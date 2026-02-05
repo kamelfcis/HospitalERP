@@ -170,7 +170,11 @@ export async function registerRoutes(
       await storage.deleteAccount(req.params.id);
       res.status(204).send();
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      if (error.message?.includes("violates foreign key constraint") || error.code === "23503") {
+        res.status(409).json({ message: "لا يمكن حذف هذا الحساب لوجود حسابات فرعية أو قيود مرتبطة به." });
+      } else {
+        res.status(500).json({ message: error.message });
+      }
     }
   });
 
@@ -256,7 +260,11 @@ export async function registerRoutes(
       await storage.deleteCostCenter(req.params.id);
       res.status(204).send();
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      if (error.message?.includes("violates foreign key constraint") || error.code === "23503") {
+        res.status(409).json({ message: "لا يمكن حذف مركز التكلفة لوجود مراكز فرعية أو قيود مرتبطة به." });
+      } else {
+        res.status(500).json({ message: error.message });
+      }
     }
   });
 
@@ -975,7 +983,11 @@ export async function registerRoutes(
       await storage.deleteItem(req.params.id);
       res.status(204).send();
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      if (error.message?.includes("violates foreign key constraint") || error.code === "23503") {
+        res.status(409).json({ message: "لا يمكن حذف هذا الصنف لوجود حركات مرتبطة به. يمكنك إلغاء تفعيله بدلاً من ذلك." });
+      } else {
+        res.status(500).json({ message: error.message });
+      }
     }
   });
 

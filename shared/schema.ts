@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, pgEnum, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -60,10 +60,12 @@ export const costCenters = pgTable("cost_centers", {
   name: text("name").notNull(),
   description: text("description"),
   type: text("type"),
-  parentId: varchar("parent_id"),
+  parentId: varchar("parent_id").references((): any => costCenters.id, { onDelete: "set null" }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  parentIdx: index("idx_cost_centers_parent").on(table.parentId),
+}));
 
 // دليل الحسابات
 export const accounts = pgTable("accounts", {
@@ -71,19 +73,22 @@ export const accounts = pgTable("accounts", {
   code: varchar("code", { length: 20 }).notNull().unique(),
   name: text("name").notNull(),
   accountType: accountTypeEnum("account_type").notNull(),
-  parentId: varchar("parent_id"),
+  parentId: varchar("parent_id").references((): any => accounts.id, { onDelete: "set null" }),
   level: integer("level").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true),
   requiresCostCenter: boolean("requires_cost_center").notNull().default(false),
   description: text("description"),
   openingBalance: decimal("opening_balance", { precision: 18, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  parentIdx: index("idx_accounts_parent").on(table.parentId),
+  typeIdx: index("idx_accounts_type").on(table.accountType),
+}));
 
 // القيود اليومية
 export const journalEntries = pgTable("journal_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  entryNumber: integer("entry_number").notNull(),
+  entryNumber: integer("entry_number").notNull().unique(),
   entryDate: date("entry_date").notNull(),
   description: text("description").notNull(),
   status: journalStatusEnum("status").notNull().default("draft"),
@@ -96,11 +101,15 @@ export const journalEntries = pgTable("journal_entries", {
   postedAt: timestamp("posted_at"),
   reversedBy: varchar("reversed_by").references(() => users.id),
   reversedAt: timestamp("reversed_at"),
-  reversalEntryId: varchar("reversal_entry_id"),
-  templateId: varchar("template_id"),
+  reversalEntryId: varchar("reversal_entry_id").references((): any => journalEntries.id, { onDelete: "set null" }),
+  templateId: varchar("template_id").references(() => journalTemplates.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  dateIdx: index("idx_journal_entries_date").on(table.entryDate),
+  statusIdx: index("idx_journal_entries_status").on(table.status),
+  periodIdx: index("idx_journal_entries_period").on(table.periodId),
+}));
 
 // سطور القيود
 export const journalLines = pgTable("journal_lines", {
@@ -112,7 +121,11 @@ export const journalLines = pgTable("journal_lines", {
   description: text("description"),
   debit: decimal("debit", { precision: 18, scale: 2 }).notNull().default("0"),
   credit: decimal("credit", { precision: 18, scale: 2 }).notNull().default("0"),
-});
+}, (table) => ({
+  entryIdx: index("idx_journal_lines_entry").on(table.journalEntryId),
+  accountIdx: index("idx_journal_lines_account").on(table.accountId),
+  costCenterIdx: index("idx_journal_lines_cost_center").on(table.costCenterId),
+}));
 
 // نماذج القيود
 export const journalTemplates = pgTable("journal_templates", {
@@ -147,7 +160,10 @@ export const auditLog = pgTable("audit_log", {
   userId: varchar("user_id").references(() => users.id),
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tableRecordIdx: index("idx_audit_log_table_record").on(table.tableName, table.recordId),
+  createdAtIdx: index("idx_audit_log_created_at").on(table.createdAt),
+}));
 
 // أنواع أشكال الأصناف (أقراص، كريم، فوار، إلخ)
 export const itemFormTypes = pgTable("item_form_types", {
@@ -179,12 +195,16 @@ export const items = pgTable("items", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  categoryIdx: index("idx_items_category").on(table.category),
+  nameArIdx: index("idx_items_name_ar").on(table.nameAr),
+  formTypeIdx: index("idx_items_form_type").on(table.formTypeId),
+}));
 
 // حركات المشتريات
 export const purchaseTransactions = pgTable("purchase_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  itemId: varchar("item_id").notNull().references(() => items.id),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
   txDate: date("tx_date").notNull(),
   supplierName: text("supplier_name"),
   qty: decimal("qty", { precision: 18, scale: 4 }).notNull(),
@@ -193,19 +213,25 @@ export const purchaseTransactions = pgTable("purchase_transactions", {
   salePriceSnapshot: decimal("sale_price_snapshot", { precision: 18, scale: 2 }),
   total: decimal("total", { precision: 18, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  itemIdx: index("idx_purchase_tx_item").on(table.itemId),
+  dateIdx: index("idx_purchase_tx_date").on(table.txDate),
+}));
 
 // حركات المبيعات
 export const salesTransactions = pgTable("sales_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  itemId: varchar("item_id").notNull().references(() => items.id),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
   txDate: date("tx_date").notNull(),
   qty: decimal("qty", { precision: 18, scale: 4 }).notNull(),
   unitLevel: unitLevelEnum("unit_level").notNull().default("minor"),
   salePrice: decimal("sale_price", { precision: 18, scale: 2 }).notNull(),
   total: decimal("total", { precision: 18, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  itemIdx: index("idx_sales_tx_item").on(table.itemId),
+  dateIdx: index("idx_sales_tx_date").on(table.txDate),
+}));
 
 // الأقسام (صيدلية خارجية، صيدلية داخلية، عناية، عمليات...)
 export const departments = pgTable("departments", {
@@ -224,7 +250,11 @@ export const itemDepartmentPrices = pgTable("item_department_prices", {
   salePrice: decimal("sale_price", { precision: 18, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  itemDeptUniq: uniqueIndex("idx_item_dept_unique").on(table.itemId, table.departmentId),
+  itemIdx: index("idx_item_dept_prices_item").on(table.itemId),
+  deptIdx: index("idx_item_dept_prices_dept").on(table.departmentId),
+}));
 
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
