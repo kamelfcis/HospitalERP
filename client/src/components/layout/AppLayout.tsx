@@ -88,6 +88,11 @@ const reportNavItems = [
     href: "/reports/cost-centers",
     icon: PieChart,
   },
+  {
+    title: "كشف حساب",
+    href: "/reports/account-ledger",
+    icon: FileText,
+  },
 ];
 
 const systemNavItems = [

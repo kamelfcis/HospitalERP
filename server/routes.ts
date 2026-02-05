@@ -659,6 +659,23 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/reports/account-ledger", async (req, res) => {
+    try {
+      const accountId = req.query.accountId as string;
+      if (!accountId) {
+        return res.status(400).json({ message: "معرف الحساب مطلوب" });
+      }
+      const today = new Date();
+      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startDate = (req.query.startDate as string) || firstDayOfMonth.toISOString().split('T')[0];
+      const endDate = (req.query.endDate as string) || today.toISOString().split('T')[0];
+      const report = await storage.getAccountLedger(accountId, startDate, endDate);
+      res.json(report);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Accounts Import
   app.post("/api/accounts/import", upload.single("file"), async (req, res) => {
     try {

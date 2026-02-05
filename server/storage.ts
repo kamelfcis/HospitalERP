@@ -90,6 +90,7 @@ export interface IStorage {
   getIncomeStatement(startDate: string, endDate: string): Promise<any>;
   getBalanceSheet(asOfDate: string): Promise<any>;
   getCostCenterReport(startDate: string, endDate: string, costCenterId?: string): Promise<any>;
+  getAccountLedger(accountId: string, startDate: string, endDate: string): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -673,6 +674,90 @@ export class DatabaseStorage implements IStorage {
       grandNetResult: (grandTotalRevenue - grandTotalExpense).toFixed(2),
       startDate,
       endDate,
+    };
+  }
+
+  async getAccountLedger(accountId: string, startDate: string, endDate: string): Promise<any> {
+    const account = await this.getAccount(accountId);
+    if (!account) {
+      throw new Error("الحساب غير موجود");
+    }
+
+    // Get opening balance (all transactions before startDate)
+    const [openingResult] = await db.select({
+      totalDebit: sql<string>`COALESCE(SUM(${journalLines.debit}::numeric), 0)::text`,
+      totalCredit: sql<string>`COALESCE(SUM(${journalLines.credit}::numeric), 0)::text`,
+    })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
+    .where(and(
+      eq(journalLines.accountId, accountId),
+      eq(journalEntries.status, 'posted'),
+      sql`${journalEntries.entryDate} < ${startDate}`
+    ));
+
+    const openingDebit = parseFloat(openingResult?.totalDebit || "0");
+    const openingCredit = parseFloat(openingResult?.totalCredit || "0");
+    
+    // For asset/expense accounts: positive balance = debit
+    // For liability/equity/revenue accounts: positive balance = credit
+    const isDebitNormal = ['asset', 'expense'].includes(account.accountType);
+    const accountOpeningBalance = parseFloat(account.openingBalance || "0");
+    let openingBalance = isDebitNormal 
+      ? accountOpeningBalance + (openingDebit - openingCredit)
+      : accountOpeningBalance + (openingCredit - openingDebit);
+
+    // Get all transactions within the period
+    const lines = await db.select({
+      id: journalLines.id,
+      entryId: journalEntries.id,
+      entryNumber: journalEntries.entryNumber,
+      entryDate: journalEntries.entryDate,
+      description: journalEntries.description,
+      lineDescription: journalLines.description,
+      debit: journalLines.debit,
+      credit: journalLines.credit,
+      reference: journalEntries.reference,
+    })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
+    .where(and(
+      eq(journalLines.accountId, accountId),
+      eq(journalEntries.status, 'posted'),
+      sql`${journalEntries.entryDate} >= ${startDate}`,
+      sql`${journalEntries.entryDate} <= ${endDate}`
+    ))
+    .orderBy(journalEntries.entryDate, journalEntries.entryNumber);
+
+    // Calculate running balance
+    let runningBalance = openingBalance;
+    const linesWithBalance = lines.map(line => {
+      const debit = parseFloat(line.debit || "0");
+      const credit = parseFloat(line.credit || "0");
+      
+      if (isDebitNormal) {
+        runningBalance += (debit - credit);
+      } else {
+        runningBalance += (credit - debit);
+      }
+
+      return {
+        ...line,
+        runningBalance: runningBalance.toFixed(2),
+      };
+    });
+
+    const totalDebit = lines.reduce((sum, l) => sum + parseFloat(l.debit || "0"), 0);
+    const totalCredit = lines.reduce((sum, l) => sum + parseFloat(l.credit || "0"), 0);
+    const closingBalance = runningBalance;
+
+    return {
+      account,
+      openingBalance: openingBalance.toFixed(2),
+      lines: linesWithBalance,
+      totalDebit: totalDebit.toFixed(2),
+      totalCredit: totalCredit.toFixed(2),
+      closingBalance: closingBalance.toFixed(2),
     };
   }
 }

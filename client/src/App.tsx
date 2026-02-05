@@ -17,6 +17,7 @@ import TrialBalance from "@/pages/TrialBalance";
 import IncomeStatement from "@/pages/IncomeStatement";
 import BalanceSheet from "@/pages/BalanceSheet";
 import CostCenterReports from "@/pages/CostCenterReports";
+import AccountLedger from "@/pages/AccountLedger";
 import AuditLog from "@/pages/AuditLog";
 import NotFound from "@/pages/not-found";
 
@@ -37,6 +38,7 @@ function Router() {
         <Route path="/reports/income-statement" component={IncomeStatement} />
         <Route path="/reports/balance-sheet" component={BalanceSheet} />
         <Route path="/reports/cost-centers" component={CostCenterReports} />
+        <Route path="/reports/account-ledger" component={AccountLedger} />
         <Route path="/audit-log" component={AuditLog} />
         <Route component={NotFound} />
       </Switch>
