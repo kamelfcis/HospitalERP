@@ -651,11 +651,12 @@ export async function registerRoutes(
       }
 
       for (const row of data) {
-        // Try multiple possible column names for each field
+        // Try multiple possible column names for each field (including variations with/without spaces)
         const code = getColumnValue(row, ["كود الحساب", "الكود", "رقم الحساب", "كود", "Code", "code", "Account Code"]);
         const name = getColumnValue(row, ["اسم الحساب", "الاسم", "اسم", "Name", "name", "Account Name", "الحساب"]);
-        const accountTypeArabic = getColumnValue(row, ["تصنيف الحساب", "التصنيف", "نوع الحساب", "النوع", "Type", "type", "Account Type", "قائمة العرض"]);
-        const requiresCostCenterValue = getColumnValue(row, ["يتطلب مركز تكلفة", "مركز التكلفة", "كود مركز التكلفة", "Cost Center", "costCenter"]);
+        const accountTypeArabic = getColumnValue(row, ["تصنيف الحساب", "التصنيف", "نوع الحساب", "النوع", "Type", "type", "Account Type"]);
+        const displayList = getColumnValue(row, ["قائمة العرض", "القائمة"]);
+        const requiresCostCenterValue = getColumnValue(row, ["يتطلب مركز تكلفة", "مركز التكلفة", "كود مركز التكلفة", "كود مركز التكلفة ", "Cost Center", "costCenter"]);
         const openingBalance = getColumnValue(row, ["الرصيد الافتتاحي", "الرصيد", "رصيد افتتاحي", "Opening Balance", "balance"]) || "0";
 
         if (!code || !name) {
@@ -669,35 +670,68 @@ export async function registerRoutes(
           continue;
         }
 
-        // Map account type - try direct mapping or derive from display list
-        let accountType = accountTypeMapArabicToEnglish[accountTypeArabic];
+        // Extended mapping for account types with Arabic variations
+        const extendedAccountTypeMap: Record<string, string> = {
+          ...accountTypeMapArabicToEnglish,
+          "الأصول": "asset",
+          "الاصول": "asset",
+          "اصول": "asset",
+          "الخصوم": "liability",
+          "خصوم": "liability",
+          "الالتزامات": "liability",
+          "التزامات": "liability",
+          "حقوق الملكية": "equity",
+          "حقوق ملكية": "equity",
+          "الإيرادات": "revenue",
+          "الايرادات": "revenue",
+          "ايرادات": "revenue",
+          "المصروفات": "expense",
+          "المصاريف": "expense",
+          "مصاريف": "expense",
+        };
+
+        // Map account type from تصنيف الحساب
+        let accountType = extendedAccountTypeMap[accountTypeArabic];
         
-        // If not found, try to derive from قائمة العرض values
-        if (!accountType) {
+        // If not found from تصنيف, try to derive from قائمة العرض
+        if (!accountType && displayList) {
           const displayListMapping: Record<string, string> = {
-            "الميزانية": "asset", // Default to asset for balance sheet items
-            "قائمة الدخل": "expense", // Default to expense for income statement items
+            "قائمة المركز المالي": "asset", // Balance sheet - default to asset
+            "الميزانية": "asset",
             "ميزانية": "asset",
-            "دخل": "expense",
-            "أصول": "asset",
-            "خصوم": "liability",
-            "حقوق الملكية": "equity",
-            "حقوق ملكية": "equity",
-            "إيرادات": "revenue",
-            "ايرادات": "revenue",
-            "مصروفات": "expense",
-            "مصاريف": "expense",
+            "قائمة الدخل": "expense", // Income statement - need to determine if revenue or expense
+            "الدخل": "expense",
           };
-          accountType = displayListMapping[accountTypeArabic];
+          
+          // Use تصنيف الحساب to determine if it's revenue or expense for income statement items
+          if (displayList.includes("الدخل") || displayList.includes("دخل")) {
+            // Check تصنيف to see if it's revenue or expense
+            if (accountTypeArabic.includes("إيراد") || accountTypeArabic.includes("ايراد")) {
+              accountType = "revenue";
+            } else if (accountTypeArabic.includes("مصروف") || accountTypeArabic.includes("مصاريف")) {
+              accountType = "expense";
+            } else {
+              accountType = "expense"; // Default for income statement
+            }
+          } else {
+            // For balance sheet, check تصنيف
+            if (accountTypeArabic.includes("خصوم") || accountTypeArabic.includes("التزام")) {
+              accountType = "liability";
+            } else if (accountTypeArabic.includes("ملكية") || accountTypeArabic.includes("حقوق")) {
+              accountType = "equity";
+            } else {
+              accountType = displayListMapping[displayList] || "asset";
+            }
+          }
         }
         
         if (!accountType) {
           // Default to asset if no type specified
           accountType = "asset";
-          errors.push(`تصنيف غير محدد للحساب ${code}، تم افتراض "أصول"`);
         }
 
-        const requiresCostCenter = requiresCostCenterValue === "نعم" || requiresCostCenterValue.toLowerCase() === "yes" || requiresCostCenterValue === "1" || requiresCostCenterValue !== "";
+        // Check if cost center is required (not "—" or empty)
+        const requiresCostCenter = requiresCostCenterValue !== "" && requiresCostCenterValue !== "—" && requiresCostCenterValue !== "-";
 
         try {
           await storage.createAccount({
