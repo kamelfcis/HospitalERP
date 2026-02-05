@@ -18,6 +18,18 @@ export const journalStatusEnum = pgEnum("journal_status", [
   "reversed"    // ملغي
 ]);
 
+export const itemCategoryEnum = pgEnum("item_category", [
+  "drug",       // دواء
+  "supply",     // مستلزمات
+  "service"     // خدمة
+]);
+
+export const unitLevelEnum = pgEnum("unit_level", [
+  "major",      // وحدة كبرى
+  "medium",     // وحدة متوسطة
+  "minor"       // وحدة صغرى
+]);
+
 // المستخدمين
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -137,6 +149,64 @@ export const auditLog = pgTable("audit_log", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// أنواع أشكال الأصناف (أقراص، كريم، فوار، إلخ)
+export const itemFormTypes = pgTable("item_form_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  nameAr: text("name_ar").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// الأصناف
+export const items = pgTable("items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemCode: varchar("item_code", { length: 50 }).notNull().unique(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en"),
+  category: itemCategoryEnum("category").notNull(),
+  isToxic: boolean("is_toxic").notNull().default(false),
+  formTypeId: varchar("form_type_id").references(() => itemFormTypes.id),
+  purchasePriceLast: decimal("purchase_price_last", { precision: 18, scale: 2 }).notNull().default("0"),
+  salePriceCurrent: decimal("sale_price_current", { precision: 18, scale: 2 }).notNull().default("0"),
+  majorUnitName: text("major_unit_name"),
+  mediumUnitName: text("medium_unit_name"),
+  minorUnitName: text("minor_unit_name"),
+  majorToMedium: decimal("major_to_medium", { precision: 10, scale: 4 }),
+  majorToMinor: decimal("major_to_minor", { precision: 10, scale: 4 }),
+  mediumToMinor: decimal("medium_to_minor", { precision: 10, scale: 4 }),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// حركات المشتريات
+export const purchaseTransactions = pgTable("purchase_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => items.id),
+  txDate: date("tx_date").notNull(),
+  supplierName: text("supplier_name"),
+  qty: decimal("qty", { precision: 18, scale: 4 }).notNull(),
+  unitLevel: unitLevelEnum("unit_level").notNull().default("minor"),
+  purchasePrice: decimal("purchase_price", { precision: 18, scale: 2 }).notNull(),
+  salePriceSnapshot: decimal("sale_price_snapshot", { precision: 18, scale: 2 }),
+  total: decimal("total", { precision: 18, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// حركات المبيعات
+export const salesTransactions = pgTable("sales_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => items.id),
+  txDate: date("tx_date").notNull(),
+  qty: decimal("qty", { precision: 18, scale: 4 }).notNull(),
+  unitLevel: unitLevelEnum("unit_level").notNull().default("minor"),
+  salePrice: decimal("sale_price", { precision: 18, scale: 2 }).notNull(),
+  total: decimal("total", { precision: 18, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
@@ -153,6 +223,10 @@ export const insertJournalLineSchema = createInsertSchema(journalLines).omit({ i
 export const insertJournalTemplateSchema = createInsertSchema(journalTemplates).omit({ id: true, createdAt: true });
 export const insertTemplateLineSchema = createInsertSchema(templateLines).omit({ id: true });
 export const insertAuditLogSchema = createInsertSchema(auditLog).omit({ id: true, createdAt: true });
+export const insertItemFormTypeSchema = createInsertSchema(itemFormTypes).omit({ id: true, createdAt: true });
+export const insertItemSchema = createInsertSchema(items).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPurchaseTransactionSchema = createInsertSchema(purchaseTransactions).omit({ id: true, createdAt: true });
+export const insertSalesTransactionSchema = createInsertSchema(salesTransactions).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -181,6 +255,18 @@ export type TemplateLine = typeof templateLines.$inferSelect;
 
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLog.$inferSelect;
+
+export type InsertItemFormType = z.infer<typeof insertItemFormTypeSchema>;
+export type ItemFormType = typeof itemFormTypes.$inferSelect;
+
+export type InsertItem = z.infer<typeof insertItemSchema>;
+export type Item = typeof items.$inferSelect;
+
+export type InsertPurchaseTransaction = z.infer<typeof insertPurchaseTransactionSchema>;
+export type PurchaseTransaction = typeof purchaseTransactions.$inferSelect;
+
+export type InsertSalesTransaction = z.infer<typeof insertSalesTransactionSchema>;
+export type SalesTransaction = typeof salesTransactions.$inferSelect;
 
 // Extended types for API responses
 export type JournalEntryWithLines = JournalEntry & {
@@ -215,4 +301,23 @@ export const journalStatusLabels: Record<string, string> = {
   draft: "مسودة",
   posted: "مُرحّل",
   reversed: "ملغي"
+};
+
+// Item category labels in Arabic
+export const itemCategoryLabels: Record<string, string> = {
+  drug: "دواء",
+  supply: "مستلزمات",
+  service: "خدمة"
+};
+
+// Unit level labels in Arabic
+export const unitLevelLabels: Record<string, string> = {
+  major: "وحدة كبرى",
+  medium: "وحدة متوسطة",
+  minor: "وحدة صغرى"
+};
+
+// Extended type for Item with form type
+export type ItemWithFormType = Item & {
+  formType?: ItemFormType;
 };

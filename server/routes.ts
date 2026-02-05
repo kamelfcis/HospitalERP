@@ -6,6 +6,8 @@ import {
   insertCostCenterSchema, 
   insertFiscalPeriodSchema,
   insertJournalTemplateSchema,
+  insertItemSchema,
+  insertItemFormTypeSchema,
   accounts,
   accountTypeLabels
 } from "@shared/schema";
@@ -892,6 +894,134 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       res.status(500).json({ message: `خطأ في معالجة الملف: ${error.message}` });
+    }
+  });
+
+  // Items
+  app.get("/api/items", async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string | undefined;
+      const category = req.query.category as string | undefined;
+      const isToxic = req.query.isToxic !== undefined ? req.query.isToxic === "true" : undefined;
+      const formTypeId = req.query.formTypeId as string | undefined;
+      const isActive = req.query.isActive !== undefined ? req.query.isActive === "true" : undefined;
+      const minPrice = req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined;
+      const maxPrice = req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined;
+
+      const result = await storage.getItems({
+        page,
+        limit,
+        search,
+        category,
+        isToxic,
+        formTypeId,
+        isActive,
+        minPrice,
+        maxPrice,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/items/:id", async (req, res) => {
+    try {
+      const item = await storage.getItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ message: "الصنف غير موجود" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/items", async (req, res) => {
+    try {
+      const validated = insertItemSchema.parse(req.body);
+      const item = await storage.createItem(validated);
+      res.status(201).json(item);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/items/:id", async (req, res) => {
+    try {
+      const validated = insertItemSchema.partial().parse(req.body);
+      const item = await storage.updateItem(req.params.id, validated);
+      if (!item) {
+        return res.status(404).json({ message: "الصنف غير موجود" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/items/:id", async (req, res) => {
+    try {
+      await storage.deleteItem(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Item Form Types
+  app.get("/api/form-types", async (req, res) => {
+    try {
+      const formTypes = await storage.getItemFormTypes();
+      res.json(formTypes);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/form-types", async (req, res) => {
+    try {
+      const validated = insertItemFormTypeSchema.parse(req.body);
+      const formType = await storage.createItemFormType(validated);
+      res.status(201).json(formType);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Item Transactions
+  app.get("/api/items/:id/last-purchases", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 5;
+      const purchases = await storage.getLastPurchases(req.params.id, limit);
+      res.json(purchases);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/items/:id/avg-sales", async (req, res) => {
+    try {
+      const today = new Date();
+      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startDate = (req.query.startDate as string) || firstDayOfMonth.toISOString().split('T')[0];
+      const endDate = (req.query.endDate as string) || today.toISOString().split('T')[0];
+
+      const result = await storage.getAverageSales(req.params.id, startDate, endDate);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 

@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql, or, like } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, or, like, ilike, asc } from "drizzle-orm";
 import {
   users,
   accounts,
@@ -10,6 +10,10 @@ import {
   journalTemplates,
   templateLines,
   auditLog,
+  items,
+  itemFormTypes,
+  purchaseTransactions,
+  salesTransactions,
   type User,
   type InsertUser,
   type Account,
@@ -29,6 +33,12 @@ import {
   type AuditLog,
   type InsertAuditLog,
   type JournalEntryWithLines,
+  type Item,
+  type InsertItem,
+  type ItemFormType,
+  type InsertItemFormType,
+  type ItemWithFormType,
+  type PurchaseTransaction,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -91,6 +101,21 @@ export interface IStorage {
   getBalanceSheet(asOfDate: string): Promise<any>;
   getCostCenterReport(startDate: string, endDate: string, costCenterId?: string): Promise<any>;
   getAccountLedger(accountId: string, startDate: string, endDate: string): Promise<any>;
+
+  // Items
+  getItems(params: { page?: number; limit?: number; search?: string; category?: string; isToxic?: boolean; formTypeId?: string; isActive?: boolean; minPrice?: number; maxPrice?: number }): Promise<{ items: Item[]; total: number }>;
+  getItem(id: string): Promise<ItemWithFormType | undefined>;
+  createItem(item: InsertItem): Promise<Item>;
+  updateItem(id: string, item: Partial<InsertItem>): Promise<Item | undefined>;
+  deleteItem(id: string): Promise<boolean>;
+
+  // Item Form Types
+  getItemFormTypes(): Promise<ItemFormType[]>;
+  createItemFormType(formType: InsertItemFormType): Promise<ItemFormType>;
+
+  // Purchase & Sales Transactions
+  getLastPurchases(itemId: string, limit?: number): Promise<PurchaseTransaction[]>;
+  getAverageSales(itemId: string, startDate: string, endDate: string): Promise<{ avgPrice: string; totalQty: string; invoiceCount: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -761,6 +786,137 @@ export class DatabaseStorage implements IStorage {
       totalDebit: totalDebit.toFixed(2),
       totalCredit: totalCredit.toFixed(2),
       closingBalance: closingBalance.toFixed(2),
+    };
+  }
+
+  // Items
+  async getItems(params: { page?: number; limit?: number; search?: string; category?: string; isToxic?: boolean; formTypeId?: string; isActive?: boolean; minPrice?: number; maxPrice?: number }): Promise<{ items: Item[]; total: number }> {
+    const { page = 1, limit = 20, search, category, isToxic, formTypeId, isActive, minPrice, maxPrice } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions: any[] = [];
+
+    if (search) {
+      const searchPattern = `%${search}%`;
+      conditions.push(
+        or(
+          ilike(items.nameAr, searchPattern),
+          ilike(items.nameEn, searchPattern),
+          ilike(items.itemCode, searchPattern)
+        )
+      );
+    }
+
+    if (category) {
+      conditions.push(eq(items.category, category as any));
+    }
+
+    if (isToxic !== undefined) {
+      conditions.push(eq(items.isToxic, isToxic));
+    }
+
+    if (formTypeId) {
+      conditions.push(eq(items.formTypeId, formTypeId));
+    }
+
+    if (isActive !== undefined) {
+      conditions.push(eq(items.isActive, isActive));
+    }
+
+    if (minPrice !== undefined) {
+      conditions.push(gte(items.salePriceCurrent, String(minPrice)));
+    }
+
+    if (maxPrice !== undefined) {
+      conditions.push(lte(items.salePriceCurrent, String(maxPrice)));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)` })
+      .from(items)
+      .where(whereClause);
+
+    const itemsList = await db.select()
+      .from(items)
+      .where(whereClause)
+      .orderBy(asc(items.itemCode))
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      items: itemsList,
+      total: countResult?.count || 0,
+    };
+  }
+
+  async getItem(id: string): Promise<ItemWithFormType | undefined> {
+    const [item] = await db.select().from(items).where(eq(items.id, id));
+    if (!item) return undefined;
+
+    let formType: ItemFormType | undefined;
+    if (item.formTypeId) {
+      const [ft] = await db.select().from(itemFormTypes).where(eq(itemFormTypes.id, item.formTypeId));
+      formType = ft;
+    }
+
+    return { ...item, formType };
+  }
+
+  async createItem(item: InsertItem): Promise<Item> {
+    const [newItem] = await db.insert(items).values(item).returning();
+    return newItem;
+  }
+
+  async updateItem(id: string, item: Partial<InsertItem>): Promise<Item | undefined> {
+    const [updated] = await db.update(items)
+      .set({ ...item, updatedAt: new Date() })
+      .where(eq(items.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteItem(id: string): Promise<boolean> {
+    await db.delete(items).where(eq(items.id, id));
+    return true;
+  }
+
+  // Item Form Types
+  async getItemFormTypes(): Promise<ItemFormType[]> {
+    return db.select().from(itemFormTypes).orderBy(asc(itemFormTypes.sortOrder));
+  }
+
+  async createItemFormType(formType: InsertItemFormType): Promise<ItemFormType> {
+    const [newFormType] = await db.insert(itemFormTypes).values(formType).returning();
+    return newFormType;
+  }
+
+  // Purchase & Sales Transactions
+  async getLastPurchases(itemId: string, limit: number = 5): Promise<PurchaseTransaction[]> {
+    return db.select()
+      .from(purchaseTransactions)
+      .where(eq(purchaseTransactions.itemId, itemId))
+      .orderBy(desc(purchaseTransactions.txDate))
+      .limit(limit);
+  }
+
+  async getAverageSales(itemId: string, startDate: string, endDate: string): Promise<{ avgPrice: string; totalQty: string; invoiceCount: number }> {
+    const [result] = await db.select({
+      avgPrice: sql<string>`COALESCE(AVG(${salesTransactions.salePrice}::numeric), 0)::text`,
+      totalQty: sql<string>`COALESCE(SUM(${salesTransactions.qty}::numeric), 0)::text`,
+      invoiceCount: sql<number>`COUNT(*)::int`,
+    })
+    .from(salesTransactions)
+    .where(and(
+      eq(salesTransactions.itemId, itemId),
+      gte(salesTransactions.txDate, startDate),
+      lte(salesTransactions.txDate, endDate)
+    ));
+
+    return {
+      avgPrice: result?.avgPrice || "0",
+      totalQty: result?.totalQty || "0",
+      invoiceCount: result?.invoiceCount || 0,
     };
   }
 }
