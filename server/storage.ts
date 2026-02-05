@@ -72,9 +72,13 @@ export interface IStorage {
   // Journal Templates
   getTemplates(): Promise<JournalTemplate[]>;
   getTemplate(id: string): Promise<JournalTemplate | undefined>;
+  getTemplateWithLines(id: string): Promise<(JournalTemplate & { lines: TemplateLine[] }) | undefined>;
   createTemplate(template: InsertJournalTemplate): Promise<JournalTemplate>;
+  createTemplateWithLines(template: InsertJournalTemplate, lines: InsertTemplateLine[]): Promise<JournalTemplate>;
   updateTemplate(id: string, template: Partial<InsertJournalTemplate>): Promise<JournalTemplate | undefined>;
+  updateTemplateWithLines(id: string, template: Partial<InsertJournalTemplate>, lines: InsertTemplateLine[]): Promise<JournalTemplate | undefined>;
   deleteTemplate(id: string): Promise<boolean>;
+  getTemplateLines(templateId: string): Promise<TemplateLine[]>;
   
   // Audit Log
   getAuditLogs(): Promise<AuditLog[]>;
@@ -380,6 +384,38 @@ export class DatabaseStorage implements IStorage {
     await db.delete(templateLines).where(eq(templateLines.templateId, id));
     await db.delete(journalTemplates).where(eq(journalTemplates.id, id));
     return true;
+  }
+
+  async getTemplateLines(templateId: string): Promise<TemplateLine[]> {
+    return db.select().from(templateLines).where(eq(templateLines.templateId, templateId)).orderBy(templateLines.lineNumber);
+  }
+
+  async getTemplateWithLines(id: string): Promise<(JournalTemplate & { lines: TemplateLine[] }) | undefined> {
+    const template = await this.getTemplate(id);
+    if (!template) return undefined;
+    const lines = await this.getTemplateLines(id);
+    return { ...template, lines };
+  }
+
+  async createTemplateWithLines(template: InsertJournalTemplate, lines: InsertTemplateLine[]): Promise<JournalTemplate> {
+    const [newTemplate] = await db.insert(journalTemplates).values(template).returning();
+    if (lines.length > 0) {
+      const linesWithTemplateId = lines.map(line => ({ ...line, templateId: newTemplate.id }));
+      await db.insert(templateLines).values(linesWithTemplateId);
+    }
+    return newTemplate;
+  }
+
+  async updateTemplateWithLines(id: string, template: Partial<InsertJournalTemplate>, lines: InsertTemplateLine[]): Promise<JournalTemplate | undefined> {
+    const [updated] = await db.update(journalTemplates).set(template).where(eq(journalTemplates.id, id)).returning();
+    if (!updated) return undefined;
+    // Delete old lines and insert new ones
+    await db.delete(templateLines).where(eq(templateLines.templateId, id));
+    if (lines.length > 0) {
+      const linesWithTemplateId = lines.map(line => ({ ...line, templateId: id }));
+      await db.insert(templateLines).values(linesWithTemplateId);
+    }
+    return updated;
   }
 
   // Audit Log

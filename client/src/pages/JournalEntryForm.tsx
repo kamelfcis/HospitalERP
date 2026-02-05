@@ -14,10 +14,26 @@ import {
   CheckCircle,
   AlertTriangle,
   Search,
+  FileText,
+  Download,
+  ChevronDown,
 } from "lucide-react";
 import { formatCurrency, formatDateForInput } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Account, CostCenter, JournalEntryWithLines, JournalTemplate } from "@shared/schema";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { Account, CostCenter, JournalEntryWithLines, JournalTemplate, TemplateLine } from "@shared/schema";
 
 interface JournalLineInput {
   id: string;
@@ -47,6 +63,9 @@ export default function JournalEntryForm() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeLineId, setActiveLineId] = useState<string | null>(null);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+  const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
 
   const { data: accounts } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
@@ -54,6 +73,10 @@ export default function JournalEntryForm() {
 
   const { data: costCenters } = useQuery<CostCenter[]>({
     queryKey: ["/api/cost-centers"],
+  });
+
+  const { data: templates } = useQuery<JournalTemplate[]>({
+    queryKey: ["/api/templates"],
   });
 
   const { data: existingEntry, isLoading: isLoadingEntry } = useQuery<JournalEntryWithLines>({
@@ -115,6 +138,85 @@ export default function JournalEntryForm() {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
+
+  const saveTemplateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return apiRequest("POST", "/api/templates", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
+      toast({ title: "تم حفظ النموذج بنجاح" });
+      setShowSaveTemplateDialog(false);
+      setTemplateName("");
+      setTemplateDescription("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleSaveAsTemplate = () => {
+    const validLines = lines.filter(
+      (line) => line.accountId && (parseFloat(line.debit) > 0 || parseFloat(line.credit) > 0)
+    );
+    
+    if (validLines.length < 2) {
+      toast({ title: "خطأ", description: "يجب إدخال سطرين على الأقل لحفظ النموذج", variant: "destructive" });
+      return;
+    }
+
+    if (!templateName.trim()) {
+      toast({ title: "خطأ", description: "يرجى إدخال اسم النموذج", variant: "destructive" });
+      return;
+    }
+
+    const templateLines = validLines.map((line, index) => ({
+      lineNumber: index + 1,
+      accountId: line.accountId,
+      costCenterId: line.costCenterId || null,
+      description: line.description,
+      debit: line.debit || "0",
+      credit: line.credit || "0",
+    }));
+
+    saveTemplateMutation.mutate({
+      name: templateName.trim(),
+      description: templateDescription.trim() || null,
+      isActive: true,
+      lines: templateLines,
+    });
+  };
+
+  const loadTemplate = async (templateId: string) => {
+    try {
+      const response = await fetch(`/api/templates/${templateId}`);
+      if (!response.ok) throw new Error("فشل تحميل النموذج");
+      const template = await response.json();
+      
+      if (template.lines && template.lines.length > 0) {
+        const newLines = template.lines.map((line: TemplateLine, index: number) => {
+          const account = accounts?.find(a => a.id === line.accountId);
+          return {
+            id: `template-${index}-${Date.now()}`,
+            accountId: line.accountId || "",
+            accountCode: account?.code || "",
+            accountName: account?.name || "",
+            costCenterId: line.costCenterId,
+            description: line.description || "",
+            debit: line.debitPercent || "",
+            credit: line.creditPercent || "",
+          };
+        });
+        setLines(newLines);
+        setDescription(template.description || template.name);
+        toast({ title: "تم تحميل النموذج بنجاح" });
+      } else {
+        toast({ title: "تنبيه", description: "النموذج لا يحتوي على سطور", variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    }
+  };
 
   const totals = useMemo(() => {
     const totalDebit = lines.reduce((sum, line) => sum + (parseFloat(line.debit) || 0), 0);
@@ -325,6 +427,42 @@ export default function JournalEntryForm() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          {/* Template Dropdown */}
+          {!isEditing && templates && templates.filter(t => t.isActive).length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-load-template">
+                  <Download className="h-4 w-4 ml-1" />
+                  استدعاء نموذج
+                  <ChevronDown className="h-3 w-3 mr-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {templates.filter(t => t.isActive).map((template) => (
+                  <DropdownMenuItem
+                    key={template.id}
+                    onClick={() => loadTemplate(template.id)}
+                    className="text-right"
+                    data-testid={`menu-template-${template.id}`}
+                  >
+                    <FileText className="h-4 w-4 ml-2" />
+                    {template.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSaveTemplateDialog(true)}
+            disabled={lines.filter(l => l.accountId && (parseFloat(l.debit) > 0 || parseFloat(l.credit) > 0)).length < 2}
+            data-testid="button-save-as-template"
+          >
+            <FileText className="h-4 w-4 ml-1" />
+            حفظ كنموذج
+          </Button>
+          <div className="h-6 w-px bg-border" />
           <Button
             variant="outline"
             size="sm"
@@ -572,6 +710,71 @@ export default function JournalEntryForm() {
           </div>
         </div>
       </div>
+
+      {/* Save Template Dialog */}
+      <Dialog open={showSaveTemplateDialog} onOpenChange={setShowSaveTemplateDialog}>
+        <DialogContent className="max-w-sm p-0" dir="rtl">
+          <div className="peachtree-toolbar">
+            <DialogHeader className="p-0">
+              <DialogTitle className="text-sm font-semibold">حفظ كنموذج</DialogTitle>
+            </DialogHeader>
+          </div>
+          <div className="p-3 space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="templateName" className="text-xs">اسم النموذج *</Label>
+              <input
+                id="templateName"
+                type="text"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="مثال: قيد الرواتب الشهرية"
+                className="peachtree-input w-full"
+                data-testid="input-template-name"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="templateDesc" className="text-xs">الوصف</Label>
+              <textarea
+                id="templateDesc"
+                value={templateDescription}
+                onChange={(e) => setTemplateDescription(e.target.value)}
+                placeholder="وصف إضافي للنموذج (اختياري)"
+                rows={2}
+                className="peachtree-input w-full resize-none"
+                style={{ height: 'auto', minHeight: '52px' }}
+                data-testid="input-template-desc"
+              />
+            </div>
+            <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+              سيتم حفظ {lines.filter(l => l.accountId && (parseFloat(l.debit) > 0 || parseFloat(l.credit) > 0)).length} سطور في النموذج
+            </div>
+          </div>
+          <div className="peachtree-toolbar flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowSaveTemplateDialog(false);
+                setTemplateName("");
+                setTemplateDescription("");
+              }}
+              data-testid="button-cancel-template"
+              className="h-7 text-xs"
+            >
+              إلغاء
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveAsTemplate}
+              disabled={saveTemplateMutation.isPending || !templateName.trim()}
+              data-testid="button-confirm-save-template"
+              className="h-7 text-xs"
+            >
+              {saveTemplateMutation.isPending ? "جاري الحفظ..." : "حفظ النموذج"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

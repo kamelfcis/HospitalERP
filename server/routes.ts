@@ -516,11 +516,39 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/templates/:id", async (req, res) => {
+    try {
+      const template = await storage.getTemplateWithLines(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "النموذج غير موجود" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/templates", async (req, res) => {
     try {
-      const validated = insertJournalTemplateSchema.parse(req.body);
-      const template = await storage.createTemplate(validated);
-      res.status(201).json(template);
+      const { lines, ...templateData } = req.body;
+      const validated = insertJournalTemplateSchema.parse(templateData);
+      
+      if (lines && Array.isArray(lines) && lines.length > 0) {
+        const validatedLines = lines.map((line: any, index: number) => ({
+          templateId: "", // Will be set by storage method
+          lineNumber: index + 1,
+          accountId: line.accountId,
+          costCenterId: line.costCenterId || null,
+          description: line.description || "",
+          debitPercent: line.debit || line.debitPercent || null,
+          creditPercent: line.credit || line.creditPercent || null,
+        }));
+        const template = await storage.createTemplateWithLines(validated, validatedLines);
+        res.status(201).json(template);
+      } else {
+        const template = await storage.createTemplate(validated);
+        res.status(201).json(template);
+      }
     } catch (error: any) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
@@ -531,12 +559,31 @@ export async function registerRoutes(
 
   app.patch("/api/templates/:id", async (req, res) => {
     try {
-      const validated = insertJournalTemplateSchema.partial().parse(req.body);
-      const template = await storage.updateTemplate(req.params.id, validated);
-      if (!template) {
-        return res.status(404).json({ message: "النموذج غير موجود" });
+      const { lines, ...templateData } = req.body;
+      const validated = insertJournalTemplateSchema.partial().parse(templateData);
+      
+      if (lines && Array.isArray(lines)) {
+        const validatedLines = lines.map((line: any, index: number) => ({
+          templateId: req.params.id,
+          lineNumber: index + 1,
+          accountId: line.accountId,
+          costCenterId: line.costCenterId || null,
+          description: line.description || "",
+          debitPercent: line.debit || line.debitPercent || null,
+          creditPercent: line.credit || line.creditPercent || null,
+        }));
+        const template = await storage.updateTemplateWithLines(req.params.id, validated, validatedLines);
+        if (!template) {
+          return res.status(404).json({ message: "النموذج غير موجود" });
+        }
+        res.json(template);
+      } else {
+        const template = await storage.updateTemplate(req.params.id, validated);
+        if (!template) {
+          return res.status(404).json({ message: "النموذج غير موجود" });
+        }
+        res.json(template);
       }
-      res.json(template);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });

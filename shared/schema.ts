@@ -120,8 +120,8 @@ export const templateLines = pgTable("template_lines", {
   accountId: varchar("account_id").references(() => accounts.id),
   costCenterId: varchar("cost_center_id").references(() => costCenters.id),
   description: text("description"),
-  debitPercent: decimal("debit_percent", { precision: 5, scale: 2 }),
-  creditPercent: decimal("credit_percent", { precision: 5, scale: 2 }),
+  debitPercent: decimal("debit_percent", { precision: 15, scale: 2 }),
+  creditPercent: decimal("credit_percent", { precision: 15, scale: 2 }),
 });
 
 // سجل التدقيق

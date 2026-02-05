@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,16 +22,23 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Search, Edit2, Trash2, FileText } from "lucide-react";
-import { formatDateTime } from "@/lib/formatters";
+import { Plus, Search, Edit2, Trash2, FileText, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { formatDateTime, formatCurrency } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { JournalTemplate, InsertJournalTemplate } from "@shared/schema";
+import type { JournalTemplate, InsertJournalTemplate, TemplateLine, Account } from "@shared/schema";
+
+interface TemplateWithLines extends JournalTemplate {
+  lines?: TemplateLine[];
+}
 
 export default function Templates() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<JournalTemplate | null>(null);
+  const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
+  const [templateLines, setTemplateLines] = useState<Record<string, TemplateLine[]>>({});
+  const [loadingLines, setLoadingLines] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<Partial<InsertJournalTemplate>>({
     name: "",
@@ -41,6 +48,10 @@ export default function Templates() {
 
   const { data: templates, isLoading } = useQuery<JournalTemplate[]>({
     queryKey: ["/api/templates"],
+  });
+
+  const { data: accounts } = useQuery<Account[]>({
+    queryKey: ["/api/accounts"],
   });
 
   const createMutation = useMutation({
@@ -126,6 +137,39 @@ export default function Templates() {
     }
   };
 
+  const toggleExpandTemplate = async (templateId: string) => {
+    if (expandedTemplateId === templateId) {
+      setExpandedTemplateId(null);
+      return;
+    }
+
+    setExpandedTemplateId(templateId);
+    
+    if (!templateLines[templateId]) {
+      setLoadingLines(templateId);
+      try {
+        const response = await fetch(`/api/templates/${templateId}`);
+        if (response.ok) {
+          const template: TemplateWithLines = await response.json();
+          setTemplateLines(prev => ({
+            ...prev,
+            [templateId]: template.lines || []
+          }));
+        }
+      } catch (error) {
+        toast({ title: "خطأ", description: "فشل تحميل سطور النموذج", variant: "destructive" });
+      } finally {
+        setLoadingLines(null);
+      }
+    }
+  };
+
+  const getAccountName = (accountId: string | null) => {
+    if (!accountId || !accounts) return "-";
+    const account = accounts.find(a => a.id === accountId);
+    return account ? `${account.code} - ${account.name}` : "-";
+  };
+
   const filteredTemplates = templates?.filter((template) => {
     return (
       searchQuery === "" ||
@@ -146,7 +190,6 @@ export default function Templates() {
 
   return (
     <div className="p-3 space-y-3" dir="rtl">
-      {/* Peachtree Toolbar Header */}
       <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-muted-foreground" />
@@ -176,7 +219,6 @@ export default function Templates() {
         </div>
       </div>
 
-      {/* Templates Table */}
       {filteredTemplates.length === 0 ? (
         <div className="peachtree-grid">
           <div className="p-6 text-center">
@@ -199,73 +241,156 @@ export default function Templates() {
                 <th className="text-right w-8">#</th>
                 <th className="text-right">اسم النموذج</th>
                 <th className="text-right">الوصف</th>
+                <th className="text-center w-20">السطور</th>
                 <th className="text-center w-20">الحالة</th>
                 <th className="text-right w-32">تاريخ الإنشاء</th>
-                <th className="text-center w-24">إجراءات</th>
+                <th className="text-center w-28">إجراءات</th>
               </tr>
             </thead>
             <tbody>
               {filteredTemplates.map((template, index) => (
-                <tr
-                  key={template.id}
-                  className={`peachtree-grid-row ${!template.isActive ? "opacity-60" : ""}`}
-                  data-testid={`row-template-${template.id}`}
-                >
-                  <td className="text-xs text-muted-foreground">{index + 1}</td>
-                  <td>
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-3 w-3 text-primary flex-shrink-0" />
-                      <span className="text-xs font-medium">{template.name}</span>
-                    </div>
-                  </td>
-                  <td className="text-xs text-muted-foreground truncate max-w-[200px]">
-                    {template.description || "-"}
-                  </td>
-                  <td className="text-center">
-                    <Badge 
-                      variant={template.isActive ? "default" : "secondary"}
-                      className="text-[10px] px-1.5 py-0"
-                    >
-                      {template.isActive ? "نشط" : "غير نشط"}
-                    </Badge>
-                  </td>
-                  <td className="text-xs text-muted-foreground">
-                    {formatDateTime(template.createdAt)}
-                  </td>
-                  <td>
-                    <div className="flex items-center justify-center gap-1">
+                <>
+                  <tr
+                    key={template.id}
+                    className={`peachtree-grid-row ${!template.isActive ? "opacity-60" : ""} ${expandedTemplateId === template.id ? "bg-muted/50" : ""}`}
+                    data-testid={`row-template-${template.id}`}
+                  >
+                    <td className="text-xs text-muted-foreground">{index + 1}</td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-3 w-3 text-primary flex-shrink-0" />
+                        <span className="text-xs font-medium">{template.name}</span>
+                      </div>
+                    </td>
+                    <td className="text-xs text-muted-foreground truncate max-w-[200px]">
+                      {template.description || "-"}
+                    </td>
+                    <td className="text-center">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleOpenDialog(template)}
-                        data-testid={`button-edit-template-${template.id}`}
-                        className="h-6 w-6 p-0"
+                        onClick={() => toggleExpandTemplate(template.id)}
+                        className="h-6 px-2 text-xs"
+                        data-testid={`button-view-lines-${template.id}`}
                       >
-                        <Edit2 className="h-3 w-3" />
+                        {expandedTemplateId === template.id ? (
+                          <ChevronUp className="h-3 w-3 ml-1" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3 ml-1" />
+                        )}
+                        {templateLines[template.id]?.length || "..."}
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm("هل أنت متأكد من حذف هذا النموذج؟")) {
-                            deleteMutation.mutate(template.id);
-                          }
-                        }}
-                        className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                        data-testid={`button-delete-template-${template.id}`}
+                    </td>
+                    <td className="text-center">
+                      <Badge 
+                        variant={template.isActive ? "default" : "secondary"}
+                        className="text-[10px] px-1.5 py-0"
                       >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
+                        {template.isActive ? "نشط" : "غير نشط"}
+                      </Badge>
+                    </td>
+                    <td className="text-xs text-muted-foreground">
+                      {formatDateTime(template.createdAt)}
+                    </td>
+                    <td>
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenDialog(template)}
+                          data-testid={`button-edit-template-${template.id}`}
+                          className="h-6 w-6 p-0"
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm("هل أنت متأكد من حذف هذا النموذج؟")) {
+                              deleteMutation.mutate(template.id);
+                            }
+                          }}
+                          className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                          data-testid={`button-delete-template-${template.id}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedTemplateId === template.id && (
+                    <tr key={`${template.id}-lines`}>
+                      <td colSpan={7} className="p-0">
+                        <div className="bg-muted/30 p-3 border-t">
+                          {loadingLines === template.id ? (
+                            <div className="text-center py-2">
+                              <Skeleton className="h-4 w-32 mx-auto" />
+                            </div>
+                          ) : templateLines[template.id]?.length === 0 ? (
+                            <div className="text-center py-2 text-xs text-muted-foreground">
+                              لا توجد سطور في هذا النموذج
+                            </div>
+                          ) : (
+                            <table className="w-full">
+                              <thead>
+                                <tr className="text-xs text-muted-foreground border-b">
+                                  <th className="text-right py-1 px-2 w-8">#</th>
+                                  <th className="text-right py-1 px-2">الحساب</th>
+                                  <th className="text-right py-1 px-2">البيان</th>
+                                  <th className="text-left py-1 px-2 w-24">مدين</th>
+                                  <th className="text-left py-1 px-2 w-24">دائن</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {templateLines[template.id]?.map((line, lineIndex) => (
+                                  <tr key={line.id} className="text-xs border-b border-muted/50 last:border-0">
+                                    <td className="py-1.5 px-2 text-muted-foreground">{lineIndex + 1}</td>
+                                    <td className="py-1.5 px-2 font-medium">{getAccountName(line.accountId)}</td>
+                                    <td className="py-1.5 px-2 text-muted-foreground">{line.description || "-"}</td>
+                                    <td className="py-1.5 px-2 text-left font-mono peachtree-amount-debit">
+                                      {line.debitPercent && parseFloat(line.debitPercent) > 0 
+                                        ? formatCurrency(parseFloat(line.debitPercent)) 
+                                        : "-"}
+                                    </td>
+                                    <td className="py-1.5 px-2 text-left font-mono peachtree-amount-credit">
+                                      {line.creditPercent && parseFloat(line.creditPercent) > 0 
+                                        ? formatCurrency(parseFloat(line.creditPercent)) 
+                                        : "-"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr className="text-xs font-bold border-t">
+                                  <td colSpan={3} className="py-1.5 px-2 text-left">الإجمالي</td>
+                                  <td className="py-1.5 px-2 text-left font-mono peachtree-amount-debit">
+                                    {formatCurrency(
+                                      templateLines[template.id]?.reduce((sum, line) => 
+                                        sum + (parseFloat(line.debitPercent || "0")), 0) || 0
+                                    )}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-left font-mono peachtree-amount-credit">
+                                    {formatCurrency(
+                                      templateLines[template.id]?.reduce((sum, line) => 
+                                        sum + (parseFloat(line.creditPercent || "0")), 0) || 0
+                                    )}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Compact Add/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-sm p-0" dir="rtl">
           <div className="peachtree-toolbar">
