@@ -111,11 +111,11 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="flex h-screen w-full bg-background">
         <Sidebar side="right" collapsible="icon">
           <SidebarHeader className="border-b border-border/50 p-4">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-row-reverse items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
                 <BookOpen className="h-5 w-5 text-primary" />
               </div>
-              <div className="group-data-[collapsible=icon]:hidden">
+              <div className="group-data-[collapsible=icon]:hidden text-right">
                 <h2 className="font-bold text-foreground">الدفتر العام</h2>
                 <p className="text-xs text-muted-foreground">نظام المحاسبة</p>
               </div>
@@ -135,7 +135,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                           isActive={location === item.href || (item.href !== "/" && location.startsWith(item.href))}
                           tooltip={item.title}
                         >
-                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`}>
+                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`} className="flex flex-row-reverse items-center gap-2">
                             <item.icon className="h-4 w-4" />
                             <span>{item.title}</span>
                           </Link>
@@ -157,7 +157,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                           isActive={location === item.href}
                           tooltip={item.title}
                         >
-                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`}>
+                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`} className="flex flex-row-reverse items-center gap-2">
                             <item.icon className="h-4 w-4" />
                             <span>{item.title}</span>
                           </Link>
@@ -179,7 +179,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                           isActive={location === item.href}
                           tooltip={item.title}
                         >
-                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`}>
+                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`} className="flex flex-row-reverse items-center gap-2">
                             <item.icon className="h-4 w-4" />
                             <span>{item.title}</span>
                           </Link>
@@ -193,7 +193,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           </SidebarContent>
 
           <SidebarFooter className="border-t border-border/50 p-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground group-data-[collapsible=icon]:justify-center">
+            <div className="flex flex-row-reverse items-center gap-2 text-xs text-muted-foreground group-data-[collapsible=icon]:justify-center">
               <Settings className="h-4 w-4" />
               <span className="group-data-[collapsible=icon]:hidden">الإصدار 1.0</span>
             </div>
