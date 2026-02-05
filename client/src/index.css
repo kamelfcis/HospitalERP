@@ -339,4 +339,173 @@
     font-size: 0.85em;
     color: hsl(var(--muted-foreground));
   }
+
+  /* Peachtree/Sage Classic Accounting Grid Styles */
+  .peachtree-grid {
+    border: 2px solid hsl(215 40% 35%);
+    background: white;
+    font-size: 13px;
+  }
+
+  .peachtree-grid-header {
+    background: linear-gradient(180deg, hsl(215 45% 45%) 0%, hsl(215 45% 35%) 100%);
+    color: white;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .peachtree-grid-header th {
+    padding: 6px 8px;
+    border-left: 1px solid hsl(215 40% 50%);
+    border-bottom: 2px solid hsl(215 50% 25%);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .peachtree-grid-header th:first-child {
+    border-left: none;
+  }
+
+  .peachtree-grid-row {
+    border-bottom: 1px solid hsl(210 10% 85%);
+  }
+
+  .peachtree-grid-row:nth-child(even) {
+    background: hsl(210 15% 97%);
+  }
+
+  .peachtree-grid-row:hover {
+    background: hsl(210 30% 94%);
+  }
+
+  .peachtree-grid-row td {
+    padding: 2px 4px;
+    border-left: 1px solid hsl(210 10% 88%);
+    vertical-align: middle;
+  }
+
+  .peachtree-grid-row td:first-child {
+    border-left: none;
+  }
+
+  .peachtree-input {
+    height: 26px;
+    font-size: 13px;
+    border: 1px solid hsl(210 10% 80%);
+    border-radius: 2px;
+    padding: 2px 6px;
+    background: white;
+  }
+
+  .peachtree-input:focus {
+    outline: none;
+    border-color: hsl(215 70% 50%);
+    box-shadow: 0 0 0 2px hsl(215 70% 50% / 0.2);
+  }
+
+  .peachtree-select {
+    height: 26px;
+    font-size: 13px;
+    border: 1px solid hsl(210 10% 80%);
+    border-radius: 2px;
+    padding: 2px 4px;
+    background: white;
+    cursor: pointer;
+  }
+
+  .peachtree-amount {
+    font-family: 'Courier New', monospace;
+    text-align: left;
+    direction: ltr;
+  }
+
+  .peachtree-amount-debit {
+    color: hsl(0 70% 45%);
+  }
+
+  .peachtree-amount-credit {
+    color: hsl(145 70% 30%);
+  }
+
+  .peachtree-toolbar {
+    background: linear-gradient(180deg, hsl(210 8% 95%) 0%, hsl(210 8% 88%) 100%);
+    border: 1px solid hsl(210 10% 75%);
+    border-bottom: 2px solid hsl(210 10% 65%);
+    padding: 6px 10px;
+  }
+
+  .peachtree-totals {
+    background: linear-gradient(180deg, hsl(45 60% 95%) 0%, hsl(45 50% 88%) 100%);
+    border: 2px solid hsl(45 40% 60%);
+    font-weight: 600;
+  }
+
+  .peachtree-totals-balanced {
+    background: linear-gradient(180deg, hsl(145 50% 94%) 0%, hsl(145 40% 88%) 100%);
+    border-color: hsl(145 50% 45%);
+  }
+
+  .peachtree-totals-unbalanced {
+    background: linear-gradient(180deg, hsl(0 60% 95%) 0%, hsl(0 50% 90%) 100%);
+    border-color: hsl(0 60% 55%);
+  }
+
+  .dark .peachtree-grid {
+    border-color: hsl(215 30% 30%);
+    background: hsl(215 15% 18%);
+  }
+
+  .dark .peachtree-grid-header {
+    background: linear-gradient(180deg, hsl(215 35% 30%) 0%, hsl(215 35% 22%) 100%);
+  }
+
+  .dark .peachtree-grid-header th {
+    border-left-color: hsl(215 30% 35%);
+    border-bottom-color: hsl(215 40% 15%);
+  }
+
+  .dark .peachtree-grid-row {
+    border-bottom-color: hsl(215 15% 25%);
+  }
+
+  .dark .peachtree-grid-row:nth-child(even) {
+    background: hsl(215 15% 16%);
+  }
+
+  .dark .peachtree-grid-row:hover {
+    background: hsl(215 20% 22%);
+  }
+
+  .dark .peachtree-grid-row td {
+    border-left-color: hsl(215 15% 25%);
+  }
+
+  .dark .peachtree-input,
+  .dark .peachtree-select {
+    background: hsl(215 15% 15%);
+    border-color: hsl(215 15% 30%);
+    color: hsl(210 8% 90%);
+  }
+
+  .dark .peachtree-toolbar {
+    background: linear-gradient(180deg, hsl(215 15% 22%) 0%, hsl(215 15% 18%) 100%);
+    border-color: hsl(215 15% 30%);
+  }
+
+  .dark .peachtree-totals {
+    background: linear-gradient(180deg, hsl(45 30% 22%) 0%, hsl(45 25% 18%) 100%);
+    border-color: hsl(45 30% 35%);
+  }
+
+  .dark .peachtree-totals-balanced {
+    background: linear-gradient(180deg, hsl(145 30% 20%) 0%, hsl(145 25% 16%) 100%);
+    border-color: hsl(145 40% 30%);
+  }
+
+  .dark .peachtree-totals-unbalanced {
+    background: linear-gradient(180deg, hsl(0 40% 22%) 0%, hsl(0 35% 18%) 100%);
+    border-color: hsl(0 50% 40%);
+  }
 }
