@@ -76,7 +76,7 @@ export default function CostCenterReports() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="sm" className="h-7 text-xs px-2" data-testid="button-print">
+          <Button variant="outline" size="sm" className="h-7 text-xs px-2 no-print" onClick={() => window.print()} data-testid="button-print">
             <Printer className="h-3 w-3 ml-1" />
             طباعة
           </Button>

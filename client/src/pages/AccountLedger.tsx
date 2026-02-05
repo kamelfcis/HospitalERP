@@ -138,7 +138,7 @@ export default function AccountLedger() {
             size="sm"
             onClick={handlePrint}
             disabled={!ledger}
-            className="h-7 text-xs"
+            className="h-7 text-xs no-print"
             data-testid="button-print"
           >
             <Printer className="h-3 w-3 ml-1" />
