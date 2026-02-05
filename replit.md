@@ -65,6 +65,12 @@ Key entities include:
 - Database seeded with 47 accounts, 10 cost centers, 12 fiscal periods, and 5 sample journal entries
 - All financial reports functional (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports)
 - Arabic RTL layout verified and working across all pages
+- **Journal Entry Templates Feature** (Feb 5, 2026):
+  - Save complete journal entries as templates with all lines, accounts, and amounts
+  - Load/recall templates when creating new journal entries via dropdown menu
+  - Templates page shows expandable rows to view all template lines with account details
+  - Template lines stored with decimal(15,2) precision for large amounts
+  - Note: Template line schema uses debitPercent/creditPercent columns but stores actual amounts (not percentages)
 
 ## External Dependencies
 
