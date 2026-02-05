@@ -71,6 +71,12 @@ Key entities include:
   - Templates page shows expandable rows to view all template lines with account details
   - Template lines stored with decimal(15,2) precision for large amounts
   - Note: Template line schema uses debitPercent/creditPercent columns but stores actual amounts (not percentages)
+- **Account Ledger Report** (Feb 5, 2026):
+  - كشف حساب - view all transactions for any account
+  - Filter by date range (from/to)
+  - Shows: date, entry number, description, debit, credit, running balance
+  - Opening balance, total debits/credits, and closing balance summary
+  - Print functionality included
 
 ## External Dependencies
 
