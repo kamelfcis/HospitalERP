@@ -286,31 +286,55 @@ export default function JournalEntryForm() {
 
   const matchesPattern = (text: string, pattern: string): boolean => {
     if (!pattern) return true;
-    const lowerText = text.toLowerCase();
-    const lowerPattern = pattern.toLowerCase();
-    if (lowerPattern.includes("%")) {
-      const parts = lowerPattern.split("%").filter(p => p.length > 0);
+    const normalizedText = text.toLowerCase().trim();
+    const normalizedPattern = pattern.toLowerCase().trim();
+    
+    if (normalizedPattern.includes("%")) {
+      const parts = normalizedPattern.split("%").filter(p => p.length > 0);
       let lastIndex = 0;
       for (const part of parts) {
-        const index = lowerText.indexOf(part, lastIndex);
+        const index = normalizedText.indexOf(part, lastIndex);
         if (index === -1) return false;
         lastIndex = index + part.length;
       }
       return true;
     }
-    return lowerText.includes(lowerPattern);
+    
+    return normalizedText.includes(normalizedPattern);
   };
 
   const filteredAccounts = useMemo(() => {
     if (!accounts) return [];
     if (!searchQuery.trim()) {
-      return accounts.filter(a => a.isActive);
+      return accounts.filter(a => a.isActive).slice(0, 50);
     }
-    return accounts.filter((account) => {
+    
+    const query = searchQuery.trim();
+    const results = accounts.filter((account) => {
       if (!account.isActive) return false;
-      const searchText = `${account.code} ${account.name}`;
-      return matchesPattern(searchText, searchQuery);
+      
+      if (matchesPattern(account.code, query)) return true;
+      if (matchesPattern(account.name, query)) return true;
+      
+      const combinedText = `${account.code} ${account.name}`;
+      return matchesPattern(combinedText, query);
     });
+    
+    results.sort((a, b) => {
+      const aStartsWithCode = a.code.startsWith(query);
+      const bStartsWithCode = b.code.startsWith(query);
+      if (aStartsWithCode && !bStartsWithCode) return -1;
+      if (!aStartsWithCode && bStartsWithCode) return 1;
+      
+      const aNameStarts = a.name.startsWith(query);
+      const bNameStarts = b.name.startsWith(query);
+      if (aNameStarts && !bNameStarts) return -1;
+      if (!aNameStarts && bNameStarts) return 1;
+      
+      return a.code.localeCompare(b.code);
+    });
+    
+    return results;
   }, [accounts, searchQuery]);
 
   const getAccountById = (id: string) => accounts?.find((a) => a.id === id);
@@ -569,23 +593,31 @@ export default function JournalEntryForm() {
                         data-testid={`input-account-code-${index}`}
                       />
                       {isActiveRow && showAccountDropdown && (
-                        <div className="absolute z-50 top-full right-0 mt-1 w-80 bg-popover border rounded shadow-lg max-h-48 overflow-auto">
-                          <div className="px-2 py-1 text-xs text-muted-foreground bg-muted border-b">
-                            استخدم % للبحث المتقدم
+                        <div className="absolute z-50 top-full right-0 mt-1 w-96 bg-popover border rounded shadow-lg max-h-64 overflow-auto">
+                          <div className="sticky top-0 px-2 py-1.5 text-xs text-muted-foreground bg-muted border-b flex items-center justify-between">
+                            <span>استخدم % للبحث المتقدم (مثال: خصم%مكتسب)</span>
+                            <span className="text-primary font-medium">{filteredAccounts.length} نتيجة</span>
                           </div>
                           {filteredAccounts.length === 0 ? (
-                            <div className="p-2 text-center text-xs text-muted-foreground">لا توجد نتائج</div>
+                            <div className="p-3 text-center text-xs text-muted-foreground">
+                              لا توجد نتائج للبحث "{searchQuery}"
+                            </div>
                           ) : (
-                            filteredAccounts.slice(0, 10).map((acc) => (
+                            filteredAccounts.slice(0, 50).map((acc) => (
                               <div
                                 key={acc.id}
-                                className="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-accent text-xs"
+                                className="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-accent text-xs border-b border-muted/50 last:border-0"
                                 onClick={() => selectAccount(line.id, acc)}
                               >
-                                <span className="font-mono w-14 text-muted-foreground">{acc.code}</span>
-                                <span className="flex-1 truncate">{acc.name}</span>
+                                <span className="font-mono w-16 text-muted-foreground flex-shrink-0">{acc.code}</span>
+                                <span className="flex-1">{acc.name}</span>
                               </div>
                             ))
+                          )}
+                          {filteredAccounts.length > 50 && (
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted text-center">
+                              +{filteredAccounts.length - 50} نتيجة أخرى - حدد البحث أكثر
+                            </div>
                           )}
                         </div>
                       )}
