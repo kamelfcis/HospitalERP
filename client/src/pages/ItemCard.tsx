@@ -663,9 +663,9 @@ export default function ItemCard() {
               </fieldset>
 
               <fieldset className="peachtree-grid p-2 flex-1">
-                <legend className="text-[11px] font-semibold px-1 text-primary">أسعار حسب القسم</legend>
+                <legend className="text-[11px] font-semibold px-1 text-primary">أسعار حسب القسم (للوحدة الكبرى)</legend>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] text-muted-foreground">السعر الافتراضي: {formatCurrency(item?.salePriceCurrent || "0")}</span>
+                  <span className="text-[10px] text-muted-foreground">السعر الافتراضي/{item?.majorUnitName || "وحدة"}: {formatCurrency(item?.salePriceCurrent || "0")}</span>
                   <Button
                     variant="outline"
                     size="sm"
@@ -793,7 +793,7 @@ export default function ItemCard() {
         <DialogContent className="sm:max-w-[300px]">
           <DialogHeader>
             <DialogTitle className="text-sm">
-              {selectedDeptPrice ? "تعديل سعر القسم" : "إضافة سعر لقسم"}
+              {selectedDeptPrice ? "تعديل سعر القسم" : "إضافة سعر لقسم"} ({item?.majorUnitName || "الوحدة الكبرى"})
             </DialogTitle>
           </DialogHeader>
           <div className="py-2 space-y-3">
