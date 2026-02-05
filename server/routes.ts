@@ -635,12 +635,28 @@ export async function registerRoutes(
       let skipped = 0;
       const errors: string[] = [];
 
+      // Helper function to find value from multiple possible column names
+      const getColumnValue = (row: Record<string, any>, possibleNames: string[]): string => {
+        for (const name of possibleNames) {
+          if (row[name] !== undefined && row[name] !== null) {
+            return String(row[name]).trim();
+          }
+        }
+        return "";
+      };
+
+      // Log first row keys for debugging
+      if (data.length > 0) {
+        console.log("أسماء الأعمدة في الملف:", Object.keys(data[0]));
+      }
+
       for (const row of data) {
-        const code = String(row["كود الحساب"] || "").trim();
-        const name = String(row["اسم الحساب"] || "").trim();
-        const accountTypeArabic = String(row["تصنيف الحساب"] || "").trim();
-        const requiresCostCenterArabic = String(row["يتطلب مركز تكلفة"] || "").trim();
-        const openingBalance = String(row["الرصيد الافتتاحي"] || "0");
+        // Try multiple possible column names for each field
+        const code = getColumnValue(row, ["كود الحساب", "الكود", "رقم الحساب", "كود", "Code", "code", "Account Code"]);
+        const name = getColumnValue(row, ["اسم الحساب", "الاسم", "اسم", "Name", "name", "Account Name", "الحساب"]);
+        const accountTypeArabic = getColumnValue(row, ["تصنيف الحساب", "التصنيف", "نوع الحساب", "النوع", "Type", "type", "Account Type", "قائمة العرض"]);
+        const requiresCostCenterValue = getColumnValue(row, ["يتطلب مركز تكلفة", "مركز التكلفة", "كود مركز التكلفة", "Cost Center", "costCenter"]);
+        const openingBalance = getColumnValue(row, ["الرصيد الافتتاحي", "الرصيد", "رصيد افتتاحي", "Opening Balance", "balance"]) || "0";
 
         if (!code || !name) {
           errors.push(`سطر بدون كود أو اسم تم تخطيه`);
@@ -653,14 +669,35 @@ export async function registerRoutes(
           continue;
         }
 
-        const accountType = accountTypeMapArabicToEnglish[accountTypeArabic];
+        // Map account type - try direct mapping or derive from display list
+        let accountType = accountTypeMapArabicToEnglish[accountTypeArabic];
+        
+        // If not found, try to derive from قائمة العرض values
         if (!accountType) {
-          errors.push(`تصنيف غير صالح للحساب ${code}: ${accountTypeArabic}`);
-          skipped++;
-          continue;
+          const displayListMapping: Record<string, string> = {
+            "الميزانية": "asset", // Default to asset for balance sheet items
+            "قائمة الدخل": "expense", // Default to expense for income statement items
+            "ميزانية": "asset",
+            "دخل": "expense",
+            "أصول": "asset",
+            "خصوم": "liability",
+            "حقوق الملكية": "equity",
+            "حقوق ملكية": "equity",
+            "إيرادات": "revenue",
+            "ايرادات": "revenue",
+            "مصروفات": "expense",
+            "مصاريف": "expense",
+          };
+          accountType = displayListMapping[accountTypeArabic];
+        }
+        
+        if (!accountType) {
+          // Default to asset if no type specified
+          accountType = "asset";
+          errors.push(`تصنيف غير محدد للحساب ${code}، تم افتراض "أصول"`);
         }
 
-        const requiresCostCenter = requiresCostCenterArabic === "نعم";
+        const requiresCostCenter = requiresCostCenterValue === "نعم" || requiresCostCenterValue.toLowerCase() === "yes" || requiresCostCenterValue === "1" || requiresCostCenterValue !== "";
 
         try {
           await storage.createAccount({
