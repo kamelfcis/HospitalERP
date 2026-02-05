@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatDateForInput } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import type { Account, CostCenter, JournalEntryWithLines, JournalTemplate } from "@shared/schema";
 
 interface JournalLineInput {
@@ -426,21 +427,13 @@ export default function JournalEntryForm() {
                       {index + 1}
                     </TableCell>
                     <TableCell>
-                      <Select
+                      <AccountSearchSelect
+                        accounts={accounts || []}
                         value={line.accountId}
-                        onValueChange={(value) => updateLine(line.id, "accountId", value)}
-                      >
-                        <SelectTrigger data-testid={`select-account-${index}`}>
-                          <SelectValue placeholder="اختر الحساب" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {accounts?.filter((a) => a.isActive).map((account) => (
-                            <SelectItem key={account.id} value={account.id}>
-                              {account.code} - {account.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={(value) => updateLine(line.id, "accountId", value)}
+                        placeholder="ابحث عن الحساب (استخدم % للبحث المتقدم)"
+                        data-testid={`select-account-${index}`}
+                      />
                     </TableCell>
                     <TableCell>
                       <Select
