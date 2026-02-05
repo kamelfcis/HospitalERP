@@ -61,8 +61,10 @@ export default function JournalEntryForm() {
   ]);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [costCenterSearchQuery, setCostCenterSearchQuery] = useState("");
   const [activeLineId, setActiveLineId] = useState<string | null>(null);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+  const [showCostCenterDropdown, setShowCostCenterDropdown] = useState(false);
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [templateDescription, setTemplateDescription] = useState("");
@@ -280,7 +282,9 @@ export default function JournalEntryForm() {
       })
     );
     setShowAccountDropdown(false);
+    setShowCostCenterDropdown(false);
     setSearchQuery("");
+    setCostCenterSearchQuery("");
     setActiveLineId(null);
   };
 
@@ -337,7 +341,37 @@ export default function JournalEntryForm() {
     return results;
   }, [accounts, searchQuery]);
 
+  const filteredCostCenters = useMemo(() => {
+    if (!costCenters) return [];
+    if (!costCenterSearchQuery.trim()) {
+      return costCenters.filter(c => c.isActive).slice(0, 30);
+    }
+    
+    const query = costCenterSearchQuery.trim();
+    const results = costCenters.filter((cc) => {
+      if (!cc.isActive) return false;
+      
+      if (matchesPattern(cc.code, query)) return true;
+      if (matchesPattern(cc.name, query)) return true;
+      
+      const combinedText = `${cc.code} ${cc.name}`;
+      return matchesPattern(combinedText, query);
+    });
+    
+    results.sort((a, b) => {
+      const aStartsWithCode = a.code.startsWith(query);
+      const bStartsWithCode = b.code.startsWith(query);
+      if (aStartsWithCode && !bStartsWithCode) return -1;
+      if (!aStartsWithCode && bStartsWithCode) return 1;
+      
+      return a.code.localeCompare(b.code);
+    });
+    
+    return results;
+  }, [costCenters, costCenterSearchQuery]);
+
   const getAccountById = (id: string) => accounts?.find((a) => a.id === id);
+  const getCostCenterById = (id: string | null) => costCenters?.find((c) => c.id === id);
 
   const validateEntry = () => {
     if (!entryDate) {
@@ -582,10 +616,12 @@ export default function JournalEntryForm() {
                           setSearchQuery(e.target.value);
                           setActiveLineId(line.id);
                           setShowAccountDropdown(true);
+                          setShowCostCenterDropdown(false);
                         }}
                         onFocus={() => {
                           setActiveLineId(line.id);
                           setShowAccountDropdown(true);
+                          setShowCostCenterDropdown(false);
                           setSearchQuery("");
                         }}
                         placeholder="كود"
@@ -632,21 +668,64 @@ export default function JournalEntryForm() {
                         data-testid={`input-account-name-${index}`}
                       />
                     </td>
-                    <td>
-                      <select
-                        value={line.costCenterId || ""}
-                        onChange={(e) => updateLine(line.id, "costCenterId", e.target.value)}
-                        disabled={!requiresCostCenter}
-                        className={`peachtree-select w-full text-xs ${requiresCostCenter && !line.costCenterId ? "border-amber-400" : ""}`}
-                        data-testid={`select-cost-center-${index}`}
-                      >
-                        <option value="">{requiresCostCenter ? "مطلوب *" : "اختياري"}</option>
-                        {costCenters?.filter((c) => c.isActive).map((cc) => (
-                          <option key={cc.id} value={cc.id}>
-                            {cc.code} - {cc.name}
-                          </option>
-                        ))}
-                      </select>
+                    <td className="relative">
+                      <input
+                        type="text"
+                        value={isActiveRow && showCostCenterDropdown ? costCenterSearchQuery : (getCostCenterById(line.costCenterId)?.code || "")}
+                        onChange={(e) => {
+                          setCostCenterSearchQuery(e.target.value);
+                          setActiveLineId(line.id);
+                          setShowCostCenterDropdown(true);
+                          setShowAccountDropdown(false);
+                        }}
+                        onFocus={() => {
+                          setActiveLineId(line.id);
+                          setShowCostCenterDropdown(true);
+                          setShowAccountDropdown(false);
+                          setCostCenterSearchQuery("");
+                        }}
+                        placeholder={requiresCostCenter ? "مطلوب *" : "اختياري"}
+                        className={`peachtree-input w-full font-mono text-xs ${requiresCostCenter && !line.costCenterId ? "border-amber-400" : ""}`}
+                        data-testid={`input-cost-center-${index}`}
+                      />
+                      {isActiveRow && showCostCenterDropdown && (
+                        <div className="absolute z-50 top-full right-0 mt-1 w-80 bg-popover border rounded shadow-lg max-h-56 overflow-auto">
+                          <div className="sticky top-0 px-2 py-1.5 text-xs text-muted-foreground bg-muted border-b flex items-center justify-between">
+                            <span>ابحث بالكود أو الاسم</span>
+                            <span className="text-primary font-medium">{filteredCostCenters.length} نتيجة</span>
+                          </div>
+                          <div
+                            className="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-accent text-xs border-b border-muted/50"
+                            onClick={() => {
+                              updateLine(line.id, "costCenterId", "");
+                              setShowCostCenterDropdown(false);
+                              setCostCenterSearchQuery("");
+                            }}
+                          >
+                            <span className="text-muted-foreground">بدون مركز تكلفة</span>
+                          </div>
+                          {filteredCostCenters.length === 0 ? (
+                            <div className="p-3 text-center text-xs text-muted-foreground">
+                              لا توجد نتائج للبحث "{costCenterSearchQuery}"
+                            </div>
+                          ) : (
+                            filteredCostCenters.slice(0, 30).map((cc) => (
+                              <div
+                                key={cc.id}
+                                className="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-accent text-xs border-b border-muted/50 last:border-0"
+                                onClick={() => {
+                                  updateLine(line.id, "costCenterId", cc.id);
+                                  setShowCostCenterDropdown(false);
+                                  setCostCenterSearchQuery("");
+                                }}
+                              >
+                                <span className="font-mono w-12 text-muted-foreground flex-shrink-0">{cc.code}</span>
+                                <span className="flex-1">{cc.name}</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <input
