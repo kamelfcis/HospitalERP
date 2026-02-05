@@ -100,6 +100,16 @@ Key entities include:
   - ItemCard includes "أسعار حسب القسم" section to manage department prices
   - Add/edit/delete department prices via modal dialog
   - API endpoint: GET /api/pricing?itemId=X&departmentId=Y returns effective price
+- **Database Integrity & Performance Audit** (Feb 5, 2026):
+  - Added self-referencing FKs: accounts.parentId → accounts.id, costCenters.parentId → costCenters.id
+  - Added FK: journalEntries.reversalEntryId → journalEntries.id, journalEntries.templateId → journalTemplates.id
+  - Added unique constraint on journalEntries.entryNumber (global unique numbering system)
+  - Added composite unique index on itemDepartmentPrices(itemId, departmentId)
+  - Changed deletion policy to RESTRICT on items, accounts, cost centers with dependent data (prevents accidental data loss)
+  - Items with purchase/sales transactions cannot be hard-deleted (use isActive soft-delete instead)
+  - Delete operations return HTTP 409 with Arabic error messages when FK constraints prevent deletion
+  - Added 22 performance indexes on frequently queried columns across all tables
+  - Audit log uses polymorphic design (table_name + record_id) without FK constraints by design
 
 ## Pre-Release Testing Checklist
 Before publishing as final product, test the following:
