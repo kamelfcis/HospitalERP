@@ -684,6 +684,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Get opening balance (all transactions before startDate)
+    // Include both 'posted' and 'reversed' entries (reversed entries still have valid transactions)
     const [openingResult] = await db.select({
       totalDebit: sql<string>`COALESCE(SUM(${journalLines.debit}::numeric), 0)::text`,
       totalCredit: sql<string>`COALESCE(SUM(${journalLines.credit}::numeric), 0)::text`,
@@ -692,7 +693,7 @@ export class DatabaseStorage implements IStorage {
     .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
     .where(and(
       eq(journalLines.accountId, accountId),
-      eq(journalEntries.status, 'posted'),
+      sql`(${journalEntries.status} = 'posted' OR ${journalEntries.status} = 'reversed')`,
       sql`${journalEntries.entryDate} < ${startDate}`
     ));
 
@@ -708,6 +709,7 @@ export class DatabaseStorage implements IStorage {
       : accountOpeningBalance + (openingCredit - openingDebit);
 
     // Get all transactions within the period
+    // Include both 'posted' and 'reversed' entries
     const lines = await db.select({
       id: journalLines.id,
       entryId: journalEntries.id,
@@ -718,12 +720,13 @@ export class DatabaseStorage implements IStorage {
       debit: journalLines.debit,
       credit: journalLines.credit,
       reference: journalEntries.reference,
+      status: journalEntries.status,
     })
     .from(journalLines)
     .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
     .where(and(
       eq(journalLines.accountId, accountId),
-      eq(journalEntries.status, 'posted'),
+      sql`(${journalEntries.status} = 'posted' OR ${journalEntries.status} = 'reversed')`,
       sql`${journalEntries.entryDate} >= ${startDate}`,
       sql`${journalEntries.entryDate} <= ${endDate}`
     ))
