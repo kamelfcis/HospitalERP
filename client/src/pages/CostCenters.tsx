@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Search, Edit2, Trash2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Upload, Download, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CostCenter, InsertCostCenter } from "@shared/schema";
 
@@ -32,6 +32,9 @@ export default function CostCenters() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCenter, setEditingCenter] = useState<CostCenter | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<Partial<InsertCostCenter>>({
     code: "",
@@ -136,6 +139,64 @@ export default function CostCenters() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      const response = await fetch("/api/cost-centers/export");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "فشل في تصدير مراكز التكلفة");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "cost-centers.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({ title: "تم تصدير مراكز التكلفة بنجاح" });
+    } catch (error: any) {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImporting(true);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/cost-centers/import", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || "فشل في استيراد مراكز التكلفة");
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/cost-centers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      toast({ title: "تم الاستيراد", description: result.message });
+    } catch (error: any) {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   const filteredCenters = costCenters?.filter((center) => {
     return (
       searchQuery === "" ||
@@ -164,10 +225,42 @@ export default function CostCenters() {
             إدارة مراكز التكلفة ({costCenters?.length || 0} مركز)
           </p>
         </div>
-        <Button size="sm" onClick={() => handleOpenDialog()} data-testid="button-add-cost-center" className="h-7 text-xs px-3">
-          <Plus className="h-3 w-3 ml-1" />
-          مركز تكلفة جديد
-        </Button>
+        <div className="flex items-center gap-1">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImport}
+            accept=".xlsx,.xls"
+            className="hidden"
+            data-testid="input-file-import-cost-centers"
+          />
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-7 text-xs px-2" 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            data-testid="button-import-cost-centers"
+          >
+            {isImporting ? <Loader2 className="h-3 w-3 ml-1 animate-spin" /> : <Upload className="h-3 w-3 ml-1" />}
+            استيراد
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-7 text-xs px-2" 
+            onClick={handleExport}
+            disabled={isExporting}
+            data-testid="button-export-cost-centers"
+          >
+            {isExporting ? <Loader2 className="h-3 w-3 ml-1 animate-spin" /> : <Download className="h-3 w-3 ml-1" />}
+            تصدير
+          </Button>
+          <Button size="sm" onClick={() => handleOpenDialog()} data-testid="button-add-cost-center" className="h-7 text-xs px-3">
+            <Plus className="h-3 w-3 ml-1" />
+            مركز تكلفة جديد
+          </Button>
+        </div>
       </div>
 
       {/* Search - Compact Peachtree Style */}

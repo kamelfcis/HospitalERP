@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ import {
   Upload,
   Download,
   Filter,
+  Loader2,
 } from "lucide-react";
 import { formatCurrency, accountTypeLabels } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,6 +50,9 @@ export default function ChartOfAccounts() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<Partial<InsertAccount>>({
     code: "",
@@ -181,6 +185,64 @@ export default function ChartOfAccounts() {
     });
   };
 
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      const response = await fetch("/api/accounts/export");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "فشل في تصدير الحسابات");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "accounts.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({ title: "تم تصدير الحسابات بنجاح" });
+    } catch (error: any) {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImporting(true);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/accounts/import", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || "فشل في استيراد الحسابات");
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      toast({ title: "تم الاستيراد", description: result.message });
+    } catch (error: any) {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   const buildTree = (accounts: Account[]): AccountTreeNode[] => {
     const accountMap = new Map<string | null, AccountTreeNode[]>();
     
@@ -265,12 +327,34 @@ export default function ChartOfAccounts() {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="sm" className="h-7 text-xs px-2" data-testid="button-import-accounts">
-            <Upload className="h-3 w-3 ml-1" />
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImport}
+            accept=".xlsx,.xls"
+            className="hidden"
+            data-testid="input-file-import-accounts"
+          />
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-7 text-xs px-2" 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            data-testid="button-import-accounts"
+          >
+            {isImporting ? <Loader2 className="h-3 w-3 ml-1 animate-spin" /> : <Upload className="h-3 w-3 ml-1" />}
             استيراد
           </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs px-2" data-testid="button-export-accounts">
-            <Download className="h-3 w-3 ml-1" />
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-7 text-xs px-2" 
+            onClick={handleExport}
+            disabled={isExporting}
+            data-testid="button-export-accounts"
+          >
+            {isExporting ? <Loader2 className="h-3 w-3 ml-1 animate-spin" /> : <Download className="h-3 w-3 ml-1" />}
             تصدير
           </Button>
           <Button size="sm" className="h-7 text-xs px-2" onClick={() => handleOpenDialog()} data-testid="button-add-account">

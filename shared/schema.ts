@@ -47,6 +47,7 @@ export const costCenters = pgTable("cost_centers", {
   code: varchar("code", { length: 20 }).notNull().unique(),
   name: text("name").notNull(),
   description: text("description"),
+  type: text("type"),
   parentId: varchar("parent_id"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),

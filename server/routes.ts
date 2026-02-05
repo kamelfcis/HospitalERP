@@ -6,9 +6,37 @@ import {
   insertCostCenterSchema, 
   insertFiscalPeriodSchema,
   insertJournalTemplateSchema,
-  accounts
+  accounts,
+  accountTypeLabels
 } from "@shared/schema";
 import { z } from "zod";
+import * as XLSX from "xlsx";
+import multer from "multer";
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+const accountTypeMapArabicToEnglish: Record<string, string> = {
+  "أصول": "asset",
+  "خصوم": "liability",
+  "حقوق ملكية": "equity",
+  "إيرادات": "revenue",
+  "مصروفات": "expense"
+};
+
+const accountTypeMapEnglishToArabic: Record<string, string> = {
+  "asset": "أصول",
+  "liability": "خصوم",
+  "equity": "حقوق ملكية",
+  "revenue": "إيرادات",
+  "expense": "مصروفات"
+};
+
+function getDisplayList(accountType: string): string {
+  if (["asset", "liability", "equity"].includes(accountType)) {
+    return "الميزانية";
+  }
+  return "قائمة الدخل";
+}
 
 // Journal line schema
 const journalLineSchema = z.object({
@@ -58,6 +86,35 @@ export async function registerRoutes(
     try {
       const accounts = await storage.getAccounts();
       res.json(accounts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Accounts Export (must be before /:id to avoid conflict)
+  app.get("/api/accounts/export", async (req, res) => {
+    try {
+      const accountsList = await storage.getAccounts();
+      
+      const excelData = accountsList.map(account => ({
+        "كود الحساب": account.code,
+        "اسم الحساب": account.name,
+        "تصنيف الحساب": accountTypeMapEnglishToArabic[account.accountType] || account.accountType,
+        "يتطلب مركز تكلفة": account.requiresCostCenter ? "نعم" : "لا",
+        "قائمة العرض": getDisplayList(account.accountType),
+        "الرصيد الافتتاحي": parseFloat(account.openingBalance),
+        "نشط": account.isActive ? "نعم" : "لا"
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "دليل الحسابات");
+
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=accounts.xlsx");
+      res.send(buffer);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -118,6 +175,32 @@ export async function registerRoutes(
     try {
       const costCenters = await storage.getCostCenters();
       res.json(costCenters);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Cost Centers Export (must be before /:id to avoid conflict)
+  app.get("/api/cost-centers/export", async (req, res) => {
+    try {
+      const costCentersList = await storage.getCostCenters();
+      
+      const excelData = costCentersList.map(cc => ({
+        "الكود": cc.code,
+        "الاسم": cc.name,
+        "النوع": cc.type || "",
+        "نشط": cc.isActive ? "نعم" : "لا"
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "مراكز التكلفة");
+
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=cost-centers.xlsx");
+      res.send(buffer);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -526,6 +609,154 @@ export async function registerRoutes(
       res.json(report);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Accounts Import
+  app.post("/api/accounts/import", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "لم يتم تحميل ملف" });
+      }
+
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet) as Record<string, any>[];
+
+      if (data.length === 0) {
+        return res.status(400).json({ message: "الملف فارغ" });
+      }
+
+      const existingAccounts = await storage.getAccounts();
+      const existingCodes = new Set(existingAccounts.map(a => a.code));
+
+      let imported = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const row of data) {
+        const code = String(row["كود الحساب"] || "").trim();
+        const name = String(row["اسم الحساب"] || "").trim();
+        const accountTypeArabic = String(row["تصنيف الحساب"] || "").trim();
+        const requiresCostCenterArabic = String(row["يتطلب مركز تكلفة"] || "").trim();
+        const openingBalance = String(row["الرصيد الافتتاحي"] || "0");
+
+        if (!code || !name) {
+          errors.push(`سطر بدون كود أو اسم تم تخطيه`);
+          skipped++;
+          continue;
+        }
+
+        if (existingCodes.has(code)) {
+          skipped++;
+          continue;
+        }
+
+        const accountType = accountTypeMapArabicToEnglish[accountTypeArabic];
+        if (!accountType) {
+          errors.push(`تصنيف غير صالح للحساب ${code}: ${accountTypeArabic}`);
+          skipped++;
+          continue;
+        }
+
+        const requiresCostCenter = requiresCostCenterArabic === "نعم";
+
+        try {
+          await storage.createAccount({
+            code,
+            name,
+            accountType: accountType as any,
+            requiresCostCenter,
+            openingBalance,
+            isActive: true,
+            level: 1,
+            parentId: null,
+            description: null
+          });
+          imported++;
+          existingCodes.add(code);
+        } catch (err: any) {
+          errors.push(`خطأ في إضافة الحساب ${code}: ${err.message}`);
+          skipped++;
+        }
+      }
+
+      res.json({
+        message: `تم استيراد ${imported} حساب بنجاح، تم تخطي ${skipped} حساب`,
+        imported,
+        skipped,
+        errors: errors.slice(0, 10)
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: `خطأ في معالجة الملف: ${error.message}` });
+    }
+  });
+
+  // Cost Centers Import
+  app.post("/api/cost-centers/import", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "لم يتم تحميل ملف" });
+      }
+
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet) as Record<string, any>[];
+
+      if (data.length === 0) {
+        return res.status(400).json({ message: "الملف فارغ" });
+      }
+
+      const existingCostCenters = await storage.getCostCenters();
+      const existingCodes = new Set(existingCostCenters.map(cc => cc.code));
+
+      let imported = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const row of data) {
+        const code = String(row["الكود"] || "").trim();
+        const name = String(row["الاسم"] || "").trim();
+        const type = String(row["النوع"] || "").trim() || null;
+
+        if (!code || !name) {
+          errors.push(`سطر بدون كود أو اسم تم تخطيه`);
+          skipped++;
+          continue;
+        }
+
+        if (existingCodes.has(code)) {
+          skipped++;
+          continue;
+        }
+
+        try {
+          await storage.createCostCenter({
+            code,
+            name,
+            type,
+            isActive: true,
+            parentId: null,
+            description: null
+          });
+          imported++;
+          existingCodes.add(code);
+        } catch (err: any) {
+          errors.push(`خطأ في إضافة مركز التكلفة ${code}: ${err.message}`);
+          skipped++;
+        }
+      }
+
+      res.json({
+        message: `تم استيراد ${imported} مركز تكلفة بنجاح، تم تخطي ${skipped} مركز`,
+        imported,
+        skipped,
+        errors: errors.slice(0, 10)
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: `خطأ في معالجة الملف: ${error.message}` });
     }
   });
 
