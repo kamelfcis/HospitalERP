@@ -19,6 +19,8 @@ import BalanceSheet from "@/pages/BalanceSheet";
 import CostCenterReports from "@/pages/CostCenterReports";
 import AccountLedger from "@/pages/AccountLedger";
 import AuditLog from "@/pages/AuditLog";
+import ItemsList from "@/pages/ItemsList";
+import ItemCard from "@/pages/ItemCard";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -39,6 +41,9 @@ function Router() {
         <Route path="/reports/balance-sheet" component={BalanceSheet} />
         <Route path="/reports/cost-centers" component={CostCenterReports} />
         <Route path="/reports/account-ledger" component={AccountLedger} />
+        <Route path="/items" component={ItemsList} />
+        <Route path="/items/new" component={ItemCard} />
+        <Route path="/items/:id" component={ItemCard} />
         <Route path="/audit-log" component={AuditLog} />
         <Route component={NotFound} />
       </Switch>

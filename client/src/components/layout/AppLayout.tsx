@@ -30,6 +30,7 @@ import {
   ClipboardList,
   PanelRightClose,
   PanelRightOpen,
+  Package,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,11 @@ const mainNavItems = [
     title: "نماذج القيود",
     href: "/templates",
     icon: ClipboardList,
+  },
+  {
+    title: "الأصناف",
+    href: "/items",
+    icon: Package,
   },
 ];
 

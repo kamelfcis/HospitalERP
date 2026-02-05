@@ -214,6 +214,7 @@ export const insertCostCenterSchema = createInsertSchema(costCenters).omit({ id:
 export const insertAccountSchema = createInsertSchema(accounts).omit({ id: true, createdAt: true });
 export const insertJournalEntrySchema = createInsertSchema(journalEntries).omit({ 
   id: true, 
+  entryNumber: true,
   createdAt: true, 
   updatedAt: true,
   postedAt: true,
