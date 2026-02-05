@@ -190,9 +190,9 @@ export class DatabaseStorage implements IStorage {
     return newPeriod;
   }
 
-  async closeFiscalPeriod(id: string, userId: string): Promise<FiscalPeriod | undefined> {
+  async closeFiscalPeriod(id: string, userId?: string | null): Promise<FiscalPeriod | undefined> {
     const [updated] = await db.update(fiscalPeriods)
-      .set({ isClosed: true, closedAt: new Date(), closedBy: userId })
+      .set({ isClosed: true, closedAt: new Date(), closedBy: userId || null })
       .where(eq(fiscalPeriods.id, id))
       .returning();
     return updated;
@@ -282,21 +282,21 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async postJournalEntry(id: string, userId: string): Promise<JournalEntry | undefined> {
+  async postJournalEntry(id: string, userId?: string | null): Promise<JournalEntry | undefined> {
     const [existing] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
     if (!existing || existing.status !== 'draft') {
       return undefined;
     }
 
     const [updated] = await db.update(journalEntries)
-      .set({ status: 'posted', postedBy: userId, postedAt: new Date() })
+      .set({ status: 'posted', postedBy: userId || null, postedAt: new Date() })
       .where(eq(journalEntries.id, id))
       .returning();
 
     return updated;
   }
 
-  async reverseJournalEntry(id: string, userId: string): Promise<JournalEntry | undefined> {
+  async reverseJournalEntry(id: string, userId?: string | null): Promise<JournalEntry | undefined> {
     const entry = await this.getJournalEntry(id);
     if (!entry || entry.status !== 'posted') {
       return undefined;
@@ -304,7 +304,7 @@ export class DatabaseStorage implements IStorage {
 
     // Mark original as reversed
     await db.update(journalEntries)
-      .set({ status: 'reversed', reversedBy: userId, reversedAt: new Date() })
+      .set({ status: 'reversed', reversedBy: userId || null, reversedAt: new Date() })
       .where(eq(journalEntries.id, id));
 
     // Create reversal entry
@@ -318,8 +318,8 @@ export class DatabaseStorage implements IStorage {
       totalDebit: entry.totalCredit,
       totalCredit: entry.totalDebit,
       reference: `REV-${entry.entryNumber}`,
-      createdBy: userId,
-      postedBy: userId,
+      createdBy: userId || null,
+      postedBy: userId || null,
       postedAt: new Date(),
       reversalEntryId: id,
     }).returning();

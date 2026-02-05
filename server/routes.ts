@@ -198,7 +198,7 @@ export async function registerRoutes(
 
   app.post("/api/fiscal-periods/:id/close", async (req, res) => {
     try {
-      const period = await storage.closeFiscalPeriod(req.params.id, "system");
+      const period = await storage.closeFiscalPeriod(req.params.id, null);
       if (!period) {
         return res.status(404).json({ message: "الفترة غير موجودة" });
       }
@@ -288,7 +288,7 @@ export async function registerRoutes(
       );
 
       if (postAfterSave) {
-        const postedEntry = await storage.postJournalEntry(entry.id, "system");
+        const postedEntry = await storage.postJournalEntry(entry.id, null);
         return res.status(201).json(postedEntry);
       }
 
@@ -389,7 +389,7 @@ export async function registerRoutes(
         }
       }
 
-      const entry = await storage.postJournalEntry(req.params.id, "system");
+      const entry = await storage.postJournalEntry(req.params.id, null);
       if (!entry) {
         return res.status(400).json({ message: "لا يمكن ترحيل القيد" });
       }
@@ -401,7 +401,7 @@ export async function registerRoutes(
 
   app.post("/api/journal-entries/:id/reverse", async (req, res) => {
     try {
-      const entry = await storage.reverseJournalEntry(req.params.id, "system");
+      const entry = await storage.reverseJournalEntry(req.params.id, null);
       if (!entry) {
         return res.status(400).json({ message: "لا يمكن إلغاء القيد" });
       }
