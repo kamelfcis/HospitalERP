@@ -577,31 +577,41 @@
     margin: 5pt 0 0 0 !important;
   }
   
-  /* Table printing styles */
+  /* Table printing styles - compact like Peachtree journal entry grid */
   table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 10pt !important;
+    font-size: 9pt !important;
   }
   
   th, td {
-    border: 1pt solid #ccc !important;
-    padding: 4pt 6pt !important;
+    border: 0.5pt solid #999 !important;
+    padding: 2pt 4pt !important;
     text-align: right !important;
+    line-height: 1.2 !important;
+    vertical-align: middle !important;
   }
   
   th {
-    background-color: #f0f0f0 !important;
+    background-color: #e0e0e0 !important;
     font-weight: bold !important;
     color: black !important;
+    font-size: 8pt !important;
+    padding: 3pt 4pt !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
   
   tr:nth-child(even) {
-    background-color: #fafafa !important;
+    background-color: #f5f5f5 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+  
+  /* Compact row height */
+  tr {
+    height: auto !important;
+    min-height: 0 !important;
   }
   
   /* Number columns alignment */
