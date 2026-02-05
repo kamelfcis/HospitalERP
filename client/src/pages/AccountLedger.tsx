@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Search, Printer, Download } from "lucide-react";
+import { FileText, Search, Printer } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import type { Account } from "@shared/schema";
 
@@ -34,15 +33,17 @@ export default function AccountLedger() {
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [selectedAccountDisplay, setSelectedAccountDisplay] = useState<string>("");
   const [startDate, setStartDate] = useState(firstDayOfMonth.toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState(today.toISOString().split("T")[0]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const { data: accounts, isLoading: accountsLoading } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
   });
 
-  const { data: ledger, isLoading: ledgerLoading, refetch } = useQuery<AccountLedgerData>({
+  const { data: ledger, isLoading: ledgerLoading } = useQuery<AccountLedgerData>({
     queryKey: ["/api/reports/account-ledger", selectedAccountId, startDate, endDate],
     queryFn: async () => {
       if (!selectedAccountId) return null;
@@ -55,11 +56,65 @@ export default function AccountLedger() {
     enabled: !!selectedAccountId,
   });
 
-  const filteredAccounts = accounts?.filter(acc => 
-    searchQuery === "" || 
-    acc.code.includes(searchQuery) || 
-    acc.name.includes(searchQuery)
-  ) || [];
+  const matchesPattern = (text: string, pattern: string): boolean => {
+    if (!pattern) return true;
+    const normalizedText = text.toLowerCase().trim();
+    const normalizedPattern = pattern.toLowerCase().trim();
+    
+    if (normalizedPattern.includes("%")) {
+      const parts = normalizedPattern.split("%").filter(p => p.length > 0);
+      let lastIndex = 0;
+      for (const part of parts) {
+        const index = normalizedText.indexOf(part, lastIndex);
+        if (index === -1) return false;
+        lastIndex = index + part.length;
+      }
+      return true;
+    }
+    
+    return normalizedText.includes(normalizedPattern);
+  };
+
+  const filteredAccounts = useMemo(() => {
+    if (!accounts) return [];
+    if (!searchQuery.trim()) {
+      return accounts.filter(a => a.isActive).slice(0, 50);
+    }
+    
+    const query = searchQuery.trim();
+    const results = accounts.filter((account) => {
+      if (!account.isActive) return false;
+      
+      if (matchesPattern(account.code, query)) return true;
+      if (matchesPattern(account.name, query)) return true;
+      
+      const combinedText = `${account.code} ${account.name}`;
+      return matchesPattern(combinedText, query);
+    });
+    
+    results.sort((a, b) => {
+      const aStartsWithCode = a.code.startsWith(query);
+      const bStartsWithCode = b.code.startsWith(query);
+      if (aStartsWithCode && !bStartsWithCode) return -1;
+      if (!aStartsWithCode && bStartsWithCode) return 1;
+      
+      const aNameStarts = a.name.startsWith(query);
+      const bNameStarts = b.name.startsWith(query);
+      if (aNameStarts && !bNameStarts) return -1;
+      if (!aNameStarts && bNameStarts) return 1;
+      
+      return a.code.localeCompare(b.code);
+    });
+    
+    return results;
+  }, [accounts, searchQuery]);
+
+  const selectAccount = (account: Account) => {
+    setSelectedAccountId(account.id);
+    setSelectedAccountDisplay(`${account.code} - ${account.name}`);
+    setShowDropdown(false);
+    setSearchQuery("");
+  };
 
   const handlePrint = () => {
     window.print();
@@ -94,32 +149,56 @@ export default function AccountLedger() {
 
       <div className="peachtree-grid p-3">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="md:col-span-2 space-y-1">
+          <div className="md:col-span-2 space-y-1 relative">
             <label className="text-xs font-medium">الحساب</label>
             <div className="relative">
-              <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+              <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground z-10" />
               <input
                 type="text"
-                placeholder="ابحث عن حساب..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="peachtree-input w-full pr-7 mb-1"
+                placeholder="ابحث بالكود أو الاسم..."
+                value={showDropdown ? searchQuery : selectedAccountDisplay}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowDropdown(true);
+                }}
+                onFocus={() => {
+                  setShowDropdown(true);
+                  setSearchQuery("");
+                }}
+                className="peachtree-input w-full pr-7"
                 data-testid="input-search-account"
               />
             </div>
-            <select
-              value={selectedAccountId}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              className="peachtree-input w-full"
-              data-testid="select-account"
-            >
-              <option value="">-- اختر حساب --</option>
-              {filteredAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.code} - {account.name}
-                </option>
-              ))}
-            </select>
+            {showDropdown && (
+              <div className="absolute z-50 top-full right-0 left-0 mt-1 bg-popover border rounded shadow-lg max-h-72 overflow-auto">
+                <div className="sticky top-0 px-2 py-1.5 text-xs text-muted-foreground bg-muted border-b flex items-center justify-between">
+                  <span>استخدم % للبحث المتقدم (مثال: خصم%مكتسب)</span>
+                  <span className="text-primary font-medium">{filteredAccounts.length} نتيجة</span>
+                </div>
+                {filteredAccounts.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-muted-foreground">
+                    لا توجد نتائج للبحث "{searchQuery}"
+                  </div>
+                ) : (
+                  filteredAccounts.slice(0, 50).map((acc) => (
+                    <div
+                      key={acc.id}
+                      className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-accent text-xs border-b border-muted/50 last:border-0 ${selectedAccountId === acc.id ? "bg-accent" : ""}`}
+                      onClick={() => selectAccount(acc)}
+                      data-testid={`option-account-${acc.id}`}
+                    >
+                      <span className="font-mono w-16 text-muted-foreground flex-shrink-0">{acc.code}</span>
+                      <span className="flex-1">{acc.name}</span>
+                    </div>
+                  ))
+                )}
+                {filteredAccounts.length > 50 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted text-center">
+                    +{filteredAccounts.length - 50} نتيجة أخرى - حدد البحث أكثر
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">من تاريخ</label>
