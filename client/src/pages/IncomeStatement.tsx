@@ -33,7 +33,7 @@ export default function IncomeStatement() {
   const [endDate, setEndDate] = useState(today.toISOString().split("T")[0]);
 
   const { data: statement, isLoading } = useQuery<IncomeStatementData>({
-    queryKey: ["/api/reports/income-statement", startDate, endDate],
+    queryKey: [`/api/reports/income-statement?startDate=${startDate}&endDate=${endDate}`],
   });
 
   if (isLoading) {

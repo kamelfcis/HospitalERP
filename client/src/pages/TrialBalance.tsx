@@ -27,7 +27,7 @@ export default function TrialBalance() {
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split("T")[0]);
 
   const { data: trialBalance, isLoading } = useQuery<TrialBalanceData>({
-    queryKey: ["/api/reports/trial-balance", asOfDate],
+    queryKey: [`/api/reports/trial-balance?asOfDate=${asOfDate}`],
   });
 
   if (isLoading) {

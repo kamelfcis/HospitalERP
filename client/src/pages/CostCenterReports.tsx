@@ -46,7 +46,7 @@ export default function CostCenterReports() {
   });
 
   const { data: report, isLoading } = useQuery<CostCenterReportData>({
-    queryKey: ["/api/reports/cost-centers", startDate, endDate, selectedCostCenter],
+    queryKey: [`/api/reports/cost-centers?startDate=${startDate}&endDate=${endDate}&costCenterId=${selectedCostCenter}`],
   });
 
   if (isLoading) {

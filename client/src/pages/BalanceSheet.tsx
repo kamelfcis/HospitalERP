@@ -30,7 +30,7 @@ export default function BalanceSheet() {
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split("T")[0]);
 
   const { data: balanceSheet, isLoading } = useQuery<BalanceSheetData>({
-    queryKey: ["/api/reports/balance-sheet", asOfDate],
+    queryKey: [`/api/reports/balance-sheet?asOfDate=${asOfDate}`],
   });
 
   if (isLoading) {

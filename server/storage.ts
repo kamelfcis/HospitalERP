@@ -432,8 +432,8 @@ export class DatabaseStorage implements IStorage {
     
     const items = await Promise.all(allAccounts.map(async (account) => {
       const [balance] = await db.select({
-        debit: sql<string>`COALESCE(SUM(CASE WHEN je.status = 'posted' AND je.entry_date <= ${asOfDate} THEN jl.debit::numeric ELSE 0 END), 0)::text`,
-        credit: sql<string>`COALESCE(SUM(CASE WHEN je.status = 'posted' AND je.entry_date <= ${asOfDate} THEN jl.credit::numeric ELSE 0 END), 0)::text`,
+        debit: sql<string>`COALESCE(SUM(CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} <= ${asOfDate} THEN ${journalLines.debit}::numeric ELSE 0 END), 0)::text`,
+        credit: sql<string>`COALESCE(SUM(CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} <= ${asOfDate} THEN ${journalLines.credit}::numeric ELSE 0 END), 0)::text`,
       })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
@@ -476,8 +476,8 @@ export class DatabaseStorage implements IStorage {
     const getAccountAmount = async (accountId: string) => {
       const [result] = await db.select({
         amount: sql<string>`COALESCE(SUM(
-          CASE WHEN je.status = 'posted' AND je.entry_date >= ${startDate} AND je.entry_date <= ${endDate}
-          THEN jl.credit::numeric - jl.debit::numeric ELSE 0 END
+          CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} >= ${startDate} AND ${journalEntries.entryDate} <= ${endDate}
+          THEN ${journalLines.credit}::numeric - ${journalLines.debit}::numeric ELSE 0 END
         ), 0)::text`,
       })
       .from(journalLines)
@@ -530,8 +530,8 @@ export class DatabaseStorage implements IStorage {
 
     const getAccountBalance = async (accountId: string, isDebitNormal: boolean) => {
       const [result] = await db.select({
-        debit: sql<string>`COALESCE(SUM(CASE WHEN je.status = 'posted' AND je.entry_date <= ${asOfDate} THEN jl.debit::numeric ELSE 0 END), 0)::text`,
-        credit: sql<string>`COALESCE(SUM(CASE WHEN je.status = 'posted' AND je.entry_date <= ${asOfDate} THEN jl.credit::numeric ELSE 0 END), 0)::text`,
+        debit: sql<string>`COALESCE(SUM(CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} <= ${asOfDate} THEN ${journalLines.debit}::numeric ELSE 0 END), 0)::text`,
+        credit: sql<string>`COALESCE(SUM(CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} <= ${asOfDate} THEN ${journalLines.credit}::numeric ELSE 0 END), 0)::text`,
       })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
@@ -599,14 +599,14 @@ export class DatabaseStorage implements IStorage {
     const items = await Promise.all(allCostCenters.map(async (cc) => {
       const [result] = await db.select({
         totalRevenue: sql<string>`COALESCE(SUM(
-          CASE WHEN a.account_type = 'revenue' AND je.status = 'posted' 
-               AND je.entry_date >= ${startDate} AND je.entry_date <= ${endDate}
-          THEN jl.credit::numeric - jl.debit::numeric ELSE 0 END
+          CASE WHEN ${accounts.accountType} = 'revenue' AND ${journalEntries.status} = 'posted' 
+               AND ${journalEntries.entryDate} >= ${startDate} AND ${journalEntries.entryDate} <= ${endDate}
+          THEN ${journalLines.credit}::numeric - ${journalLines.debit}::numeric ELSE 0 END
         ), 0)::text`,
         totalExpense: sql<string>`COALESCE(SUM(
-          CASE WHEN a.account_type = 'expense' AND je.status = 'posted'
-               AND je.entry_date >= ${startDate} AND je.entry_date <= ${endDate}
-          THEN jl.debit::numeric - jl.credit::numeric ELSE 0 END
+          CASE WHEN ${accounts.accountType} = 'expense' AND ${journalEntries.status} = 'posted'
+               AND ${journalEntries.entryDate} >= ${startDate} AND ${journalEntries.entryDate} <= ${endDate}
+          THEN ${journalLines.debit}::numeric - ${journalLines.credit}::numeric ELSE 0 END
         ), 0)::text`,
       })
       .from(journalLines)
