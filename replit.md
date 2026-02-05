@@ -76,7 +76,37 @@ Key entities include:
   - Filter by date range (from/to)
   - Shows: date, entry number, description, debit, credit, running balance
   - Opening balance, total debits/credits, and closing balance summary
+  - Both posted AND reversed entries appear in ledger (correct accounting behavior)
   - Print functionality included
+- **Advanced Search with Wildcards** (Feb 5, 2026):
+  - Use % wildcard for multi-part searches (e.g., "خصم%مكتسب")
+  - Search displays up to 50 results with result count indicator
+  - Results sorted by relevance (code matches first, then name matches)
+  - Implemented in: Journal Entry form, Cost Centers, Account Ledger
+- **Collapsible Sidebar** (Feb 5, 2026):
+  - Toggle button in header to show/hide sidebar
+  - Collapses to icon-only mode for more workspace
+  - Click again to expand back to full menu
+- **Professional Print Styles** (Feb 5, 2026):
+  - Sidebar and header hidden during printing
+  - Report content expands to full page width
+  - Compact Peachtree-style table formatting
+  - Optimized for A4 paper with proper margins
+  - CSS classes available: print-header, print-summary, no-print
+
+## Pre-Release Testing Checklist
+Before publishing as final product, test the following:
+- [ ] Chart of Accounts: Create, edit, delete accounts
+- [ ] Chart of Accounts: Excel import with headers (الكود, اسم الحساب, كود مركز التكلفة, تصنيف الحساب, قائمة العرض)
+- [ ] Cost Centers: Create hierarchical cost centers
+- [ ] Journal Entries: Create, post, and reverse entries
+- [ ] Journal Entries: Load templates and save new templates
+- [ ] Account Ledger: View transactions with date range filter
+- [ ] Account Ledger: Verify reversed entries appear correctly
+- [ ] All Reports: Trial Balance, Income Statement, Balance Sheet, Cost Center Reports
+- [ ] Print: All reports print correctly without sidebar
+- [ ] Fiscal Periods: Open and close periods
+- [ ] Audit Log: Verify all actions are logged
 
 ## External Dependencies
 
