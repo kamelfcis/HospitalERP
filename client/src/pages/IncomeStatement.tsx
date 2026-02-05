@@ -2,18 +2,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Download, Printer, Calendar, TrendingUp, TrendingDown } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,10 +38,10 @@ export default function IncomeStatement() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-96 w-full" />
+      <div className="p-3 space-y-3">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
@@ -60,220 +50,193 @@ export default function IncomeStatement() {
   const isProfit = netIncome >= 0;
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">قائمة الدخل</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            ملخص الإيرادات والمصروفات
-          </p>
+    <div className="p-3 space-y-3">
+      <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-bold text-foreground">قائمة الدخل</h1>
+          <span className="text-xs text-muted-foreground">|</span>
+          <span className="text-xs text-muted-foreground">ملخص الإيرادات والمصروفات</span>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" data-testid="button-print">
-            <Printer className="h-4 w-4 ml-2" />
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="sm" className="h-6 text-xs px-2" data-testid="button-print">
+            <Printer className="h-3 w-3 ml-1" />
             طباعة
           </Button>
-          <Button variant="outline" size="sm" data-testid="button-export">
-            <Download className="h-4 w-4 ml-2" />
+          <Button variant="outline" size="sm" className="h-6 text-xs px-2" data-testid="button-export">
+            <Download className="h-3 w-3 ml-1" />
             تصدير
           </Button>
         </div>
       </div>
 
-      {/* Date Filter */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">من:</span>
-            </div>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-[160px]"
-              data-testid="input-start-date"
-            />
-            <span className="text-sm font-medium">إلى:</span>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-[160px]"
-              data-testid="input-end-date"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">إجمالي الإيرادات</p>
-                <p className="text-2xl font-bold text-emerald-600 accounting-number">
-                  {formatCurrency(statement?.totalRevenue || 0)}
-                </p>
-              </div>
-              <div className="p-3 bg-emerald-100 rounded-lg">
-                <TrendingUp className="h-6 w-6 text-emerald-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">إجمالي المصروفات</p>
-                <p className="text-2xl font-bold text-red-600 accounting-number">
-                  {formatCurrency(statement?.totalExpense || 0)}
-                </p>
-              </div>
-              <div className="p-3 bg-red-100 rounded-lg">
-                <TrendingDown className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={isProfit ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {isProfit ? "صافي الربح" : "صافي الخسارة"}
-                </p>
-                <p className={`text-2xl font-bold accounting-number ${isProfit ? "text-emerald-600" : "text-red-600"}`}>
-                  {formatCurrency(Math.abs(netIncome))}
-                </p>
-              </div>
-              <Badge className={isProfit ? "bg-emerald-600" : "bg-red-600"}>
-                {isProfit ? "ربح" : "خسارة"}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1">
+          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <span className="text-xs font-medium">من:</span>
+        </div>
+        <Input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="peachtree-input w-[130px] text-xs"
+          data-testid="input-start-date"
+        />
+        <span className="text-xs font-medium">إلى:</span>
+        <Input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="peachtree-input w-[130px] text-xs"
+          data-testid="input-end-date"
+        />
       </div>
 
-      {/* Income Statement Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">
-            قائمة الدخل للفترة من {formatDateShort(startDate)} إلى {formatDateShort(endDate)}
-          </CardTitle>
-        </CardHeader>
-        <ScrollArea className="h-[calc(100vh-550px)]">
-          <div className="p-6 pt-0 space-y-6">
-            {/* Revenues Section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+        <div className="peachtree-toolbar p-2">
+          <div className="flex items-center justify-between gap-2">
             <div>
-              <h3 className="text-lg font-semibold text-emerald-700 mb-3 flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                الإيرادات
-              </h3>
-              <Table className="accounting-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[100px]">رقم الحساب</TableHead>
-                    <TableHead>اسم الحساب</TableHead>
-                    <TableHead className="w-[180px] text-left">المبلغ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {!statement?.revenues || statement.revenues.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center py-4 text-muted-foreground">
-                        لا توجد إيرادات
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    <>
-                      {statement.revenues.map((item) => (
-                        <TableRow key={item.accountId}>
-                          <TableCell className="font-mono">{item.accountCode}</TableCell>
-                          <TableCell>{item.accountName}</TableCell>
-                          <TableCell className="accounting-number font-medium text-emerald-600">
-                            {formatCurrency(item.amount)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow className="bg-emerald-50 font-bold">
-                        <TableCell colSpan={2}>إجمالي الإيرادات</TableCell>
-                        <TableCell className="accounting-number text-emerald-700 text-lg">
-                          {formatCurrency(statement.totalRevenue)}
-                        </TableCell>
-                      </TableRow>
-                    </>
-                  )}
-                </TableBody>
-              </Table>
+              <p className="text-xs text-muted-foreground">إجمالي الإيرادات</p>
+              <p className="text-sm font-bold font-mono peachtree-amount peachtree-amount-credit">
+                {formatCurrency(statement?.totalRevenue || 0)}
+              </p>
             </div>
-
-            <Separator />
-
-            {/* Expenses Section */}
+            <TrendingUp className="h-4 w-4 text-emerald-600" />
+          </div>
+        </div>
+        <div className="peachtree-toolbar p-2">
+          <div className="flex items-center justify-between gap-2">
             <div>
-              <h3 className="text-lg font-semibold text-red-700 mb-3 flex items-center gap-2">
-                <TrendingDown className="h-5 w-5" />
-                المصروفات
-              </h3>
-              <Table className="accounting-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[100px]">رقم الحساب</TableHead>
-                    <TableHead>اسم الحساب</TableHead>
-                    <TableHead className="w-[180px] text-left">المبلغ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {!statement?.expenses || statement.expenses.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center py-4 text-muted-foreground">
-                        لا توجد مصروفات
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    <>
-                      {statement.expenses.map((item) => (
-                        <TableRow key={item.accountId}>
-                          <TableCell className="font-mono">{item.accountCode}</TableCell>
-                          <TableCell>{item.accountName}</TableCell>
-                          <TableCell className="accounting-number font-medium text-red-600">
-                            {formatCurrency(item.amount)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow className="bg-red-50 font-bold">
-                        <TableCell colSpan={2}>إجمالي المصروفات</TableCell>
-                        <TableCell className="accounting-number text-red-700 text-lg">
-                          {formatCurrency(statement.totalExpense)}
-                        </TableCell>
-                      </TableRow>
-                    </>
-                  )}
-                </TableBody>
-              </Table>
+              <p className="text-xs text-muted-foreground">إجمالي المصروفات</p>
+              <p className="text-sm font-bold font-mono peachtree-amount peachtree-amount-debit">
+                {formatCurrency(statement?.totalExpense || 0)}
+              </p>
             </div>
+            <TrendingDown className="h-4 w-4 text-red-600" />
+          </div>
+        </div>
+        <div className={`p-2 ${isProfit ? "peachtree-totals-balanced" : "peachtree-totals-unbalanced"}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-xs text-muted-foreground">
+                {isProfit ? "صافي الربح" : "صافي الخسارة"}
+              </p>
+              <p className={`text-sm font-bold font-mono peachtree-amount ${isProfit ? "peachtree-amount-credit" : "peachtree-amount-debit"}`}>
+                {formatCurrency(Math.abs(netIncome))}
+              </p>
+            </div>
+            <Badge className={`text-xs h-5 ${isProfit ? "bg-emerald-600" : "bg-red-600"}`}>
+              {isProfit ? "ربح" : "خسارة"}
+            </Badge>
+          </div>
+        </div>
+      </div>
 
-            <Separator />
+      <div className="peachtree-toolbar py-1 px-2">
+        <span className="text-xs font-semibold">
+          قائمة الدخل للفترة من {formatDateShort(startDate)} إلى {formatDateShort(endDate)}
+        </span>
+      </div>
 
-            {/* Net Income */}
-            <div className={`p-4 rounded-lg ${isProfit ? "bg-emerald-100" : "bg-red-100"}`}>
-              <div className="flex items-center justify-between">
-                <h3 className={`text-xl font-bold ${isProfit ? "text-emerald-800" : "text-red-800"}`}>
-                  {isProfit ? "صافي الربح" : "صافي الخسارة"}
-                </h3>
-                <p className={`text-2xl font-bold accounting-number ${isProfit ? "text-emerald-700" : "text-red-700"}`}>
-                  {formatCurrency(Math.abs(netIncome))}
-                </p>
-              </div>
+      <ScrollArea className="h-[calc(100vh-380px)]">
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center gap-1 mb-1 px-1">
+              <TrendingUp className="h-3 w-3 text-emerald-600" />
+              <h3 className="text-xs font-bold text-emerald-700">الإيرادات</h3>
+            </div>
+            <table className="w-full peachtree-grid text-xs">
+              <thead>
+                <tr className="peachtree-grid-header">
+                  <th className="w-[80px] text-right">رقم الحساب</th>
+                  <th className="text-right">اسم الحساب</th>
+                  <th className="w-[120px] text-left">المبلغ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!statement?.revenues || statement.revenues.length === 0 ? (
+                  <tr className="peachtree-grid-row">
+                    <td colSpan={3} className="text-center py-2 text-muted-foreground text-xs">
+                      لا توجد إيرادات
+                    </td>
+                  </tr>
+                ) : (
+                  <>
+                    {statement.revenues.map((item) => (
+                      <tr key={item.accountId} className="peachtree-grid-row">
+                        <td className="font-mono text-xs">{item.accountCode}</td>
+                        <td className="text-xs">{item.accountName}</td>
+                        <td className="font-mono peachtree-amount peachtree-amount-credit text-xs">
+                          {formatCurrency(item.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="peachtree-totals">
+                      <td colSpan={2} className="text-xs font-bold py-1 px-2">إجمالي الإيرادات</td>
+                      <td className="font-mono peachtree-amount peachtree-amount-credit text-sm font-bold py-1 px-2">
+                        {formatCurrency(statement.totalRevenue)}
+                      </td>
+                    </tr>
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <div className="flex items-center gap-1 mb-1 px-1">
+              <TrendingDown className="h-3 w-3 text-red-600" />
+              <h3 className="text-xs font-bold text-red-700">المصروفات</h3>
+            </div>
+            <table className="w-full peachtree-grid text-xs">
+              <thead>
+                <tr className="peachtree-grid-header">
+                  <th className="w-[80px] text-right">رقم الحساب</th>
+                  <th className="text-right">اسم الحساب</th>
+                  <th className="w-[120px] text-left">المبلغ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!statement?.expenses || statement.expenses.length === 0 ? (
+                  <tr className="peachtree-grid-row">
+                    <td colSpan={3} className="text-center py-2 text-muted-foreground text-xs">
+                      لا توجد مصروفات
+                    </td>
+                  </tr>
+                ) : (
+                  <>
+                    {statement.expenses.map((item) => (
+                      <tr key={item.accountId} className="peachtree-grid-row">
+                        <td className="font-mono text-xs">{item.accountCode}</td>
+                        <td className="text-xs">{item.accountName}</td>
+                        <td className="font-mono peachtree-amount peachtree-amount-debit text-xs">
+                          {formatCurrency(item.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="peachtree-totals">
+                      <td colSpan={2} className="text-xs font-bold py-1 px-2">إجمالي المصروفات</td>
+                      <td className="font-mono peachtree-amount peachtree-amount-debit text-sm font-bold py-1 px-2">
+                        {formatCurrency(statement.totalExpense)}
+                      </td>
+                    </tr>
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className={`p-3 ${isProfit ? "peachtree-totals-balanced" : "peachtree-totals-unbalanced"}`}>
+            <div className="flex items-center justify-between">
+              <h3 className={`text-sm font-bold ${isProfit ? "text-emerald-800" : "text-red-800"}`}>
+                {isProfit ? "صافي الربح" : "صافي الخسارة"}
+              </h3>
+              <p className={`text-base font-bold font-mono peachtree-amount ${isProfit ? "peachtree-amount-credit" : "peachtree-amount-debit"}`}>
+                {formatCurrency(Math.abs(netIncome))}
+              </p>
             </div>
           </div>
-        </ScrollArea>
-      </Card>
+        </div>
+      </ScrollArea>
     </div>
   );
 }

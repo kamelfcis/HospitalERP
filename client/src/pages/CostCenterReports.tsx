@@ -2,8 +2,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -11,16 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, Printer, Calendar, Building2, TrendingUp, TrendingDown } from "lucide-react";
+import { Download, Printer, Calendar, Building2 } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CostCenter } from "@shared/schema";
@@ -61,205 +51,170 @@ export default function CostCenterReports() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-96 w-full" />
+      <div className="p-3 space-y-3">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-80 w-full" />
       </div>
     );
   }
 
+  const grandNetResult = parseFloat(report?.grandNetResult || "0");
+  const isBalanced = grandNetResult >= 0;
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">تقارير مراكز التكلفة</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            تحليل الإيرادات والمصروفات حسب مركز التكلفة
-          </p>
+    <div className="p-3 space-y-3">
+      {/* Page Header - Peachtree Toolbar Style */}
+      <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <Building2 className="h-4 w-4 text-muted-foreground" />
+          <div>
+            <h1 className="text-sm font-bold text-foreground">تقارير مراكز التكلفة</h1>
+            <p className="text-xs text-muted-foreground">
+              تحليل الإيرادات والمصروفات حسب مركز التكلفة
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" data-testid="button-print">
-            <Printer className="h-4 w-4 ml-2" />
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="sm" className="h-7 text-xs px-2" data-testid="button-print">
+            <Printer className="h-3 w-3 ml-1" />
             طباعة
           </Button>
-          <Button variant="outline" size="sm" data-testid="button-export">
-            <Download className="h-4 w-4 ml-2" />
+          <Button variant="outline" size="sm" className="h-7 text-xs px-2" data-testid="button-export">
+            <Download className="h-3 w-3 ml-1" />
             تصدير
           </Button>
         </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">من:</span>
-            </div>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-[160px]"
-              data-testid="input-start-date"
-            />
-            <span className="text-sm font-medium">إلى:</span>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-[160px]"
-              data-testid="input-end-date"
-            />
-            <Select value={selectedCostCenter} onValueChange={setSelectedCostCenter}>
-              <SelectTrigger className="w-[200px]" data-testid="select-cost-center">
-                <Building2 className="h-4 w-4 ml-2" />
-                <SelectValue placeholder="مركز التكلفة" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">جميع المراكز</SelectItem>
-                {costCenters?.filter((c) => c.isActive).map((cc) => (
-                  <SelectItem key={cc.id} value={cc.id}>
-                    {cc.code} - {cc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">إجمالي الإيرادات</p>
-                <p className="text-2xl font-bold text-emerald-600 accounting-number">
-                  {formatCurrency(report?.grandTotalRevenue || 0)}
-                </p>
-              </div>
-              <div className="p-3 bg-emerald-100 rounded-lg">
-                <TrendingUp className="h-6 w-6 text-emerald-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">إجمالي المصروفات</p>
-                <p className="text-2xl font-bold text-red-600 accounting-number">
-                  {formatCurrency(report?.grandTotalExpense || 0)}
-                </p>
-              </div>
-              <div className="p-3 bg-red-100 rounded-lg">
-                <TrendingDown className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={
-          parseFloat(report?.grandNetResult || "0") >= 0
-            ? "bg-emerald-50 border-emerald-200"
-            : "bg-red-50 border-red-200"
-        }>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">صافي النتيجة</p>
-                <p className={`text-2xl font-bold accounting-number ${
-                  parseFloat(report?.grandNetResult || "0") >= 0
-                    ? "text-emerald-600"
-                    : "text-red-600"
-                }`}>
-                  {formatCurrency(report?.grandNetResult || 0)}
-                </p>
-              </div>
-              <Badge className={
-                parseFloat(report?.grandNetResult || "0") >= 0
-                  ? "bg-emerald-600"
-                  : "bg-red-600"
-              }>
-                {parseFloat(report?.grandNetResult || "0") >= 0 ? "ربح" : "خسارة"}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Filters - Peachtree Toolbar Style */}
+      <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1">
+          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <span className="text-xs font-medium">من:</span>
+        </div>
+        <Input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="peachtree-input w-[130px] text-xs"
+          data-testid="input-start-date"
+        />
+        <span className="text-xs font-medium">إلى:</span>
+        <Input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="peachtree-input w-[130px] text-xs"
+          data-testid="input-end-date"
+        />
+        <Select value={selectedCostCenter} onValueChange={setSelectedCostCenter}>
+          <SelectTrigger className="peachtree-select w-[180px] text-xs" data-testid="select-cost-center">
+            <Building2 className="h-3 w-3 ml-1" />
+            <SelectValue placeholder="مركز التكلفة" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-xs">جميع المراكز</SelectItem>
+            {costCenters?.filter((c) => c.isActive).map((cc) => (
+              <SelectItem key={cc.id} value={cc.id} className="text-xs">
+                {cc.code} - {cc.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Report Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">
-            تقرير مراكز التكلفة للفترة من {formatDateShort(startDate)} إلى {formatDateShort(endDate)}
-          </CardTitle>
-        </CardHeader>
-        <ScrollArea className="h-[calc(100vh-550px)]">
-          <Table className="accounting-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[100px]">الرمز</TableHead>
-                <TableHead>مركز التكلفة</TableHead>
-                <TableHead className="w-[160px] text-left">الإيرادات</TableHead>
-                <TableHead className="w-[160px] text-left">المصروفات</TableHead>
-                <TableHead className="w-[160px] text-left">صافي النتيجة</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+      {/* Report Title */}
+      <div className="peachtree-toolbar text-center py-2">
+        <h2 className="text-xs font-semibold">
+          تقرير مراكز التكلفة للفترة من {formatDateShort(startDate)} إلى {formatDateShort(endDate)}
+        </h2>
+      </div>
+
+      {/* Report Table - Peachtree Grid Style */}
+      <div className="peachtree-grid">
+        <ScrollArea className="h-[calc(100vh-320px)]">
+          <table className="w-full">
+            <thead className="peachtree-grid-header sticky top-0">
+              <tr>
+                <th className="w-[80px] text-right">الرمز</th>
+                <th className="text-right">مركز التكلفة</th>
+                <th className="w-[140px] text-left">الإيرادات</th>
+                <th className="w-[140px] text-left">المصروفات</th>
+                <th className="w-[140px] text-left">صافي النتيجة</th>
+              </tr>
+            </thead>
+            <tbody>
               {!report?.items || report.items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <tr className="peachtree-grid-row">
+                  <td colSpan={5} className="text-center py-6 text-xs text-muted-foreground">
                     لا توجد بيانات
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ) : (
-                <>
-                  {report.items.map((item) => {
-                    const netResult = parseFloat(item.netResult);
-                    return (
-                      <TableRow key={item.costCenterId}>
-                        <TableCell className="font-mono">{item.costCenterCode}</TableCell>
-                        <TableCell className="font-medium">{item.costCenterName}</TableCell>
-                        <TableCell className="accounting-number text-emerald-600 font-medium">
-                          {formatCurrency(item.totalRevenue)}
-                        </TableCell>
-                        <TableCell className="accounting-number text-red-600 font-medium">
-                          {formatCurrency(item.totalExpense)}
-                        </TableCell>
-                        <TableCell className={`accounting-number font-bold ${
-                          netResult >= 0 ? "text-emerald-600" : "text-red-600"
-                        }`}>
-                          {formatCurrency(item.netResult)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  <TableRow className="bg-muted/50 font-bold">
-                    <TableCell colSpan={2}>الإجمالي</TableCell>
-                    <TableCell className="accounting-number text-emerald-700 text-lg">
-                      {formatCurrency(report.grandTotalRevenue)}
-                    </TableCell>
-                    <TableCell className="accounting-number text-red-700 text-lg">
-                      {formatCurrency(report.grandTotalExpense)}
-                    </TableCell>
-                    <TableCell className={`accounting-number text-lg font-bold ${
-                      parseFloat(report.grandNetResult) >= 0 ? "text-emerald-700" : "text-red-700"
-                    }`}>
-                      {formatCurrency(report.grandNetResult)}
-                    </TableCell>
-                  </TableRow>
-                </>
+                report.items.map((item) => {
+                  const netResult = parseFloat(item.netResult);
+                  return (
+                    <tr key={item.costCenterId} className="peachtree-grid-row">
+                      <td className="font-mono text-xs">{item.costCenterCode}</td>
+                      <td className="text-xs">{item.costCenterName}</td>
+                      <td className="peachtree-amount peachtree-amount-credit font-mono text-xs">
+                        {formatCurrency(item.totalRevenue)}
+                      </td>
+                      <td className="peachtree-amount peachtree-amount-debit font-mono text-xs">
+                        {formatCurrency(item.totalExpense)}
+                      </td>
+                      <td className={`peachtree-amount font-mono text-xs font-semibold ${
+                        netResult >= 0 ? "peachtree-amount-credit" : "peachtree-amount-debit"
+                      }`}>
+                        {formatCurrency(item.netResult)}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </ScrollArea>
-      </Card>
+      </div>
+
+      {/* Totals Row - Peachtree Totals Style */}
+      {report?.items && report.items.length > 0 && (
+        <div className={`peachtree-totals ${isBalanced ? "peachtree-totals-balanced" : "peachtree-totals-unbalanced"}`}>
+          <div className="flex items-center justify-between px-3 py-2">
+            <span className="text-xs font-bold">الإجمالي</span>
+            <div className="flex items-center gap-6">
+              <div className="text-left">
+                <span className="text-xs text-muted-foreground ml-2">الإيرادات:</span>
+                <span className="peachtree-amount peachtree-amount-credit font-mono text-sm font-bold">
+                  {formatCurrency(report.grandTotalRevenue)}
+                </span>
+              </div>
+              <div className="text-left">
+                <span className="text-xs text-muted-foreground ml-2">المصروفات:</span>
+                <span className="peachtree-amount peachtree-amount-debit font-mono text-sm font-bold">
+                  {formatCurrency(report.grandTotalExpense)}
+                </span>
+              </div>
+              <div className="text-left">
+                <span className="text-xs text-muted-foreground ml-2">صافي النتيجة:</span>
+                <span className={`peachtree-amount font-mono text-sm font-bold ${
+                  grandNetResult >= 0 ? "peachtree-amount-credit" : "peachtree-amount-debit"
+                }`}>
+                  {formatCurrency(report.grandNetResult)}
+                </span>
+                <span className={`text-xs mr-2 px-1 py-0.5 rounded ${
+                  grandNetResult >= 0 
+                    ? "bg-emerald-600 text-white" 
+                    : "bg-red-600 text-white"
+                }`}>
+                  {grandNetResult >= 0 ? "ربح" : "خسارة"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

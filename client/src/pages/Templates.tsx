@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -21,7 +20,6 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Search, Edit2, Trash2, FileText } from "lucide-react";
@@ -138,161 +136,182 @@ export default function Templates() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="p-3 space-y-3">
         <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-96 w-full" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">نماذج القيود</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            إنشاء وإدارة نماذج القيود المحاسبية
-          </p>
+    <div className="p-3 space-y-3" dir="rtl">
+      {/* Peachtree Toolbar Header */}
+      <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <div>
+            <h1 className="text-sm font-semibold text-foreground">نماذج القيود</h1>
+            <p className="text-xs text-muted-foreground">
+              إنشاء وإدارة نماذج القيود المحاسبية
+            </p>
+          </div>
         </div>
-        <Button onClick={() => handleOpenDialog()} data-testid="button-add-template">
-          <Plus className="h-4 w-4 ml-2" />
-          نموذج جديد
-        </Button>
-      </div>
-
-      {/* Search */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="relative max-w-md">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="بحث في النماذج..."
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="بحث..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pr-10"
+              className="peachtree-input pr-7 w-40"
               data-testid="input-search-templates"
             />
           </div>
-        </CardContent>
-      </Card>
+          <Button size="sm" onClick={() => handleOpenDialog()} data-testid="button-add-template" className="h-7 text-xs px-2">
+            <Plus className="h-3 w-3 ml-1" />
+            جديد
+          </Button>
+        </div>
+      </div>
 
-      {/* Templates Grid */}
+      {/* Templates Table */}
       {filteredTemplates.length === 0 ? (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium mb-2">لا توجد نماذج</h3>
-            <p className="text-sm text-muted-foreground mb-4">
+        <div className="peachtree-grid">
+          <div className="p-6 text-center">
+            <FileText className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm font-medium mb-1">لا توجد نماذج</p>
+            <p className="text-xs text-muted-foreground mb-3">
               قم بإنشاء نموذج لتسريع إدخال القيود المتكررة
             </p>
-            <Button onClick={() => handleOpenDialog()} data-testid="button-add-template-empty">
-              <Plus className="h-4 w-4 ml-2" />
+            <Button size="sm" onClick={() => handleOpenDialog()} data-testid="button-add-template-empty" className="h-7 text-xs">
+              <Plus className="h-3 w-3 ml-1" />
               إنشاء نموذج
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTemplates.map((template) => (
-            <Card
-              key={template.id}
-              className={`hover-elevate ${!template.isActive ? "opacity-60" : ""}`}
-              data-testid={`card-template-${template.id}`}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <FileText className="h-5 w-5 text-primary" />
+        <div className="peachtree-grid overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="peachtree-grid-header">
+                <th className="text-right w-8">#</th>
+                <th className="text-right">اسم النموذج</th>
+                <th className="text-right">الوصف</th>
+                <th className="text-center w-20">الحالة</th>
+                <th className="text-right w-32">تاريخ الإنشاء</th>
+                <th className="text-center w-24">إجراءات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTemplates.map((template, index) => (
+                <tr
+                  key={template.id}
+                  className={`peachtree-grid-row ${!template.isActive ? "opacity-60" : ""}`}
+                  data-testid={`row-template-${template.id}`}
+                >
+                  <td className="text-xs text-muted-foreground">{index + 1}</td>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-3 w-3 text-primary flex-shrink-0" />
+                      <span className="text-xs font-medium">{template.name}</span>
                     </div>
-                    <div>
-                      <h3 className="font-semibold">{template.name}</h3>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDateTime(template.createdAt)}
-                      </p>
+                  </td>
+                  <td className="text-xs text-muted-foreground truncate max-w-[200px]">
+                    {template.description || "-"}
+                  </td>
+                  <td className="text-center">
+                    <Badge 
+                      variant={template.isActive ? "default" : "secondary"}
+                      className="text-[10px] px-1.5 py-0"
+                    >
+                      {template.isActive ? "نشط" : "غير نشط"}
+                    </Badge>
+                  </td>
+                  <td className="text-xs text-muted-foreground">
+                    {formatDateTime(template.createdAt)}
+                  </td>
+                  <td>
+                    <div className="flex items-center justify-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleOpenDialog(template)}
+                        data-testid={`button-edit-template-${template.id}`}
+                        className="h-6 w-6 p-0"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (confirm("هل أنت متأكد من حذف هذا النموذج؟")) {
+                            deleteMutation.mutate(template.id);
+                          }
+                        }}
+                        className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                        data-testid={`button-delete-template-${template.id}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
                     </div>
-                  </div>
-                  <Badge variant={template.isActive ? "default" : "secondary"}>
-                    {template.isActive ? "نشط" : "غير نشط"}
-                  </Badge>
-                </div>
-                {template.description && (
-                  <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                    {template.description}
-                  </p>
-                )}
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleOpenDialog(template)}
-                    data-testid={`button-edit-template-${template.id}`}
-                  >
-                    <Edit2 className="h-4 w-4 ml-1" />
-                    تعديل
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (confirm("هل أنت متأكد من حذف هذا النموذج؟")) {
-                        deleteMutation.mutate(template.id);
-                      }
-                    }}
-                    className="text-destructive hover:text-destructive"
-                    data-testid={`button-delete-template-${template.id}`}
-                  >
-                    <Trash2 className="h-4 w-4 ml-1" />
-                    حذف
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Add/Edit Dialog */}
+      {/* Compact Add/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-md" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>
-              {editingTemplate ? "تعديل نموذج" : "إضافة نموذج جديد"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">اسم النموذج *</Label>
-              <Input
+        <DialogContent className="max-w-sm p-0" dir="rtl">
+          <div className="peachtree-toolbar">
+            <DialogHeader className="p-0">
+              <DialogTitle className="text-sm font-semibold">
+                {editingTemplate ? "تعديل نموذج" : "إضافة نموذج جديد"}
+              </DialogTitle>
+            </DialogHeader>
+          </div>
+          <div className="p-3 space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="name" className="text-xs">اسم النموذج *</Label>
+              <input
                 id="name"
+                type="text"
                 value={formData.name || ""}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="مثال: قيد الرواتب الشهرية"
+                className="peachtree-input w-full"
                 data-testid="input-template-name"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">الوصف</Label>
-              <Textarea
+            <div className="space-y-1">
+              <Label htmlFor="description" className="text-xs">الوصف</Label>
+              <textarea
                 id="description"
                 value={formData.description || ""}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="وصف إضافي للنموذج (اختياري)"
-                rows={3}
+                rows={2}
+                className="peachtree-input w-full resize-none"
+                style={{ height: 'auto', minHeight: '52px' }}
                 data-testid="input-template-description"
               />
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={handleCloseDialog} data-testid="button-cancel">
+          <div className="peachtree-toolbar flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={handleCloseDialog} data-testid="button-cancel" className="h-7 text-xs">
               إلغاء
             </Button>
             <Button
+              size="sm"
               onClick={handleSubmit}
               disabled={createMutation.isPending || updateMutation.isPending}
               data-testid="button-save-template"
+              className="h-7 text-xs"
             >
               {createMutation.isPending || updateMutation.isPending
                 ? "جاري الحفظ..."
@@ -300,7 +319,7 @@ export default function Templates() {
                 ? "تحديث"
                 : "إضافة"}
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -121,132 +121,129 @@ export default function JournalEntries() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="p-3 space-y-3">
+      {/* Page Header - Peachtree Toolbar Style */}
+      <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2 rounded">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">القيود اليومية</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="text-sm font-bold text-foreground">القيود اليومية</h1>
+          <p className="text-xs text-muted-foreground">
             إدارة القيود المحاسبية ({entries?.length || 0} قيد)
           </p>
         </div>
         <Link href="/journal-entries/new">
-          <Button data-testid="button-add-journal-entry">
-            <Plus className="h-4 w-4 ml-2" />
+          <Button size="sm" data-testid="button-add-journal-entry" className="text-xs h-7">
+            <Plus className="h-3 w-3 ml-1" />
             قيد جديد
           </Button>
         </Link>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="بحث برقم القيد أو البيان..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pr-10"
-                data-testid="input-search-entries"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]" data-testid="select-status-filter">
-                <Filter className="h-4 w-4 ml-2" />
-                <SelectValue placeholder="الحالة" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">جميع الحالات</SelectItem>
-                <SelectItem value="draft">مسودة</SelectItem>
-                <SelectItem value="posted">مُرحّل</SelectItem>
-                <SelectItem value="reversed">ملغي</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-[150px]"
-                placeholder="من تاريخ"
-                data-testid="input-date-from"
-              />
-              <span className="text-muted-foreground">إلى</span>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-[150px]"
-                placeholder="إلى تاريخ"
-                data-testid="input-date-to"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Filters - Compact Peachtree Style */}
+      <div className="peachtree-toolbar flex items-center gap-2 flex-wrap rounded">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+          <Input
+            placeholder="بحث برقم القيد أو البيان..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="peachtree-input pr-7 text-xs"
+            data-testid="input-search-entries"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="peachtree-select w-[120px] text-xs" data-testid="select-status-filter">
+            <Filter className="h-3 w-3 ml-1" />
+            <SelectValue placeholder="الحالة" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-xs">جميع الحالات</SelectItem>
+            <SelectItem value="draft" className="text-xs">مسودة</SelectItem>
+            <SelectItem value="posted" className="text-xs">مُرحّل</SelectItem>
+            <SelectItem value="reversed" className="text-xs">ملغي</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-1">
+          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="peachtree-input w-[120px] text-xs"
+            placeholder="من تاريخ"
+            data-testid="input-date-from"
+          />
+          <span className="text-xs text-muted-foreground">إلى</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="peachtree-input w-[120px] text-xs"
+            placeholder="إلى تاريخ"
+            data-testid="input-date-to"
+          />
+        </div>
+      </div>
 
-      {/* Entries Table */}
-      <Card>
-        <ScrollArea className="h-[calc(100vh-320px)]">
-          <Table className="accounting-table">
-            <TableHeader>
+      {/* Entries Table - Peachtree Grid Style */}
+      <div className="peachtree-grid rounded">
+        <ScrollArea className="h-[calc(100vh-280px)]">
+          <Table>
+            <TableHeader className="peachtree-grid-header">
               <TableRow>
-                <TableHead className="w-[80px]">رقم القيد</TableHead>
-                <TableHead className="w-[120px]">التاريخ</TableHead>
-                <TableHead>البيان</TableHead>
-                <TableHead className="w-[120px]">المرجع</TableHead>
-                <TableHead className="w-[140px] text-left">المدين</TableHead>
-                <TableHead className="w-[140px] text-left">الدائن</TableHead>
-                <TableHead className="w-[100px]">الحالة</TableHead>
-                <TableHead className="w-[140px]">الإجراءات</TableHead>
+                <TableHead className="w-[70px] text-xs">رقم القيد</TableHead>
+                <TableHead className="w-[90px] text-xs">التاريخ</TableHead>
+                <TableHead className="text-xs">البيان</TableHead>
+                <TableHead className="w-[100px] text-xs">المرجع</TableHead>
+                <TableHead className="w-[110px] text-xs text-left">المدين</TableHead>
+                <TableHead className="w-[110px] text-xs text-left">الدائن</TableHead>
+                <TableHead className="w-[80px] text-xs">الحالة</TableHead>
+                <TableHead className="w-[100px] text-xs">الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredEntries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-4 text-xs text-muted-foreground">
                     لا توجد قيود
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredEntries.map((entry) => (
-                  <TableRow key={entry.id} data-testid={`row-entry-${entry.id}`}>
-                    <TableCell className="font-mono font-bold text-primary">
+                  <TableRow key={entry.id} className="peachtree-grid-row" data-testid={`row-entry-${entry.id}`}>
+                    <TableCell className="font-mono text-xs font-bold text-primary">
                       {entry.entryNumber}
                     </TableCell>
-                    <TableCell>{formatDateShort(entry.entryDate)}</TableCell>
-                    <TableCell className="font-medium max-w-[300px] truncate">
+                    <TableCell className="text-xs">{formatDateShort(entry.entryDate)}</TableCell>
+                    <TableCell className="text-xs font-medium max-w-[250px] truncate">
                       {entry.description}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-xs text-muted-foreground">
                       {entry.reference || "-"}
                     </TableCell>
-                    <TableCell className="accounting-number debit-amount">
+                    <TableCell className="peachtree-amount peachtree-amount-debit font-mono text-xs">
                       {formatCurrency(entry.totalDebit)}
                     </TableCell>
-                    <TableCell className="accounting-number credit-amount">
+                    <TableCell className="peachtree-amount peachtree-amount-credit font-mono text-xs">
                       {formatCurrency(entry.totalCredit)}
                     </TableCell>
                     <TableCell>
                       <Badge
                         variant="outline"
-                        className={getStatusBadgeClass(entry.status)}
+                        className={`text-[10px] px-1.5 py-0 ${getStatusBadgeClass(entry.status)}`}
                       >
                         {journalStatusLabels[entry.status]}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0.5">
                         <Link href={`/journal-entries/${entry.id}`}>
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-6 w-6"
                             data-testid={`button-view-entry-${entry.id}`}
                           >
-                            <Eye className="h-4 w-4" />
+                            <Eye className="h-3 w-3" />
                           </Button>
                         </Link>
                         {entry.status === "draft" && (
@@ -255,24 +252,25 @@ export default function JournalEntries() {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className="h-6 w-6"
                                 data-testid={`button-edit-entry-${entry.id}`}
                               >
-                                <Edit2 className="h-4 w-4" />
+                                <Edit2 className="h-3 w-3" />
                               </Button>
                             </Link>
                             <Button
                               variant="ghost"
                               size="icon"
+                              className="h-6 w-6 text-emerald-600 hover:text-emerald-700"
                               onClick={() => {
                                 if (confirm("هل تريد ترحيل هذا القيد؟ لن يمكن تعديله بعد الترحيل.")) {
                                   postMutation.mutate(entry.id);
                                 }
                               }}
                               disabled={postMutation.isPending}
-                              className="text-emerald-600 hover:text-emerald-700"
                               data-testid={`button-post-entry-${entry.id}`}
                             >
-                              <CheckCircle className="h-4 w-4" />
+                              <CheckCircle className="h-3 w-3" />
                             </Button>
                           </>
                         )}
@@ -280,16 +278,16 @@ export default function JournalEntries() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-6 w-6 text-destructive hover:text-destructive/80"
                             onClick={() => {
                               if (confirm("هل تريد إلغاء هذا القيد؟ سيتم إنشاء قيد عكسي.")) {
                                 reverseMutation.mutate(entry.id);
                               }
                             }}
                             disabled={reverseMutation.isPending}
-                            className="text-destructive hover:text-destructive/80"
                             data-testid={`button-reverse-entry-${entry.id}`}
                           >
-                            <RotateCcw className="h-4 w-4" />
+                            <RotateCcw className="h-3 w-3" />
                           </Button>
                         )}
                       </div>
@@ -300,58 +298,56 @@ export default function JournalEntries() {
             </TableBody>
           </Table>
         </ScrollArea>
-      </Card>
+      </div>
 
-      {/* Summary */}
+      {/* Summary - Peachtree Totals Style */}
       {filteredEntries.length > 0 && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">إجمالي القيود:</span>
-                  <Badge variant="secondary">{filteredEntries.length}</Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">مسودة:</span>
-                  <Badge className="status-draft">
-                    {filteredEntries.filter((e) => e.status === "draft").length}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">مُرحّل:</span>
-                  <Badge className="status-posted">
-                    {filteredEntries.filter((e) => e.status === "posted").length}
-                  </Badge>
-                </div>
+        <div className="peachtree-totals rounded p-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">إجمالي القيود:</span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{filteredEntries.length}</Badge>
               </div>
-              <div className="flex items-center gap-6">
-                <div className="text-left">
-                  <p className="text-xs text-muted-foreground">إجمالي المدين</p>
-                  <p className="text-lg font-bold accounting-number debit-amount">
-                    {formatCurrency(
-                      filteredEntries.reduce(
-                        (sum, e) => sum + parseFloat(e.totalDebit || "0"),
-                        0
-                      )
-                    )}
-                  </p>
-                </div>
-                <div className="text-left">
-                  <p className="text-xs text-muted-foreground">إجمالي الدائن</p>
-                  <p className="text-lg font-bold accounting-number credit-amount">
-                    {formatCurrency(
-                      filteredEntries.reduce(
-                        (sum, e) => sum + parseFloat(e.totalCredit || "0"),
-                        0
-                      )
-                    )}
-                  </p>
-                </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">مسودة:</span>
+                <Badge className="status-draft text-[10px] px-1.5 py-0">
+                  {filteredEntries.filter((e) => e.status === "draft").length}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">مُرحّل:</span>
+                <Badge className="status-posted text-[10px] px-1.5 py-0">
+                  {filteredEntries.filter((e) => e.status === "posted").length}
+                </Badge>
               </div>
             </div>
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-4">
+              <div className="text-left">
+                <p className="text-[10px] text-muted-foreground">إجمالي المدين</p>
+                <p className="text-sm font-bold peachtree-amount peachtree-amount-debit font-mono">
+                  {formatCurrency(
+                    filteredEntries.reduce(
+                      (sum, e) => sum + parseFloat(e.totalDebit || "0"),
+                      0
+                    )
+                  )}
+                </p>
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] text-muted-foreground">إجمالي الدائن</p>
+                <p className="text-sm font-bold peachtree-amount peachtree-amount-credit font-mono">
+                  {formatCurrency(
+                    filteredEntries.reduce(
+                      (sum, e) => sum + parseFloat(e.totalCredit || "0"),
+                      0
+                    )
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

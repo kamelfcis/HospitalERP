@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   FileText, 
   BookOpen, 
@@ -12,7 +11,6 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import type { JournalEntry, Account, CostCenter, FiscalPeriod } from "@shared/schema";
 
 interface DashboardStats {
@@ -34,173 +32,193 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="p-2 space-y-2">
+        <div className="peachtree-toolbar">
+          <Skeleton className="h-5 w-32" />
+        </div>
+        <div className="grid grid-cols-4 gap-2">
           {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <Skeleton className="h-4 w-24 mb-2" />
-                <Skeleton className="h-8 w-16" />
-              </CardContent>
-            </Card>
+            <div key={i} className="peachtree-grid p-2">
+              <Skeleton className="h-4 w-20 mb-1" />
+              <Skeleton className="h-6 w-12" />
+            </div>
           ))}
         </div>
       </div>
     );
   }
 
-  const statCards = [
-    {
-      title: "دليل الحسابات",
-      value: stats?.totalAccounts || 0,
-      icon: BookOpen,
-      color: "text-primary",
-      bgColor: "bg-primary/10",
-    },
-    {
-      title: "مراكز التكلفة",
-      value: stats?.totalCostCenters || 0,
-      icon: Building2,
-      color: "text-emerald-600",
-      bgColor: "bg-emerald-100",
-    },
-    {
-      title: "القيود المُرحّلة",
-      value: stats?.postedEntries || 0,
-      icon: CheckCircle2,
-      color: "text-green-600",
-      bgColor: "bg-green-100",
-    },
-    {
-      title: "قيود مسودة",
-      value: stats?.draftEntries || 0,
-      icon: Clock,
-      color: "text-amber-600",
-      bgColor: "bg-amber-100",
-    },
+  const statItems = [
+    { label: "دليل الحسابات", value: stats?.totalAccounts || 0, icon: BookOpen, color: "text-blue-700" },
+    { label: "مراكز التكلفة", value: stats?.totalCostCenters || 0, icon: Building2, color: "text-emerald-700" },
+    { label: "القيود المُرحّلة", value: stats?.postedEntries || 0, icon: CheckCircle2, color: "text-green-700" },
+    { label: "قيود مسودة", value: stats?.draftEntries || 0, icon: Clock, color: "text-amber-700" },
   ];
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">لوحة التحكم</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            نظرة عامة على النظام المحاسبي
-          </p>
+    <div className="p-2 space-y-2">
+      {/* Page Header - Peachtree Toolbar Style */}
+      <div className="peachtree-toolbar flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <h1 className="text-sm font-semibold text-foreground">لوحة التحكم - نظرة عامة</h1>
         </div>
         {stats?.currentPeriod && (
-          <div className="flex items-center gap-2 bg-card border rounded-lg px-4 py-2">
-            <span className="text-sm text-muted-foreground">الفترة الحالية:</span>
-            <Badge variant="outline" className="font-medium">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground">الفترة:</span>
+            <span className="font-semibold px-2 py-0.5 bg-white dark:bg-card border rounded text-xs">
               {stats.currentPeriod.name}
-            </Badge>
+            </span>
           </div>
         )}
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((stat, index) => (
-          <Card key={index} className="hover-elevate">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">{stat.title}</p>
-                  <p className="text-3xl font-bold mt-2">{stat.value}</p>
-                </div>
-                <div className={`p-3 rounded-lg ${stat.bgColor}`}>
-                  <stat.icon className={`h-6 w-6 ${stat.color}`} />
-                </div>
+      {/* Stats Row - Compact Grid Style */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {statItems.map((stat, index) => (
+          <div key={index} className="peachtree-grid p-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">{stat.label}</p>
+                <p className="text-lg font-bold font-mono mt-0.5">{stat.value}</p>
               </div>
-            </CardContent>
-          </Card>
+              <stat.icon className={`h-5 w-5 ${stat.color} opacity-70`} />
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-4">
-            <CardTitle className="text-lg font-semibold">إجمالي الحركات</CardTitle>
-            <FileText className="h-5 w-5 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-4 bg-primary/5 rounded-lg">
-              <div className="flex items-center gap-3">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                <span className="font-medium">إجمالي المدين</span>
-              </div>
-              <span className="text-lg font-bold text-primary accounting-number">
-                {formatCurrency(stats?.totalDebits || 0)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <TrendingDown className="h-5 w-5 text-emerald-600" />
-                <span className="font-medium">إجمالي الدائن</span>
-              </div>
-              <span className="text-lg font-bold text-emerald-600 accounting-number">
-                {formatCurrency(stats?.totalCredits || 0)}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-4">
-            <CardTitle className="text-lg font-semibold">آخر القيود</CardTitle>
-            <Clock className="h-5 w-5 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {stats?.recentEntries && stats.recentEntries.length > 0 ? (
-              <div className="space-y-3">
-                {stats.recentEntries.slice(0, 5).map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                        <span className="text-xs font-bold text-primary">
-                          {entry.entryNumber}
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{entry.description}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDateShort(entry.entryDate)}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={
-                        entry.status === "posted"
-                          ? "status-posted"
-                          : entry.status === "draft"
-                          ? "status-draft"
-                          : "status-reversed"
-                      }
-                    >
-                      {entry.status === "posted"
-                        ? "مُرحّل"
-                        : entry.status === "draft"
-                        ? "مسودة"
-                        : "ملغي"}
-                    </Badge>
+      {/* Main Content - Two Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+        {/* Transactions Summary */}
+        <div className="peachtree-grid">
+          <table className="w-full">
+            <thead>
+              <tr className="peachtree-grid-header">
+                <th colSpan={2} className="text-right">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-3 w-3" />
+                    إجمالي الحركات
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                <AlertCircle className="h-12 w-12 mb-3 opacity-50" />
-                <p className="text-sm">لا توجد قيود حتى الآن</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="peachtree-grid-row">
+                <td className="text-xs py-2 px-3">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-3 w-3 text-red-600" />
+                    إجمالي المدين
+                  </div>
+                </td>
+                <td className="text-left py-2 px-3">
+                  <span className="font-mono text-sm peachtree-amount peachtree-amount-debit font-semibold">
+                    {formatCurrency(stats?.totalDebits || 0)}
+                  </span>
+                </td>
+              </tr>
+              <tr className="peachtree-grid-row">
+                <td className="text-xs py-2 px-3">
+                  <div className="flex items-center gap-2">
+                    <TrendingDown className="h-3 w-3 text-green-600" />
+                    إجمالي الدائن
+                  </div>
+                </td>
+                <td className="text-left py-2 px-3">
+                  <span className="font-mono text-sm peachtree-amount peachtree-amount-credit font-semibold">
+                    {formatCurrency(stats?.totalCredits || 0)}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr className={`${
+                stats?.totalDebits === stats?.totalCredits 
+                  ? "peachtree-totals-balanced" 
+                  : "peachtree-totals"
+              }`}>
+                <td className="text-xs py-2 px-3 font-semibold">الفرق</td>
+                <td className="text-left py-2 px-3">
+                  <span className="font-mono text-sm peachtree-amount font-bold">
+                    {formatCurrency(
+                      Math.abs(
+                        parseFloat(String(stats?.totalDebits || 0)) - 
+                        parseFloat(String(stats?.totalCredits || 0))
+                      )
+                    )}
+                  </span>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {/* Recent Entries Table */}
+        <div className="peachtree-grid">
+          <table className="w-full">
+            <thead>
+              <tr className="peachtree-grid-header">
+                <th className="w-12 text-center">رقم</th>
+                <th className="text-right">الوصف</th>
+                <th className="w-20 text-center">التاريخ</th>
+                <th className="w-16 text-center">الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats?.recentEntries && stats.recentEntries.length > 0 ? (
+                stats.recentEntries.slice(0, 6).map((entry) => (
+                  <tr key={entry.id} className="peachtree-grid-row">
+                    <td className="text-center py-1.5 px-2">
+                      <span className="font-mono text-xs font-semibold text-primary">
+                        {entry.entryNumber}
+                      </span>
+                    </td>
+                    <td className="text-xs py-1.5 px-2 truncate max-w-[200px]">
+                      {entry.description}
+                    </td>
+                    <td className="text-center py-1.5 px-2">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {formatDateShort(entry.entryDate)}
+                      </span>
+                    </td>
+                    <td className="text-center py-1.5 px-2">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        entry.status === "posted"
+                          ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                          : entry.status === "draft"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                          : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                      }`}>
+                        {entry.status === "posted" ? "مُرحّل" : entry.status === "draft" ? "مسودة" : "ملغي"}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr className="peachtree-grid-row">
+                  <td colSpan={4} className="text-center py-4 text-xs text-muted-foreground">
+                    <AlertCircle className="h-4 w-4 mx-auto mb-1 opacity-50" />
+                    لا توجد قيود حتى الآن
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Quick Stats Footer */}
+      <div className="peachtree-totals flex items-center justify-between px-3 py-2 text-xs">
+        <div className="flex items-center gap-4">
+          <span className="text-muted-foreground">إجمالي القيود:</span>
+          <span className="font-mono font-semibold">{stats?.totalJournalEntries || 0}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-muted-foreground">مُرحّلة:</span>
+          <span className="font-mono font-semibold text-green-700">{stats?.postedEntries || 0}</span>
+          <span className="text-muted-foreground">مسودة:</span>
+          <span className="font-mono font-semibold text-amber-700">{stats?.draftEntries || 0}</span>
+        </div>
       </div>
     </div>
   );
