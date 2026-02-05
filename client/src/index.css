@@ -509,3 +509,184 @@
     border-color: hsl(0 50% 40%);
   }
 }
+
+/* Print Styles - Professional Report Printing */
+@media print {
+  /* Hide sidebar and header when printing */
+  [data-sidebar],
+  [data-slot="sidebar"],
+  header,
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Remove sidebar gap and make content full width */
+  [data-slot="main-content"],
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  
+  /* Reset page layout for printing */
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+  }
+  
+  html {
+    direction: rtl !important;
+  }
+  
+  /* Print-friendly container */
+  .print-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Print header styling */
+  .print-header {
+    text-align: center;
+    margin-bottom: 20pt;
+    border-bottom: 2pt solid #333;
+    padding-bottom: 10pt;
+  }
+  
+  .print-header h1 {
+    font-size: 18pt !important;
+    font-weight: bold !important;
+    margin: 0 0 5pt 0 !important;
+    color: black !important;
+  }
+  
+  .print-header h2 {
+    font-size: 14pt !important;
+    font-weight: 600 !important;
+    margin: 0 !important;
+    color: #333 !important;
+  }
+  
+  .print-header p {
+    font-size: 10pt !important;
+    color: #666 !important;
+    margin: 5pt 0 0 0 !important;
+  }
+  
+  /* Table printing styles */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 10pt !important;
+  }
+  
+  th, td {
+    border: 1pt solid #ccc !important;
+    padding: 4pt 6pt !important;
+    text-align: right !important;
+  }
+  
+  th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  tr:nth-child(even) {
+    background-color: #fafafa !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Number columns alignment */
+  .accounting-number,
+  .peachtree-amount,
+  [dir="ltr"] {
+    text-align: left !important;
+    direction: ltr !important;
+  }
+  
+  /* Print totals row */
+  .print-totals,
+  tfoot tr {
+    font-weight: bold !important;
+    background-color: #e8e8e8 !important;
+    border-top: 2pt solid #333 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Summary section */
+  .print-summary {
+    margin-top: 15pt;
+    padding: 10pt;
+    border: 1pt solid #ccc;
+    background: #f9f9f9 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Hide buttons and interactive elements */
+  button,
+  input,
+  select,
+  .btn,
+  [role="button"] {
+    display: none !important;
+  }
+  
+  /* Show buttons marked for print */
+  .print-show {
+    display: block !important;
+  }
+  
+  /* Page breaks */
+  .page-break-before {
+    page-break-before: always;
+  }
+  
+  .page-break-after {
+    page-break-after: always;
+  }
+  
+  .no-page-break {
+    page-break-inside: avoid;
+  }
+  
+  /* Card styling for print */
+  .rounded-lg,
+  .rounded-md,
+  [class*="rounded"] {
+    border-radius: 0 !important;
+  }
+  
+  /* Remove shadows for print */
+  [class*="shadow"] {
+    box-shadow: none !important;
+  }
+  
+  /* Footer for printed pages */
+  .print-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 9pt;
+    color: #666;
+    border-top: 1pt solid #ccc;
+    padding-top: 5pt;
+  }
+  
+  /* Page margins */
+  @page {
+    size: A4;
+    margin: 15mm 10mm;
+  }
+}

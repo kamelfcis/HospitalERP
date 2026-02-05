@@ -12,6 +12,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
   SidebarFooter,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
@@ -27,8 +28,12 @@ import {
   History,
   Settings,
   ClipboardList,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -103,6 +108,34 @@ const systemNavItems = [
   },
 ];
 
+function SidebarToggleButton() {
+  const { state, toggleSidebar } = useSidebar();
+  const isCollapsed = state === "collapsed";
+  
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleSidebar}
+          className="text-primary-foreground hover:bg-primary-foreground/10"
+          data-testid="button-sidebar-toggle"
+        >
+          {isCollapsed ? (
+            <PanelRightOpen className="h-5 w-5" />
+          ) : (
+            <PanelRightClose className="h-5 w-5" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {isCollapsed ? "فتح القائمة" : "إغلاق القائمة"}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function AppLayout({ children }: AppLayoutProps) {
   const [location] = useLocation();
 
@@ -114,7 +147,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full bg-background">
-        <Sidebar side="right" collapsible="icon">
+        <Sidebar side="right" collapsible="icon" className="no-print" data-sidebar="main">
           <SidebarHeader className="border-b border-border/50 p-4">
             <div className="flex flex-row-reverse items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
@@ -206,9 +239,9 @@ export function AppLayout({ children }: AppLayoutProps) {
         </Sidebar>
 
         <div className="flex flex-col flex-1 min-w-0">
-          <header className="flex items-center justify-between h-14 px-4 border-b bg-primary shrink-0">
+          <header className="flex items-center justify-between h-14 px-4 border-b bg-primary shrink-0 no-print">
             <div className="flex items-center gap-4">
-              <SidebarTrigger className="text-primary-foreground" data-testid="button-sidebar-toggle" />
+              <SidebarToggleButton />
               <h1 className="text-lg font-semibold text-primary-foreground">
                 نظام الحسابات العامة - المستشفى
               </h1>
