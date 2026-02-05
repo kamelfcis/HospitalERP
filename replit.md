@@ -93,6 +93,13 @@ Key entities include:
   - Compact Peachtree-style table formatting
   - Optimized for A4 paper with proper margins
   - CSS classes available: print-header, print-summary, no-print
+- **Department-Based Pricing** (Feb 5, 2026):
+  - Hospital departments table for different pricing tiers (صيدلية خارجية, صيدلية داخلية, عناية مركزة, غرفة عمليات, طوارئ, معمل تحاليل, أشعة)
+  - Items can have custom sale prices per department
+  - If no department-specific price, the default item sale price is used
+  - ItemCard includes "أسعار حسب القسم" section to manage department prices
+  - Add/edit/delete department prices via modal dialog
+  - API endpoint: GET /api/pricing?itemId=X&departmentId=Y returns effective price
 
 ## Pre-Release Testing Checklist
 Before publishing as final product, test the following:
@@ -107,6 +114,7 @@ Before publishing as final product, test the following:
 - [ ] Print: All reports print correctly without sidebar
 - [ ] Fiscal Periods: Open and close periods
 - [ ] Audit Log: Verify all actions are logged
+- [ ] Department Pricing: Add/edit/delete department-specific prices for items
 
 ## External Dependencies
 

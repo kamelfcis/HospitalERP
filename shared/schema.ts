@@ -207,6 +207,25 @@ export const salesTransactions = pgTable("sales_transactions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// الأقسام (صيدلية خارجية، صيدلية داخلية، عناية، عمليات...)
+export const departments = pgTable("departments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code", { length: 20 }).notNull().unique(),
+  nameAr: text("name_ar").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// أسعار الأصناف حسب القسم
+export const itemDepartmentPrices = pgTable("item_department_prices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  salePrice: decimal("sale_price", { precision: 18, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
@@ -228,6 +247,8 @@ export const insertItemFormTypeSchema = createInsertSchema(itemFormTypes).omit({
 export const insertItemSchema = createInsertSchema(items).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPurchaseTransactionSchema = createInsertSchema(purchaseTransactions).omit({ id: true, createdAt: true });
 export const insertSalesTransactionSchema = createInsertSchema(salesTransactions).omit({ id: true, createdAt: true });
+export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
+export const insertItemDepartmentPriceSchema = createInsertSchema(itemDepartmentPrices).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -268,6 +289,12 @@ export type PurchaseTransaction = typeof purchaseTransactions.$inferSelect;
 
 export type InsertSalesTransaction = z.infer<typeof insertSalesTransactionSchema>;
 export type SalesTransaction = typeof salesTransactions.$inferSelect;
+
+export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
+export type Department = typeof departments.$inferSelect;
+
+export type InsertItemDepartmentPrice = z.infer<typeof insertItemDepartmentPriceSchema>;
+export type ItemDepartmentPrice = typeof itemDepartmentPrices.$inferSelect;
 
 // Extended types for API responses
 export type JournalEntryWithLines = JournalEntry & {
@@ -321,4 +348,9 @@ export const unitLevelLabels: Record<string, string> = {
 // Extended type for Item with form type
 export type ItemWithFormType = Item & {
   formType?: ItemFormType;
+};
+
+// Extended type for ItemDepartmentPrice with department info
+export type ItemDepartmentPriceWithDepartment = ItemDepartmentPrice & {
+  department?: Department;
 };

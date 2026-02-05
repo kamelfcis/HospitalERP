@@ -30,10 +30,12 @@ import {
   AlertTriangle,
   Plus,
   Loader2,
+  Trash2,
+  Pencil,
 } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Item, ItemFormType, PurchaseTransaction, InsertItem } from "@shared/schema";
+import type { Item, ItemFormType, PurchaseTransaction, InsertItem, Department, ItemDepartmentPriceWithDepartment } from "@shared/schema";
 
 interface ItemWithFormType extends Item {
   formType?: ItemFormType;
@@ -56,6 +58,9 @@ export default function ItemCard() {
   const [showFormTypeDialog, setShowFormTypeDialog] = useState(false);
   const [newFormTypeName, setNewFormTypeName] = useState("");
   const [salesPeriod, setSalesPeriod] = useState("3");
+  const [showDeptPriceDialog, setShowDeptPriceDialog] = useState(false);
+  const [selectedDeptPrice, setSelectedDeptPrice] = useState<ItemDepartmentPriceWithDepartment | null>(null);
+  const [newDeptPrice, setNewDeptPrice] = useState<{ departmentId: string; salePrice: string }>({ departmentId: "", salePrice: "" });
 
   const [formData, setFormData] = useState<Partial<InsertItem>>({
     itemCode: "",
@@ -86,11 +91,7 @@ export default function ItemCard() {
   });
 
   const { data: lastPurchases } = useQuery<PurchaseTransaction[]>({
-    queryKey: ["/api/items", itemId, "last-purchases"],
-    queryFn: async () => {
-      const res = await fetch(`/api/items/${itemId}/last-purchases?limit=3`);
-      return res.json();
-    },
+    queryKey: [`/api/items/${itemId}/last-purchases?limit=3`],
     enabled: !!itemId,
   });
 
@@ -102,13 +103,19 @@ export default function ItemCard() {
     return { startDate: startDate.toISOString().split("T")[0], endDate };
   };
 
+  const { startDate, endDate } = getSalesDates();
+
   const { data: avgSales } = useQuery<AvgSalesResponse>({
-    queryKey: ["/api/items", itemId, "avg-sales", salesPeriod],
-    queryFn: async () => {
-      const { startDate, endDate } = getSalesDates();
-      const res = await fetch(`/api/items/${itemId}/avg-sales?startDate=${startDate}&endDate=${endDate}`);
-      return res.json();
-    },
+    queryKey: [`/api/items/${itemId}/avg-sales?startDate=${startDate}&endDate=${endDate}`],
+    enabled: !!itemId,
+  });
+
+  const { data: departments } = useQuery<Department[]>({
+    queryKey: ["/api/departments"],
+  });
+
+  const { data: departmentPrices, refetch: refetchDeptPrices } = useQuery<ItemDepartmentPriceWithDepartment[]>({
+    queryKey: [`/api/items/${itemId}/department-prices`],
     enabled: !!itemId,
   });
 
@@ -173,6 +180,51 @@ export default function ItemCard() {
     },
   });
 
+  const createDeptPriceMutation = useMutation({
+    mutationFn: async (data: { departmentId: string; salePrice: string }) => {
+      return apiRequest("POST", `/api/items/${itemId}/department-prices`, data);
+    },
+    onSuccess: () => {
+      refetchDeptPrices();
+      setShowDeptPriceDialog(false);
+      setNewDeptPrice({ departmentId: "", salePrice: "" });
+      setSelectedDeptPrice(null);
+      toast({ title: "تم إضافة سعر القسم بنجاح" });
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateDeptPriceMutation = useMutation({
+    mutationFn: async (data: { id: string; salePrice: string }) => {
+      return apiRequest("PUT", `/api/item-department-prices/${data.id}`, { salePrice: data.salePrice });
+    },
+    onSuccess: () => {
+      refetchDeptPrices();
+      setShowDeptPriceDialog(false);
+      setNewDeptPrice({ departmentId: "", salePrice: "" });
+      setSelectedDeptPrice(null);
+      toast({ title: "تم تحديث سعر القسم بنجاح" });
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteDeptPriceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/item-department-prices/${id}`);
+    },
+    onSuccess: () => {
+      refetchDeptPrices();
+      toast({ title: "تم حذف سعر القسم" });
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleSave = () => {
     if (!formData.itemCode || !formData.nameAr) {
       toast({ title: "خطأ", description: "الكود والاسم العربي مطلوبان", variant: "destructive" });
@@ -199,6 +251,38 @@ export default function ItemCard() {
       return `1 ${major} = ${toMedium} ${medium} = ${toMinor} ${minor}`;
     }
     return `1 ${major} = ${toMinor} ${minor}`;
+  };
+
+  const availableDepartments = departments?.filter(
+    (dept) => !departmentPrices?.some((dp) => dp.departmentId === dept.id)
+  ) || [];
+
+  const handleOpenDeptPriceDialog = (deptPrice?: ItemDepartmentPriceWithDepartment) => {
+    if (deptPrice) {
+      setSelectedDeptPrice(deptPrice);
+      setNewDeptPrice({ departmentId: deptPrice.departmentId, salePrice: deptPrice.salePrice });
+    } else {
+      setSelectedDeptPrice(null);
+      setNewDeptPrice({ departmentId: "", salePrice: "" });
+    }
+    setShowDeptPriceDialog(true);
+  };
+
+  const handleSaveDeptPrice = () => {
+    const price = parseFloat(newDeptPrice.salePrice);
+    if (!newDeptPrice.salePrice || price <= 0) {
+      toast({ title: "خطأ", description: "سعر البيع يجب أن يكون موجب", variant: "destructive" });
+      return;
+    }
+    if (selectedDeptPrice) {
+      updateDeptPriceMutation.mutate({ id: selectedDeptPrice.id, salePrice: newDeptPrice.salePrice });
+    } else {
+      if (!newDeptPrice.departmentId) {
+        toast({ title: "خطأ", description: "يرجى اختيار القسم", variant: "destructive" });
+        return;
+      }
+      createDeptPriceMutation.mutate(newDeptPrice);
+    }
   };
 
   if (isLoading && !isNew) {
@@ -240,7 +324,7 @@ export default function ItemCard() {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-6 text-[11px] gap-1 px-2"
+                className="text-[11px] gap-1 px-2"
                 onClick={() => isNew ? navigate("/items") : setIsEditing(false)}
                 data-testid="button-cancel"
               >
@@ -249,7 +333,7 @@ export default function ItemCard() {
               </Button>
               <Button
                 size="sm"
-                className="h-6 text-[11px] gap-1 px-2 bg-emerald-600 hover:bg-emerald-700"
+                className="text-[11px] gap-1 px-2"
                 onClick={handleSave}
                 disabled={saveMutation.isPending}
                 data-testid="button-save"
@@ -259,11 +343,11 @@ export default function ItemCard() {
               </Button>
             </>
           ) : (
-            <Button size="sm" className="h-6 text-[11px] px-2" onClick={() => setIsEditing(true)} data-testid="button-edit">
+            <Button size="sm" className="text-[11px] px-2" onClick={() => setIsEditing(true)} data-testid="button-edit">
               تعديل
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 px-2" onClick={() => navigate("/items")} data-testid="button-back">
+          <Button variant="ghost" size="sm" className="text-[11px] gap-1 px-2" onClick={() => navigate("/items")} data-testid="button-back">
             <ArrowRight className="h-3 w-3" />
             رجوع
           </Button>
@@ -342,7 +426,7 @@ export default function ItemCard() {
                       </SelectContent>
                     </Select>
                     {isEditing && (
-                      <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setShowFormTypeDialog(true)} data-testid="button-add-form-type">
+                      <Button variant="outline" size="icon" onClick={() => setShowFormTypeDialog(true)} data-testid="button-add-form-type">
                         <Plus className="h-3 w-3" />
                       </Button>
                     )}
@@ -577,6 +661,89 @@ export default function ItemCard() {
                   </div>
                 </div>
               </fieldset>
+
+              <fieldset className="peachtree-grid p-2 flex-1">
+                <legend className="text-[11px] font-semibold px-1 text-primary">أسعار حسب القسم</legend>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] text-muted-foreground">السعر الافتراضي: {formatCurrency(item?.salePriceCurrent || "0")}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-[10px] gap-0.5 px-1"
+                    onClick={() => handleOpenDeptPriceDialog()}
+                    disabled={availableDepartments.length === 0}
+                    data-testid="button-add-dept-price"
+                  >
+                    <Plus className="h-3 w-3" />
+                    إضافة سعر لقسم
+                  </Button>
+                </div>
+                {departmentPrices && departmentPrices.length > 0 ? (
+                  <table className="w-full text-[10px]">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="py-1 px-1 text-right font-medium">القسم</th>
+                        <th className="py-1 px-1 text-left font-medium">سعر البيع</th>
+                        <th className="py-1 px-1 text-center font-medium w-12">إجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {departmentPrices.map((dp, i) => (
+                        <tr key={dp.id} className={i < departmentPrices.length - 1 ? "border-b border-dashed" : ""}>
+                          <td className="py-1 px-1">{dp.department?.nameAr || "-"}</td>
+                          <td className="py-1 px-1 text-left font-mono">{formatCurrency(dp.salePrice)}</td>
+                          <td className="py-1 px-1 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenDeptPriceDialog(dp)}
+                                data-testid={`button-edit-dept-price-${dp.id}`}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive"
+                                onClick={() => deleteDeptPriceMutation.mutate(dp.id)}
+                                data-testid={`button-delete-dept-price-${dp.id}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-[10px] text-muted-foreground text-center py-2">
+                    جميع الأقسام تستخدم السعر الافتراضي
+                  </div>
+                )}
+                <div className="mt-2 pt-2 border-t">
+                  <div className="text-[9px] text-muted-foreground mb-1">ملخص الأسعار:</div>
+                  <div className="text-[10px] space-y-0.5">
+                    <div className="flex justify-between">
+                      <span>السعر الافتراضي:</span>
+                      <span className="font-mono font-medium">{formatCurrency(item?.salePriceCurrent || "0")}</span>
+                    </div>
+                    {departmentPrices?.map((dp) => (
+                      <div key={dp.id} className="flex justify-between text-primary">
+                        <span>{dp.department?.nameAr}:</span>
+                        <span className="font-mono font-medium">{formatCurrency(dp.salePrice)}</span>
+                      </div>
+                    ))}
+                    {departments?.filter(d => !departmentPrices?.some(dp => dp.departmentId === d.id)).map((dept) => (
+                      <div key={dept.id} className="flex justify-between text-muted-foreground">
+                        <span>{dept.nameAr}:</span>
+                        <span className="font-mono">(افتراضي)</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </fieldset>
             </div>
           )}
 
@@ -607,16 +774,89 @@ export default function ItemCard() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowFormTypeDialog(false)}>
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowFormTypeDialog(false)}>
               إلغاء
             </Button>
             <Button
               size="sm"
-              className="h-7 text-xs"
+              className="text-xs"
               onClick={() => createFormTypeMutation.mutate(newFormTypeName)}
               disabled={!newFormTypeName || createFormTypeMutation.isPending}
             >
               {createFormTypeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "إضافة"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeptPriceDialog} onOpenChange={setShowDeptPriceDialog}>
+        <DialogContent className="sm:max-w-[300px]">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              {selectedDeptPrice ? "تعديل سعر القسم" : "إضافة سعر لقسم"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div>
+              <Label className="text-[10px] text-muted-foreground">القسم</Label>
+              {selectedDeptPrice ? (
+                <div className="h-6 flex items-center text-[11px] px-1 bg-muted rounded">
+                  {selectedDeptPrice.department?.nameAr}
+                </div>
+              ) : (
+                <Select
+                  value={newDeptPrice.departmentId}
+                  onValueChange={(v) => setNewDeptPrice({ ...newDeptPrice, departmentId: v })}
+                >
+                  <SelectTrigger className="h-6 text-[11px] px-1" data-testid="select-department">
+                    <SelectValue placeholder="اختر القسم..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableDepartments.map((dept) => (
+                      <SelectItem key={dept.id} value={dept.id}>{dept.nameAr}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">سعر البيع</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newDeptPrice.salePrice}
+                onChange={(e) => setNewDeptPrice({ ...newDeptPrice, salePrice: e.target.value })}
+                placeholder="0.00"
+                className="h-6 text-[11px] px-1 font-mono text-left"
+                dir="ltr"
+                data-testid="input-dept-sale-price"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-[10px]"
+              onClick={() => {
+                setShowDeptPriceDialog(false);
+                setSelectedDeptPrice(null);
+                setNewDeptPrice({ departmentId: "", salePrice: "" });
+              }}
+            >
+              إلغاء
+            </Button>
+            <Button
+              size="sm"
+              className="text-[10px]"
+              onClick={handleSaveDeptPrice}
+              disabled={createDeptPriceMutation.isPending || updateDeptPriceMutation.isPending}
+            >
+              {(createDeptPriceMutation.isPending || updateDeptPriceMutation.isPending) ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                "حفظ"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

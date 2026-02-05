@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { accounts, costCenters, fiscalPeriods, journalEntries, journalLines, items, itemFormTypes, purchaseTransactions, salesTransactions } from "@shared/schema";
+import { accounts, costCenters, fiscalPeriods, journalEntries, journalLines, items, itemFormTypes, purchaseTransactions, salesTransactions, departments } from "@shared/schema";
 import { sql } from "drizzle-orm";
 
 export async function seedDatabase() {
@@ -15,6 +15,8 @@ export async function seedDatabase() {
       } else {
         console.log("Items already seeded");
       }
+      // Check if departments need to be seeded (independently)
+      await seedDepartmentsIfNeeded();
       return;
     }
 
@@ -599,6 +601,26 @@ async function seedItemsData() {
 
   console.log("Form types seeded");
 
+  // Seed Departments
+  const departmentsData = [
+    { code: "PHARM-OUT", nameAr: "صيدلية خارجية" },
+    { code: "PHARM-IN", nameAr: "صيدلية داخلية" },
+    { code: "ICU", nameAr: "عناية مركزة" },
+    { code: "OR", nameAr: "غرفة عمليات" },
+    { code: "ER", nameAr: "طوارئ" },
+    { code: "LAB", nameAr: "معمل تحاليل" },
+    { code: "RADIOLOGY", nameAr: "أشعة" },
+  ];
+
+  for (const dept of departmentsData) {
+    await db.insert(departments).values({
+      ...dept,
+      isActive: true,
+    });
+  }
+
+  console.log("Departments seeded");
+
   // Seed Items
   const itemsData = [
     {
@@ -817,4 +839,32 @@ async function seedItemsData() {
 
   console.log("Sales transactions seeded");
   console.log("Items data seeding completed!");
+}
+
+async function seedDepartmentsIfNeeded() {
+  const existingDepartments = await db.select().from(departments).limit(1);
+  if (existingDepartments.length > 0) {
+    console.log("Departments already seeded");
+    return;
+  }
+
+  console.log("Seeding departments...");
+  const departmentsData = [
+    { code: "PHARM-OUT", nameAr: "صيدلية خارجية" },
+    { code: "PHARM-IN", nameAr: "صيدلية داخلية" },
+    { code: "ICU", nameAr: "عناية مركزة" },
+    { code: "OR", nameAr: "غرفة عمليات" },
+    { code: "ER", nameAr: "طوارئ" },
+    { code: "LAB", nameAr: "معمل تحاليل" },
+    { code: "RADIOLOGY", nameAr: "أشعة" },
+  ];
+
+  for (const dept of departmentsData) {
+    await db.insert(departments).values({
+      ...dept,
+      isActive: true,
+    });
+  }
+
+  console.log("Departments seeded");
 }

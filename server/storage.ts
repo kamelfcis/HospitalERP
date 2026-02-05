@@ -14,6 +14,8 @@ import {
   itemFormTypes,
   purchaseTransactions,
   salesTransactions,
+  departments,
+  itemDepartmentPrices,
   type User,
   type InsertUser,
   type Account,
@@ -39,6 +41,11 @@ import {
   type InsertItemFormType,
   type ItemWithFormType,
   type PurchaseTransaction,
+  type Department,
+  type InsertDepartment,
+  type ItemDepartmentPrice,
+  type InsertItemDepartmentPrice,
+  type ItemDepartmentPriceWithDepartment,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -116,6 +123,20 @@ export interface IStorage {
   // Purchase & Sales Transactions
   getLastPurchases(itemId: string, limit?: number): Promise<PurchaseTransaction[]>;
   getAverageSales(itemId: string, startDate: string, endDate: string): Promise<{ avgPrice: string; totalQty: string; invoiceCount: number }>;
+
+  // Departments
+  getDepartments(): Promise<Department[]>;
+  getDepartment(id: string): Promise<Department | undefined>;
+  createDepartment(dept: InsertDepartment): Promise<Department>;
+  updateDepartment(id: string, dept: Partial<InsertDepartment>): Promise<Department | undefined>;
+  deleteDepartment(id: string): Promise<boolean>;
+
+  // Item Department Prices
+  getItemDepartmentPrices(itemId: string): Promise<ItemDepartmentPriceWithDepartment[]>;
+  createItemDepartmentPrice(price: InsertItemDepartmentPrice): Promise<ItemDepartmentPrice>;
+  updateItemDepartmentPrice(id: string, price: Partial<InsertItemDepartmentPrice>): Promise<ItemDepartmentPrice | undefined>;
+  deleteItemDepartmentPrice(id: string): Promise<boolean>;
+  getItemPriceForDepartment(itemId: string, departmentId: string): Promise<string>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -918,6 +939,89 @@ export class DatabaseStorage implements IStorage {
       totalQty: result?.totalQty || "0",
       invoiceCount: result?.invoiceCount || 0,
     };
+  }
+
+  // Departments
+  async getDepartments(): Promise<Department[]> {
+    return db.select().from(departments).orderBy(asc(departments.code));
+  }
+
+  async getDepartment(id: string): Promise<Department | undefined> {
+    const [dept] = await db.select().from(departments).where(eq(departments.id, id));
+    return dept;
+  }
+
+  async createDepartment(dept: InsertDepartment): Promise<Department> {
+    const [newDept] = await db.insert(departments).values(dept).returning();
+    return newDept;
+  }
+
+  async updateDepartment(id: string, dept: Partial<InsertDepartment>): Promise<Department | undefined> {
+    const [updated] = await db.update(departments)
+      .set(dept)
+      .where(eq(departments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDepartment(id: string): Promise<boolean> {
+    await db.delete(departments).where(eq(departments.id, id));
+    return true;
+  }
+
+  // Item Department Prices
+  async getItemDepartmentPrices(itemId: string): Promise<ItemDepartmentPriceWithDepartment[]> {
+    const prices = await db.select()
+      .from(itemDepartmentPrices)
+      .where(eq(itemDepartmentPrices.itemId, itemId))
+      .orderBy(asc(itemDepartmentPrices.createdAt));
+
+    const result: ItemDepartmentPriceWithDepartment[] = [];
+    for (const price of prices) {
+      const [dept] = await db.select().from(departments).where(eq(departments.id, price.departmentId));
+      result.push({
+        ...price,
+        department: dept,
+      });
+    }
+    return result;
+  }
+
+  async createItemDepartmentPrice(price: InsertItemDepartmentPrice): Promise<ItemDepartmentPrice> {
+    const [newPrice] = await db.insert(itemDepartmentPrices).values(price).returning();
+    return newPrice;
+  }
+
+  async updateItemDepartmentPrice(id: string, price: Partial<InsertItemDepartmentPrice>): Promise<ItemDepartmentPrice | undefined> {
+    const [updated] = await db.update(itemDepartmentPrices)
+      .set({ ...price, updatedAt: new Date() })
+      .where(eq(itemDepartmentPrices.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteItemDepartmentPrice(id: string): Promise<boolean> {
+    await db.delete(itemDepartmentPrices).where(eq(itemDepartmentPrices.id, id));
+    return true;
+  }
+
+  async getItemPriceForDepartment(itemId: string, departmentId: string): Promise<string> {
+    const [deptPrice] = await db.select()
+      .from(itemDepartmentPrices)
+      .where(and(
+        eq(itemDepartmentPrices.itemId, itemId),
+        eq(itemDepartmentPrices.departmentId, departmentId)
+      ));
+
+    if (deptPrice) {
+      return deptPrice.salePrice;
+    }
+
+    const [item] = await db.select({ salePriceCurrent: items.salePriceCurrent })
+      .from(items)
+      .where(eq(items.id, itemId));
+
+    return item?.salePriceCurrent || "0";
   }
 }
 

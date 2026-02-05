@@ -8,6 +8,8 @@ import {
   insertJournalTemplateSchema,
   insertItemSchema,
   insertItemFormTypeSchema,
+  insertDepartmentSchema,
+  insertItemDepartmentPriceSchema,
   accounts,
   accountTypeLabels
 } from "@shared/schema";
@@ -1020,6 +1022,121 @@ export async function registerRoutes(
 
       const result = await storage.getAverageSales(req.params.id, startDate, endDate);
       res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== DEPARTMENTS =====
+  app.get("/api/departments", async (req, res) => {
+    try {
+      const departments = await storage.getDepartments();
+      res.json(departments);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/departments/:id", async (req, res) => {
+    try {
+      const department = await storage.getDepartment(req.params.id);
+      if (!department) {
+        return res.status(404).json({ message: "القسم غير موجود" });
+      }
+      res.json(department);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/departments", async (req, res) => {
+    try {
+      const parsed = insertDepartmentSchema.parse(req.body);
+      const department = await storage.createDepartment(parsed);
+      res.status(201).json(department);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/departments/:id", async (req, res) => {
+    try {
+      const parsed = insertDepartmentSchema.partial().parse(req.body);
+      const department = await storage.updateDepartment(req.params.id, parsed);
+      if (!department) {
+        return res.status(404).json({ message: "القسم غير موجود" });
+      }
+      res.json(department);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/departments/:id", async (req, res) => {
+    try {
+      await storage.deleteDepartment(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== ITEM DEPARTMENT PRICES =====
+  app.get("/api/items/:id/department-prices", async (req, res) => {
+    try {
+      const prices = await storage.getItemDepartmentPrices(req.params.id);
+      res.json(prices);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/items/:id/department-prices", async (req, res) => {
+    try {
+      const parsed = insertItemDepartmentPriceSchema.parse({
+        ...req.body,
+        itemId: req.params.id,
+      });
+      const price = await storage.createItemDepartmentPrice(parsed);
+      res.status(201).json(price);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/item-department-prices/:id", async (req, res) => {
+    try {
+      const parsed = insertItemDepartmentPriceSchema.partial().parse(req.body);
+      const price = await storage.updateItemDepartmentPrice(req.params.id, parsed);
+      if (!price) {
+        return res.status(404).json({ message: "السعر غير موجود" });
+      }
+      res.json(price);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/item-department-prices/:id", async (req, res) => {
+    try {
+      await storage.deleteItemDepartmentPrice(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/pricing", async (req, res) => {
+    try {
+      const { itemId, departmentId } = req.query;
+      if (!itemId || !departmentId) {
+        return res.status(400).json({ message: "itemId و departmentId مطلوبان" });
+      }
+      const price = await storage.getItemPriceForDepartment(
+        itemId as string,
+        departmentId as string
+      );
+      res.json({ price });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Package,
   Search,
   Plus,
@@ -20,7 +30,10 @@ import {
   ChevronRight,
   AlertTriangle,
   Eye,
+  Trash2,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Item, ItemFormType } from "@shared/schema";
@@ -32,6 +45,7 @@ interface ItemsResponse {
 }
 
 export default function ItemsList() {
+  const { toast } = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -39,6 +53,8 @@ export default function ItemsList() {
   const [isToxic, setIsToxic] = useState<string>("all");
   const [isActive, setIsActive] = useState<string>("all");
   const [formTypeId, setFormTypeId] = useState<string>("all");
+  const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
+  const [deleteItemName, setDeleteItemName] = useState<string>("");
   const limit = 20;
 
   const { data: formTypes } = useQuery<ItemFormType[]>({
@@ -65,6 +81,31 @@ export default function ItemsList() {
       return response.json();
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/items/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/items"] });
+      toast({ title: "تم حذف الصنف بنجاح" });
+      setDeleteItemId(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleDelete = (id: string, name: string) => {
+    setDeleteItemId(id);
+    setDeleteItemName(name);
+  };
+
+  const confirmDelete = () => {
+    if (deleteItemId) {
+      deleteMutation.mutate(deleteItemId);
+    }
+  };
 
   const handleSearch = () => {
     setSearch(searchInput);
@@ -247,17 +288,28 @@ export default function ItemsList() {
                     )}
                   </td>
                   <td>
-                    <Link href={`/items/${item.id}`}>
+                    <div className="flex items-center gap-1">
+                      <Link href={`/items/${item.id}`}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs gap-1"
+                          data-testid={`button-view-${item.id}`}
+                        >
+                          <Eye className="h-3 w-3" />
+                          عرض
+                        </Button>
+                      </Link>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 px-2 text-xs gap-1"
-                        data-testid={`button-view-${item.id}`}
+                        className="h-6 px-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => handleDelete(item.id, item.nameAr)}
+                        data-testid={`button-delete-${item.id}`}
                       >
-                        <Eye className="h-3 w-3" />
-                        عرض
+                        <Trash2 className="h-3 w-3" />
                       </Button>
-                    </Link>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -306,6 +358,29 @@ export default function ItemsList() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={!!deleteItemId} onOpenChange={() => setDeleteItemId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف الصنف "{deleteItemName}"؟
+              <br />
+              لا يمكن التراجع عن هذا الإجراء.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete"
+            >
+              حذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
