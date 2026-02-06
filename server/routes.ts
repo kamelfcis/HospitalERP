@@ -1586,11 +1586,12 @@ export async function registerRoutes(
   // ===== SUPPLIER RECEIVING =====
   app.get("/api/receivings", async (req, res) => {
     try {
-      const { supplierId, warehouseId, status, fromDate, toDate, search, page, pageSize } = req.query;
+      const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page, pageSize } = req.query;
       const result = await storage.getReceivings({
         supplierId: supplierId as string | undefined,
         warehouseId: warehouseId as string | undefined,
         status: status as string | undefined,
+        statusFilter: statusFilter as string | undefined,
         fromDate: fromDate as string | undefined,
         toDate: toDate as string | undefined,
         search: search as string | undefined,

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, X, ScanBarcode, Truck, AlertTriangle, Check, BarChart3 } from "lucide-react";
+import { Loader2, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, X, ScanBarcode, Truck, AlertTriangle, Check, BarChart3, RotateCcw } from "lucide-react";
 import { ExpiryInput } from "@/components/ui/expiry-input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -64,12 +64,13 @@ export default function SupplierReceiving() {
 
   const [activeTab, setActiveTab] = useState<string>("log");
 
-  const [filterFromDate, setFilterFromDate] = useState("");
-  const [filterToDate, setFilterToDate] = useState("");
+  const [filterFromDate, setFilterFromDate] = useState(today);
+  const [filterToDate, setFilterToDate] = useState(today);
   const [filterSupplierId, setFilterSupplierId] = useState("");
   const [filterWarehouseId, setFilterWarehouseId] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("ALL");
   const [filterSearch, setFilterSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [logPage, setLogPage] = useState(1);
   const logPageSize = 20;
 
@@ -145,6 +146,14 @@ export default function SupplierReceiving() {
     },
   });
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(filterSearch.trim());
+      setLogPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [filterSearch]);
+
   const buildLogQueryString = () => {
     const params = new URLSearchParams();
     params.set("page", logPage.toString());
@@ -153,13 +162,13 @@ export default function SupplierReceiving() {
     if (filterToDate) params.set("toDate", filterToDate);
     if (filterSupplierId && filterSupplierId !== "all") params.set("supplierId", filterSupplierId);
     if (filterWarehouseId && filterWarehouseId !== "all") params.set("warehouseId", filterWarehouseId);
-    if (filterStatus && filterStatus !== "all") params.set("status", filterStatus);
-    if (filterSearch) params.set("search", filterSearch);
+    if (filterStatus && filterStatus !== "ALL") params.set("statusFilter", filterStatus);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     return params.toString();
   };
 
   const { data: receivingsData, isLoading: receivingsLoading } = useQuery<{ data: ReceivingHeaderWithDetails[]; total: number }>({
-    queryKey: ["/api/receivings", logPage, filterFromDate, filterToDate, filterSupplierId, filterWarehouseId, filterStatus, filterSearch],
+    queryKey: ["/api/receivings", logPage, filterFromDate, filterToDate, filterSupplierId, filterWarehouseId, filterStatus, debouncedSearch],
     queryFn: async () => {
       const res = await fetch(`/api/receivings?${buildLogQueryString()}`);
       if (!res.ok) throw new Error("Failed to fetch receivings");
@@ -171,9 +180,15 @@ export default function SupplierReceiving() {
   const totalReceivings = receivingsData?.total || 0;
   const totalPages = Math.max(1, Math.ceil(totalReceivings / logPageSize));
 
-  const handleFilterSearch = () => {
+  const handleResetFilters = () => {
+    setFilterFromDate(today);
+    setFilterToDate(today);
+    setFilterSupplierId("");
+    setFilterWarehouseId("");
+    setFilterStatus("ALL");
+    setFilterSearch("");
+    setDebouncedSearch("");
     setLogPage(1);
-    queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
   };
 
   const handleSupplierSearch = useCallback(async (text: string) => {
@@ -744,73 +759,82 @@ export default function SupplierReceiving() {
         </div>
 
         <TabsContent value="log" className="space-y-2">
-          <div className="peachtree-toolbar flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1">
-              <Label className="text-[10px] text-muted-foreground whitespace-nowrap">تاريخ من</Label>
-              <Input
-                type="date"
-                value={filterFromDate}
-                onChange={(e) => setFilterFromDate(e.target.value)}
-                className="h-7 text-[11px] px-1 w-[120px]"
-                data-testid="filter-from-date"
-              />
+          <div className="peachtree-toolbar space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative flex-1 min-w-[200px] max-w-[360px]">
+                <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="text"
+                  value={filterSearch}
+                  onChange={(e) => { setFilterSearch(e.target.value); setLogPage(1); }}
+                  placeholder="ابحث برقم فاتورة المورد أو اسم المورد"
+                  className="h-7 text-[11px] pr-7 pl-7"
+                  data-testid="filter-search"
+                />
+                {filterSearch && (
+                  <button
+                    type="button"
+                    onClick={() => { setFilterSearch(""); setDebouncedSearch(""); setLogPage(1); }}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    data-testid="button-clear-search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-[10px] text-muted-foreground whitespace-nowrap">من</Label>
+                <Input
+                  type="date"
+                  value={filterFromDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFilterFromDate(val);
+                    if (filterToDate && val > filterToDate) setFilterToDate(val);
+                    setLogPage(1);
+                  }}
+                  className="h-7 text-[11px] px-1 w-[120px]"
+                  data-testid="filter-from-date"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-[10px] text-muted-foreground whitespace-nowrap">إلى</Label>
+                <Input
+                  type="date"
+                  value={filterToDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFilterToDate(val);
+                    if (filterFromDate && val < filterFromDate) setFilterFromDate(val);
+                    setLogPage(1);
+                  }}
+                  className="h-7 text-[11px] px-1 w-[120px]"
+                  data-testid="filter-to-date"
+                />
+              </div>
+              <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setLogPage(1); }}>
+                <SelectTrigger className="h-7 text-[11px] px-1 w-[180px]" data-testid="filter-status">
+                  <SelectValue placeholder="الحالة" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">الكل</SelectItem>
+                  <SelectItem value="POSTED">تم الترحيل فقط</SelectItem>
+                  <SelectItem value="CONVERTED">تم التحويل إلى فاتورة شراء</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetFilters}
+                data-testid="button-reset-filters"
+              >
+                <RotateCcw className="h-3 w-3 ml-1" />
+                إعادة تعيين
+              </Button>
             </div>
-            <div className="flex items-center gap-1">
-              <Label className="text-[10px] text-muted-foreground whitespace-nowrap">تاريخ إلى</Label>
-              <Input
-                type="date"
-                value={filterToDate}
-                onChange={(e) => setFilterToDate(e.target.value)}
-                className="h-7 text-[11px] px-1 w-[120px]"
-                data-testid="filter-to-date"
-              />
-            </div>
-            <Select value={filterSupplierId} onValueChange={setFilterSupplierId}>
-              <SelectTrigger className="h-7 text-[11px] px-1 w-[140px]" data-testid="filter-supplier">
-                <SelectValue placeholder="المورد" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">الكل</SelectItem>
-                {allSuppliers?.suppliers?.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.nameAr}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterWarehouseId} onValueChange={setFilterWarehouseId}>
-              <SelectTrigger className="h-7 text-[11px] px-1 w-[140px]" data-testid="filter-warehouse">
-                <SelectValue placeholder="المستودع" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">الكل</SelectItem>
-                {warehouses?.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="h-7 text-[11px] px-1 w-[100px]" data-testid="filter-status">
-                <SelectValue placeholder="الحالة" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">الكل</SelectItem>
-                <SelectItem value="draft">مسودة</SelectItem>
-                <SelectItem value="posted">مُرحّل</SelectItem>
-                <SelectItem value="posted_qty_only">مُرحّل (كمية فقط)</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              type="text"
-              value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleFilterSearch()}
-              placeholder="بحث نصي..."
-              className="h-7 text-[11px] px-1 w-[140px]"
-              data-testid="filter-search"
-            />
-            <Button size="sm" onClick={handleFilterSearch} data-testid="button-filter-search">
-              <Search className="h-3 w-3 ml-1" />
-              بحث
-            </Button>
+            {filterFromDate && filterToDate && filterFromDate > filterToDate && (
+              <p className="text-[10px] text-destructive" data-testid="text-date-error">تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية</p>
+            )}
           </div>
 
           <div className="peachtree-grid">
@@ -844,15 +868,20 @@ export default function SupplierReceiving() {
                             <td className="py-1 px-2">{r.supplierInvoiceNo}</td>
                             <td className="py-1 px-2">{r.warehouse?.nameAr || "—"}</td>
                             <td className="py-1 px-2">
-                              {r.status === "posted" ? (
-                                <Badge variant="default" className="text-[9px] bg-green-600 no-default-hover-elevate no-default-active-elevate">
-                                  {receivingStatusLabels[r.status] || r.status}
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-[9px]">
-                                  {receivingStatusLabels[r.status] || r.status}
-                                </Badge>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {r.status === "posted" || r.status === "posted_qty_only" ? (
+                                  <Badge variant="default" className="text-[9px] bg-green-600 no-default-hover-elevate no-default-active-elevate">
+                                    {receivingStatusLabels[r.status] || r.status}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-[9px]">
+                                    {receivingStatusLabels[r.status] || r.status}
+                                  </Badge>
+                                )}
+                                {(r as any).convertedToInvoiceId && (
+                                  <Badge variant="default" className="text-[9px] bg-blue-600 no-default-hover-elevate no-default-active-elevate">تم التحويل</Badge>
+                                )}
+                              </div>
                             </td>
                             <td className="py-1 px-2 font-mono">{parseFloat(r.totalCost as string || "0").toFixed(2)}</td>
                             <td className="py-1 px-2">
@@ -887,9 +916,6 @@ export default function SupplierReceiving() {
                                   >
                                     تحويل إلى فاتورة
                                   </Button>
-                                )}
-                                {(r as any).convertedToInvoiceId && (
-                                  <Badge variant="default" className="bg-green-600 text-white text-[10px] no-default-hover-elevate no-default-active-elevate">تم التحويل</Badge>
                                 )}
                               </div>
                             </td>

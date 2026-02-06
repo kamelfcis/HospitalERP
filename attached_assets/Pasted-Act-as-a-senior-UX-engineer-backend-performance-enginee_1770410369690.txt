@@ -1,0 +1,143 @@
+Act as a senior UX engineer + backend performance engineer.
+Your task is to implement a FAST, SMART, and USER-FRIENDLY search and filter system in the
+"استلام الموردين" → سجل أذون الاستلام (Receiving Register) screen.
+
+GOAL:
+Enable users to quickly find receiving documents by:
+- Supplier Name
+- Supplier Invoice Number
+- Receiving Status (Posted / Converted to Purchase Invoice)
+- Date range (From / To)
+With smart defaults that reduce typing and mistakes.
+
+════════════════════════════════════
+A) SEARCH BAR (SINGLE SMART INPUT)
+════════════════════════════════════
+Implement ONE prominent search box at the top of the Receiving Register with the following behavior:
+
+1) The search input must support:
+   - Searching by Supplier Invoice Number (exact or partial)
+   - Searching by Supplier Name (Arabic and English)
+   - Case-insensitive
+   - Trim spaces automatically
+
+2) Smart detection:
+   - If user types mostly numbers → prioritize invoice number search
+   - If user types letters → prioritize supplier name search
+   - Still allow mixed search (do NOT restrict)
+
+3) Performance:
+   - Debounced search (300ms)
+   - Backend query must use indexed fields only
+   - No full table scans
+
+4) UX:
+   - Placeholder text (Arabic):
+     "ابحث برقم فاتورة المورد أو اسم المورد"
+   - Clear (X) button to reset search instantly
+   - Search must work without pressing Enter (auto-search)
+
+════════════════════════════════════
+B) DATE FILTERS (FROM / TO) — WITH SMART DEFAULTS
+════════════════════════════════════
+1) Add two date filters:
+   - From Date
+   - To Date
+
+2) Default behavior (VERY IMPORTANT):
+   - On screen load:
+     From Date = Today
+     To Date = Today
+   This reduces user effort and matches real daily workflow.
+
+3) Date rules:
+   - From Date cannot be after To Date
+   - Changing either date immediately refreshes results
+   - Provide inline validation message if invalid range
+
+4) UX:
+   - Compact layout (same row as search if possible)
+   - Clear labels in Arabic
+   - No extra scrolling
+
+════════════════════════════════════
+C) STATUS FILTER (NEW – VERY IMPORTANT)
+════════════════════════════════════
+Add a Receiving Status filter with clear options:
+
+Status options:
+- الكل (All)  ← default
+- تم الترحيل فقط (Posted)
+- تم التحويل إلى فاتورة شراء (Converted to Purchase Invoice)
+
+Rules:
+1) Default = الكل
+2) Status filter must combine with:
+   - Search text
+   - Date range
+3) Changing status immediately refreshes results
+4) Status filter must be very clear visually (dropdown or segmented buttons)
+
+Backend mapping:
+- Posted:
+  - receivingStatus = POSTED_QTY_ONLY
+- Converted:
+  - convertedToInvoice = true (or purchaseInvoiceId IS NOT NULL)
+
+Ensure DB indexes:
+- ReceivingHeader(status)
+- ReceivingHeader(convertedToInvoice or purchaseInvoiceId)
+
+════════════════════════════════════
+D) COMBINED FILTER LOGIC (BACKEND)
+════════════════════════════════════
+The backend API for Receiving Register must support:
+- q (search text: supplier name or invoice number)
+- fromDate (required, default today)
+- toDate (required, default today)
+- statusFilter (ALL | POSTED | CONVERTED)
+- page, pageSize
+
+Query rules:
+- Combine ALL filters using AND logic
+- If q is empty → filter by date + status only
+- If status = ALL → do not restrict by status
+- Results must be ordered by receivingDate DESC
+- Must paginate
+
+════════════════════════════════════
+E) RESET & SAFETY BEHAVIOR
+════════════════════════════════════
+1) Reset button:
+   - Clears search text
+   - Resets status filter to ALL
+   - Resets dates back to Today → Today
+   - Refreshes list immediately
+
+2) Navigation safety:
+   - If user opens a receiving document and returns to the register:
+     - Preserve last search, date range, and status filter
+     - Do NOT auto-reset
+
+════════════════════════════════════
+F) TESTING (MANDATORY)
+════════════════════════════════════
+Add tests to ensure:
+1) Default load shows only TODAY’s receivings (all statuses)
+2) Filter by Posted only returns posted receivings
+3) Filter by Converted only returns receivings linked to purchase invoices
+4) Search + Status + Date combined correctly (AND logic)
+5) Reset restores defaults (Today → Today, Status = ALL, q empty)
+6) Performance:
+   - Search API response < 300ms for large dataset
+
+════════════════════════════════════
+G) NON-NEGOTIABLE CONSTRAINTS
+════════════════════════════════════
+- Do NOT change existing business logic
+- Do NOT break draft/post/convert behavior
+- Do NOT add extra screens
+- Keep UI compact and fast
+- This feature must reduce user errors and speed up daily work
+
+Implement now with clean, production-grade code.

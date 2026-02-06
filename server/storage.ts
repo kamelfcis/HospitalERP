@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql, or, like, ilike, asc } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, or, like, ilike, asc, isNull, isNotNull } from "drizzle-orm";
 import {
   users,
   accounts,
@@ -232,7 +232,7 @@ export interface IStorage {
   updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
 
   // Receiving
-  getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }>;
+  getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }>;
   getReceiving(id: string): Promise<ReceivingHeaderWithDetails | undefined>;
   getNextReceivingNumber(): Promise<number>;
   checkSupplierInvoiceUnique(supplierId: string, supplierInvoiceNo: string, excludeId?: string): Promise<boolean>;
@@ -2173,24 +2173,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ===== RECEIVING =====
-  async getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }> {
-    const { supplierId, warehouseId, status, fromDate, toDate, search, page = 1, pageSize = 50 } = params;
+  async getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }> {
+    const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page = 1, pageSize = 50 } = params;
     const offset = (page - 1) * pageSize;
     const conditions: any[] = [];
     if (supplierId) conditions.push(eq(receivingHeaders.supplierId, supplierId));
     if (warehouseId) conditions.push(eq(receivingHeaders.warehouseId, warehouseId));
     if (status) conditions.push(eq(receivingHeaders.status, status as any));
+    if (statusFilter && statusFilter !== 'ALL') {
+      if (statusFilter === 'POSTED') {
+        conditions.push(eq(receivingHeaders.status, 'posted_qty_only' as any));
+        conditions.push(isNull(receivingHeaders.convertedToInvoiceId));
+      } else if (statusFilter === 'CONVERTED') {
+        conditions.push(isNotNull(receivingHeaders.convertedToInvoiceId));
+      }
+    }
     if (fromDate) conditions.push(gte(receivingHeaders.receiveDate, fromDate));
     if (toDate) conditions.push(lte(receivingHeaders.receiveDate, toDate));
     if (search) {
       conditions.push(or(
         ilike(receivingHeaders.supplierInvoiceNo, `%${search}%`),
-        sql`${receivingHeaders.receivingNumber}::text ILIKE ${`%${search}%`}`
+        sql`${receivingHeaders.receivingNumber}::text ILIKE ${`%${search}%`}`,
+        sql`EXISTS (SELECT 1 FROM suppliers WHERE suppliers.id = ${receivingHeaders.supplierId} AND (suppliers.name_ar ILIKE ${`%${search}%`} OR suppliers.name_en ILIKE ${`%${search}%`}))`
       ));
     }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
     const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(receivingHeaders).where(where);
-    const headers = await db.select().from(receivingHeaders).where(where).orderBy(desc(receivingHeaders.createdAt)).limit(pageSize).offset(offset);
+    const headers = await db.select().from(receivingHeaders).where(where).orderBy(desc(receivingHeaders.receiveDate), desc(receivingHeaders.receivingNumber)).limit(pageSize).offset(offset);
     
     const data: ReceivingHeaderWithDetails[] = [];
     for (const h of headers) {
