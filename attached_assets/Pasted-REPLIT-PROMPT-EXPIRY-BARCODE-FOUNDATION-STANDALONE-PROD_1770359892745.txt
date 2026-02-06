@@ -1,0 +1,253 @@
+REPLIT PROMPT – EXPIRY + BARCODE FOUNDATION (STANDALONE, PRODUCTION-READY)
+الميزة: دعم تاريخ الصلاحية للأصناف + تجهيز FEFO + دعم “الباركود/الكود الدولي” متعدد لكل صنف
+(Arabic RTL + Peachtree/Sage Web Theme + SQL Server + أداء عالي + بدون كلكعة لاحقًا)
+
+====================================================================================================
+0) الهدف (Objective)
+====================================================================================================
+تنفيذ “Foundation” قوي وبسيط في نفس الوقت يدعم لاحقًا:
+1) البيع بمنطق FEFO: الأقرب صلاحية يخرج أولًا (حسب ExpiryDate) + استبعاد المنتهي.
+2) تقييم المخزون لاحقًا على مستوى اللوت (Lot Cost) بدون تغيير الـSchema.
+3) الاستدعاء السريع للصنف في البيع عبر:
+   - الباركود/الكود الدولي (Scanner)
+   - أو كود الصنف الداخلي
+مع ضمان:
+- الصنف يمكن يكون له أكثر من باركود (More than 1 barcode)
+- أي باركود لا يتكرر إطلاقًا داخل قاعدة البيانات (Unique across all items)
+- الأداء عالي جدًا (الاسكنر ينزل الصنف في سطر البيع فورًا بدون lag)
+
+لا نبني شاشة بيع كاملة الآن، لكن نجهّز:
+- قاعدة البيانات + APIs + قواعد تحقق + تيست + Guidance للدمج في البيع لاحقًا.
+
+====================================================================================================
+1) قواعد العمل (Business Rules) – Non-Negotiable
+====================================================================================================
+A) إعداد الصلاحية (Expiry)
+- Checkbox في كارت الصنف: “له تاريخ صلاحية” (HasExpiry)
+- مستلزمات: Default OFF
+- خدمات: OFF ومقفول
+- أدوية: Default ON (حسب سياسة النظام)
+
+B) FEFO (Expiry First-Out)
+- عند صرف/بيع صنف HasExpiry=1:
+  - اختيار تلقائي لأقرب ExpiryDate متاح (ExpiryDate ASC)
+  - لو الكمية لا تكفي: Split على أكثر من Lot
+  - يمنع الصرف من Lot منتهي (ExpiryDate < TxDate)
+- HasExpiry=0:
+  - لا اختيار صلاحية
+  - ممنوع وجود ExpiryDate في Lots
+
+C) الباركود/الكود الدولي (Barcode)
+- لكل صنف يمكن إضافة عدة أكواد دولية/باركود.
+- الباركود Unique على مستوى قاعدة البيانات بالكامل:
+  - لا يتكرر داخل نفس الصنف
+  - ولا يتكرر مع أي صنف آخر
+- الاستدعاء في البيع لاحقًا يتم بأحد طريقتين:
+  1) إدخال/مسح Barcode => النظام يحدد ItemID فورًا
+  2) إدخال/بحث بكود الصنف الداخلي => يحدد ItemID
+- في حالة باركود غير معروف:
+  - يظهر تنبيه عربي واضح + صوت/Badge (اختياري)
+- في حالة وجود تعارض (لا يجب أن يحدث بسبب Unique):
+  - يرفض الإدخال ويمنع الحفظ
+
+====================================================================================================
+2) واجهة المستخدم المطلوبة الآن (UI – داخل كارت الصنف فقط)
+====================================================================================================
+داخل كارت الصنف (RTL + نفس الثيم):
+
+Section 1: “إعداد الصلاحية”
+- Checkbox: “الصنف له تاريخ صلاحية”
+- (اختياري) Checkbox: “له باتش/تشغيلة” (HasBatch) للتجهيز
+
+Section 2: “الباركود/الكود الدولي”
+- Grid صغير يعرض الباركودات المرتبطة بالصنف:
+  - الباركود
+  - نوع الباركود (اختياري: EAN-13 / Code128 / ... كقيمة وصفية)
+  - الحالة (فعال/غير فعال)
+  - تاريخ الإضافة
+  - حذف/تعطيل
+- زر: “إضافة باركود”
+  Modal:
+    - حقل إدخال باركود (Textbox)
+    - (اختياري) نوع الباركود Dropdown بسيط
+    - زر حفظ
+
+Validation UI:
+- يمنع إدخال باركود مكرر (رسالة عربية: “هذا الباركود مسجل لصنف آخر”)
+- Trim spaces + منع حروف غير مناسبة حسب السياسة
+- دعم إدخال سريع (Paste/Scan) داخل حقل الباركود
+
+====================================================================================================
+3) قاعدة البيانات (SQL Server) – جاهزة للصلاحية + FEFO + Barcodes
+====================================================================================================
+A) Items (تعديل/تأكيد)
+- HasExpiry (BIT NOT NULL DEFAULT 0)
+
+قواعد افتراضية:
+- Supply => Default HasExpiry = 0
+- Service => HasExpiry = 0 (Locked)
+- Drug => Default HasExpiry = 1 (حسب السياسة)
+
+B) InventoryLots (Foundation للـFEFO والتقييم)
+InventoryLots:
+- LotID (PK)
+- ItemID (FK -> Items)
+- ExpiryDate (DATE NULL)
+- ReceivedDate (DATE NOT NULL)
+- PurchasePrice (DECIMAL(18,4) NOT NULL)
+- QtyInMinor (DECIMAL(18,4) NOT NULL)
+- IsActive (BIT NOT NULL DEFAULT 1)
+- CreatedAt, UpdatedAt
+
+Constraints:
+- CHECK QtyInMinor >= 0
+- CHECK (ExpiryDate IS NULL) OR (ExpiryDate >= '2000-01-01')
+- قاعدة: إذا Item.HasExpiry = 0 => ExpiryDate MUST be NULL
+  (Enforce via Backend + Trigger إذا لزم)
+
+Indexes:
+- IX_InventoryLots_Item_Expiry (ItemID, ExpiryDate)
+- IX_InventoryLots_Item_Received (ItemID, ReceivedDate)
+
+C) InventoryLotMovements (Ledger للدفعات)
+InventoryLotMovements:
+- MovementID (PK)
+- LotID (FK -> InventoryLots)
+- TxDate (DATETIME)
+- TxType (IN/OUT/ADJ)
+- QtyChangeInMinor (DECIMAL(18,4))
+- UnitCost (DECIMAL(18,4))
+- ReferenceType (Purchase/Sale/Adjustment)
+- ReferenceID (NVARCHAR(50))
+- CreatedAt
+
+Indexes:
+- IX_LotMovements_Lot_TxDate (LotID, TxDate)
+
+D) ItemBarcodes (جدول الباركودات – CRITICAL)
+ItemBarcodes:
+- BarcodeID (PK)
+- ItemID (FK -> Items)
+- BarcodeValue (NVARCHAR(50) NOT NULL)
+- BarcodeType (NVARCHAR(20) NULL)     -- وصفي فقط
+- IsActive (BIT NOT NULL DEFAULT 1)
+- CreatedAt
+
+Constraints (مهم جدًا):
+1) Unique across database:
+   - Create UNIQUE INDEX on BarcodeValue WHERE IsActive = 1
+   (حتى لو باركود قديم متعطل، لا يسمح بالتكرار إذا رغبت؛
+    أو اجعل التكرار مسموح فقط لو القديم متعطل—حدد سياسة واحدة والتزم بها)
+القرار الافتراضي المطلوب هنا:
+- لا يسمح بتكرار BarcodeValue مطلقًا حتى لو متعطل (أسلم وأبسط).
+
+2) Trim/Normalize:
+- Store normalized barcode (trim spaces, remove invisible chars)
+
+Indexes:
+- UX_ItemBarcodes_BarcodeValue (UNIQUE)  -- أهم فهرس للأداء
+- IX_ItemBarcodes_ItemID (ItemID)
+
+====================================================================================================
+4) APIs المطلوبة (Foundation)
+====================================================================================================
+A) Expiry Settings
+- PUT /items/{id}/expiry-settings
+  payload: { hasExpiry: true/false }
+  Rules:
+  - Service => false (Locked)
+  - If switching true->false: لا تسمح إذا يوجد Lots بصلاحية ورصيد > 0
+
+B) Lots (للتجربة والاستعداد للشراء لاحقًا)
+- POST /lots
+  payload: { itemId, expiryDate, receivedDate, purchasePrice, qtyInMinor }
+  Rules:
+  - hasExpiry=0 => expiryDate must be null
+  - hasExpiry=1 => expiryDate required and must be >= receivedDate (أو منطقي)
+
+C) FEFO Preview (جاهز لمرحلة البيع)
+- GET /fefo/preview?itemId=&requiredQtyInMinor=&asOfDate=
+  returns allocations ordered by ExpiryDate asc
+  excludes expired lots
+
+D) Barcode Management
+- GET /items/{id}/barcodes
+- POST /items/{id}/barcodes
+  payload: { barcodeValue, barcodeType? }
+  Rules:
+  - Normalize barcodeValue (trim)
+  - Reject if exists in DB (unique violation) برسالة عربية واضحة
+- DELETE /barcodes/{barcodeId} (soft delete by IsActive=0)
+- GET /barcode/resolve?value=
+  returns:
+  - { found: true, itemId, itemCode, itemNameAR }
+  - or { found: false }
+
+====================================================================================================
+5) دمج الاسكنر في شاشة البيع لاحقًا (Guidance لمنع مشاكل الاستدعاء)
+====================================================================================================
+مطلوب من الآن وضع تصميم “سهل وسريع” للاستدعاء:
+
+- في شاشة البيع لاحقًا يوجد Input واحد اسمه:
+  “بحث/مسح صنف (باركود أو كود داخلي)”
+- السلوك:
+  1) Focus ثابت في هذا الحقل (Auto-focus)
+  2) عند قراءة الاسكنر:
+     - الاسكنر يرسل النص + Enter غالبًا
+     - عند Enter: Call API resolve (barcode first)
+  3) لو وجد Barcode:
+     - أضف سطر بيع مباشرة للصنف (Qty افتراضي = 1 بالوحدة الصغرى أو حسب سياسة)
+  4) لو لم يوجد Barcode:
+     - حاول تفسير المدخل كـ ItemCode
+     - لو وجد: أضف السطر
+     - لو لا: رسالة “غير موجود”
+- متطلبات أداء:
+  - Resolve يجب أن يكون O(1) عمليًا بسبب Unique Index على BarcodeValue
+  - لا تحميل أصناف كاملة في الواجهة
+  - لا dropdown ضخم
+
+ملاحظة:
+- أي تعارض باركود مستحيل بسبب Unique Index، وبكده نتجنب كلكعة “استدعاء غلط”.
+
+====================================================================================================
+6) اختبارات صارمة (Testing – MUST)
+====================================================================================================
+A) باركود
+- إضافة 3 باركود لصنف واحد => ينجح
+- محاولة إضافة نفس الباركود لنفس الصنف => رفض
+- محاولة إضافة نفس الباركود لصنف آخر => رفض
+- resolve API:
+  - باركود موجود => يرجع الصنف بسرعة
+  - باركود غير موجود => found:false
+- اختبار Normalize:
+  - “  622xxxx  ” يتم تخزينه بدون مسافات ويعمل resolve
+
+B) FEFO
+- Lots مختلفة الصلاحية + Lot منتهي
+- FEFO preview يستبعد المنتهي ويختار الأقرب
+- Split allocation يعمل
+
+C) تكامل (Simulation)
+- Test Script يحاكي “مسح 50 باركود متتالي” ويقيس السرعة
+- تأكيد أنه لا يوجد lag ملحوظ مع 20 مستخدم (على الأقل اختبارات load بسيطة)
+
+====================================================================================================
+7) مخرجات مطلوبة (Deliverables)
+====================================================================================================
+- تعديل Items لإضافة HasExpiry + قواعد
+- جداول: InventoryLots, InventoryLotMovements, ItemBarcodes
+- Indexes/Constraints كاملة
+- APIs كاملة
+- UI في كارت الصنف: Checkbox الصلاحية + إدارة باركودات
+- Seed/Test Data + تقرير اختبار مختصر
+
+====================================================================================================
+8) قواعد نهائية (Final Rules)
+====================================================================================================
+- لا تواريخ افتراضية مثل 1900-01-01
+- لا Expiry لصنف HasExpiry=0
+- FEFO يعتمد على ExpiryDate (الأقرب صلاحية)
+- الباركود Unique على مستوى قاعدة البيانات بالكامل
+- الاستدعاء من الاسكنر يكون سريع جدًا ويضيف الصنف فورًا (barcode resolve endpoint + index)
+
+انتهى.

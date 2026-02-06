@@ -30,6 +30,8 @@ export const unitLevelEnum = pgEnum("unit_level", [
   "minor"       // وحدة صغرى
 ]);
 
+export const lotTxTypeEnum = pgEnum("lot_tx_type", ["in", "out", "adj"]);
+
 // المستخدمين
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -182,6 +184,7 @@ export const items = pgTable("items", {
   nameEn: text("name_en"),
   category: itemCategoryEnum("category").notNull(),
   isToxic: boolean("is_toxic").notNull().default(false),
+  hasExpiry: boolean("has_expiry").notNull().default(false),
   formTypeId: varchar("form_type_id").references(() => itemFormTypes.id),
   purchasePriceLast: decimal("purchase_price_last", { precision: 18, scale: 2 }).notNull().default("0"),
   salePriceCurrent: decimal("sale_price_current", { precision: 18, scale: 2 }).notNull().default("0"),
@@ -256,6 +259,46 @@ export const itemDepartmentPrices = pgTable("item_department_prices", {
   deptIdx: index("idx_item_dept_prices_dept").on(table.departmentId),
 }));
 
+export const inventoryLots = pgTable("inventory_lots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  expiryDate: date("expiry_date"),
+  receivedDate: date("received_date").notNull(),
+  purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull(),
+  qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull().default("0"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  itemExpiryIdx: index("idx_lots_item_expiry").on(table.itemId, table.expiryDate),
+  itemReceivedIdx: index("idx_lots_item_received").on(table.itemId, table.receivedDate),
+}));
+
+export const inventoryLotMovements = pgTable("inventory_lot_movements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  lotId: varchar("lot_id").notNull().references(() => inventoryLots.id, { onDelete: "restrict" }),
+  txDate: timestamp("tx_date").notNull().defaultNow(),
+  txType: lotTxTypeEnum("tx_type").notNull(),
+  qtyChangeInMinor: decimal("qty_change_in_minor", { precision: 18, scale: 4 }).notNull(),
+  unitCost: decimal("unit_cost", { precision: 18, scale: 4 }),
+  referenceType: text("reference_type"),
+  referenceId: varchar("reference_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  lotTxDateIdx: index("idx_lot_movements_lot_txdate").on(table.lotId, table.txDate),
+}));
+
+export const itemBarcodes = pgTable("item_barcodes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  barcodeValue: varchar("barcode_value", { length: 50 }).notNull().unique(),
+  barcodeType: varchar("barcode_type", { length: 20 }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  itemIdx: index("idx_barcodes_item").on(table.itemId),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
@@ -279,6 +322,9 @@ export const insertPurchaseTransactionSchema = createInsertSchema(purchaseTransa
 export const insertSalesTransactionSchema = createInsertSchema(salesTransactions).omit({ id: true, createdAt: true });
 export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
 export const insertItemDepartmentPriceSchema = createInsertSchema(itemDepartmentPrices).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertInventoryLotSchema = createInsertSchema(inventoryLots).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertInventoryLotMovementSchema = createInsertSchema(inventoryLotMovements).omit({ id: true, createdAt: true });
+export const insertItemBarcodeSchema = createInsertSchema(itemBarcodes).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -325,6 +371,15 @@ export type Department = typeof departments.$inferSelect;
 
 export type InsertItemDepartmentPrice = z.infer<typeof insertItemDepartmentPriceSchema>;
 export type ItemDepartmentPrice = typeof itemDepartmentPrices.$inferSelect;
+
+export type InsertInventoryLot = z.infer<typeof insertInventoryLotSchema>;
+export type InventoryLot = typeof inventoryLots.$inferSelect;
+
+export type InsertInventoryLotMovement = z.infer<typeof insertInventoryLotMovementSchema>;
+export type InventoryLotMovement = typeof inventoryLotMovements.$inferSelect;
+
+export type InsertItemBarcode = z.infer<typeof insertItemBarcodeSchema>;
+export type ItemBarcode = typeof itemBarcodes.$inferSelect;
 
 // Extended types for API responses
 export type JournalEntryWithLines = JournalEntry & {

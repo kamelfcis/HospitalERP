@@ -16,6 +16,9 @@ import {
   salesTransactions,
   departments,
   itemDepartmentPrices,
+  inventoryLots,
+  inventoryLotMovements,
+  itemBarcodes,
   type User,
   type InsertUser,
   type Account,
@@ -46,6 +49,12 @@ import {
   type ItemDepartmentPrice,
   type InsertItemDepartmentPrice,
   type ItemDepartmentPriceWithDepartment,
+  type InventoryLot,
+  type InsertInventoryLot,
+  type InventoryLotMovement,
+  type InsertInventoryLotMovement,
+  type ItemBarcode,
+  type InsertItemBarcode,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -137,6 +146,19 @@ export interface IStorage {
   updateItemDepartmentPrice(id: string, price: Partial<InsertItemDepartmentPrice>): Promise<ItemDepartmentPrice | undefined>;
   deleteItemDepartmentPrice(id: string): Promise<boolean>;
   getItemPriceForDepartment(itemId: string, departmentId: string): Promise<string>;
+
+  // Inventory Lots
+  getLots(itemId: string): Promise<InventoryLot[]>;
+  createLot(lot: InsertInventoryLot): Promise<InventoryLot>;
+
+  // FEFO Preview
+  getFefoPreview(itemId: string, requiredQty: number, asOfDate: string): Promise<{ allocations: Array<{ lotId: string; expiryDate: string | null; availableQty: string; allocatedQty: string }>; fulfilled: boolean; shortfall: string }>;
+
+  // Item Barcodes
+  getItemBarcodes(itemId: string): Promise<ItemBarcode[]>;
+  createItemBarcode(barcode: InsertItemBarcode): Promise<ItemBarcode>;
+  deactivateBarcode(barcodeId: string): Promise<ItemBarcode | undefined>;
+  resolveBarcode(barcodeValue: string): Promise<{ found: boolean; itemId?: string; itemCode?: string; nameAr?: string } | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1022,6 +1044,106 @@ export class DatabaseStorage implements IStorage {
       .where(eq(items.id, itemId));
 
     return item?.salePriceCurrent || "0";
+  }
+
+  // Inventory Lots
+  async getLots(itemId: string): Promise<InventoryLot[]> {
+    return db.select().from(inventoryLots)
+      .where(and(eq(inventoryLots.itemId, itemId), eq(inventoryLots.isActive, true)))
+      .orderBy(asc(inventoryLots.expiryDate));
+  }
+
+  async createLot(lot: InsertInventoryLot): Promise<InventoryLot> {
+    const [newLot] = await db.insert(inventoryLots).values(lot).returning();
+    await db.insert(inventoryLotMovements).values({
+      lotId: newLot.id,
+      txType: "in" as const,
+      qtyChangeInMinor: lot.qtyInMinor || "0",
+      unitCost: lot.purchasePrice || "0",
+      referenceType: "initial",
+      txDate: new Date(),
+    } as any);
+    return newLot;
+  }
+
+  // FEFO Preview
+  async getFefoPreview(itemId: string, requiredQty: number, asOfDate: string): Promise<any> {
+    const lots = await db.select().from(inventoryLots)
+      .where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.isActive, true),
+        sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+        or(
+          sql`${inventoryLots.expiryDate} IS NULL`,
+          sql`${inventoryLots.expiryDate} >= ${asOfDate}`
+        )
+      ))
+      .orderBy(asc(inventoryLots.expiryDate));
+
+    const allocations: any[] = [];
+    let remaining = requiredQty;
+
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const available = parseFloat(lot.qtyInMinor);
+      const allocated = Math.min(available, remaining);
+      allocations.push({
+        lotId: lot.id,
+        expiryDate: lot.expiryDate,
+        availableQty: available.toFixed(4),
+        allocatedQty: allocated.toFixed(4),
+      });
+      remaining -= allocated;
+    }
+
+    return {
+      allocations,
+      fulfilled: remaining <= 0,
+      shortfall: remaining > 0 ? remaining.toFixed(4) : "0",
+    };
+  }
+
+  // Item Barcodes
+  async getItemBarcodes(itemId: string): Promise<ItemBarcode[]> {
+    return db.select().from(itemBarcodes)
+      .where(eq(itemBarcodes.itemId, itemId))
+      .orderBy(desc(itemBarcodes.createdAt));
+  }
+
+  async createItemBarcode(barcode: InsertItemBarcode): Promise<ItemBarcode> {
+    const normalized = { ...barcode, barcodeValue: barcode.barcodeValue.trim() };
+    const [newBarcode] = await db.insert(itemBarcodes).values(normalized).returning();
+    return newBarcode;
+  }
+
+  async deactivateBarcode(barcodeId: string): Promise<ItemBarcode | undefined> {
+    const [updated] = await db.update(itemBarcodes)
+      .set({ isActive: false })
+      .where(eq(itemBarcodes.id, barcodeId))
+      .returning();
+    return updated;
+  }
+
+  async resolveBarcode(barcodeValue: string): Promise<{ found: boolean; itemId?: string; itemCode?: string; nameAr?: string }> {
+    const normalized = barcodeValue.trim();
+    const [barcode] = await db.select().from(itemBarcodes)
+      .where(and(eq(itemBarcodes.barcodeValue, normalized), eq(itemBarcodes.isActive, true)));
+    
+    if (barcode) {
+      const [item] = await db.select({ id: items.id, itemCode: items.itemCode, nameAr: items.nameAr })
+        .from(items).where(eq(items.id, barcode.itemId));
+      if (item) {
+        return { found: true, itemId: item.id, itemCode: item.itemCode, nameAr: item.nameAr };
+      }
+    }
+
+    const [item] = await db.select({ id: items.id, itemCode: items.itemCode, nameAr: items.nameAr })
+      .from(items).where(eq(items.itemCode, normalized));
+    if (item) {
+      return { found: true, itemId: item.id, itemCode: item.itemCode, nameAr: item.nameAr };
+    }
+
+    return { found: false };
   }
 }
 

@@ -100,6 +100,20 @@ Key entities include:
   - ItemCard includes "أسعار حسب القسم" section to manage department prices
   - Add/edit/delete department prices via modal dialog
   - API endpoint: GET /api/pricing?itemId=X&departmentId=Y returns effective price
+- **Expiry & Barcode Foundation** (Feb 6, 2026):
+  - `hasExpiry` flag on items: drugs default to enabled, supplies default to disabled, services locked (always false)
+  - Backend enforces category-based defaults: POST /api/items auto-sets hasExpiry based on category
+  - PUT /api/items/:id/expiry-settings toggles hasExpiry with safety checks (cannot disable if active lots with expiry exist)
+  - Services cannot enable expiry (400 error) and cannot create inventory lots (400 error)
+  - Inventory lots system: inventoryLots table with batch_number, expiry_date, qty tracking
+  - Lot movements: inventoryLotMovements table tracks IN/OUT/ADJ transactions per lot
+  - FEFO allocation: GET /api/fefo/preview returns allocations ordered by earliest expiry first
+  - Barcode management: multiple barcodes per item, unique constraint on barcode_value
+  - Barcode CRUD: POST /api/items/:id/barcodes, DELETE /api/barcodes/:id (soft-delete via isActive)
+  - Barcode resolution: GET /api/barcode/resolve?value=X tries barcode table first, falls back to item code
+  - Alphanumeric validation on barcode values (frontend + backend)
+  - Duplicate barcode returns HTTP 409 with Arabic error message
+  - ItemCard UI: hasExpiry checkbox with CalendarClock icon, barcode grid with add/delete dialogs
 - **Database Integrity & Performance Audit** (Feb 5, 2026):
   - Added self-referencing FKs: accounts.parentId → accounts.id, costCenters.parentId → costCenters.id
   - Added FK: journalEntries.reversalEntryId → journalEntries.id, journalEntries.templateId → journalTemplates.id

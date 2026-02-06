@@ -32,10 +32,12 @@ import {
   Loader2,
   Trash2,
   Pencil,
+  Barcode,
+  CalendarClock,
 } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Item, ItemFormType, PurchaseTransaction, InsertItem, Department, ItemDepartmentPriceWithDepartment } from "@shared/schema";
+import type { Item, ItemFormType, PurchaseTransaction, InsertItem, Department, ItemDepartmentPriceWithDepartment, ItemBarcode } from "@shared/schema";
 
 interface ItemWithFormType extends Item {
   formType?: ItemFormType;
@@ -61,6 +63,9 @@ export default function ItemCard() {
   const [showDeptPriceDialog, setShowDeptPriceDialog] = useState(false);
   const [selectedDeptPrice, setSelectedDeptPrice] = useState<ItemDepartmentPriceWithDepartment | null>(null);
   const [newDeptPrice, setNewDeptPrice] = useState<{ departmentId: string; salePrice: string }>({ departmentId: "", salePrice: "" });
+  const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
+  const [newBarcodeValue, setNewBarcodeValue] = useState("");
+  const [newBarcodeType, setNewBarcodeType] = useState("EAN-13");
 
   const [formData, setFormData] = useState<Partial<InsertItem>>({
     itemCode: "",
@@ -68,6 +73,7 @@ export default function ItemCard() {
     nameEn: "",
     category: "drug",
     isToxic: false,
+    hasExpiry: true,
     formTypeId: null,
     purchasePriceLast: "0",
     salePriceCurrent: "0",
@@ -119,6 +125,11 @@ export default function ItemCard() {
     enabled: !!itemId,
   });
 
+  const { data: barcodes, refetch: refetchBarcodes } = useQuery<ItemBarcode[]>({
+    queryKey: [`/api/items/${itemId}/barcodes`],
+    enabled: !!itemId,
+  });
+
   useEffect(() => {
     if (item) {
       setFormData({
@@ -127,6 +138,7 @@ export default function ItemCard() {
         nameEn: item.nameEn || "",
         category: item.category,
         isToxic: item.isToxic,
+        hasExpiry: item.hasExpiry,
         formTypeId: item.formTypeId,
         purchasePriceLast: item.purchasePriceLast,
         salePriceCurrent: item.salePriceCurrent,
@@ -141,6 +153,19 @@ export default function ItemCard() {
       });
     }
   }, [item]);
+
+  useEffect(() => {
+    if (isNew) {
+      const cat = formData.category;
+      if (cat === "service") {
+        setFormData(prev => ({ ...prev, hasExpiry: false }));
+      } else if (cat === "drug") {
+        setFormData(prev => ({ ...prev, hasExpiry: true }));
+      } else if (cat === "supply") {
+        setFormData(prev => ({ ...prev, hasExpiry: false }));
+      }
+    }
+  }, [formData.category, isNew]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<InsertItem>) => {
@@ -225,6 +250,60 @@ export default function ItemCard() {
     },
   });
 
+  const addBarcodeMutation = useMutation({
+    mutationFn: async (data: { barcodeValue: string; barcodeType: string }) => {
+      const res = await apiRequest("POST", `/api/items/${itemId}/barcodes`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchBarcodes();
+      setShowBarcodeDialog(false);
+      setNewBarcodeValue("");
+      setNewBarcodeType("EAN-13");
+      toast({ title: "تم إضافة الباركود بنجاح" });
+    },
+    onError: (error: any) => {
+      const msg = error.message || "";
+      if (msg.includes("409") || msg.includes("مسجل")) {
+        toast({ title: "خطأ", description: "هذا الباركود مسجل بالفعل لصنف آخر", variant: "destructive" });
+      } else {
+        toast({ title: "خطأ", description: msg, variant: "destructive" });
+      }
+    },
+  });
+
+  const deleteBarcodeMutation = useMutation({
+    mutationFn: async (barcodeId: string) => {
+      return apiRequest("DELETE", `/api/barcodes/${barcodeId}`);
+    },
+    onSuccess: () => {
+      refetchBarcodes();
+      toast({ title: "تم حذف الباركود" });
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const expirySettingMutation = useMutation({
+    mutationFn: async (hasExpiry: boolean) => {
+      const res = await apiRequest("PUT", `/api/items/${itemId}/expiry-settings`, { hasExpiry });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/items", itemId] });
+      toast({ title: data.hasExpiry ? "تم تفعيل الصلاحية" : "تم إلغاء الصلاحية" });
+    },
+    onError: (error: any) => {
+      const msg = error.message || "";
+      if (msg.includes("409")) {
+        toast({ title: "خطأ", description: "لا يمكن إلغاء الصلاحية: يوجد دفعات نشطة بصلاحية", variant: "destructive" });
+      } else {
+        toast({ title: "خطأ", description: msg, variant: "destructive" });
+      }
+    },
+  });
+
   const handleSave = () => {
     if (!formData.itemCode || !formData.nameAr) {
       toast({ title: "خطأ", description: "الكود والاسم العربي مطلوبان", variant: "destructive" });
@@ -284,6 +363,22 @@ export default function ItemCard() {
       createDeptPriceMutation.mutate(newDeptPrice);
     }
   };
+
+  const handleAddBarcode = () => {
+    const trimmed = newBarcodeValue.trim();
+    if (!trimmed) {
+      toast({ title: "خطأ", description: "قيمة الباركود مطلوبة", variant: "destructive" });
+      return;
+    }
+    if (!/^[a-zA-Z0-9\-\.]+$/.test(trimmed)) {
+      toast({ title: "خطأ", description: "الباركود يجب أن يحتوي على أرقام وحروف إنجليزية فقط", variant: "destructive" });
+      return;
+    }
+    addBarcodeMutation.mutate({ barcodeValue: trimmed, barcodeType: newBarcodeType });
+  };
+
+  const isExpiryLocked = formData.category === "service";
+  const activeBarcodes = barcodes?.filter(b => b.isActive) || [];
 
   if (isLoading && !isNew) {
     return (
@@ -354,8 +449,8 @@ export default function ItemCard() {
         </div>
       </div>
 
-      <div className="flex-1 p-2 overflow-hidden">
-        <div className="h-full grid grid-cols-12 gap-2">
+      <div className="flex-1 p-2 overflow-auto">
+        <div className="grid grid-cols-12 gap-2">
           <div className="col-span-8 flex flex-col gap-2">
             <fieldset className="peachtree-grid p-2 flex-shrink-0">
               <legend className="text-[11px] font-semibold px-1 text-primary">البيانات الأساسية</legend>
@@ -432,7 +527,7 @@ export default function ItemCard() {
                     )}
                   </div>
                 </div>
-                <div className="col-span-2 flex items-end gap-4 pb-1">
+                <div className="col-span-2 flex items-end gap-3 pb-1">
                   <div className="flex items-center gap-1">
                     <Checkbox
                       id="isToxic"
@@ -443,6 +538,29 @@ export default function ItemCard() {
                       data-testid="checkbox-toxic"
                     />
                     <Label htmlFor="isToxic" className="text-[10px] text-red-600 font-medium">سموم</Label>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Checkbox
+                      id="hasExpiry"
+                      checked={formData.hasExpiry || false}
+                      onCheckedChange={(c) => {
+                        if (isNew) {
+                          setFormData({ ...formData, hasExpiry: !!c });
+                        } else if (itemId) {
+                          expirySettingMutation.mutate(!!c);
+                        }
+                      }}
+                      disabled={(!isEditing && !itemId) || isExpiryLocked || expirySettingMutation.isPending}
+                      className="h-3 w-3"
+                      data-testid="checkbox-has-expiry"
+                    />
+                    <Label htmlFor="hasExpiry" className="text-[10px] text-orange-600 font-medium flex items-center gap-0.5">
+                      <CalendarClock className="h-3 w-3" />
+                      صلاحية
+                    </Label>
+                    {isExpiryLocked && (
+                      <span className="text-[9px] text-muted-foreground">(مقفل)</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <Checkbox
@@ -599,11 +717,76 @@ export default function ItemCard() {
                 </div>
               </div>
             </fieldset>
+
+            {!isNew && (
+              <fieldset className="peachtree-grid p-2 flex-shrink-0">
+                <legend className="text-[11px] font-semibold px-1 text-primary flex items-center gap-1">
+                  <Barcode className="h-3.5 w-3.5" />
+                  الباركود / الكود الدولي
+                </legend>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] text-muted-foreground">
+                    {activeBarcodes.length > 0 ? `${activeBarcodes.length} باركود مسجل` : "لا يوجد باركود"}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-[10px] gap-0.5 px-1"
+                    onClick={() => setShowBarcodeDialog(true)}
+                    data-testid="button-add-barcode"
+                  >
+                    <Plus className="h-3 w-3" />
+                    إضافة باركود
+                  </Button>
+                </div>
+                {activeBarcodes.length > 0 ? (
+                  <table className="w-full text-[10px]">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="py-1 px-1 text-right font-medium">الباركود</th>
+                        <th className="py-1 px-1 text-right font-medium">النوع</th>
+                        <th className="py-1 px-1 text-right font-medium">تاريخ الإضافة</th>
+                        <th className="py-1 px-1 text-center font-medium w-10">حذف</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeBarcodes.map((bc, i) => (
+                        <tr key={bc.id} className={i < activeBarcodes.length - 1 ? "border-b border-dashed" : ""} data-testid={`row-barcode-${bc.id}`}>
+                          <td className="py-1 px-1 font-mono font-medium" dir="ltr">{bc.barcodeValue}</td>
+                          <td className="py-1 px-1">
+                            {bc.barcodeType ? (
+                              <Badge variant="outline" className="text-[9px] h-4">{bc.barcodeType}</Badge>
+                            ) : "-"}
+                          </td>
+                          <td className="py-1 px-1">{formatDateShort(bc.createdAt)}</td>
+                          <td className="py-1 px-1 text-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive"
+                              onClick={() => deleteBarcodeMutation.mutate(bc.id)}
+                              disabled={deleteBarcodeMutation.isPending}
+                              data-testid={`button-delete-barcode-${bc.id}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-[10px] text-muted-foreground text-center py-3 border border-dashed rounded">
+                    لم يتم تسجيل أي باركود بعد
+                  </div>
+                )}
+              </fieldset>
+            )}
           </div>
 
           {!isNew && (
             <div className="col-span-4 flex flex-col gap-2">
-              <fieldset className="peachtree-grid p-2 flex-1">
+              <fieldset className="peachtree-grid p-2">
                 <legend className="text-[11px] font-semibold px-1 text-primary">آخر المشتريات</legend>
                 {lastPurchases && lastPurchases.length > 0 ? (
                   <table className="w-full text-[10px]">
@@ -631,7 +814,7 @@ export default function ItemCard() {
                 )}
               </fieldset>
 
-              <fieldset className="peachtree-grid p-2 flex-1">
+              <fieldset className="peachtree-grid p-2">
                 <legend className="text-[11px] font-semibold px-1 text-primary">إحصائيات المبيعات</legend>
                 <div className="flex items-center gap-1 mb-2">
                   <Label className="text-[10px]">الفترة:</Label>
@@ -662,7 +845,7 @@ export default function ItemCard() {
                 </div>
               </fieldset>
 
-              <fieldset className="peachtree-grid p-2 flex-1">
+              <fieldset className="peachtree-grid p-2">
                 <legend className="text-[11px] font-semibold px-1 text-primary">أسعار حسب القسم (للوحدة الكبرى)</legend>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] text-muted-foreground">السعر الافتراضي/{item?.majorUnitName || "وحدة"}: {formatCurrency(item?.salePriceCurrent || "0")}</span>
@@ -856,6 +1039,82 @@ export default function ItemCard() {
                 <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
                 "حفظ"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBarcodeDialog} onOpenChange={setShowBarcodeDialog}>
+        <DialogContent className="sm:max-w-[350px]">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-1">
+              <Barcode className="h-4 w-4" />
+              إضافة باركود جديد
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div>
+              <Label className="text-[10px] text-muted-foreground">قيمة الباركود</Label>
+              <Input
+                value={newBarcodeValue}
+                onChange={(e) => setNewBarcodeValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddBarcode();
+                  }
+                }}
+                placeholder="مثال: 6221234567890"
+                className="h-7 text-xs font-mono text-left"
+                dir="ltr"
+                autoFocus
+                data-testid="input-barcode-value"
+              />
+              <p className="text-[9px] text-muted-foreground mt-1">يمكنك استخدام الاسكنر مباشرة أو كتابة الباركود يدوياً</p>
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">نوع الباركود (اختياري)</Label>
+              <Select value={newBarcodeType} onValueChange={setNewBarcodeType}>
+                <SelectTrigger className="h-6 text-[11px] px-1" data-testid="select-barcode-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EAN-13">EAN-13</SelectItem>
+                  <SelectItem value="EAN-8">EAN-8</SelectItem>
+                  <SelectItem value="Code128">Code 128</SelectItem>
+                  <SelectItem value="Code39">Code 39</SelectItem>
+                  <SelectItem value="UPC-A">UPC-A</SelectItem>
+                  <SelectItem value="QR">QR Code</SelectItem>
+                  <SelectItem value="other">أخرى</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-[10px]"
+              onClick={() => {
+                setShowBarcodeDialog(false);
+                setNewBarcodeValue("");
+                setNewBarcodeType("EAN-13");
+              }}
+            >
+              إلغاء
+            </Button>
+            <Button
+              size="sm"
+              className="text-[10px]"
+              onClick={handleAddBarcode}
+              disabled={addBarcodeMutation.isPending || !newBarcodeValue.trim()}
+              data-testid="button-save-barcode"
+            >
+              {addBarcodeMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                "إضافة"
               )}
             </Button>
           </DialogFooter>
