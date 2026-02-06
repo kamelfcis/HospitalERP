@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ArrowLeftRight, Loader2, AlertTriangle, Check, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, FileText, X } from "lucide-react";
+import { ArrowLeftRight, Loader2, AlertTriangle, Check, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, FileText, X, Printer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateShort } from "@/lib/formatters";
@@ -563,7 +563,7 @@ export default function StoreTransfers() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-2">
+        <TabsList className="mb-2 no-print">
           <TabsTrigger value="log" data-testid="tab-log">سجل التحويلات</TabsTrigger>
           <TabsTrigger value="form" data-testid="tab-form">إذن تحويل</TabsTrigger>
         </TabsList>
@@ -758,8 +758,8 @@ export default function StoreTransfers() {
         <TabsContent value="form" className="space-y-2">
           <fieldset className="peachtree-grid p-2">
             <legend className="text-xs font-semibold px-1">بيانات إذن التحويل</legend>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-              <div className="space-y-1">
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1 w-[100px]">
                 <Label className="text-[10px] text-muted-foreground">رقم الإذن</Label>
                 <Input
                   type="text"
@@ -769,7 +769,7 @@ export default function StoreTransfers() {
                   data-testid="input-transfer-number"
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 w-[120px]">
                 <Label className="text-[10px] text-muted-foreground">تاريخ التحويل</Label>
                 <Input
                   type="date"
@@ -780,7 +780,7 @@ export default function StoreTransfers() {
                   data-testid="input-transfer-date"
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 flex-1 min-w-[160px]">
                 <Label className="text-[10px] text-muted-foreground">مخزن المصدر *</Label>
                 <Select value={sourceWarehouseId} onValueChange={(val) => { setSourceWarehouseId(val); setFormLines([]); }} disabled={isViewOnly}>
                   <SelectTrigger className="h-7 text-[11px] px-1" data-testid="select-source-warehouse">
@@ -793,7 +793,7 @@ export default function StoreTransfers() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 flex-1 min-w-[160px]">
                 <Label className="text-[10px] text-muted-foreground">مخزن الوجهة *</Label>
                 <Select value={destWarehouseId} onValueChange={setDestWarehouseId} disabled={isViewOnly}>
                   <SelectTrigger className="h-7 text-[11px] px-1" data-testid="select-dest-warehouse">
@@ -808,17 +808,14 @@ export default function StoreTransfers() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] text-muted-foreground">الحالة</Label>
-                <div className="pt-1">
-                  {formStatus === "executed" ? (
-                    <Badge variant="default" className="text-[9px] bg-green-600 no-default-hover-elevate no-default-active-elevate">مُنفّذ</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-[9px]">مسودة</Badge>
-                  )}
-                </div>
+              <div className="flex items-center h-7">
+                {formStatus === "executed" ? (
+                  <Badge variant="default" className="text-[9px] bg-green-600 no-default-hover-elevate no-default-active-elevate">مُنفّذ</Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[9px]">مسودة</Badge>
+                )}
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 flex-1 min-w-[120px]">
                 <Label className="text-[10px] text-muted-foreground">ملاحظات</Label>
                 <Input
                   type="text"
@@ -839,7 +836,7 @@ export default function StoreTransfers() {
               <table className="w-full text-[10px]" dir="rtl" data-testid="table-transfer-lines">
                 <thead>
                   <tr className="peachtree-grid-header">
-                    <th className="py-1 px-2 text-right font-medium">اسم الصنف</th>
+                    <th className="py-1 px-2 text-right font-semibold">اسم الصنف</th>
                     <th className="py-1 px-2 text-right font-medium">كود الصنف</th>
                     <th className="py-1 px-1 text-center font-medium w-8">📊</th>
                     <th className="py-1 px-2 text-right font-medium">الوحدة</th>
@@ -854,7 +851,7 @@ export default function StoreTransfers() {
                   {formLines.length > 0 ? (
                     formLines.map((line, idx) => (
                       <tr key={line.id} className="peachtree-grid-row" data-testid={`row-line-${idx}`}>
-                        <td className="py-1 px-2">{line.item?.nameAr || "—"}</td>
+                        <td className="py-1 px-2 font-semibold text-foreground">{line.item?.nameAr || "—"}</td>
                         <td className="py-1 px-2 font-mono">{line.item?.itemCode || "—"}</td>
                         <td className="py-1 px-1 text-center">
                           <button
@@ -903,7 +900,7 @@ export default function StoreTransfers() {
           </fieldset>
 
           {!isViewOnly && (
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap no-print">
               <Button
                 variant="outline"
                 size="sm"
@@ -943,9 +940,31 @@ export default function StoreTransfers() {
                 <FileText className="h-3 w-3 ml-1" />
                 إذن جديد
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.print()}
+                data-testid="button-print-transfer"
+              >
+                <Printer className="h-3 w-3 ml-1" />
+                طباعة
+              </Button>
               {formLines.length > 0 && (
                 <span className="text-[10px] text-muted-foreground mr-auto">{formLines.length} صنف مُضاف</span>
               )}
+            </div>
+          )}
+          {isViewOnly && (formLines.length > 0 || editingTransferId) && (
+            <div className="flex items-center gap-2 flex-wrap no-print">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.print()}
+                data-testid="button-print-transfer"
+              >
+                <Printer className="h-3 w-3 ml-1" />
+                طباعة
+              </Button>
             </div>
           )}
         </TabsContent>
