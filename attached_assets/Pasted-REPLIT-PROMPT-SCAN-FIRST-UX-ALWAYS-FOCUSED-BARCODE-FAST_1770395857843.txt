@@ -1,0 +1,192 @@
+REPLIT PROMPT – SCAN-FIRST UX (ALWAYS-FOCUSED BARCODE) + FAST ADD + INLINE QTY EDIT + FEFO AUTO-SPLIT (NO LAG)
+Arabic RTL + Peachtree/Sage Web Theme + SQL Server + High Performance + Large Data Friendly
+هدف البرومبت: تجربة صيدلي “ممتعة وسريعة” — اسكنر طول الوقت + سطر يتفتح فورًا + كمية افتراضية 1 + وحدة كبرى + FEFO تقسيم تلقائي بدون تعطيل
+
+====================================================================================================
+0) الهدف (Golden UX Flow)
+====================================================================================================
+في شاشة (إذن تحويل / فاتورة بيع – نفس فلسفة التحويل):
+1) المؤشر (Focus) يكون دايمًا على خانة الباركود (Scan Field)
+2) الصيدلي يسحب الاسكنر:
+   - النظام يجيب الصنف فورًا (Barcode Resolve)
+   - يفتح سطر جديد في Grid بالصنف المختار
+   - Qty الافتراضية = 1
+   - Unit الافتراضية = Major Unit
+   - Focus ينتقل فورًا لخانة الكمية في نفس السطر (علشان يكتب الكمية بسرعة)
+3) بعد ما يكتب الكمية ويضغط Enter:
+   - لو الصنف HasExpiry=1:
+     النظام يعمل FEFO allocation ويقسم تلقائيًا على سطور متعددة لو لازم
+   - لو HasExpiry=0:
+     سطر واحد فقط بدون Expiry
+4) بعد اعتماد الكمية:
+   - Focus يرجع تلقائيًا لخانة الباركود لاستقبال اسكن جديد فورًا
+
+القاعدة: “إيد على الاسكنر — إيد على الكيبورد” بدون أي خطوات إضافية.
+
+====================================================================================================
+1) UPDATE-A: Always-Focused Barcode Field (Non-Negotiable)
+====================================================================================================
+A) إنشاء Barcode Input ثابت (ظاهر أو شبه مخفي) داخل Tab إذن التحويل:
+- barcodeInput is ALWAYS ready to receive scanner text
+- scanner sends text + Enter
+- ممنوع فقدان الـ focus بسبب click في grid أو popup
+
+B) Focus Guard Rules:
+- عند أي click خارج input:
+  - لا تسرق focus من barcodeInput إلا في حالتين فقط:
+    1) المستخدم بالفعل داخل edit mode في Qty cell
+    2) نافذة Modal مفتوحة وتحتاج input (مثل Sticky Search)
+- بعد انتهاء أي edit (Enter / blur / save line):
+  - ارجع focus للـ barcodeInput خلال 50ms
+
+C) Hotkeys:
+- F2 = يرجع المؤشر للباركود فورًا
+- Esc = يلغي edit ويرجع للباركود
+
+====================================================================================================
+2) UPDATE-B: Scan-to-Line Creation (Fast Add – No Manual Search)
+====================================================================================================
+A) عند Enter في barcodeInput:
+- Call API resolve:
+  GET /barcode/resolve?value={barcode}&warehouseId={sourceWarehouseId}
+
+B) Response لازم يحتوي:
+- itemId, itemCode, itemNameAR, hasExpiry, conversionFactor, majorUnitName, minorUnitName
+
+C) Behavior:
+- لو barcode unknown:
+  - Toast سريع "باركود غير معروف"
+  - focus stays on barcodeInput
+- لو معروف:
+  1) Add a new line into Grid immediately (optimistic UI):
+     - ItemName, ItemCode
+     - Unit = Major (default)
+     - Qty = 1 (default)
+     - Expiry empty مؤقتًا
+  2) Move focus مباشرة إلى Qty cell في نفس السطر (auto-select الرقم 1)
+  3) لا تفتح نافذة بحث — إلا لو المستخدم ضغط Ctrl+F أو زر بحث
+
+====================================================================================================
+3) UPDATE-C: Qty Edit Flow (Enter-to-Confirm)
+====================================================================================================
+A) Editing Qty:
+- الصيدلي يكتب qty ثم Enter
+- عند Enter:
+  - يتم “Confirm Qty” وبدء allocation لو لازم
+- يمنع الاعتماد على mouse قدر الإمكان
+
+B) Default Unit:
+- Unit always defaults to Major
+- user can change unit manually (optional) لكن الافتراضي Major
+
+C) Validation:
+- لو qty <= 0 => رسالة "كمية غير صحيحة" ويفضل في Qty
+- لو qty أكبر من المتاح => رسالة + رجوع للكمية بدون تجميد
+
+====================================================================================================
+4) UPDATE-D: FEFO Auto-Split (Hard Rules + Smooth UI)
+====================================================================================================
+A) Trigger:
+- يتم تشغيل FEFO allocation بعد Confirm Qty (Enter على Qty)
+
+B) Server-side Allocation ONLY:
+GET /transfer/fefo-allocate?itemId=&sourceWarehouseId=&requiredQtyInMinor=&asOfDate=
+
+Response:
+{
+  allocations:[{lotId, expiryDate, qtyAllocatedInMinor, purchasePrice}],
+  shortageInMinor
+}
+
+C) Multi-Line Creation (UI + DB aligned):
+- لو allocations.length == 1:
+  - update نفس السطر:
+    expiry = allocation.expiryDate (لو HasExpiry=1)
+    lockFefo = true
+- لو allocations.length > 1:
+  - النظام “يحوّل” السطر الحالي إلى أول allocation
+  - ثم ينشئ سطور إضافية لباقي allocations تلقائيًا:
+    Line1: qtyMajor = alloc1/minorFactor , expiry=exp1
+    Line2: qtyMajor = alloc2/minorFactor , expiry=exp2
+    ...
+  - كل سطر يحمل allocationId/lotId داخليًا (FefoLocked = true)
+
+D) Non-Expiry Items:
+- HasExpiry=0:
+  - ممنوع أي expiry UI/DB
+  - allocation = single line only (Expiry NULL)
+
+E) No Lag UI Rule:
+- لا تعمل re-render للجدول كله
+- حدث السطر الحالي + append سطور فقط (minimal diff update)
+- أثناء الاستدعاء:
+  - spinner صغير داخل السطر نفسه (غير blocking)
+  - user يقدر يكمل اسكن (queue) لو تحب تعملها advanced
+
+====================================================================================================
+5) UPDATE-E: Scan Queue (تسهيل إضافي مقترح – اختياري لكنه عبقري)
+====================================================================================================
+لو الصيدلي اسكن أصناف بسرعة قبل ما يكتب كميات:
+- اعمل Queue بسيطة:
+  - كل scan يضيف سطر Qty=1 ويقف على Qty
+  - لو المستخدم اسكن تاني فورًا:
+    - يسجل الصنف التالي في queue ويضيفه كسطر Qty=1
+    - ويترك الصيدلي يرجع يعدل كمياتهم واحد واحد
+- زر "التالي" و"السابق" بين سطور الكمية (↑ ↓)
+
+(ده يقلل توقف الشغل في الزحمة)
+
+====================================================================================================
+6) DB Integrity (Prevent Future Problems)
+====================================================================================================
+- لا ترحيل (Post) بدون:
+  - Allocations للأصناف HasExpiry=1
+- TransferLineAllocations = مصدر الحقيقة
+- UI lines مجرد عرض للـ allocations وليس اجتهاد
+
+====================================================================================================
+7) Performance Targets (Replit must verify with tests)
+====================================================================================================
+- Barcode resolve p95 ≤ 150ms
+- FEFO allocate p95 ≤ 250ms
+- Multi-line split rendering ≤ 60ms
+- No UI freeze أثناء API calls
+
+====================================================================================================
+8) Mandatory Tests (Auto-run)
+====================================================================================================
+TEST-FOCUS-01:
+- افتح الإذن، اضغط أي مكان: المؤشر يرجع للباركود خلال 50ms
+
+TEST-SCAN-01:
+- scan barcode معروف => يضيف سطر فورًا + يفتح Qty cell + qty=1 + unit=Major
+
+TEST-QTY-01:
+- اكتب qty=7 ثم Enter
+- لو المتاح:
+  LotExp1=5
+  LotExp2=5
+=> لازم يقسم تلقائيًا:
+  سطر1 qty=5 expiry=Exp1
+  سطر2 qty=2 expiry=Exp2
+- بدون تهنيج
+
+TEST-UNKNOWN-01:
+- scan barcode غير معروف => toast + focus ثابت على الباركود
+
+TEST-NONEXP-01:
+- HasExpiry=0 => لا expiry + سطر واحد فقط
+
+====================================================================================================
+9) Implementation Notes (Clean & No-Mess)
+====================================================================================================
+- استخدم Event-driven architecture:
+  onScanEnter -> resolve -> addLine -> focusQty
+  onQtyEnter  -> allocate -> splitLines -> focusBarcode
+- Minimal DOM updates + async calls + caching as needed
+- Indexes:
+  Items(Barcode) unique
+  InventoryLots(ItemID, WarehouseID, ExpiryDate) include(QtyInMinor)
+- No blocking modals during scan flow
+
+انتهى.
