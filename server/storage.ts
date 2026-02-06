@@ -188,6 +188,9 @@ export interface IStorage {
   getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
   getItemAvailability(itemId: string, warehouseId: string): Promise<string>;
   searchItemsForTransfer(query: string, warehouseId: string, limit?: number): Promise<any[]>;
+
+  // Pilot Test Seed
+  seedPilotTest(): Promise<{ warehouses: any[]; items: any[]; lots: any[] }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1271,16 +1274,20 @@ export class DatabaseStorage implements IStorage {
         const requiredQty = parseFloat(line.qtyInMinor);
         if (requiredQty <= 0) throw new Error(`الكمية يجب أن تكون أكبر من صفر: ${item.nameAr}`);
 
+        const expiryCondition = item.hasExpiry
+          ? and(
+              sql`${inventoryLots.expiryDate} IS NOT NULL`,
+              sql`${inventoryLots.expiryDate} >= ${transfer.transferDate}`
+            )
+          : sql`${inventoryLots.expiryDate} IS NULL`;
+
         const lots = await tx.select().from(inventoryLots)
           .where(and(
             eq(inventoryLots.itemId, line.itemId),
             eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
             eq(inventoryLots.isActive, true),
             sql`${inventoryLots.qtyInMinor}::numeric > 0`,
-            or(
-              sql`${inventoryLots.expiryDate} IS NULL`,
-              sql`${inventoryLots.expiryDate} >= ${transfer.transferDate}`
-            )
+            expiryCondition
           ))
           .orderBy(asc(inventoryLots.expiryDate), asc(inventoryLots.receivedDate));
 
@@ -1301,7 +1308,7 @@ export class DatabaseStorage implements IStorage {
         }
 
         if (remaining > 0) {
-          throw new Error(`الكمية المتاحة غير كافية للصنف: ${item.nameAr}. العجز: ${remaining.toFixed(4)} وحدة`);
+          throw new Error(`الكمية غير متاحة للصنف: ${item.nameAr} - المطلوب: ${requiredQty} - المتاح: ${(requiredQty - remaining).toFixed(0)} (بالوحدة الصغرى)`);
         }
 
         for (const alloc of allocations) {
@@ -1348,7 +1355,7 @@ export class DatabaseStorage implements IStorage {
             const [newLot] = await tx.insert(inventoryLots).values({
               itemId: line.itemId,
               warehouseId: transfer.destinationWarehouseId,
-              expiryDate: alloc.expiryDate || null,
+              expiryDate: item.hasExpiry ? (alloc.expiryDate || null) : null,
               receivedDate: transfer.transferDate,
               purchasePrice: alloc.unitCost,
               qtyInMinor: alloc.allocatedQty.toFixed(4),
@@ -1397,16 +1404,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any> {
+    const [item] = await db.select().from(items).where(eq(items.id, itemId));
+
+    const expiryCondition = item && item.hasExpiry
+      ? and(
+          sql`${inventoryLots.expiryDate} IS NOT NULL`,
+          sql`${inventoryLots.expiryDate} >= ${asOfDate}`
+        )
+      : sql`${inventoryLots.expiryDate} IS NULL`;
+
     const lots = await db.select().from(inventoryLots)
       .where(and(
         eq(inventoryLots.itemId, itemId),
         eq(inventoryLots.warehouseId, warehouseId),
         eq(inventoryLots.isActive, true),
         sql`${inventoryLots.qtyInMinor}::numeric > 0`,
-        or(
-          sql`${inventoryLots.expiryDate} IS NULL`,
-          sql`${inventoryLots.expiryDate} >= ${asOfDate}`
-        )
+        expiryCondition
       ))
       .orderBy(asc(inventoryLots.expiryDate), asc(inventoryLots.receivedDate));
 
@@ -1484,6 +1497,166 @@ export class DatabaseStorage implements IStorage {
       });
     }
     return enriched;
+  }
+
+  async seedPilotTest(): Promise<{ warehouses: any[]; items: any[]; lots: any[] }> {
+    const today = new Date();
+    const formatDate = (d: Date) => d.toISOString().split('T')[0];
+    const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+
+    return await db.transaction(async (tx) => {
+      const warehouseDefs = [
+        { warehouseCode: "WH-PH-IN", nameAr: "صيدلية داخلية" },
+        { warehouseCode: "WH-OR", nameAr: "مخزن العمليات" },
+      ];
+
+      const createdWarehouses: any[] = [];
+      for (const whDef of warehouseDefs) {
+        const [existing] = await tx.select().from(warehouses).where(eq(warehouses.warehouseCode, whDef.warehouseCode));
+        if (existing) {
+          createdWarehouses.push(existing);
+        } else {
+          const [inserted] = await tx.insert(warehouses).values(whDef).returning();
+          createdWarehouses.push(inserted);
+        }
+      }
+
+      const whPhIn = createdWarehouses.find(w => w.warehouseCode === "WH-PH-IN")!;
+
+      const itemDefs = [
+        {
+          itemCode: "TEST-DRUG-1",
+          category: "drug" as const,
+          hasExpiry: true,
+          nameAr: "باراسيتامول 500mg تجريبي",
+          majorUnitName: "علبة",
+          minorUnitName: "شريط",
+          majorToMinor: "10",
+          purchasePriceLast: "100",
+          salePriceCurrent: "150",
+        },
+        {
+          itemCode: "TEST-DRUG-2",
+          category: "drug" as const,
+          hasExpiry: true,
+          nameAr: "أموكسيسيلين 250mg تجريبي",
+          majorUnitName: "علبة",
+          minorUnitName: "قرص",
+          majorToMinor: "20",
+          purchasePriceLast: "200",
+          salePriceCurrent: "300",
+        },
+        {
+          itemCode: "TEST-SUP-1",
+          category: "supply" as const,
+          hasExpiry: false,
+          nameAr: "قفازات طبية تجريبي",
+          majorUnitName: "علبة",
+          minorUnitName: "قطعة",
+          majorToMinor: "50",
+          purchasePriceLast: "30",
+          salePriceCurrent: "45",
+        },
+      ];
+
+      const createdItems: any[] = [];
+      for (const itemDef of itemDefs) {
+        const [existing] = await tx.select().from(items).where(eq(items.itemCode, itemDef.itemCode));
+        if (existing) {
+          createdItems.push(existing);
+        } else {
+          const [inserted] = await tx.insert(items).values(itemDef).returning();
+          createdItems.push(inserted);
+        }
+      }
+
+      const drug1 = createdItems.find(i => i.itemCode === "TEST-DRUG-1")!;
+      const drug2 = createdItems.find(i => i.itemCode === "TEST-DRUG-2")!;
+      const sup1 = createdItems.find(i => i.itemCode === "TEST-SUP-1")!;
+
+      const lotDefs = [
+        {
+          itemId: drug1.id,
+          warehouseId: whPhIn.id,
+          expiryDate: formatDate(addDays(today, 30)),
+          receivedDate: formatDate(addDays(today, -5)),
+          purchasePrice: "100.0000",
+          qtyInMinor: "50.0000",
+          label: "TEST-DRUG-1 LotA",
+        },
+        {
+          itemId: drug1.id,
+          warehouseId: whPhIn.id,
+          expiryDate: formatDate(addDays(today, 90)),
+          receivedDate: formatDate(addDays(today, -3)),
+          purchasePrice: "105.0000",
+          qtyInMinor: "100.0000",
+          label: "TEST-DRUG-1 LotB",
+        },
+        {
+          itemId: drug1.id,
+          warehouseId: whPhIn.id,
+          expiryDate: formatDate(addDays(today, -10)),
+          receivedDate: formatDate(addDays(today, -60)),
+          purchasePrice: "95.0000",
+          qtyInMinor: "200.0000",
+          label: "TEST-DRUG-1 LotExpired",
+        },
+        {
+          itemId: drug2.id,
+          warehouseId: whPhIn.id,
+          expiryDate: formatDate(addDays(today, 60)),
+          receivedDate: formatDate(addDays(today, -7)),
+          purchasePrice: "200.0000",
+          qtyInMinor: "40.0000",
+          label: "TEST-DRUG-2 Lot1",
+        },
+        {
+          itemId: sup1.id,
+          warehouseId: whPhIn.id,
+          expiryDate: null as string | null,
+          receivedDate: formatDate(addDays(today, -10)),
+          purchasePrice: "30.0000",
+          qtyInMinor: "500.0000",
+          label: "TEST-SUP-1 Lot1",
+        },
+      ];
+
+      const createdLots: any[] = [];
+      for (const lotDef of lotDefs) {
+        const { label, ...lotData } = lotDef;
+
+        const expiryCondition = lotData.expiryDate === null
+          ? sql`${inventoryLots.expiryDate} IS NULL`
+          : eq(inventoryLots.expiryDate, lotData.expiryDate);
+
+        const [existing] = await tx.select().from(inventoryLots).where(
+          and(
+            eq(inventoryLots.itemId, lotData.itemId),
+            eq(inventoryLots.warehouseId, lotData.warehouseId),
+            expiryCondition,
+            eq(inventoryLots.purchasePrice, lotData.purchasePrice),
+          )
+        );
+
+        if (existing) {
+          const [updated] = await tx.update(inventoryLots)
+            .set({ qtyInMinor: lotData.qtyInMinor })
+            .where(eq(inventoryLots.id, existing.id))
+            .returning();
+          createdLots.push({ ...updated, label });
+        } else {
+          const [inserted] = await tx.insert(inventoryLots).values(lotData).returning();
+          createdLots.push({ ...inserted, label });
+        }
+      }
+
+      return {
+        warehouses: createdWarehouses.map(w => ({ id: w.id, warehouseCode: w.warehouseCode, nameAr: w.nameAr })),
+        items: createdItems.map(i => ({ id: i.id, itemCode: i.itemCode, nameAr: i.nameAr })),
+        lots: createdLots.map(l => ({ id: l.id, label: l.label, itemId: l.itemId, warehouseId: l.warehouseId, expiryDate: l.expiryDate, qtyInMinor: l.qtyInMinor })),
+      };
+    });
   }
 }
 

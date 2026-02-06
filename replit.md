@@ -131,6 +131,19 @@ Key entities include:
   - API: GET /api/items/lookup (search with availability), GET /api/items/:itemId/availability
   - Lines reset when source warehouse changes (prevents stale availability data)
   - Sidebar nav item "تحويل مخزني" with ArrowLeftRight icon
+- **Real-World Pilot Test (Feb 6, 2026)**:
+  - Seed endpoint: POST /api/seed/pilot-test (idempotent, creates/updates TEST- prefixed data)
+  - Test warehouses: WH-PH-IN (صيدلية داخلية), WH-OR (مخزن غرفة العمليات)
+  - Test items: TEST-DRUG-1 (HasExpiry=1, علبة/شريط, factor=10), TEST-DRUG-2 (HasExpiry=1, علبة/قرص, factor=20), TEST-SUP-1 (HasExpiry=0, علبة/قطعة, factor=50)
+  - Lot scenarios: FEFO split (multiple lots with different expiry), expired lot (excluded automatically), non-expiry lot (NULL expiry)
+  - HasExpiry enforcement: HasExpiry=0 items only use NULL-expiry lots, HasExpiry=1 items exclude expired lots
+  - Default unit = Major (علبة) in UI, conversion to minor for DB operations
+  - Availability display: shows in selected unit (e.g., "5 علبة + 3 شريط") not raw minor
+  - FEFO column header: "توزيع الصلاحية" (Arabic)
+  - Search dropdown: shows "متاح: X علبة" in major unit
+  - Shortage rejection: Arabic error "الكمية غير متاحة" with details
+  - Verified: FEFO split, non-expiry transfer, shortage rejection, destination lot creation
+  - To remove test data: DELETE items/lots/warehouses WHERE code LIKE 'TEST-%'
 - **Database Integrity & Performance Audit** (Feb 5, 2026):
   - Added self-referencing FKs: accounts.parentId → accounts.id, costCenters.parentId → costCenters.id
   - Added FK: journalEntries.reversalEntryId → journalEntries.id, journalEntries.templateId → journalTemplates.id

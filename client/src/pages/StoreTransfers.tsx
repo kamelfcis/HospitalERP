@@ -91,6 +91,39 @@ function buildFefoSummary(preview: FefoPreviewResponse, item: Item | null): stri
   }).join(" | ");
 }
 
+function formatAvailability(availableQtyMinor: string, unitLevel: string, item: Item | null): string {
+  const minorQty = parseFloat(availableQtyMinor);
+  if (isNaN(minorQty)) return "0";
+  
+  if (item && unitLevel === "major" && item.majorToMinor) {
+    const factor = parseFloat(item.majorToMinor);
+    if (factor > 0) {
+      const majorQty = minorQty / factor;
+      const wholeMajor = Math.floor(majorQty);
+      const remainderMinor = Math.round(minorQty - (wholeMajor * factor));
+      if (remainderMinor > 0) {
+        return `${wholeMajor} ${item.majorUnitName || ''} + ${remainderMinor} ${item.minorUnitName || ''}`;
+      }
+      return `${wholeMajor} ${item.majorUnitName || ''}`;
+    }
+  }
+  
+  if (item && unitLevel === "medium" && item.mediumToMinor) {
+    const factor = parseFloat(item.mediumToMinor);
+    if (factor > 0) {
+      const medQty = minorQty / factor;
+      const wholeMed = Math.floor(medQty);
+      const remainderMinor = Math.round(minorQty - (wholeMed * factor));
+      if (remainderMinor > 0) {
+        return `${wholeMed} ${item.mediumUnitName || ''} + ${remainderMinor} ${item.minorUnitName || ''}`;
+      }
+      return `${wholeMed} ${item.mediumUnitName || ''}`;
+    }
+  }
+  
+  return `${minorQty} ${item?.minorUnitName || 'وحدة'}`;
+}
+
 export default function StoreTransfers() {
   const { toast } = useToast();
   const today = new Date().toISOString().split("T")[0];
@@ -500,7 +533,7 @@ export default function StoreTransfers() {
                 <th className="py-1 px-1 text-right font-medium min-w-[100px]">الوحدة</th>
                 <th className="py-1 px-1 text-right font-medium min-w-[70px]">الكمية</th>
                 <th className="py-1 px-1 text-right font-medium min-w-[70px]">المتاح</th>
-                <th className="py-1 px-1 text-right font-medium min-w-[180px]">FEFO</th>
+                <th className="py-1 px-1 text-right font-medium min-w-[180px]">توزيع الصلاحية</th>
                 <th className="py-1 px-1 text-center font-medium min-w-[40px]">حذف</th>
               </tr>
             </thead>
@@ -557,7 +590,11 @@ export default function StoreTransfers() {
                                   <span className="font-mono text-muted-foreground">{item.itemCode}</span>
                                   <span className="flex-1 truncate">{item.nameAr}</span>
                                   {item.availableQtyMinor !== undefined && (
-                                    <span className="text-[9px] text-muted-foreground">({item.availableQtyMinor})</span>
+                                    <span className="text-[9px] text-muted-foreground">
+                                      (متاح: {item.majorToMinor && parseFloat(item.majorToMinor) > 0
+                                        ? `${Math.floor(parseFloat(item.availableQtyMinor) / parseFloat(item.majorToMinor))} ${item.majorUnitName || ''}`
+                                        : item.availableQtyMinor})
+                                    </span>
                                   )}
                                 </button>
                               ))}
@@ -613,7 +650,7 @@ export default function StoreTransfers() {
 
                     <td className="py-1 px-1">
                       {line.isLocked && line.availableQty ? (
-                        <span className="text-[10px] font-mono">{line.availableQty}</span>
+                        <span className="text-[10px] font-mono">{formatAvailability(line.availableQty, line.unitLevel, line.item)}</span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

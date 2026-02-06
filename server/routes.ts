@@ -1363,6 +1363,16 @@ export async function registerRoutes(
     }
   });
 
+  // ===== PILOT TEST SEED =====
+  app.post("/api/seed/pilot-test", async (req, res) => {
+    try {
+      const result = await storage.seedPilotTest();
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ===== STORE TRANSFERS =====
   app.get("/api/transfers", async (req, res) => {
     try {

@@ -1,0 +1,259 @@
+REPLIT PROMPT – REAL-WORLD PILOT: TRANSFER 2–3 ITEMS (INTERNAL PHARMACY → OR STORE)
+Scope: تنفيذ عملي كامل + تجهيز داتا + شاشة تحويل + اختبارات لكل الاحتمالات
+Arabic RTL + Peachtree/Sage Web Theme + SQL Server
+IMPORTANT: التحويل مخزن لمخزن فقط (NOT SALE) + FEFO للأصناف ذات الصلاحية + Default Unit = Major
+
+====================================================================================================
+0) الهدف (Objective)
+====================================================================================================
+عايزك تنفذ “تجربة واقعية” End-to-End لتحويل 2–3 أصناف من:
+- مخزن: صيدلية داخلية (Internal Pharmacy Warehouse)
+إلى:
+- مخزن: العمليات (OR Warehouse)
+
+مع تغطية كل السيناريوهات الممكنة عندنا:
+A) يوجد مخازن ورصيد افتتاحي بالفعل
+B) لا يوجد مخازن أصلاً (لا جدول Warehouses)
+C) يوجد مخازن لكن لا يوجد رصيد (لا Lots/No Opening)
+D) يوجد Lots لكن بدون Expiry غلط / تواريخ 1900 / Item HasExpiry=0 ومع ذلك له Expiry (لازم تمنع)
+E) HasExpiry=1 مع Lots متعددة وتحتاج FEFO Split
+F) HasExpiry=0 (مستلزمات) تحويل بدون Expiry
+
+المطلوب: أي شيء لازم يتعمل (جداول/تعديلات/Seed/Endpoints/UI/Test scripts) يتعمل فورًا.
+
+====================================================================================================
+1) قواعد صارمة (Non-Negotiable)
+====================================================================================================
+1) Transfer = حركة مخزنية فقط:
+   OUT من مخزن المصدر + IN لمخزن الوجهة
+   لا تسعير، لا بيع، لا إيراد/مصروف.
+2) FEFO:
+   للأصناف HasExpiry=1 فقط:
+   - اختيار أقرب ExpiryDate صالح (ExpiryDate >= TransferDate)
+   - Split لو الكمية أكبر من لوت واحد
+   - منع التحويل من منتهي الصلاحية
+3) HasExpiry=0:
+   - ممنوع تخزين ExpiryDate أو Lots بصلاحية
+   - التحويل من رصيد إجمالي (Lot واحد Expiry NULL لكل مخزن كتصميم عملي)
+4) Default Unit في UI = MajorUnit (الوحدة الكبرى)
+   والتحويل فعليًا يتم في DB بالوحدة الصغرى QtyInMinor (ConversionFactor)
+5) ممنوع تواريخ وهمية 1900-01-01
+
+====================================================================================================
+2) Detection + Plan (Auto-Detect Current DB State)
+====================================================================================================
+عند التشغيل أول مرة:
+- افحص هل الجداول التالية موجودة:
+  Items
+  Warehouses
+  InventoryLots
+  InventoryLotMovements
+  TransferHeaders / TransferLines / TransferLineAllocations
+
+لو أي جدول ناقص:
+- اعمل Migration تلقائي لإنشائه (SQL script) مع Indexes + Constraints
+- لو الجداول موجودة لكن ناقص أعمدة (WarehouseID داخل InventoryLots مثلًا) اعمل ALTER
+
+لو الداتا موجودة:
+- لا تبوظ حاجة
+- اعمل Seed “اختياري” بعلامة IsTestData=1 أو Prefix واضح في الأكواد (TEST-)
+
+====================================================================================================
+3) Database Schema (Required)
+====================================================================================================
+A) Warehouses
+- WarehouseID PK
+- WarehouseCode UNIQUE
+- WarehouseNameAR
+- IsActive BIT DEFAULT 1
+
+B) Items (minimum fields needed for pilot)
+- ItemID PK
+- ItemCode UNIQUE
+- ItemNameAR
+- HasExpiry BIT NOT NULL DEFAULT 0
+- MajorUnitName NVARCHAR(20)
+- MinorUnitName NVARCHAR(20)
+- ConversionFactor DECIMAL(18,4) NOT NULL DEFAULT 1
+
+C) InventoryLots (Must include WarehouseID)
+- LotID PK
+- ItemID FK
+- WarehouseID FK
+- ExpiryDate DATE NULL
+- ReceivedDate DATE NOT NULL
+- PurchasePrice DECIMAL(18,4) NOT NULL
+- QtyInMinor DECIMAL(18,4) NOT NULL CHECK(QtyInMinor>=0)
+- IsActive BIT DEFAULT 1
+Constraints:
+- CHECK (ExpiryDate IS NULL OR ExpiryDate >= '2000-01-01')
+Indexes:
+- IX_Lots_Item_Warehouse_Expiry (ItemID, WarehouseID, ExpiryDate)
+
+D) InventoryLotMovements
+- MovementID PK
+- LotID FK
+- WarehouseID FK
+- TxDate DATETIME
+- TxType NVARCHAR(10)  -- IN/OUT/TRANSFER
+- QtyChangeInMinor DECIMAL(18,4)
+- UnitCost DECIMAL(18,4)
+- ReferenceType NVARCHAR(20) = 'TRANSFER'
+- ReferenceID NVARCHAR(50) = TransferNo
+Index:
+- IX_Mov_Lot_TxDate (LotID, TxDate)
+
+E) Transfers
+TransferHeaders:
+- TransferID PK
+- TransferNo UNIQUE
+- TransferDate
+- SourceWarehouseID
+- DestinationWarehouseID
+- Status (Draft/Posted)
+- CreatedAt
+
+TransferLines:
+- LineID PK
+- TransferID FK
+- ItemID
+- UnitName (Major/Minor)
+- QtyEntered
+- QtyInMinor
+- CreatedAt
+
+TransferLineAllocations:
+- AllocationID PK
+- LineID FK
+- SourceLotID
+- ExpiryDate
+- QtyOutInMinor
+- PurchasePrice
+- DestinationLotID
+
+====================================================================================================
+4) Seed Data (Must Create 2–3 Items + Warehouses + Opening/No Opening Scenarios)
+====================================================================================================
+Create Warehouses (if not exists):
+1) WH-PH-IN   "صيدلية داخلية"
+2) WH-OR      "مخزن العمليات"
+
+Create 3 Test Items:
+1) TEST-DRUG-1 (HasExpiry=1)  Major=علبة  Minor=شريط  Factor=10
+2) TEST-DRUG-2 (HasExpiry=1)  Major=علبة  Minor=قرص   Factor=20
+3) TEST-SUP-1  (HasExpiry=0)  Major=علبة  Minor=قطعة  Factor=50
+
+Lots Scenarios in Internal Pharmacy:
+A) For TEST-DRUG-1:
+   LotA Expiry قريب (مثال: بعد 30 يوم) QtyInMinor=50  PurchasePrice=100
+   LotB Expiry أبعد (بعد 90 يوم)      QtyInMinor=100 PurchasePrice=105
+   LotExpired Expiry قبل اليوم         QtyInMinor=200 PurchasePrice=95  (يجب استبعاده)
+B) For TEST-DRUG-2:
+   Lot1 Expiry بعد 60 يوم QtyInMinor=40  PurchasePrice=200
+C) For TEST-SUP-1:
+   Use single lot with ExpiryDate NULL QtyInMinor=500 PurchasePrice=30
+
+Also create 1 “No Opening” Case:
+- Item TEST-DRUG-1 in OR warehouse initially has ZERO lots/qty
+- System must create destination lot(s) أثناء التحويل تلقائيًا
+
+====================================================================================================
+5) UI (Single-Line Professional Transfer Screen)
+====================================================================================================
+Screen: “تحويل مخزني بين الأقسام”
+Header:
+- TransferDate (default today)
+- SourceWarehouse (dropdown)
+- DestinationWarehouse (dropdown)
+- Status badge
+
+Lines Grid:
+Column1: الصنف (Inline Search input: Barcode/Code/Name)
+Column2: الوحدة (default Major)
+Column3: الكمية (default 1)
+Column4: المتاح (read-only)
+Column5: FEFO Preview (read-only breakdown) if HasExpiry=1
+Buttons:
+- Save Draft
+- Post Transfer
+
+UX:
+- اختيار الصنف يثبت السطر ويفتح سطر جديد تلقائيًا
+- بمجرد إدخال Qty: يتم تحديث FEFO preview
+- منع Post لو في shortage أو Expired only أو warehouses not selected
+
+====================================================================================================
+6) APIs (Must Implement)
+====================================================================================================
+1) GET /warehouses
+2) GET /items/lookup?query=&warehouseId=&limit=10
+3) GET /transfer/fefo-preview?itemId=&warehouseId=&requiredQtyInMinor=&date=
+4) POST /transfers/draft
+5) POST /transfers/{id}/post
+
+Posting must:
+- Re-validate availability
+- Perform allocations
+- Create OUT/IN movements
+- Create destination lots if missing (same ExpiryDate + PurchasePrice)
+
+====================================================================================================
+7) Test Plan (Must Execute Automatically + Produce Report)
+====================================================================================================
+Write automated tests that run after seeding:
+
+TEST-01 FEFO Split:
+- Transfer TEST-DRUG-1 qtyEntered=6 Major (Factor=10 => 60 minor)
+Expected:
+- Allocate 50 from closest expiry lot + 10 from next lot
+- Exclude expired lot
+- Source qty decreases, destination qty increases
+- Movements created properly
+- Destination lots created (2 lots) with same expiry + cost
+
+TEST-02 Non-expiry item:
+- Transfer TEST-SUP-1 qtyEntered=2 Major (Factor=50 => 100 minor)
+Expected:
+- Use Expiry NULL lot only
+- No expiry shown
+- Destination lot Expiry NULL created/updated
+- Movements OK
+
+TEST-03 Shortage:
+- Transfer TEST-DRUG-2 qtyEntered high بحيث تتجاوز المتاح (مثال: 5 Major => 100 minor بينما المتاح 40)
+Expected:
+- Reject with Arabic message "الكمية غير متاحة" + shortage shown
+- No movements posted
+
+TEST-04 Missing Warehouses scenario:
+- If Warehouses table not exist: migration creates it
+- UI can select both warehouses
+
+TEST-05 Existing DB scenario:
+- If data already exists: do not overwrite
+- Create only TEST- prefixed items and keep them isolated
+
+Generate a short “Test Results” report:
+- Passed/Failed + السبب + snapshots من allocations
+
+====================================================================================================
+8) Output Deliverables
+====================================================================================================
+- SQL migration scripts (create/alter + indexes/constraints)
+- Seed script (test warehouses + items + lots)
+- Backend APIs
+- UI screen RTL one-line
+- Automated tests + test report
+- Notes: how to remove TEST data safely (by prefix TEST-)
+
+====================================================================================================
+9) Final Rules
+====================================================================================================
+- التحويل ≠ بيع
+- FEFO للأصناف HasExpiry=1 فقط
+- HasExpiry=0 => ExpiryDate MUST be NULL
+- Default Unit = Major
+- No 1900 dates
+- كل شيء لازم للواقع العملي يتعمل: داتا + شاشات + APIs + Tests
+
+انتهى.
