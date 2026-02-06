@@ -114,6 +114,22 @@ Key entities include:
   - Alphanumeric validation on barcode values (frontend + backend)
   - Duplicate barcode returns HTTP 409 with Arabic error message
   - ItemCard UI: hasExpiry checkbox with CalendarClock icon, barcode grid with add/delete dialogs
+- **Store-to-Store Transfer (تحويل مخزني)** (Feb 6, 2026):
+  - Warehouses table with 7 seeded warehouses (WH-MAIN, WH-PHARM-OUT, WH-PHARM-IN, WH-OR, WH-ICU, WH-ER, WH-LAB)
+  - inventoryLots and inventoryLotMovements extended with warehouseId column
+  - storeTransfers table with auto-increment transfer_number, status tracking, and metadata
+  - Warehouse-aware FEFO preview: GET /api/transfer/fefo-preview?itemId=X&warehouseId=Y&requiredQtyInMinor=Z&asOfDate=DATE
+  - Transfer execution wrapped in DB transaction for atomicity (prevents inventory corruption)
+  - FEFO allocation: lots ordered by earliest expiry first, then by receivedDate
+  - Lot destination logic: reuses existing lot in destination if same expiry+cost, otherwise creates new
+  - OUT movements deduct from source lots, IN movements add to destination lots
+  - Services cannot be transferred; source and destination warehouse must differ
+  - Cost moves as-is from source lot purchasePrice (no pricing/revenue/accounting entries)
+  - StoreTransfers page: form with warehouse selects, item search (code/name/barcode), qty, date, notes
+  - Real-time FEFO preview panel shows lot allocations with availability and cost
+  - Transfer history grid with status badges
+  - API: GET /api/warehouses, POST /api/warehouses, GET /api/transfers, POST /api/transfers
+  - Sidebar nav item "تحويل مخزني" with ArrowLeftRight icon
 - **Database Integrity & Performance Audit** (Feb 5, 2026):
   - Added self-referencing FKs: accounts.parentId → accounts.id, costCenters.parentId → costCenters.id
   - Added FK: journalEntries.reversalEntryId → journalEntries.id, journalEntries.templateId → journalTemplates.id
