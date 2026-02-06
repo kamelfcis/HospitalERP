@@ -69,6 +69,17 @@ import {
   type TransferLineAllocation,
   type InsertTransferLineAllocation,
   type TransferLineWithItem,
+  suppliers,
+  receivingHeaders,
+  receivingLines,
+  type Supplier,
+  type InsertSupplier,
+  type ReceivingHeader,
+  type InsertReceivingHeader,
+  type ReceivingHeaderWithDetails,
+  type ReceivingLine,
+  type InsertReceivingLine,
+  type ReceivingLineWithItem,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -211,6 +222,22 @@ export interface IStorage {
 
   // Pilot Test Seed
   seedPilotTest(): Promise<{ warehouses: any[]; items: any[]; lots: any[] }>;
+
+  // Suppliers
+  getSuppliers(params: { search?: string; page: number; pageSize: number }): Promise<{ suppliers: Supplier[]; total: number }>;
+  getSupplier(id: string): Promise<Supplier | undefined>;
+  createSupplier(supplier: InsertSupplier): Promise<Supplier>;
+  updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
+
+  // Receiving
+  getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }>;
+  getReceiving(id: string): Promise<ReceivingHeaderWithDetails | undefined>;
+  getNextReceivingNumber(): Promise<number>;
+  checkSupplierInvoiceUnique(supplierId: string, supplierInvoiceNo: string, excludeId?: string): Promise<boolean>;
+  saveDraftReceiving(header: InsertReceivingHeader, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; purchasePrice: string; lineTotal: string; batchNumber?: string; expiryDate?: string; salePriceHint?: string; notes?: string; isRejected?: boolean; rejectionReason?: string }[], existingId?: string): Promise<ReceivingHeader>;
+  postReceiving(id: string): Promise<ReceivingHeader>;
+  deleteReceiving(id: string): Promise<boolean>;
+  getItemHints(itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2040,6 +2067,272 @@ export class DatabaseStorage implements IStorage {
         lots: createdLots.map(l => ({ id: l.id, label: l.label, itemId: l.itemId, warehouseId: l.warehouseId, expiryDate: l.expiryDate, qtyInMinor: l.qtyInMinor })),
       };
     });
+  }
+  // ===== SUPPLIERS =====
+  async getSuppliers(params: { search?: string; page: number; pageSize: number }): Promise<{ suppliers: Supplier[]; total: number }> {
+    const { search, page = 1, pageSize = 50 } = params;
+    const offset = (page - 1) * pageSize;
+    const conditions: any[] = [eq(suppliers.isActive, true)];
+    if (search) {
+      const pattern = `%${search}%`;
+      conditions.push(or(
+        ilike(suppliers.nameAr, pattern),
+        ilike(suppliers.code, pattern),
+        ilike(suppliers.phone, pattern),
+        ilike(suppliers.taxId, pattern)
+      ));
+    }
+    const where = conditions.length > 1 ? and(...conditions) : conditions[0];
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(suppliers).where(where);
+    const results = await db.select().from(suppliers).where(where).orderBy(suppliers.nameAr).limit(pageSize).offset(offset);
+    return { suppliers: results, total: Number(countResult.count) };
+  }
+
+  async getSupplier(id: string): Promise<Supplier | undefined> {
+    const [s] = await db.select().from(suppliers).where(eq(suppliers.id, id));
+    return s;
+  }
+
+  async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
+    const [s] = await db.insert(suppliers).values(supplier).returning();
+    return s;
+  }
+
+  async updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined> {
+    const [s] = await db.update(suppliers).set(supplier).where(eq(suppliers.id, id)).returning();
+    return s;
+  }
+
+  // ===== RECEIVING =====
+  async getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }> {
+    const { supplierId, warehouseId, status, fromDate, toDate, search, page = 1, pageSize = 50 } = params;
+    const offset = (page - 1) * pageSize;
+    const conditions: any[] = [];
+    if (supplierId) conditions.push(eq(receivingHeaders.supplierId, supplierId));
+    if (warehouseId) conditions.push(eq(receivingHeaders.warehouseId, warehouseId));
+    if (status) conditions.push(eq(receivingHeaders.status, status as any));
+    if (fromDate) conditions.push(gte(receivingHeaders.receiveDate, fromDate));
+    if (toDate) conditions.push(lte(receivingHeaders.receiveDate, toDate));
+    if (search) {
+      conditions.push(or(
+        ilike(receivingHeaders.supplierInvoiceNo, `%${search}%`),
+        sql`${receivingHeaders.receivingNumber}::text ILIKE ${`%${search}%`}`
+      ));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(receivingHeaders).where(where);
+    const headers = await db.select().from(receivingHeaders).where(where).orderBy(desc(receivingHeaders.createdAt)).limit(pageSize).offset(offset);
+    
+    const data: ReceivingHeaderWithDetails[] = [];
+    for (const h of headers) {
+      const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
+      const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
+      const lines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, h.id));
+      const linesWithItems: ReceivingLineWithItem[] = [];
+      for (const line of lines) {
+        const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+        linesWithItems.push({ ...line, item });
+      }
+      data.push({ ...h, supplier: sup, warehouse: wh, lines: linesWithItems });
+    }
+    return { data, total: Number(countResult.count) };
+  }
+
+  async getReceiving(id: string): Promise<ReceivingHeaderWithDetails | undefined> {
+    const [h] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
+    if (!h) return undefined;
+    const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
+    const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
+    const lines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, h.id));
+    const linesWithItems: ReceivingLineWithItem[] = [];
+    for (const line of lines) {
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      linesWithItems.push({ ...line, item });
+    }
+    return { ...h, supplier: sup, warehouse: wh, lines: linesWithItems };
+  }
+
+  async getNextReceivingNumber(): Promise<number> {
+    const [result] = await db.select({ max: sql<number>`COALESCE(MAX(receiving_number), 0)` }).from(receivingHeaders);
+    return (result?.max || 0) + 1;
+  }
+
+  async checkSupplierInvoiceUnique(supplierId: string, supplierInvoiceNo: string, excludeId?: string): Promise<boolean> {
+    const conditions = [eq(receivingHeaders.supplierId, supplierId), eq(receivingHeaders.supplierInvoiceNo, supplierInvoiceNo)];
+    if (excludeId) {
+      conditions.push(sql`${receivingHeaders.id} != ${excludeId}`);
+    }
+    const [result] = await db.select({ count: sql<number>`count(*)` }).from(receivingHeaders).where(and(...conditions));
+    return Number(result.count) === 0;
+  }
+
+  async saveDraftReceiving(header: InsertReceivingHeader, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; purchasePrice: string; lineTotal: string; batchNumber?: string; expiryDate?: string; salePriceHint?: string; notes?: string; isRejected?: boolean; rejectionReason?: string }[], existingId?: string): Promise<ReceivingHeader> {
+    return await db.transaction(async (tx) => {
+      let header_result: ReceivingHeader;
+      if (existingId) {
+        const [existing] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, existingId));
+        if (!existing || existing.status !== 'draft') throw new Error('لا يمكن تعديل مستند مُرحّل');
+        
+        await tx.update(receivingHeaders).set({
+          ...header,
+          updatedAt: new Date(),
+        }).where(eq(receivingHeaders.id, existingId));
+        
+        await tx.delete(receivingLines).where(eq(receivingLines.receivingId, existingId));
+        [header_result] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, existingId));
+      } else {
+        const nextNum = await this.getNextReceivingNumber();
+        [header_result] = await tx.insert(receivingHeaders).values({
+          ...header,
+          receivingNumber: nextNum,
+        } as any).returning();
+      }
+      
+      let totalQty = 0;
+      let totalCost = 0;
+      
+      for (const line of lines) {
+        const lt = parseFloat(line.lineTotal) || 0;
+        const qty = parseFloat(line.qtyInMinor) || 0;
+        totalQty += qty;
+        totalCost += lt;
+        
+        await tx.insert(receivingLines).values({
+          receivingId: header_result.id,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel as any,
+          qtyEntered: line.qtyEntered,
+          qtyInMinor: line.qtyInMinor,
+          purchasePrice: line.purchasePrice,
+          lineTotal: line.lineTotal,
+          batchNumber: line.batchNumber || null,
+          expiryDate: line.expiryDate || null,
+          salePriceHint: line.salePriceHint || null,
+          notes: line.notes || null,
+          isRejected: line.isRejected || false,
+          rejectionReason: line.rejectionReason || null,
+        });
+      }
+      
+      await tx.update(receivingHeaders).set({
+        totalQty: totalQty.toFixed(4),
+        totalCost: totalCost.toFixed(2),
+      }).where(eq(receivingHeaders.id, header_result.id));
+      
+      [header_result] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, header_result.id));
+      return header_result;
+    });
+  }
+
+  async postReceiving(id: string): Promise<ReceivingHeader> {
+    return await db.transaction(async (tx) => {
+      const [header] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
+      if (!header) throw new Error('المستند غير موجود');
+      if (header.status === 'posted') return header;
+      
+      const lines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
+      const activeLines = lines.filter(l => !l.isRejected);
+      if (activeLines.length === 0) throw new Error('لا توجد أصناف للترحيل');
+      
+      for (const line of activeLines) {
+        const qtyMinor = parseFloat(line.qtyInMinor);
+        if (qtyMinor <= 0) continue;
+        
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        if (!item) continue;
+        
+        if (item.hasExpiry && !line.expiryDate) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية`);
+        if (!item.hasExpiry && line.expiryDate) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);
+        
+        const lotConditions = [
+          eq(inventoryLots.itemId, line.itemId),
+          eq(inventoryLots.warehouseId, header.warehouseId),
+        ];
+        if (line.expiryDate) {
+          lotConditions.push(eq(inventoryLots.expiryDate, line.expiryDate));
+        } else {
+          lotConditions.push(sql`${inventoryLots.expiryDate} IS NULL`);
+        }
+        
+        const existingLots = await tx.select().from(inventoryLots).where(and(...lotConditions));
+        let lotId: string;
+        
+        if (existingLots.length > 0) {
+          const lot = existingLots[0];
+          const newQty = parseFloat(lot.qtyInMinor) + qtyMinor;
+          await tx.update(inventoryLots).set({ 
+            qtyInMinor: newQty.toFixed(4),
+            purchasePrice: line.purchasePrice,
+            updatedAt: new Date(),
+          }).where(eq(inventoryLots.id, lot.id));
+          lotId = lot.id;
+        } else {
+          const [newLot] = await tx.insert(inventoryLots).values({
+            itemId: line.itemId,
+            warehouseId: header.warehouseId,
+            expiryDate: line.expiryDate || null,
+            receivedDate: header.receiveDate,
+            purchasePrice: line.purchasePrice,
+            qtyInMinor: qtyMinor.toFixed(4),
+          }).returning();
+          lotId = newLot.id;
+        }
+        
+        await tx.insert(inventoryLotMovements).values({
+          lotId,
+          warehouseId: header.warehouseId,
+          txType: 'in',
+          qtyChangeInMinor: qtyMinor.toFixed(4),
+          unitCost: line.purchasePrice,
+          referenceType: 'receiving',
+          referenceId: header.id,
+        });
+        
+        await tx.update(items).set({
+          purchasePriceLast: line.purchasePrice,
+          updatedAt: new Date(),
+        }).where(eq(items.id, line.itemId));
+      }
+      
+      const [posted] = await tx.update(receivingHeaders).set({
+        status: 'posted',
+        postedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(receivingHeaders.id, id)).returning();
+      
+      return posted;
+    });
+  }
+
+  async deleteReceiving(id: string): Promise<boolean> {
+    const [header] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
+    if (!header) return false;
+    if (header.status === 'posted') throw new Error('لا يمكن حذف مستند مُرحّل');
+    await db.delete(receivingHeaders).where(eq(receivingHeaders.id, id));
+    return true;
+  }
+
+  async getItemHints(itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }> {
+    const [lastPurchase] = await db.select().from(purchaseTransactions).where(eq(purchaseTransactions.itemId, itemId)).orderBy(desc(purchaseTransactions.createdAt)).limit(1);
+    
+    const [lastSale] = await db.select().from(salesTransactions).where(eq(salesTransactions.itemId, itemId)).orderBy(desc(salesTransactions.createdAt)).limit(1);
+    
+    const [item] = await db.select().from(items).where(eq(items.id, itemId));
+    
+    const [onHandResult] = await db.select({
+      total: sql<string>`COALESCE(SUM(${inventoryLots.qtyInMinor}::numeric), 0)::text`
+    }).from(inventoryLots).where(and(
+      eq(inventoryLots.itemId, itemId),
+      eq(inventoryLots.warehouseId, warehouseId),
+      eq(inventoryLots.isActive, true),
+    ));
+    
+    return {
+      lastPurchasePrice: lastPurchase?.purchasePrice || null,
+      lastSalePrice: lastSale?.salePrice || null,
+      currentSalePrice: item?.salePriceCurrent || "0",
+      onHandMinor: onHandResult?.total || "0",
+    };
   }
 }
 

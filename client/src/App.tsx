@@ -22,6 +22,7 @@ import AuditLog from "@/pages/AuditLog";
 import ItemsList from "@/pages/ItemsList";
 import ItemCard from "@/pages/ItemCard";
 import StoreTransfers from "@/pages/StoreTransfers";
+import SupplierReceiving from "@/pages/SupplierReceiving";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -46,6 +47,7 @@ function Router() {
         <Route path="/items/new" component={ItemCard} />
         <Route path="/items/:id" component={ItemCard} />
         <Route path="/store-transfers" component={StoreTransfers} />
+        <Route path="/supplier-receiving" component={SupplierReceiving} />
         <Route path="/audit-log" component={AuditLog} />
         <Route component={NotFound} />
       </Switch>

@@ -15,6 +15,7 @@ import {
   insertWarehouseSchema,
   insertStoreTransferSchema,
   insertTransferLineSchema,
+  insertSupplierSchema,
   accounts,
   accountTypeLabels
 } from "@shared/schema";
@@ -1526,6 +1527,162 @@ export async function registerRoutes(
       if (error.message.includes("مُرحّل")) {
         return res.status(400).json({ message: error.message });
       }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== SUPPLIERS =====
+  app.get("/api/suppliers", async (req, res) => {
+    try {
+      const { search, page, pageSize } = req.query;
+      const result = await storage.getSuppliers({
+        search: search as string | undefined,
+        page: parseInt(page as string) || 1,
+        pageSize: parseInt(pageSize as string) || 50,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/suppliers/:id", async (req, res) => {
+    try {
+      const supplier = await storage.getSupplier(req.params.id);
+      if (!supplier) return res.status(404).json({ message: "المورد غير موجود" });
+      res.json(supplier);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/suppliers", async (req, res) => {
+    try {
+      const validated = insertSupplierSchema.parse(req.body);
+      const supplier = await storage.createSupplier(validated);
+      res.status(201).json(supplier);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message?.includes('unique') || error.code === '23505') {
+        return res.status(409).json({ message: "كود المورد مُستخدم بالفعل" });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/suppliers/:id", async (req, res) => {
+    try {
+      const validated = insertSupplierSchema.partial().parse(req.body);
+      const supplier = await storage.updateSupplier(req.params.id, validated);
+      if (!supplier) return res.status(404).json({ message: "المورد غير موجود" });
+      res.json(supplier);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== SUPPLIER RECEIVING =====
+  app.get("/api/receivings", async (req, res) => {
+    try {
+      const { supplierId, warehouseId, status, fromDate, toDate, search, page, pageSize } = req.query;
+      const result = await storage.getReceivings({
+        supplierId: supplierId as string | undefined,
+        warehouseId: warehouseId as string | undefined,
+        status: status as string | undefined,
+        fromDate: fromDate as string | undefined,
+        toDate: toDate as string | undefined,
+        search: search as string | undefined,
+        page: parseInt(page as string) || 1,
+        pageSize: parseInt(pageSize as string) || 50,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/receivings/check-invoice", async (req, res) => {
+    try {
+      const { supplierId, supplierInvoiceNo, excludeId } = req.query;
+      if (!supplierId || !supplierInvoiceNo) return res.status(400).json({ message: "بيانات ناقصة" });
+      const isUnique = await storage.checkSupplierInvoiceUnique(
+        supplierId as string,
+        supplierInvoiceNo as string,
+        excludeId as string | undefined
+      );
+      res.json({ isUnique });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/receivings/:id", async (req, res) => {
+    try {
+      const receiving = await storage.getReceiving(req.params.id);
+      if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
+      res.json(receiving);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/receivings", async (req, res) => {
+    try {
+      const { header, lines } = req.body;
+      if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
+      
+      const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo);
+      if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
+      
+      const result = await storage.saveDraftReceiving(header, lines);
+      res.status(201).json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/receivings/:id", async (req, res) => {
+    try {
+      const { header, lines } = req.body;
+      if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
+      
+      const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo, req.params.id);
+      if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
+      
+      const result = await storage.saveDraftReceiving(header, lines, req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/receivings/:id/post", async (req, res) => {
+    try {
+      const result = await storage.postReceiving(req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/receivings/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteReceiving(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "المستند غير موجود" });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/items/:itemId/hints", async (req, res) => {
+    try {
+      const { supplierId, warehouseId } = req.query;
+      const hints = await storage.getItemHints(req.params.itemId, (supplierId as string) || "", (warehouseId as string) || "");
+      res.json(hints);
+    } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
   });
