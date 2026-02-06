@@ -137,6 +137,16 @@ Key entities include:
   - Availability insight icon (📊): click shows popup with item stock across all active warehouses in major unit
   - API: GET /api/items/:id/availability-summary?asOfDate=&excludeExpired=1 (lazy-loaded, 60s client cache)
   - Popup shows warehouseNameAr + qtyMajor, "إرشادي فقط" footer, closes on click-outside or Esc
+- **Compact Rows + Barcode Fast Add + FEFO Auto-Split (Feb 6, 2026)**:
+  - Compact row height: table base 12px, item name 14px bold with 2-line clamp + ellipsis + tooltip
+  - Barcode fast-add: scan input (data-testid="input-barcode-scan") on form tab, type barcode/code + Enter → instant add
+  - Barcode resolves via /api/barcode/resolve, then fetches item via /api/items/search, then adds with FEFO
+  - FEFO auto-split: addItemWithFefo() helper calls /api/transfer/fefo-preview for hasExpiry=1 items
+  - Creates multiple TransferLineLocal entries (one per lot allocation) when qty spans multiple lots
+  - Non-expiry items always create single line
+  - Both modal "موافق" and barcode scan use the same addItemWithFefo flow
+  - Toast shows lot count when FEFO split occurs (e.g., "تم التوزيع على 3 دفعات")
+  - Shortage validation with Arabic error messages
 - **Real-World Pilot Test (Feb 6, 2026)**:
   - Seed endpoint: POST /api/seed/pilot-test (idempotent, creates/updates TEST- prefixed data)
   - Test warehouses: WH-PH-IN (صيدلية داخلية), WH-OR (مخزن غرفة العمليات)

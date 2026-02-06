@@ -1,0 +1,172 @@
+REPLIT PROMPT – COMPACT ROWS + BARCODE FAST ADD + FEFO AUTO-SPLIT INTO MULTI-LINES (STRICT)
+Arabic RTL + Peachtree/Sage Web Theme + SQL Server + High Performance
+هدف التعديل: سطور إذن التحويل تبقى مدمجة + اسم الصنف واضح + سحب باركود فوري + تقسيم تلقائي FEFO على سطور متعددة
+
+====================================================================================================
+0) المطلوب (What to Implement)
+====================================================================================================
+A) Compact Row Height:
+- تقليل ارتفاع سطور Grid داخل “أصناف التحويل”
+- مع الاحتفاظ بأن اسم الصنف أكبر خطًا من باقي الأعمدة
+
+B) Barcode Fast Add:
+- داخل شاشة إذن التحويل: بمجرد قراءة باركود من الاسكنر
+  يتم إضافة الصنف فورًا للسطر بدون فتح شاشة بحث أو إدخال يدوي
+
+C) FEFO Auto-Split Multi-Lines:
+- عند إدخال/سحب صنف بكمية Q:
+  لو HasExpiry=1 والكمية موزعة على أكثر من Lot:
+  النظام يوزع تلقائيًا FEFO (الأقرب صلاحية أولًا)
+  ويُنشئ سطور متعددة في الإذن:
+    Line1 Qty من Lot1
+    Line2 Qty من Lot2
+    ... حتى تكتمل الكمية
+- مثال:
+  مطلوب 7، المتاح:
+   Lot(Exp1)=5
+   Lot(Exp2)=5
+  => ينشئ سطرين:
+    سطر1: 5 بتاريخ Exp1
+    سطر2: 2 بتاريخ Exp2
+
+====================================================================================================
+1) UPDATE-A: Compact Row Height (بدون ما نصغّر اسم الصنف)
+====================================================================================================
+A) Grid Row Height:
+- Default Row Height ثابت ومضغوط: (مثال 34px)
+- Padding داخل الخلايا: صغير (مثال 4px عمودي)
+- Vertical Align: Middle لكل الأعمدة
+
+B) Item Name Typography (يحافظ على الوضوح):
+- اسم الصنف فقط:
+  - Font Size أكبر من باقي الأعمدة بـ +20% (مثال 16px)
+  - Font Weight = 600
+  - Line Height = 1.15 (علشان ميبقاش السطر طويل)
+- باقي الأعمدة:
+  - Font Size (مثال 13px)
+  - Line Height = 1.1
+
+C) Long Names Handling داخل Compact Row:
+- الوضع الافتراضي داخل Grid:
+  - Wrap محدود: Max 2 lines فقط لاسم الصنف (مش Unlimited)
+  - لو الاسم أطول:
+    - يظهر Ellipsis (…) في نهاية السطر الثاني
+    - Tooltip عند Hover يعرض الاسم كامل
+=> كده جمعنا “سطر صغير + اسم واضح + مفيش تمدد مزعج”.
+
+====================================================================================================
+2) UPDATE-B: Barcode Fast Add (Scan-to-Add بدون بحث)
+====================================================================================================
+A) Input Listener:
+- في Tab “إذن تحويل” يوجد Focus دائم (Hidden/Small Input) يستقبل Input من الاسكنر
+- Scanner يرسل النص + Enter
+- عند Enter:
+  1) Resolve barcode -> itemId فوري
+  2) لو الصنف غير موجود: رسالة “باركود غير معروف” بدون تجميد UI
+  3) لو موجود: يفتح نافذة Quantity صغيرة (أو يستخدم Qty افتراضي = 1) حسب الإعداد
+
+B) API:
+GET /barcode/resolve?value=xxxx&warehouseId=SOURCE_WH
+Return:
+- itemId, itemCode, itemNameAR, hasExpiry, conversionFactor, majorUnitName
+
+C) لا تحميل كامل:
+- resolve فقط بالباركود (Indexed)
+- زمن الاستجابة مستهدف ≤ 150ms في الظروف الطبيعية
+
+====================================================================================================
+3) UPDATE-C: FEFO Auto-Split (Strict) + Multi-Line Creation
+====================================================================================================
+A) مبدأ صارم:
+- الترحيل النهائي (Post) يعتمد على Allocations داخل DB
+- لكن UI يسمح “بالتمثيل كسطور متعددة” علشان يبقى واضح للصيدلي
+
+B) Allocation Engine (Server-side فقط):
+- عند إضافة صنف مع QtyMajor:
+  - QtyInMinor = QtyMajor * ConversionFactor
+  - لو HasExpiry=1:
+      استدعاء FEFO Allocation:
+      GET /transfer/fefo-allocate?itemId=&sourceWarehouseId=&requiredQtyInMinor=&asOfDate=
+      يرجع قائمة allocations مرتبة:
+        [{lotId, expiryDate, qtyAllocatedInMinor, purchasePrice}]
+  - لو HasExpiry=0:
+      allocation = سطر واحد Expiry NULL (بدون تقسيم)
+
+C) Multi-Line UI Creation Rule:
+- لو allocations أكثر من 1:
+  النظام ينشئ Lines متعددة تلقائيًا (بدون تدخل المستخدم):
+  لكل allocation:
+    - سطر جديد بنفس itemId
+    - qtyEnteredMajor = qtyAllocatedInMinor / conversionFactor
+    - expiry = allocation.expiryDate (للصنف expiry فقط)
+    - FefoLocked = true (علشان مايتلعبش في التوزيع يدويًا)
+- لو allocation واحد:
+  ينشئ سطر واحد طبيعي
+
+D) Validation:
+- لو shortage:
+  - لا يتم إضافة أي سطر
+  - رسالة: “الكمية المطلوبة غير متاحة – العجز: X”
+- يمنع Expiry منتهي:
+  ExpiryDate < asOfDate => مستبعد تمامًا
+
+E) قاعدة مهمة لمنع مشاكل مستقبلًا:
+- السطور المتعددة ليست “اجتهاد UI”
+- لازم تتحفظ Allocations في جدول TransferLineAllocations
+- Post يستخدم TransferLineAllocations كمرجع وحيد للحركات (Source of Truth)
+
+====================================================================================================
+4) DB / Entities المطلوبة لضمان الصرامة
+====================================================================================================
+- TransferLines: سطر لكل جزء (حتى لو نفس الصنف مكرر بسبب split)
+- TransferLineAllocations: يربط كل سطر بـ LotId وكمية QtyOutInMinor
+- ممنوع Post بدون Allocations للأصناف HasExpiry=1
+
+====================================================================================================
+5) APIs المطلوبة
+====================================================================================================
+1) GET /barcode/resolve?value=&warehouseId=
+2) GET /transfer/fefo-allocate?itemId=&sourceWarehouseId=&requiredQtyInMinor=&asOfDate=
+   Response:
+   {
+     allocations:[{lotId, expiryDate, qtyAllocatedInMinor, purchasePrice}],
+     shortageInMinor
+   }
+3) POST /transfers/draft  (يحفظ Lines + Allocations)
+4) POST /transfers/{id}/post (يعيد validate ثم يحرك OUT/IN من نفس allocations)
+
+====================================================================================================
+6) الأداء (Performance Rules تحت الضغط)
+====================================================================================================
+- Barcode resolve: indexed lookup فقط
+- FEFO allocate: Query على InventoryLots باستخدام index (ItemID, WarehouseID, ExpiryDate)
+- لا UI blocking:
+  - Async + spinner صغير داخل السطر فقط
+- Caching:
+  - ممكن Cache للـ FEFO preview/allocate 10-20 ثانية (اختياري) لتقليل الضغط
+
+====================================================================================================
+7) اختبارات إلزامية (Must Pass)
+====================================================================================================
+TEST-ROW-01:
+- ارتفاع السطر ~34px
+- اسم الصنف 16px واضح
+- باقي الأعمدة 13px
+- الاسم الطويل: Max 2 lines + Ellipsis + Tooltip
+
+TEST-SCAN-01:
+- اسكن باركود => الصنف يضاف فورًا بدون بحث
+
+TEST-FEFO-SPLIT-01:
+- Qty=7
+- Lot1=5 Exp1
+- Lot2=5 Exp2
+=> ينشئ سطرين تلقائيًا:
+  (5, Exp1) + (2, Exp2)
+- Allocations محفوظة
+
+TEST-POST-01:
+- Post يعتمد على allocations فقط
+- يمنع أي mismatch أو double-deduct
+
+انتهى.

@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ArrowLeftRight, Loader2, AlertTriangle, Check, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, FileText, X, Printer } from "lucide-react";
+import { ArrowLeftRight, Loader2, AlertTriangle, Check, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, FileText, X, Printer, ScanBarcode } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateShort } from "@/lib/formatters";
@@ -128,6 +128,10 @@ export default function StoreTransfers() {
   const [availPopupData, setAvailPopupData] = useState<any[] | null>(null);
   const [availPopupLoading, setAvailPopupLoading] = useState(false);
   const [availPopupPosition, setAvailPopupPosition] = useState<{top: number; left: number} | null>(null);
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+
   const availPopupCache = useRef<Record<string, {data: any[]; ts: number}>>({});
 
   const { data: warehouses } = useQuery<Warehouse[]>({
@@ -489,60 +493,160 @@ export default function StoreTransfers() {
     }
   };
 
-  const handleModalOk = () => {
+  const addItemWithFefo = useCallback(async (item: any, unitLevel: string, qtyEntered: number): Promise<boolean> => {
+    const qtyInMinor = calculateQtyInMinor(qtyEntered, unitLevel, item);
+    if (qtyInMinor <= 0) {
+      toast({ title: "الكمية يجب أن تكون أكبر من صفر", variant: "destructive" });
+      return false;
+    }
+
+    const totalAvail = parseFloat(item.availableQtyMinor || "0");
+    if (qtyInMinor > totalAvail) {
+      toast({
+        title: "الكمية غير متاحة",
+        description: `المطلوب: ${qtyEntered} ${getUnitName(item, unitLevel)} — المتاح: ${formatAvailability(String(totalAvail), unitLevel, item)}`,
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (item.hasExpiry) {
+      try {
+        const params = new URLSearchParams({
+          itemId: item.id,
+          warehouseId: sourceWarehouseId,
+          requiredQtyInMinor: String(qtyInMinor),
+          asOfDate: transferDate,
+        });
+        const res = await fetch(`/api/transfer/fefo-preview?${params.toString()}`);
+        if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
+        const preview = await res.json();
+
+        if (!preview.fulfilled) {
+          const shortfall = parseFloat(preview.shortfall);
+          toast({
+            title: "الكمية غير متاحة",
+            description: `العجز: ${formatAvailability(String(shortfall), unitLevel, item)}`,
+            variant: "destructive",
+          });
+          return false;
+        }
+
+        const newLines: TransferLineLocal[] = preview.allocations
+          .filter((a: any) => parseFloat(a.allocatedQty) > 0)
+          .map((alloc: any) => {
+            const allocMinor = parseFloat(alloc.allocatedQty);
+            let displayQty = allocMinor;
+            if (unitLevel === "major" && item.majorToMinor) {
+              displayQty = allocMinor / parseFloat(item.majorToMinor);
+            } else if (unitLevel === "medium" && item.mediumToMinor) {
+              displayQty = allocMinor / parseFloat(item.mediumToMinor);
+            }
+            displayQty = Math.round(displayQty * 10000) / 10000;
+
+            return {
+              id: crypto.randomUUID(),
+              itemId: item.id,
+              item,
+              unitLevel,
+              qtyEntered: displayQty,
+              qtyInMinor: allocMinor,
+              selectedExpiryDate: alloc.expiryDate || null,
+              availableQtyMinor: alloc.availableQty || "0",
+              notes: "",
+            } as TransferLineLocal;
+          });
+
+        setFormLines((prev) => [...prev, ...newLines]);
+        const lotCount = newLines.length;
+        toast({
+          title: `تمت إضافة: ${item.nameAr}`,
+          description: lotCount > 1 ? `تم التوزيع على ${lotCount} دفعات (FEFO)` : undefined,
+        });
+        return true;
+      } catch (err: any) {
+        toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+        return false;
+      }
+    } else {
+      const newLine: TransferLineLocal = {
+        id: crypto.randomUUID(),
+        itemId: item.id,
+        item,
+        unitLevel,
+        qtyEntered,
+        qtyInMinor,
+        selectedExpiryDate: null,
+        availableQtyMinor: item.availableQtyMinor || "0",
+        notes: "",
+      };
+      setFormLines((prev) => [...prev, newLine]);
+      toast({ title: `تمت إضافة: ${item.nameAr}` });
+      return true;
+    }
+  }, [sourceWarehouseId, transferDate, toast]);
+
+  const handleModalOk = async () => {
     if (!selectedModalItem) return;
-    const qtyInMinor = calculateQtyInMinor(modalQty, modalUnit, selectedModalItem);
 
     if (selectedModalItem.hasExpiry && modalSelectedExpiry) {
       const expiryOpt = modalExpiryOptions.find((o) => o.expiryDate === modalSelectedExpiry);
       if (expiryOpt) {
+        const qtyInMinor = calculateQtyInMinor(modalQty, modalUnit, selectedModalItem);
         const available = parseFloat(expiryOpt.qtyAvailableMinor);
         if (qtyInMinor > available) {
           setModalValidation(`الكمية المطلوبة (${qtyInMinor}) تتجاوز المتاح (${available}) لهذه الصلاحية`);
           return;
         }
       }
-    } else if (!selectedModalItem.hasExpiry) {
-      const totalAvail = parseFloat(selectedModalItem.availableQtyMinor || "0");
-      if (qtyInMinor > totalAvail) {
-        setModalValidation(`الكمية المطلوبة (${qtyInMinor}) تتجاوز الرصيد المتاح (${totalAvail})`);
-        return;
-      }
     }
 
-    if (modalQty <= 0) {
-      setModalValidation("الكمية يجب أن تكون أكبر من صفر");
-      return;
+    const success = await addItemWithFefo(selectedModalItem, modalUnit, modalQty);
+    if (success) {
+      setModalQty(1);
+      setModalUnit("major");
+      setModalExpiryOptions([]);
+      setModalSelectedExpiry("");
+      setModalValidation("");
+      setModalSelectedIndex(-1);
+      setTimeout(() => modalSearchInputRef.current?.focus(), 50);
     }
-
-    const newLine: TransferLineLocal = {
-      id: crypto.randomUUID(),
-      itemId: selectedModalItem.id,
-      item: selectedModalItem,
-      unitLevel: modalUnit,
-      qtyEntered: modalQty,
-      qtyInMinor,
-      selectedExpiryDate: selectedModalItem.hasExpiry ? (modalSelectedExpiry || null) : null,
-      availableQtyMinor: selectedModalItem.availableQtyMinor || "0",
-      notes: "",
-    };
-
-    setFormLines((prev) => [...prev, newLine]);
-    toast({ title: `تمت إضافة: ${selectedModalItem.nameAr}` });
-
-    setModalQty(1);
-    setModalUnit("major");
-    setModalExpiryOptions([]);
-    setModalSelectedExpiry("");
-    setModalValidation("");
-    setModalSelectedIndex(-1);
-
-    setTimeout(() => modalSearchInputRef.current?.focus(), 50);
   };
 
   const handleDeleteLine = (index: number) => {
     setFormLines((prev) => prev.filter((_, i) => i !== index));
   };
+
+  const handleBarcodeScan = useCallback(async (barcodeValue: string) => {
+    if (!barcodeValue.trim() || !sourceWarehouseId || barcodeLoading) return;
+    setBarcodeLoading(true);
+    try {
+      const resolveRes = await fetch(`/api/barcode/resolve?value=${encodeURIComponent(barcodeValue.trim())}`);
+      if (!resolveRes.ok) throw new Error("فشل البحث");
+      const resolved = await resolveRes.json();
+      if (!resolved.found) {
+        toast({ title: "باركود غير معروف", description: barcodeValue, variant: "destructive" });
+        return;
+      }
+
+      const searchRes = await fetch(`/api/items/search?warehouseId=${sourceWarehouseId}&mode=CODE&q=${encodeURIComponent(resolved.itemCode)}&page=1&pageSize=1&includeZeroStock=false&drugsOnly=false`);
+      if (!searchRes.ok) throw new Error("فشل جلب بيانات الصنف");
+      const searchData = await searchRes.json();
+      const item = searchData.items?.[0];
+      if (!item) {
+        toast({ title: "الصنف غير متاح في المخزن المصدر", variant: "destructive" });
+        return;
+      }
+
+      await addItemWithFefo(item, "major", 1);
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } finally {
+      setBarcodeLoading(false);
+      setBarcodeInput("");
+      setTimeout(() => barcodeInputRef.current?.focus(), 50);
+    }
+  }, [sourceWarehouseId, barcodeLoading, toast, addItemWithFefo]);
 
   useEffect(() => {
     if (modalResultsRef.current && modalResults.length > 0) {
@@ -830,29 +934,52 @@ export default function StoreTransfers() {
             </div>
           </fieldset>
 
+          {!isViewOnly && sourceWarehouseId && destWarehouseId && (
+            <div className="flex items-center gap-2 px-2">
+              <ScanBarcode className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Input
+                ref={barcodeInputRef}
+                type="text"
+                value={barcodeInput}
+                onChange={(e) => setBarcodeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && barcodeInput.trim()) {
+                    e.preventDefault();
+                    handleBarcodeScan(barcodeInput);
+                  }
+                }}
+                placeholder="امسح الباركود هنا..."
+                className="h-7 text-[11px] px-2 max-w-[300px]"
+                disabled={barcodeLoading}
+                data-testid="input-barcode-scan"
+              />
+              {barcodeLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+            </div>
+          )}
+
           <fieldset className="peachtree-grid p-2">
             <legend className="text-xs font-semibold px-1">أصناف التحويل</legend>
             <div className="overflow-x-auto">
-              <table className="w-full text-[10px]" dir="rtl" data-testid="table-transfer-lines">
+              <table className="w-full text-[12px]" dir="rtl" data-testid="table-transfer-lines">
                 <thead>
                   <tr className="peachtree-grid-header">
                     <th className="py-1 px-2 text-right font-bold text-[13px]">اسم الصنف</th>
-                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">كود الصنف</th>
-                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">الوحدة</th>
-                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">الكمية</th>
-                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">الصلاحية</th>
-                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">الرصيد المتاح</th>
-                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">ملاحظات</th>
-                    {!isViewOnly && <th className="py-1 px-2 text-center font-medium whitespace-nowrap">حذف</th>}
+                    <th className="py-1 px-2 text-right whitespace-nowrap">كود الصنف</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">الرصيد المتاح</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">ملاحظات</th>
+                    {!isViewOnly && <th className="py-1 px-2 text-center whitespace-nowrap">حذف</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {formLines.length > 0 ? (
                     formLines.map((line, idx) => (
                       <tr key={line.id} className="peachtree-grid-row" data-testid={`row-line-${idx}`}>
-                        <td className="py-1.5 px-2" title={`${line.item?.nameAr || ""} — ${line.item?.itemCode || ""}`}>
+                        <td className="py-1 px-2" title={`${line.item?.nameAr || ""} — ${line.item?.itemCode || ""}`}>
                           <div className="flex items-start gap-1">
-                            <span className="text-[14px] font-bold text-foreground leading-snug break-words" style={{ wordBreak: "break-word" }}>
+                            <span className="text-foreground leading-tight line-clamp-2" style={{ fontSize: "14px", fontWeight: 700, wordBreak: "break-word" }}>
                               {line.item?.nameAr || "—"}
                             </span>
                             <button
@@ -866,18 +993,18 @@ export default function StoreTransfers() {
                             </button>
                           </div>
                         </td>
-                        <td className="py-1 px-2 font-mono whitespace-nowrap">{line.item?.itemCode || "—"}</td>
-                        <td className="py-1 px-2 whitespace-nowrap">{line.item ? getUnitName(line.item, line.unitLevel) : "—"}</td>
-                        <td className="py-1 px-2 whitespace-nowrap">{line.qtyEntered}</td>
-                        <td className="py-1 px-2 whitespace-nowrap">
+                        <td className="py-0.5 px-2 font-mono whitespace-nowrap">{line.item?.itemCode || "—"}</td>
+                        <td className="py-0.5 px-2 whitespace-nowrap">{line.item ? getUnitName(line.item, line.unitLevel) : "—"}</td>
+                        <td className="py-0.5 px-2 whitespace-nowrap">{line.qtyEntered}</td>
+                        <td className="py-0.5 px-2 whitespace-nowrap">
                           {line.selectedExpiryDate ? formatDateShort(line.selectedExpiryDate) : "—"}
                         </td>
-                        <td className="py-1 px-2 whitespace-nowrap">
+                        <td className="py-0.5 px-2 whitespace-nowrap">
                           {line.item ? formatAvailability(line.availableQtyMinor, line.unitLevel, line.item) : "—"}
                         </td>
-                        <td className="py-1 px-2 text-muted-foreground">{line.notes || "—"}</td>
+                        <td className="py-0.5 px-2 text-muted-foreground">{line.notes || "—"}</td>
                         {!isViewOnly && (
-                          <td className="py-1 px-2 text-center">
+                          <td className="py-0.5 px-2 text-center">
                             <Button
                               variant="outline"
                               size="icon"
