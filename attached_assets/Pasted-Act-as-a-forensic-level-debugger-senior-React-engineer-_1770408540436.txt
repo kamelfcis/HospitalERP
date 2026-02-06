@@ -1,0 +1,73 @@
+Act as a forensic-level debugger + senior React engineer.
+Your mission: Fix a critical bug in "استلام من مورد" receiving screen where Qty in the FIRST line becomes disabled/locked after adding a second line item.
+
+Observed bug:
+- User adds item A -> line1 appears
+- User searches/adds item B -> line2 appears
+- User goes back to edit Qty on line1 -> Qty input is unexpectedly locked/disabled
+This blocks work and must be fixed with surgical precision.
+
+NON-NEGOTIABLE:
+- Do not break existing rules: Draft editable, Posted read-only, Month/Year expiry only, default major unit, autosave, warnings, barcode workflow.
+- The bug must be reproducible and then eliminated with tests.
+
+A) Root-cause investigation (must be done)
+1) Confirm whether row keys are stable:
+   - If using array index as key => likely cause. Must switch to stable lineId.
+2) Identify why Qty becomes disabled:
+   - IsDisabled computed from wrong condition? (e.g., "isSelectedRow" or "isActiveRow" mismatch)
+   - Is the component reusing state from another row due to key reuse?
+   - Is there a global editing lock that moves to the latest row and disables others?
+3) Check controlled vs uncontrolled inputs:
+   - Mixed value/defaultValue patterns can cause inputs to “freeze”.
+4) Check focus manager / barcode auto-focus:
+   - Ensure focus changes are not toggling edit modes incorrectly.
+5) Check draft autosave and server-sync:
+   - Adding line2 might trigger autosave and rehydrate lines, resetting flags on line1.
+
+B) Required architectural fix (likely necessary)
+1) Ensure every line has a permanent unique id:
+   - generate UUID on client at add-time (clientLineId) and persist to server in draft
+   - use that id as React key (NOT array index)
+2) Normalize lines state:
+   - lines stored as map by id + ordered list of ids (prevents accidental reordering bugs)
+3) Ensure qty input disabling logic is ONLY:
+   - disabled when document status != DRAFT
+   - OR line is marked REJECTED (if you support that)
+   - Never disabled because another line was added
+
+C) UI behavior requirements
+- In DRAFT:
+  - any line qty must always be editable at any time
+  - adding a second line must NOT affect first line editability
+- In POSTED:
+  - all qty fields are read-only
+- When a new line is added:
+  - it can auto-focus its qty field
+  - but must not set previous lines to disabled
+- If the grid supports “edit mode per row”, implement it without disabling other rows; use styling only (highlight active row) not disabling.
+
+D) Tests (must be strong and realistic)
+1) Unit tests (React):
+- Render receiving lines with two items, verify both qty inputs enabled in DRAFT
+- Add a line dynamically, verify previous lines remain editable
+- Ensure keys are stable (no warning + verify correct mapping)
+2) E2E tests (Playwright):
+Scenario 1:
+- Add item A via search -> line1
+- Add item B via search -> line2
+- Click qty in line1 -> type 10 -> must work
+Scenario 2 (stress):
+- Add 10 lines fast (mix barcode + search)
+- Randomly edit qty for old lines (1st, 3rd, 7th) -> must work
+Scenario 3:
+- Post document -> reopen -> qty is disabled everywhere (expected)
+
+E) Deliverable
+- Provide code diff:
+  - stable ids for lines
+  - corrected disabled logic
+  - any state refactor needed to eliminate the bug
+- Provide explanation of actual root cause found (e.g., index key reuse) and why fix prevents recurrence.
+
+Implement now.
