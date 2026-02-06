@@ -959,6 +959,41 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/items/search", async (req, res) => {
+    try {
+      const { warehouseId, mode, q, page, pageSize, includeZeroStock, drugsOnly } = req.query;
+      if (!warehouseId || !q) {
+        return res.status(400).json({ message: "warehouseId و q مطلوبة" });
+      }
+      const result = await storage.searchItemsAdvanced({
+        mode: (mode as string || 'AR') as 'AR' | 'EN' | 'CODE' | 'BARCODE',
+        query: q as string,
+        warehouseId: warehouseId as string,
+        page: parseInt(page as string) || 1,
+        pageSize: parseInt(pageSize as string) || 50,
+        includeZeroStock: includeZeroStock === 'true',
+        drugsOnly: drugsOnly === 'true',
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/items/:itemId/expiry-options", async (req, res) => {
+    try {
+      const { warehouseId, asOfDate } = req.query;
+      if (!warehouseId) {
+        return res.status(400).json({ message: "warehouseId مطلوب" });
+      }
+      const date = (asOfDate as string) || new Date().toISOString().split("T")[0];
+      const options = await storage.getExpiryOptions(req.params.itemId, warehouseId as string, date);
+      res.json(options);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/items/:itemId/availability", async (req, res) => {
     try {
       const { warehouseId } = req.query;
@@ -1376,6 +1411,22 @@ export async function registerRoutes(
   // ===== STORE TRANSFERS =====
   app.get("/api/transfers", async (req, res) => {
     try {
+      const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize } = req.query;
+
+      if (page || pageSize || fromDate || toDate || sourceWarehouseId || destWarehouseId || status || search) {
+        const result = await storage.getTransfersFiltered({
+          fromDate: fromDate as string | undefined,
+          toDate: toDate as string | undefined,
+          sourceWarehouseId: sourceWarehouseId as string | undefined,
+          destWarehouseId: destWarehouseId as string | undefined,
+          status: status as string | undefined,
+          search: search as string | undefined,
+          page: parseInt(page as string) || 1,
+          pageSize: parseInt(pageSize as string) || 50,
+        });
+        return res.json(result);
+      }
+
       const transfers = await storage.getTransfers();
       res.json(transfers);
     } catch (error: any) {

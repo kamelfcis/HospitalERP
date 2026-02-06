@@ -1,0 +1,339 @@
+REPLIT PROMPT – TRANSFER MODULE (TABS + TRANSFER LOG + ADVANCED ITEM SEARCH MODAL + FEFO DEFAULT)
+Arabic RTL + Peachtree/Sage Web Theme + SQL Server + High Performance + Large Data Friendly
+
+====================================================================================================
+0) المطلوب النهائي (What to Build)
+====================================================================================================
+ابني موديول “تحويل مخزني بين الأقسام” بشكل احترافي مشابه للصورة:
+
+A) Tabs داخل نفس الشاشة:
+1) Tab 1: “سجل التحويلات”
+   - قائمة تحويلات (Transfer Log) مع بحث/فلترة + فتح الإذن
+2) Tab 2: “إذن تحويل”
+   - شاشة إذن تحويل جديد + تعديل/عرض إذن قائم
+   - زر “إضافة إذن تحويل جديد”
+
+B) اختيار الصنف لا يتم داخل Grid Inline.
+   - يتم عبر نافذة صغيرة (Modal) للبحث المتقدم مثل الصورة:
+     - البحث بالاسم العربي / الاسم الإنجليزي / الكود / (جزء من الاسم) + دعم % wildcard
+     - نتائج البحث تظهر أسفل حقول البحث مباشرة
+     - المستخدم يقف على صنف مختار في النتائج (highlight + arrows)
+     - أسفل النتائج Container (Details Panel) يحتوي:
+       - الكمية
+       - الوحدة (Default = الوحدة الكبرى)
+       - تاريخ الصلاحية المتاح (Default = الأقرب FEFO)
+       - رصيد الصنف في مخزن المصدر (واضح ومباشر)
+     - زر “موافق/OK” يضيف الصنف لسطر واحد في إذن التحويل
+     - زر “إغلاق”
+
+C) FEFO:
+- للأصناف HasExpiry=1:
+  - النظام يقترح تلقائيًا أقرب تاريخ صلاحية متاح (FEFO) كاختيار افتراضي
+  - ويمنع اختيار/تحويل من المنتهي
+- للأصناف HasExpiry=0:
+  - لا تعرض صلاحيات، ولا تسمح بأي ExpiryDate
+
+D) أداء:
+- ممنوع تحميل قائمة أصناف كاملة
+- بحث Server-side فقط + Pagination + Indexes
+- Debounce 250ms + Top 50 results
+- استعلامات SARGable (تستخدم Index) وتجنب LIKE %term% إلا عند الضرورة وبأسلوب محسوب
+
+====================================================================================================
+1) قواعد العمل (Business Rules) – صارمة
+====================================================================================================
+1) Transfer = حركة مخزنية فقط (OUT من مخزن المصدر + IN لمخزن الوجهة)
+   - لا بيع / لا أسعار / لا إيراد / لا مصروف
+2) Default Unit = Major Unit (الوحدة الكبرى) داخل شاشة البحث وعند الإضافة للسطر
+3) التخزين والحركة في DB = QtyInMinor فقط
+   QtyInMinor = QtyMajor * ConversionFactor (حسب الصنف)
+4) HasExpiry=1:
+   - اختيار Expiry الافتراضي = أقرب صلاحية متاحة (ExpiryDate ASC)
+   - يمنع ExpiryDate < TransferDate
+5) HasExpiry=0:
+   - ExpiryDate MUST be NULL (DB + Validation)
+6) يمنع إضافة سطر بكمية أكبر من المتاح في مخزن المصدر
+7) عند اختيار صنف في البحث:
+   - اعرض “رصيد المخزن المصدر” بشكل واضح
+   - للأصناف ذات الصلاحية اعرض “أقرب صلاحية + الرصيد الخاص بها” + إمكانية تغيير الصلاحية من قائمة صلاحيات متاحة
+
+====================================================================================================
+2) UI / UX (RTL) – تفاصيل التنفيذ
+====================================================================================================
+Screen Title: “التحويلات المخزنية”
+
+Tabs:
+--------------------------------------------------------------------------------
+Tab 1: سجل التحويلات (Transfer Log)
+--------------------------------------------------------------------------------
+- Filters:
+  - تاريخ من/إلى
+  - مخزن مصدر
+  - مخزن وجهة
+  - الحالة (Draft/Posted)
+  - بحث نصي (رقم الإذن / اسم صنف / كود)
+- Grid:
+  - رقم الإذن، التاريخ، المصدر، الوجهة، عدد السطور، الحالة، المستخدم
+- Actions:
+  - فتح الإذن (Open)
+  - طباعة (اختياري)
+  - ترحيل/إلغاء ترحيل حسب الصلاحيات (اختياري)
+
+--------------------------------------------------------------------------------
+Tab 2: إذن تحويل (Transfer Form)
+--------------------------------------------------------------------------------
+Header:
+- TransferNo (Auto)
+- TransferDate (Default Today)
+- SourceWarehouse (Required)
+- DestinationWarehouse (Required)
+- Status (Draft/Posted)
+
+Lines Grid (سطر واحد لكل صنف):
+Columns:
+- كود الصنف
+- اسم الصنف
+- الوحدة (Default Major)
+- الكمية
+- الصلاحية المختارة (لو HasExpiry=1) وإلا فارغ
+- الرصيد المتاح (Read-only)
+- ملاحظات (اختياري)
+- حذف
+
+Buttons:
+- “إضافة صنف” => يفتح نافذة البحث المتقدم (Modal)
+- “حفظ كمسودة”
+- “ترحيل التحويل (Post)”
+- “إذن جديد”
+
+====================================================================================================
+3) نافذة البحث المتقدم (Advanced Search Modal) – طبق الصورة
+====================================================================================================
+Modal Title: “بحث عن صنف”
+Layout (RTL):
+A) منطقة البحث (Top):
+- Dropdown “بحث بـ”:
+  1) الاسم (AR)
+  2) الاسم (EN)
+  3) الكود
+  4) Barcode (اختياري)
+- Textbox “نص البحث”
+  - يدعم إدخال مقطع + % (مثال: "سيف%" أو "%سيف%" أو "amox%")
+- خيارات (Checkboxes اختيارية لو موجودة في النظام):
+  - أصناف بدون رصيد (إظهار/إخفاء)
+  - أدوية فقط / مستلزمات فقط (لو عندك تصنيف)
+- زر “بحث”
+
+B) نتائج البحث (Middle):
+- Grid Results (Top 50):
+  - الكود | اسم الصنف | الشركة (اختياري) | رصيد المخزن (Minor/Major) | أقرب صلاحية (لو HasExpiry=1)
+- UX:
+  - أول نتيجة تتحدد تلقائيًا
+  - سهم لأعلى/أسفل للتنقل
+  - Double click = اختيار فوري
+
+C) Container أسفل النتائج (Bottom Details Panel):
+- الصنف المختار (Read-only): الكود + الاسم
+- الرصيد في مخزن المصدر:
+  - عرض بالوحدة الكبرى والصغرى (حسب ConversionFactor)
+- الوحدة:
+  - Dropdown (Major/Minor) Default Major
+- الكمية:
+  - Numeric (Default 1)
+- الصلاحية المتاحة (إذا HasExpiry=1 فقط):
+  - Dropdown للـ ExpiryDate المتاح (مرتّب FEFO) مع عرض الرصيد لكل صلاحية
+  - Default = أقرب صلاحية متاحة (FEFO)
+- Validation inline:
+  - لو الكمية > المتاح: رسالة عربية فورية + منع OK
+
+Buttons:
+- “موافق OK” => يضيف/يحدث سطر واحد في إذن التحويل
+- “إغلاق”
+
+IMPORTANT:
+- لا تفتح شاشة تانية للبحث
+- النتائج تتحدث بسرعة بدون Lag
+- لا تجيب بيانات كثيرة: فقط top 50 + pagination
+
+====================================================================================================
+4) قاعدة البيانات (SQL Server) – Required Schema & Indexes
+====================================================================================================
+Minimum Tables (لو ناقصة اعمل Migration تلقائي):
+
+Items:
+- ItemID PK
+- ItemCode UNIQUE
+- ItemNameAR
+- ItemNameEN NULL
+- HasExpiry BIT NOT NULL DEFAULT 0
+- MajorUnitName NVARCHAR(20)
+- MinorUnitName NVARCHAR(20)
+- ConversionFactor DECIMAL(18,4) NOT NULL DEFAULT 1
+
+Warehouses:
+- WarehouseID PK
+- WarehouseCode UNIQUE
+- WarehouseNameAR
+- IsActive BIT DEFAULT 1
+
+InventoryLots:
+- LotID PK
+- ItemID FK
+- WarehouseID FK
+- ExpiryDate DATE NULL
+- ReceivedDate DATE NOT NULL
+- PurchasePrice DECIMAL(18,4) NOT NULL
+- QtyInMinor DECIMAL(18,4) NOT NULL CHECK(QtyInMinor>=0)
+Constraints:
+- CHECK (ExpiryDate IS NULL OR ExpiryDate >= '2000-01-01')
+
+Indexes (Critical):
+- IX_Items_Code (ItemCode)
+- IX_Items_NameAR (ItemNameAR)
+- IX_Items_NameEN (ItemNameEN)
+- IX_Lots_Item_Warehouse_Expiry (ItemID, WarehouseID, ExpiryDate) INCLUDE (QtyInMinor, PurchasePrice)
+- IX_Lots_Item_Warehouse (ItemID, WarehouseID) INCLUDE (QtyInMinor)
+
+Transfers:
+TransferHeaders:
+- TransferID PK
+- TransferNo UNIQUE
+- TransferDate
+- SourceWarehouseID
+- DestinationWarehouseID
+- Status (Draft/Posted)
+- CreatedAt, CreatedBy
+
+TransferLines:
+- LineID PK
+- TransferID FK
+- ItemID
+- UnitName (Major/Minor)
+- QtyEntered
+- QtyInMinor
+- SelectedExpiryDate DATE NULL
+- AvailableAtSaveMinor DECIMAL(18,4) NULL   -- snapshot
+- CreatedAt
+
+TransferLineAllocations (Audit / FEFO):
+- AllocationID PK
+- LineID FK
+- SourceLotID
+- ExpiryDate
+- QtyOutInMinor
+- PurchasePrice
+- DestinationLotID
+
+InventoryLotMovements:
+- MovementID PK
+- LotID FK
+- WarehouseID FK
+- TxDate
+- TxType (IN/OUT/TRANSFER)
+- QtyChangeInMinor
+- UnitCost
+- ReferenceType='TRANSFER'
+- ReferenceID=TransferNo
+
+Enforcement:
+- If Item.HasExpiry=0 => ExpiryDate MUST be NULL (validate in backend + optional trigger)
+
+====================================================================================================
+5) APIs المطلوبة (Backend) – سريعة ومحسوبة
+====================================================================================================
+1) Warehouses
+- GET /warehouses
+
+2) Transfer Log
+- GET /transfers?from=&to=&sourceWarehouseId=&destWarehouseId=&status=&q=&page=&pageSize=
+Return paged list
+
+3) Open Transfer
+- GET /transfers/{id}
+
+4) Advanced Search (Server Side)
+- GET /items/search?warehouseId=&mode=(AR|EN|CODE|BARCODE)&q=&page=1&pageSize=50&includeZeroStock=false
+Return:
+- itemId, itemCode, itemNameAR, itemNameEN, hasExpiry,
+- availableQtyMinor, availableQtyMajor,
+- nearestExpiryDate (if hasExpiry), nearestExpiryQtyMinor
+
+Performance Notes:
+- Use TOP + pagination
+- For AR/EN search:
+  - If user includes % => treat as LIKE pattern
+  - Else:
+    - prefer "starts with" q% (faster) and fallback to %q% only if user explicitly used %
+  - always use parameterized queries
+  - normalize whitespace
+
+5) Expiry Options for Selected Item
+- GET /items/{itemId}/expiry-options?warehouseId=&asOfDate=
+Return list:
+- [{expiryDate, qtyAvailableMinor}] ordered by expiryDate ASC, excluding expired and zero
+
+6) Validate Quantity
+- GET /items/{itemId}/availability?warehouseId=&expiryDate=&qtyInMinor=&asOfDate=
+Return ok/shortage
+
+7) Save Draft
+- POST /transfers/draft
+payload:
+{ transferDate, sourceWarehouseId, destinationWarehouseId, lines:[{itemId, unitName, qtyEntered, selectedExpiryDate?}] }
+
+8) Post Transfer (ترحيل)
+- POST /transfers/{id}/post
+Rules:
+- Revalidate availability
+- FEFO allocations:
+  - If user selectedExpiryDate:
+    - allocate from that expiry first (still enforce FEFO within same expiry by receivedDate)
+  - Else:
+    - FEFO full auto
+- Create OUT/IN movements
+- Create destination lots if missing (same item + expiry + cost)
+- Update lots qty
+
+====================================================================================================
+6) منطق “أقرب صلاحية افتراضيًا” (FEFO Default)
+====================================================================================================
+When user selects an item in modal:
+IF hasExpiry=1:
+- Call /expiry-options
+- Pick first expiryDate with qty>0 as default
+- Show it + its qty in details panel
+IF hasExpiry=0:
+- Hide expiry controls entirely
+
+====================================================================================================
+7) اختبارات + سيناريوهات (Must Implement)
+====================================================================================================
+1) Search Tests:
+- search AR starts-with and contains-with-% works
+- search EN starts-with and contains-with-% works
+- search by CODE exact and partial
+- pagination works
+
+2) FEFO default:
+- item has multiple lots => nearest expiry auto selected
+- expired lots excluded
+
+3) Validation:
+- qty > available => block OK and block save/post
+
+4) Posting:
+- inventory decreases source and increases destination
+- allocations created correctly
+- no pricing screens and no revenue entries
+
+====================================================================================================
+8) مخرجات نهائية (Deliverables)
+====================================================================================================
+- Tabs UI (Log + Form)
+- Modal Advanced Search مثل الصورة
+- APIs + DB migrations + indexes
+- FEFO default + expiry dropdown
+- Performance-friendly implementation (server side, pagination, debounce)
+- Automated tests + short report
+
+انتهى.

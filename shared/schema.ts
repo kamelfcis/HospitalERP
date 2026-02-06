@@ -328,6 +328,8 @@ export const transferLines = pgTable("transfer_lines", {
   unitLevel: unitLevelEnum("unit_level").notNull().default("major"),
   qtyEntered: decimal("qty_entered", { precision: 18, scale: 4 }).notNull(),
   qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull(),
+  selectedExpiryDate: date("selected_expiry_date"),
+  availableAtSaveMinor: decimal("available_at_save_minor", { precision: 18, scale: 4 }),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

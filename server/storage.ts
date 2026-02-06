@@ -181,13 +181,33 @@ export interface IStorage {
 
   // Store Transfers
   getTransfers(): Promise<StoreTransferWithDetails[]>;
+  getTransfersFiltered(params: {
+    fromDate?: string;
+    toDate?: string;
+    sourceWarehouseId?: string;
+    destWarehouseId?: string;
+    status?: string;
+    search?: string;
+    page: number;
+    pageSize: number;
+  }): Promise<{data: StoreTransferWithDetails[]; total: number}>;
   getTransfer(id: string): Promise<StoreTransferWithDetails | undefined>;
-  createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; notes?: string }[]): Promise<StoreTransfer>;
+  createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer>;
   postTransfer(transferId: string): Promise<StoreTransfer>;
   deleteTransfer(id: string): Promise<boolean>;
   getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
   getItemAvailability(itemId: string, warehouseId: string): Promise<string>;
   searchItemsForTransfer(query: string, warehouseId: string, limit?: number): Promise<any[]>;
+  getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; qtyAvailableMinor: string}[]>;
+  searchItemsAdvanced(params: {
+    mode: 'AR' | 'EN' | 'CODE' | 'BARCODE';
+    query: string;
+    warehouseId: string;
+    page: number;
+    pageSize: number;
+    includeZeroStock: boolean;
+    drugsOnly: boolean;
+  }): Promise<{items: any[]; total: number}>;
 
   // Pilot Test Seed
   seedPilotTest(): Promise<{ warehouses: any[]; items: any[]; lots: any[] }>;
@@ -1230,7 +1250,7 @@ export class DatabaseStorage implements IStorage {
     return { ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems };
   }
 
-  async createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; notes?: string }[]): Promise<StoreTransfer> {
+  async createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer> {
     return await db.transaction(async (tx) => {
       const [maxNum] = await tx.select({ max: sql<number>`COALESCE(MAX(${storeTransfers.transferNumber}), 0)` }).from(storeTransfers);
       const nextNumber = (maxNum?.max || 0) + 1;
@@ -1248,6 +1268,8 @@ export class DatabaseStorage implements IStorage {
           unitLevel: line.unitLevel as any,
           qtyEntered: line.qtyEntered,
           qtyInMinor: line.qtyInMinor,
+          selectedExpiryDate: line.selectedExpiryDate || null,
+          availableAtSaveMinor: line.availableAtSaveMinor || null,
           notes: line.notes || null,
         });
       }
@@ -1274,37 +1296,69 @@ export class DatabaseStorage implements IStorage {
         const requiredQty = parseFloat(line.qtyInMinor);
         if (requiredQty <= 0) throw new Error(`الكمية يجب أن تكون أكبر من صفر: ${item.nameAr}`);
 
-        const expiryCondition = item.hasExpiry
-          ? and(
-              sql`${inventoryLots.expiryDate} IS NOT NULL`,
-              sql`${inventoryLots.expiryDate} >= ${transfer.transferDate}`
-            )
-          : sql`${inventoryLots.expiryDate} IS NULL`;
-
-        const lots = await tx.select().from(inventoryLots)
-          .where(and(
-            eq(inventoryLots.itemId, line.itemId),
-            eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
-            eq(inventoryLots.isActive, true),
-            sql`${inventoryLots.qtyInMinor}::numeric > 0`,
-            expiryCondition
-          ))
-          .orderBy(asc(inventoryLots.expiryDate), asc(inventoryLots.receivedDate));
-
         let remaining = requiredQty;
         const allocations: { lotId: string; expiryDate: string | null; allocatedQty: number; unitCost: string }[] = [];
 
-        for (const lot of lots) {
-          if (remaining <= 0) break;
-          const available = parseFloat(lot.qtyInMinor);
-          const allocated = Math.min(available, remaining);
-          allocations.push({
-            lotId: lot.id,
-            expiryDate: lot.expiryDate,
-            allocatedQty: allocated,
-            unitCost: lot.purchasePrice,
-          });
-          remaining -= allocated;
+        if (line.selectedExpiryDate && item.hasExpiry) {
+          const selectedLots = await tx.select().from(inventoryLots)
+            .where(and(
+              eq(inventoryLots.itemId, line.itemId),
+              eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
+              eq(inventoryLots.isActive, true),
+              sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+              sql`${inventoryLots.expiryDate} = ${line.selectedExpiryDate}`
+            ))
+            .orderBy(asc(inventoryLots.receivedDate));
+
+          for (const lot of selectedLots) {
+            if (remaining <= 0) break;
+            const available = parseFloat(lot.qtyInMinor);
+            const allocated = Math.min(available, remaining);
+            allocations.push({
+              lotId: lot.id,
+              expiryDate: lot.expiryDate,
+              allocatedQty: allocated,
+              unitCost: lot.purchasePrice,
+            });
+            remaining -= allocated;
+          }
+        }
+
+        if (remaining > 0) {
+          const expiryCondition = item.hasExpiry
+            ? and(
+                sql`${inventoryLots.expiryDate} IS NOT NULL`,
+                sql`${inventoryLots.expiryDate} >= ${transfer.transferDate}`
+              )
+            : sql`${inventoryLots.expiryDate} IS NULL`;
+
+          const alreadyUsedLotIds = allocations.map(a => a.lotId);
+
+          const fefoLots = await tx.select().from(inventoryLots)
+            .where(and(
+              eq(inventoryLots.itemId, line.itemId),
+              eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
+              eq(inventoryLots.isActive, true),
+              sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+              expiryCondition,
+              ...(alreadyUsedLotIds.length > 0
+                ? [sql`${inventoryLots.id} NOT IN (${sql.join(alreadyUsedLotIds.map(id => sql`${id}`), sql`, `)})`]
+                : [])
+            ))
+            .orderBy(asc(inventoryLots.expiryDate), asc(inventoryLots.receivedDate));
+
+          for (const lot of fefoLots) {
+            if (remaining <= 0) break;
+            const available = parseFloat(lot.qtyInMinor);
+            const allocated = Math.min(available, remaining);
+            allocations.push({
+              lotId: lot.id,
+              expiryDate: lot.expiryDate,
+              allocatedQty: allocated,
+              unitCost: lot.purchasePrice,
+            });
+            remaining -= allocated;
+          }
         }
 
         if (remaining > 0) {
@@ -1460,6 +1514,299 @@ export class DatabaseStorage implements IStorage {
         sql`${inventoryLots.qtyInMinor}::numeric > 0`
       ));
     return result?.total || "0";
+  }
+
+  async getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; qtyAvailableMinor: string}[]> {
+    const [item] = await db.select().from(items).where(eq(items.id, itemId));
+    if (!item || !item.hasExpiry) return [];
+
+    const results = await db.select({
+      expiryDate: inventoryLots.expiryDate,
+      qtyAvailableMinor: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+    })
+      .from(inventoryLots)
+      .where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.warehouseId, warehouseId),
+        eq(inventoryLots.isActive, true),
+        sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+        sql`${inventoryLots.expiryDate} IS NOT NULL`,
+        sql`${inventoryLots.expiryDate} >= ${asOfDate}`
+      ))
+      .groupBy(inventoryLots.expiryDate)
+      .orderBy(asc(inventoryLots.expiryDate));
+
+    return results.filter(r => r.expiryDate !== null).map(r => ({
+      expiryDate: r.expiryDate!,
+      qtyAvailableMinor: r.qtyAvailableMinor,
+    }));
+  }
+
+  async searchItemsAdvanced(params: {
+    mode: 'AR' | 'EN' | 'CODE' | 'BARCODE';
+    query: string;
+    warehouseId: string;
+    page: number;
+    pageSize: number;
+    includeZeroStock: boolean;
+    drugsOnly: boolean;
+  }): Promise<{items: any[]; total: number}> {
+    const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly } = params;
+    const offset = (page - 1) * pageSize;
+
+    const buildPattern = (q: string) => q.includes('%') ? q : `${q}%`;
+
+    let searchCondition: any;
+    let joinBarcode = false;
+
+    switch (mode) {
+      case 'AR':
+        searchCondition = ilike(items.nameAr, buildPattern(query));
+        break;
+      case 'EN':
+        searchCondition = ilike(sql`COALESCE(${items.nameEn}, '')`, buildPattern(query));
+        break;
+      case 'CODE':
+        searchCondition = ilike(items.itemCode, buildPattern(query));
+        break;
+      case 'BARCODE':
+        joinBarcode = true;
+        searchCondition = ilike(itemBarcodes.barcodeValue, buildPattern(query));
+        break;
+      default:
+        searchCondition = ilike(items.nameAr, buildPattern(query));
+    }
+
+    const conditions: any[] = [eq(items.isActive, true), searchCondition];
+    if (drugsOnly) {
+      conditions.push(eq(items.category, 'drug'));
+    }
+
+    const itemIdRef = sql.raw(`"items"."id"`);
+    const availQtySql = sql<string>`COALESCE((
+      SELECT SUM(il.qty_in_minor::numeric)::text
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+    ), '0')`;
+
+    const nearestExpirySql = sql<string>`(
+      SELECT MIN(il.expiry_date)::text
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+        AND il.expiry_date IS NOT NULL
+        AND il.expiry_date >= CURRENT_DATE
+    )`;
+
+    const nearestExpiryQtySql = sql<string>`(
+      SELECT SUM(il.qty_in_minor::numeric)::text
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+        AND il.expiry_date = (
+          SELECT MIN(il2.expiry_date)
+          FROM inventory_lots il2
+          WHERE il2.item_id = ${itemIdRef}
+            AND il2.warehouse_id = ${warehouseId}
+            AND il2.is_active = true
+            AND il2.qty_in_minor::numeric > 0
+            AND il2.expiry_date IS NOT NULL
+            AND il2.expiry_date >= CURRENT_DATE
+        )
+    )`;
+
+    if (joinBarcode) {
+      const baseQuery = db.select({
+        id: items.id,
+        itemCode: items.itemCode,
+        nameAr: items.nameAr,
+        nameEn: items.nameEn,
+        hasExpiry: items.hasExpiry,
+        category: items.category,
+        majorUnitName: items.majorUnitName,
+        minorUnitName: items.minorUnitName,
+        majorToMinor: items.majorToMinor,
+        mediumUnitName: items.mediumUnitName,
+        mediumToMinor: items.mediumToMinor,
+        availableQtyMinor: availQtySql,
+        nearestExpiryDate: nearestExpirySql,
+        nearestExpiryQtyMinor: nearestExpiryQtySql,
+      })
+        .from(items)
+        .innerJoin(itemBarcodes, and(eq(itemBarcodes.itemId, items.id), eq(itemBarcodes.isActive, true)))
+        .where(and(...conditions))
+        .groupBy(items.id);
+
+      if (!includeZeroStock) {
+        const allResults = await baseQuery.orderBy(asc(items.itemCode));
+        const filtered = allResults.filter(r => parseFloat(r.availableQtyMinor) > 0);
+        const total = filtered.length;
+        const paged = filtered.slice(offset, offset + pageSize);
+        return { items: paged, total };
+      }
+
+      const countResult = await db.select({ count: sql<number>`COUNT(DISTINCT ${items.id})` })
+        .from(items)
+        .innerJoin(itemBarcodes, and(eq(itemBarcodes.itemId, items.id), eq(itemBarcodes.isActive, true)))
+        .where(and(...conditions));
+
+      const total = countResult[0]?.count || 0;
+      const results = await baseQuery.orderBy(asc(items.itemCode)).limit(pageSize).offset(offset);
+      return { items: results, total };
+    }
+
+    if (!includeZeroStock) {
+      const allResults = await db.select({
+        id: items.id,
+        itemCode: items.itemCode,
+        nameAr: items.nameAr,
+        nameEn: items.nameEn,
+        hasExpiry: items.hasExpiry,
+        category: items.category,
+        majorUnitName: items.majorUnitName,
+        minorUnitName: items.minorUnitName,
+        majorToMinor: items.majorToMinor,
+        mediumUnitName: items.mediumUnitName,
+        mediumToMinor: items.mediumToMinor,
+        availableQtyMinor: availQtySql,
+        nearestExpiryDate: nearestExpirySql,
+        nearestExpiryQtyMinor: nearestExpiryQtySql,
+      })
+        .from(items)
+        .where(and(...conditions))
+        .orderBy(asc(items.itemCode));
+
+      const filtered = allResults.filter(r => parseFloat(r.availableQtyMinor) > 0);
+      const total = filtered.length;
+      const paged = filtered.slice(offset, offset + pageSize);
+      return { items: paged, total };
+    }
+
+    const [countResult] = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(items)
+      .where(and(...conditions));
+
+    const total = countResult?.count || 0;
+
+    const results = await db.select({
+      id: items.id,
+      itemCode: items.itemCode,
+      nameAr: items.nameAr,
+      nameEn: items.nameEn,
+      hasExpiry: items.hasExpiry,
+      category: items.category,
+      majorUnitName: items.majorUnitName,
+      minorUnitName: items.minorUnitName,
+      majorToMinor: items.majorToMinor,
+      mediumUnitName: items.mediumUnitName,
+      mediumToMinor: items.mediumToMinor,
+      availableQtyMinor: availQtySql,
+      nearestExpiryDate: nearestExpirySql,
+      nearestExpiryQtyMinor: nearestExpiryQtySql,
+    })
+      .from(items)
+      .where(and(...conditions))
+      .orderBy(asc(items.itemCode))
+      .limit(pageSize)
+      .offset(offset);
+
+    return { items: results, total };
+  }
+
+  async getTransfersFiltered(params: {
+    fromDate?: string;
+    toDate?: string;
+    sourceWarehouseId?: string;
+    destWarehouseId?: string;
+    status?: string;
+    search?: string;
+    page: number;
+    pageSize: number;
+  }): Promise<{data: StoreTransferWithDetails[]; total: number}> {
+    const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize } = params;
+    const offset = (page - 1) * pageSize;
+
+    const conditions: any[] = [];
+
+    if (fromDate) {
+      conditions.push(gte(storeTransfers.transferDate, fromDate));
+    }
+    if (toDate) {
+      conditions.push(lte(storeTransfers.transferDate, toDate));
+    }
+    if (sourceWarehouseId) {
+      conditions.push(eq(storeTransfers.sourceWarehouseId, sourceWarehouseId));
+    }
+    if (destWarehouseId) {
+      conditions.push(eq(storeTransfers.destinationWarehouseId, destWarehouseId));
+    }
+    if (status) {
+      conditions.push(eq(storeTransfers.status, status as any));
+    }
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      const numericSearch = parseInt(searchTerm, 10);
+      if (!isNaN(numericSearch)) {
+        conditions.push(eq(storeTransfers.transferNumber, numericSearch));
+      } else {
+        const matchingItemIds = await db.select({ id: items.id })
+          .from(items)
+          .where(or(
+            ilike(items.nameAr, `%${searchTerm}%`),
+            ilike(items.itemCode, `%${searchTerm}%`)
+          ));
+
+        if (matchingItemIds.length > 0) {
+          const transferIdsWithItem = await db.selectDistinct({ transferId: transferLines.transferId })
+            .from(transferLines)
+            .where(sql`${transferLines.itemId} IN (${sql.join(matchingItemIds.map(i => sql`${i.id}`), sql`, `)})`);
+
+          if (transferIdsWithItem.length > 0) {
+            conditions.push(sql`${storeTransfers.id} IN (${sql.join(transferIdsWithItem.map(t => sql`${t.transferId}`), sql`, `)})`);
+          } else {
+            return { data: [], total: 0 };
+          }
+        } else {
+          return { data: [], total: 0 };
+        }
+      }
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(storeTransfers)
+      .where(whereClause);
+
+    const total = countResult?.count || 0;
+
+    const transfers = await db.select().from(storeTransfers)
+      .where(whereClause)
+      .orderBy(desc(storeTransfers.createdAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    const result: StoreTransferWithDetails[] = [];
+    for (const t of transfers) {
+      const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
+      const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
+      const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, t.id));
+      const linesWithItems: TransferLineWithItem[] = [];
+      for (const line of lines) {
+        const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+        linesWithItems.push({ ...line, item });
+      }
+      result.push({ ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems });
+    }
+
+    return { data: result, total };
   }
 
   async searchItemsForTransfer(query: string, warehouseId: string, limit: number = 10): Promise<any[]> {
