@@ -10,23 +10,7 @@ async function api(method: string, path: string, body?: any) {
 }
 
 describe("Receiving Register Filters", () => {
-  let supplierId: string;
-  let warehouseId: string;
-  let itemId: string;
-  let receivingId: string;
   const today = new Date().toISOString().split("T")[0];
-
-  beforeAll(async () => {
-    // Get existing test data
-    const suppliers = await api("GET", "/api/suppliers?page=1&pageSize=1");
-    supplierId = suppliers.data.suppliers[0].id;
-
-    const warehouses = await api("GET", "/api/warehouses");
-    warehouseId = warehouses.data[0].id;
-
-    const items = await api("GET", "/api/items?page=1&limit=1");
-    itemId = items.data.items[0].id;
-  });
 
   it("should return receivings filtered by date range (today)", async () => {
     const res = await api("GET", `/api/receivings?page=1&pageSize=50&fromDate=${today}&toDate=${today}`);
@@ -42,10 +26,17 @@ describe("Receiving Register Filters", () => {
     expect(Array.isArray(res.data.data)).toBe(true);
   });
 
+  it("should filter by statusFilter=DRAFT (only drafts)", async () => {
+    const res = await api("GET", `/api/receivings?page=1&pageSize=50&statusFilter=DRAFT`);
+    expect(res.status).toBe(200);
+    for (const r of res.data.data) {
+      expect(r.status).toBe("draft");
+    }
+  });
+
   it("should filter by statusFilter=POSTED (posted_qty_only, not converted)", async () => {
     const res = await api("GET", `/api/receivings?page=1&pageSize=50&statusFilter=POSTED`);
     expect(res.status).toBe(200);
-    // All results should have status posted_qty_only and no convertedToInvoiceId
     for (const r of res.data.data) {
       expect(r.status).toBe("posted_qty_only");
       expect(r.convertedToInvoiceId).toBeFalsy();
@@ -64,12 +55,10 @@ describe("Receiving Register Filters", () => {
     const resAll = await api("GET", `/api/receivings?page=1&pageSize=50&statusFilter=ALL`);
     const resNoFilter = await api("GET", `/api/receivings?page=1&pageSize=50`);
     expect(resAll.status).toBe(200);
-    // ALL should return same total as no filter
     expect(resAll.data.total).toBe(resNoFilter.data.total);
   });
 
   it("should search by supplier invoice number", async () => {
-    // First get a receiving to know its invoice number
     const all = await api("GET", `/api/receivings?page=1&pageSize=1`);
     if (all.data.data.length > 0) {
       const invoiceNo = all.data.data[0].supplierInvoiceNo;
@@ -80,7 +69,6 @@ describe("Receiving Register Filters", () => {
   });
 
   it("should search by supplier name", async () => {
-    // Get supplier name from existing data
     const all = await api("GET", `/api/receivings?page=1&pageSize=1`);
     if (all.data.data.length > 0 && all.data.data[0].supplier?.nameAr) {
       const nameAr = all.data.data[0].supplier.nameAr;
@@ -104,7 +92,6 @@ describe("Receiving Register Filters", () => {
       const res2 = await api("GET", `/api/receivings?page=2&pageSize=2`);
       expect(res2.status).toBe(200);
       expect(res2.data.data.length).toBeGreaterThanOrEqual(1);
-      // Pages should have different data
       if (res2.data.data.length > 0 && res1.data.data.length > 0) {
         expect(res2.data.data[0].id).not.toBe(res1.data.data[0].id);
       }
@@ -118,5 +105,83 @@ describe("Receiving Register Filters", () => {
     for (let i = 1; i < dates.length; i++) {
       expect(dates[i] <= dates[i - 1]).toBe(true);
     }
+  });
+});
+
+describe("Supplier Search API", () => {
+  it("should return results for a valid query", async () => {
+    const suppliers = await api("GET", "/api/suppliers?page=1&pageSize=1");
+    if (suppliers.data.suppliers?.length > 0) {
+      const code = suppliers.data.suppliers[0].code;
+      const res = await api("GET", `/api/suppliers/search?q=${encodeURIComponent(code)}&limit=10`);
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.data)).toBe(true);
+      expect(res.data.length).toBeGreaterThanOrEqual(1);
+      expect(res.data[0]).toHaveProperty("id");
+      expect(res.data[0]).toHaveProperty("code");
+      expect(res.data[0]).toHaveProperty("nameAr");
+    }
+  });
+
+  it("should return results when searching by Arabic name", async () => {
+    const suppliers = await api("GET", "/api/suppliers?page=1&pageSize=1");
+    if (suppliers.data.suppliers?.length > 0) {
+      const nameAr = suppliers.data.suppliers[0].nameAr;
+      const partial = nameAr.substring(0, Math.min(5, nameAr.length));
+      const res = await api("GET", `/api/suppliers/search?q=${encodeURIComponent(partial)}&limit=10`);
+      expect(res.status).toBe(200);
+      expect(res.data.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("should return empty array for empty query", async () => {
+    const res = await api("GET", `/api/suppliers/search?q=&limit=10`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.data)).toBe(true);
+    expect(res.data.length).toBe(0);
+  });
+
+  it("should prioritize exact code match for numeric queries", async () => {
+    const suppliers = await api("GET", "/api/suppliers?page=1&pageSize=1");
+    if (suppliers.data.suppliers?.length > 0) {
+      const code = suppliers.data.suppliers[0].code;
+      if (/^\d+$/.test(code)) {
+        const res = await api("GET", `/api/suppliers/search?q=${encodeURIComponent(code)}&limit=10`);
+        expect(res.status).toBe(200);
+        expect(res.data.length).toBeGreaterThanOrEqual(1);
+        expect(res.data[0].code).toBe(code);
+      }
+    }
+  });
+
+  it("should return minimal fields only (id, code, nameAr, nameEn, phone)", async () => {
+    const suppliers = await api("GET", "/api/suppliers?page=1&pageSize=1");
+    if (suppliers.data.suppliers?.length > 0) {
+      const code = suppliers.data.suppliers[0].code;
+      const res = await api("GET", `/api/suppliers/search?q=${encodeURIComponent(code)}&limit=10`);
+      expect(res.status).toBe(200);
+      if (res.data.length > 0) {
+        const keys = Object.keys(res.data[0]);
+        expect(keys).toContain("id");
+        expect(keys).toContain("code");
+        expect(keys).toContain("nameAr");
+        expect(keys).not.toContain("address");
+        expect(keys).not.toContain("createdAt");
+      }
+    }
+  });
+
+  it("should respect limit parameter", async () => {
+    const res = await api("GET", `/api/suppliers/search?q=a&limit=2`);
+    expect(res.status).toBe(200);
+    expect(res.data.length).toBeLessThanOrEqual(2);
+  });
+
+  it("should respond quickly (< 500ms)", async () => {
+    const start = Date.now();
+    const res = await api("GET", `/api/suppliers/search?q=test&limit=20`);
+    const elapsed = Date.now() - start;
+    expect(res.status).toBe(200);
+    expect(elapsed).toBeLessThan(500);
   });
 });

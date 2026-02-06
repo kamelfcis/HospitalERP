@@ -227,6 +227,7 @@ export interface IStorage {
 
   // Suppliers
   getSuppliers(params: { search?: string; page: number; pageSize: number }): Promise<{ suppliers: Supplier[]; total: number }>;
+  searchSuppliers(q: string, limit?: number): Promise<Pick<Supplier, 'id' | 'code' | 'nameAr' | 'nameEn' | 'phone'>[]>;
   getSupplier(id: string): Promise<Supplier | undefined>;
   createSupplier(supplier: InsertSupplier): Promise<Supplier>;
   updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
@@ -2157,6 +2158,34 @@ export class DatabaseStorage implements IStorage {
     return { suppliers: results, total: Number(countResult.count) };
   }
 
+  async searchSuppliers(q: string, limit: number = 20): Promise<Pick<Supplier, 'id' | 'code' | 'nameAr' | 'nameEn' | 'phone'>[]> {
+    const trimmed = q.trim();
+    if (!trimmed) return [];
+    const isNumericLike = /^\d+$/.test(trimmed);
+    let results;
+    if (isNumericLike) {
+      results = await db.select({
+        id: suppliers.id, code: suppliers.code, nameAr: suppliers.nameAr, nameEn: suppliers.nameEn, phone: suppliers.phone,
+      }).from(suppliers).where(and(eq(suppliers.isActive, true), or(
+        eq(suppliers.code, trimmed),
+        ilike(suppliers.code, `${trimmed}%`),
+        ilike(suppliers.phone, `%${trimmed}%`),
+      ))).orderBy(sql`CASE WHEN ${suppliers.code} = ${trimmed} THEN 0 ELSE 1 END`, suppliers.code).limit(limit);
+    } else {
+      const pattern = `%${trimmed}%`;
+      results = await db.select({
+        id: suppliers.id, code: suppliers.code, nameAr: suppliers.nameAr, nameEn: suppliers.nameEn, phone: suppliers.phone,
+      }).from(suppliers).where(and(eq(suppliers.isActive, true), or(
+        ilike(suppliers.nameAr, pattern),
+        ilike(suppliers.nameEn, pattern),
+        ilike(suppliers.code, pattern),
+        ilike(suppliers.phone, pattern),
+        ilike(suppliers.taxId, pattern),
+      ))).orderBy(suppliers.nameAr).limit(limit);
+    }
+    return results;
+  }
+
   async getSupplier(id: string): Promise<Supplier | undefined> {
     const [s] = await db.select().from(suppliers).where(eq(suppliers.id, id));
     return s;
@@ -2181,7 +2210,9 @@ export class DatabaseStorage implements IStorage {
     if (warehouseId) conditions.push(eq(receivingHeaders.warehouseId, warehouseId));
     if (status) conditions.push(eq(receivingHeaders.status, status as any));
     if (statusFilter && statusFilter !== 'ALL') {
-      if (statusFilter === 'POSTED') {
+      if (statusFilter === 'DRAFT') {
+        conditions.push(eq(receivingHeaders.status, 'draft' as any));
+      } else if (statusFilter === 'POSTED') {
         conditions.push(eq(receivingHeaders.status, 'posted_qty_only' as any));
         conditions.push(isNull(receivingHeaders.convertedToInvoiceId));
       } else if (statusFilter === 'CONVERTED') {

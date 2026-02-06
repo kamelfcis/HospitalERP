@@ -1,0 +1,102 @@
+You are working on two improvements:
+1) Receiving Register screen "سجل أذون الاستلام"
+2) Receiving Form screen "استلام من مورد" (supplier search performance)
+
+Do NOT change business rules. Focus on UX + performance + correctness + tests.
+
+════════════════════════════════════
+PART 1 — Receiving Register: add DRAFT status filter
+════════════════════════════════════
+A) Status Filter options (must be exactly these Arabic labels)
+Add statusFilter with options:
+- الكل (ALL) [default]
+- مسودة (DRAFT)  ← NEW
+- تم الترحيل فقط (POSTED)
+- تم التحويل إلى فاتورة شراء (CONVERTED)
+
+Definitions:
+- DRAFT: receiving.status = DRAFT AND purchaseInvoiceId IS NULL (not converted)
+- POSTED: receiving.status = POSTED_QTY_ONLY (or equivalent) AND NOT converted unless user selects converted
+- CONVERTED: purchaseInvoiceId IS NOT NULL (or convertedToInvoice = true), regardless of posted status
+- ALL: no restriction
+
+Rules:
+- statusFilter combines with search q + date range using AND logic
+- Preserve filters when user opens a document and returns
+- Reset restores: Today→Today, status=ALL, q empty
+- Keep layout compact (same row as search and dates)
+
+Backend API:
+- Accept params: q, fromDate, toDate, statusFilter (ALL|DRAFT|POSTED|CONVERTED), page, pageSize
+- Order: receivingDate DESC
+- Use pagination always
+
+Indexes (Postgres):
+- ReceivingHeader(receivingDate)
+- ReceivingHeader(status)
+- ReceivingHeader(purchaseInvoiceId) or convertedToInvoice
+- ReceivingHeader(supplierInvoiceNo)
+- Supplier(nameAr), Supplier(nameEn)
+
+Tests (mandatory):
+- DRAFT filter returns only drafts not converted
+- POSTED filter returns posted not converted (unless business rules allow)
+- CONVERTED returns only converted
+- ALL returns everything within date
+- Combined: q + status + date works with AND logic
+- Default load shows Today only
+
+════════════════════════════════════
+PART 2 — Receiving Form: Supplier search must be advanced + FAST (code/name)
+════════════════════════════════════
+Current issue: supplier search feels slow for supplier code or name.
+Goal: Make supplier lookup instantaneous and user-friendly.
+
+A) UX requirements (Supplier field in header)
+- Supplier input has:
+  1) typeahead (debounce 200–300ms)
+  2) advanced search modal (filters: الاسم، الكود، الهاتف، رقم ضريبي)
+  3) keyboard navigation (↑↓ Enter)
+  4) show last 10 suppliers used by this user as quick picks
+- Must search by:
+  - supplier code (exact match first)
+  - supplier Arabic name (partial)
+  - supplier English name (partial)
+  - phone / taxId (optional)
+- If user types numeric-only and length matches typical code → prioritize code exact match
+
+B) Backend performance requirements
+- Create a dedicated endpoint: GET /suppliers/search?q=...&limit=20
+- Must be index-friendly:
+  - If q looks like code: query Supplier.code = q OR Supplier.code ILIKE q%
+  - Else: query nameAr ILIKE %q% OR nameEn ILIKE %q%
+- Return minimal fields (id, code, nameAr, nameEn, phone) to reduce payload
+- Add caching for identical q within short window (in-memory LRU per instance) if needed
+
+C) Database indexes (must add)
+- Supplier(code) btree
+- Supplier(nameAr) + Supplier(nameEn) use:
+  - trigram index (gin) for fast ILIKE %...% if Postgres supports it
+  - OR at minimum lower(nameAr), lower(nameEn) indexes
+- Supplier(phone) optional
+- Supplier(taxId) optional
+
+D) Frontend optimization
+- Debounce requests
+- Cancel in-flight requests when q changes (AbortController)
+- Cache recent results in memory to avoid re-fetch when user backspaces
+- Show loading indicator but do not block typing
+
+E) Tests (mandatory)
+- Integration test: searching by exact code returns supplier in < 300ms (within test env tolerance)
+- Searching by Arabic partial returns correct list
+- Searching by English partial returns correct list
+- UI E2E:
+  - type code quickly -> list appears -> select with Enter
+  - type Arabic name -> select -> must not lag or freeze
+
+Deliver:
+- Code diff for register filter + supplier search
+- Migrations for indexes
+- Tests added and must pass together (no flaky data interference)
+Implement now.

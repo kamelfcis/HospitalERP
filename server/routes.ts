@@ -1546,6 +1546,17 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/suppliers/search", async (req, res) => {
+    try {
+      const q = (req.query.q as string || "").trim();
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+      const results = await storage.searchSuppliers(q, limit);
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/suppliers/:id", async (req, res) => {
     try {
       const supplier = await storage.getSupplier(req.params.id);

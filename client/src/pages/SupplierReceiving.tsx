@@ -88,8 +88,12 @@ export default function SupplierReceiving() {
   const [supplierResults, setSupplierResults] = useState<Supplier[]>([]);
   const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [supplierHighlightIdx, setSupplierHighlightIdx] = useState(-1);
+  const [supplierSearchLoading, setSupplierSearchLoading] = useState(false);
   const supplierSearchRef = useRef<HTMLInputElement>(null);
   const supplierDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const supplierAbortRef = useRef<AbortController | null>(null);
+  const supplierCacheRef = useRef<Map<string, Supplier[]>>(new Map());
 
   const [invoiceDuplicateError, setInvoiceDuplicateError] = useState("");
   const invoiceCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -192,19 +196,41 @@ export default function SupplierReceiving() {
   };
 
   const handleSupplierSearch = useCallback(async (text: string) => {
-    if (!text.trim()) {
+    const trimmed = text.trim();
+    if (!trimmed) {
       setSupplierResults([]);
+      setSupplierSearchLoading(false);
       return;
     }
+    const cached = supplierCacheRef.current.get(trimmed);
+    if (cached) {
+      setSupplierResults(cached);
+      setSupplierDropdownOpen(true);
+      setSupplierHighlightIdx(-1);
+      setSupplierSearchLoading(false);
+      return;
+    }
+    if (supplierAbortRef.current) supplierAbortRef.current.abort();
+    const controller = new AbortController();
+    supplierAbortRef.current = controller;
     try {
-      const res = await fetch(`/api/suppliers?search=${encodeURIComponent(text)}&page=1&pageSize=50`);
+      setSupplierSearchLoading(true);
+      const res = await fetch(`/api/suppliers/search?q=${encodeURIComponent(trimmed)}&limit=20`, { signal: controller.signal });
       if (res.ok) {
         const data = await res.json();
-        setSupplierResults(data.suppliers || data.data || []);
+        supplierCacheRef.current.set(trimmed, data);
+        if (supplierCacheRef.current.size > 50) {
+          const firstKey = supplierCacheRef.current.keys().next().value;
+          if (firstKey !== undefined) supplierCacheRef.current.delete(firstKey);
+        }
+        setSupplierResults(data);
         setSupplierDropdownOpen(true);
+        setSupplierHighlightIdx(-1);
       }
-    } catch {
-      setSupplierResults([]);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') setSupplierResults([]);
+    } finally {
+      setSupplierSearchLoading(false);
     }
   }, []);
 
@@ -214,6 +240,20 @@ export default function SupplierReceiving() {
     supplierDebounceRef.current = setTimeout(() => {
       handleSupplierSearch(val);
     }, 250);
+  };
+
+  const handleSupplierKeyDown = (e: React.KeyboardEvent) => {
+    if (!supplierDropdownOpen || supplierResults.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSupplierHighlightIdx((prev) => Math.min(prev + 1, supplierResults.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSupplierHighlightIdx((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter" && supplierHighlightIdx >= 0) {
+      e.preventDefault();
+      selectSupplier(supplierResults[supplierHighlightIdx]);
+    }
   };
 
   const selectSupplier = (supplier: Supplier) => {
@@ -818,6 +858,7 @@ export default function SupplierReceiving() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">الكل</SelectItem>
+                  <SelectItem value="DRAFT">مسودة</SelectItem>
                   <SelectItem value="POSTED">تم الترحيل فقط</SelectItem>
                   <SelectItem value="CONVERTED">تم التحويل إلى فاتورة شراء</SelectItem>
                 </SelectContent>
@@ -1038,34 +1079,40 @@ export default function SupplierReceiving() {
 
               <div className="space-y-1 flex-1 min-w-[200px] relative">
                 <Label className="text-[10px] text-muted-foreground">المورد *</Label>
-                <Input
-                  ref={supplierSearchRef}
-                  type="text"
-                  value={supplierSearchText}
-                  onChange={(e) => {
-                    handleSupplierSearchChange(e.target.value);
-                    if (selectedSupplier) {
-                      setSelectedSupplier(null);
-                      setSupplierId("");
-                    }
-                  }}
-                  onFocus={() => {
-                    if (supplierResults.length > 0) setSupplierDropdownOpen(true);
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => setSupplierDropdownOpen(false), 400);
-                  }}
-                  placeholder="ابحث عن المورد..."
-                  className="h-7 text-[11px] px-1"
-                  disabled={isViewOnly}
-                  data-testid="select-supplier"
-                />
+                <div className="relative">
+                  <Input
+                    ref={supplierSearchRef}
+                    type="text"
+                    value={supplierSearchText}
+                    onChange={(e) => {
+                      handleSupplierSearchChange(e.target.value);
+                      if (selectedSupplier) {
+                        setSelectedSupplier(null);
+                        setSupplierId("");
+                      }
+                    }}
+                    onKeyDown={handleSupplierKeyDown}
+                    onFocus={() => {
+                      if (supplierResults.length > 0) setSupplierDropdownOpen(true);
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => setSupplierDropdownOpen(false), 400);
+                    }}
+                    placeholder="ابحث بالكود أو الاسم..."
+                    className="h-7 text-[11px] px-1"
+                    disabled={isViewOnly}
+                    data-testid="select-supplier"
+                  />
+                  {supplierSearchLoading && (
+                    <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
+                  )}
+                </div>
                 {supplierDropdownOpen && supplierResults.length > 0 && (
                   <div className="absolute top-full right-0 left-0 z-50 bg-card border rounded-md shadow-lg max-h-[200px] overflow-auto mt-1">
-                    {supplierResults.map((s) => (
+                    {supplierResults.map((s, idx) => (
                       <div
                         key={s.id}
-                        className="px-2 py-1.5 text-[11px] cursor-pointer hover:bg-muted/50"
+                        className={`px-2 py-1.5 text-[11px] cursor-pointer hover:bg-muted/50 ${idx === supplierHighlightIdx ? "bg-muted" : ""}`}
                         onMouseDown={(e) => {
                           e.preventDefault();
                         }}
@@ -1074,7 +1121,7 @@ export default function SupplierReceiving() {
                         }}
                         data-testid={`supplier-option-${s.id}`}
                       >
-                        {s.code} - {s.nameAr}
+                        <span className="font-mono text-muted-foreground">{s.code}</span> - {s.nameAr} {s.nameEn ? `(${s.nameEn})` : ""}
                       </div>
                     ))}
                   </div>
