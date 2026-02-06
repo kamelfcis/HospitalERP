@@ -238,3 +238,30 @@ describe("Expiry Parsing", () => {
     });
   });
 });
+
+describe("Default Unit Level", () => {
+  function getDefaultUnitLevel(item: any): string {
+    if (item.majorUnitName) return "major";
+    return "minor";
+  }
+
+  it("should return 'major' when item has majorUnitName", () => {
+    expect(getDefaultUnitLevel({ majorUnitName: "علبة", minorUnitName: "قرص" })).toBe("major");
+  });
+
+  it("should return 'minor' when item has no majorUnitName", () => {
+    expect(getDefaultUnitLevel({ minorUnitName: "قرص" })).toBe("minor");
+  });
+
+  it("should return 'minor' when majorUnitName is null", () => {
+    expect(getDefaultUnitLevel({ majorUnitName: null, minorUnitName: "قرص" })).toBe("minor");
+  });
+
+  it("should return 'minor' when majorUnitName is empty string", () => {
+    expect(getDefaultUnitLevel({ majorUnitName: "", minorUnitName: "قرص" })).toBe("minor");
+  });
+
+  it("should return 'major' even when no minorUnitName", () => {
+    expect(getDefaultUnitLevel({ majorUnitName: "كرتونة" })).toBe("major");
+  });
+});

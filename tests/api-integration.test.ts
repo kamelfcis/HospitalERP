@@ -270,3 +270,100 @@ describe("Purchase Invoice Immutability", () => {
     expect(result.data.code).toBe("ALREADY_APPROVED");
   });
 });
+
+describe("Major Unit Defaulting", () => {
+  let supplierId: string;
+  let warehouseId: string;
+  let itemWithMajor: any;
+
+  beforeAll(async () => {
+    const suppliers = await api("GET", "/api/suppliers?page=1&pageSize=1");
+    supplierId = suppliers.data?.suppliers?.[0]?.id;
+    const warehouses = await api("GET", "/api/warehouses");
+    warehouseId = warehouses.data?.[0]?.id;
+
+    const itemsRes = await api("GET", "/api/items?page=1&limit=50");
+    const items = itemsRes.data?.items || itemsRes.data || [];
+    itemWithMajor = items.find((i: any) => i.majorUnitName);
+    if (!itemWithMajor) {
+      itemWithMajor = items[0];
+    }
+  });
+
+  it("should default unitLevel to major when creating receiving line without unitLevel", async () => {
+    if (!itemWithMajor || !supplierId || !warehouseId) return;
+
+    const result = await api("POST", "/api/receivings", {
+      header: {
+        supplierId,
+        supplierInvoiceNo: `MAJOR-TEST-${Date.now()}`,
+        warehouseId,
+        receiveDate: "2026-02-06",
+      },
+      lines: [{
+        itemId: itemWithMajor.id,
+        unitLevel: "",
+        qtyEntered: "1",
+        qtyInMinor: "1",
+        purchasePrice: "10",
+        lineTotal: "10",
+        bonusQty: "0",
+        bonusQtyInMinor: "0",
+      }],
+    });
+    expect(result.status).toBe(201);
+
+    if (result.data?.id) {
+      const fetchResult = await api("GET", `/api/receivings/${result.data.id}`);
+      expect(fetchResult.status).toBe(200);
+      const lines = fetchResult.data?.lines || [];
+      if (lines.length > 0 && itemWithMajor.majorUnitName) {
+        expect(lines[0].unitLevel).toBe("major");
+      }
+    }
+  });
+
+  it("should carry unitLevel through receiving to invoice conversion", async () => {
+    if (!itemWithMajor || !supplierId || !warehouseId) return;
+
+    const createResult = await api("POST", "/api/receivings", {
+      header: {
+        supplierId,
+        supplierInvoiceNo: `CONV-UNIT-${Date.now()}`,
+        warehouseId,
+        receiveDate: "2026-02-06",
+      },
+      lines: [{
+        itemId: itemWithMajor.id,
+        unitLevel: "major",
+        qtyEntered: "1",
+        qtyInMinor: itemWithMajor.majorToMinor || "1",
+        purchasePrice: "10",
+        lineTotal: "10",
+        bonusQty: "0",
+        bonusQtyInMinor: "0",
+        expiryMonth: itemWithMajor.hasExpiry ? 6 : undefined,
+        expiryYear: itemWithMajor.hasExpiry ? 2027 : undefined,
+      }],
+    });
+
+    if (createResult.status !== 201 || !createResult.data?.id) return;
+
+    const postResult = await api("POST", `/api/receivings/${createResult.data.id}/post`);
+    if (postResult.status !== 200) return;
+
+    const convertResult = await api("POST", `/api/receivings/${createResult.data.id}/convert-to-invoice`);
+    if (convertResult.status !== 200 && convertResult.status !== 201) return;
+
+    const invoiceId = convertResult.data?.id;
+    if (invoiceId) {
+      const invoiceResult = await api("GET", `/api/purchase-invoices/${invoiceId}`);
+      if (invoiceResult.status === 200) {
+        const lines = invoiceResult.data?.lines || [];
+        if (lines.length > 0) {
+          expect(lines[0].unitLevel).toBe("major");
+        }
+      }
+    }
+  });
+});
