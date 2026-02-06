@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, X, ScanBarcode, Truck, AlertTriangle, Check, BarChart3 } from "lucide-react";
+import { ExpiryInput } from "@/components/ui/expiry-input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateShort } from "@/lib/formatters";
@@ -207,6 +208,9 @@ export default function SupplierReceiving() {
     }
     try {
       const params = new URLSearchParams({ supplierId: sId, supplierInvoiceNo: invoiceNo });
+      if (editingReceivingId) {
+        params.set("excludeId", editingReceivingId);
+      }
       const res = await fetch(`/api/receivings/check-invoice?${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -372,7 +376,7 @@ export default function SupplierReceiving() {
     formStatus === "draft" &&
     !invoiceDuplicateError;
 
-  const isViewOnly = formStatus === "posted";
+  const isViewOnly = formStatus !== "draft";
 
   const saveDraftMutation = useMutation({
     mutationFn: async () => {
@@ -658,10 +662,18 @@ export default function SupplierReceiving() {
   };
 
   const handleModalSelectItem = async (item: any) => {
-    await addItemLine(item);
+    const newLine = await addItemLine(item);
     setModalSearchText("");
     setModalResults([]);
-    setTimeout(() => modalSearchInputRef.current?.focus(), 50);
+    setTimeout(() => {
+      setFormLines(prev => {
+        const newIndex = prev.length - 1;
+        setEditingQtyIndex(newIndex);
+        setEditingQtyValue("1");
+        setTimeout(() => qtyInputRef.current?.focus(), 80);
+        return prev;
+      });
+    }, 50);
   };
 
   const modalOpenPrev = useRef(false);
@@ -920,6 +932,11 @@ export default function SupplierReceiving() {
         </TabsContent>
 
         <TabsContent value="form" className="space-y-2" onClick={handleFormContainerClick}>
+          {isViewOnly && (
+            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-md p-2 mb-2 text-center text-sm text-amber-800 dark:text-amber-200" data-testid="banner-read-only">
+              {receivingStatusLabels[formStatus as keyof typeof receivingStatusLabels] || formStatus} — للعرض فقط
+            </div>
+          )}
           <fieldset className="peachtree-grid p-2 sticky top-0 z-50 bg-card">
             <legend className="text-xs font-semibold px-1">بيانات إذن الاستلام</legend>
             <div className="flex flex-wrap items-end gap-2">
@@ -1209,28 +1226,13 @@ export default function SupplierReceiving() {
                           {isViewOnly ? (
                             <span>{line.expiryMonth && line.expiryYear ? `${String(line.expiryMonth).padStart(2, '0')}/${line.expiryYear}` : "—"}</span>
                           ) : (
-                            <div className="flex gap-0.5 items-center">
-                              <select
-                                value={line.expiryMonth || ""}
-                                onChange={(e) => updateLine(idx, { expiryMonth: e.target.value ? parseInt(e.target.value) : null })}
-                                className="h-6 text-[10px] w-[45px] border rounded bg-transparent"
-                                data-testid={`select-expiry-month-${idx}`}
-                              >
-                                <option value="">شهر</option>
-                                {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{String(m).padStart(2,'0')}</option>)}
-                              </select>
-                              <span className="text-muted-foreground text-[10px]">/</span>
-                              <input
-                                type="number"
-                                value={line.expiryYear || ""}
-                                onChange={(e) => updateLine(idx, { expiryYear: e.target.value ? parseInt(e.target.value) : null })}
-                                className="h-6 text-[10px] w-[55px] border rounded bg-transparent text-center"
-                                placeholder="سنة"
-                                min="2024"
-                                max="2040"
-                                data-testid={`input-expiry-year-${idx}`}
-                              />
-                            </div>
+                            <ExpiryInput
+                              expiryMonth={line.expiryMonth}
+                              expiryYear={line.expiryYear}
+                              onChange={(month, year) => updateLine(idx, { expiryMonth: month, expiryYear: year })}
+                              disabled={isViewOnly}
+                              data-testid={`input-expiry-${idx}`}
+                            />
                           )}
                         </td>
                         <td className="py-0.5 px-2 whitespace-nowrap">

@@ -1,0 +1,133 @@
+You are continuing an existing Hospital/Pharmacy ERP on Replit (NestJS + Prisma + PostgreSQL, React + TypeScript).
+Your mission is to FIX critical UX/validation bugs and add EXTREME tests (unit+integration+e2e+load) for:
+1) Screen: "استلام من مورد" (Receiving)
+2) Screen: "فاتورة شراء" (Purchase Invoice)
+Implement fixes immediately and prove correctness with tests.
+
+GLOBAL CRITICAL RULE (SYSTEM-WIDE):
+- Expiry is MONTH/YEAR only, stored as (expiryMonth INT, expiryYear INT). No day allowed anywhere.
+- FEFO ordering: expiryYear ASC, expiryMonth ASC.
+- Comparison semantics: expiry at end-of-month.
+- UI entry must be ultra-fast:
+  - user types month (MM) then year is automatically prompted and filled (MM/YYYY)
+  - allow typing "MMYY" or "MM/YYYY" and normalize
+  - on leaving the field, auto-format to "MM/YYYY" and persist month/year.
+
+A) BUG FIX #1 — POSTED documents must be READ-ONLY
+Current bug: after saving/posting (حفظ وترحيل), user can reopen and edit.
+Required behavior:
+- ReceivingHeader.status:
+  - DRAFT: editable (header + lines)
+  - POSTED_QTY_ONLY: NOT editable (read-only) and cannot be changed by any API except explicit reversal workflow (not implemented now).
+- PurchaseInvoice.status:
+  - DRAFT: editable
+  - APPROVED_COSTED (or POSTED): read-only
+Implementation requirements:
+1) Backend must enforce immutability:
+   - All update endpoints must reject modifications for POSTED/APPROVED docs (HTTP 409 with clear error code).
+   - Use DB-level protection where possible:
+     - Add updatedAt triggers or explicit checks in service layer.
+2) Frontend must reflect state:
+   - If POSTED: disable all inputs and show banner "مُرحّل - للعرض فقط"
+   - Hide edit actions; show print/export only.
+3) Add tests to confirm:
+   - Attempt to update posted receiving returns 409
+   - Attempt to update approved invoice returns 409
+
+B) BUG FIX #2 — False duplicate Supplier Invoice Number error on open
+Current bug: opening an existing receiving shows “invoice number duplicate for same supplier”.
+Root cause likely: uniqueness validation does not exclude current record.
+Fix requirements:
+- Uniqueness rule: supplierId + supplierInvoiceNo is unique ONLY among non-void docs.
+- When editing a DRAFT receiving, uniqueness check MUST exclude the same receiving record id.
+- When opening POSTED receiving in read-only mode, DO NOT trigger uniqueness validation popups at all.
+Implementation details:
+- Add unique index: (supplierId, supplierInvoiceNo) with partial condition if supported, or enforce in code with status != VOID.
+- API validation:
+  - On create: check duplicates.
+  - On update (draft only): check duplicates excluding current id.
+  - On GET/open: never run duplicate validation.
+- Add tests:
+  - Create draft with invoiceNo X then open it => no duplicate error
+  - Create another draft with same supplier+invoiceNo => must fail
+  - If same invoiceNo but different supplier => allowed
+
+C) BUG FIX #3 — Qty field locked after adding item from search
+Current bug: when adding item via advanced search, Qty input becomes disabled/locked.
+Fix requirements:
+- Qty input must ALWAYS be editable in DRAFT state.
+- On item add, default qty=1 and focus qty cell immediately.
+- Ensure no conflicting controlled/uncontrolled input state.
+- Add UI tests:
+  - Add item via search -> qty is enabled -> can type -> persists to draft autosave
+  - Add item via barcode -> qty enabled
+
+D) UX Enhancement — Expiry entry (Month then Year) extremely fast
+Implement a Month/Year input that supports:
+- Typing "06" then automatically moves cursor to year part and pre-fills "/" (shows "06/____")
+- Typing "0626" becomes "06/2026"
+- Typing "06/26" becomes "06/2026"
+- Typing "06/2026" accepted
+- On blur: normalize and store expiryMonth=6, expiryYear=2026
+Validation:
+- Month 1..12 only
+- Past months optionally allowed based on config; default disallow past for receiving
+- Must be used everywhere expiry is entered.
+
+E) Hardening Receiving workflow
+Ensure:
+- Supplier is mandatory; receiving warehouse mandatory; supplierInvoiceNo mandatory and non-empty.
+- DRAFT allows editing; POSTED is read-only.
+- Post action is transactional and idempotent:
+  - lock row FOR UPDATE
+  - if already POSTED, return success payload (safe retry)
+- Offline draft autosave must not accidentally POST.
+- Do not validate uniqueness on autosave drafts until user has chosen supplier + invoiceNo (but still enforce on final save/post).
+
+F) Purchase Invoice: same immutability rules + conversion correctness
+- Converted from receiving must prefill lines and must not allow duplicate conversion.
+- Invoice DRAFT editable; once approved/costed, read-only.
+- Add tests for conversion idempotency:
+  - Convert same receiving twice => second attempt returns existing invoice.
+
+G) EXTREME TESTING (must be implemented, not superficial)
+1) Unit tests:
+   - expiry parsing/normalization (dozens of inputs)
+   - uniqueness validation excluding same record
+   - status-based immutability guards
+2) Integration tests (NestJS + DB):
+   - create draft receiving -> add lines -> autosave -> reopen -> edit allowed
+   - post receiving -> reopen -> cannot edit
+   - duplicate invoiceNo scenarios
+   - add item by search then edit qty
+3) E2E tests (Playwright):
+   - Simulate real user: keyboard-only fast entry:
+     - select supplier via typeahead
+     - enter supplier invoice no
+     - choose warehouse
+     - scan/add 30 items quickly
+     - qty edits
+     - expiry month/year fast typing
+     - post
+     - reopen read-only and verify inputs disabled
+   - Heavy UI: 200 line items with virtualization; ensure no freezes.
+4) Load/Stress tests:
+   - Use k6 or Artillery to hammer endpoints:
+     - item search (Arabic/English)
+     - barcode lookup
+     - draft autosave
+     - post receiving
+   - Include concurrency:
+     - 20 users posting simultaneously
+   - Performance thresholds:
+     - p95 < 300ms for barcode/item lookup
+     - p95 < 600ms for advanced search
+     - post receiving < 1s for 50 lines on local env
+
+H) Deliverables (must provide runnable code)
+- Fix backend validation and status guards
+- Fix frontend controlled inputs (qty) and read-only mode
+- Implement expiry Month/Year input parsing + component used everywhere
+- Add robust test suites (unit/integration/e2e/load) and run instructions
+- Add clear error codes/messages in Arabic for user-facing errors
+Implement now.

@@ -1648,6 +1648,12 @@ export async function registerRoutes(
       const { header, lines } = req.body;
       if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
       
+      const existing = await storage.getReceiving(req.params.id);
+      if (!existing) return res.status(404).json({ message: "المستند غير موجود" });
+      if (existing.status !== "draft") {
+        return res.status(409).json({ message: "لا يمكن تعديل مستند مُرحّل", code: "DOCUMENT_POSTED" });
+      }
+      
       const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo, req.params.id);
       if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
       
@@ -1720,13 +1726,15 @@ export async function registerRoutes(
 
   app.patch("/api/purchase-invoices/:id", async (req, res) => {
     try {
+      const invoice = await storage.getPurchaseInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (invoice.status !== "draft") {
+        return res.status(409).json({ message: "لا يمكن تعديل فاتورة معتمدة ومُسعّرة", code: "INVOICE_APPROVED" });
+      }
       const { lines, ...headerUpdates } = req.body;
       const result = await storage.savePurchaseInvoice(req.params.id, lines, headerUpdates);
       res.json(result);
     } catch (error: any) {
-      if (error.message.includes("معتمدة") || error.message.includes("غير موجودة")) {
-        return res.status(400).json({ message: error.message });
-      }
       res.status(500).json({ message: error.message });
     }
   });
@@ -1736,8 +1744,11 @@ export async function registerRoutes(
       const result = await storage.approvePurchaseInvoice(req.params.id);
       res.json(result);
     } catch (error: any) {
-      if (error.message.includes("معتمدة") || error.message.includes("غير موجودة")) {
-        return res.status(400).json({ message: error.message });
+      if (error.message.includes("معتمدة")) {
+        return res.status(409).json({ message: error.message, code: "ALREADY_APPROVED" });
+      }
+      if (error.message.includes("غير موجودة")) {
+        return res.status(404).json({ message: error.message });
       }
       res.status(500).json({ message: error.message });
     }

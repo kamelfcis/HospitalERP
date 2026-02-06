@@ -2299,9 +2299,14 @@ export class DatabaseStorage implements IStorage {
 
   async postReceiving(id: string): Promise<ReceivingHeader> {
     return await db.transaction(async (tx) => {
-      const [header] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
+      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${id} FOR UPDATE`);
+      const header = lockResult.rows?.[0] as any;
       if (!header) throw new Error('المستند غير موجود');
       if (header.status === 'posted' || header.status === 'posted_qty_only') return header;
+      
+      if (!header.supplier_id) throw new Error('المورد مطلوب');
+      if (!header.supplier_invoice_no?.trim()) throw new Error('رقم فاتورة المورد مطلوب');
+      if (!header.warehouse_id) throw new Error('المستودع مطلوب');
       
       const lines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
       const activeLines = lines.filter(l => !l.isRejected);
@@ -2319,7 +2324,7 @@ export class DatabaseStorage implements IStorage {
         
         const lotConditions = [
           eq(inventoryLots.itemId, line.itemId),
-          eq(inventoryLots.warehouseId, header.warehouseId),
+          eq(inventoryLots.warehouseId, header.warehouse_id),
         ];
         if (line.expiryMonth && line.expiryYear) {
           lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
@@ -2343,11 +2348,11 @@ export class DatabaseStorage implements IStorage {
         } else {
           const [newLot] = await tx.insert(inventoryLots).values({
             itemId: line.itemId,
-            warehouseId: header.warehouseId,
+            warehouseId: header.warehouse_id,
             expiryDate: line.expiryDate || null,
             expiryMonth: line.expiryMonth || null,
             expiryYear: line.expiryYear || null,
-            receivedDate: header.receiveDate,
+            receivedDate: header.receive_date,
             purchasePrice: line.purchasePrice,
             qtyInMinor: qtyMinor.toFixed(4),
           }).returning();
@@ -2356,7 +2361,7 @@ export class DatabaseStorage implements IStorage {
         
         await tx.insert(inventoryLotMovements).values({
           lotId,
-          warehouseId: header.warehouseId,
+          warehouseId: header.warehouse_id,
           txType: 'in',
           qtyChangeInMinor: qtyMinor.toFixed(4),
           unitCost: line.purchasePrice,
@@ -2479,7 +2484,10 @@ export class DatabaseStorage implements IStorage {
       const [receiving] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, receivingId));
       if (!receiving) throw new Error("إذن الاستلام غير موجود");
       if (receiving.status === "draft") throw new Error("يجب ترحيل إذن الاستلام أولاً");
-      if (receiving.convertedToInvoiceId) throw new Error("تم تحويل إذن الاستلام مسبقاً");
+      if (receiving.convertedToInvoiceId) {
+        const existingInvoice = await this.getPurchaseInvoice(receiving.convertedToInvoiceId);
+        if (existingInvoice) return existingInvoice;
+      }
 
       const lines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, receivingId));
       const nextNum = await this.getNextPurchaseInvoiceNumber();
