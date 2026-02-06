@@ -39,7 +39,8 @@ Preferred communication style: Simple, everyday language.
 - Financial reports: Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, and Account Ledger.
 - Full audit trail logging.
 - Advanced search with wildcard support.
-- Receiving Register: smart search (debounced 300ms, supplier name + invoice number), date defaults (today), status filter (All/Posted/Converted), reset button, combined AND filters with pagination.
+- Receiving Register: smart search (debounced 300ms, supplier name + invoice number), date defaults (today), status filter (All/Draft/Posted/Converted), reset button, combined AND filters with pagination.
+- Dedicated /api/suppliers/search endpoint with smart detection (numeric queries prioritize exact code match, text queries search all fields), returns minimal fields only, includes AbortController for request cancellation, LRU cache (50 entries), keyboard navigation (↑↓ Enter), and loading indicator.
 - Collapsible sidebar for improved workspace.
 - Professional print styles optimized for A4.
 - Department-based pricing for items.
