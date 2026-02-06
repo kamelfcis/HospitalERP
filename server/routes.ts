@@ -12,6 +12,8 @@ import {
   insertItemDepartmentPriceSchema,
   insertItemBarcodeSchema,
   insertInventoryLotSchema,
+  insertWarehouseSchema,
+  insertStoreTransferSchema,
   accounts,
   accountTypeLabels
 } from "@shared/schema";
@@ -1303,6 +1305,90 @@ export async function registerRoutes(
       const result = await storage.resolveBarcode(value as string);
       res.json(result);
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== WAREHOUSES =====
+  app.get("/api/warehouses", async (req, res) => {
+    try {
+      const whs = await storage.getWarehouses();
+      res.json(whs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/warehouses", async (req, res) => {
+    try {
+      const validated = insertWarehouseSchema.parse(req.body);
+      const wh = await storage.createWarehouse(validated);
+      res.status(201).json(wh);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== STORE TRANSFERS =====
+  app.get("/api/transfers", async (req, res) => {
+    try {
+      const transfers = await storage.getTransfers();
+      res.json(transfers);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/transfers/:id", async (req, res) => {
+    try {
+      const transfer = await storage.getTransfer(req.params.id);
+      if (!transfer) {
+        return res.status(404).json({ message: "التحويل غير موجود" });
+      }
+      res.json(transfer);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/transfer/fefo-preview", async (req, res) => {
+    try {
+      const { itemId, warehouseId, requiredQtyInMinor, asOfDate } = req.query;
+      if (!itemId || !warehouseId || !requiredQtyInMinor) {
+        return res.status(400).json({ message: "itemId, warehouseId, requiredQtyInMinor مطلوبة" });
+      }
+      const qty = parseFloat(requiredQtyInMinor as string);
+      if (qty <= 0) {
+        return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
+      }
+      const date = (asOfDate as string) || new Date().toISOString().split("T")[0];
+      const preview = await storage.getWarehouseFefoPreview(
+        itemId as string,
+        warehouseId as string,
+        qty,
+        date
+      );
+      res.json(preview);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/transfers", async (req, res) => {
+    try {
+      const validated = insertStoreTransferSchema.parse(req.body);
+      const transfer = await storage.executeTransfer(validated);
+      res.status(201).json(transfer);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message.includes("غير كافية") || error.message.includes("مختلفين")) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(500).json({ message: error.message });
     }
   });

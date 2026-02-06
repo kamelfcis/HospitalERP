@@ -19,6 +19,8 @@ import {
   inventoryLots,
   inventoryLotMovements,
   itemBarcodes,
+  warehouses,
+  storeTransfers,
   type User,
   type InsertUser,
   type Account,
@@ -55,6 +57,11 @@ import {
   type InsertInventoryLotMovement,
   type ItemBarcode,
   type InsertItemBarcode,
+  type Warehouse,
+  type InsertWarehouse,
+  type StoreTransfer,
+  type InsertStoreTransfer,
+  type StoreTransferWithDetails,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -159,6 +166,17 @@ export interface IStorage {
   createItemBarcode(barcode: InsertItemBarcode): Promise<ItemBarcode>;
   deactivateBarcode(barcodeId: string): Promise<ItemBarcode | undefined>;
   resolveBarcode(barcodeValue: string): Promise<{ found: boolean; itemId?: string; itemCode?: string; nameAr?: string } | null>;
+
+  // Warehouses
+  getWarehouses(): Promise<Warehouse[]>;
+  getWarehouse(id: string): Promise<Warehouse | undefined>;
+  createWarehouse(wh: InsertWarehouse): Promise<Warehouse>;
+
+  // Store Transfers
+  getTransfers(): Promise<StoreTransferWithDetails[]>;
+  getTransfer(id: string): Promise<StoreTransferWithDetails | undefined>;
+  getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
+  executeTransfer(data: InsertStoreTransfer): Promise<StoreTransfer>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1144,6 +1162,183 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { found: false };
+  }
+
+  // Warehouses
+  async getWarehouses(): Promise<Warehouse[]> {
+    return db.select().from(warehouses)
+      .where(eq(warehouses.isActive, true))
+      .orderBy(asc(warehouses.warehouseCode));
+  }
+
+  async getWarehouse(id: string): Promise<Warehouse | undefined> {
+    const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, id));
+    return wh;
+  }
+
+  async createWarehouse(wh: InsertWarehouse): Promise<Warehouse> {
+    const [newWh] = await db.insert(warehouses).values(wh).returning();
+    return newWh;
+  }
+
+  // Store Transfers
+  async getTransfers(): Promise<StoreTransferWithDetails[]> {
+    const transfers = await db.select().from(storeTransfers)
+      .orderBy(desc(storeTransfers.createdAt))
+      .limit(100);
+
+    const result: StoreTransferWithDetails[] = [];
+    for (const t of transfers) {
+      const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
+      const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
+      const [item] = await db.select().from(items).where(eq(items.id, t.itemId));
+      result.push({ ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, item });
+    }
+    return result;
+  }
+
+  async getTransfer(id: string): Promise<StoreTransferWithDetails | undefined> {
+    const [t] = await db.select().from(storeTransfers).where(eq(storeTransfers.id, id));
+    if (!t) return undefined;
+    const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
+    const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
+    const [item] = await db.select().from(items).where(eq(items.id, t.itemId));
+    return { ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, item };
+  }
+
+  async getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any> {
+    const lots = await db.select().from(inventoryLots)
+      .where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.warehouseId, warehouseId),
+        eq(inventoryLots.isActive, true),
+        sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+        or(
+          sql`${inventoryLots.expiryDate} IS NULL`,
+          sql`${inventoryLots.expiryDate} >= ${asOfDate}`
+        )
+      ))
+      .orderBy(asc(inventoryLots.expiryDate), asc(inventoryLots.receivedDate));
+
+    const allocations: any[] = [];
+    let remaining = requiredQty;
+
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const available = parseFloat(lot.qtyInMinor);
+      const allocated = Math.min(available, remaining);
+      allocations.push({
+        lotId: lot.id,
+        expiryDate: lot.expiryDate,
+        receivedDate: lot.receivedDate,
+        availableQty: available.toFixed(4),
+        allocatedQty: allocated.toFixed(4),
+        unitCost: lot.purchasePrice,
+      });
+      remaining -= allocated;
+    }
+
+    return {
+      allocations,
+      fulfilled: remaining <= 0,
+      shortfall: remaining > 0 ? remaining.toFixed(4) : "0",
+    };
+  }
+
+  async executeTransfer(data: InsertStoreTransfer): Promise<StoreTransfer> {
+    const item = await this.getItem(data.itemId);
+    if (!item) throw new Error("الصنف غير موجود");
+    if (item.category === "service") throw new Error("الخدمات لا يمكن تحويلها مخزنياً");
+    if (data.sourceWarehouseId === data.destinationWarehouseId) throw new Error("مخزن المصدر والوجهة يجب أن يكونا مختلفين");
+
+    const requiredQty = parseFloat(data.qtyInMinor);
+    if (requiredQty <= 0) throw new Error("الكمية يجب أن تكون أكبر من صفر");
+
+    const preview = await this.getWarehouseFefoPreview(data.itemId, data.sourceWarehouseId, requiredQty, data.transferDate);
+    if (!preview.fulfilled) {
+      throw new Error(`الكمية المتاحة غير كافية. العجز: ${preview.shortfall} وحدة`);
+    }
+
+    return await db.transaction(async (tx) => {
+      const [maxNum] = await tx.select({ max: sql<number>`COALESCE(MAX(${storeTransfers.transferNumber}), 0)` }).from(storeTransfers);
+      const nextNumber = (maxNum?.max || 0) + 1;
+
+      const [transfer] = await tx.insert(storeTransfers).values({
+        ...data,
+        transferNumber: nextNumber,
+        status: "executed" as const,
+        executedAt: new Date(),
+      } as any).returning();
+
+      for (const alloc of preview.allocations) {
+        const allocQty = parseFloat(alloc.allocatedQty);
+
+        await tx.execute(sql`
+          UPDATE inventory_lots 
+          SET qty_in_minor = qty_in_minor::numeric - ${allocQty.toFixed(4)}::numeric,
+              updated_at = NOW()
+          WHERE id = ${alloc.lotId}
+        `);
+
+        await tx.insert(inventoryLotMovements).values({
+          lotId: alloc.lotId,
+          warehouseId: data.sourceWarehouseId,
+          txType: "out" as const,
+          txDate: new Date(),
+          qtyChangeInMinor: (-allocQty).toFixed(4),
+          unitCost: alloc.unitCost,
+          referenceType: "transfer",
+          referenceId: transfer.id,
+        } as any);
+
+        const existingDestLots = await tx.select().from(inventoryLots)
+          .where(and(
+            eq(inventoryLots.itemId, data.itemId),
+            eq(inventoryLots.warehouseId, data.destinationWarehouseId),
+            eq(inventoryLots.isActive, true),
+            alloc.expiryDate
+              ? sql`${inventoryLots.expiryDate} = ${alloc.expiryDate}`
+              : sql`${inventoryLots.expiryDate} IS NULL`,
+            sql`${inventoryLots.purchasePrice}::numeric = ${alloc.unitCost}::numeric`
+          ));
+
+        let destLotId: string;
+
+        if (existingDestLots.length > 0) {
+          destLotId = existingDestLots[0].id;
+          await tx.execute(sql`
+            UPDATE inventory_lots 
+            SET qty_in_minor = qty_in_minor::numeric + ${allocQty.toFixed(4)}::numeric,
+                updated_at = NOW()
+            WHERE id = ${destLotId}
+          `);
+        } else {
+          const [newLot] = await tx.insert(inventoryLots).values({
+            itemId: data.itemId,
+            warehouseId: data.destinationWarehouseId,
+            expiryDate: alloc.expiryDate || null,
+            receivedDate: data.transferDate,
+            purchasePrice: alloc.unitCost,
+            qtyInMinor: allocQty.toFixed(4),
+            isActive: true,
+          }).returning();
+          destLotId = newLot.id;
+        }
+
+        await tx.insert(inventoryLotMovements).values({
+          lotId: destLotId,
+          warehouseId: data.destinationWarehouseId,
+          txType: "in" as const,
+          txDate: new Date(),
+          qtyChangeInMinor: allocQty.toFixed(4),
+          unitCost: alloc.unitCost,
+          referenceType: "transfer",
+          referenceId: transfer.id,
+        } as any);
+      }
+
+      return transfer;
+    });
   }
 }
 

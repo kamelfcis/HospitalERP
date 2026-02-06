@@ -17,6 +17,7 @@ export async function seedDatabase() {
       }
       // Check if departments need to be seeded (independently)
       await seedDepartmentsIfNeeded();
+      await seedWarehousesIfNeeded();
       return;
     }
 
@@ -867,4 +868,45 @@ async function seedDepartmentsIfNeeded() {
   }
 
   console.log("Departments seeded");
+}
+
+async function seedWarehousesIfNeeded() {
+  const existingWarehouses = await db.select().from(warehouses).limit(1);
+  if (existingWarehouses.length > 0) {
+    console.log("Warehouses already seeded");
+    const [defaultWh] = await db.select().from(warehouses).limit(1);
+    if (defaultWh) {
+      await db.update(inventoryLots)
+        .set({ warehouseId: defaultWh.id })
+        .where(isNull(inventoryLots.warehouseId));
+    }
+    return;
+  }
+
+  console.log("Seeding warehouses...");
+  const warehouseData = [
+    { warehouseCode: "WH-MAIN", nameAr: "المخزن الرئيسي" },
+    { warehouseCode: "WH-PHARM-OUT", nameAr: "مخزن الصيدلية الخارجية" },
+    { warehouseCode: "WH-PHARM-IN", nameAr: "مخزن الصيدلية الداخلية" },
+    { warehouseCode: "WH-OR", nameAr: "مخزن غرفة العمليات" },
+    { warehouseCode: "WH-ICU", nameAr: "مخزن العناية المركزة" },
+    { warehouseCode: "WH-ER", nameAr: "مخزن الطوارئ" },
+    { warehouseCode: "WH-LAB", nameAr: "مخزن المعمل" },
+  ];
+
+  for (const wh of warehouseData) {
+    await db.insert(warehouses).values({
+      ...wh,
+      isActive: true,
+    });
+  }
+
+  const [defaultWh] = await db.select().from(warehouses).limit(1);
+  if (defaultWh) {
+    await db.update(inventoryLots)
+      .set({ warehouseId: defaultWh.id })
+      .where(isNull(inventoryLots.warehouseId));
+  }
+
+  console.log("Warehouses seeded");
 }

@@ -31,6 +31,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Package,
+  ArrowLeftRight,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,11 @@ const mainNavItems = [
     title: "الأصناف",
     href: "/items",
     icon: Package,
+  },
+  {
+    title: "تحويل مخزني",
+    href: "/store-transfers",
+    icon: ArrowLeftRight,
   },
 ];
 
