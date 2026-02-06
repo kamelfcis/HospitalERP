@@ -137,11 +137,10 @@ export default function StoreTransfers() {
   const [barcodeLoading, setBarcodeLoading] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
-  const [editingQtyIndex, setEditingQtyIndex] = useState<number | null>(null);
-  const [editingQtyValue, setEditingQtyValue] = useState<string>("");
   const [fefoLoadingIndex, setFefoLoadingIndex] = useState<number | null>(null);
-  const qtyInputRef = useRef<HTMLInputElement>(null);
-  const qtyConfirmedViaEnterRef = useRef(false);
+  const qtyInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  const pendingQtyRef = useRef<Map<string, string>>(new Map());
+  const [focusedLineIdx, setFocusedLineIdx] = useState<number | null>(null);
 
   const availPopupCache = useRef<Record<string, {data: any[]; ts: number}>>({});
 
@@ -318,9 +317,9 @@ export default function StoreTransfers() {
     setFormLines([]);
     setFormStatus("draft");
     setFormTransferNumber(null);
-    setEditingQtyIndex(null);
-    setEditingQtyValue("");
+    setFocusedLineIdx(null);
     setFefoLoadingIndex(null);
+    pendingQtyRef.current.clear();
   };
 
   const canSaveDraft =
@@ -641,21 +640,33 @@ export default function StoreTransfers() {
   };
 
   const handleDeleteLine = (index: number) => {
-    if (editingQtyIndex === index) {
-      setEditingQtyIndex(null);
-    } else if (editingQtyIndex !== null && editingQtyIndex > index) {
-      setEditingQtyIndex(editingQtyIndex - 1);
+    const line = formLines[index];
+    if (line) {
+      pendingQtyRef.current.delete(line.id);
+      qtyInputRefs.current.delete(line.id);
+    }
+    if (focusedLineIdx === index) {
+      setFocusedLineIdx(null);
+    } else if (focusedLineIdx !== null && focusedLineIdx > index) {
+      setFocusedLineIdx(focusedLineIdx - 1);
     }
     setFormLines((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleQtyConfirm = useCallback(async (index: number) => {
+  const handleQtyConfirm = useCallback(async (lineId: string) => {
+    const index = formLines.findIndex((l) => l.id === lineId);
     const line = formLines[index];
     if (!line) return;
-    const qtyEntered = parseFloat(editingQtyValue) || 0;
+    const pendingVal = pendingQtyRef.current.get(lineId);
+    const qtyEntered = parseFloat(pendingVal ?? String(line.qtyEntered)) || 0;
     if (qtyEntered <= 0) {
       toast({ title: "كمية غير صحيحة", variant: "destructive" });
-      setTimeout(() => qtyInputRef.current?.focus(), 50);
+      setTimeout(() => qtyInputRefs.current.get(lineId)?.focus(), 50);
+      return;
+    }
+
+    if (qtyEntered === line.qtyEntered && line.fefoLocked) {
+      pendingQtyRef.current.delete(lineId);
       return;
     }
 
@@ -667,11 +678,11 @@ export default function StoreTransfers() {
         description: `المطلوب: ${qtyEntered} ${getUnitName(line.item, line.unitLevel)} — المتاح: ${formatAvailability(String(totalAvail), line.unitLevel, line.item)}`,
         variant: "destructive",
       });
-      setTimeout(() => qtyInputRef.current?.focus(), 50);
+      setTimeout(() => qtyInputRefs.current.get(lineId)?.focus(), 50);
       return;
     }
 
-    setEditingQtyIndex(null);
+    pendingQtyRef.current.delete(lineId);
 
     if (line.item?.hasExpiry) {
       setFefoLoadingIndex(index);
@@ -693,9 +704,8 @@ export default function StoreTransfers() {
             variant: "destructive",
           });
           setFefoLoadingIndex(null);
-          setEditingQtyIndex(index);
-          setEditingQtyValue(String(qtyEntered));
-          setTimeout(() => qtyInputRef.current?.focus(), 50);
+          pendingQtyRef.current.set(lineId, String(qtyEntered));
+          setTimeout(() => qtyInputRefs.current.get(lineId)?.focus(), 50);
           return;
         }
 
@@ -755,14 +765,10 @@ export default function StoreTransfers() {
     }
 
     setTimeout(() => barcodeInputRef.current?.focus(), 50);
-  }, [formLines, editingQtyValue, sourceWarehouseId, transferDate, toast]);
+  }, [formLines, sourceWarehouseId, transferDate, toast]);
 
   const handleBarcodeScan = useCallback(async (barcodeValue: string) => {
     if (!barcodeValue.trim() || !sourceWarehouseId || barcodeLoading) return;
-
-    if (editingQtyIndex !== null) {
-      handleQtyConfirm(editingQtyIndex);
-    }
 
     setBarcodeLoading(true);
     try {
@@ -783,8 +789,9 @@ export default function StoreTransfers() {
         return;
       }
 
+      const newLineId = crypto.randomUUID();
       const newLine: TransferLineLocal = {
-        id: crypto.randomUUID(),
+        id: newLineId,
         itemId: item.id,
         item,
         unitLevel: "major",
@@ -798,23 +805,21 @@ export default function StoreTransfers() {
         fefoLocked: false,
       };
 
-      setFormLines((prev) => {
-        const updated = [...prev, newLine];
-        const newIndex = updated.length - 1;
-        setTimeout(() => {
-          setEditingQtyIndex(newIndex);
-          setEditingQtyValue("1");
-          setTimeout(() => qtyInputRef.current?.focus(), 50);
-        }, 0);
-        return updated;
-      });
+      setFormLines((prev) => [...prev, newLine]);
+      setTimeout(() => {
+        const inp = qtyInputRefs.current.get(newLineId);
+        if (inp) {
+          inp.focus();
+          inp.select();
+        }
+      }, 100);
     } catch (err: any) {
       toast({ title: "خطأ", description: err.message, variant: "destructive" });
     } finally {
       setBarcodeLoading(false);
       setBarcodeInput("");
     }
-  }, [sourceWarehouseId, barcodeLoading, toast, editingQtyIndex, handleQtyConfirm]);
+  }, [sourceWarehouseId, barcodeLoading, toast]);
 
   useEffect(() => {
     if (modalResultsRef.current && modalResults.length > 0) {
@@ -829,28 +834,29 @@ export default function StoreTransfers() {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === "F2") {
         e.preventDefault();
-        if (editingQtyIndex !== null) {
-          setEditingQtyIndex(null);
-        }
+        setFocusedLineIdx(null);
         barcodeInputRef.current?.focus();
       }
-      if (e.key === "Escape" && editingQtyIndex !== null) {
+      if (e.key === "Escape" && focusedLineIdx !== null) {
         e.preventDefault();
-        setEditingQtyIndex(null);
-        setEditingQtyValue("");
+        const line = formLines[focusedLineIdx];
+        if (line) {
+          pendingQtyRef.current.delete(line.id);
+        }
+        setFocusedLineIdx(null);
         setTimeout(() => barcodeInputRef.current?.focus(), 50);
       }
     };
     document.addEventListener("keydown", handleGlobalKeyDown);
     return () => document.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [editingQtyIndex]);
+  }, [focusedLineIdx, formLines]);
 
   useEffect(() => {
-    if (activeTab === "form" && !modalOpen && editingQtyIndex === null) {
+    if (activeTab === "form" && !modalOpen && focusedLineIdx === null) {
       const timer = setTimeout(() => barcodeInputRef.current?.focus(), 100);
       return () => clearTimeout(timer);
     }
-  }, [activeTab, modalOpen, editingQtyIndex]);
+  }, [activeTab, modalOpen, focusedLineIdx]);
 
   const handleFormContainerClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -859,10 +865,10 @@ export default function StoreTransfers() {
     if (target.closest("input")) return;
     if (target.closest("select")) return;
     if (target.closest("[role='dialog']")) return;
-    if (editingQtyIndex === null && !modalOpen) {
+    if (focusedLineIdx === null && !modalOpen) {
       setTimeout(() => barcodeInputRef.current?.focus(), 50);
     }
-  }, [editingQtyIndex, modalOpen]);
+  }, [focusedLineIdx, modalOpen]);
 
   return (
     <div className="p-2 space-y-2" dir="rtl">
@@ -1185,7 +1191,7 @@ export default function StoreTransfers() {
                     formLines.map((line, idx) => (
                       <tr
                         key={line.id}
-                        className={`peachtree-grid-row ${!line.fefoLocked ? "bg-yellow-50 dark:bg-yellow-900/20" : ""} ${editingQtyIndex === idx ? "ring-1 ring-blue-300 dark:ring-blue-700" : ""}`}
+                        className={`peachtree-grid-row ${!line.fefoLocked ? "bg-yellow-50 dark:bg-yellow-900/20" : ""} ${focusedLineIdx === idx ? "ring-1 ring-blue-300 dark:ring-blue-700" : ""}`}
                         data-testid={`row-line-${idx}`}
                       >
                         <td className="py-1 px-2" title={`${line.item?.nameAr || ""} — ${line.item?.itemCode || ""}`}>
@@ -1207,51 +1213,46 @@ export default function StoreTransfers() {
                         <td className="py-0.5 px-2 font-mono whitespace-nowrap">{line.item?.itemCode || "—"}</td>
                         <td className="py-0.5 px-2 whitespace-nowrap">{line.item ? getUnitName(line.item, line.unitLevel) : "—"}</td>
                         <td className="py-0.5 px-2 whitespace-nowrap">
-                          {editingQtyIndex === idx ? (
+                          {isViewOnly ? (
+                            <span data-testid={`text-qty-${idx}`}>{line.qtyEntered}</span>
+                          ) : (
                             <input
-                              ref={qtyInputRef}
+                              ref={(el) => {
+                                if (el) qtyInputRefs.current.set(line.id, el);
+                                else qtyInputRefs.current.delete(line.id);
+                              }}
                               type="number"
-                              value={editingQtyValue}
-                              onChange={(e) => setEditingQtyValue(e.target.value)}
-                              onFocus={(e) => e.target.select()}
+                              value={pendingQtyRef.current.get(line.id) ?? String(line.qtyEntered)}
+                              onChange={(e) => {
+                                pendingQtyRef.current.set(line.id, e.target.value);
+                                const el = qtyInputRefs.current.get(line.id);
+                                if (el) el.value = e.target.value;
+                              }}
+                              onFocus={(e) => {
+                                setFocusedLineIdx(idx);
+                                e.target.select();
+                              }}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") {
                                   e.preventDefault();
-                                  qtyConfirmedViaEnterRef.current = true;
-                                  handleQtyConfirm(idx);
+                                  handleQtyConfirm(line.id);
                                 } else if (e.key === "Escape") {
                                   e.preventDefault();
-                                  setEditingQtyIndex(null);
-                                  setEditingQtyValue("");
+                                  pendingQtyRef.current.delete(line.id);
+                                  const el = qtyInputRefs.current.get(line.id);
+                                  if (el) el.value = String(line.qtyEntered);
+                                  setFocusedLineIdx(null);
                                   setTimeout(() => barcodeInputRef.current?.focus(), 50);
                                 }
                               }}
                               onBlur={() => {
-                                if (qtyConfirmedViaEnterRef.current) {
-                                  qtyConfirmedViaEnterRef.current = false;
-                                  return;
-                                }
-                                handleQtyConfirm(idx);
+                                handleQtyConfirm(line.id);
                               }}
-                              className="w-[70px] h-6 text-[12px] px-1 border-2 border-blue-400 dark:border-blue-600 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              className={`w-[70px] h-6 text-[12px] px-1 border rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-500 ${focusedLineIdx === idx ? "border-2 border-blue-400 dark:border-blue-600" : "border-border"}`}
                               data-testid="input-qty-edit"
                               min="0"
                               step="any"
                             />
-                          ) : (
-                            <span
-                              className={`cursor-pointer ${!isViewOnly ? "hover:text-blue-600 dark:hover:text-blue-400" : ""}`}
-                              onClick={() => {
-                                if (!isViewOnly) {
-                                  setEditingQtyIndex(idx);
-                                  setEditingQtyValue(String(line.qtyEntered));
-                                  setTimeout(() => qtyInputRef.current?.focus(), 50);
-                                }
-                              }}
-                              data-testid={`text-qty-${idx}`}
-                            >
-                              {line.qtyEntered}
-                            </span>
                           )}
                         </td>
                         <td className="py-0.5 px-2 whitespace-nowrap">

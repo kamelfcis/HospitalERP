@@ -248,6 +248,7 @@ export interface IStorage {
   getPurchaseInvoice(id: string): Promise<any>;
   savePurchaseInvoice(invoiceId: string, lines: any[], headerUpdates?: any): Promise<any>;
   approvePurchaseInvoice(id: string): Promise<any>;
+  deletePurchaseInvoice(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2697,6 +2698,14 @@ export class DatabaseStorage implements IStorage {
       const [updated] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
       return updated;
     });
+  }
+
+  async deletePurchaseInvoice(id: string): Promise<boolean> {
+    const [invoice] = await db.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+    if (!invoice) return false;
+    if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة معتمدة ومُسعّرة");
+    await db.delete(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+    return true;
   }
 }
 

@@ -1509,7 +1509,7 @@ export async function registerRoutes(
       const transfer = await storage.postTransfer(req.params.id);
       res.json(transfer);
     } catch (error: any) {
-      if (error.message.includes("غير كافية") || error.message.includes("مختلفين") || error.message.includes("مسودة") || error.message.includes("لا يمكن")) {
+      if (error.message.includes("غير كافية") || error.message.includes("مختلفين") || error.message.includes("مسودة") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("مطلوب")) {
         return res.status(400).json({ message: error.message });
       }
       res.status(500).json({ message: error.message });
@@ -1524,8 +1524,8 @@ export async function registerRoutes(
       }
       res.json({ success: true });
     } catch (error: any) {
-      if (error.message.includes("مُرحّل")) {
-        return res.status(400).json({ message: error.message });
+      if (error.message.includes("مُرحّل") || error.message.includes("لا يمكن حذف")) {
+        return res.status(409).json({ message: error.message, code: "DOCUMENT_POSTED" });
       }
       res.status(500).json({ message: error.message });
     }
@@ -1632,9 +1632,14 @@ export async function registerRoutes(
     try {
       const { header, lines } = req.body;
       if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
+      if (!header.supplierId) return res.status(400).json({ message: "المورد مطلوب" });
+      if (!header.receiveDate) return res.status(400).json({ message: "تاريخ الاستلام مطلوب" });
+      if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
       
-      const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo);
-      if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
+      if (header.supplierId && header.supplierInvoiceNo?.trim()) {
+        const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo);
+        if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
+      }
       
       const result = await storage.saveDraftReceiving(header, lines);
       res.status(201).json(result);
@@ -1669,6 +1674,9 @@ export async function registerRoutes(
       const result = await storage.postReceiving(req.params.id);
       res.json(result);
     } catch (error: any) {
+      if (error.message.includes("مطلوب") || error.message.includes("لا توجد") || error.message.includes("لا يمكن") || error.message.includes("غير موجود")) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(500).json({ message: error.message });
     }
   });
@@ -1679,6 +1687,9 @@ export async function registerRoutes(
       if (!deleted) return res.status(404).json({ message: "المستند غير موجود" });
       res.json({ success: true });
     } catch (error: any) {
+      if (error.message.includes("لا يمكن حذف") || error.message.includes("مُرحّل")) {
+        return res.status(409).json({ message: error.message, code: "DOCUMENT_POSTED" });
+      }
       res.status(500).json({ message: error.message });
     }
   });
@@ -1735,6 +1746,19 @@ export async function registerRoutes(
       const result = await storage.savePurchaseInvoice(req.params.id, lines, headerUpdates);
       res.json(result);
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/purchase-invoices/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deletePurchaseInvoice(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error.message.includes("لا يمكن حذف")) {
+        return res.status(409).json({ message: error.message, code: "INVOICE_APPROVED" });
+      }
       res.status(500).json({ message: error.message });
     }
   });

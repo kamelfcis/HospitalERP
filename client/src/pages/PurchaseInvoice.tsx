@@ -71,6 +71,7 @@ export default function PurchaseInvoice() {
   const [discountValue, setDiscountValue] = useState(0);
   const [notes, setNotes] = useState("");
   const [confirmApproveOpen, setConfirmApproveOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const { data: suppliersData } = useQuery<{ suppliers: Supplier[]; total: number }>({
     queryKey: ["/api/suppliers?page=1&pageSize=500"],
@@ -238,10 +239,36 @@ export default function PurchaseInvoice() {
 
   const approveMutation = useMutation({
     mutationFn: async () => {
+      const body = {
+        lines: lines.map(ln => ({
+          id: ln.id,
+          receivingLineId: ln.receivingLineId,
+          itemId: ln.itemId,
+          unitLevel: ln.unitLevel,
+          qty: ln.qty,
+          bonusQty: ln.bonusQty,
+          sellingPrice: ln.sellingPrice,
+          purchasePrice: ln.purchasePrice,
+          lineDiscountPct: ln.lineDiscountPct,
+          lineDiscountValue: ln.lineDiscountValue,
+          vatRate: ln.vatRate,
+          valueBeforeVat: ln.valueBeforeVat,
+          vatAmount: ln.vatAmount,
+          valueAfterVat: ln.valueAfterVat,
+          batchNumber: ln.batchNumber,
+          expiryMonth: ln.expiryMonth,
+          expiryYear: ln.expiryYear,
+        })),
+        discountType,
+        discountValue,
+        invoiceDate,
+        notes,
+      };
+      await apiRequest("PATCH", `/api/purchase-invoices/${editId}`, body);
       await apiRequest("POST", `/api/purchase-invoices/${editId}/approve`);
     },
     onSuccess: () => {
-      toast({ title: "تم الاعتماد والتسعير بنجاح" });
+      toast({ title: "تم الحفظ والاعتماد والتسعير بنجاح" });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
       queryClient.invalidateQueries({ queryKey: [`/api/purchase-invoices/${editId}`] });
       setConfirmApproveOpen(false);
@@ -654,14 +681,15 @@ export default function PurchaseInvoice() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => {
-                            if (confirm("هل أنت متأكد من حذف هذه الفاتورة؟")) {
-                              deleteMutation.mutate(inv.id);
-                            }
-                          }}
+                          onClick={() => setConfirmDeleteId(inv.id)}
+                          disabled={deleteMutation.isPending}
                           data-testid={`button-delete-${inv.id}`}
                         >
-                          <Trash2 className="h-3 w-3 text-destructive" />
+                          {deleteMutation.isPending && deleteMutation.variables === inv.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          )}
                         </Button>
                       )}
                     </div>
@@ -703,6 +731,37 @@ export default function PurchaseInvoice() {
           </Button>
         </div>
       )}
+
+      <Dialog open={!!confirmDeleteId} onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>تأكيد الحذف</DialogTitle>
+            <DialogDescription>
+              هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)} data-testid="button-cancel-delete">
+              إلغاء
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (confirmDeleteId) {
+                  deleteMutation.mutate(confirmDeleteId, {
+                    onSettled: () => setConfirmDeleteId(null),
+                  });
+                }
+              }}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin ml-1" />}
+              تأكيد الحذف
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

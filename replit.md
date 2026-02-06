@@ -83,6 +83,10 @@ Preferred communication style: Simple, everyday language.
 - FOR UPDATE row locks in postReceiving for concurrency safety (raw SQL returns snake_case fields).
 - Idempotent conversion: convertReceivingToInvoice returns existing invoice if already converted.
 - Stricter validation in postReceiving: supplier, invoice number, and warehouse are mandatory.
+- Receiving POST validates required header fields (supplierId, receiveDate) and non-empty lines array before saving.
+- Purchase Invoice DELETE endpoint with status guard (draft only, 409 for approved).
+- postReceiving route returns 400 for validation errors (not 500).
+- Transfer delete/post routes return proper HTTP status codes (400 for validation, 409 for immutability).
 
 ### Reusable UI Components
 - ExpiryInput (`client/src/components/ui/expiry-input.tsx`): Single text input for MM/YYYY format with auto-slash, supports MMYY/MMYYYY/MM/YY/MM/YYYY parsing. Exports `parseExpiryFinal` for testability. Key design: onChange only fires on blur/Enter/Tab, never during typing, to prevent premature year expansion (e.g., "12/20" → 2020 bug).

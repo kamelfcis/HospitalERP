@@ -1,0 +1,145 @@
+Act as a ruthless QA Lead, UX psychologist, and senior backend engineer.
+Your mission is NOT to add features.
+Your mission is to FIND, REPRODUCE, and FIX every possible BUG, edge case, UX trap, and logical loophole across ALL ERP screens — especially:
+- Receiving (إذن استلام)
+- Purchase Invoice (فاتورة شراء)
+- Inventory movements
+- Sales-related flows that depend on inventory
+- Draft / Post / Approve lifecycles
+
+You must assume the user is careless, rushed, non-technical, and sometimes reckless — not malicious, but capable of breaking the system accidentally.
+
+GOAL:
+- Discover all bugs (visible and silent)
+- Discover all UX flows that allow users to “mess things up” unintentionally
+- Fix them with logic, validation, guidance, and clear messages
+- Prove correctness with EXTREME testing (unit, integration, E2E, stress, chaos testing)
+
+════════════════════════════════════
+A) USER BEHAVIOR SIMULATION (MANDATORY)
+════════════════════════════════════
+Simulate the following user behaviors across ALL screens:
+1) Very fast keyboard entry (no mouse)
+2) Random clicking (user clicks anything clickable)
+3) Editing old rows after adding new ones
+4) Leaving fields half-filled
+5) Switching tabs/screens mid-edit
+6) Losing internet/power mid-operation
+7) Reopening drafts multiple times
+8) Trying to post with missing or inconsistent data
+9) Reusing numbers unintentionally (invoice numbers, batches, etc.)
+10) Ignoring warnings and continuing anyway
+
+You must walk through each screen as if YOU are that user.
+
+════════════════════════════════════
+B) BUG DISCOVERY STRATEGY (DO NOT SKIP)
+════════════════════════════════════
+For EACH screen:
+1) Map all states:
+   - Empty
+   - Draft
+   - Partially filled
+   - Fully filled
+   - Posted / Approved / Read-only
+2) For EACH input:
+   - Can it become locked incorrectly?
+   - Can it accept invalid values?
+   - Can it lose focus unexpectedly?
+   - Can it be overwritten by autosave or rerender?
+3) For EACH action button:
+   - Can it be clicked twice?
+   - Can it fire when it should be disabled?
+   - Can it run while data is invalid?
+
+Log every discovered issue with:
+- Reproduction steps
+- Root cause (frontend/backend/state/UX)
+- Impact severity (blocking / dangerous / annoying)
+
+════════════════════════════════════
+C) FORCED GUARDRAILS (FIXES YOU MUST APPLY)
+════════════════════════════════════
+Wherever a user can accidentally break logic:
+1) Add HARD backend guards:
+   - Status-based immutability
+   - Idempotency
+   - Transaction locks
+2) Add UX guardrails:
+   - Inline validation (not alerts)
+   - Non-blocking guidance popups
+   - Blocking confirmation popups ONLY when damage is irreversible
+3) Add EDUCATIONAL popups when needed:
+   - Example:
+     "تنبيه: تعديل الكمية هنا سيؤثر على تكلفة المخزون"
+     "لا يمكن تعديل هذا المستند بعد الترحيل"
+
+Popups must be:
+- Clear Arabic
+- Short
+- Shown ONLY when they prevent real mistakes
+- Never annoying or repetitive
+
+════════════════════════════════════
+D) CHAOS & STRESS TESTING (MANDATORY)
+════════════════════════════════════
+Implement automated tests that:
+1) Add 100+ lines rapidly (barcode + search)
+2) Edit random fields in random order
+3) Trigger autosave while typing
+4) Simulate network lag and dropped responses
+5) Simulate two users editing similar documents
+6) Hammer APIs with concurrent requests
+
+Use:
+- Unit tests (logic & validation)
+- Integration tests (DB + services)
+- E2E tests (Playwright):
+   - Keyboard-only flows
+   - Focus and cursor stability
+   - Read-only enforcement
+- Load tests (k6 or Artillery):
+   - Define acceptable thresholds (p95)
+
+════════════════════════════════════
+E) SPECIFIC MUST-CATCH BUG PATTERNS
+════════════════════════════════════
+You MUST explicitly test and fix:
+- Inputs becoming disabled unexpectedly
+- Focus jumping without user intent
+- Duplicate validation firing on open
+- Wrong default values (e.g., unit, year, cost)
+- Autosave overwriting user edits
+- Partial state commits
+- Re-render destroying controlled inputs
+- Using array index as React key
+- Editing posted documents
+- Inconsistent totals and rounding
+- Bonus qty, expiry, unit conversion inconsistencies
+
+════════════════════════════════════
+F) DELIVERABLES (NO EXCUSES)
+════════════════════════════════════
+1) A documented list of ALL discovered bugs (even minor ones)
+2) Code fixes with minimal refactor and clear reasoning
+3) New validations and guardrails added
+4) New UX messages added (Arabic)
+5) Full automated test suite:
+   - Unit
+   - Integration
+   - E2E
+   - Stress
+6) Proof that:
+   - User cannot accidentally corrupt data
+   - User is guided to correct behavior
+   - System remains fast and stable
+
+You are NOT allowed to say:
+- “Works as expected”
+- “Edge case”
+- “User should not do this”
+
+ASSUME THE USER WILL DO IT.
+Fix the system accordingly.
+
+Implement now.
