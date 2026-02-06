@@ -2217,6 +2217,8 @@ export class DatabaseStorage implements IStorage {
         conditions.push(isNull(receivingHeaders.convertedToInvoiceId));
       } else if (statusFilter === 'CONVERTED') {
         conditions.push(isNotNull(receivingHeaders.convertedToInvoiceId));
+      } else if (statusFilter === 'CORRECTED') {
+        conditions.push(eq(receivingHeaders.correctionStatus, 'corrected'));
       }
     }
     if (fromDate) conditions.push(gte(receivingHeaders.receiveDate, fromDate));
@@ -2737,6 +2739,209 @@ export class DatabaseStorage implements IStorage {
 
       const [updated] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
       return updated;
+    });
+  }
+
+  async createReceivingCorrection(originalId: string): Promise<ReceivingHeader> {
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
+      const original = lockResult.rows?.[0] as any;
+      if (!original) throw new Error('المستند غير موجود');
+      if (original.status !== 'posted_qty_only') throw new Error('يمكن تصحيح المستندات المرحّلة فقط');
+      if (original.correction_status === 'corrected') throw new Error('تم تصحيح هذا المستند مسبقاً');
+      if (original.converted_to_invoice_id) {
+        const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, original.converted_to_invoice_id));
+        if (invoice && invoice.status !== 'draft') {
+          throw new Error('لا يمكن تصحيح إذن استلام محوّل لفاتورة معتمدة');
+        }
+      }
+
+      const [maxNum] = await tx.select({ max: sql<number>`COALESCE(MAX(receiving_number), 0)` }).from(receivingHeaders);
+      const nextNum = (maxNum?.max || 0) + 1;
+
+      const [newHeader] = await tx.insert(receivingHeaders).values({
+        receivingNumber: nextNum,
+        supplierId: original.supplier_id,
+        supplierInvoiceNo: `${original.supplier_invoice_no || 'N/A'}-COR-${nextNum}`,
+        warehouseId: original.warehouse_id,
+        receiveDate: original.receive_date,
+        notes: original.notes ? `تصحيح للإذن رقم ${original.receiving_number} - ${original.notes}` : `تصحيح للإذن رقم ${original.receiving_number}`,
+        status: 'draft',
+        correctionOfId: originalId,
+        correctionStatus: 'correction',
+      }).returning();
+
+      const originalLines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, originalId));
+      let totalQty = 0;
+      let totalCost = 0;
+
+      for (const line of originalLines) {
+        await tx.insert(receivingLines).values({
+          receivingId: newHeader.id,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel,
+          qtyEntered: line.qtyEntered,
+          qtyInMinor: line.qtyInMinor,
+          bonusQty: line.bonusQty,
+          bonusQtyInMinor: line.bonusQtyInMinor,
+          purchasePrice: line.purchasePrice,
+          lineTotal: line.lineTotal,
+          batchNumber: line.batchNumber,
+          expiryDate: line.expiryDate,
+          expiryMonth: line.expiryMonth,
+          expiryYear: line.expiryYear,
+          salePrice: line.salePrice,
+          salePriceHint: line.salePriceHint,
+          notes: line.notes,
+          isRejected: line.isRejected,
+          rejectionReason: line.rejectionReason,
+        });
+        if (!line.isRejected) {
+          totalQty += parseFloat(line.qtyInMinor as string) || 0;
+          totalCost += parseFloat(line.lineTotal as string) || 0;
+        }
+      }
+
+      await tx.update(receivingHeaders).set({
+        totalQty: totalQty.toFixed(4),
+        totalCost: totalCost.toFixed(2),
+      }).where(eq(receivingHeaders.id, newHeader.id));
+
+      await tx.update(receivingHeaders).set({
+        correctedById: newHeader.id,
+        correctionStatus: 'corrected',
+        updatedAt: new Date(),
+      }).where(eq(receivingHeaders.id, originalId));
+
+      const [result] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, newHeader.id));
+      return result;
+    });
+  }
+
+  async postReceivingCorrection(correctionId: string): Promise<ReceivingHeader> {
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${correctionId} FOR UPDATE`);
+      const correction = lockResult.rows?.[0] as any;
+      if (!correction) throw new Error('المستند غير موجود');
+      if (correction.status !== 'draft') throw new Error('لا يمكن ترحيل مستند غير مسودة');
+      if (correction.correction_status !== 'correction') throw new Error('هذا المستند ليس مستند تصحيح');
+
+      const originalId = correction.correction_of_id;
+      if (!originalId) throw new Error('لا يوجد مستند أصلي للتصحيح');
+
+      const origLockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
+      const original = origLockResult.rows?.[0] as any;
+      if (!original) throw new Error('المستند الأصلي غير موجود');
+
+      const originalMovements = await tx.select().from(inventoryLotMovements)
+        .where(and(
+          eq(inventoryLotMovements.referenceType, 'receiving'),
+          eq(inventoryLotMovements.referenceId, originalId),
+        ));
+
+      for (const mov of originalMovements) {
+        const qtyToReverse = parseFloat(mov.qtyChangeInMinor as string);
+        if (qtyToReverse <= 0) continue;
+
+        const [lot] = await tx.select().from(inventoryLots).where(eq(inventoryLots.id, mov.lotId));
+        if (!lot) continue;
+
+        const currentQty = parseFloat(lot.qtyInMinor as string);
+        if (currentQty < qtyToReverse) {
+          const [item] = await tx.select().from(items).where(eq(items.id, lot.itemId));
+          throw new Error(`لا يمكن التصحيح: الصنف "${item?.nameAr || ''}" سيصبح رصيده سالباً في المستودع (المتاح: ${currentQty.toFixed(2)}, المطلوب عكسه: ${qtyToReverse.toFixed(2)})`);
+        }
+
+        const newQty = currentQty - qtyToReverse;
+        await tx.update(inventoryLots).set({ 
+          qtyInMinor: newQty.toFixed(4),
+          updatedAt: new Date(),
+        }).where(eq(inventoryLots.id, mov.lotId));
+
+        await tx.insert(inventoryLotMovements).values({
+          lotId: mov.lotId,
+          warehouseId: mov.warehouseId,
+          txType: 'out',
+          qtyChangeInMinor: (-qtyToReverse).toFixed(4),
+          unitCost: mov.unitCost,
+          referenceType: 'receiving_correction_reversal',
+          referenceId: correctionId,
+        });
+      }
+
+      const correctionLines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, correctionId));
+      const activeLines = correctionLines.filter(l => !l.isRejected);
+
+      for (const line of activeLines) {
+        const qtyMinor = parseFloat(line.qtyInMinor as string) + parseFloat(line.bonusQtyInMinor as string || "0");
+        if (qtyMinor <= 0) continue;
+
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        if (!item) continue;
+
+        if (!item.majorUnitName) {
+          throw new Error(`الصنف "${item.nameAr}" يحتاج تحديد الوحدة الكبرى في بطاقة الصنف`);
+        }
+
+        const lotConditions = [
+          eq(inventoryLots.itemId, line.itemId),
+          eq(inventoryLots.warehouseId, correction.warehouse_id),
+        ];
+        if (line.expiryMonth && line.expiryYear) {
+          lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
+          lotConditions.push(eq(inventoryLots.expiryYear, line.expiryYear));
+        } else {
+          lotConditions.push(sql`${inventoryLots.expiryMonth} IS NULL`);
+        }
+
+        const existingLots = await tx.select().from(inventoryLots).where(and(...lotConditions));
+        let lotId: string;
+
+        if (existingLots.length > 0) {
+          const lot = existingLots[0];
+          const newQty = parseFloat(lot.qtyInMinor as string) + qtyMinor;
+          await tx.update(inventoryLots).set({ 
+            qtyInMinor: newQty.toFixed(4),
+            purchasePrice: line.purchasePrice,
+            updatedAt: new Date(),
+          }).where(eq(inventoryLots.id, lot.id));
+          lotId = lot.id;
+        } else {
+          const [newLot] = await tx.insert(inventoryLots).values({
+            itemId: line.itemId,
+            warehouseId: correction.warehouse_id,
+            expiryDate: line.expiryDate || null,
+            expiryMonth: line.expiryMonth || null,
+            expiryYear: line.expiryYear || null,
+            receivedDate: correction.receive_date,
+            purchasePrice: line.purchasePrice,
+            qtyInMinor: qtyMinor.toFixed(4),
+          }).returning();
+          lotId = newLot.id;
+        }
+
+        await tx.insert(inventoryLotMovements).values({
+          lotId,
+          warehouseId: correction.warehouse_id,
+          txType: 'in',
+          qtyChangeInMinor: qtyMinor.toFixed(4),
+          unitCost: line.purchasePrice,
+          referenceType: 'receiving_correction',
+          referenceId: correctionId,
+        });
+
+        const updateFields: any = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
+        if (line.salePrice) updateFields.salePriceCurrent = line.salePrice;
+        await tx.update(items).set(updateFields).where(eq(items.id, line.itemId));
+      }
+
+      const [posted] = await tx.update(receivingHeaders).set({
+        status: 'posted_qty_only',
+        postedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(receivingHeaders.id, correctionId)).returning();
+
+      return posted;
     });
   }
 

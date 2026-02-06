@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateShort } from "@/lib/formatters";
 import type { Warehouse, Item, Supplier, ReceivingHeaderWithDetails } from "@shared/schema";
-import { receivingStatusLabels } from "@shared/schema";
+import { receivingStatusLabels, correctionStatusLabels } from "@shared/schema";
 
 interface ReceivingLineLocal {
   id: string;
@@ -110,6 +110,8 @@ export default function SupplierReceiving() {
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const qtyInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+  const salePriceInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+  const expiryInputRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [focusedLineIdx, setFocusedLineIdx] = useState<number | null>(null);
   const lineFieldFocusedRef = useRef(false);
 
@@ -122,6 +124,9 @@ export default function SupplierReceiving() {
   }, []);
 
   const [confirmPostOpen, setConfirmPostOpen] = useState(false);
+  const [lineErrors, setLineErrors] = useState<{ lineIndex: number; field: string; messageAr: string }[]>([]);
+  const [formCorrectionStatus, setFormCorrectionStatus] = useState<string | null>(null);
+  const [formCorrectionOfId, setFormCorrectionOfId] = useState<string | null>(null);
 
   const [statsItemId, setStatsItemId] = useState<string | null>(null);
   const [statsData, setStatsData] = useState<any[]>([]);
@@ -425,6 +430,8 @@ export default function SupplierReceiving() {
         }
       }
 
+      setFormCorrectionStatus((receiving as any).correctionStatus || null);
+      setFormCorrectionOfId((receiving as any).correctionOfId || null);
       setFormLines(loadedLines);
       setActiveTab("form");
     } catch (err: any) {
@@ -445,6 +452,9 @@ export default function SupplierReceiving() {
     setFormStatus("draft");
     setFormReceivingNumber(null);
     setInvoiceDuplicateError("");
+    setFormCorrectionStatus(null);
+    setFormCorrectionOfId(null);
+    setLineErrors([]);
   };
 
   const grandTotal = formLines.reduce((sum, l) => sum + l.lineTotal, 0);
@@ -460,8 +470,39 @@ export default function SupplierReceiving() {
 
   const isViewOnly = formStatus !== "draft";
 
+  const validateLines = useCallback((): { lineIndex: number; field: string; messageAr: string }[] => {
+    const errors: { lineIndex: number; field: string; messageAr: string }[] = [];
+    for (let i = 0; i < formLines.length; i++) {
+      const line = formLines[i];
+      if (line.isRejected) continue;
+      if (line.salePrice == null || line.salePrice <= 0) {
+        errors.push({ lineIndex: i, field: "salePrice", messageAr: "سعر البيع مطلوب" });
+      }
+      if (line.item?.hasExpiry) {
+        if (line.expiryMonth == null || line.expiryYear == null || line.expiryMonth < 1 || line.expiryMonth > 12 || line.expiryYear < 2000) {
+          errors.push({ lineIndex: i, field: "expiry", messageAr: "تاريخ الصلاحية مطلوب" });
+        }
+      }
+    }
+    return errors;
+  }, [formLines]);
+
   const saveDraftMutation = useMutation({
     mutationFn: async () => {
+      const errors = validateLines();
+      if (errors.length > 0) {
+        setLineErrors(errors);
+        const first = errors[0];
+        if (first.field === "salePrice") {
+          salePriceInputRefs.current.get(first.lineIndex)?.focus();
+        } else if (first.field === "expiry") {
+          const el = expiryInputRefs.current.get(first.lineIndex);
+          const input = el?.querySelector('input');
+          input?.focus();
+        }
+        throw new Error("لا يمكن حفظ الإذن: تأكد من سعر البيع وتاريخ الصلاحية للأصناف المطلوبة");
+      }
+      setLineErrors([]);
       const payload = {
         header: {
           supplierId,
@@ -513,6 +554,20 @@ export default function SupplierReceiving() {
 
   const postReceivingMutation = useMutation({
     mutationFn: async () => {
+      const errors = validateLines();
+      if (errors.length > 0) {
+        setLineErrors(errors);
+        const first = errors[0];
+        if (first.field === "salePrice") {
+          salePriceInputRefs.current.get(first.lineIndex)?.focus();
+        } else if (first.field === "expiry") {
+          const el = expiryInputRefs.current.get(first.lineIndex);
+          const input = el?.querySelector('input');
+          input?.focus();
+        }
+        throw new Error("لا يمكن حفظ الإذن: تأكد من سعر البيع وتاريخ الصلاحية للأصناف المطلوبة");
+      }
+      setLineErrors([]);
       const payload = {
         header: {
           supplierId,
@@ -588,13 +643,29 @@ export default function SupplierReceiving() {
     },
   });
 
+  const correctReceivingMutation = useMutation({
+    mutationFn: async (receivingId: string) => {
+      return apiRequest("POST", `/api/receivings/${receivingId}/correct`);
+    },
+    onSuccess: async (res) => {
+      const newReceiving = await res.json();
+      toast({ title: "تم إنشاء مستند التصحيح بنجاح" });
+      queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
+      loadReceivingForEditing(newReceiving.id);
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ في إنشاء التصحيح", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleConvertToInvoice = (receivingId: string) => {
     convertToInvoiceMutation.mutate(receivingId);
   };
 
-  const isPending = saveDraftMutation.isPending || postReceivingMutation.isPending;
+  const isPending = saveDraftMutation.isPending || postReceivingMutation.isPending || correctReceivingMutation.isPending;
 
   const updateLine = useCallback((index: number, updates: Partial<ReceivingLineLocal>) => {
+    setLineErrors([]);
     setFormLines((prev) => {
       const copy = [...prev];
       const line = { ...copy[index], ...updates };
@@ -861,6 +932,7 @@ export default function SupplierReceiving() {
                   <SelectItem value="DRAFT">مسودة</SelectItem>
                   <SelectItem value="POSTED">تم الترحيل فقط</SelectItem>
                   <SelectItem value="CONVERTED">تم التحويل إلى فاتورة شراء</SelectItem>
+                  <SelectItem value="CORRECTED">مُصحَّح</SelectItem>
                 </SelectContent>
               </Select>
               <Button
@@ -922,6 +994,12 @@ export default function SupplierReceiving() {
                                 {(r as any).convertedToInvoiceId && (
                                   <Badge variant="default" className="text-[9px] bg-blue-600 no-default-hover-elevate no-default-active-elevate">تم التحويل</Badge>
                                 )}
+                                {(r as any).correctionStatus === 'corrected' && (
+                                  <Badge variant="default" className="text-[9px] bg-orange-600 no-default-hover-elevate no-default-active-elevate">مُصحَّح</Badge>
+                                )}
+                                {(r as any).correctionStatus === 'correction' && (
+                                  <Badge variant="default" className="text-[9px] bg-purple-600 no-default-hover-elevate no-default-active-elevate">تصحيح</Badge>
+                                )}
                               </div>
                             </td>
                             <td className="py-1 px-2 font-mono">{parseFloat(r.totalCost as string || "0").toFixed(2)}</td>
@@ -956,6 +1034,17 @@ export default function SupplierReceiving() {
                                     data-testid={`button-convert-${r.id}`}
                                   >
                                     تحويل إلى فاتورة
+                                  </Button>
+                                )}
+                                {r.status === "posted_qty_only" && (r as any).correctionStatus !== 'corrected' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={correctReceivingMutation.isPending}
+                                    onClick={() => correctReceivingMutation.mutate(r.id)}
+                                    data-testid={`button-correct-${r.id}`}
+                                  >
+                                    تصحيح
                                   </Button>
                                 )}
                               </div>
@@ -1005,6 +1094,16 @@ export default function SupplierReceiving() {
           {isViewOnly && (
             <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-md p-2 mb-2 text-center text-sm text-amber-800 dark:text-amber-200" data-testid="banner-read-only">
               {receivingStatusLabels[formStatus as keyof typeof receivingStatusLabels] || formStatus} — للعرض فقط
+            </div>
+          )}
+          {formCorrectionStatus === 'correction' && (
+            <div className="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 rounded-md p-2 mb-2 text-center text-sm text-purple-800 dark:text-purple-200" data-testid="banner-correction">
+              مستند تصحيح — يمكنك تعديل الأصناف ثم الترحيل لتطبيق التصحيح
+            </div>
+          )}
+          {formCorrectionStatus === 'corrected' && isViewOnly && (
+            <div className="bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-md p-2 mb-2 text-center text-sm text-orange-800 dark:text-orange-200" data-testid="banner-corrected">
+              تم تصحيح هذا المستند
             </div>
           )}
           <fieldset className="peachtree-grid p-2 sticky top-0 z-50 bg-card">
@@ -1164,6 +1263,11 @@ export default function SupplierReceiving() {
             </div>
           )}
 
+          {lineErrors.length > 0 && (
+            <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md p-2 mb-2 text-center text-sm text-red-800 dark:text-red-200" data-testid="banner-validation-errors">
+              لا يمكن حفظ الإذن: تأكد من سعر البيع وتاريخ الصلاحية للأصناف المطلوبة
+            </div>
+          )}
           <fieldset className="peachtree-grid p-2">
             <legend className="text-xs font-semibold px-1">أصناف الاستلام</legend>
             <div className="overflow-x-auto">
@@ -1276,12 +1380,16 @@ export default function SupplierReceiving() {
                             <span>{line.salePrice != null ? line.salePrice.toFixed(2) : "—"}</span>
                           ) : (
                             <input
+                              ref={(el) => {
+                                if (el) salePriceInputRefs.current.set(idx, el);
+                                else salePriceInputRefs.current.delete(idx);
+                              }}
                               type="number"
                               value={line.salePrice ?? ""}
                               onChange={(e) => updateLine(idx, { salePrice: e.target.value ? parseFloat(e.target.value) : null })}
                               onFocus={() => { lineFieldFocusedRef.current = true; }}
                               onBlur={() => { lineFieldFocusedRef.current = false; }}
-                              className="w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center"
+                              className={`w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center ${lineErrors.some(e => e.lineIndex === idx && e.field === "salePrice") ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
                               placeholder="0.00"
                               min="0"
                               step="any"
@@ -1296,13 +1404,21 @@ export default function SupplierReceiving() {
                           {isViewOnly ? (
                             <span>{line.expiryMonth && line.expiryYear ? `${String(line.expiryMonth).padStart(2, '0')}/${line.expiryYear}` : "—"}</span>
                           ) : (
-                            <ExpiryInput
-                              expiryMonth={line.expiryMonth}
-                              expiryYear={line.expiryYear}
-                              onChange={(month, year) => updateLine(idx, { expiryMonth: month, expiryYear: year })}
-                              disabled={isViewOnly}
-                              data-testid={`input-expiry-${idx}`}
-                            />
+                            <div
+                              ref={(el) => {
+                                if (el) expiryInputRefs.current.set(idx, el);
+                                else expiryInputRefs.current.delete(idx);
+                              }}
+                              className={lineErrors.some(e => e.lineIndex === idx && e.field === "expiry") ? "[&_input]:border-red-500 [&_input]:bg-red-50 dark:[&_input]:bg-red-900/20" : ""}
+                            >
+                              <ExpiryInput
+                                expiryMonth={line.expiryMonth}
+                                expiryYear={line.expiryYear}
+                                onChange={(month, year) => updateLine(idx, { expiryMonth: month, expiryYear: year })}
+                                disabled={isViewOnly || !line.item?.hasExpiry}
+                                data-testid={`input-expiry-${idx}`}
+                              />
+                            </div>
                           )}
                         </td>
                         <td className="py-0.5 px-2 whitespace-nowrap">

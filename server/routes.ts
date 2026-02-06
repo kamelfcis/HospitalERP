@@ -77,6 +77,38 @@ const journalEntryUpdateSchema = z.object({
   lines: z.array(journalLineSchema).min(2, "يجب أن يحتوي القيد على سطرين على الأقل").optional(),
 });
 
+async function validateReceivingLines(lines: any[]): Promise<{ lineIndex: number; field: string; messageAr: string }[]> {
+  const errors: { lineIndex: number; field: string; messageAr: string }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.isRejected) continue;
+
+    const sp = parseFloat(line.salePrice);
+    if (!line.salePrice || isNaN(sp) || sp <= 0) {
+      errors.push({ lineIndex: i, field: "salePrice", messageAr: "سعر البيع مطلوب ويجب أن يكون أكبر من صفر" });
+    }
+
+    const item = await storage.getItem(line.itemId);
+    if (item) {
+      if (item.hasExpiry) {
+        const month = line.expiryMonth != null ? parseInt(String(line.expiryMonth)) : null;
+        const year = line.expiryYear != null ? parseInt(String(line.expiryYear)) : null;
+        if (month == null || isNaN(month) || month < 1 || month > 12) {
+          errors.push({ lineIndex: i, field: "expiry", messageAr: "تاريخ الصلاحية مطلوب لهذا الصنف" });
+        } else if (year == null || isNaN(year) || year < 2000 || year > 2100) {
+          errors.push({ lineIndex: i, field: "expiry", messageAr: "سنة الصلاحية غير صحيحة" });
+        }
+      } else {
+        if (line.expiryMonth != null || line.expiryYear != null) {
+          line.expiryMonth = null;
+          line.expiryYear = null;
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -1653,6 +1685,14 @@ export async function registerRoutes(
         if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
       }
       
+      const lineErrors = await validateReceivingLines(lines);
+      if (lineErrors.length > 0) {
+        return res.status(400).json({ 
+          message: "لا يمكن حفظ الإذن: تأكد من سعر البيع وتاريخ الصلاحية للأصناف المطلوبة",
+          lineErrors 
+        });
+      }
+      
       const result = await storage.saveDraftReceiving(header, lines);
       res.status(201).json(result);
     } catch (error: any) {
@@ -1674,6 +1714,14 @@ export async function registerRoutes(
       const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo, req.params.id);
       if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
       
+      const lineErrors = await validateReceivingLines(lines);
+      if (lineErrors.length > 0) {
+        return res.status(400).json({ 
+          message: "لا يمكن حفظ الإذن: تأكد من سعر البيع وتاريخ الصلاحية للأصناف المطلوبة",
+          lineErrors 
+        });
+      }
+      
       const result = await storage.saveDraftReceiving(header, lines, req.params.id);
       res.json(result);
     } catch (error: any) {
@@ -1683,10 +1731,38 @@ export async function registerRoutes(
 
   app.post("/api/receivings/:id/post", async (req, res) => {
     try {
-      const result = await storage.postReceiving(req.params.id);
+      const receiving = await storage.getReceiving(req.params.id);
+      if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
+      if (receiving.lines && receiving.lines.length > 0) {
+        const lineErrors = await validateReceivingLines(receiving.lines);
+        if (lineErrors.length > 0) {
+          return res.status(400).json({ 
+            message: "لا يمكن ترحيل الإذن: تأكد من سعر البيع وتاريخ الصلاحية للأصناف المطلوبة",
+            lineErrors 
+          });
+        }
+      }
+      let result;
+      if (receiving.correctionStatus === 'correction') {
+        result = await storage.postReceivingCorrection(req.params.id);
+      } else {
+        result = await storage.postReceiving(req.params.id);
+      }
       res.json(result);
     } catch (error: any) {
-      if (error.message.includes("مطلوب") || error.message.includes("لا توجد") || error.message.includes("لا يمكن") || error.message.includes("غير موجود")) {
+      if (error.message.includes("مطلوب") || error.message.includes("لا توجد") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("سالباً")) {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/receivings/:id/correct", async (req, res) => {
+    try {
+      const result = await storage.createReceivingCorrection(req.params.id);
+      res.status(201).json(result);
+    } catch (error: any) {
+      if (error.message.includes("مسبقاً") || error.message.includes("فقط") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("معتمدة")) {
         return res.status(400).json({ message: error.message });
       }
       res.status(500).json({ message: error.message });

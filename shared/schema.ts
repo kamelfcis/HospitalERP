@@ -398,6 +398,9 @@ export const receivingHeaders = pgTable("receiving_headers", {
   postedAt: timestamp("posted_at"),
   convertedToInvoiceId: varchar("converted_to_invoice_id"),
   convertedAt: timestamp("converted_at"),
+  correctionOfId: varchar("correction_of_id"),
+  correctedById: varchar("corrected_by_id"),
+  correctionStatus: text("correction_status"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -520,7 +523,7 @@ export const insertStoreTransferSchema = createInsertSchema(storeTransfers).omit
 export const insertTransferLineSchema = createInsertSchema(transferLines).omit({ id: true, createdAt: true });
 export const insertTransferLineAllocationSchema = createInsertSchema(transferLineAllocations).omit({ id: true, createdAt: true });
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
-export const insertReceivingHeaderSchema = createInsertSchema(receivingHeaders).omit({ id: true, receivingNumber: true, createdAt: true, updatedAt: true, postedAt: true, convertedToInvoiceId: true, convertedAt: true });
+export const insertReceivingHeaderSchema = createInsertSchema(receivingHeaders).omit({ id: true, receivingNumber: true, createdAt: true, updatedAt: true, postedAt: true, convertedToInvoiceId: true, convertedAt: true, correctionOfId: true, correctedById: true, correctionStatus: true });
 export const insertReceivingLineSchema = createInsertSchema(receivingLines).omit({ id: true, createdAt: true });
 export const insertPurchaseInvoiceHeaderSchema = createInsertSchema(purchaseInvoiceHeaders).omit({ id: true, invoiceNumber: true, createdAt: true, updatedAt: true, approvedAt: true, approvedBy: true });
 export const insertPurchaseInvoiceLineSchema = createInsertSchema(purchaseInvoiceLines).omit({ id: true, createdAt: true });
@@ -697,7 +700,12 @@ export type ReceivingHeaderWithDetails = ReceivingHeader & {
 export const receivingStatusLabels: Record<string, string> = {
   draft: "مسودة",
   posted: "مُرحّل",
-  posted_qty_only: "مُرحّل (كمية فقط)"
+  posted_qty_only: "مُرحّل (كمية فقط)",
+};
+
+export const correctionStatusLabels: Record<string, string> = {
+  corrected: "مُصحَّح",
+  correction: "تصحيح",
 };
 
 export type PurchaseInvoiceLineWithItem = PurchaseInvoiceLine & {

@@ -1,0 +1,105 @@
+You are implementing a safe, user-friendly Receiving workflow with strict validation and a correction mechanism.
+Goal: Allow fixing mistakes before converting to Purchase Invoice without corrupting inventory/valuation/DB,
+AND enforce mandatory line-level fields even for DRAFT saves.
+
+GLOBAL RULES:
+- Expiry is MONTH/YEAR only (expiryMonth INT, expiryYear INT). No day anywhere.
+- End-of-month semantics for comparisons and FEFO.
+
+DOCUMENT STATES:
+1) ReceivingHeader.status = DRAFT:
+   - Editable (header + lines)
+   - NO inventory ledger posted
+2) ReceivingHeader.status = POSTED_QTY_ONLY:
+   - Read-only
+   - Inventory is affected
+   - No direct edits allowed
+   - Corrections only via "Correction workflow" (reverse+repost by creating a revision doc)
+
+NEW STRICT VALIDATION RULE (MANDATORY, APPLY TO SAVING DRAFT TOO):
+A receiving document cannot be saved (even as DRAFT) unless ALL line-level mandatory fields are valid:
+1) Selling Price is REQUIRED for every line (always required).
+2) Expiry is REQUIRED ONLY for items with hasExpiry=true:
+   - expiryMonth and expiryYear must be present and valid.
+3) For items with hasExpiry=false:
+   - expiry fields MUST be disabled in UI AND must be NULL in payload (server enforces).
+4) Validation must run on:
+   - Save Draft
+   - Post
+No “partial draft save” allowed. The user must complete selling price and expiry (when applicable) before saving.
+
+UI BEHAVIOR REQUIRED:
+- If item.hasExpiry=true:
+  - show Expiry input as Month/Year only
+  - allow fast typing: "MMYY" => "MM/20YY", "MM/YY" => "MM/20YY", normalize on blur to "MM/YYYY"
+- If item.hasExpiry=false:
+  - Expiry input is visible but DISABLED (greyed out) OR hidden (choose one consistent pattern)
+  - user cannot type into it
+- If Selling Price empty:
+  - highlight the cell red and show inline error
+- If Expiry missing for expiry items:
+  - highlight expiry cell red and show inline error
+- On Save:
+  - if errors exist: show a single summary banner at top:
+    "لا يمكن حفظ الإذن: تأكد من سعر البيع وتاريخ الصلاحية للأصناف المطلوبة"
+  - focus jumps to the first invalid cell (surgical focus handling; no random focus jumps)
+
+BACKEND ENFORCEMENT (NON-NEGOTIABLE):
+- DTO validation for ReceivingLine:
+  - sellingPrice: required, > 0
+  - if item.hasExpiry=true => expiryMonth 1..12 required, expiryYear 2000..2100 required
+  - if item.hasExpiry=false => expiryMonth/expiryYear must be null, otherwise reject
+- Reject invalid DRAFT save with HTTP 400 and structured error details per line:
+  - { lineId, field, messageAr }
+- Prevent direct updates to POSTED receivings (HTTP 409).
+
+CORRECTION WORKFLOW (POSTED, BEFORE CONVERSION):
+- Add action on posted receiving: "تصحيح إذن الاستلام"
+- Implement Option A (preferred): create a NEW revision doc:
+  1) Old doc remains READ-ONLY and marked correctedBy=newId, correctionStatus="CORRECTED"
+  2) New doc is DRAFT prefilled with old lines
+  3) On posting the NEW doc:
+     - reverse inventory movements of old doc (exact lots: warehouse+batch+expiryMonth+expiryYear)
+     - post inventory movements of new doc
+     - reverse old valuation layers and create new pending layers
+     - reverse old GL entry and post new GL entry
+  4) All reverse+repost must be a single DB transaction (no partial states)
+- Block correction if:
+  - receiving convertedToInvoice=true AND invoice is not DRAFT (out of scope)
+  - reversing would make stock negative (show clear Arabic message)
+
+IDEMPOTENCY + CONCURRENCY:
+- Post and Correction actions must be idempotent (idempotencyKey stored)
+- Use row locks (SELECT ... FOR UPDATE) on receiving header + affected stock balance rows
+- Prevent two users correcting simultaneously (one fails gracefully)
+
+REGISTER / AUDIT:
+- Receiving Register must show:
+  - DRAFT / POSTED / CONVERTED / CORRECTED status badges
+  - Links between old corrected doc and new revision doc
+- Audit log:
+  - saving draft, posting, correction initiation, correction posting
+  - who + when
+
+TESTS (MUST BE STRONG AND RUN TOGETHER):
+1) Draft save validation:
+- Cannot save draft with missing selling price
+- Cannot save draft with expiry item missing expiryMonth/year
+- Can save draft for non-expiry item with expiry disabled and stored null
+2) Posted immutability:
+- Post receiving then attempt update => 409
+3) Correction flow:
+- Post qty 10 then correct to qty 8 => net stock is +8, ledger shows reverse+repost
+- Ensure valuation layers updated and remain pending
+- Ensure GL is balanced with reversal and repost
+4) Focus/UX E2E:
+- Try save with missing fields => banner shows + focus to first invalid cell
+- Ensure expiry disabled for non-expiry items
+5) Data isolation:
+- Tests must not conflict; use unique invoice numbers or DB reset between tests
+
+Deliverables:
+- Backend endpoints, DTO validation, and DB migrations if needed
+- Frontend validation + disabled expiry logic + focus-to-first-error
+- Full test suite passing when all tests run together
+Implement now.

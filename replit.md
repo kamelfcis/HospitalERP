@@ -54,6 +54,10 @@ Preferred communication style: Simple, everyday language.
 - VAT handling where base includes quantity + bonus quantity; invoice-level discount applied proportionally before VAT.
 - Invoice approval/costing workflow (draft → approved_costed status).
 - Multi-line, scan-first UX for store-to-store transfers with FEFO allocation (month/year based).
+- Strict line-level validation: salePrice required (>0) for all non-rejected lines, expiry validation (month 1-12, year 2000-2100) for items with hasExpiry. Backend returns structured lineErrors array with lineIndex/field/messageAr. Validation runs at both save and post time.
+- Receiving correction workflow: POST /api/receivings/:id/correct creates draft correction from posted doc with correctionOfId link. postReceivingCorrection reverses original inventory movements and posts new ones in single transaction with negative stock protection. Fields: correctionOfId, correctedById, correctionStatus (corrected/correction).
+- Frontend validation UI: red highlights on invalid fields, error banner, disabled expiry inputs for non-expiry items, focus-to-first-error, client-side validation mirrors backend.
+- Frontend correction UI: correction button for posted docs, CORRECTED (orange) and correction (purple) badges in register, correction info banners, CORRECTED status filter option.
 
 ### Build and Deployment
 - **Development**: `npm run dev` with `tsx` and hot reload.

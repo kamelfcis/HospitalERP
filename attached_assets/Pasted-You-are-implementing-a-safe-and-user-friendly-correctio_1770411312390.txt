@@ -1,0 +1,107 @@
+You are implementing a safe and user-friendly correction workflow for Receiving documents.
+Goal: Allow fixing mistakes (wrong qty/batch/expiry/bonus) BEFORE converting to Purchase Invoice,
+without corrupting inventory quantities, valuation, or database integrity.
+
+CORE RULES:
+1) ReceivingHeader.status = DRAFT:
+   - Fully editable (header + lines)
+   - NO inventory ledger posted
+2) ReceivingHeader.status = POSTED_QTY_ONLY:
+   - NOT directly editable
+   - Inventory quantities already affected
+   - Correction must be done ONLY via a controlled workflow: REVERSE + REPOST (atomic, safe)
+3) Receiving converted to Purchase Invoice:
+   - If already converted, correction rules depend on invoice status:
+     - If invoice is DRAFT: allow correction but must sync receiving/invoice safely
+     - If invoice is APPROVED_COSTED: block correction or require formal return process (out of scope now)
+For now: block corrections if convertedToInvoice=true, unless invoice is DRAFT and correction flow updates both.
+
+A) Implement "Correction Mode" for POSTED receivings (before conversion)
+Add an explicit action button on POSTED receiving:
+- Arabic label: "تصحيح إذن الاستلام"
+- This action must not allow ad-hoc edits. It triggers a guided safe flow.
+
+Correction flow:
+1) User clicks "تصحيح إذن الاستلام"
+2) System creates a new revision OR starts a transaction to reverse old stock then apply new stock:
+   - Option A (preferred, simplest): create a NEW ReceivingRevision document:
+     - Old document becomes READ-ONLY, marked correctedBy=NewId
+     - New document is DRAFT and prefilled with old lines
+     - When new is POSTED:
+       - System auto posts an Inventory REVERSE movement for the old doc
+       - Then posts Inventory movement for the new doc
+   - Option B: in-place correction with revision number (still must reverse+repost internally)
+Choose Option A for clarity & audit trail.
+
+Inventory & ledger rules:
+- Reverse must exactly negate old quantities:
+  - qtyOut = old (qty + bonusQty) from same warehouse/batch/expiry
+- Repost must apply new quantities
+- Both reverse and repost must run in one DB transaction to avoid partial states
+
+Valuation rules:
+- Since posted receiving is Qty-only with pending cost:
+  - Valuation layers are pending and can be replaced safely
+  - Reverse old valuation layers and create new pending layers matching new lines
+
+GL rules (generic posting engine):
+- Reverse the original journal entry (storno or opposite lines)
+- Post a new journal entry for the revised receiving
+- Ensure idempotency with idempotencyKey
+
+UI rules:
+- DRAFT: user edits freely
+- POSTED: user sees read-only with a clear banner
+- Correction: user is editing the NEW revision draft, with banner:
+  "هذه نسخة تصحيح — سيتم عكس الإذن السابق تلقائيًا عند الترحيل"
+- Provide a preview summary:
+  - Old total qty vs New total qty per item
+  - Highlight deltas
+
+B) Prevent accidental corruption
+- Direct update endpoints must reject changes to POSTED documents (HTTP 409).
+- Correction endpoints must enforce:
+  - cannot correct if already converted to invoice (unless invoice is DRAFT and sync is implemented)
+  - cannot correct if reversing would make stock negative (show clear message)
+  - concurrency lock: SELECT ... FOR UPDATE on receiving header and affected stock rows
+
+C) Easy user experience
+- One click "تصحيح إذن الاستلام" creates a draft revision prefilled.
+- User edits quantities easily.
+- On POST: system handles reverse+repost automatically.
+- After successful correction:
+  - Register shows:
+    - old doc status: "تم التصحيح"
+    - new doc status: "مرحّل"
+  - Provide links between them.
+
+D) Tests (must be strong and run together without data interference)
+1) Integration tests:
+- Create draft receiving, edit lines, save, reopen => still editable and no stock ledger created
+- Post receiving => stock increased correctly
+- Try to edit posted => 409
+- Correction flow:
+  - Post receiving with qty 10
+  - Correct to qty 8 via correction revision
+  - Verify stock net change = +8 (not +18)
+  - Verify inventory ledger has reverse + repost entries
+  - Verify valuation layers replaced correctly (pending)
+  - Verify GL has reversing entry + new entry and is balanced
+2) Edge cases:
+- Correcting decreases qty below sold qty => must block with message
+- Correcting batch/expiry changes => reverse exact old lot then apply new lot
+- BonusQty handling: reverse and repost includes bonusQty
+3) E2E Playwright:
+- User posts receiving then realizes qty wrong
+- Click "تصحيح إذن الاستلام"
+- Change qty in first line
+- Post correction
+- Go to register: see old marked corrected and new posted
+4) Concurrency tests:
+- Two users attempt correction simultaneously => one must fail gracefully
+
+Deliver:
+- Backend endpoints & DB changes for revision linkage
+- UI workflow with minimal confusion
+- Full test suite and ensure it passes when running all tests together
+Implement now.
