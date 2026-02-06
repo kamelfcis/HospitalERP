@@ -39,6 +39,7 @@ Preferred communication style: Simple, everyday language.
 - Financial reports: Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, and Account Ledger.
 - Full audit trail logging.
 - Advanced search with wildcard support.
+- Receiving Register: smart search (debounced 300ms, supplier name + invoice number), date defaults (today), status filter (All/Posted/Converted), reset button, combined AND filters with pagination.
 - Collapsible sidebar for improved workspace.
 - Professional print styles optimized for A4.
 - Department-based pricing for items.
