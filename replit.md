@@ -76,3 +76,13 @@ Preferred communication style: Simple, everyday language.
 - Replit-specific Vite plugins
 - TypeScript (strict mode)
 - Path aliases (`@/`, `@shared/`)
+- Vitest for unit and integration testing (`vitest.config.ts`, `tests/` directory)
+
+### Backend Safety Patterns
+- HTTP 409 (Conflict) for immutability violations on posted/approved documents, with error codes: DOCUMENT_POSTED, INVOICE_APPROVED, ALREADY_APPROVED.
+- FOR UPDATE row locks in postReceiving for concurrency safety (raw SQL returns snake_case fields).
+- Idempotent conversion: convertReceivingToInvoice returns existing invoice if already converted.
+- Stricter validation in postReceiving: supplier, invoice number, and warehouse are mandatory.
+
+### Reusable UI Components
+- ExpiryInput (`client/src/components/ui/expiry-input.tsx`): Single text input for MM/YYYY format with auto-slash, supports MMYY/MMYYYY/MM/YY/MM/YYYY parsing.
