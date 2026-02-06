@@ -1,35 +1,21 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ArrowLeftRight,
-  Loader2,
-  AlertTriangle,
-  Check,
-  Search,
-  Package,
+  ArrowLeftRight, Loader2, AlertTriangle, Check, Search, Package, Trash2, Send, Save,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency, formatDateShort } from "@/lib/formatters";
+import { formatDateShort } from "@/lib/formatters";
 import type { Warehouse, Item, StoreTransferWithDetails } from "@shared/schema";
-import { transferStatusLabels, itemCategoryLabels } from "@shared/schema";
-
-interface ItemsResponse {
-  items: Item[];
-  total: string;
-}
+import { transferStatusLabels, itemCategoryLabels, unitLevelLabels } from "@shared/schema";
 
 interface FefoAllocation {
   lotId: string;
@@ -45,6 +31,66 @@ interface FefoPreviewResponse {
   allocations: FefoAllocation[];
 }
 
+interface TransferLineRow {
+  id: string;
+  itemId: string;
+  item: Item | null;
+  searchText: string;
+  unitLevel: string;
+  qtyEntered: string;
+  qtyInMinor: string;
+  availableQty: string;
+  fefoSummary: string;
+  fefoFulfilled: boolean;
+  notes: string;
+  isLocked: boolean;
+}
+
+function createEmptyRow(): TransferLineRow {
+  return {
+    id: crypto.randomUUID(),
+    itemId: "",
+    item: null,
+    searchText: "",
+    unitLevel: "minor",
+    qtyEntered: "1",
+    qtyInMinor: "1",
+    availableQty: "",
+    fefoSummary: "",
+    fefoFulfilled: false,
+    notes: "",
+    isLocked: false,
+  };
+}
+
+function calculateQtyInMinor(qtyEntered: number, unitLevel: string, item: Item): number {
+  if (unitLevel === "major" && item.majorToMinor) {
+    return qtyEntered * parseFloat(item.majorToMinor);
+  } else if (unitLevel === "medium" && item.mediumToMinor) {
+    return qtyEntered * parseFloat(item.mediumToMinor);
+  }
+  return qtyEntered;
+}
+
+function getDefaultUnitLevel(item: Item): string {
+  if (item.majorUnitName) return "major";
+  return "minor";
+}
+
+function buildFefoSummary(preview: FefoPreviewResponse, item: Item | null): string {
+  if (!preview.allocations || preview.allocations.length === 0) {
+    return preview.fulfilled ? "متاح" : "غير متاح";
+  }
+  if (item && !item.hasExpiry) {
+    const total = preview.allocations.reduce((s, a) => s + parseFloat(a.allocatedQty || "0"), 0);
+    return `متاح: ${total}`;
+  }
+  return preview.allocations.map(a => {
+    const exp = a.expiryDate ? formatDateShort(a.expiryDate) : "—";
+    return `(${exp}) ${a.allocatedQty}`;
+  }).join(" | ");
+}
+
 export default function StoreTransfers() {
   const { toast } = useToast();
   const today = new Date().toISOString().split("T")[0];
@@ -52,139 +98,302 @@ export default function StoreTransfers() {
   const [transferDate, setTransferDate] = useState(today);
   const [sourceWarehouseId, setSourceWarehouseId] = useState("");
   const [destWarehouseId, setDestWarehouseId] = useState("");
-  const [selectedItemId, setSelectedItemId] = useState("");
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [qty, setQty] = useState("");
   const [notes, setNotes] = useState("");
-
-  const [itemSearchText, setItemSearchText] = useState("");
-  const [showItemDropdown, setShowItemDropdown] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [lines, setLines] = useState<TransferLineRow[]>([createEmptyRow()]);
+  const [activeSearchRowId, setActiveSearchRowId] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowItemDropdown(false);
+      if (activeSearchRowId) {
+        const ref = dropdownRefs.current[activeSearchRowId];
+        if (ref && !ref.contains(e.target as Node)) {
+          setActiveSearchRowId(null);
+          setSearchResults([]);
+        }
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [activeSearchRowId]);
 
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
-  });
-
-  const { data: itemsData } = useQuery<ItemsResponse>({
-    queryKey: ["/api/items", itemSearchText],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("limit", "10");
-      if (itemSearchText) params.set("search", itemSearchText);
-      const res = await fetch(`/api/items?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch items");
-      return res.json();
-    },
-    enabled: itemSearchText.length > 0,
-  });
-
-  const handleBarcodeResolve = async (value: string) => {
-    try {
-      const res = await fetch(`/api/barcode/resolve?value=${encodeURIComponent(value)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.itemId) {
-          const itemRes = await fetch(`/api/items/${data.itemId}`);
-          if (itemRes.ok) {
-            const item = await itemRes.json();
-            selectItem(item);
-            return;
-          }
-        }
-      }
-    } catch {
-      // barcode not found, continue with text search
-    }
-  };
-
-  const handleItemSearchChange = (value: string) => {
-    setItemSearchText(value);
-    setShowItemDropdown(true);
-    if (selectedItem) {
-      setSelectedItem(null);
-      setSelectedItemId("");
-    }
-  };
-
-  const handleItemSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && itemSearchText) {
-      handleBarcodeResolve(itemSearchText);
-    }
-  };
-
-  const selectItem = (item: Item) => {
-    setSelectedItem(item);
-    setSelectedItemId(item.id);
-    setItemSearchText(item.nameAr);
-    setShowItemDropdown(false);
-  };
-
-  const qtyNum = parseFloat(qty) || 0;
-  const canPreviewFefo = !!selectedItemId && !!sourceWarehouseId && qtyNum > 0;
-
-  const { data: fefoPreview, isLoading: fefoLoading } = useQuery<FefoPreviewResponse>({
-    queryKey: ["/api/transfer/fefo-preview", selectedItemId, sourceWarehouseId, qty, transferDate],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        itemId: selectedItemId,
-        warehouseId: sourceWarehouseId,
-        requiredQtyInMinor: qty,
-        asOfDate: transferDate,
-      });
-      const res = await fetch(`/api/transfer/fefo-preview?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch FEFO preview");
-      return res.json();
-    },
-    enabled: canPreviewFefo,
   });
 
   const { data: transfers, isLoading: transfersLoading } = useQuery<StoreTransferWithDetails[]>({
     queryKey: ["/api/transfers"],
   });
 
-  const canExecute =
+  const updateLine = useCallback((rowId: string, updates: Partial<TransferLineRow>) => {
+    setLines(prev => prev.map(l => l.id === rowId ? { ...l, ...updates } : l));
+  }, []);
+
+  const fetchItemSearch = useCallback(async (query: string, warehouseId: string) => {
+    if (!query || !warehouseId) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const params = new URLSearchParams({ query, warehouseId, limit: "10" });
+      const res = await fetch(`/api/items/lookup?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults(data || []);
+      }
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
+  const handleSearchChange = useCallback((rowId: string, value: string) => {
+    updateLine(rowId, { searchText: value });
+    setActiveSearchRowId(rowId);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchItemSearch(value, sourceWarehouseId);
+    }, 300);
+  }, [sourceWarehouseId, fetchItemSearch, updateLine]);
+
+  const fetchAvailability = useCallback(async (itemId: string, warehouseId: string): Promise<string> => {
+    try {
+      const res = await fetch(`/api/items/${itemId}/availability?warehouseId=${encodeURIComponent(warehouseId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.availableQtyMinor || "0";
+      }
+    } catch {}
+    return "0";
+  }, []);
+
+  const fetchFefoPreview = useCallback(async (itemId: string, warehouseId: string, qtyInMinor: string, asOfDate: string, item: Item | null): Promise<{ summary: string; fulfilled: boolean }> => {
+    try {
+      const params = new URLSearchParams({
+        itemId,
+        warehouseId,
+        requiredQtyInMinor: qtyInMinor,
+        asOfDate,
+      });
+      const res = await fetch(`/api/transfer/fefo-preview?${params.toString()}`);
+      if (res.ok) {
+        const preview: FefoPreviewResponse = await res.json();
+        return {
+          summary: buildFefoSummary(preview, item),
+          fulfilled: preview.fulfilled,
+        };
+      }
+    } catch {}
+    return { summary: "", fulfilled: false };
+  }, []);
+
+  const lockRow = useCallback(async (rowId: string, item: Item) => {
+    const defaultUnit = getDefaultUnitLevel(item);
+    const qtyEntered = 1;
+    const qtyInMinor = calculateQtyInMinor(qtyEntered, defaultUnit, item);
+
+    updateLine(rowId, {
+      itemId: item.id,
+      item,
+      searchText: `${item.itemCode} - ${item.nameAr}`,
+      unitLevel: defaultUnit,
+      qtyEntered: "1",
+      qtyInMinor: String(qtyInMinor),
+      isLocked: true,
+    });
+
+    setActiveSearchRowId(null);
+    setSearchResults([]);
+
+    const [avail, fefo] = await Promise.all([
+      fetchAvailability(item.id, sourceWarehouseId),
+      fetchFefoPreview(item.id, sourceWarehouseId, String(qtyInMinor), transferDate, item),
+    ]);
+
+    updateLine(rowId, {
+      availableQty: avail,
+      fefoSummary: fefo.summary,
+      fefoFulfilled: fefo.fulfilled,
+    });
+
+    setLines(prev => {
+      const last = prev[prev.length - 1];
+      if (last.isLocked || last.id === rowId) {
+        return [...prev, createEmptyRow()];
+      }
+      return prev;
+    });
+  }, [sourceWarehouseId, transferDate, updateLine, fetchAvailability, fetchFefoPreview]);
+
+  const handleBarcodeResolve = useCallback(async (rowId: string, value: string) => {
+    try {
+      const res = await fetch(`/api/barcode/resolve?value=${encodeURIComponent(value)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.found && data.itemId) {
+          const itemRes = await fetch(`/api/items/${data.itemId}`);
+          if (itemRes.ok) {
+            const item = await itemRes.json();
+            await lockRow(rowId, item);
+            return;
+          }
+        }
+      }
+    } catch {}
+  }, [lockRow]);
+
+  const handleSearchKeyDown = useCallback((rowId: string, e: React.KeyboardEvent, value: string) => {
+    if (e.key === "Enter" && value) {
+      e.preventDefault();
+      handleBarcodeResolve(rowId, value);
+    }
+  }, [handleBarcodeResolve]);
+
+  const handleSelectItem = useCallback((rowId: string, item: Item) => {
+    lockRow(rowId, item);
+  }, [lockRow]);
+
+  const handleUnitChange = useCallback(async (rowId: string, newUnit: string) => {
+    setLines(prev => {
+      const line = prev.find(l => l.id === rowId);
+      if (!line || !line.item) return prev;
+      const qtyNum = parseFloat(line.qtyEntered) || 1;
+      const newQtyInMinor = calculateQtyInMinor(qtyNum, newUnit, line.item);
+      return prev.map(l => l.id === rowId ? { ...l, unitLevel: newUnit, qtyInMinor: String(newQtyInMinor) } : l);
+    });
+
+    const line = lines.find(l => l.id === rowId);
+    if (line && line.item && sourceWarehouseId) {
+      const qtyNum = parseFloat(line.qtyEntered) || 1;
+      const newQtyInMinor = calculateQtyInMinor(qtyNum, newUnit, line.item);
+      const fefo = await fetchFefoPreview(line.item.id, sourceWarehouseId, String(newQtyInMinor), transferDate, line.item);
+      updateLine(rowId, { fefoSummary: fefo.summary, fefoFulfilled: fefo.fulfilled });
+    }
+  }, [lines, sourceWarehouseId, transferDate, fetchFefoPreview, updateLine]);
+
+  const handleQtyChange = useCallback(async (rowId: string, newQty: string) => {
+    setLines(prev => {
+      const line = prev.find(l => l.id === rowId);
+      if (!line || !line.item) return prev.map(l => l.id === rowId ? { ...l, qtyEntered: newQty } : l);
+      const qtyNum = parseFloat(newQty) || 0;
+      const newQtyInMinor = calculateQtyInMinor(qtyNum, line.unitLevel, line.item);
+      return prev.map(l => l.id === rowId ? { ...l, qtyEntered: newQty, qtyInMinor: String(newQtyInMinor) } : l);
+    });
+
+    const line = lines.find(l => l.id === rowId);
+    if (line && line.item && sourceWarehouseId) {
+      const qtyNum = parseFloat(newQty) || 0;
+      if (qtyNum > 0) {
+        const newQtyInMinor = calculateQtyInMinor(qtyNum, line.unitLevel, line.item);
+        const fefo = await fetchFefoPreview(line.item.id, sourceWarehouseId, String(newQtyInMinor), transferDate, line.item);
+        updateLine(rowId, { fefoSummary: fefo.summary, fefoFulfilled: fefo.fulfilled });
+      }
+    }
+  }, [lines, sourceWarehouseId, transferDate, fetchFefoPreview, updateLine]);
+
+  const handleDeleteLine = useCallback((rowId: string) => {
+    setLines(prev => {
+      const filtered = prev.filter(l => l.id !== rowId);
+      if (filtered.length === 0 || filtered.every(l => l.isLocked)) {
+        return [...filtered, createEmptyRow()];
+      }
+      return filtered;
+    });
+  }, []);
+
+  const lockedLines = lines.filter(l => l.isLocked && l.itemId);
+
+  const canSaveDraft =
     !!transferDate &&
     !!sourceWarehouseId &&
     !!destWarehouseId &&
     sourceWarehouseId !== destWarehouseId &&
-    !!selectedItemId &&
-    qtyNum > 0 &&
-    fefoPreview?.fulfilled === true;
+    lockedLines.length > 0;
 
-  const executeMutation = useMutation({
+  const saveDraftMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", "/api/transfers", {
+      const payload = {
         transferDate,
         sourceWarehouseId,
         destinationWarehouseId: destWarehouseId,
-        itemId: selectedItemId,
-        qtyInMinor: qty,
         notes: notes || undefined,
-        status: "executed",
-      });
+        lines: lockedLines.map(l => ({
+          itemId: l.itemId,
+          unitLevel: l.unitLevel,
+          qtyEntered: l.qtyEntered,
+          qtyInMinor: l.qtyInMinor,
+        })),
+      };
+      return apiRequest("POST", "/api/transfers", payload);
     },
     onSuccess: () => {
-      toast({ title: "تم تنفيذ التحويل بنجاح" });
+      toast({ title: "تم حفظ المسودة بنجاح" });
       resetForm();
       queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/transfer/fefo-preview"] });
     },
     onError: (error: any) => {
-      toast({
-        title: "خطأ في تنفيذ التحويل",
-        description: error.message || "حدث خطأ غير متوقع",
-        variant: "destructive",
-      });
+      toast({ title: "خطأ في حفظ المسودة", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const postTransferMutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        transferDate,
+        sourceWarehouseId,
+        destinationWarehouseId: destWarehouseId,
+        notes: notes || undefined,
+        lines: lockedLines.map(l => ({
+          itemId: l.itemId,
+          unitLevel: l.unitLevel,
+          qtyEntered: l.qtyEntered,
+          qtyInMinor: l.qtyInMinor,
+        })),
+      };
+      const createRes = await apiRequest("POST", "/api/transfers", payload);
+      const created = await createRes.json();
+      await apiRequest("POST", `/api/transfers/${created.id}/post`);
+      return created;
+    },
+    onSuccess: () => {
+      toast({ title: "تم ترحيل التحويل بنجاح" });
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ في ترحيل التحويل", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const postDraftMutation = useMutation({
+    mutationFn: async (transferId: string) => {
+      return apiRequest("POST", `/api/transfers/${transferId}/post`);
+    },
+    onSuccess: () => {
+      toast({ title: "تم ترحيل التحويل بنجاح" });
+      queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ في ترحيل التحويل", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteDraftMutation = useMutation({
+    mutationFn: async (transferId: string) => {
+      return apiRequest("DELETE", `/api/transfers/${transferId}`);
+    },
+    onSuccess: () => {
+      toast({ title: "تم حذف التحويل" });
+      queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ في حذف التحويل", description: error.message, variant: "destructive" });
     },
   });
 
@@ -192,17 +401,28 @@ export default function StoreTransfers() {
     setTransferDate(today);
     setSourceWarehouseId("");
     setDestWarehouseId("");
-    setSelectedItemId("");
-    setSelectedItem(null);
-    setItemSearchText("");
-    setQty("");
     setNotes("");
+    setLines([createEmptyRow()]);
+    setActiveSearchRowId(null);
+    setSearchResults([]);
   };
+
+  const getConversionInfo = (item: Item, unitLevel: string): string => {
+    if (unitLevel === "major" && item.majorUnitName && item.majorToMinor) {
+      return `1 ${item.majorUnitName} = ${item.majorToMinor} ${item.minorUnitName || "وحدة صغرى"}`;
+    }
+    if (unitLevel === "medium" && item.mediumUnitName && item.mediumToMinor) {
+      return `1 ${item.mediumUnitName} = ${item.mediumToMinor} ${item.minorUnitName || "وحدة صغرى"}`;
+    }
+    return "";
+  };
+
+  const isPending = saveDraftMutation.isPending || postTransferMutation.isPending;
 
   return (
     <div className="p-2 space-y-2" dir="rtl">
-      <div className="peachtree-toolbar flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="peachtree-toolbar flex items-center justify-between flex-shrink-0 gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
           <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />
           <h1 className="text-sm font-semibold text-foreground">تحويل مخزني بين الأقسام</h1>
           <span className="text-xs text-muted-foreground">|</span>
@@ -213,7 +433,7 @@ export default function StoreTransfers() {
       <fieldset className="peachtree-grid p-2">
         <legend className="text-xs font-semibold px-1">بيانات التحويل</legend>
 
-        <div className="grid grid-cols-3 gap-3 mb-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
           <div className="space-y-1">
             <Label className="text-[10px] text-muted-foreground">تاريخ التحويل</Label>
             <Input
@@ -227,7 +447,7 @@ export default function StoreTransfers() {
 
           <div className="space-y-1">
             <Label className="text-[10px] text-muted-foreground">مخزن المصدر</Label>
-            <Select value={sourceWarehouseId} onValueChange={setSourceWarehouseId}>
+            <Select value={sourceWarehouseId} onValueChange={(val) => { setSourceWarehouseId(val); setLines([createEmptyRow()]); }}>
               <SelectTrigger className="h-6 text-[11px] px-1" data-testid="select-source-warehouse">
                 <SelectValue placeholder="اختر المخزن" />
               </SelectTrigger>
@@ -258,67 +478,6 @@ export default function StoreTransfers() {
               </SelectContent>
             </Select>
           </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3 mb-2">
-          <div className="space-y-1 relative" ref={dropdownRef}>
-            <Label className="text-[10px] text-muted-foreground">الصنف</Label>
-            <div className="relative">
-              <Search className="absolute right-1 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-              <Input
-                type="text"
-                value={itemSearchText}
-                onChange={(e) => handleItemSearchChange(e.target.value)}
-                onKeyDown={handleItemSearchKeyDown}
-                onFocus={() => itemSearchText && setShowItemDropdown(true)}
-                placeholder="بحث بالكود أو الاسم أو الباركود"
-                className="h-6 text-[11px] px-1 pr-5"
-                data-testid="input-item-search"
-              />
-            </div>
-            {showItemDropdown && itemsData?.items && itemsData.items.length > 0 && (
-              <div className="absolute z-50 top-full mt-1 w-full bg-background border rounded-md shadow-lg max-h-48 overflow-auto">
-                {itemsData.items.map((item) => (
-                  <button
-                    key={item.id}
-                    className="w-full text-right px-2 py-1 text-[11px] hover-elevate cursor-pointer flex items-center gap-2"
-                    onClick={() => selectItem(item)}
-                    data-testid={`item-option-${item.id}`}
-                  >
-                    <span className="font-mono text-muted-foreground">{item.itemCode}</span>
-                    <span>{item.nameAr}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {selectedItem && (
-              <div className="flex items-center gap-2 mt-1">
-                <Package className="h-3 w-3 text-muted-foreground" />
-                <span className="text-[10px] font-medium">{selectedItem.nameAr}</span>
-                <Badge variant="outline" className="text-[9px]">
-                  {itemCategoryLabels[selectedItem.category] || selectedItem.category}
-                </Badge>
-                {selectedItem.hasExpiry && (
-                  <Badge variant="secondary" className="text-[9px]">
-                    له صلاحية
-                  </Badge>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-[10px] text-muted-foreground">الكمية (بالوحدة الصغرى)</Label>
-            <Input
-              type="number"
-              min="1"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder="0"
-              className="h-6 text-[11px] px-1"
-              data-testid="input-transfer-qty"
-            />
-          </div>
 
           <div className="space-y-1">
             <Label className="text-[10px] text-muted-foreground">ملاحظات</Label>
@@ -333,74 +492,216 @@ export default function StoreTransfers() {
           </div>
         </div>
 
-        {canPreviewFefo && (
-          <div className="mt-2">
-            <Label className="text-[10px] text-muted-foreground mb-1 block">
-              معاينة FEFO (أول انتهاء أول صرف)
-            </Label>
-            {fefoLoading ? (
-              <div className="space-y-1">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-full" />
-              </div>
-            ) : fefoPreview ? (
-              <div>
-                <table className="w-full text-[10px] border">
-                  <thead>
-                    <tr className="bg-muted/50">
-                      <th className="py-1 px-1 text-right font-medium">اللوت</th>
-                      <th className="py-1 px-1 text-right font-medium">تاريخ الصلاحية</th>
-                      <th className="py-1 px-1 text-right font-medium">الكمية المتاحة</th>
-                      <th className="py-1 px-1 text-right font-medium">الكمية المخصومة</th>
-                      <th className="py-1 px-1 text-right font-medium">التكلفة</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fefoPreview.allocations.map((alloc, i) => (
-                      <tr key={alloc.lotId || i} className="border-t">
-                        <td className="py-1 px-1 font-mono">{alloc.lotId?.slice(0, 8) || "-"}</td>
-                        <td className="py-1 px-1">{alloc.expiryDate ? formatDateShort(alloc.expiryDate) : "بدون صلاحية"}</td>
-                        <td className="py-1 px-1">{alloc.availableQty}</td>
-                        <td className="py-1 px-1">{alloc.allocatedQty}</td>
-                        <td className="py-1 px-1">{formatCurrency(alloc.unitCost)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="mt-1" data-testid="text-fefo-status">
-                  {fefoPreview.fulfilled ? (
-                    <span className="text-[11px] text-green-700 flex items-center gap-1">
-                      <Check className="h-3 w-3" />
-                      الكمية متوفرة
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-red-600 flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3" />
-                      الكمية المتاحة غير كافية (ينقص {fefoPreview.shortfall})
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-[10px]">
+            <thead>
+              <tr className="peachtree-grid-header">
+                <th className="py-1 px-1 text-right font-medium min-w-[200px]">الصنف</th>
+                <th className="py-1 px-1 text-right font-medium min-w-[100px]">الوحدة</th>
+                <th className="py-1 px-1 text-right font-medium min-w-[70px]">الكمية</th>
+                <th className="py-1 px-1 text-right font-medium min-w-[70px]">المتاح</th>
+                <th className="py-1 px-1 text-right font-medium min-w-[180px]">FEFO</th>
+                <th className="py-1 px-1 text-center font-medium min-w-[40px]">حذف</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line, idx) => {
+                const isEditing = !line.isLocked;
+                const isLast = idx === lines.length - 1 && isEditing;
 
-        <div className="mt-3 flex items-center gap-2">
+                return (
+                  <tr key={line.id} className="peachtree-grid-row">
+                    <td className="py-1 px-1 relative">
+                      {line.isLocked ? (
+                        <div className="flex items-center gap-1">
+                          <Package className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                          <span className="font-mono text-muted-foreground text-[9px]">{line.item?.itemCode}</span>
+                          <span className="text-[10px] truncate">{line.item?.nameAr}</span>
+                          {line.item && line.unitLevel !== "minor" && (
+                            <span className="text-[8px] text-muted-foreground">
+                              ({getConversionInfo(line.item, line.unitLevel)})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          className="relative"
+                          ref={(el) => { dropdownRefs.current[line.id] = el; }}
+                        >
+                          <div className="relative">
+                            <Search className="absolute right-1 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                            <Input
+                              type="text"
+                              value={line.searchText}
+                              onChange={(e) => handleSearchChange(line.id, e.target.value)}
+                              onKeyDown={(e) => handleSearchKeyDown(line.id, e, line.searchText)}
+                              onFocus={() => {
+                                setActiveSearchRowId(line.id);
+                                if (line.searchText) fetchItemSearch(line.searchText, sourceWarehouseId);
+                              }}
+                              placeholder={sourceWarehouseId ? "بحث بالكود أو الاسم أو الباركود" : "اختر المخزن أولاً"}
+                              disabled={!sourceWarehouseId}
+                              className="h-6 text-[11px] px-1 pr-5"
+                              data-testid={`input-line-search-${line.id}`}
+                            />
+                          </div>
+                          {activeSearchRowId === line.id && searchResults.length > 0 && (
+                            <div className="absolute z-50 top-full mt-1 w-full bg-background border rounded-md shadow-lg max-h-48 overflow-auto">
+                              {searchResults.map((item: any) => (
+                                <button
+                                  key={item.id}
+                                  className="w-full text-right px-2 py-1 text-[11px] hover-elevate cursor-pointer flex items-center gap-2"
+                                  onClick={() => handleSelectItem(line.id, item)}
+                                  data-testid={`item-option-${item.id}`}
+                                >
+                                  <span className="font-mono text-muted-foreground">{item.itemCode}</span>
+                                  <span className="flex-1 truncate">{item.nameAr}</span>
+                                  {item.availableQtyMinor !== undefined && (
+                                    <span className="text-[9px] text-muted-foreground">({item.availableQtyMinor})</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {activeSearchRowId === line.id && searchLoading && (
+                            <div className="absolute z-50 top-full mt-1 w-full bg-background border rounded-md shadow-lg p-2 text-center">
+                              <Loader2 className="h-3 w-3 animate-spin inline-block" />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="py-1 px-1">
+                      {line.isLocked && line.item ? (
+                        <Select
+                          value={line.unitLevel}
+                          onValueChange={(v) => handleUnitChange(line.id, v)}
+                        >
+                          <SelectTrigger className="h-6 text-[10px] px-1" data-testid={`select-line-unit-${line.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {line.item.majorUnitName && (
+                              <SelectItem value="major">{line.item.majorUnitName}</SelectItem>
+                            )}
+                            {line.item.mediumUnitName && (
+                              <SelectItem value="medium">{line.item.mediumUnitName}</SelectItem>
+                            )}
+                            <SelectItem value="minor">{line.item.minorUnitName || "وحدة صغرى"}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+
+                    <td className="py-1 px-1">
+                      {line.isLocked ? (
+                        <Input
+                          type="number"
+                          min="1"
+                          value={line.qtyEntered}
+                          onChange={(e) => handleQtyChange(line.id, e.target.value)}
+                          className="h-6 text-[11px] px-1 w-16"
+                          data-testid={`input-line-qty-${line.id}`}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+
+                    <td className="py-1 px-1">
+                      {line.isLocked && line.availableQty ? (
+                        <span className="text-[10px] font-mono">{line.availableQty}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+
+                    <td className="py-1 px-1">
+                      {line.isLocked && line.fefoSummary ? (
+                        <span className={`text-[9px] ${line.fefoFulfilled ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                          {line.fefoFulfilled ? (
+                            <Check className="h-3 w-3 inline-block ml-1" />
+                          ) : (
+                            <AlertTriangle className="h-3 w-3 inline-block ml-1" />
+                          )}
+                          {line.fefoSummary}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+
+                    <td className="py-1 px-1 text-center">
+                      {line.isLocked && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={() => handleDeleteLine(line.id)}
+                          data-testid={`button-delete-line-${line.id}`}
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
             className="text-[11px] gap-1 px-2"
-            disabled={!canExecute || executeMutation.isPending}
-            onClick={() => executeMutation.mutate()}
-            data-testid="button-execute-transfer"
+            disabled={!canSaveDraft || isPending}
+            onClick={() => saveDraftMutation.mutate()}
+            data-testid="button-save-draft"
           >
-            {executeMutation.isPending ? (
+            {saveDraftMutation.isPending ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <ArrowLeftRight className="h-3 w-3" />
+              <Save className="h-3 w-3" />
             )}
-            تنفيذ التحويل
+            حفظ كمسودة
           </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-[11px] gap-1 px-2"
+            disabled={!canSaveDraft || isPending}
+            onClick={() => postTransferMutation.mutate()}
+            data-testid="button-post-transfer"
+          >
+            {postTransferMutation.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Send className="h-3 w-3" />
+            )}
+            ترحيل التحويل
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-[11px] gap-1 px-2"
+            onClick={resetForm}
+            data-testid="button-cancel"
+          >
+            إلغاء
+          </Button>
+
+          {lockedLines.length > 0 && (
+            <span className="text-[10px] text-muted-foreground mr-auto">
+              {lockedLines.length} صنف مُضاف
+            </span>
+          )}
         </div>
       </fieldset>
 
@@ -420,9 +721,9 @@ export default function StoreTransfers() {
                 <th className="py-1 px-1 text-right font-medium">التاريخ</th>
                 <th className="py-1 px-1 text-right font-medium">من مخزن</th>
                 <th className="py-1 px-1 text-right font-medium">إلى مخزن</th>
-                <th className="py-1 px-1 text-right font-medium">الصنف</th>
-                <th className="py-1 px-1 text-right font-medium">الكمية</th>
+                <th className="py-1 px-1 text-right font-medium">عدد الأصناف</th>
                 <th className="py-1 px-1 text-right font-medium">الحالة</th>
+                <th className="py-1 px-1 text-right font-medium">إجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -431,10 +732,9 @@ export default function StoreTransfers() {
                   <tr key={t.id} className="border-t" data-testid={`row-transfer-${t.id}`}>
                     <td className="py-1 px-1 font-mono">{t.transferNumber}</td>
                     <td className="py-1 px-1">{formatDateShort(t.transferDate)}</td>
-                    <td className="py-1 px-1">{t.sourceWarehouse?.nameAr || "-"}</td>
-                    <td className="py-1 px-1">{t.destinationWarehouse?.nameAr || "-"}</td>
-                    <td className="py-1 px-1">{t.item?.nameAr || "-"}</td>
-                    <td className="py-1 px-1">{t.qtyInMinor}</td>
+                    <td className="py-1 px-1">{t.sourceWarehouse?.nameAr || "—"}</td>
+                    <td className="py-1 px-1">{t.destinationWarehouse?.nameAr || "—"}</td>
+                    <td className="py-1 px-1">{t.lines?.length || 0} أصناف</td>
                     <td className="py-1 px-1">
                       {t.status === "executed" ? (
                         <Badge variant="default" className="text-[9px] bg-green-600">
@@ -444,6 +744,42 @@ export default function StoreTransfers() {
                         <Badge variant="outline" className="text-[9px]">
                           {transferStatusLabels[t.status] || t.status}
                         </Badge>
+                      )}
+                    </td>
+                    <td className="py-1 px-1">
+                      {t.status === "draft" && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-[10px] gap-1 px-1 h-5"
+                            disabled={postDraftMutation.isPending}
+                            onClick={() => postDraftMutation.mutate(t.id)}
+                            data-testid={`button-post-draft-${t.id}`}
+                          >
+                            {postDraftMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="h-3 w-3" />
+                            )}
+                            ترحيل
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-[10px] gap-1 px-1 h-5"
+                            disabled={deleteDraftMutation.isPending}
+                            onClick={() => deleteDraftMutation.mutate(t.id)}
+                            data-testid={`button-delete-draft-${t.id}`}
+                          >
+                            {deleteDraftMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3 w-3" />
+                            )}
+                            حذف
+                          </Button>
+                        </div>
                       )}
                     </td>
                   </tr>

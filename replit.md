@@ -114,21 +114,22 @@ Key entities include:
   - Alphanumeric validation on barcode values (frontend + backend)
   - Duplicate barcode returns HTTP 409 with Arabic error message
   - ItemCard UI: hasExpiry checkbox with CalendarClock icon, barcode grid with add/delete dialogs
-- **Store-to-Store Transfer (تحويل مخزني)** (Feb 6, 2026):
-  - Warehouses table with 7 seeded warehouses (WH-MAIN, WH-PHARM-OUT, WH-PHARM-IN, WH-OR, WH-ICU, WH-ER, WH-LAB)
-  - inventoryLots and inventoryLotMovements extended with warehouseId column
-  - storeTransfers table with auto-increment transfer_number, status tracking, and metadata
-  - Warehouse-aware FEFO preview: GET /api/transfer/fefo-preview?itemId=X&warehouseId=Y&requiredQtyInMinor=Z&asOfDate=DATE
-  - Transfer execution wrapped in DB transaction for atomicity (prevents inventory corruption)
-  - FEFO allocation: lots ordered by earliest expiry first, then by receivedDate
-  - Lot destination logic: reuses existing lot in destination if same expiry+cost, otherwise creates new
-  - OUT movements deduct from source lots, IN movements add to destination lots
-  - Services cannot be transferred; source and destination warehouse must differ
-  - Cost moves as-is from source lot purchasePrice (no pricing/revenue/accounting entries)
-  - StoreTransfers page: form with warehouse selects, item search (code/name/barcode), qty, date, notes
-  - Real-time FEFO preview panel shows lot allocations with availability and cost
-  - Transfer history grid with status badges
-  - API: GET /api/warehouses, POST /api/warehouses, GET /api/transfers, POST /api/transfers
+- **Store-to-Store Transfer (تحويل مخزني) - Multi-Line Redesign** (Feb 6, 2026):
+  - Architecture: Header+Lines model (storeTransfers → transferLines → transferLineAllocations)
+  - storeTransfers is now header-only (no itemId/qtyInMinor) with draft/executed status
+  - transferLines table: itemId, unitLevel (major/medium/minor), qtyEntered, qtyInMinor, notes per line
+  - transferLineAllocations table: audit trail of FEFO lot allocations per line during posting
+  - Draft/Post workflow: save as مسودة (draft), then ترحيل (post/execute) separately
+  - Inline editable grid: per-row item search (barcode/code/name), unit dropdown, qty input
+  - Auto-add empty row on item selection; row locks after item is picked
+  - Unit conversion: calculateQtyInMinor() handles major/medium/minor with conversion factors
+  - FEFO allocation per-line during posting, ordered by earliest expiry first
+  - Transfer execution wrapped in DB transaction for atomicity across multiple lines
+  - Real-time availability display per row from source warehouse
+  - Transfer history with draft actions (ترحيل/حذف buttons)
+  - API: POST /api/transfers (create draft), POST /api/transfers/:id/post, DELETE /api/transfers/:id
+  - API: GET /api/items/lookup (search with availability), GET /api/items/:itemId/availability
+  - Lines reset when source warehouse changes (prevents stale availability data)
   - Sidebar nav item "تحويل مخزني" with ArrowLeftRight icon
 - **Database Integrity & Performance Audit** (Feb 5, 2026):
   - Added self-referencing FKs: accounts.parentId → accounts.id, costCenters.parentId → costCenters.id

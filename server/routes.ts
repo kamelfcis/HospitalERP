@@ -14,6 +14,7 @@ import {
   insertInventoryLotSchema,
   insertWarehouseSchema,
   insertStoreTransferSchema,
+  insertTransferLineSchema,
   accounts,
   accountTypeLabels
 } from "@shared/schema";
@@ -941,6 +942,36 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/items/lookup", async (req, res) => {
+    try {
+      const { query, warehouseId, limit } = req.query;
+      if (!query || !warehouseId) {
+        return res.status(400).json({ message: "query و warehouseId مطلوبة" });
+      }
+      const results = await storage.searchItemsForTransfer(
+        query as string,
+        warehouseId as string,
+        limit ? parseInt(limit as string) : 10
+      );
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/items/:itemId/availability", async (req, res) => {
+    try {
+      const { warehouseId } = req.query;
+      if (!warehouseId) {
+        return res.status(400).json({ message: "warehouseId مطلوب" });
+      }
+      const qty = await storage.getItemAvailability(req.params.itemId, warehouseId as string);
+      res.json({ availableQtyMinor: qty });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/items/:id", async (req, res) => {
     try {
       const item = await storage.getItem(req.params.id);
@@ -1379,14 +1410,47 @@ export async function registerRoutes(
 
   app.post("/api/transfers", async (req, res) => {
     try {
-      const validated = insertStoreTransferSchema.parse(req.body);
-      const transfer = await storage.executeTransfer(validated);
+      const { transferDate, sourceWarehouseId, destinationWarehouseId, notes, lines } = req.body;
+
+      if (!transferDate || !sourceWarehouseId || !destinationWarehouseId) {
+        return res.status(400).json({ message: "بيانات التحويل غير مكتملة" });
+      }
+      if (sourceWarehouseId === destinationWarehouseId) {
+        return res.status(400).json({ message: "مخزن المصدر والوجهة يجب أن يكونا مختلفين" });
+      }
+      if (!lines || !Array.isArray(lines) || lines.length === 0) {
+        return res.status(400).json({ message: "يجب إضافة سطر واحد على الأقل" });
+      }
+
+      const header = { transferDate, sourceWarehouseId, destinationWarehouseId, notes: notes || null };
+      const transfer = await storage.createDraftTransfer(header, lines);
       res.status(201).json(transfer);
     } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/transfers/:id/post", async (req, res) => {
+    try {
+      const transfer = await storage.postTransfer(req.params.id);
+      res.json(transfer);
+    } catch (error: any) {
+      if (error.message.includes("غير كافية") || error.message.includes("مختلفين") || error.message.includes("مسودة") || error.message.includes("لا يمكن")) {
+        return res.status(400).json({ message: error.message });
       }
-      if (error.message.includes("غير كافية") || error.message.includes("مختلفين")) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/transfers/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteTransfer(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "التحويل غير موجود" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error.message.includes("مُرحّل")) {
         return res.status(400).json({ message: error.message });
       }
       res.status(500).json({ message: error.message });

@@ -310,8 +310,6 @@ export const storeTransfers = pgTable("store_transfers", {
   transferDate: date("transfer_date").notNull(),
   sourceWarehouseId: varchar("source_warehouse_id").notNull().references(() => warehouses.id),
   destinationWarehouseId: varchar("destination_warehouse_id").notNull().references(() => warehouses.id),
-  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
-  qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull(),
   status: transferStatusEnum("status").notNull().default("draft"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -320,8 +318,34 @@ export const storeTransfers = pgTable("store_transfers", {
   transferNumberIdx: index("idx_transfers_number").on(table.transferNumber),
   sourceWarehouseIdx: index("idx_transfers_source").on(table.sourceWarehouseId),
   destWarehouseIdx: index("idx_transfers_dest").on(table.destinationWarehouseId),
-  itemIdx: index("idx_transfers_item").on(table.itemId),
   dateIdx: index("idx_transfers_date").on(table.transferDate),
+}));
+
+export const transferLines = pgTable("transfer_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transferId: varchar("transfer_id").notNull().references(() => storeTransfers.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  unitLevel: unitLevelEnum("unit_level").notNull().default("major"),
+  qtyEntered: decimal("qty_entered", { precision: 18, scale: 4 }).notNull(),
+  qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  transferIdx: index("idx_transfer_lines_transfer").on(table.transferId),
+  itemIdx: index("idx_transfer_lines_item").on(table.itemId),
+}));
+
+export const transferLineAllocations = pgTable("transfer_line_allocations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  lineId: varchar("line_id").notNull().references(() => transferLines.id, { onDelete: "cascade" }),
+  sourceLotId: varchar("source_lot_id").notNull().references(() => inventoryLots.id),
+  expiryDate: date("expiry_date"),
+  qtyOutInMinor: decimal("qty_out_in_minor", { precision: 18, scale: 4 }).notNull(),
+  purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull(),
+  destinationLotId: varchar("destination_lot_id").references(() => inventoryLots.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  lineIdx: index("idx_transfer_allocs_line").on(table.lineId),
 }));
 
 export const itemBarcodes = pgTable("item_barcodes", {
@@ -363,6 +387,8 @@ export const insertInventoryLotSchema = createInsertSchema(inventoryLots).omit({
 export const insertInventoryLotMovementSchema = createInsertSchema(inventoryLotMovements).omit({ id: true, createdAt: true });
 export const insertItemBarcodeSchema = createInsertSchema(itemBarcodes).omit({ id: true, createdAt: true });
 export const insertStoreTransferSchema = createInsertSchema(storeTransfers).omit({ id: true, transferNumber: true, createdAt: true, executedAt: true });
+export const insertTransferLineSchema = createInsertSchema(transferLines).omit({ id: true, createdAt: true });
+export const insertTransferLineAllocationSchema = createInsertSchema(transferLineAllocations).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -425,6 +451,12 @@ export type Warehouse = typeof warehouses.$inferSelect;
 export type InsertStoreTransfer = z.infer<typeof insertStoreTransferSchema>;
 export type StoreTransfer = typeof storeTransfers.$inferSelect;
 
+export type InsertTransferLine = z.infer<typeof insertTransferLineSchema>;
+export type TransferLine = typeof transferLines.$inferSelect;
+
+export type InsertTransferLineAllocation = z.infer<typeof insertTransferLineAllocationSchema>;
+export type TransferLineAllocation = typeof transferLineAllocations.$inferSelect;
+
 // Extended types for API responses
 export type JournalEntryWithLines = JournalEntry & {
   lines: (JournalLine & {
@@ -484,11 +516,16 @@ export type ItemDepartmentPriceWithDepartment = ItemDepartmentPrice & {
   department?: Department;
 };
 
+// Extended type for TransferLine with item info
+export type TransferLineWithItem = TransferLine & {
+  item?: Item;
+};
+
 // Extended type for StoreTransfer with related info
 export type StoreTransferWithDetails = StoreTransfer & {
   sourceWarehouse?: Warehouse;
   destinationWarehouse?: Warehouse;
-  item?: Item;
+  lines?: TransferLineWithItem[];
 };
 
 // Transfer status labels in Arabic

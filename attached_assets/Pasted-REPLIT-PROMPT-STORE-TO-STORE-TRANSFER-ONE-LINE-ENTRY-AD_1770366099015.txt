@@ -1,0 +1,246 @@
+REPLIT PROMPT – STORE TO STORE TRANSFER (ONE-LINE ENTRY + ADVANCED SEARCH + FEFO AUTO-PICK)
+الميزة: تحويل مخزني بين الأقسام (مخزن → مخزن) “بسطر واحد احترافي”
+Arabic RTL + Peachtree/Sage Web Theme + SQL Server + سريع + بدون تسعير + محاسبي
+
+====================================================================================================
+0) الهدف (Objective)
+====================================================================================================
+نعدل شاشة التحويل المخزني بحيث تكون “سلسة”:
+1) لا يوجد Box منفصل لاختيار الصنف ثم ينزل سطر.
+2) نفس سطر الإدخال هو سطر الحركة.
+3) المستخدم يكتب/يمسح (باركود / كود / اسم) داخل عمود “الصنف” في نفس السطر.
+4) النظام يعمل Advanced Search (اللي اتفقنا عليه) ويختار الصنف بسرعة.
+5) بمجرد اختيار الصنف:
+   - النظام يعمل FEFO Auto-Pick من مخزن المصدر (الأقرب صلاحية أولًا) بشكل Preview.
+6) المستخدم يحدد الكمية والوحدة.
+7) الوحدة الافتراضية للصنف = الوحدة الكبرى (Accounting-friendly).
+8) لا يتم إنشاء كل السطور مرة واحدة؛ كل اختيار = سطر واحد فقط.
+
+⚠️ التحويل ليس بيع، لا أسعار، لا إيراد/مصروف، فقط مخزون وتكلفة.
+
+====================================================================================================
+1) قواعد العمل (Business Rules) – صارمة
+====================================================================================================
+A) إدخال سطر واحد
+- يوجد Grid للسطور.
+- أول سطر دائمًا “Editable”.
+- عمود الصنف هو نفسه حقل البحث (Inline Search).
+- عند اختيار صنف: يتم “تثبيت” السطر + فتح سطر جديد فارغ تلقائيًا.
+
+B) Advanced Search (نفس اللي عرفناه)
+- البحث يدعم:
+  1) Barcode (Scanner) -> Resolve فوري
+  2) ItemCode
+  3) اسم عربي/إنجليزي + مطابقة جزئية
+- ترتيب الأفضلية:
+  Barcode -> ItemCode -> Exact Name -> Partial Name
+- يفضل عدم تحميل قائمة ضخمة، البحث عبر API + Pagination.
+
+C) FEFO Auto-Pick (Preview + Allocation)
+- بعد تثبيت الصنف واختيار مخزن المصدر:
+  - لو HasExpiry = 1:
+    - النظام يجلب Lots صالحة من مخزن المصدر
+    - يرتب ExpiryDate ASC ثم ReceivedDate ASC
+    - يعمل Preview: “سيسحب من اللوت الأقرب”
+  - لو HasExpiry = 0:
+    - لا Lots/Expiry، السحب من الرصيد الإجمالي.
+
+D) الوحدة الافتراضية
+- Default Unit = MajorUnit (الوحدة الكبرى).
+- التخزين/الحركات تتم بالوحدة الصغرى QtyInMinor.
+- عند إدخال QtyMajor:
+  QtyInMinor = QtyMajor * ConversionFactor
+- ConversionFactor من كارت الصنف (Major->Minor).
+
+E) منع الأخطاء
+- يمنع تحويل كمية > المتاح (حسب FEFO للصلاحية أو إجمالي الرصيد لغير الصلاحية).
+- يمنع التحويل من Lot منتهي الصلاحية.
+- لا تظهر أي أسعار (بيع/أقسام).
+
+====================================================================================================
+2) واجهة المستخدم (UI) – تصميم احترافي سهل
+====================================================================================================
+Screen: “تحويل مخزني بين الأقسام”
+
+Header (فوق):
+- TransferNo (Auto)
+- TransferDate (Default Today)
+- SourceWarehouse (مطلوب)
+- DestinationWarehouse (مطلوب)
+- Status: Draft / Posted
+
+Grid (السطور) – سطر واحد في كل مرة:
+Columns:
+1) الصنف (Inline Search Input)  [Barcode/Code/Name]
+2) الوحدة (Dropdown) Default = MajorUnit
+3) الكمية (Numeric) Default = 1
+4) المتاح (Read-only) حسب مخزن المصدر
+5) HasExpiry Badge (Read-only)
+6) FEFO Preview (Read-only مختصر):
+   - “Lot1(Exp:xx) -> Qty … + Lot2 …”
+7) ملاحظات (اختياري)
+8) حذف السطر
+
+Inline Search UX:
+- Focus ثابت في عمود الصنف للسطر الجاري.
+- Scanner يكتب + Enter:
+  - Enter => Resolve API فوري -> يثبت الصنف.
+- لو كتابة:
+  - بعد 250ms debounce يظهر Dropdown Suggestions (Top 10) داخل نفس الخلية.
+- اختيار الصنف:
+  - يثبت الصنف
+  - يملأ الوحدة الافتراضية = الكبرى
+  - يحسب المتاح
+  - يعمل FEFO preview تلقائي
+  - يفتح سطر جديد فارغ تحت مباشرة
+
+Buttons:
+- “ترحيل التحويل” (Post)
+- “حفظ كمسودة”
+- “إلغاء”
+
+Messages:
+- رسائل عربية واضحة عند:
+  - صنف غير موجود
+  - كمية أكبر من المتاح
+  - لا يوجد Lots صالحة (منتهي/0 رصيد)
+  - اختيار مخزن مصدر/وجهة غير صحيح
+
+====================================================================================================
+3) قاعدة البيانات (SQL Server) – الأساس (مُلزم)
+====================================================================================================
+A) Items
+- HasExpiry BIT NOT NULL DEFAULT 0
+- MajorUnitID, MinorUnitID, ConversionFactor (أو جدول Units)
+
+B) Warehouses
+- WarehouseID (PK) … إلخ
+
+C) InventoryLots (لابد فيها WarehouseID)
+- LotID (PK)
+- ItemID
+- WarehouseID
+- ExpiryDate (NULL if HasExpiry=0)
+- ReceivedDate
+- PurchasePrice
+- QtyInMinor
+Indexes:
+- IX_Lots_Item_Warehouse_Expiry (ItemID, WarehouseID, ExpiryDate)
+
+D) InventoryLotMovements
+- MovementID
+- LotID
+- WarehouseID
+- TxDate
+- TxType (IN/OUT/TRANSFER)
+- QtyChangeInMinor
+- UnitCost
+- ReferenceType='TRANSFER'
+- ReferenceID=TransferNo
+
+E) Transfer Header/Lines (جديد)
+TransferHeaders:
+- TransferID (PK)
+- TransferNo (Unique)
+- TransferDate
+- SourceWarehouseID
+- DestinationWarehouseID
+- Status (Draft/Posted)
+- CreatedBy, CreatedAt
+
+TransferLines:
+- LineID (PK)
+- TransferID (FK)
+- ItemID
+- UnitID (Major/Minor)
+- QtyEntered (بالوحدة المختارة)
+- QtyInMinor (محسوبة)
+- FefoSummary (اختياري للتدقيق)
+- CreatedAt
+
+TransferLineAllocations (للتدقيق والـAudit – مهم):
+- AllocationID (PK)
+- LineID (FK)
+- SourceLotID
+- ExpiryDate
+- QtyOutInMinor
+- PurchasePrice
+- DestinationLotID (لو تم إنشاء/استخدام لوت في المخزن الوجهة)
+
+====================================================================================================
+4) APIs المطلوبة (سريعة ومباشرة)
+====================================================================================================
+A) Advanced Item Search
+- GET /items/lookup?query=&warehouseId=&limit=10
+returns:
+- itemId, itemCode, itemNameAR, hasExpiry, majorUnit, minorUnit, conversionFactor, availableQtyMajor, availableQtyMinor
+
+B) Barcode Resolve (لو موجود)
+- GET /barcode/resolve?value=
+returns found + itemId
+
+C) FEFO Preview (بعد اختيار الصنف)
+- GET /transfer/fefo-preview?itemId=&warehouseId=&requiredQtyInMinor=&date=
+returns:
+- allocations: [{lotId, expiryDate, qtyAllocatedInMinor, qtyAvailableInMinor, purchasePrice}]
+- shortageInMinor (لو في عجز)
+
+D) Create Draft / Save Draft
+- POST /transfers/draft
+payload:
+{
+  transferDate, sourceWarehouseId, destinationWarehouseId,
+  lines: [{ itemId, unitId, qtyEntered }]
+}
+
+E) Post Transfer (ترحيل)
+- POST /transfers/{transferId}/post
+Rules:
+- Validate stock again (race condition)
+- Create OUT/IN movements
+- Create/Update destination lots بنفس ExpiryDate + PurchasePrice
+
+====================================================================================================
+5) منطق التنفيذ (Posting Logic) – بدون كلكعة
+====================================================================================================
+For each line:
+1) Convert qtyEntered -> QtyInMinor using conversionFactor حسب unitId.
+2) If item.hasExpiry=1:
+   - call FEFO allocation from sourceWarehouse
+   - for each allocation:
+     - OUT movement من sourceLot
+     - IN movement إلى destinationLot:
+       - ابحث عن Lot في الوجهة بنفس (ItemID, ExpiryDate, PurchasePrice)
+       - لو موجود: زوّد QtyInMinor
+       - لو غير موجود: Create Lot جديد بنفس التكلفة والصلاحية
+3) If item.hasExpiry=0:
+   - استخدم Lot واحد “ExpiryDate NULL” في كل مخزن (Design Choice):
+     - sourceLot = (ItemID + WarehouseID + ExpiryDate NULL)
+     - destinationLot = same concept
+   - حركة OUT/IN بنفس PurchasePrice (من آخر تكلفة أو متوسط حسب سياسة المخزون المستقبلية)
+   - IMPORTANT: لو لسه سياسة التكلفة غير محسومة لغير الصلاحية:
+     - استخدم Weighted Average على مستوى المخزن (اختيار) أو FIFO بدون Expiry (اختيار)
+     - لكن لا تستخدم أسعار الأقسام
+
+====================================================================================================
+6) اختبارات UI/UX إلزامية (Must Pass)
+====================================================================================================
+1) اختيار صنف بالباركود => يثبت السطر ويفتح سطر جديد فورًا.
+2) اختيار صنف بالاسم => Suggestions ثم تثبيت.
+3) Default Unit = MajorUnit.
+4) إدخال Qty=2 (Major) => يتحول لـ QtyInMinor صحيح.
+5) HasExpiry=1 => FEFO Preview يظهر breakdown.
+6) Qty أكبر من المتاح => يمنع ويظهر رسالة عربية.
+7) Post => ينقص من مخزن المصدر ويزيد في الوجهة بنفس التكلفة ونفس الصلاحية.
+
+====================================================================================================
+7) قواعد نهائية (Final Rules)
+====================================================================================================
+- التحويل = مخزن لمخزن فقط (Not Sale).
+- سطر واحد لكل اختيار، لا Bulk insert مرة واحدة.
+- عمود الصنف = نفس حقل البحث (Inline).
+- Default unit = الوحدة الكبرى، والحركات مخزنية بالوحدة الصغرى.
+- FEFO يحدد “من أي لوت” وليس “بسعر كام”.
+- لا أسعار أقسام/بيع في أي مكان في الشاشة.
+
+انتهى.

@@ -21,6 +21,8 @@ import {
   itemBarcodes,
   warehouses,
   storeTransfers,
+  transferLines,
+  transferLineAllocations,
   type User,
   type InsertUser,
   type Account,
@@ -62,6 +64,11 @@ import {
   type StoreTransfer,
   type InsertStoreTransfer,
   type StoreTransferWithDetails,
+  type TransferLine,
+  type InsertTransferLine,
+  type TransferLineAllocation,
+  type InsertTransferLineAllocation,
+  type TransferLineWithItem,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -175,8 +182,12 @@ export interface IStorage {
   // Store Transfers
   getTransfers(): Promise<StoreTransferWithDetails[]>;
   getTransfer(id: string): Promise<StoreTransferWithDetails | undefined>;
+  createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; notes?: string }[]): Promise<StoreTransfer>;
+  postTransfer(transferId: string): Promise<StoreTransfer>;
+  deleteTransfer(id: string): Promise<boolean>;
   getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
-  executeTransfer(data: InsertStoreTransfer): Promise<StoreTransfer>;
+  getItemAvailability(itemId: string, warehouseId: string): Promise<string>;
+  searchItemsForTransfer(query: string, warehouseId: string, limit?: number): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1191,8 +1202,13 @@ export class DatabaseStorage implements IStorage {
     for (const t of transfers) {
       const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
       const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
-      const [item] = await db.select().from(items).where(eq(items.id, t.itemId));
-      result.push({ ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, item });
+      const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, t.id));
+      const linesWithItems: TransferLineWithItem[] = [];
+      for (const line of lines) {
+        const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+        linesWithItems.push({ ...line, item });
+      }
+      result.push({ ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems });
     }
     return result;
   }
@@ -1202,8 +1218,182 @@ export class DatabaseStorage implements IStorage {
     if (!t) return undefined;
     const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
     const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
-    const [item] = await db.select().from(items).where(eq(items.id, t.itemId));
-    return { ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, item };
+    const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, t.id));
+    const linesWithItems: TransferLineWithItem[] = [];
+    for (const line of lines) {
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      linesWithItems.push({ ...line, item });
+    }
+    return { ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems };
+  }
+
+  async createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; notes?: string }[]): Promise<StoreTransfer> {
+    return await db.transaction(async (tx) => {
+      const [maxNum] = await tx.select({ max: sql<number>`COALESCE(MAX(${storeTransfers.transferNumber}), 0)` }).from(storeTransfers);
+      const nextNumber = (maxNum?.max || 0) + 1;
+
+      const [transfer] = await tx.insert(storeTransfers).values({
+        ...header,
+        transferNumber: nextNumber,
+        status: "draft" as const,
+      }).returning();
+
+      for (const line of lines) {
+        await tx.insert(transferLines).values({
+          transferId: transfer.id,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel as any,
+          qtyEntered: line.qtyEntered,
+          qtyInMinor: line.qtyInMinor,
+          notes: line.notes || null,
+        });
+      }
+
+      return transfer;
+    });
+  }
+
+  async postTransfer(transferId: string): Promise<StoreTransfer> {
+    const transfer = await this.getTransfer(transferId);
+    if (!transfer) throw new Error("التحويل غير موجود");
+    if (transfer.status !== "draft") throw new Error("لا يمكن ترحيل تحويل غير مسودة");
+    if (transfer.sourceWarehouseId === transfer.destinationWarehouseId) throw new Error("مخزن المصدر والوجهة يجب أن يكونا مختلفين");
+
+    const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, transferId));
+    if (lines.length === 0) throw new Error("لا توجد سطور في التحويل");
+
+    return await db.transaction(async (tx) => {
+      for (const line of lines) {
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        if (!item) throw new Error(`الصنف غير موجود: ${line.itemId}`);
+        if (item.category === "service") throw new Error(`الخدمات لا يمكن تحويلها: ${item.nameAr}`);
+
+        const requiredQty = parseFloat(line.qtyInMinor);
+        if (requiredQty <= 0) throw new Error(`الكمية يجب أن تكون أكبر من صفر: ${item.nameAr}`);
+
+        const lots = await tx.select().from(inventoryLots)
+          .where(and(
+            eq(inventoryLots.itemId, line.itemId),
+            eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
+            eq(inventoryLots.isActive, true),
+            sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+            or(
+              sql`${inventoryLots.expiryDate} IS NULL`,
+              sql`${inventoryLots.expiryDate} >= ${transfer.transferDate}`
+            )
+          ))
+          .orderBy(asc(inventoryLots.expiryDate), asc(inventoryLots.receivedDate));
+
+        let remaining = requiredQty;
+        const allocations: { lotId: string; expiryDate: string | null; allocatedQty: number; unitCost: string }[] = [];
+
+        for (const lot of lots) {
+          if (remaining <= 0) break;
+          const available = parseFloat(lot.qtyInMinor);
+          const allocated = Math.min(available, remaining);
+          allocations.push({
+            lotId: lot.id,
+            expiryDate: lot.expiryDate,
+            allocatedQty: allocated,
+            unitCost: lot.purchasePrice,
+          });
+          remaining -= allocated;
+        }
+
+        if (remaining > 0) {
+          throw new Error(`الكمية المتاحة غير كافية للصنف: ${item.nameAr}. العجز: ${remaining.toFixed(4)} وحدة`);
+        }
+
+        for (const alloc of allocations) {
+          await tx.execute(sql`
+            UPDATE inventory_lots 
+            SET qty_in_minor = qty_in_minor::numeric - ${alloc.allocatedQty.toFixed(4)}::numeric,
+                updated_at = NOW()
+            WHERE id = ${alloc.lotId}
+          `);
+
+          await tx.insert(inventoryLotMovements).values({
+            lotId: alloc.lotId,
+            warehouseId: transfer.sourceWarehouseId,
+            txType: "out" as const,
+            txDate: new Date(),
+            qtyChangeInMinor: (-alloc.allocatedQty).toFixed(4),
+            unitCost: alloc.unitCost,
+            referenceType: "transfer",
+            referenceId: transfer.id,
+          } as any);
+
+          const existingDestLots = await tx.select().from(inventoryLots)
+            .where(and(
+              eq(inventoryLots.itemId, line.itemId),
+              eq(inventoryLots.warehouseId, transfer.destinationWarehouseId),
+              eq(inventoryLots.isActive, true),
+              alloc.expiryDate
+                ? sql`${inventoryLots.expiryDate} = ${alloc.expiryDate}`
+                : sql`${inventoryLots.expiryDate} IS NULL`,
+              sql`${inventoryLots.purchasePrice}::numeric = ${alloc.unitCost}::numeric`
+            ));
+
+          let destLotId: string;
+
+          if (existingDestLots.length > 0) {
+            destLotId = existingDestLots[0].id;
+            await tx.execute(sql`
+              UPDATE inventory_lots 
+              SET qty_in_minor = qty_in_minor::numeric + ${alloc.allocatedQty.toFixed(4)}::numeric,
+                  updated_at = NOW()
+              WHERE id = ${destLotId}
+            `);
+          } else {
+            const [newLot] = await tx.insert(inventoryLots).values({
+              itemId: line.itemId,
+              warehouseId: transfer.destinationWarehouseId,
+              expiryDate: alloc.expiryDate || null,
+              receivedDate: transfer.transferDate,
+              purchasePrice: alloc.unitCost,
+              qtyInMinor: alloc.allocatedQty.toFixed(4),
+              isActive: true,
+            }).returning();
+            destLotId = newLot.id;
+          }
+
+          await tx.insert(inventoryLotMovements).values({
+            lotId: destLotId,
+            warehouseId: transfer.destinationWarehouseId,
+            txType: "in" as const,
+            txDate: new Date(),
+            qtyChangeInMinor: alloc.allocatedQty.toFixed(4),
+            unitCost: alloc.unitCost,
+            referenceType: "transfer",
+            referenceId: transfer.id,
+          } as any);
+
+          await tx.insert(transferLineAllocations).values({
+            lineId: line.id,
+            sourceLotId: alloc.lotId,
+            expiryDate: alloc.expiryDate || null,
+            qtyOutInMinor: alloc.allocatedQty.toFixed(4),
+            purchasePrice: alloc.unitCost,
+            destinationLotId: destLotId,
+          });
+        }
+      }
+
+      const [updated] = await tx.update(storeTransfers)
+        .set({ status: "executed" as const, executedAt: new Date() })
+        .where(eq(storeTransfers.id, transferId))
+        .returning();
+
+      return updated;
+    });
+  }
+
+  async deleteTransfer(id: string): Promise<boolean> {
+    const [t] = await db.select().from(storeTransfers).where(eq(storeTransfers.id, id));
+    if (!t) return false;
+    if (t.status !== "draft") throw new Error("لا يمكن حذف تحويل مُرحّل");
+    await db.delete(storeTransfers).where(eq(storeTransfers.id, id));
+    return true;
   }
 
   async getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any> {
@@ -1245,100 +1435,55 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async executeTransfer(data: InsertStoreTransfer): Promise<StoreTransfer> {
-    const item = await this.getItem(data.itemId);
-    if (!item) throw new Error("الصنف غير موجود");
-    if (item.category === "service") throw new Error("الخدمات لا يمكن تحويلها مخزنياً");
-    if (data.sourceWarehouseId === data.destinationWarehouseId) throw new Error("مخزن المصدر والوجهة يجب أن يكونا مختلفين");
+  async getItemAvailability(itemId: string, warehouseId: string): Promise<string> {
+    const [result] = await db.select({
+      total: sql<string>`COALESCE(SUM(${inventoryLots.qtyInMinor}::numeric), 0)::text`
+    })
+      .from(inventoryLots)
+      .where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.warehouseId, warehouseId),
+        eq(inventoryLots.isActive, true),
+        sql`${inventoryLots.qtyInMinor}::numeric > 0`
+      ));
+    return result?.total || "0";
+  }
 
-    const requiredQty = parseFloat(data.qtyInMinor);
-    if (requiredQty <= 0) throw new Error("الكمية يجب أن تكون أكبر من صفر");
+  async searchItemsForTransfer(query: string, warehouseId: string, limit: number = 10): Promise<any[]> {
+    const searchTerms = query.trim().split('%').filter(Boolean);
 
-    const preview = await this.getWarehouseFefoPreview(data.itemId, data.sourceWarehouseId, requiredQty, data.transferDate);
-    if (!preview.fulfilled) {
-      throw new Error(`الكمية المتاحة غير كافية. العجز: ${preview.shortfall} وحدة`);
+    let conditions: any[] = [eq(items.isActive, true)];
+
+    if (searchTerms.length > 1) {
+      const nameConditions = searchTerms.map(term =>
+        ilike(items.nameAr, `%${term}%`)
+      );
+      conditions.push(and(...nameConditions));
+    } else if (searchTerms.length === 1) {
+      const term = searchTerms[0];
+      conditions.push(
+        or(
+          ilike(items.itemCode, `%${term}%`),
+          ilike(items.nameAr, `%${term}%`),
+          ilike(items.nameEn || '', `%${term}%`)
+        )
+      );
     }
 
-    return await db.transaction(async (tx) => {
-      const [maxNum] = await tx.select({ max: sql<number>`COALESCE(MAX(${storeTransfers.transferNumber}), 0)` }).from(storeTransfers);
-      const nextNumber = (maxNum?.max || 0) + 1;
+    const results = await db.select().from(items)
+      .where(and(...conditions))
+      .orderBy(asc(items.itemCode))
+      .limit(limit);
 
-      const [transfer] = await tx.insert(storeTransfers).values({
-        ...data,
-        transferNumber: nextNumber,
-        status: "executed" as const,
-        executedAt: new Date(),
-      } as any).returning();
-
-      for (const alloc of preview.allocations) {
-        const allocQty = parseFloat(alloc.allocatedQty);
-
-        await tx.execute(sql`
-          UPDATE inventory_lots 
-          SET qty_in_minor = qty_in_minor::numeric - ${allocQty.toFixed(4)}::numeric,
-              updated_at = NOW()
-          WHERE id = ${alloc.lotId}
-        `);
-
-        await tx.insert(inventoryLotMovements).values({
-          lotId: alloc.lotId,
-          warehouseId: data.sourceWarehouseId,
-          txType: "out" as const,
-          txDate: new Date(),
-          qtyChangeInMinor: (-allocQty).toFixed(4),
-          unitCost: alloc.unitCost,
-          referenceType: "transfer",
-          referenceId: transfer.id,
-        } as any);
-
-        const existingDestLots = await tx.select().from(inventoryLots)
-          .where(and(
-            eq(inventoryLots.itemId, data.itemId),
-            eq(inventoryLots.warehouseId, data.destinationWarehouseId),
-            eq(inventoryLots.isActive, true),
-            alloc.expiryDate
-              ? sql`${inventoryLots.expiryDate} = ${alloc.expiryDate}`
-              : sql`${inventoryLots.expiryDate} IS NULL`,
-            sql`${inventoryLots.purchasePrice}::numeric = ${alloc.unitCost}::numeric`
-          ));
-
-        let destLotId: string;
-
-        if (existingDestLots.length > 0) {
-          destLotId = existingDestLots[0].id;
-          await tx.execute(sql`
-            UPDATE inventory_lots 
-            SET qty_in_minor = qty_in_minor::numeric + ${allocQty.toFixed(4)}::numeric,
-                updated_at = NOW()
-            WHERE id = ${destLotId}
-          `);
-        } else {
-          const [newLot] = await tx.insert(inventoryLots).values({
-            itemId: data.itemId,
-            warehouseId: data.destinationWarehouseId,
-            expiryDate: alloc.expiryDate || null,
-            receivedDate: data.transferDate,
-            purchasePrice: alloc.unitCost,
-            qtyInMinor: allocQty.toFixed(4),
-            isActive: true,
-          }).returning();
-          destLotId = newLot.id;
-        }
-
-        await tx.insert(inventoryLotMovements).values({
-          lotId: destLotId,
-          warehouseId: data.destinationWarehouseId,
-          txType: "in" as const,
-          txDate: new Date(),
-          qtyChangeInMinor: allocQty.toFixed(4),
-          unitCost: alloc.unitCost,
-          referenceType: "transfer",
-          referenceId: transfer.id,
-        } as any);
-      }
-
-      return transfer;
-    });
+    const enriched = [];
+    for (const item of results) {
+      const avail = await this.getItemAvailability(item.id, warehouseId);
+      enriched.push({
+        ...item,
+        availableQtyMinor: avail,
+      });
+    }
+    return enriched;
   }
 }
 
