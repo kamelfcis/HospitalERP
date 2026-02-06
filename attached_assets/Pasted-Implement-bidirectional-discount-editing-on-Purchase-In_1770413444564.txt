@@ -1,0 +1,88 @@
+Implement bidirectional discount editing on Purchase Invoice line items.
+Current state: Discount% is editable but DiscountValue is locked.
+Required: BOTH Discount% and DiscountValue are editable, and they must stay consistent with PurchasePrice and SellingPrice.
+Additionally: DiscountValue must ALWAYS be displayed as an auto-calculated output even if the user never edits it.
+
+CONSTANT:
+- SellingPrice (sale price) is the fixed reference per item line (readonly).
+- Relationship model (must use consistently):
+  - discountPercent = (discountValue / sellingPrice) * 100
+  - purchasePrice = sellingPrice - discountValue
+  - discountPercent = (1 - purchasePrice / sellingPrice) * 100
+All three must always stay synchronized.
+
+LINE FIELDS (per item):
+- sellingPrice (readonly)
+- purchasePrice (editable)
+- discountPercent (editable)
+- discountValue (editable BUT ALSO always visible as computed output)
+- computed: valueBeforeVAT, VAT, valueAfterVAT (existing)
+
+UI REQUIREMENT (NEW):
+- Even if the user never touches DiscountValue, it must show automatically as a live computed result next to Discount%.
+- If user edits Discount%, DiscountValue updates instantly.
+- If user edits PurchasePrice, DiscountValue updates instantly.
+- If user edits DiscountValue, it acts as driver and updates Discount% and PurchasePrice.
+
+RULES:
+1) Any of these inputs can be the “driver”:
+   - If user edits purchasePrice:
+     - recompute discountValue = sellingPrice - purchasePrice
+     - recompute discountPercent = (discountValue / sellingPrice) * 100
+   - If user edits discountPercent:
+     - clamp 0..99.99
+     - recompute discountValue = sellingPrice * discountPercent/100
+     - recompute purchasePrice = sellingPrice - discountValue
+   - If user edits discountValue:
+     - clamp 0..sellingPrice
+     - recompute discountPercent = (discountValue / sellingPrice) * 100
+     - recompute purchasePrice = sellingPrice - discountValue
+
+2) Rounding and precision (critical):
+- Use consistent rounding:
+  - Percent: 2 decimals
+  - Money: 2 decimals
+- Never allow negative purchasePrice.
+- If sellingPrice is 0: disable discount editing and show error (item setup issue).
+
+3) UX details (prevent loops and keep stable):
+- Track lastEditedDriver per line: "PURCHASE" | "PERCENT" | "VALUE"
+- Update other fields based on driver (avoid infinite loops).
+- On blur: normalize and round values.
+- Show non-blocking warning if purchasePrice > sellingPrice (negative discount).
+  - Default behavior: BLOCK save/approve with inline error unless explicitly allowed by config (default block).
+- Inline errors:
+  - discountValue > sellingPrice
+  - discountPercent >= 100
+  - purchasePrice < 0
+
+4) Persistence & validation:
+Preferred persistence:
+- Persist purchasePrice + discountPercent + discountValue for audit clarity.
+Backend must validate consistency on save/approve:
+- Recompute and compare within tolerance (0.01) to prevent tampering or rounding drift.
+
+5) Tests (mandatory):
+Unit tests:
+- selling=100, percent=10 => value=10, purchase=90
+- selling=100, value=10 => percent=10, purchase=90
+- selling=100, purchase=90 => value=10, percent=10
+- Live display rule:
+  - user edits percent only => value auto-displays correctly
+  - user edits purchase only => value auto-displays correctly
+Clamp tests:
+- value>selling => error
+- percent>=100 => error
+- purchase<0 => error
+Integration/UI tests:
+- Edit discountValue => percent + purchase update live
+- Edit percent => value + purchase update live
+- Edit purchase => value + percent update live
+- Ensure no rerender loops
+- Totals update correctly
+
+Deliver:
+- Frontend changes (enable discountValue + always display it live)
+- Backend validation for consistency
+- Full tests added
+Implement now.

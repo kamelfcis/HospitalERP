@@ -2661,16 +2661,17 @@ export class DatabaseStorage implements IStorage {
         const vatRate = parseFloat(line.vatRate) || 0;
 
         const valueBeforeVat = qty * purchasePrice;
-        const lineDiscountValue = parseFloat(line.sellingPrice || "0") > 0
-          ? qty * parseFloat(line.sellingPrice) * (lineDiscountPct / 100)
-          : 0;
+        const sellingPrice = parseFloat(line.sellingPrice || "0");
+        const lineDiscountValue = line.lineDiscountValue !== undefined
+          ? parseFloat(line.lineDiscountValue) || 0
+          : (sellingPrice > 0 ? +(sellingPrice * (lineDiscountPct / 100)).toFixed(2) : 0);
         const vatBase = (qty + bonusQty) * purchasePrice;
         const vatAmount = vatBase * (vatRate / 100);
         const valueAfterVat = valueBeforeVat + vatAmount;
 
         totalBeforeVat += valueBeforeVat;
         totalVat += vatAmount;
-        totalLineDiscounts += lineDiscountValue;
+        totalLineDiscounts += lineDiscountValue * qty;
 
         await tx.insert(purchaseInvoiceLines).values({
           invoiceId,

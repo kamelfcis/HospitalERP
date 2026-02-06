@@ -41,8 +41,16 @@ function recalcLine(line: InvoiceLineLocal): InvoiceLineLocal {
   const vatBase = +((qty + bonusQty) * purchasePrice).toFixed(2);
   const vatAmount = +(vatBase * (vatRate / 100)).toFixed(2);
   const valueAfterVat = +(valueBeforeVat + vatAmount).toFixed(2);
-  const lineDiscountValue = +(qty * sellingPrice * (lineDiscountPct / 100)).toFixed(2);
+  const lineDiscountValue = +(sellingPrice * (lineDiscountPct / 100)).toFixed(2);
   return { ...line, valueBeforeVat, vatAmount, valueAfterVat, lineDiscountValue };
+}
+
+function getLineDiscountErrors(ln: InvoiceLineLocal): { field: string; message: string }[] {
+  const errors: { field: string; message: string }[] = [];
+  if (ln.purchasePrice < 0) errors.push({ field: 'purchasePrice', message: 'سعر الشراء لا يمكن أن يكون سالب' });
+  if (ln.lineDiscountPct >= 100) errors.push({ field: 'discountPct', message: 'نسبة الخصم لا يمكن أن تكون 100% أو أكثر' });
+  if (ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice) errors.push({ field: 'discountValue', message: 'قيمة الخصم أكبر من سعر البيع' });
+  return errors;
 }
 
 function getUnitName(item: any, unitLevel: string): string {
@@ -162,13 +170,15 @@ export default function PurchaseInvoice() {
   }, [lines, discountType, discountValue]);
 
   const handlePurchasePriceChange = useCallback((index: number, val: string) => {
-    const newPrice = parseFloat(val) || 0;
+    const newPrice = Math.max(0, parseFloat(val) || 0);
     setLines(prev => {
       const updated = [...prev];
       const ln = { ...updated[index] };
       ln.purchasePrice = newPrice;
       if (ln.sellingPrice > 0) {
-        ln.lineDiscountPct = +Math.min(99, Math.max(0, (1 - newPrice / ln.sellingPrice) * 100)).toFixed(2);
+        const dv = +(ln.sellingPrice - newPrice).toFixed(2);
+        ln.lineDiscountValue = Math.max(0, dv);
+        ln.lineDiscountPct = +((ln.lineDiscountValue / ln.sellingPrice) * 100).toFixed(2);
       }
       updated[index] = recalcLine(ln);
       return updated;
@@ -176,12 +186,28 @@ export default function PurchaseInvoice() {
   }, []);
 
   const handleDiscountPctChange = useCallback((index: number, val: string) => {
-    const pct = Math.min(99, Math.max(0, parseFloat(val) || 0));
+    const pct = +Math.min(99.99, Math.max(0, parseFloat(val) || 0)).toFixed(2);
     setLines(prev => {
       const updated = [...prev];
       const ln = { ...updated[index] };
-      ln.lineDiscountPct = +pct.toFixed(2);
-      ln.purchasePrice = +(ln.sellingPrice * (1 - pct / 100)).toFixed(4);
+      ln.lineDiscountPct = pct;
+      ln.lineDiscountValue = +(ln.sellingPrice * (pct / 100)).toFixed(2);
+      ln.purchasePrice = +(ln.sellingPrice - ln.lineDiscountValue).toFixed(4);
+      updated[index] = recalcLine(ln);
+      return updated;
+    });
+  }, []);
+
+  const handleDiscountValueChange = useCallback((index: number, val: string) => {
+    setLines(prev => {
+      const updated = [...prev];
+      const ln = { ...updated[index] };
+      const dv = parseFloat(val) || 0;
+      ln.lineDiscountValue = +Math.min(ln.sellingPrice, Math.max(0, dv)).toFixed(2);
+      if (ln.sellingPrice > 0) {
+        ln.lineDiscountPct = +((ln.lineDiscountValue / ln.sellingPrice) * 100).toFixed(2);
+      }
+      ln.purchasePrice = +(ln.sellingPrice - ln.lineDiscountValue).toFixed(4);
       updated[index] = recalcLine(ln);
       return updated;
     });
@@ -200,6 +226,12 @@ export default function PurchaseInvoice() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const hasDiscountErrors = lines.some(ln =>
+        ln.purchasePrice < 0 || ln.lineDiscountPct >= 100 || (ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice)
+      );
+      if (hasDiscountErrors) {
+        throw new Error('يوجد أخطاء في بيانات الخصم، يرجى مراجعة الأسطر');
+      }
       const body = {
         lines: lines.map(ln => ({
           id: ln.id,
@@ -239,6 +271,12 @@ export default function PurchaseInvoice() {
 
   const approveMutation = useMutation({
     mutationFn: async () => {
+      const hasDiscountErrors = lines.some(ln =>
+        ln.purchasePrice < 0 || ln.lineDiscountPct >= 100 || (ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice)
+      );
+      if (hasDiscountErrors) {
+        throw new Error('يوجد أخطاء في بيانات الخصم، يرجى مراجعة الأسطر');
+      }
       const body = {
         lines: lines.map(ln => ({
           id: ln.id,
@@ -422,15 +460,18 @@ export default function PurchaseInvoice() {
                     <td className="text-center peachtree-amount">{formatNumber(ln.sellingPrice)}</td>
                     <td className="text-center">
                       {isDraft ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={ln.purchasePrice}
-                          onChange={(e) => handlePurchasePriceChange(i, e.target.value)}
-                          className={`peachtree-input w-[80px] text-center ${priceWarning ? "border-orange-400" : ""}`}
-                          data-testid={`input-purchase-price-${i}`}
-                        />
+                        <>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={ln.purchasePrice}
+                            onChange={(e) => handlePurchasePriceChange(i, e.target.value)}
+                            className={`peachtree-input w-[80px] text-center ${priceWarning ? "border-orange-400" : ""} ${ln.purchasePrice < 0 ? "border-red-400" : ""}`}
+                            data-testid={`input-purchase-price-${i}`}
+                          />
+                          {priceWarning && <span className="text-[10px] text-orange-500">سعر الشراء أعلى من البيع</span>}
+                        </>
                       ) : (
                         <span className="peachtree-amount">{formatNumber(ln.purchasePrice)}</span>
                       )}
@@ -441,17 +482,31 @@ export default function PurchaseInvoice() {
                           type="number"
                           step="0.01"
                           min="0"
-                          max="99"
+                          max="99.99"
                           value={ln.lineDiscountPct}
                           onChange={(e) => handleDiscountPctChange(i, e.target.value)}
-                          className="peachtree-input w-[60px] text-center"
+                          className={`peachtree-input w-[60px] text-center ${ln.lineDiscountPct >= 100 ? "border-red-400" : ""}`}
                           data-testid={`input-discount-pct-${i}`}
                         />
                       ) : (
                         <span className="peachtree-amount">{formatNumber(ln.lineDiscountPct)}</span>
                       )}
                     </td>
-                    <td className="text-center peachtree-amount">{formatNumber(ln.lineDiscountValue)}</td>
+                    <td className="text-center">
+                      {isDraft ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={ln.lineDiscountValue}
+                          onChange={(e) => handleDiscountValueChange(i, e.target.value)}
+                          className={`peachtree-input w-[80px] text-center ${ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice ? "border-red-400" : ""}`}
+                          data-testid={`input-discount-value-${i}`}
+                        />
+                      ) : (
+                        <span className="peachtree-amount">{formatNumber(ln.lineDiscountValue)}</span>
+                      )}
+                    </td>
                     <td className="text-center">
                       {isDraft ? (
                         <input

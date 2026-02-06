@@ -50,7 +50,7 @@ Preferred communication style: Simple, everyday language.
 - Bonus quantity (free units) tracking in receiving lines with automatic minor unit conversion.
 - Sale price mismatch warnings (orange) and near-expiry warnings (red, ≤6 months) in receiving entry.
 - Receiving-to-invoice conversion flow: posted_qty_only receivings can be converted to purchase invoices.
-- Purchase Invoice management with bidirectional price/discount calculations (discountPct = 1 - purchasePrice/sellingPrice).
+- Purchase Invoice management with full bidirectional discount editing: purchasePrice, discountPercent, and discountValue are all editable and stay synchronized. Relationship: discountValue = sellingPrice * (discountPercent/100), purchasePrice = sellingPrice - discountValue. Backend validates consistency within 0.02 tolerance on save and approve. Frontend blocks save/approve on validation errors (negative purchasePrice, discountPct >= 100, discountValue > sellingPrice).
 - VAT handling where base includes quantity + bonus quantity; invoice-level discount applied proportionally before VAT.
 - Invoice approval/costing workflow (draft → approved_costed status).
 - Multi-line, scan-first UX for store-to-store transfers with FEFO allocation (month/year based).

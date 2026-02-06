@@ -1823,6 +1823,40 @@ export async function registerRoutes(
     }
   });
 
+  function validateInvoiceLineDiscounts(lines: any[]): { lineIndex: number; field: string; messageAr: string }[] {
+    const errors: { lineIndex: number; field: string; messageAr: string }[] = [];
+    if (!Array.isArray(lines)) return errors;
+    const TOLERANCE = 0.02;
+    lines.forEach((ln: any, i: number) => {
+      const sp = parseFloat(ln.sellingPrice) || 0;
+      const pp = parseFloat(ln.purchasePrice) || 0;
+      const pct = parseFloat(ln.lineDiscountPct) || 0;
+      const dv = parseFloat(ln.lineDiscountValue) || 0;
+
+      if (pp < 0) {
+        errors.push({ lineIndex: i, field: "purchasePrice", messageAr: "سعر الشراء لا يمكن أن يكون سالب" });
+      }
+      if (pct >= 100) {
+        errors.push({ lineIndex: i, field: "lineDiscountPct", messageAr: "نسبة الخصم لا يمكن أن تكون 100% أو أكثر" });
+      }
+      if (sp > 0 && dv > sp + TOLERANCE) {
+        errors.push({ lineIndex: i, field: "lineDiscountValue", messageAr: "قيمة الخصم أكبر من سعر البيع" });
+      }
+
+      if (sp > 0) {
+        const expectedDv = +(sp * (pct / 100)).toFixed(2);
+        const expectedPp = +(sp - dv).toFixed(4);
+        if (Math.abs(dv - expectedDv) > TOLERANCE) {
+          errors.push({ lineIndex: i, field: "lineDiscountValue", messageAr: "قيمة الخصم غير متوافقة مع نسبة الخصم" });
+        }
+        if (Math.abs(pp - expectedPp) > TOLERANCE) {
+          errors.push({ lineIndex: i, field: "purchasePrice", messageAr: "سعر الشراء غير متوافق مع قيمة الخصم" });
+        }
+      }
+    });
+    return errors;
+  }
+
   app.patch("/api/purchase-invoices/:id", async (req, res) => {
     try {
       const invoice = await storage.getPurchaseInvoice(req.params.id);
@@ -1831,6 +1865,10 @@ export async function registerRoutes(
         return res.status(409).json({ message: "لا يمكن تعديل فاتورة معتمدة ومُسعّرة", code: "INVOICE_APPROVED" });
       }
       const { lines, ...headerUpdates } = req.body;
+      const discountErrors = validateInvoiceLineDiscounts(lines);
+      if (discountErrors.length > 0) {
+        return res.status(400).json({ message: "أخطاء في بيانات الخصم", lineErrors: discountErrors });
+      }
       const result = await storage.savePurchaseInvoice(req.params.id, lines, headerUpdates);
       res.json(result);
     } catch (error: any) {
@@ -1853,6 +1891,14 @@ export async function registerRoutes(
 
   app.post("/api/purchase-invoices/:id/approve", async (req, res) => {
     try {
+      const invoice = await storage.getPurchaseInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (invoice.lines && Array.isArray(invoice.lines)) {
+        const discountErrors = validateInvoiceLineDiscounts(invoice.lines);
+        if (discountErrors.length > 0) {
+          return res.status(400).json({ message: "أخطاء في بيانات الخصم - لا يمكن الاعتماد", lineErrors: discountErrors });
+        }
+      }
       const result = await storage.approvePurchaseInvoice(req.params.id);
       res.json(result);
     } catch (error: any) {
