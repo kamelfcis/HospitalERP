@@ -836,40 +836,43 @@ export default function StoreTransfers() {
               <table className="w-full text-[10px]" dir="rtl" data-testid="table-transfer-lines">
                 <thead>
                   <tr className="peachtree-grid-header">
-                    <th className="py-1 px-2 text-right font-semibold">اسم الصنف</th>
-                    <th className="py-1 px-2 text-right font-medium">كود الصنف</th>
-                    <th className="py-1 px-1 text-center font-medium w-8">📊</th>
-                    <th className="py-1 px-2 text-right font-medium">الوحدة</th>
-                    <th className="py-1 px-2 text-right font-medium">الكمية</th>
-                    <th className="py-1 px-2 text-right font-medium">الصلاحية</th>
-                    <th className="py-1 px-2 text-right font-medium">الرصيد المتاح</th>
-                    <th className="py-1 px-2 text-right font-medium">ملاحظات</th>
-                    {!isViewOnly && <th className="py-1 px-2 text-center font-medium">حذف</th>}
+                    <th className="py-1 px-2 text-right font-bold text-[13px]">اسم الصنف</th>
+                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">كود الصنف</th>
+                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">الوحدة</th>
+                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">الكمية</th>
+                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">الصلاحية</th>
+                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">الرصيد المتاح</th>
+                    <th className="py-1 px-2 text-right font-medium whitespace-nowrap">ملاحظات</th>
+                    {!isViewOnly && <th className="py-1 px-2 text-center font-medium whitespace-nowrap">حذف</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {formLines.length > 0 ? (
                     formLines.map((line, idx) => (
                       <tr key={line.id} className="peachtree-grid-row" data-testid={`row-line-${idx}`}>
-                        <td className="py-1 px-2 font-semibold text-foreground">{line.item?.nameAr || "—"}</td>
-                        <td className="py-1 px-2 font-mono">{line.item?.itemCode || "—"}</td>
-                        <td className="py-1 px-1 text-center">
-                          <button
-                            type="button"
-                            onClick={(e) => showAvailabilityPopup(line.itemId, line.item, e)}
-                            className="text-muted-foreground hover:text-foreground cursor-pointer text-[11px]"
-                            title="تواجد الصنف"
-                            data-testid={`button-avail-${idx}`}
-                          >
-                            📊
-                          </button>
+                        <td className="py-1.5 px-2" title={`${line.item?.nameAr || ""} — ${line.item?.itemCode || ""}`}>
+                          <div className="flex items-start gap-1">
+                            <span className="text-[14px] font-bold text-foreground leading-snug break-words" style={{ wordBreak: "break-word" }}>
+                              {line.item?.nameAr || "—"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => showAvailabilityPopup(line.itemId, line.item, e)}
+                              className="text-muted-foreground hover:text-foreground cursor-pointer text-[11px] shrink-0 mt-0.5"
+                              title="تواجد الصنف"
+                              data-testid={`button-avail-${idx}`}
+                            >
+                              📊
+                            </button>
+                          </div>
                         </td>
-                        <td className="py-1 px-2">{line.item ? getUnitName(line.item, line.unitLevel) : "—"}</td>
-                        <td className="py-1 px-2">{line.qtyEntered}</td>
-                        <td className="py-1 px-2">
+                        <td className="py-1 px-2 font-mono whitespace-nowrap">{line.item?.itemCode || "—"}</td>
+                        <td className="py-1 px-2 whitespace-nowrap">{line.item ? getUnitName(line.item, line.unitLevel) : "—"}</td>
+                        <td className="py-1 px-2 whitespace-nowrap">{line.qtyEntered}</td>
+                        <td className="py-1 px-2 whitespace-nowrap">
                           {line.selectedExpiryDate ? formatDateShort(line.selectedExpiryDate) : "—"}
                         </td>
-                        <td className="py-1 px-2">
+                        <td className="py-1 px-2 whitespace-nowrap">
                           {line.item ? formatAvailability(line.availableQtyMinor, line.unitLevel, line.item) : "—"}
                         </td>
                         <td className="py-1 px-2 text-muted-foreground">{line.notes || "—"}</td>
@@ -889,7 +892,7 @@ export default function StoreTransfers() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={isViewOnly ? 8 : 9} className="py-4 text-center text-muted-foreground">
+                      <td colSpan={isViewOnly ? 7 : 8} className="py-4 text-center text-muted-foreground">
                         لا توجد أصناف - اضغط "إضافة صنف" لإضافة أصناف
                       </td>
                     </tr>
