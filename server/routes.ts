@@ -1677,6 +1677,72 @@ export async function registerRoutes(
     }
   });
 
+  // ===== CONVERT RECEIVING TO PURCHASE INVOICE =====
+  app.post("/api/receivings/:id/convert-to-invoice", async (req, res) => {
+    try {
+      const invoice = await storage.convertReceivingToInvoice(req.params.id);
+      res.status(201).json(invoice);
+    } catch (error: any) {
+      if (error.message.includes("مسبقاً") || error.message.includes("أولاً") || error.message.includes("غير موجود")) {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== PURCHASE INVOICES =====
+  app.get("/api/purchase-invoices", async (req, res) => {
+    try {
+      const { supplierId, status, dateFrom, dateTo, page, pageSize } = req.query;
+      const result = await storage.getPurchaseInvoices({
+        supplierId: supplierId as string,
+        status: status as string,
+        dateFrom: dateFrom as string,
+        dateTo: dateTo as string,
+        page: page ? parseInt(page as string) : 1,
+        pageSize: pageSize ? parseInt(pageSize as string) : 20,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/purchase-invoices/:id", async (req, res) => {
+    try {
+      const invoice = await storage.getPurchaseInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      res.json(invoice);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/purchase-invoices/:id", async (req, res) => {
+    try {
+      const { lines, ...headerUpdates } = req.body;
+      const result = await storage.savePurchaseInvoice(req.params.id, lines, headerUpdates);
+      res.json(result);
+    } catch (error: any) {
+      if (error.message.includes("معتمدة") || error.message.includes("غير موجودة")) {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/purchase-invoices/:id/approve", async (req, res) => {
+    try {
+      const result = await storage.approvePurchaseInvoice(req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      if (error.message.includes("معتمدة") || error.message.includes("غير موجودة")) {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/items/:itemId/hints", async (req, res) => {
     try {
       const { supplierId, warehouseId } = req.query;

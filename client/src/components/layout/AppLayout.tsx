@@ -33,6 +33,7 @@ import {
   Package,
   ArrowLeftRight,
   Truck,
+  Receipt,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,11 @@ const mainNavItems = [
     title: "استلام من مورد",
     href: "/supplier-receiving",
     icon: Truck,
+  },
+  {
+    title: "فواتير الشراء",
+    href: "/purchase-invoices",
+    icon: Receipt,
   },
   {
     title: "تحويل مخزني",

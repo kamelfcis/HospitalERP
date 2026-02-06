@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,8 @@ interface ReceivingLineLocal {
   salePrice: number | null;
   lastPurchasePriceHint: number | null;
   lastSalePriceHint: number | null;
+  bonusQty: number;
+  bonusQtyInMinor: number;
   onHandInWarehouse: string;
   notes: string;
   isRejected: boolean;
@@ -55,6 +58,7 @@ function getUnitName(item: any, unitLevel: string): string {
 
 export default function SupplierReceiving() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const today = new Date().toISOString().split("T")[0];
 
   const [activeTab, setActiveTab] = useState<string>("log");
@@ -261,6 +265,8 @@ export default function SupplierReceiving() {
       salePrice: currentSalePrice || null,
       lastPurchasePriceHint: lastPurchasePrice || null,
       lastSalePriceHint: lastSalePrice ? parseFloat(String(lastSalePrice)) : null,
+      bonusQty: 0,
+      bonusQtyInMinor: 0,
       onHandInWarehouse: hints?.onHandMinor || "0",
       notes: "",
       isRejected: false,
@@ -307,6 +313,8 @@ export default function SupplierReceiving() {
         salePrice: line.salePrice ? parseFloat(line.salePrice as string) : null,
         lastPurchasePriceHint: line.purchasePrice ? parseFloat(line.purchasePrice as string) : null,
         lastSalePriceHint: line.salePriceHint ? parseFloat(line.salePriceHint as string) : null,
+        bonusQty: parseFloat(line.bonusQty as string) || 0,
+        bonusQtyInMinor: parseFloat(line.bonusQtyInMinor as string) || 0,
         onHandInWarehouse: "0",
         notes: line.notes || "",
         isRejected: line.isRejected || false,
@@ -381,6 +389,8 @@ export default function SupplierReceiving() {
           unitLevel: l.unitLevel,
           qtyEntered: String(l.qtyEntered),
           qtyInMinor: String(l.qtyInMinor),
+          bonusQty: String(l.bonusQty),
+          bonusQtyInMinor: String(l.bonusQtyInMinor),
           purchasePrice: String(l.purchasePrice),
           lineTotal: String(l.lineTotal),
           batchNumber: l.batchNumber || undefined,
@@ -430,6 +440,8 @@ export default function SupplierReceiving() {
           unitLevel: l.unitLevel,
           qtyEntered: String(l.qtyEntered),
           qtyInMinor: String(l.qtyInMinor),
+          bonusQty: String(l.bonusQty),
+          bonusQtyInMinor: String(l.bonusQtyInMinor),
           purchasePrice: String(l.purchasePrice),
           lineTotal: String(l.lineTotal),
           batchNumber: l.batchNumber || undefined,
@@ -475,17 +487,39 @@ export default function SupplierReceiving() {
     },
   });
 
+  const convertToInvoiceMutation = useMutation({
+    mutationFn: async (receivingId: string) => {
+      return apiRequest("POST", `/api/receivings/${receivingId}/convert-to-invoice`);
+    },
+    onSuccess: async (res) => {
+      const invoice = await res.json();
+      toast({ title: "تم التحويل إلى فاتورة شراء بنجاح" });
+      queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
+      navigate(`/purchase-invoices?id=${invoice.id}`);
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ في التحويل", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleConvertToInvoice = (receivingId: string) => {
+    convertToInvoiceMutation.mutate(receivingId);
+  };
+
   const isPending = saveDraftMutation.isPending || postReceivingMutation.isPending;
 
   const updateLine = useCallback((index: number, updates: Partial<ReceivingLineLocal>) => {
     setFormLines((prev) => {
       const copy = [...prev];
       const line = { ...copy[index], ...updates };
-      if ("qtyEntered" in updates || "unitLevel" in updates) {
+      if ("qtyEntered" in updates || "bonusQty" in updates || "unitLevel" in updates) {
         const qty = updates.qtyEntered ?? line.qtyEntered;
+        const bonus = updates.bonusQty ?? line.bonusQty;
         const unitLvl = updates.unitLevel ?? line.unitLevel;
         line.qtyEntered = qty;
+        line.bonusQty = bonus;
         line.qtyInMinor = calculateQtyInMinor(qty, unitLvl, line.item);
+        line.bonusQtyInMinor = calculateQtyInMinor(bonus, unitLvl, line.item);
         line.unitLevel = unitLvl;
       }
       copy[index] = line;
@@ -564,6 +598,8 @@ export default function SupplierReceiving() {
         salePrice: currentSalePrice || null,
         lastPurchasePriceHint: lastPurchasePrice || null,
         lastSalePriceHint: lastSalePrice ? parseFloat(String(lastSalePrice)) : null,
+        bonusQty: 0,
+        bonusQtyInMinor: 0,
         onHandInWarehouse: hints?.onHandMinor || "0",
         notes: "",
         isRejected: false,
@@ -744,6 +780,7 @@ export default function SupplierReceiving() {
                 <SelectItem value="all">الكل</SelectItem>
                 <SelectItem value="draft">مسودة</SelectItem>
                 <SelectItem value="posted">مُرحّل</SelectItem>
+                <SelectItem value="posted_qty_only">مُرحّل (كمية فقط)</SelectItem>
               </SelectContent>
             </Select>
             <Input
@@ -825,6 +862,19 @@ export default function SupplierReceiving() {
                                     {deleteDraftMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3 ml-1" />}
                                     حذف
                                   </Button>
+                                )}
+                                {r.status === "posted_qty_only" && !(r as any).convertedToInvoiceId && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleConvertToInvoice(r.id)}
+                                    data-testid={`button-convert-${r.id}`}
+                                  >
+                                    تحويل إلى فاتورة
+                                  </Button>
+                                )}
+                                {(r as any).convertedToInvoiceId && (
+                                  <Badge variant="default" className="bg-green-600 text-white text-[10px] no-default-hover-elevate no-default-active-elevate">تم التحويل</Badge>
                                 )}
                               </div>
                             </td>
@@ -1030,6 +1080,7 @@ export default function SupplierReceiving() {
                     <th className="py-1 px-2 text-right font-bold text-[13px]">الصنف</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">هدية</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">رقم التشغيلة</th>
@@ -1037,6 +1088,7 @@ export default function SupplierReceiving() {
                     <th className="py-1 px-2 text-right whitespace-nowrap">آخر بيع</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">رصيد المخزن</th>
                     <th className="py-1 px-2 text-center whitespace-nowrap">إحصاء</th>
+                    <th className="py-1 px-2 text-center whitespace-nowrap">تنبيه</th>
                     {!isViewOnly && <th className="py-1 px-2 text-center whitespace-nowrap">حذف</th>}
                   </tr>
                 </thead>
@@ -1123,6 +1175,22 @@ export default function SupplierReceiving() {
                         </td>
                         <td className="py-0.5 px-2 whitespace-nowrap">
                           {isViewOnly ? (
+                            <span>{line.bonusQty}</span>
+                          ) : (
+                            <input
+                              type="number"
+                              value={line.bonusQty || ""}
+                              onChange={(e) => updateLine(idx, { bonusQty: parseFloat(e.target.value) || 0 })}
+                              className="w-[55px] h-6 text-[11px] px-1 border rounded text-center bg-transparent"
+                              placeholder="0"
+                              min="0"
+                              step="any"
+                              data-testid={`input-bonus-qty-${idx}`}
+                            />
+                          )}
+                        </td>
+                        <td className="py-0.5 px-2 whitespace-nowrap">
+                          {isViewOnly ? (
                             <span>{line.salePrice != null ? line.salePrice.toFixed(2) : "—"}</span>
                           ) : (
                             <input
@@ -1198,6 +1266,25 @@ export default function SupplierReceiving() {
                             <BarChart3 className="h-3 w-3" />
                           </Button>
                         </td>
+                        <td className="py-0.5 px-2 text-center whitespace-nowrap">
+                          <div className="flex gap-0.5 items-center justify-center">
+                            {line.salePrice != null && line.lastSalePriceHint != null && line.lastSalePriceHint > 0 && 
+                             Math.abs(line.salePrice - line.lastSalePriceHint) > 0.01 && (
+                              <span title={`سعر البيع (${line.salePrice}) يختلف عن آخر سعر (${line.lastSalePriceHint})`} className="text-orange-500">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                              </span>
+                            )}
+                            {line.expiryMonth && line.expiryYear && (() => {
+                              const now = new Date();
+                              const monthsUntilExpiry = (line.expiryYear - now.getFullYear()) * 12 + (line.expiryMonth - (now.getMonth() + 1));
+                              return monthsUntilExpiry <= 6 && monthsUntilExpiry >= 0;
+                            })() && (
+                              <span title="صلاحية قريبة (أقل من 6 أشهر)" className="text-red-500">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         {!isViewOnly && (
                           <td className="py-0.5 px-2 text-center">
                             <Button
@@ -1214,7 +1301,7 @@ export default function SupplierReceiving() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={isViewOnly ? 11 : 12} className="py-4 text-center text-muted-foreground">
+                      <td colSpan={isViewOnly ? 13 : 14} className="py-4 text-center text-muted-foreground">
                         لا توجد أصناف - اضغط "إضافة صنف" أو امسح الباركود
                       </td>
                     </tr>
@@ -1225,7 +1312,7 @@ export default function SupplierReceiving() {
                     <tr className="border-t font-bold">
                       <td colSpan={3} className="py-1 px-2 text-left">إجمالي الأصناف</td>
                       <td className="py-1 px-2 font-mono">{formLines.length}</td>
-                      <td colSpan={isViewOnly ? 7 : 8}></td>
+                      <td colSpan={isViewOnly ? 9 : 10}></td>
                     </tr>
                   </tfoot>
                 )}

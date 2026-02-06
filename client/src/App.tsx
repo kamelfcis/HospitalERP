@@ -23,6 +23,7 @@ import ItemsList from "@/pages/ItemsList";
 import ItemCard from "@/pages/ItemCard";
 import StoreTransfers from "@/pages/StoreTransfers";
 import SupplierReceiving from "@/pages/SupplierReceiving";
+import PurchaseInvoice from "@/pages/PurchaseInvoice";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -48,6 +49,7 @@ function Router() {
         <Route path="/items/:id" component={ItemCard} />
         <Route path="/store-transfers" component={StoreTransfers} />
         <Route path="/supplier-receiving" component={SupplierReceiving} />
+        <Route path="/purchase-invoices" component={PurchaseInvoice} />
         <Route path="/audit-log" component={AuditLog} />
         <Route component={NotFound} />
       </Switch>

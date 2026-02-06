@@ -1,0 +1,211 @@
+You are continuing an existing Hospital/Pharmacy ERP on Replit (NestJS + Prisma + PostgreSQL, React + TypeScript).
+Implement the strongest purchasing receiving flow: Qty-Only Receiving with Pending Cost and later Purchase Invoice costing.
+Focus on:
+1) Screen: "استلام من مورد" (Receiving)
+2) Screen: Receiving Register (list)
+3) Screen: "فاتورة شراء" (Purchase Invoice) created from a Receiving document.
+
+CRITICAL GLOBAL RULE (MUST APPLY SYSTEM-WIDE):
+- Expiry Date handling across the ENTIRE system is MONTH/YEAR only.
+- NO day component is allowed anywhere.
+- Expiry is represented as (expiryMonth, expiryYear).
+- Use end-of-month semantics for comparisons and FEFO ordering (expiryYear, expiryMonth).
+- DB must store expiryMonth INT, expiryYear INT only.
+
+RECEIVING ("استلام من مورد") — UPDATED REQUIREMENTS
+A) Header (single-row sticky container, mandatory fields)
+- Supplier (REQUIRED, advanced search)
+- Supplier Invoice Number (REQUIRED, UNIQUE per supplier) with DB unique index (supplierId, supplierInvoiceNo)
+- Receiving Warehouse (REQUIRED)
+- Date/Time, Notes, Status (DRAFT / POSTED_QTY_ONLY)
+- Save Draft + Post (idempotent, transactional)
+
+B) Line Entry (fast like transfer screen)
+Line columns MUST include:
+- Item
+- Unit (default = major unit)
+- Qty (default = 1)
+- BONUS Qty (new, default = 0)  [free units]
+- BatchNo (if required)
+- ExpiryMonth/ExpiryYear (if required)
+- Selling Price (EDITABLE)
+- Read-only hints (from LAST RECEIVING of same item):
+  - lastReceivingSalePrice (read-only)
+  - lastReceivingPurchasePrice (read-only)
+- OnHand in selected warehouse (shown inline)
+- "إحصاء" icon (opens panel showing OnHand across ALL warehouses with expiry/batch breakdown)
+- Warnings icon
+
+BONUS QTY RULES:
+- Total received units for stock increase = Qty + BonusQty
+- BonusQty is FREE COST (0 unit cost) at receiving stage.
+- BonusQty must still be part of taxable base if VAT applies in Purchase Invoice (see invoice section).
+- The receiving screen itself does NOT calculate VAT and does NOT set purchase cost.
+
+C) Warnings & Decision support (non-blocking toasts)
+- Sale price mismatch toast + icon
+- Expiry near expiry toast + icon (threshold configurable)
+- Batch duplication mismatch requires explicit confirmation
+- Use month/year only for expiry display and logic
+
+D) Posting logic (qty-only, pending cost)
+On POST:
+- Validate required fields; enforce uniqueness of supplierInvoiceNo per supplier.
+- Validate batch/expiry (month/year only).
+- Transaction:
+  - ReceivingHeader status=POSTED_QTY_ONLY
+  - ReceivingLines stored with qty and bonusQty
+  - InventoryLedger qtyIn = qty + bonusQty
+  - StockBalance update accordingly
+  - ValuationLayers:
+    - Create two layers OR one layer with split flags:
+      1) Paid Layer: qty = Qty, unitCost = 0, costStatus=PENDING
+      2) Bonus Layer: qty = BonusQty, unitCost = 0, costStatus=BONUS_PENDING (or PENDING with isBonus=true)
+  - Post GL via PostingRules: Dr UncostedInventory / Cr GRNI_Clearing
+Return posted doc number + printable receiving note.
+
+RECEIVING REGISTER (LIST) — NEW
+Create a register screen listing receiving documents with:
+- Filters: date range, supplier, warehouse, status, and "Converted to Purchase Invoice" (Yes/No).
+- Visual color indicator for conversion:
+  - Not converted: normal color
+  - Converted: highlighted/green badge "تم التحويل"
+- Action per row: "تحويل إلى فاتورة شراء" (Convert to Purchase Invoice)
+- Prevent converting same receiving twice (idempotent + DB constraint).
+
+CONVERT TO PURCHASE INVOICE — NEW FLOW
+When clicking "تحويل إلى فاتورة شراء":
+- Create a PurchaseInvoiceHeader in DRAFT based on the receiving:
+  - supplierId, supplierInvoiceNo copied
+  - warehouse copied
+  - invoiceDate default = receivingDate (editable)
+- Create PurchaseInvoiceLines prefilled from receiving lines:
+  - itemId, unitId, qtyInvoiced = Qty
+  - bonusQty carried (bonusQty)
+  - batch/expiry copied
+  - sellingPrice copied (for reference and fixed constraint)
+  - lastReceiving hints copied (read-only)
+- Mark receiving header as converted with reference purchaseInvoiceId.
+- Open the Purchase Invoice screen immediately.
+
+PURCHASE INVOICE SCREEN ("فاتورة شراء") — HIGH-END UX + ERROR-PROOF
+Goal: very easy, fast, minimal scrolling, accountant-friendly layout.
+
+1) Layout rules (reduce scrolling)
+- Sticky header row with:
+  - Supplier (locked from receiving; editable only with strong warning)
+  - Supplier Invoice Number (locked; unique; editable only with audit)
+  - Warehouse (locked)
+  - InvoiceDate
+  - Status badge: DRAFT / APPROVED_COSTED
+- Below header: compact grid with line items (no horizontal scroll as much as possible; use responsive columns + column grouping).
+- Right side summary panel (sticky) showing totals:
+  - Total before VAT
+  - Total VAT
+  - Total after VAT
+  - Total line discounts
+  - Invoice-level discount (value or %)
+  - Net payable
+
+2) Line columns and computed fields
+Each line must have:
+- Item (readonly)
+- Unit (readonly, from receiving)
+- Qty (readonly = Qty)
+- BonusQty (readonly)
+- SellingPrice (readonly as fixed reference / constant in equation)
+- PurchasePrice (editable)  [this is the "net purchase unit price before VAT AFTER line discount" or define clearly]
+- LineDiscount% (editable)
+- LineDiscountValue (computed or editable optional)
+- VAT Rate (editable or default by item VAT group)
+- ValueBeforeVAT (computed)
+- VAT Amount (computed)
+- ValueAfterVAT (computed)
+- Batch/Expiry (readonly month/year)
+
+3) The bidirectional relationship (VERY IMPORTANT)
+The constant in the equation is SellingPrice.
+User can either:
+- Change PurchasePrice => system recalculates LineDiscount% automatically
+OR
+- Change LineDiscount% => system recalculates PurchasePrice automatically
+This relationship must be consistent and reversible, with rounding rules.
+Define formulas clearly and use the same rounding everywhere:
+- Let SellingPrice be reference only, not used for accounting totals.
+- The discount relationship is conceptual:
+  - If discount% = 20%, then purchasePrice = basePurchasePrice * (1 - 0.20) OR
+  - If the system uses sellingPrice as base: discount% = 1 - (purchasePrice / sellingPrice)
+Choose ONE model and apply consistently across all lines:
+MODEL REQUIRED HERE:
+- discount% = 1 - (purchasePrice / sellingPrice)
+- purchasePrice = sellingPrice * (1 - discount%)
+Clamp discount% between 0 and 0.99.
+Warn if purchasePrice > sellingPrice.
+
+4) BonusQty VAT treatment (CRITICAL)
+- BonusQty has ZERO COST but may be VAT taxable depending on local policy.
+Implement this rule:
+- VAT base includes (Qty + BonusQty) * purchasePrice unless VAT-exempt item.
+- Costing allocation:
+  - Allocate total net cost ONLY across paid Qty (not bonus) OR across total units based on business choice.
+Choose one and implement with clarity:
+REQUIRED:
+- Paid Qty carries the cost; BonusQty carries unitCost=0.
+- VAT is calculated on total units (Qty + BonusQty) if VAT applies.
+Show VAT base clearly.
+
+5) Invoice-level discount (global)
+Provide invoice-level discount controls:
+- Discount type: Percent or Value
+- Apply discount AFTER summing line net amounts and BEFORE VAT OR AFTER VAT based on configuration.
+REQUIRED default:
+- Apply invoice discount on ValueBeforeVAT proportionally across lines, then compute VAT.
+Show audit trail of allocations.
+
+6) Validation (must prevent mistakes)
+- Cannot approve invoice if any required fields missing.
+- Prevent negative values.
+- Ensure supplierInvoiceNo uniqueness.
+- Ensure receiving conversion relationship intact.
+- Ensure VAT rates valid.
+- Show inline errors (no disruptive modals).
+- Use confirmation on approve.
+
+7) Approval / Costing integration (future-proof but scaffold now)
+On APPROVED_COSTED:
+- Allocate costs to ValuationLayers created by receiving:
+  - Paid layers become COSTED with final computed purchase costs.
+  - Bonus layers remain costed at 0.
+- Generate Revaluation entries if sales occurred from pending layers (scaffold endpoints and db tables even if not fully used now).
+- Post GL:
+  - Close GRNI clearing, create AP supplier liability, record Input VAT.
+- Ensure balanced journals.
+
+8) Performance / No lag
+- Use bulk endpoints.
+- Cache lastReceiving hints and item metadata.
+- Avoid N+1 queries.
+- Use virtualization for large line grids.
+- Add proper DB indexes.
+
+9) Audit and coloring
+- Record who converted and when.
+- Receiving register must highlight converted vs not converted.
+- Purchase invoice list should also show “source receiving”.
+
+DELIVERABLES
+- Prisma schema + migrations:
+  - Add bonusQty to receiving lines
+  - Add convertedToInvoice flag + purchaseInvoiceId on receiving header
+  - Purchase invoice tables with required fields including discount%, purchasePrice, computed totals
+  - expiryMonth/expiryYear everywhere
+- NestJS endpoints + DTO validation
+- React UI screens (3 screens) with production-grade UX
+- Tests:
+  - uniqueness supplierInvoiceNo per supplier
+  - conversion idempotency
+  - VAT base includes bonusQty rule
+  - bidirectional discount/price relationship correctness with rounding
+  - no day-level expiry anywhere
+
+Implement now with clean architecture and high performance.

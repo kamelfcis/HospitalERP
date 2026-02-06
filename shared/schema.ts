@@ -366,7 +366,8 @@ export const itemBarcodes = pgTable("item_barcodes", {
   itemIdx: index("idx_barcodes_item").on(table.itemId),
 }));
 
-export const receivingStatusEnum = pgEnum("receiving_status", ["draft", "posted"]);
+export const receivingStatusEnum = pgEnum("receiving_status", ["draft", "posted", "posted_qty_only"]);
+export const purchaseInvoiceStatusEnum = pgEnum("purchase_invoice_status", ["draft", "approved_costed"]);
 
 export const suppliers = pgTable("suppliers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -395,6 +396,8 @@ export const receivingHeaders = pgTable("receiving_headers", {
   totalQty: decimal("total_qty", { precision: 18, scale: 4 }).notNull().default("0"),
   totalCost: decimal("total_cost", { precision: 18, scale: 2 }).notNull().default("0"),
   postedAt: timestamp("posted_at"),
+  convertedToInvoiceId: varchar("converted_to_invoice_id"),
+  convertedAt: timestamp("converted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -413,6 +416,8 @@ export const receivingLines = pgTable("receiving_lines", {
   unitLevel: unitLevelEnum("unit_level").notNull().default("major"),
   qtyEntered: decimal("qty_entered", { precision: 18, scale: 4 }).notNull(),
   qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull(),
+  bonusQty: decimal("bonus_qty", { precision: 18, scale: 4 }).notNull().default("0"),
+  bonusQtyInMinor: decimal("bonus_qty_in_minor", { precision: 18, scale: 4 }).notNull().default("0"),
   purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull().default("0"),
   lineTotal: decimal("line_total", { precision: 18, scale: 2 }).notNull().default("0"),
   batchNumber: text("batch_number"),
@@ -428,6 +433,60 @@ export const receivingLines = pgTable("receiving_lines", {
 }, (table) => ({
   receivingIdx: index("idx_receiving_lines_receiving").on(table.receivingId),
   itemIdx: index("idx_receiving_lines_item").on(table.itemId),
+}));
+
+export const purchaseInvoiceHeaders = pgTable("purchase_invoice_headers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNumber: integer("invoice_number").notNull().unique(),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id),
+  supplierInvoiceNo: text("supplier_invoice_no").notNull(),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id),
+  receivingId: varchar("receiving_id").references(() => receivingHeaders.id),
+  invoiceDate: date("invoice_date").notNull(),
+  status: purchaseInvoiceStatusEnum("status").notNull().default("draft"),
+  discountType: text("discount_type").default("percent"),
+  discountValue: decimal("discount_value", { precision: 18, scale: 4 }).notNull().default("0"),
+  totalBeforeVat: decimal("total_before_vat", { precision: 18, scale: 2 }).notNull().default("0"),
+  totalVat: decimal("total_vat", { precision: 18, scale: 2 }).notNull().default("0"),
+  totalAfterVat: decimal("total_after_vat", { precision: 18, scale: 2 }).notNull().default("0"),
+  totalLineDiscounts: decimal("total_line_discounts", { precision: 18, scale: 2 }).notNull().default("0"),
+  netPayable: decimal("net_payable", { precision: 18, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  numberIdx: index("idx_pi_number").on(table.invoiceNumber),
+  supplierIdx: index("idx_pi_supplier").on(table.supplierId),
+  receivingIdx: index("idx_pi_receiving").on(table.receivingId),
+  statusIdx: index("idx_pi_status").on(table.status),
+  dateIdx: index("idx_pi_date").on(table.invoiceDate),
+}));
+
+export const purchaseInvoiceLines = pgTable("purchase_invoice_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => purchaseInvoiceHeaders.id, { onDelete: "cascade" }),
+  receivingLineId: varchar("receiving_line_id"),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  unitLevel: unitLevelEnum("unit_level").notNull().default("major"),
+  qty: decimal("qty", { precision: 18, scale: 4 }).notNull(),
+  bonusQty: decimal("bonus_qty", { precision: 18, scale: 4 }).notNull().default("0"),
+  sellingPrice: decimal("selling_price", { precision: 18, scale: 2 }).notNull().default("0"),
+  purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull().default("0"),
+  lineDiscountPct: decimal("line_discount_pct", { precision: 8, scale: 4 }).notNull().default("0"),
+  lineDiscountValue: decimal("line_discount_value", { precision: 18, scale: 2 }).notNull().default("0"),
+  vatRate: decimal("vat_rate", { precision: 8, scale: 4 }).notNull().default("0"),
+  valueBeforeVat: decimal("value_before_vat", { precision: 18, scale: 2 }).notNull().default("0"),
+  vatAmount: decimal("vat_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  valueAfterVat: decimal("value_after_vat", { precision: 18, scale: 2 }).notNull().default("0"),
+  batchNumber: text("batch_number"),
+  expiryMonth: integer("expiry_month"),
+  expiryYear: integer("expiry_year"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  invoiceIdx: index("idx_pi_lines_invoice").on(table.invoiceId),
+  itemIdx: index("idx_pi_lines_item").on(table.itemId),
 }));
 
 // Insert schemas
@@ -461,8 +520,10 @@ export const insertStoreTransferSchema = createInsertSchema(storeTransfers).omit
 export const insertTransferLineSchema = createInsertSchema(transferLines).omit({ id: true, createdAt: true });
 export const insertTransferLineAllocationSchema = createInsertSchema(transferLineAllocations).omit({ id: true, createdAt: true });
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
-export const insertReceivingHeaderSchema = createInsertSchema(receivingHeaders).omit({ id: true, receivingNumber: true, createdAt: true, updatedAt: true, postedAt: true });
+export const insertReceivingHeaderSchema = createInsertSchema(receivingHeaders).omit({ id: true, receivingNumber: true, createdAt: true, updatedAt: true, postedAt: true, convertedToInvoiceId: true, convertedAt: true });
 export const insertReceivingLineSchema = createInsertSchema(receivingLines).omit({ id: true, createdAt: true });
+export const insertPurchaseInvoiceHeaderSchema = createInsertSchema(purchaseInvoiceHeaders).omit({ id: true, invoiceNumber: true, createdAt: true, updatedAt: true, approvedAt: true, approvedBy: true });
+export const insertPurchaseInvoiceLineSchema = createInsertSchema(purchaseInvoiceLines).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -539,6 +600,12 @@ export type ReceivingHeader = typeof receivingHeaders.$inferSelect;
 
 export type InsertReceivingLine = z.infer<typeof insertReceivingLineSchema>;
 export type ReceivingLine = typeof receivingLines.$inferSelect;
+
+export type InsertPurchaseInvoiceHeader = z.infer<typeof insertPurchaseInvoiceHeaderSchema>;
+export type PurchaseInvoiceHeader = typeof purchaseInvoiceHeaders.$inferSelect;
+
+export type InsertPurchaseInvoiceLine = z.infer<typeof insertPurchaseInvoiceLineSchema>;
+export type PurchaseInvoiceLine = typeof purchaseInvoiceLines.$inferSelect;
 
 // Extended types for API responses
 export type JournalEntryWithLines = JournalEntry & {
@@ -629,5 +696,22 @@ export type ReceivingHeaderWithDetails = ReceivingHeader & {
 
 export const receivingStatusLabels: Record<string, string> = {
   draft: "مسودة",
-  posted: "مُرحّل"
+  posted: "مُرحّل",
+  posted_qty_only: "مُرحّل (كمية فقط)"
+};
+
+export type PurchaseInvoiceLineWithItem = PurchaseInvoiceLine & {
+  item?: Item;
+};
+
+export type PurchaseInvoiceWithDetails = PurchaseInvoiceHeader & {
+  supplier?: Supplier;
+  warehouse?: Warehouse;
+  receiving?: ReceivingHeader;
+  lines?: PurchaseInvoiceLineWithItem[];
+};
+
+export const purchaseInvoiceStatusLabels: Record<string, string> = {
+  draft: "مسودة",
+  approved_costed: "مُعتمد ومُسعّر"
 };

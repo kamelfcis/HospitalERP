@@ -29,7 +29,7 @@ Preferred communication style: Simple, everyday language.
 - **Database**: PostgreSQL (configured via `DATABASE_URL`)
 - **Connection Pooling**: pg Pool
 - **Schema Management**: Drizzle Kit (`db:push` for migrations)
-- **Key Entities**: Users, Accounts (hierarchical), Cost Centers (hierarchical), Fiscal Periods, Journal Entries/Lines, Journal Templates, Audit Log.
+- **Key Entities**: Users, Accounts (hierarchical), Cost Centers (hierarchical), Fiscal Periods, Journal Entries/Lines, Journal Templates, Audit Log, Receiving Headers/Lines, Purchase Invoice Headers/Lines.
 
 ### Core Features
 - Dashboard with financial statistics.
@@ -45,6 +45,12 @@ Preferred communication style: Simple, everyday language.
 - Expiry management using month/year format (MM/YYYY) for inventory lots, receiving, and transfers.
 - Barcode management for inventory items.
 - Supplier Receiving with quantity-only workflow: editable selling price, read-only purchase price hints from last posted receiving, per-line warehouse stock display, per-line statistics popup showing item availability across all warehouses.
+- Bonus quantity (free units) tracking in receiving lines with automatic minor unit conversion.
+- Sale price mismatch warnings (orange) and near-expiry warnings (red, ≤6 months) in receiving entry.
+- Receiving-to-invoice conversion flow: posted_qty_only receivings can be converted to purchase invoices.
+- Purchase Invoice management with bidirectional price/discount calculations (discountPct = 1 - purchasePrice/sellingPrice).
+- VAT handling where base includes quantity + bonus quantity; invoice-level discount applied proportionally before VAT.
+- Invoice approval/costing workflow (draft → approved_costed status).
 - Multi-line, scan-first UX for store-to-store transfers with FEFO allocation (month/year based).
 
 ### Build and Deployment
