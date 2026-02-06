@@ -1,0 +1,48 @@
+You are working on the React UI of the ERP (Arabic-first). Apply the following UI/UX changes to the Supplier Receiving module.
+
+GOAL:
+1) Remove the extra row that contains two large buttons ("إذن استلام" and "السجل") because it wastes vertical space.
+2) Move navigation to the top bar next to the page title "استلام الموردين" and "إدارة أذونات الاستلام من الموردين".
+3) Make the receiving header fields layout flow from RIGHT to LEFT (true RTL), not left aligned.
+
+A) Replace the red-circled buttons with top-level Tabs (preferred)
+- In the page header row (same row as title/breadcrumb):
+  - Show Tabs: [إذن استلام] [السجل]
+  - Active tab is visually highlighted.
+  - Switching tabs changes the view (Receiving form vs Register list) WITHOUT navigating away if possible (single route with internal tab state), or with query param ?tab=receiving|register.
+- Remove the old button row entirely.
+
+B) RTL layout for the blue-circled header container (Receiving form header)
+- The entire header container must be RTL:
+  - CSS: direction: rtl;
+  - Ensure the grid/row order is from right to left.
+  - Labels and inputs aligned properly.
+- Field order from RIGHT to LEFT:
+  1) ملاحظات
+  2) حالة المستند (مسودة/مرحّل) badge
+  3) تاريخ الاستلام
+  4) المستودع
+  5) رقم فاتورة المورد
+  6) المورد
+  7) رقم الإذن (readonly)
+(If you use a responsive grid, keep this logical order when wrapping on smaller screens.)
+
+C) Implementation details (avoid regressions)
+- Do NOT change business rules. This is UI-only refactor.
+- Preserve existing components and logic but reorganize layout.
+- Make the header row sticky if it already is; ensure tabs do not create additional height.
+- Ensure all controls keep working: supplier advanced search, invoiceNo validation, warehouse selection, draft/post actions.
+- Add a small “+ جديد” button next to Tabs only if needed; otherwise omit.
+
+D) Styling & Performance
+- Use minimal DOM changes; no heavy rerenders.
+- The top bar must remain compact (one line).
+- Ensure RTL does not break input caret behavior and dropdown menus.
+
+E) Testing
+- Add a basic UI test (Playwright or React Testing Library):
+  - Tabs exist in header, old button row removed.
+  - Switching tabs shows correct content.
+  - Receiving header container has RTL direction and right-to-left visual order.
+
+Deliver the code changes with clear file diffs and instructions.

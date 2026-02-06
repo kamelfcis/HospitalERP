@@ -727,18 +727,26 @@ export default function SupplierReceiving() {
 
   return (
     <div className="p-2 space-y-2" dir="rtl">
-      <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
-        <Truck className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">استلام الموردين</h1>
-        <span className="text-xs text-muted-foreground">|</span>
-        <span className="text-xs text-muted-foreground">إدارة أذونات الاستلام من الموردين</span>
-      </div>
-
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-2 no-print">
-          <TabsTrigger value="log" data-testid="tab-log">السجل</TabsTrigger>
-          <TabsTrigger value="form" data-testid="tab-form">إذن استلام</TabsTrigger>
-        </TabsList>
+        <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
+          <Truck className="h-4 w-4 text-muted-foreground" />
+          <h1 className="text-sm font-semibold text-foreground">استلام الموردين</h1>
+          <span className="text-xs text-muted-foreground hidden sm:inline">إدارة أذونات الاستلام من الموردين</span>
+          <TabsList className="no-print mr-auto">
+            <TabsTrigger value="form" data-testid="tab-form">إذن استلام</TabsTrigger>
+            <TabsTrigger value="log" data-testid="tab-log">السجل</TabsTrigger>
+          </TabsList>
+          <Button
+            size="sm"
+            variant="outline"
+            className="no-print"
+            onClick={() => { resetForm(); setActiveTab("form"); }}
+            data-testid="button-new-receiving"
+          >
+            <Plus className="h-3 w-3 ml-1" />
+            جديد
+          </Button>
+        </div>
 
         <TabsContent value="log" className="space-y-2">
           <div className="peachtree-toolbar flex items-center gap-2 flex-wrap">
@@ -940,15 +948,71 @@ export default function SupplierReceiving() {
           <fieldset className="peachtree-grid p-2 sticky top-0 z-50 bg-card">
             <legend className="text-xs font-semibold px-1">بيانات إذن الاستلام</legend>
             <div className="flex flex-wrap items-end gap-2">
-              <div className="space-y-1 w-[100px]">
-                <Label className="text-[10px] text-muted-foreground">رقم الإذن</Label>
+              <div className="space-y-1 flex-1 min-w-[120px]">
+                <Label className="text-[10px] text-muted-foreground">ملاحظات</Label>
                 <Input
                   type="text"
-                  value={formReceivingNumber ? String(formReceivingNumber) : "تلقائي"}
-                  readOnly
-                  className="h-7 text-[11px] px-1 bg-muted/30"
-                  data-testid="input-receiving-number"
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  placeholder="اختياري"
+                  className="h-7 text-[11px] px-1"
+                  disabled={isViewOnly}
+                  data-testid="input-notes"
                 />
+              </div>
+
+              <div className="flex items-center h-7">
+                <Badge
+                  variant={formStatus === "draft" ? "outline" : "default"}
+                  className={`text-[9px] ${formStatus !== "draft" ? "bg-green-600 no-default-hover-elevate no-default-active-elevate" : ""}`}
+                >
+                  {receivingStatusLabels[formStatus as keyof typeof receivingStatusLabels] || formStatus}
+                </Badge>
+              </div>
+
+              <div className="space-y-1 w-[120px]">
+                <Label className="text-[10px] text-muted-foreground">تاريخ الاستلام</Label>
+                <Input
+                  type="date"
+                  value={receiveDate}
+                  onChange={(e) => setReceiveDate(e.target.value)}
+                  className="h-7 text-[11px] px-1"
+                  disabled={isViewOnly}
+                  data-testid="input-receive-date"
+                />
+              </div>
+
+              <div className="space-y-1 flex-1 min-w-[160px]">
+                <Label className="text-[10px] text-muted-foreground">المستودع *</Label>
+                <Select value={warehouseId} onValueChange={setWarehouseId} disabled={isViewOnly}>
+                  <SelectTrigger className="h-7 text-[11px] px-1" data-testid="select-receiving-warehouse">
+                    <SelectValue placeholder="اختر المستودع" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses?.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>{w.warehouseCode} - {w.nameAr}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1 w-[160px]">
+                <Label className="text-[10px] text-muted-foreground">رقم فاتورة المورد *</Label>
+                <Input
+                  type="text"
+                  value={supplierInvoiceNo}
+                  onChange={(e) => setSupplierInvoiceNo(e.target.value)}
+                  placeholder="رقم الفاتورة"
+                  className={`h-7 text-[11px] px-1 ${invoiceDuplicateError ? "border-destructive" : ""}`}
+                  disabled={isViewOnly}
+                  data-testid="input-supplier-invoice"
+                />
+                {invoiceDuplicateError && (
+                  <span className="text-[9px] text-destructive flex items-center gap-0.5">
+                    <AlertTriangle className="h-3 w-3" />
+                    {invoiceDuplicateError}
+                  </span>
+                )}
               </div>
 
               <div className="space-y-1 flex-1 min-w-[200px] relative">
@@ -996,69 +1060,14 @@ export default function SupplierReceiving() {
                 )}
               </div>
 
-              <div className="space-y-1 w-[160px]">
-                <Label className="text-[10px] text-muted-foreground">رقم فاتورة المورد *</Label>
+              <div className="space-y-1 w-[100px]">
+                <Label className="text-[10px] text-muted-foreground">رقم الإذن</Label>
                 <Input
                   type="text"
-                  value={supplierInvoiceNo}
-                  onChange={(e) => setSupplierInvoiceNo(e.target.value)}
-                  placeholder="رقم الفاتورة"
-                  className={`h-7 text-[11px] px-1 ${invoiceDuplicateError ? "border-destructive" : ""}`}
-                  disabled={isViewOnly}
-                  data-testid="input-supplier-invoice"
-                />
-                {invoiceDuplicateError && (
-                  <span className="text-[9px] text-destructive flex items-center gap-0.5">
-                    <AlertTriangle className="h-3 w-3" />
-                    {invoiceDuplicateError}
-                  </span>
-                )}
-              </div>
-
-              <div className="space-y-1 flex-1 min-w-[160px]">
-                <Label className="text-[10px] text-muted-foreground">المستودع *</Label>
-                <Select value={warehouseId} onValueChange={setWarehouseId} disabled={isViewOnly}>
-                  <SelectTrigger className="h-7 text-[11px] px-1" data-testid="select-receiving-warehouse">
-                    <SelectValue placeholder="اختر المستودع" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {warehouses?.map((w) => (
-                      <SelectItem key={w.id} value={w.id}>{w.warehouseCode} - {w.nameAr}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1 w-[120px]">
-                <Label className="text-[10px] text-muted-foreground">تاريخ الاستلام</Label>
-                <Input
-                  type="date"
-                  value={receiveDate}
-                  onChange={(e) => setReceiveDate(e.target.value)}
-                  className="h-7 text-[11px] px-1"
-                  disabled={isViewOnly}
-                  data-testid="input-receive-date"
-                />
-              </div>
-
-              <div className="flex items-center h-7">
-                {formStatus === "posted" ? (
-                  <Badge variant="default" className="text-[9px] bg-green-600 no-default-hover-elevate no-default-active-elevate">مُرحّل</Badge>
-                ) : (
-                  <Badge variant="outline" className="text-[9px]">مسودة</Badge>
-                )}
-              </div>
-
-              <div className="space-y-1 flex-1 min-w-[120px]">
-                <Label className="text-[10px] text-muted-foreground">ملاحظات</Label>
-                <Input
-                  type="text"
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="اختياري"
-                  className="h-7 text-[11px] px-1"
-                  disabled={isViewOnly}
-                  data-testid="input-notes"
+                  value={formReceivingNumber ? String(formReceivingNumber) : "تلقائي"}
+                  readOnly
+                  className="h-7 text-[11px] px-1 bg-muted/30"
+                  data-testid="input-receiving-number"
                 />
               </div>
             </div>
