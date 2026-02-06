@@ -994,6 +994,18 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/items/:itemId/availability-summary", async (req, res) => {
+    try {
+      const { asOfDate, excludeExpired } = req.query;
+      const date = (asOfDate as string) || new Date().toISOString().split("T")[0];
+      const exclude = excludeExpired !== "0";
+      const summary = await storage.getItemAvailabilitySummary(req.params.itemId, date, exclude);
+      res.json(summary);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/items/:itemId/availability", async (req, res) => {
     try {
       const { warehouseId } = req.query;

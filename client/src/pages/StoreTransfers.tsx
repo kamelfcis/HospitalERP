@@ -122,6 +122,13 @@ export default function StoreTransfers() {
 
   const modalResultsRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modalSearchInputRef = useRef<HTMLInputElement>(null);
+
+  const [availPopupItemId, setAvailPopupItemId] = useState<string | null>(null);
+  const [availPopupData, setAvailPopupData] = useState<any[] | null>(null);
+  const [availPopupLoading, setAvailPopupLoading] = useState(false);
+  const [availPopupPosition, setAvailPopupPosition] = useState<{top: number; left: number} | null>(null);
+  const availPopupCache = useRef<Record<string, {data: any[]; ts: number}>>({});
 
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
@@ -378,6 +385,40 @@ export default function StoreTransfers() {
     }
   }, [sourceWarehouseId, transferDate]);
 
+  const showAvailabilityPopup = useCallback(async (itemId: string, item: any, event: React.MouseEvent) => {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    setAvailPopupPosition({ top: rect.bottom + 4, left: rect.left });
+    setAvailPopupItemId(itemId);
+
+    const cached = availPopupCache.current[itemId];
+    if (cached && Date.now() - cached.ts < 60000) {
+      setAvailPopupData(cached.data);
+      return;
+    }
+
+    setAvailPopupLoading(true);
+    setAvailPopupData(null);
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const res = await fetch(`/api/items/${itemId}/availability-summary?asOfDate=${today}&excludeExpired=1`);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailPopupData(data);
+        availPopupCache.current[itemId] = { data, ts: Date.now() };
+      }
+    } catch {
+      setAvailPopupData([]);
+    } finally {
+      setAvailPopupLoading(false);
+    }
+  }, []);
+
+  const closeAvailPopup = useCallback(() => {
+    setAvailPopupItemId(null);
+    setAvailPopupData(null);
+    setAvailPopupPosition(null);
+  }, []);
+
   const handleModalSearchTextChange = (val: string) => {
     setModalSearchText(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -388,13 +429,16 @@ export default function StoreTransfers() {
     }, 250);
   };
 
+  const modalOpenPrev = useRef(false);
   useEffect(() => {
-    if (!modalOpen) return;
-    setModalSearchText("");
-    setModalResults([]);
-    setModalResultsTotal(0);
-    setModalSelectedIndex(0);
-    resetModalDetails();
+    if (modalOpen && !modalOpenPrev.current) {
+      setModalSearchText("");
+      setModalResults([]);
+      setModalResultsTotal(0);
+      setModalSelectedIndex(0);
+      resetModalDetails();
+    }
+    modalOpenPrev.current = modalOpen;
   }, [modalOpen]);
 
   const selectedModalItem = modalResults[modalSelectedIndex] || null;
@@ -484,8 +528,16 @@ export default function StoreTransfers() {
     };
 
     setFormLines((prev) => [...prev, newLine]);
-    setModalOpen(false);
     toast({ title: `تمت إضافة: ${selectedModalItem.nameAr}` });
+
+    setModalQty(1);
+    setModalUnit("major");
+    setModalExpiryOptions([]);
+    setModalSelectedExpiry("");
+    setModalValidation("");
+    setModalSelectedIndex(-1);
+
+    setTimeout(() => modalSearchInputRef.current?.focus(), 50);
   };
 
   const handleDeleteLine = (index: number) => {
@@ -787,8 +839,9 @@ export default function StoreTransfers() {
               <table className="w-full text-[10px]" data-testid="table-transfer-lines">
                 <thead>
                   <tr className="peachtree-grid-header">
-                    <th className="py-1 px-2 text-right font-medium">كود الصنف</th>
                     <th className="py-1 px-2 text-right font-medium">اسم الصنف</th>
+                    <th className="py-1 px-2 text-right font-medium">كود الصنف</th>
+                    <th className="py-1 px-1 text-center font-medium w-8">📊</th>
                     <th className="py-1 px-2 text-right font-medium">الوحدة</th>
                     <th className="py-1 px-2 text-right font-medium">الكمية</th>
                     <th className="py-1 px-2 text-right font-medium">الصلاحية</th>
@@ -801,8 +854,19 @@ export default function StoreTransfers() {
                   {formLines.length > 0 ? (
                     formLines.map((line, idx) => (
                       <tr key={line.id} className="peachtree-grid-row" data-testid={`row-line-${idx}`}>
-                        <td className="py-1 px-2 font-mono">{line.item?.itemCode || "—"}</td>
                         <td className="py-1 px-2">{line.item?.nameAr || "—"}</td>
+                        <td className="py-1 px-2 font-mono">{line.item?.itemCode || "—"}</td>
+                        <td className="py-1 px-1 text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => showAvailabilityPopup(line.itemId, line.item, e)}
+                            className="text-muted-foreground hover:text-foreground cursor-pointer text-[11px]"
+                            title="تواجد الصنف"
+                            data-testid={`button-avail-${idx}`}
+                          >
+                            📊
+                          </button>
+                        </td>
                         <td className="py-1 px-2">{line.item ? getUnitName(line.item, line.unitLevel) : "—"}</td>
                         <td className="py-1 px-2">{line.qtyEntered}</td>
                         <td className="py-1 px-2">
@@ -828,7 +892,7 @@ export default function StoreTransfers() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={isViewOnly ? 7 : 8} className="py-4 text-center text-muted-foreground">
+                      <td colSpan={isViewOnly ? 8 : 9} className="py-4 text-center text-muted-foreground">
                         لا توجد أصناف - اضغط "إضافة صنف" لإضافة أصناف
                       </td>
                     </tr>
@@ -922,6 +986,7 @@ export default function StoreTransfers() {
                 placeholder="نص البحث..."
                 className="h-7 text-[11px] px-1 flex-1 min-w-[150px]"
                 data-testid="modal-search-text"
+                ref={modalSearchInputRef}
                 autoFocus
               />
               <Button size="sm" onClick={() => doModalSearch()} disabled={modalSearching} data-testid="button-modal-search">
@@ -1100,6 +1165,49 @@ export default function StoreTransfers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {availPopupItemId && availPopupPosition && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={closeAvailPopup} onKeyDown={(e) => e.key === "Escape" && closeAvailPopup()} />
+          <div
+            className="fixed z-50 bg-popover border rounded-md shadow-lg p-3 min-w-[220px] max-w-[320px]"
+            style={{ top: availPopupPosition.top, left: availPopupPosition.left }}
+            dir="rtl"
+            data-testid="popup-availability"
+          >
+            <div className="flex items-center gap-1 mb-2 text-[11px] font-semibold border-b pb-1">
+              <Package className="h-3 w-3" />
+              <span>تواجد الصنف - إحصائي</span>
+            </div>
+            {availPopupLoading ? (
+              <div className="flex items-center gap-2 py-2 text-[10px] text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>جاري التحميل...</span>
+              </div>
+            ) : availPopupData && availPopupData.length > 0 ? (
+              <div className="space-y-1">
+                {availPopupData.map((row: any, i: number) => {
+                  const minorQty = parseFloat(row.qtyMinor);
+                  const factor = row.majorToMinor ? parseFloat(row.majorToMinor) : 0;
+                  const majorQty = factor > 0 ? Math.floor(minorQty / factor) : minorQty;
+                  const unitLabel = row.majorUnitName || "وحدة";
+                  return (
+                    <div key={i} className="flex items-center justify-between text-[10px] py-0.5">
+                      <span className="text-foreground">{row.warehouseNameAr}</span>
+                      <span className="font-mono text-foreground font-medium">{majorQty} {unitLabel}</span>
+                    </div>
+                  );
+                })}
+                <div className="border-t pt-1 mt-1 text-[9px] text-muted-foreground text-center">
+                  الوحدة: {availPopupData[0]?.majorUnitName || "وحدة"} | إرشادي فقط
+                </div>
+              </div>
+            ) : (
+              <div className="text-[10px] text-muted-foreground py-2 text-center">لا يوجد رصيد</div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -131,6 +131,12 @@ Key entities include:
   - API: GET /api/items/lookup (search with availability), GET /api/items/:itemId/availability
   - Lines reset when source warehouse changes (prevents stale availability data)
   - Sidebar nav item "تحويل مخزني" with ArrowLeftRight icon
+- **Transfer Enhancements Pack (Feb 6, 2026)**:
+  - RTL grid column order: اسم الصنف first (rightmost), then كود, 📊, الوحدة, الكمية, الصلاحية, الرصيد, ملاحظات, حذف
+  - Sticky search modal: stays open after adding item, soft-resets details panel (qty=1, unit=major), focus returns to search input
+  - Availability insight icon (📊): click shows popup with item stock across all active warehouses in major unit
+  - API: GET /api/items/:id/availability-summary?asOfDate=&excludeExpired=1 (lazy-loaded, 60s client cache)
+  - Popup shows warehouseNameAr + qtyMajor, "إرشادي فقط" footer, closes on click-outside or Esc
 - **Real-World Pilot Test (Feb 6, 2026)**:
   - Seed endpoint: POST /api/seed/pilot-test (idempotent, creates/updates TEST- prefixed data)
   - Test warehouses: WH-PH-IN (صيدلية داخلية), WH-OR (مخزن غرفة العمليات)

@@ -1542,6 +1542,42 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  async getItemAvailabilitySummary(itemId: string, asOfDate: string, excludeExpired: boolean): Promise<{warehouseId: string; warehouseNameAr: string; qtyMinor: string; majorUnitName: string | null; majorToMinor: string | null}[]> {
+    const [item] = await db.select({ hasExpiry: items.hasExpiry, majorUnitName: items.majorUnitName, majorToMinor: items.majorToMinor }).from(items).where(eq(items.id, itemId));
+    if (!item) return [];
+
+    const conditions: any[] = [
+      eq(inventoryLots.itemId, itemId),
+      eq(inventoryLots.isActive, true),
+      sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+    ];
+
+    if (excludeExpired && item.hasExpiry) {
+      conditions.push(
+        sql`(${inventoryLots.expiryDate} IS NULL OR ${inventoryLots.expiryDate} >= ${asOfDate})`
+      );
+    }
+
+    const results = await db.select({
+      warehouseId: inventoryLots.warehouseId,
+      warehouseNameAr: warehouses.nameAr,
+      qtyMinor: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+    })
+      .from(inventoryLots)
+      .innerJoin(warehouses, and(eq(warehouses.id, inventoryLots.warehouseId), eq(warehouses.isActive, true)))
+      .where(and(...conditions))
+      .groupBy(inventoryLots.warehouseId, warehouses.nameAr)
+      .orderBy(warehouses.nameAr);
+
+    return results.filter(r => r.warehouseId !== null).map(r => ({
+      warehouseId: r.warehouseId!,
+      warehouseNameAr: r.warehouseNameAr,
+      qtyMinor: r.qtyMinor,
+      majorUnitName: item.majorUnitName,
+      majorToMinor: item.majorToMinor,
+    }));
+  }
+
   async searchItemsAdvanced(params: {
     mode: 'AR' | 'EN' | 'CODE' | 'BARCODE';
     query: string;
