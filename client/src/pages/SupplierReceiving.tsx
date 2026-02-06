@@ -341,6 +341,28 @@ export default function SupplierReceiving() {
         } catch {}
       }
 
+      if (receiving.status === "draft") {
+        let fixedCount = 0;
+        for (let i = 0; i < loadedLines.length; i++) {
+          const ln = loadedLines[i];
+          const item = ln.item;
+          if (item) {
+            const expectedUnit = getDefaultUnitLevel(item);
+            if (!ln.unitLevel || (item.majorUnitName && ln.unitLevel !== "major")) {
+              loadedLines[i] = {
+                ...loadedLines[i],
+                unitLevel: expectedUnit,
+                qtyInMinor: calculateQtyInMinor(loadedLines[i].qtyEntered, expectedUnit, item),
+              };
+              fixedCount++;
+            }
+          }
+        }
+        if (fixedCount > 0) {
+          toast({ title: "تم ضبط وحدة الشراء للوحدة الكبرى", description: `تم تصحيح ${fixedCount} سطر` });
+        }
+      }
+
       setFormLines(loadedLines);
       setActiveTab("form");
     } catch (err: any) {
@@ -1445,7 +1467,13 @@ export default function SupplierReceiving() {
                     modalResults.map((item) => (
                       <tr key={item.id} className="cursor-pointer border-b hover:bg-muted/50">
                         <td className="py-1 px-2 font-mono">{item.itemCode}</td>
-                        <td className="py-1 px-2">{item.nameAr}</td>
+                        <td className="py-1 px-2">
+                          {item.nameAr}
+                          {" "}
+                          <span className="text-[9px] text-muted-foreground">
+                            ({item.majorUnitName || item.minorUnitName || "—"})
+                          </span>
+                        </td>
                         <td className="py-1 px-2">{item.category === "drug" ? "دواء" : item.category === "supply" ? "مستلزمات" : "خدمة"}</td>
                         <td className="py-1 px-2 text-center">
                           <Button

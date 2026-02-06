@@ -2265,10 +2265,16 @@ export class DatabaseStorage implements IStorage {
         totalQty += qty;
         totalCost += lt;
         
+        let resolvedUnitLevel = line.unitLevel;
+        if (!resolvedUnitLevel || resolvedUnitLevel.trim() === '') {
+          const [lineItem] = await tx.select().from(items).where(eq(items.id, line.itemId));
+          resolvedUnitLevel = lineItem?.majorUnitName ? 'major' : 'minor';
+        }
+        
         await tx.insert(receivingLines).values({
           receivingId: header_result.id,
           itemId: line.itemId,
-          unitLevel: line.unitLevel as any,
+          unitLevel: resolvedUnitLevel as any,
           qtyEntered: line.qtyEntered,
           qtyInMinor: line.qtyInMinor,
           purchasePrice: line.purchasePrice,
@@ -2319,6 +2325,9 @@ export class DatabaseStorage implements IStorage {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
         
+        if (!item.majorUnitName) {
+          throw new Error(`الصنف "${item.nameAr}" يحتاج تحديد الوحدة الكبرى في بطاقة الصنف`);
+        }
         if (item.hasExpiry && (!line.expiryMonth || !line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية (شهر/سنة)`);
         if (!item.hasExpiry && (line.expiryMonth || line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);
         

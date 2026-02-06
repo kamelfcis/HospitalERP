@@ -1,0 +1,54 @@
+You are continuing the ERP (NestJS + Prisma + PostgreSQL, React + TypeScript).
+
+GOAL:
+Set the DEFAULT PURCHASE UNIT for ANY item to be the MAJOR/LARGE unit (الوحدة الكبرى) across the entire purchasing flow:
+- Receiving "استلام من مورد"
+- Convert to Purchase Invoice
+- Purchase Invoice "فاتورة شراء"
+Also ensure this default is applied when adding items via barcode scan OR advanced search.
+
+A) Data Model / Source of Truth
+1) In Item master, ensure we can identify major unit:
+- Item.majorUnitId (required) OR
+- ItemUnit mapping table with a flag isMajor=true
+2) For safety, enforce:
+- Every item must have a majorUnitId set.
+- If missing, block posting and show clear error for admin to fix item master.
+
+B) Backend Rules (must enforce)
+1) When creating receiving lines:
+- If unitId is not provided by client, set unitId = item.majorUnitId
+- If client sends unitId different from major:
+  - allow only if item has a valid conversion to that unit
+2) When converting Receiving -> Purchase Invoice:
+- Carry unitId from receiving lines (which should already be major by default)
+3) Any APIs that create purchase/receiving lines must apply the same defaulting logic.
+
+C) Frontend UX Rules
+1) In "استلام من مورد":
+- When item is added (barcode/search), set line.unitId = item.majorUnitId immediately.
+- Display major unit as selected by default in the unit dropdown.
+- If user changes unit, show conversion factor clearly.
+2) In search modal results:
+- Show the major unit next to item name.
+3) When opening existing DRAFT documents:
+- If line.unitId is null or invalid, auto-fix to major unit (only in DRAFT) and show a small non-blocking toast "تم ضبط وحدة الشراء للوحدة الكبرى".
+
+D) Edge Cases
+- If an item has only one unit: that unit is the major unit.
+- If an item has multiple units but majorUnitId missing:
+  - Do not allow POST; show error: "الصنف يحتاج تحديد الوحدة الكبرى في بطاقة الصنف"
+- Ensure no horizontal/vertical scroll regressions in UI.
+
+E) Tests (mandatory)
+1) Unit tests:
+- Defaulting unit to major when missing
+- Reject invalid unit conversion
+2) Integration tests:
+- Add item via barcode to receiving -> unit is major
+- Add item via search -> unit is major
+- Convert receiving to purchase invoice -> unit remains major
+3) UI test (Playwright):
+- Add item -> verify unit dropdown preselected to major
+
+Implement now with clean code and minimal refactor.
