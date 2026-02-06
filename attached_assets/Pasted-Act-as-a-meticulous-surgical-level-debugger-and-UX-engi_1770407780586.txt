@@ -1,0 +1,84 @@
+Act as a meticulous surgical-level debugger and UX engineer.
+Your task is to FIX a critical focus + expiry input bug in the Receiving screen "استلام من مورد" with ZERO regressions.
+
+Problem symptoms:
+1) While typing expiry (Month/Year) in a receiving line, the input sometimes auto-writes year as 2020 incorrectly.
+2) Sometimes focus jumps unexpectedly to the Barcode input before the user finishes typing expiry.
+3) This disrupts speed and causes errors.
+
+NON-NEGOTIABLE REQUIREMENTS:
+- Expiry is Month/Year only (expiryMonth INT, expiryYear INT). No day anywhere.
+- Expiry typing must be smooth and deterministic:
+  - User types month then year; supports MMYY, MM/YYYY, MM/YY
+  - Normalize to MM/YYYY, store month/year
+- After completing a line (depending on workflow), focus MUST return to the Barcode input reliably.
+- BUT: focus must NOT jump to barcode while the user is still editing expiry or any field.
+- Fix must be surgical: do NOT redesign the whole screen, do NOT break existing draft autosave, posting rules, validations, warnings, or line grid behavior.
+
+INVESTIGATION (must be done, not guessed):
+1) Identify every place focus is set programmatically (e.g., barcodeRef.focus()).
+2) Identify re-render causes that remount the expiry input or barcode input.
+3) Identify the expiry parser/formatter that produces 2020 and why it triggers.
+4) Confirm whether autosave, validation, or toast notifications trigger state updates that steal focus.
+
+SURGICAL FIX STRATEGY:
+A) Implement a dedicated ExpiryInput component with:
+- Controlled internal editing state (string) separated from persisted (month/year).
+- Parsing rules:
+  - "MM" alone is allowed while user continues typing (do not auto-complete year).
+  - "MMYY" => MM/20YY (use a pivot rule if needed, but default to 20YY)
+  - "MM/YY" => MM/20YY
+  - "MM/YYYY" => MM/YYYY
+- NEVER default to 2020 unless user explicitly typed "20" as year.
+- Do not auto-write a full year until enough digits are entered.
+- OnBlur: normalize and persist month/year only if valid; otherwise show inline error and keep focus.
+
+B) Focus Management (critical):
+- Introduce a single "FocusController" for the receiving screen.
+- Rules:
+  1) Barcode input is the default focus target ONLY when:
+     - the user just added/confirmed a line
+     - OR user presses Enter on the last editable field of the line
+  2) While editing expiry (ExpiryInput has focus), NOTHING is allowed to call barcodeRef.focus().
+  3) If validation fails on expiry, keep focus on expiry until corrected.
+- Use explicit events to move focus:
+  - Enter/Tab handling inside line grid:
+    - barcode -> item -> qty -> batch -> expiry -> salePrice -> (commit line) -> barcode
+- Implement a safe "commitLineAndFocusBarcode()" that runs only after expiry is valid and state is committed.
+
+C) Prevent focus stealing due to re-renders:
+- Ensure line rows have stable keys (lineId not array index).
+- Memoize line components (React.memo) and avoid recreating refs.
+- Ensure autosave does not remount inputs:
+  - autosave should not rewrite the whole lines array object unnecessarily.
+  - use immutable updates but preserve object identity where possible for unaffected lines.
+
+D) Regression Safety:
+- Do not change business logic:
+  - posted docs readonly
+  - uniqueness checks
+  - month/year global rule
+  - default major unit
+  - bonus qty
+- Keep barcode always ready AFTER successful field completion.
+
+TESTS (must be exhaustive):
+1) Unit tests for expiry parsing:
+- "12" => stays "12/____" (no auto year)
+- "1228" => "12/2028"
+- "12/28" => "12/2028"
+- "12/2028" => "12/2028"
+- invalid months rejected
+- ensure no auto "2020" occurs unless typed
+2) E2E (Playwright) keyboard-speed test:
+- Add item -> focus qty -> type -> move to expiry -> type "1228" quickly
+- Ensure focus does NOT jump to barcode mid-typing
+- On completion (Enter), focus returns to barcode
+- Repeat for 50 lines with rapid entry
+3) Stress UI test:
+- Autosave enabled while typing expiry; ensure no focus jump
+- Toast warnings appear; ensure they do not steal focus
+
+DELIVERABLE:
+Provide the exact code changes (components + focus controller) and explain briefly where the bug was and how your fix prevents it.
+Implement now.

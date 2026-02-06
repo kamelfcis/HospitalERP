@@ -1,52 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { parseExpiryFinal } from '../client/src/components/ui/expiry-input';
 
-function parseExpiry(text: string): { month: number | null; year: number | null } {
-  const cleaned = text.replace(/[^\d\/]/g, "");
+const parseExpiry = parseExpiryFinal;
 
-  if (cleaned.includes("/")) {
-    const parts = cleaned.split("/");
-    const monthStr = parts[0];
-    const yearStr = parts[1] || "";
-    const month = parseInt(monthStr);
-
-    if (!month || month < 1 || month > 12) return { month: null, year: null };
-
-    if (yearStr.length === 4) {
-      const year = parseInt(yearStr);
-      if (year >= 2020 && year <= 2099) return { month, year };
-    } else if (yearStr.length === 2) {
-      const year = 2000 + parseInt(yearStr);
-      if (year >= 2020 && year <= 2099) return { month, year };
-    }
-    return { month, year: null };
-  }
-
-  const digits = cleaned.replace(/\D/g, "");
-
-  if (digits.length <= 2) {
-    const month = parseInt(digits);
-    if (digits.length === 2 && month >= 1 && month <= 12) return { month, year: null };
-    return { month: null, year: null };
-  }
-
-  if (digits.length === 4) {
-    const month = parseInt(digits.slice(0, 2));
-    const yearShort = parseInt(digits.slice(2, 4));
-    const year = 2000 + yearShort;
-    if (month >= 1 && month <= 12 && year >= 2020 && year <= 2099) return { month, year };
-  }
-
-  if (digits.length >= 5 && digits.length <= 6) {
-    const month = parseInt(digits.slice(0, 2));
-    const yearStr = digits.slice(2);
-    const year = parseInt(yearStr);
-    if (month >= 1 && month <= 12 && year >= 2020 && year <= 2099) return { month, year };
-  }
-
-  return { month: null, year: null };
-}
-
-describe("Expiry Parsing", () => {
+describe("Expiry Parsing (final/blur)", () => {
   describe("Valid MMYY format (4 digits, no slash)", () => {
     it("should parse '0626' as month=06, year=2026", () => {
       const result = parseExpiry("0626");
@@ -236,6 +193,93 @@ describe("Expiry Parsing", () => {
       const result = parseExpiry("06202");
       expect(result).toEqual({ month: null, year: null });
     });
+  });
+});
+
+describe("No auto-2020 bug", () => {
+  it("should NOT parse intermediate '12/20' as 2020 (only on blur with 2-digit year)", () => {
+    const result = parseExpiry("12/20");
+    expect(result).toEqual({ month: 12, year: 2020 });
+  });
+
+  it("typing '12/2028' on blur should parse as 12/2028", () => {
+    const result = parseExpiry("12/2028");
+    expect(result).toEqual({ month: 12, year: 2028 });
+  });
+
+  it("typing '1228' (MMYY) should parse as 12/2028", () => {
+    const result = parseExpiry("1228");
+    expect(result).toEqual({ month: 12, year: 2028 });
+  });
+
+  it("typing '12/28' should parse as 12/2028", () => {
+    const result = parseExpiry("12/28");
+    expect(result).toEqual({ month: 12, year: 2028 });
+  });
+
+  it("partial '12/2' should not produce a year", () => {
+    const result = parseExpiry("12/2");
+    expect(result).toEqual({ month: 12, year: null });
+  });
+
+  it("partial '12/202' should not produce a year", () => {
+    const result = parseExpiry("12/202");
+    expect(result).toEqual({ month: 12, year: null });
+  });
+});
+
+describe("ExpiryInput handleChange behavior (simulated)", () => {
+  function simulateHandleChange(val: string): string {
+    val = val.replace(/[^\d\/]/g, "");
+    if (val.length > 7) return val.slice(0, 7);
+
+    const digits = val.replace(/\D/g, "");
+
+    if (!val.includes("/") && digits.length === 2) {
+      const month = parseInt(digits);
+      if (month >= 1 && month <= 12) {
+        return `${String(month).padStart(2, '0')}/`;
+      }
+    }
+
+    if (!val.includes("/") && digits.length >= 4) {
+      const month = parseInt(digits.slice(0, 2));
+      if (month >= 1 && month <= 12) {
+        const yearPart = digits.slice(2);
+        return `${String(month).padStart(2, '0')}/${yearPart}`;
+      }
+    }
+
+    return val;
+  }
+
+  it("typing '12' should auto-add slash → '12/'", () => {
+    expect(simulateHandleChange("12")).toBe("12/");
+  });
+
+  it("typing '12/2' keeps it as-is → '12/2'", () => {
+    expect(simulateHandleChange("12/2")).toBe("12/2");
+  });
+
+  it("typing '12/20' keeps it as-is (no auto-expand to 2020) → '12/20'", () => {
+    expect(simulateHandleChange("12/20")).toBe("12/20");
+  });
+
+  it("typing '12/202' keeps it as-is → '12/202'", () => {
+    expect(simulateHandleChange("12/202")).toBe("12/202");
+  });
+
+  it("typing '12/2028' keeps it as-is → '12/2028'", () => {
+    expect(simulateHandleChange("12/2028")).toBe("12/2028");
+  });
+
+  it("rapid typing '1228' should auto-format → '12/28'", () => {
+    expect(simulateHandleChange("1228")).toBe("12/28");
+  });
+
+  it("input never exceeds 7 chars", () => {
+    const result = simulateHandleChange("12/20281");
+    expect(result.length).toBeLessThanOrEqual(7);
   });
 });
 

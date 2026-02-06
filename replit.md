@@ -85,4 +85,8 @@ Preferred communication style: Simple, everyday language.
 - Stricter validation in postReceiving: supplier, invoice number, and warehouse are mandatory.
 
 ### Reusable UI Components
-- ExpiryInput (`client/src/components/ui/expiry-input.tsx`): Single text input for MM/YYYY format with auto-slash, supports MMYY/MMYYYY/MM/YY/MM/YYYY parsing.
+- ExpiryInput (`client/src/components/ui/expiry-input.tsx`): Single text input for MM/YYYY format with auto-slash, supports MMYY/MMYYYY/MM/YY/MM/YYYY parsing. Exports `parseExpiryFinal` for testability. Key design: onChange only fires on blur/Enter/Tab, never during typing, to prevent premature year expansion (e.g., "12/20" → 2020 bug).
+
+### Focus Management
+- SupplierReceiving uses `lineFieldFocusedRef` to track when any inline line input (bonus, sale price, expiry, batch) has focus.
+- All barcode auto-focus calls go through `safeFocusBarcode()` which checks `lineFieldFocusedRef` before focusing, preventing focus stealing during field editing.

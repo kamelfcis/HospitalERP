@@ -108,6 +108,15 @@ export default function SupplierReceiving() {
   const [editingQtyValue, setEditingQtyValue] = useState<string>("");
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const qtyConfirmedViaEnterRef = useRef(false);
+  const lineFieldFocusedRef = useRef(false);
+
+  const safeFocusBarcode = useCallback((delay = 50) => {
+    setTimeout(() => {
+      if (!lineFieldFocusedRef.current) {
+        barcodeInputRef.current?.focus();
+      }
+    }, delay);
+  }, []);
 
   const [confirmPostOpen, setConfirmPostOpen] = useState(false);
 
@@ -574,8 +583,8 @@ export default function SupplierReceiving() {
 
     setEditingQtyIndex(null);
     updateLine(index, { qtyEntered });
-    setTimeout(() => barcodeInputRef.current?.focus(), 50);
-  }, [formLines, editingQtyValue, toast, updateLine]);
+    safeFocusBarcode();
+  }, [formLines, editingQtyValue, toast, updateLine, safeFocusBarcode]);
 
   const handleBarcodeScan = useCallback(async (barcodeValue: string) => {
     if (!barcodeValue.trim() || barcodeLoading) return;
@@ -714,13 +723,13 @@ export default function SupplierReceiving() {
         if (editingQtyIndex !== null) {
           setEditingQtyIndex(null);
         }
-        barcodeInputRef.current?.focus();
+        safeFocusBarcode(0);
       }
       if (e.key === "Escape" && editingQtyIndex !== null) {
         e.preventDefault();
         setEditingQtyIndex(null);
         setEditingQtyValue("");
-        setTimeout(() => barcodeInputRef.current?.focus(), 50);
+        safeFocusBarcode();
       }
     };
     document.addEventListener("keydown", handleGlobalKeyDown);
@@ -729,10 +738,14 @@ export default function SupplierReceiving() {
 
   useEffect(() => {
     if (activeTab === "form" && !modalOpen && editingQtyIndex === null) {
-      const timer = setTimeout(() => barcodeInputRef.current?.focus(), 100);
+      const timer = setTimeout(() => {
+        if (!lineFieldFocusedRef.current) {
+          safeFocusBarcode(0);
+        }
+      }, 100);
       return () => clearTimeout(timer);
     }
-  }, [activeTab, modalOpen, editingQtyIndex]);
+  }, [activeTab, modalOpen, editingQtyIndex, safeFocusBarcode]);
 
   const handleFormContainerClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -742,10 +755,11 @@ export default function SupplierReceiving() {
     if (target.closest("select")) return;
     if (target.closest("[role='dialog']")) return;
     if (target.closest("[role='listbox']")) return;
-    if (editingQtyIndex === null && !modalOpen) {
-      setTimeout(() => barcodeInputRef.current?.focus(), 50);
+    if (target.closest("[data-expiry-input]")) return;
+    if (editingQtyIndex === null && !modalOpen && !lineFieldFocusedRef.current) {
+      safeFocusBarcode();
     }
-  }, [editingQtyIndex, modalOpen]);
+  }, [editingQtyIndex, modalOpen, safeFocusBarcode]);
 
   return (
     <div className="p-2 space-y-2" dir="rtl">
@@ -1190,7 +1204,7 @@ export default function SupplierReceiving() {
                                   e.preventDefault();
                                   setEditingQtyIndex(null);
                                   setEditingQtyValue("");
-                                  setTimeout(() => barcodeInputRef.current?.focus(), 50);
+                                  safeFocusBarcode();
                                 }
                               }}
                               onBlur={() => {
@@ -1229,6 +1243,8 @@ export default function SupplierReceiving() {
                               type="number"
                               value={line.bonusQty || ""}
                               onChange={(e) => updateLine(idx, { bonusQty: parseFloat(e.target.value) || 0 })}
+                              onFocus={() => { lineFieldFocusedRef.current = true; }}
+                              onBlur={() => { lineFieldFocusedRef.current = false; }}
                               className="w-[55px] h-6 text-[11px] px-1 border rounded text-center bg-transparent"
                               placeholder="0"
                               min="0"
@@ -1245,6 +1261,8 @@ export default function SupplierReceiving() {
                               type="number"
                               value={line.salePrice ?? ""}
                               onChange={(e) => updateLine(idx, { salePrice: e.target.value ? parseFloat(e.target.value) : null })}
+                              onFocus={() => { lineFieldFocusedRef.current = true; }}
+                              onBlur={() => { lineFieldFocusedRef.current = false; }}
                               className="w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center"
                               placeholder="0.00"
                               min="0"
@@ -1253,7 +1271,10 @@ export default function SupplierReceiving() {
                             />
                           )}
                         </td>
-                        <td className="py-0.5 px-2 whitespace-nowrap">
+                        <td className="py-0.5 px-2 whitespace-nowrap"
+                            onFocusCapture={() => { lineFieldFocusedRef.current = true; }}
+                            onBlurCapture={() => { lineFieldFocusedRef.current = false; }}
+                        >
                           {isViewOnly ? (
                             <span>{line.expiryMonth && line.expiryYear ? `${String(line.expiryMonth).padStart(2, '0')}/${line.expiryYear}` : "—"}</span>
                           ) : (
@@ -1274,6 +1295,8 @@ export default function SupplierReceiving() {
                               type="text"
                               value={line.batchNumber}
                               onChange={(e) => updateLine(idx, { batchNumber: e.target.value })}
+                              onFocus={() => { lineFieldFocusedRef.current = true; }}
+                              onBlur={() => { lineFieldFocusedRef.current = false; }}
                               className="w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent"
                               placeholder={line.item?.hasBatch ? "مطلوب" : "—"}
                               data-testid={`input-batch-${idx}`}
