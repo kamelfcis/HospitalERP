@@ -645,7 +645,7 @@ export default function StoreTransfers() {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-[10px]" data-testid="table-transfer-log">
+                  <table className="w-full text-[10px]" dir="rtl" data-testid="table-transfer-log">
                     <thead>
                       <tr className="peachtree-grid-header">
                         <th className="py-1 px-2 text-right font-medium">رقم الإذن</th>
@@ -836,7 +836,7 @@ export default function StoreTransfers() {
           <fieldset className="peachtree-grid p-2">
             <legend className="text-xs font-semibold px-1">أصناف التحويل</legend>
             <div className="overflow-x-auto">
-              <table className="w-full text-[10px]" data-testid="table-transfer-lines">
+              <table className="w-full text-[10px]" dir="rtl" data-testid="table-transfer-lines">
                 <thead>
                   <tr className="peachtree-grid-header">
                     <th className="py-1 px-2 text-right font-medium">اسم الصنف</th>
