@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, X, ScanBarcode, Truck, AlertTriangle, Check } from "lucide-react";
+import { Loader2, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, X, ScanBarcode, Truck, AlertTriangle, Check, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateShort } from "@/lib/formatters";
@@ -25,8 +25,12 @@ interface ReceivingLineLocal {
   purchasePrice: number;
   lineTotal: number;
   batchNumber: string;
-  expiryDate: string;
-  salePriceHint: number | null;
+  expiryMonth: number | null;
+  expiryYear: number | null;
+  salePrice: number | null;
+  lastPurchasePriceHint: number | null;
+  lastSalePriceHint: number | null;
+  onHandInWarehouse: string;
   notes: string;
   isRejected: boolean;
   rejectionReason: string;
@@ -101,6 +105,20 @@ export default function SupplierReceiving() {
   const qtyConfirmedViaEnterRef = useRef(false);
 
   const [confirmPostOpen, setConfirmPostOpen] = useState(false);
+
+  const [statsItemId, setStatsItemId] = useState<string | null>(null);
+  const [statsData, setStatsData] = useState<any[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  const openStats = async (itemId: string) => {
+    setStatsItemId(itemId);
+    setStatsLoading(true);
+    try {
+      const res = await fetch(`/api/items/${itemId}/warehouse-stats`);
+      if (res.ok) setStatsData(await res.json());
+    } catch {}
+    setStatsLoading(false);
+  };
 
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
@@ -223,11 +241,10 @@ export default function SupplierReceiving() {
     const qtyEntered = 1;
     const qtyInMinor = calculateQtyInMinor(qtyEntered, unitLevel, item);
 
-    let purchasePrice = 0;
     const hints = await fetchHints(item.id, supplierId, warehouseId);
-    if (hints?.lastPurchasePrice) {
-      purchasePrice = parseFloat(hints.lastPurchasePrice);
-    }
+    const lastPurchasePrice = hints?.lastPurchasePrice ? parseFloat(hints.lastPurchasePrice) : 0;
+    const currentSalePrice = hints?.currentSalePrice ? parseFloat(hints.currentSalePrice) : 0;
+    const lastSalePrice = hints?.lastSalePrice ? parseFloat(hints.lastSalePrice) : null;
 
     const newLine: ReceivingLineLocal = {
       id: crypto.randomUUID(),
@@ -236,11 +253,15 @@ export default function SupplierReceiving() {
       unitLevel,
       qtyEntered,
       qtyInMinor,
-      purchasePrice,
-      lineTotal: qtyEntered * purchasePrice,
+      purchasePrice: lastPurchasePrice,
+      lineTotal: 0,
       batchNumber: "",
-      expiryDate: "",
-      salePriceHint: null,
+      expiryMonth: null,
+      expiryYear: null,
+      salePrice: currentSalePrice || null,
+      lastPurchasePriceHint: lastPurchasePrice || null,
+      lastSalePriceHint: lastSalePrice ? parseFloat(String(lastSalePrice)) : null,
+      onHandInWarehouse: hints?.onHandMinor || "0",
       notes: "",
       isRejected: false,
       rejectionReason: "",
@@ -271,7 +292,7 @@ export default function SupplierReceiving() {
         setSupplierSearchText(`${receiving.supplier.code} - ${receiving.supplier.nameAr}`);
       }
 
-      const loadedLines: ReceivingLineLocal[] = (receiving.lines || []).map((line) => ({
+      const loadedLines: ReceivingLineLocal[] = (receiving.lines || []).map((line: any) => ({
         id: crypto.randomUUID(),
         itemId: line.itemId,
         item: line.item || null,
@@ -281,12 +302,33 @@ export default function SupplierReceiving() {
         purchasePrice: parseFloat(line.purchasePrice as string) || 0,
         lineTotal: parseFloat(line.lineTotal as string) || 0,
         batchNumber: line.batchNumber || "",
-        expiryDate: line.expiryDate || "",
-        salePriceHint: line.salePriceHint ? parseFloat(line.salePriceHint as string) : null,
+        expiryMonth: line.expiryMonth ?? null,
+        expiryYear: line.expiryYear ?? null,
+        salePrice: line.salePrice ? parseFloat(line.salePrice as string) : null,
+        lastPurchasePriceHint: line.purchasePrice ? parseFloat(line.purchasePrice as string) : null,
+        lastSalePriceHint: line.salePriceHint ? parseFloat(line.salePriceHint as string) : null,
+        onHandInWarehouse: "0",
         notes: line.notes || "",
         isRejected: line.isRejected || false,
         rejectionReason: line.rejectionReason || "",
       }));
+
+      for (let i = 0; i < loadedLines.length; i++) {
+        const ln = loadedLines[i];
+        try {
+          const hintsRes = await fetch(`/api/items/${ln.itemId}/hints?supplierId=${receiving.supplierId}&warehouseId=${receiving.warehouseId}`);
+          if (hintsRes.ok) {
+            const hints = await hintsRes.json();
+            loadedLines[i] = {
+              ...loadedLines[i],
+              onHandInWarehouse: hints.onHandMinor || "0",
+              lastPurchasePriceHint: loadedLines[i].lastPurchasePriceHint || (hints.lastPurchasePrice ? parseFloat(hints.lastPurchasePrice) : null),
+              lastSalePriceHint: loadedLines[i].lastSalePriceHint || (hints.lastSalePrice ? parseFloat(hints.lastSalePrice) : null),
+            };
+          }
+        } catch {}
+      }
+
       setFormLines(loadedLines);
       setActiveTab("form");
     } catch (err: any) {
@@ -342,8 +384,9 @@ export default function SupplierReceiving() {
           purchasePrice: String(l.purchasePrice),
           lineTotal: String(l.lineTotal),
           batchNumber: l.batchNumber || undefined,
-          expiryDate: l.expiryDate || undefined,
-          salePriceHint: l.salePriceHint != null ? String(l.salePriceHint) : undefined,
+          expiryMonth: l.expiryMonth || undefined,
+          expiryYear: l.expiryYear || undefined,
+          salePrice: l.salePrice != null ? String(l.salePrice) : undefined,
           notes: l.notes || undefined,
           isRejected: l.isRejected,
           rejectionReason: l.rejectionReason || undefined,
@@ -390,8 +433,9 @@ export default function SupplierReceiving() {
           purchasePrice: String(l.purchasePrice),
           lineTotal: String(l.lineTotal),
           batchNumber: l.batchNumber || undefined,
-          expiryDate: l.expiryDate || undefined,
-          salePriceHint: l.salePriceHint != null ? String(l.salePriceHint) : undefined,
+          expiryMonth: l.expiryMonth || undefined,
+          expiryYear: l.expiryYear || undefined,
+          salePrice: l.salePrice != null ? String(l.salePrice) : undefined,
           notes: l.notes || undefined,
           isRejected: l.isRejected,
           rejectionReason: l.rejectionReason || undefined,
@@ -437,13 +481,10 @@ export default function SupplierReceiving() {
     setFormLines((prev) => {
       const copy = [...prev];
       const line = { ...copy[index], ...updates };
-      if ("qtyEntered" in updates || "purchasePrice" in updates || "unitLevel" in updates) {
+      if ("qtyEntered" in updates || "unitLevel" in updates) {
         const qty = updates.qtyEntered ?? line.qtyEntered;
-        const price = updates.purchasePrice ?? line.purchasePrice;
         const unitLvl = updates.unitLevel ?? line.unitLevel;
         line.qtyEntered = qty;
-        line.purchasePrice = price;
-        line.lineTotal = qty * price;
         line.qtyInMinor = calculateQtyInMinor(qty, unitLvl, line.item);
         line.unitLevel = unitLvl;
       }
@@ -503,11 +544,10 @@ export default function SupplierReceiving() {
       }
 
       const unitLevel = getDefaultUnitLevel(item);
-      let purchasePrice = 0;
       const hints = await fetchHints(item.id, supplierId, warehouseId);
-      if (hints?.lastPurchasePrice) {
-        purchasePrice = parseFloat(hints.lastPurchasePrice);
-      }
+      const lastPurchasePrice = hints?.lastPurchasePrice ? parseFloat(hints.lastPurchasePrice) : 0;
+      const currentSalePrice = hints?.currentSalePrice ? parseFloat(hints.currentSalePrice) : 0;
+      const lastSalePrice = hints?.lastSalePrice ? parseFloat(hints.lastSalePrice) : null;
 
       const newLine: ReceivingLineLocal = {
         id: crypto.randomUUID(),
@@ -516,11 +556,15 @@ export default function SupplierReceiving() {
         unitLevel,
         qtyEntered: 1,
         qtyInMinor: calculateQtyInMinor(1, unitLevel, item),
-        purchasePrice,
-        lineTotal: purchasePrice,
+        purchasePrice: lastPurchasePrice,
+        lineTotal: 0,
         batchNumber: "",
-        expiryDate: "",
-        salePriceHint: null,
+        expiryMonth: null,
+        expiryYear: null,
+        salePrice: currentSalePrice || null,
+        lastPurchasePriceHint: lastPurchasePrice || null,
+        lastSalePriceHint: lastSalePrice ? parseFloat(String(lastSalePrice)) : null,
+        onHandInWarehouse: hints?.onHandMinor || "0",
         notes: "",
         isRejected: false,
         rejectionReason: "",
@@ -986,11 +1030,13 @@ export default function SupplierReceiving() {
                     <th className="py-1 px-2 text-right font-bold text-[13px]">الصنف</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
-                    <th className="py-1 px-2 text-right whitespace-nowrap">سعر الشراء</th>
-                    <th className="py-1 px-2 text-right whitespace-nowrap">الإجمالي</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
                     <th className="py-1 px-2 text-right whitespace-nowrap">رقم التشغيلة</th>
-                    <th className="py-1 px-2 text-right whitespace-nowrap">تاريخ الصلاحية</th>
-                    <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع المقترح</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">آخر شراء</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">آخر بيع</th>
+                    <th className="py-1 px-2 text-right whitespace-nowrap">رصيد المخزن</th>
+                    <th className="py-1 px-2 text-center whitespace-nowrap">إحصاء</th>
                     {!isViewOnly && <th className="py-1 px-2 text-center whitespace-nowrap">حذف</th>}
                   </tr>
                 </thead>
@@ -1077,22 +1123,47 @@ export default function SupplierReceiving() {
                         </td>
                         <td className="py-0.5 px-2 whitespace-nowrap">
                           {isViewOnly ? (
-                            <span>{line.purchasePrice.toFixed(2)}</span>
+                            <span>{line.salePrice != null ? line.salePrice.toFixed(2) : "—"}</span>
                           ) : (
                             <input
                               type="number"
-                              value={line.purchasePrice || ""}
-                              onChange={(e) => updateLine(idx, { purchasePrice: parseFloat(e.target.value) || 0 })}
-                              className="w-[80px] h-6 text-[11px] px-1 border rounded text-center bg-transparent"
+                              value={line.salePrice ?? ""}
+                              onChange={(e) => updateLine(idx, { salePrice: e.target.value ? parseFloat(e.target.value) : null })}
+                              className="w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center"
                               placeholder="0.00"
                               min="0"
                               step="any"
-                              data-testid={`input-price-${idx}`}
+                              data-testid={`input-sale-price-${idx}`}
                             />
                           )}
                         </td>
-                        <td className="py-0.5 px-2 whitespace-nowrap font-mono">
-                          {line.lineTotal.toFixed(2)}
+                        <td className="py-0.5 px-2 whitespace-nowrap">
+                          {isViewOnly ? (
+                            <span>{line.expiryMonth && line.expiryYear ? `${String(line.expiryMonth).padStart(2, '0')}/${line.expiryYear}` : "—"}</span>
+                          ) : (
+                            <div className="flex gap-0.5 items-center">
+                              <select
+                                value={line.expiryMonth || ""}
+                                onChange={(e) => updateLine(idx, { expiryMonth: e.target.value ? parseInt(e.target.value) : null })}
+                                className="h-6 text-[10px] w-[45px] border rounded bg-transparent"
+                                data-testid={`select-expiry-month-${idx}`}
+                              >
+                                <option value="">شهر</option>
+                                {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{String(m).padStart(2,'0')}</option>)}
+                              </select>
+                              <span className="text-muted-foreground text-[10px]">/</span>
+                              <input
+                                type="number"
+                                value={line.expiryYear || ""}
+                                onChange={(e) => updateLine(idx, { expiryYear: e.target.value ? parseInt(e.target.value) : null })}
+                                className="h-6 text-[10px] w-[55px] border rounded bg-transparent text-center"
+                                placeholder="سنة"
+                                min="2024"
+                                max="2040"
+                                data-testid={`input-expiry-year-${idx}`}
+                              />
+                            </div>
+                          )}
                         </td>
                         <td className="py-0.5 px-2 whitespace-nowrap">
                           {isViewOnly ? (
@@ -1108,34 +1179,24 @@ export default function SupplierReceiving() {
                             />
                           )}
                         </td>
-                        <td className="py-0.5 px-2 whitespace-nowrap">
-                          {isViewOnly ? (
-                            <span>{line.expiryDate ? formatDateShort(line.expiryDate) : "—"}</span>
-                          ) : (
-                            <input
-                              type="date"
-                              value={line.expiryDate}
-                              onChange={(e) => updateLine(idx, { expiryDate: e.target.value })}
-                              className="w-[110px] h-6 text-[11px] px-1 border rounded bg-transparent"
-                              data-testid={`input-expiry-${idx}`}
-                            />
-                          )}
+                        <td className="py-0.5 px-2 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
+                          {line.lastPurchasePriceHint != null ? line.lastPurchasePriceHint.toFixed(2) : "—"}
                         </td>
-                        <td className="py-0.5 px-2 whitespace-nowrap">
-                          {isViewOnly ? (
-                            <span>{line.salePriceHint != null ? line.salePriceHint.toFixed(2) : "—"}</span>
-                          ) : (
-                            <input
-                              type="number"
-                              value={line.salePriceHint ?? ""}
-                              onChange={(e) => updateLine(idx, { salePriceHint: e.target.value ? parseFloat(e.target.value) : null })}
-                              className="w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent"
-                              placeholder="اختياري"
-                              min="0"
-                              step="any"
-                              data-testid={`input-sale-hint-${idx}`}
-                            />
-                          )}
+                        <td className="py-0.5 px-2 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
+                          {line.lastSalePriceHint != null ? line.lastSalePriceHint.toFixed(2) : "—"}
+                        </td>
+                        <td className="py-0.5 px-2 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
+                          {line.onHandInWarehouse}
+                        </td>
+                        <td className="py-0.5 px-2 text-center">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => openStats(line.itemId)}
+                            data-testid={`button-stats-${idx}`}
+                          >
+                            <BarChart3 className="h-3 w-3" />
+                          </Button>
                         </td>
                         {!isViewOnly && (
                           <td className="py-0.5 px-2 text-center">
@@ -1153,7 +1214,7 @@ export default function SupplierReceiving() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={isViewOnly ? 9 : 10} className="py-4 text-center text-muted-foreground">
+                      <td colSpan={isViewOnly ? 11 : 12} className="py-4 text-center text-muted-foreground">
                         لا توجد أصناف - اضغط "إضافة صنف" أو امسح الباركود
                       </td>
                     </tr>
@@ -1162,9 +1223,9 @@ export default function SupplierReceiving() {
                 {formLines.length > 0 && (
                   <tfoot>
                     <tr className="border-t font-bold">
-                      <td colSpan={5} className="py-1 px-2 text-left">الإجمالي الكلي</td>
-                      <td className="py-1 px-2 font-mono">{grandTotal.toFixed(2)}</td>
-                      <td colSpan={isViewOnly ? 3 : 4}></td>
+                      <td colSpan={3} className="py-1 px-2 text-left">إجمالي الأصناف</td>
+                      <td className="py-1 px-2 font-mono">{formLines.length}</td>
+                      <td colSpan={isViewOnly ? 7 : 8}></td>
                     </tr>
                   </tfoot>
                 )}
@@ -1214,7 +1275,7 @@ export default function SupplierReceiving() {
               </Button>
               {formLines.length > 0 && (
                 <span className="text-[10px] text-muted-foreground mr-auto">
-                  {formLines.length} صنف | الإجمالي: {grandTotal.toFixed(2)}
+                  {formLines.length} صنف
                 </span>
               )}
             </div>
@@ -1232,7 +1293,7 @@ export default function SupplierReceiving() {
               </Button>
               {formLines.length > 0 && (
                 <span className="text-[10px] text-muted-foreground mr-auto">
-                  {formLines.length} صنف | الإجمالي: {grandTotal.toFixed(2)}
+                  {formLines.length} صنف
                 </span>
               )}
             </div>
@@ -1349,6 +1410,38 @@ export default function SupplierReceiving() {
               تأكيد الترحيل
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!statsItemId} onOpenChange={(open) => !open && setStatsItemId(null)}>
+        <DialogContent className="max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>إحصاء المخزون</DialogTitle>
+            <DialogDescription>الكميات المتاحة في جميع المستودعات</DialogDescription>
+          </DialogHeader>
+          {statsLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : statsData.length === 0 ? (
+            <p className="text-center text-muted-foreground py-4">لا يوجد مخزون</p>
+          ) : (
+            <div className="space-y-2 max-h-[300px] overflow-auto">
+              {statsData.map((wh: any, i: number) => (
+                <div key={i} className="border rounded p-2 text-[12px]">
+                  <div className="font-bold">{wh.warehouseCode} - {wh.warehouseName}</div>
+                  <div>الكمية: <span className="font-mono">{parseFloat(wh.qtyMinor).toFixed(2)}</span></div>
+                  {wh.expiryBreakdown && wh.expiryBreakdown.length > 0 && (
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {wh.expiryBreakdown.map((eb: any, j: number) => (
+                        <div key={j}>
+                          {eb.expiryMonth && eb.expiryYear ? `${String(eb.expiryMonth).padStart(2,'0')}/${eb.expiryYear}` : "بدون صلاحية"}: {parseFloat(eb.qty).toFixed(2)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

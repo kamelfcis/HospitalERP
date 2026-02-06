@@ -23,6 +23,8 @@ interface TransferLineLocal {
   qtyEntered: number;
   qtyInMinor: number;
   selectedExpiryDate: string | null;
+  selectedExpiryMonth: number | null;
+  selectedExpiryYear: number | null;
   availableQtyMinor: string;
   notes: string;
   fefoLocked: boolean;
@@ -30,6 +32,8 @@ interface TransferLineLocal {
 
 interface ExpiryOption {
   expiryDate: string;
+  expiryMonth: number | null;
+  expiryYear: number | null;
   qtyAvailableMinor: string;
 }
 
@@ -190,7 +194,7 @@ export default function StoreTransfers() {
       setFormStatus(transfer.status);
       setFormTransferNumber(transfer.transferNumber);
 
-      const loadedLines: TransferLineLocal[] = (transfer.lines || []).map((line) => ({
+      const loadedLines: TransferLineLocal[] = (transfer.lines || []).map((line: any) => ({
         id: crypto.randomUUID(),
         itemId: line.itemId,
         item: line.item || null,
@@ -198,6 +202,8 @@ export default function StoreTransfers() {
         qtyEntered: parseFloat(line.qtyEntered as string),
         qtyInMinor: parseFloat(line.qtyInMinor as string),
         selectedExpiryDate: line.selectedExpiryDate || null,
+        selectedExpiryMonth: line.selectedExpiryMonth || null,
+        selectedExpiryYear: line.selectedExpiryYear || null,
         availableQtyMinor: line.availableAtSaveMinor as string || "0",
         notes: line.notes || "",
         fefoLocked: true,
@@ -222,6 +228,8 @@ export default function StoreTransfers() {
           qtyEntered: String(l.qtyEntered),
           qtyInMinor: String(l.qtyInMinor),
           selectedExpiryDate: l.selectedExpiryDate || undefined,
+          expiryMonth: l.selectedExpiryMonth || undefined,
+          expiryYear: l.selectedExpiryYear || undefined,
           availableAtSaveMinor: l.availableQtyMinor || undefined,
           notes: l.notes || undefined,
         })),
@@ -255,6 +263,8 @@ export default function StoreTransfers() {
           qtyEntered: String(l.qtyEntered),
           qtyInMinor: String(l.qtyInMinor),
           selectedExpiryDate: l.selectedExpiryDate || undefined,
+          expiryMonth: l.selectedExpiryMonth || undefined,
+          expiryYear: l.selectedExpiryYear || undefined,
           availableAtSaveMinor: l.availableQtyMinor || undefined,
           notes: l.notes || undefined,
         })),
@@ -563,6 +573,8 @@ export default function StoreTransfers() {
               qtyEntered: displayQty,
               qtyInMinor: allocMinor,
               selectedExpiryDate: alloc.expiryDate || null,
+              selectedExpiryMonth: alloc.expiryMonth || null,
+              selectedExpiryYear: alloc.expiryYear || null,
               availableQtyMinor: alloc.availableQty || "0",
               notes: "",
               fefoLocked: true,
@@ -589,6 +601,8 @@ export default function StoreTransfers() {
         qtyEntered,
         qtyInMinor,
         selectedExpiryDate: null,
+        selectedExpiryMonth: null,
+        selectedExpiryYear: null,
         availableQtyMinor: item.availableQtyMinor || "0",
         notes: "",
         fefoLocked: true,
@@ -705,6 +719,8 @@ export default function StoreTransfers() {
               qtyEntered: displayQty,
               qtyInMinor: allocMinor,
               selectedExpiryDate: alloc.expiryDate || null,
+              selectedExpiryMonth: alloc.expiryMonth || null,
+              selectedExpiryYear: alloc.expiryYear || null,
               availableQtyMinor: alloc.availableQty || "0",
               notes: "",
               fefoLocked: true,
@@ -775,6 +791,8 @@ export default function StoreTransfers() {
         qtyEntered: 1,
         qtyInMinor: calculateQtyInMinor(1, "major", item),
         selectedExpiryDate: null,
+        selectedExpiryMonth: null,
+        selectedExpiryYear: null,
         availableQtyMinor: item.availableQtyMinor || "0",
         notes: "",
         fefoLocked: false,
@@ -1239,6 +1257,8 @@ export default function StoreTransfers() {
                         <td className="py-0.5 px-2 whitespace-nowrap">
                           {fefoLoadingIndex === idx ? (
                             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground inline" />
+                          ) : line.selectedExpiryMonth && line.selectedExpiryYear ? (
+                            `${String(line.selectedExpiryMonth).padStart(2,'0')}/${line.selectedExpiryYear}`
                           ) : line.selectedExpiryDate ? (
                             formatDateShort(line.selectedExpiryDate)
                           ) : (
@@ -1449,7 +1469,9 @@ export default function StoreTransfers() {
                           {parseFloat(item.availableQtyMinor || "0").toFixed(2)}
                         </td>
                         <td className="py-1 px-2">
-                          {item.nearestExpiryDate ? formatDateShort(item.nearestExpiryDate) : "—"}
+                          {item.nearestExpiryMonth && item.nearestExpiryYear 
+                            ? `${String(item.nearestExpiryMonth).padStart(2,'0')}/${item.nearestExpiryYear}` 
+                            : (item.nearestExpiryDate ? formatDateShort(item.nearestExpiryDate) : "—")}
                         </td>
                       </tr>
                     ))
@@ -1508,7 +1530,9 @@ export default function StoreTransfers() {
                           <SelectContent>
                             {modalExpiryOptions.map((opt) => (
                               <SelectItem key={opt.expiryDate} value={opt.expiryDate}>
-                                {formatDateShort(opt.expiryDate)} (متاح: {parseFloat(opt.qtyAvailableMinor).toFixed(2)})
+                                {opt.expiryMonth && opt.expiryYear 
+                                  ? `${String(opt.expiryMonth).padStart(2,'0')}/${opt.expiryYear}` 
+                                  : formatDateShort(opt.expiryDate)} (متاح: {parseFloat(opt.qtyAvailableMinor).toFixed(2)})
                               </SelectItem>
                             ))}
                           </SelectContent>

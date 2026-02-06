@@ -209,7 +209,7 @@ export interface IStorage {
   getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
   getItemAvailability(itemId: string, warehouseId: string): Promise<string>;
   searchItemsForTransfer(query: string, warehouseId: string, limit?: number): Promise<any[]>;
-  getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; qtyAvailableMinor: string}[]>;
+  getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; expiryMonth: number | null; expiryYear: number | null; qtyAvailableMinor: string}[]>;
   searchItemsAdvanced(params: {
     mode: 'AR' | 'EN' | 'CODE' | 'BARCODE';
     query: string;
@@ -234,10 +234,11 @@ export interface IStorage {
   getReceiving(id: string): Promise<ReceivingHeaderWithDetails | undefined>;
   getNextReceivingNumber(): Promise<number>;
   checkSupplierInvoiceUnique(supplierId: string, supplierInvoiceNo: string, excludeId?: string): Promise<boolean>;
-  saveDraftReceiving(header: InsertReceivingHeader, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; purchasePrice: string; lineTotal: string; batchNumber?: string; expiryDate?: string; salePriceHint?: string; notes?: string; isRejected?: boolean; rejectionReason?: string }[], existingId?: string): Promise<ReceivingHeader>;
+  saveDraftReceiving(header: InsertReceivingHeader, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; purchasePrice: string; lineTotal: string; batchNumber?: string; expiryDate?: string; expiryMonth?: number; expiryYear?: number; salePrice?: string; salePriceHint?: string; notes?: string; isRejected?: boolean; rejectionReason?: string }[], existingId?: string): Promise<ReceivingHeader>;
   postReceiving(id: string): Promise<ReceivingHeader>;
   deleteReceiving(id: string): Promise<boolean>;
   getItemHints(itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }>;
+  getItemWarehouseStats(itemId: string): Promise<{ warehouseId: string; warehouseName: string; warehouseCode: string; qtyMinor: string; expiryBreakdown: { expiryMonth: number | null; expiryYear: number | null; qty: string }[] }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1324,7 +1325,7 @@ export class DatabaseStorage implements IStorage {
         if (requiredQty <= 0) throw new Error(`الكمية يجب أن تكون أكبر من صفر: ${item.nameAr}`);
 
         let remaining = requiredQty;
-        const allocations: { lotId: string; expiryDate: string | null; allocatedQty: number; unitCost: string }[] = [];
+        const allocations: { lotId: string; expiryDate: string | null; expiryMonth: number | null; expiryYear: number | null; allocatedQty: number; unitCost: string }[] = [];
 
         if (line.selectedExpiryDate && item.hasExpiry) {
           const selectedLots = await tx.select().from(inventoryLots)
@@ -1344,6 +1345,8 @@ export class DatabaseStorage implements IStorage {
             allocations.push({
               lotId: lot.id,
               expiryDate: lot.expiryDate,
+              expiryMonth: lot.expiryMonth,
+              expiryYear: lot.expiryYear,
               allocatedQty: allocated,
               unitCost: lot.purchasePrice,
             });
@@ -1381,6 +1384,8 @@ export class DatabaseStorage implements IStorage {
             allocations.push({
               lotId: lot.id,
               expiryDate: lot.expiryDate,
+              expiryMonth: lot.expiryMonth,
+              expiryYear: lot.expiryYear,
               allocatedQty: allocated,
               unitCost: lot.purchasePrice,
             });
@@ -1437,6 +1442,8 @@ export class DatabaseStorage implements IStorage {
               itemId: line.itemId,
               warehouseId: transfer.destinationWarehouseId,
               expiryDate: item.hasExpiry ? (alloc.expiryDate || null) : null,
+              expiryMonth: item.hasExpiry ? (alloc.expiryMonth || null) : null,
+              expiryYear: item.hasExpiry ? (alloc.expiryYear || null) : null,
               receivedDate: transfer.transferDate,
               purchasePrice: alloc.unitCost,
               qtyInMinor: alloc.allocatedQty.toFixed(4),
@@ -1487,12 +1494,17 @@ export class DatabaseStorage implements IStorage {
   async getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any> {
     const [item] = await db.select().from(items).where(eq(items.id, itemId));
 
+    const asOf = new Date(asOfDate);
+    const asOfMonth = asOf.getMonth() + 1;
+    const asOfYear = asOf.getFullYear();
+
     const expiryCondition = item && item.hasExpiry
       ? and(
-          sql`${inventoryLots.expiryDate} IS NOT NULL`,
-          sql`${inventoryLots.expiryDate} >= ${asOfDate}`
+          sql`${inventoryLots.expiryMonth} IS NOT NULL`,
+          sql`${inventoryLots.expiryYear} IS NOT NULL`,
+          sql`(${inventoryLots.expiryYear} > ${asOfYear} OR (${inventoryLots.expiryYear} = ${asOfYear} AND ${inventoryLots.expiryMonth} >= ${asOfMonth}))`
         )
-      : sql`${inventoryLots.expiryDate} IS NULL`;
+      : sql`${inventoryLots.expiryMonth} IS NULL`;
 
     const lots = await db.select().from(inventoryLots)
       .where(and(
@@ -1502,7 +1514,7 @@ export class DatabaseStorage implements IStorage {
         sql`${inventoryLots.qtyInMinor}::numeric > 0`,
         expiryCondition
       ))
-      .orderBy(asc(inventoryLots.expiryDate), asc(inventoryLots.receivedDate));
+      .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth), asc(inventoryLots.receivedDate));
 
     const allocations: any[] = [];
     let remaining = requiredQty;
@@ -1514,6 +1526,8 @@ export class DatabaseStorage implements IStorage {
       allocations.push({
         lotId: lot.id,
         expiryDate: lot.expiryDate,
+        expiryMonth: lot.expiryMonth,
+        expiryYear: lot.expiryYear,
         receivedDate: lot.receivedDate,
         availableQty: available.toFixed(4),
         allocatedQty: allocated.toFixed(4),
@@ -1543,12 +1557,17 @@ export class DatabaseStorage implements IStorage {
     return result?.total || "0";
   }
 
-  async getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; qtyAvailableMinor: string}[]> {
+  async getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; expiryMonth: number | null; expiryYear: number | null; qtyAvailableMinor: string}[]> {
     const [item] = await db.select().from(items).where(eq(items.id, itemId));
     if (!item || !item.hasExpiry) return [];
+    
+    const asOf = new Date(asOfDate);
+    const asOfMonth = asOf.getMonth() + 1;
+    const asOfYear = asOf.getFullYear();
 
     const results = await db.select({
-      expiryDate: inventoryLots.expiryDate,
+      expiryMonth: inventoryLots.expiryMonth,
+      expiryYear: inventoryLots.expiryYear,
       qtyAvailableMinor: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
     })
       .from(inventoryLots)
@@ -1557,14 +1576,17 @@ export class DatabaseStorage implements IStorage {
         eq(inventoryLots.warehouseId, warehouseId),
         eq(inventoryLots.isActive, true),
         sql`${inventoryLots.qtyInMinor}::numeric > 0`,
-        sql`${inventoryLots.expiryDate} IS NOT NULL`,
-        sql`${inventoryLots.expiryDate} >= ${asOfDate}`
+        sql`${inventoryLots.expiryMonth} IS NOT NULL`,
+        sql`${inventoryLots.expiryYear} IS NOT NULL`,
+        sql`(${inventoryLots.expiryYear} > ${asOfYear} OR (${inventoryLots.expiryYear} = ${asOfYear} AND ${inventoryLots.expiryMonth} >= ${asOfMonth}))`
       ))
-      .groupBy(inventoryLots.expiryDate)
-      .orderBy(asc(inventoryLots.expiryDate));
+      .groupBy(inventoryLots.expiryMonth, inventoryLots.expiryYear)
+      .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth));
 
-    return results.filter(r => r.expiryDate !== null).map(r => ({
-      expiryDate: r.expiryDate!,
+    return results.filter(r => r.expiryMonth !== null && r.expiryYear !== null).map(r => ({
+      expiryDate: `${r.expiryYear}-${String(r.expiryMonth).padStart(2, '0')}-01`,
+      expiryMonth: r.expiryMonth,
+      expiryYear: r.expiryYear,
       qtyAvailableMinor: r.qtyAvailableMinor,
     }));
   }
@@ -1580,8 +1602,11 @@ export class DatabaseStorage implements IStorage {
     ];
 
     if (excludeExpired && item.hasExpiry) {
+      const asOf = new Date(asOfDate);
+      const asOfMonth = asOf.getMonth() + 1;
+      const asOfYear = asOf.getFullYear();
       conditions.push(
-        sql`(${inventoryLots.expiryDate} IS NULL OR ${inventoryLots.expiryDate} >= ${asOfDate})`
+        sql`(${inventoryLots.expiryMonth} IS NULL OR ${inventoryLots.expiryYear} > ${asOfYear} OR (${inventoryLots.expiryYear} = ${asOfYear} AND ${inventoryLots.expiryMonth} >= ${asOfMonth}))`
       );
     }
 
@@ -1666,6 +1691,34 @@ export class DatabaseStorage implements IStorage {
         AND il.expiry_date >= CURRENT_DATE
     )`;
 
+    const nearestExpiryMonthSql = sql<number>`(
+      SELECT il.expiry_month
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+        AND il.expiry_month IS NOT NULL
+        AND il.expiry_year IS NOT NULL
+        AND (il.expiry_year > EXTRACT(YEAR FROM CURRENT_DATE)::int OR (il.expiry_year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND il.expiry_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))
+      ORDER BY il.expiry_year ASC, il.expiry_month ASC
+      LIMIT 1
+    )`;
+
+    const nearestExpiryYearSql = sql<number>`(
+      SELECT il.expiry_year
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+        AND il.expiry_month IS NOT NULL
+        AND il.expiry_year IS NOT NULL
+        AND (il.expiry_year > EXTRACT(YEAR FROM CURRENT_DATE)::int OR (il.expiry_year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND il.expiry_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))
+      ORDER BY il.expiry_year ASC, il.expiry_month ASC
+      LIMIT 1
+    )`;
+
     const nearestExpiryQtySql = sql<string>`(
       SELECT SUM(il.qty_in_minor::numeric)::text
       FROM inventory_lots il
@@ -1700,6 +1753,8 @@ export class DatabaseStorage implements IStorage {
         mediumToMinor: items.mediumToMinor,
         availableQtyMinor: availQtySql,
         nearestExpiryDate: nearestExpirySql,
+        nearestExpiryMonth: nearestExpiryMonthSql,
+        nearestExpiryYear: nearestExpiryYearSql,
         nearestExpiryQtyMinor: nearestExpiryQtySql,
       })
         .from(items)
@@ -1740,6 +1795,8 @@ export class DatabaseStorage implements IStorage {
         mediumToMinor: items.mediumToMinor,
         availableQtyMinor: availQtySql,
         nearestExpiryDate: nearestExpirySql,
+        nearestExpiryMonth: nearestExpiryMonthSql,
+        nearestExpiryYear: nearestExpiryYearSql,
         nearestExpiryQtyMinor: nearestExpiryQtySql,
       })
         .from(items)
@@ -1772,6 +1829,8 @@ export class DatabaseStorage implements IStorage {
       mediumToMinor: items.mediumToMinor,
       availableQtyMinor: availQtySql,
       nearestExpiryDate: nearestExpirySql,
+      nearestExpiryMonth: nearestExpiryMonthSql,
+      nearestExpiryYear: nearestExpiryYearSql,
       nearestExpiryQtyMinor: nearestExpiryQtySql,
     })
       .from(items)
@@ -2166,7 +2225,7 @@ export class DatabaseStorage implements IStorage {
     return Number(result.count) === 0;
   }
 
-  async saveDraftReceiving(header: InsertReceivingHeader, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; purchasePrice: string; lineTotal: string; batchNumber?: string; expiryDate?: string; salePriceHint?: string; notes?: string; isRejected?: boolean; rejectionReason?: string }[], existingId?: string): Promise<ReceivingHeader> {
+  async saveDraftReceiving(header: InsertReceivingHeader, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; purchasePrice: string; lineTotal: string; batchNumber?: string; expiryDate?: string; expiryMonth?: number; expiryYear?: number; salePrice?: string; salePriceHint?: string; notes?: string; isRejected?: boolean; rejectionReason?: string }[], existingId?: string): Promise<ReceivingHeader> {
     return await db.transaction(async (tx) => {
       let header_result: ReceivingHeader;
       if (existingId) {
@@ -2207,6 +2266,9 @@ export class DatabaseStorage implements IStorage {
           lineTotal: line.lineTotal,
           batchNumber: line.batchNumber || null,
           expiryDate: line.expiryDate || null,
+          expiryMonth: line.expiryMonth || null,
+          expiryYear: line.expiryYear || null,
+          salePrice: line.salePrice || null,
           salePriceHint: line.salePriceHint || null,
           notes: line.notes || null,
           isRejected: line.isRejected || false,
@@ -2241,17 +2303,18 @@ export class DatabaseStorage implements IStorage {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
         
-        if (item.hasExpiry && !line.expiryDate) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية`);
-        if (!item.hasExpiry && line.expiryDate) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);
+        if (item.hasExpiry && (!line.expiryMonth || !line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية (شهر/سنة)`);
+        if (!item.hasExpiry && (line.expiryMonth || line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);
         
         const lotConditions = [
           eq(inventoryLots.itemId, line.itemId),
           eq(inventoryLots.warehouseId, header.warehouseId),
         ];
-        if (line.expiryDate) {
-          lotConditions.push(eq(inventoryLots.expiryDate, line.expiryDate));
+        if (line.expiryMonth && line.expiryYear) {
+          lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
+          lotConditions.push(eq(inventoryLots.expiryYear, line.expiryYear));
         } else {
-          lotConditions.push(sql`${inventoryLots.expiryDate} IS NULL`);
+          lotConditions.push(sql`${inventoryLots.expiryMonth} IS NULL`);
         }
         
         const existingLots = await tx.select().from(inventoryLots).where(and(...lotConditions));
@@ -2271,6 +2334,8 @@ export class DatabaseStorage implements IStorage {
             itemId: line.itemId,
             warehouseId: header.warehouseId,
             expiryDate: line.expiryDate || null,
+            expiryMonth: line.expiryMonth || null,
+            expiryYear: line.expiryYear || null,
             receivedDate: header.receiveDate,
             purchasePrice: line.purchasePrice,
             qtyInMinor: qtyMinor.toFixed(4),
@@ -2288,10 +2353,9 @@ export class DatabaseStorage implements IStorage {
           referenceId: header.id,
         });
         
-        await tx.update(items).set({
-          purchasePriceLast: line.purchasePrice,
-          updatedAt: new Date(),
-        }).where(eq(items.id, line.itemId));
+        const updateFields: any = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
+        if (line.salePrice) updateFields.salePriceCurrent = line.salePrice;
+        await tx.update(items).set(updateFields).where(eq(items.id, line.itemId));
       }
       
       const [posted] = await tx.update(receivingHeaders).set({
@@ -2313,26 +2377,89 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getItemHints(itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }> {
-    const [lastPurchase] = await db.select().from(purchaseTransactions).where(eq(purchaseTransactions.itemId, itemId)).orderBy(desc(purchaseTransactions.createdAt)).limit(1);
-    
-    const [lastSale] = await db.select().from(salesTransactions).where(eq(salesTransactions.itemId, itemId)).orderBy(desc(salesTransactions.createdAt)).limit(1);
+    const lastReceivingLine = await db.select({
+      purchasePrice: receivingLines.purchasePrice,
+      salePrice: receivingLines.salePrice,
+      salePriceHint: receivingLines.salePriceHint,
+    })
+    .from(receivingLines)
+    .innerJoin(receivingHeaders, eq(receivingLines.receivingId, receivingHeaders.id))
+    .where(and(
+      eq(receivingLines.itemId, itemId),
+      eq(receivingHeaders.status, 'posted'),
+      eq(receivingLines.isRejected, false),
+    ))
+    .orderBy(desc(receivingHeaders.postedAt))
+    .limit(1);
     
     const [item] = await db.select().from(items).where(eq(items.id, itemId));
     
-    const [onHandResult] = await db.select({
-      total: sql<string>`COALESCE(SUM(${inventoryLots.qtyInMinor}::numeric), 0)::text`
-    }).from(inventoryLots).where(and(
-      eq(inventoryLots.itemId, itemId),
-      eq(inventoryLots.warehouseId, warehouseId),
-      eq(inventoryLots.isActive, true),
-    ));
+    let onHandMinor = "0";
+    if (warehouseId) {
+      const [onHandResult] = await db.select({
+        total: sql<string>`COALESCE(SUM(${inventoryLots.qtyInMinor}::numeric), 0)::text`
+      }).from(inventoryLots).where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.warehouseId, warehouseId),
+        eq(inventoryLots.isActive, true),
+      ));
+      onHandMinor = onHandResult?.total || "0";
+    }
     
+    const lastLine = lastReceivingLine[0];
     return {
-      lastPurchasePrice: lastPurchase?.purchasePrice || null,
-      lastSalePrice: lastSale?.salePrice || null,
+      lastPurchasePrice: lastLine?.purchasePrice || item?.purchasePriceLast || null,
+      lastSalePrice: lastLine?.salePrice || lastLine?.salePriceHint || null,
       currentSalePrice: item?.salePriceCurrent || "0",
-      onHandMinor: onHandResult?.total || "0",
+      onHandMinor,
     };
+  }
+
+  async getItemWarehouseStats(itemId: string): Promise<{ warehouseId: string; warehouseName: string; warehouseCode: string; qtyMinor: string; expiryBreakdown: { expiryMonth: number | null; expiryYear: number | null; qty: string }[] }[]> {
+    const warehouseTotals = await db.select({
+      warehouseId: inventoryLots.warehouseId,
+      warehouseName: warehouses.nameAr,
+      warehouseCode: warehouses.warehouseCode,
+      qtyMinor: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+    })
+    .from(inventoryLots)
+    .innerJoin(warehouses, eq(warehouses.id, inventoryLots.warehouseId))
+    .where(and(
+      eq(inventoryLots.itemId, itemId),
+      eq(inventoryLots.isActive, true),
+      sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+    ))
+    .groupBy(inventoryLots.warehouseId, warehouses.nameAr, warehouses.warehouseCode)
+    .orderBy(warehouses.nameAr);
+
+    const expiryBreakdowns = await db.select({
+      warehouseId: inventoryLots.warehouseId,
+      expiryMonth: inventoryLots.expiryMonth,
+      expiryYear: inventoryLots.expiryYear,
+      qty: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+    })
+    .from(inventoryLots)
+    .where(and(
+      eq(inventoryLots.itemId, itemId),
+      eq(inventoryLots.isActive, true),
+      sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+    ))
+    .groupBy(inventoryLots.warehouseId, inventoryLots.expiryMonth, inventoryLots.expiryYear)
+    .orderBy(inventoryLots.expiryYear, inventoryLots.expiryMonth);
+
+    return warehouseTotals.filter(w => w.warehouseId !== null).map(w => ({
+      warehouseId: w.warehouseId!,
+      warehouseName: w.warehouseName,
+      warehouseCode: w.warehouseCode,
+      qtyMinor: w.qtyMinor,
+      expiryBreakdown: expiryBreakdowns
+        .filter(e => e.warehouseId === w.warehouseId)
+        .map(e => ({
+          expiryMonth: e.expiryMonth,
+          expiryYear: e.expiryYear,
+          qty: e.qty,
+        })),
+    }));
   }
 }
 

@@ -42,8 +42,10 @@ Preferred communication style: Simple, everyday language.
 - Collapsible sidebar for improved workspace.
 - Professional print styles optimized for A4.
 - Department-based pricing for items.
-- Expiry date and barcode management for inventory items.
-- Multi-line, scan-first UX for store-to-store transfers with FEFO allocation.
+- Expiry management using month/year format (MM/YYYY) for inventory lots, receiving, and transfers.
+- Barcode management for inventory items.
+- Supplier Receiving with quantity-only workflow: editable selling price, read-only purchase price hints from last posted receiving, per-line warehouse stock display, per-line statistics popup showing item availability across all warehouses.
+- Multi-line, scan-first UX for store-to-store transfers with FEFO allocation (month/year based).
 
 ### Build and Deployment
 - **Development**: `npm run dev` with `tsx` and hot reload.

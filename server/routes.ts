@@ -1687,5 +1687,14 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/items/:itemId/warehouse-stats", async (req, res) => {
+    try {
+      const stats = await storage.getItemWarehouseStats(req.params.itemId);
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   return httpServer;
 }

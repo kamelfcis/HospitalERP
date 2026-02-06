@@ -276,6 +276,8 @@ export const inventoryLots = pgTable("inventory_lots", {
   itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
   warehouseId: varchar("warehouse_id").references(() => warehouses.id),
   expiryDate: date("expiry_date"),
+  expiryMonth: integer("expiry_month"),
+  expiryYear: integer("expiry_year"),
   receivedDate: date("received_date").notNull(),
   purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull(),
   qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull().default("0"),
@@ -283,10 +285,11 @@ export const inventoryLots = pgTable("inventory_lots", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
-  itemExpiryIdx: index("idx_lots_item_expiry").on(table.itemId, table.expiryDate),
+  itemExpiryIdx: index("idx_lots_item_expiry").on(table.itemId, table.expiryYear, table.expiryMonth),
   itemReceivedIdx: index("idx_lots_item_received").on(table.itemId, table.receivedDate),
-  itemWarehouseExpiryIdx: index("idx_lots_item_warehouse_expiry").on(table.itemId, table.warehouseId, table.expiryDate),
+  itemWarehouseExpiryIdx: index("idx_lots_item_warehouse_expiry").on(table.itemId, table.warehouseId, table.expiryYear, table.expiryMonth),
   itemWarehouseIdx: index("idx_lots_item_warehouse").on(table.itemId, table.warehouseId),
+  itemWarehouseExpiryMonthIdx: index("idx_lots_item_warehouse_expiry_month").on(table.itemId, table.warehouseId, table.expiryYear, table.expiryMonth),
 }));
 
 export const inventoryLotMovements = pgTable("inventory_lot_movements", {
@@ -342,6 +345,8 @@ export const transferLineAllocations = pgTable("transfer_line_allocations", {
   lineId: varchar("line_id").notNull().references(() => transferLines.id, { onDelete: "cascade" }),
   sourceLotId: varchar("source_lot_id").notNull().references(() => inventoryLots.id),
   expiryDate: date("expiry_date"),
+  expiryMonth: integer("expiry_month"),
+  expiryYear: integer("expiry_year"),
   qtyOutInMinor: decimal("qty_out_in_minor", { precision: 18, scale: 4 }).notNull(),
   purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull(),
   destinationLotId: varchar("destination_lot_id").references(() => inventoryLots.id),
@@ -412,6 +417,9 @@ export const receivingLines = pgTable("receiving_lines", {
   lineTotal: decimal("line_total", { precision: 18, scale: 2 }).notNull().default("0"),
   batchNumber: text("batch_number"),
   expiryDate: date("expiry_date"),
+  expiryMonth: integer("expiry_month"),
+  expiryYear: integer("expiry_year"),
+  salePrice: decimal("sale_price", { precision: 18, scale: 2 }),
   salePriceHint: decimal("sale_price_hint", { precision: 18, scale: 2 }),
   notes: text("notes"),
   isRejected: boolean("is_rejected").notNull().default(false),

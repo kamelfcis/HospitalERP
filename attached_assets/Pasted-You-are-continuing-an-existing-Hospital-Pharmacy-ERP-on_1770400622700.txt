@@ -1,0 +1,114 @@
+You are continuing an existing Hospital/Pharmacy ERP on Replit (NestJS + Prisma + PostgreSQL, React + TypeScript).
+Implement the strongest purchasing receiving flow: Qty-Only Receiving with Pending Cost (cost later via vendor invoice & revaluation).
+Focus NOW on ONE production-grade screen named exactly: "استلام من مورد".
+
+CRITICAL GLOBAL RULE (MUST APPLY SYSTEM-WIDE):
+- Expiry Date handling across the ENTIRE system is MONTH/YEAR only.
+- NO day component is allowed anywhere.
+- Expiry is represented as (expiryMonth, expiryYear).
+- Any expiry date logic must assume expiry at END OF MONTH (e.g., 06/2026 means valid until 30/06/2026).
+- This rule applies to ALL modules:
+  - Receiving
+  - Inventory
+  - Transfers
+  - Sales
+  - Expiry warnings
+  - Batch handling
+  - Reports
+  - Database schema
+  - APIs
+  - UI components
+- Do NOT store or accept day-level expiry (DD/MM/YYYY) under any circumstances.
+
+IMPORTANT BUSINESS RULES (must follow exactly):
+1) Editable field during receiving is Selling Price ONLY (Sale Price). Cost is NOT editable here.
+2) Default receiving unit is the BIG/MAJOR unit (unit الكبرى) for each item.
+3) Read-only hints shown to the receiver:
+   - Last Selling Price (read-only)
+   - Last Purchase Price (read-only)
+   Both MUST be sourced from the LAST RECEIVING transaction of this item (latest posted receiving line), not from invoices.
+4) Must show a statistics icon (إحصاء) per line to display the item quantities across ALL warehouses.
+5) The receiving document must show, for each line, the TOTAL quantity of the item in the selected receiving warehouse.
+6) Item search must support:
+   - Arabic name search
+   - English name search
+   - Search by Selling Price (range or exact)
+   - Search by barcode and item code
+7) Performance must be excellent (no lag), even under load.
+
+A) Mandatory Header Container (single-row, clean UX)
+Create a fixed sticky header container (single horizontal row, visually clear) with REQUIRED fields:
+1) Supplier (REQUIRED) with Advanced Search:
+   - Typeahead search (debounced 300ms)
+   - Advanced search modal: filter by name/phone/taxId/code; show last 5 suppliers used by this user; keyboard navigation.
+2) Supplier Invoice Number (REQUIRED, UNIQUE, non-repeat):
+   - Mandatory.
+   - Enforce uniqueness at DB level with unique index: (supplierId, supplierInvoiceNo).
+   - Validate in API before save; show instant inline validation error.
+3) Receiving Warehouse (REQUIRED):
+   - Dropdown with search; default to user's last selected warehouse.
+4) Receiving Date/Time (default now; editable)
+5) Notes (optional)
+6) Status badge: DRAFT / POSTED_QTY_ONLY
+7) Save Draft / Post buttons (Post must be atomic + idempotent)
+
+B) Line Entry Area (same style as Transfer screen)
+- Add items via barcode scan or advanced search.
+- Default Qty = 1.
+- Default Unit = item.majorUnit.
+- Batch rules apply per item.
+- Expiry input:
+  - Month/Year picker ONLY (MM/YYYY).
+  - No day picker.
+  - Stored as expiryMonth INT, expiryYear INT.
+  - UI must prevent selecting invalid past months.
+
+C) Expiry Logic (MANDATORY IMPLEMENTATION)
+- For all comparisons, warnings, and reports:
+  - Convert (expiryMonth, expiryYear) logically to end-of-month date.
+- Near-expiry calculation:
+  - Compare current date with end-of-expiry-month.
+- Sorting by expiry (FEFO):
+  - Order by expiryYear ASC, expiryMonth ASC.
+
+D) Search & Decision Support
+- Advanced item search by Arabic name, English name, selling price, barcode, code.
+- On item select:
+  - Show lastReceivingSalePrice (read-only).
+  - Show lastReceivingPurchasePrice (read-only).
+  - Show OnHand in selected warehouse.
+- Statistics icon (إحصاء):
+  - Show OnHand across ALL warehouses.
+  - Show expiry breakdown using Month/Year format.
+
+E) Posting Logic (Qty-Only Receiving)
+- Validate batch/expiry:
+  - If item.hasExpiry=true → expiryMonth & expiryYear REQUIRED.
+  - If item.hasExpiry=false → expiry fields MUST be NULL.
+- Store expiry as (expiryMonth, expiryYear) only.
+- Create InventoryLedger, StockBalance, ValuationLayers (costStatus=PENDING).
+- Post GL via PostingRules (UncostedInventory / GRNI_Clearing).
+
+F) Performance & No-Lag
+- Use bulk endpoints and caching.
+- Index StockBalance(itemId, warehouseId, expiryYear, expiryMonth).
+- Avoid N+1 queries.
+
+G) Offline / Power Cut Resilience
+- Autosave drafts to IndexedDB.
+- Restore drafts on reload.
+- Sync safely when connection resumes.
+
+H) Security & Audit
+- Only WarehouseReceiver can POST.
+- Audit all critical actions.
+
+I) Deliverables
+Provide:
+- Prisma schema with expiryMonth, expiryYear (NO Date type for expiry).
+- Backend validation enforcing Month/Year expiry.
+- Frontend Month/Year picker component.
+- Tests validating no DD/MM/YYYY acceptance anywhere.
+- Production-grade performance and clean architecture.
+
+Implement now.
