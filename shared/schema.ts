@@ -361,6 +361,67 @@ export const itemBarcodes = pgTable("item_barcodes", {
   itemIdx: index("idx_barcodes_item").on(table.itemId),
 }));
 
+export const receivingStatusEnum = pgEnum("receiving_status", ["draft", "posted"]);
+
+export const suppliers = pgTable("suppliers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code", { length: 20 }).notNull().unique(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en"),
+  phone: text("phone"),
+  taxId: varchar("tax_id", { length: 30 }),
+  address: text("address"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  codeIdx: index("idx_suppliers_code").on(table.code),
+  nameArIdx: index("idx_suppliers_name_ar").on(table.nameAr),
+}));
+
+export const receivingHeaders = pgTable("receiving_headers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receivingNumber: integer("receiving_number").notNull().unique(),
+  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id),
+  supplierInvoiceNo: text("supplier_invoice_no").notNull(),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id),
+  receiveDate: date("receive_date").notNull(),
+  notes: text("notes"),
+  status: receivingStatusEnum("status").notNull().default("draft"),
+  totalQty: decimal("total_qty", { precision: 18, scale: 4 }).notNull().default("0"),
+  totalCost: decimal("total_cost", { precision: 18, scale: 2 }).notNull().default("0"),
+  postedAt: timestamp("posted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  supplierInvoiceUniq: uniqueIndex("idx_receiving_supplier_invoice").on(table.supplierId, table.supplierInvoiceNo),
+  numberIdx: index("idx_receiving_number").on(table.receivingNumber),
+  supplierIdx: index("idx_receiving_supplier").on(table.supplierId),
+  warehouseIdx: index("idx_receiving_warehouse").on(table.warehouseId),
+  dateIdx: index("idx_receiving_date").on(table.receiveDate),
+  statusIdx: index("idx_receiving_status").on(table.status),
+}));
+
+export const receivingLines = pgTable("receiving_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receivingId: varchar("receiving_id").notNull().references(() => receivingHeaders.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  unitLevel: unitLevelEnum("unit_level").notNull().default("major"),
+  qtyEntered: decimal("qty_entered", { precision: 18, scale: 4 }).notNull(),
+  qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull(),
+  purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull().default("0"),
+  lineTotal: decimal("line_total", { precision: 18, scale: 2 }).notNull().default("0"),
+  batchNumber: text("batch_number"),
+  expiryDate: date("expiry_date"),
+  salePriceHint: decimal("sale_price_hint", { precision: 18, scale: 2 }),
+  notes: text("notes"),
+  isRejected: boolean("is_rejected").notNull().default(false),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  receivingIdx: index("idx_receiving_lines_receiving").on(table.receivingId),
+  itemIdx: index("idx_receiving_lines_item").on(table.itemId),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
@@ -391,6 +452,9 @@ export const insertItemBarcodeSchema = createInsertSchema(itemBarcodes).omit({ i
 export const insertStoreTransferSchema = createInsertSchema(storeTransfers).omit({ id: true, transferNumber: true, createdAt: true, executedAt: true });
 export const insertTransferLineSchema = createInsertSchema(transferLines).omit({ id: true, createdAt: true });
 export const insertTransferLineAllocationSchema = createInsertSchema(transferLineAllocations).omit({ id: true, createdAt: true });
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
+export const insertReceivingHeaderSchema = createInsertSchema(receivingHeaders).omit({ id: true, receivingNumber: true, createdAt: true, updatedAt: true, postedAt: true });
+export const insertReceivingLineSchema = createInsertSchema(receivingLines).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -458,6 +522,15 @@ export type TransferLine = typeof transferLines.$inferSelect;
 
 export type InsertTransferLineAllocation = z.infer<typeof insertTransferLineAllocationSchema>;
 export type TransferLineAllocation = typeof transferLineAllocations.$inferSelect;
+
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type Supplier = typeof suppliers.$inferSelect;
+
+export type InsertReceivingHeader = z.infer<typeof insertReceivingHeaderSchema>;
+export type ReceivingHeader = typeof receivingHeaders.$inferSelect;
+
+export type InsertReceivingLine = z.infer<typeof insertReceivingLineSchema>;
+export type ReceivingLine = typeof receivingLines.$inferSelect;
 
 // Extended types for API responses
 export type JournalEntryWithLines = JournalEntry & {
@@ -534,4 +607,19 @@ export type StoreTransferWithDetails = StoreTransfer & {
 export const transferStatusLabels: Record<string, string> = {
   draft: "مسودة",
   executed: "مُنفّذ"
+};
+
+export type ReceivingLineWithItem = ReceivingLine & {
+  item?: Item;
+};
+
+export type ReceivingHeaderWithDetails = ReceivingHeader & {
+  supplier?: Supplier;
+  warehouse?: Warehouse;
+  lines?: ReceivingLineWithItem[];
+};
+
+export const receivingStatusLabels: Record<string, string> = {
+  draft: "مسودة",
+  posted: "مُرحّل"
 };

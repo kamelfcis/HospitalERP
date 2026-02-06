@@ -1,0 +1,144 @@
+You are continuing an existing Hospital/Pharmacy ERP on Replit (NestJS + Prisma + PostgreSQL, React + TypeScript).
+Implement the STRONGEST purchasing receiving flow: Qty-Only Receiving with Pending Cost and later Invoice Costing/Revaluation.
+Focus NOW on ONE production-grade screen named exactly: "استلام من مورد".
+
+A) Mandatory Header Container (single-row, clean UX)
+On the "استلام من مورد" screen, create a fixed header container (single horizontal row, visually clear) with REQUIRED fields:
+1) Supplier (REQUIRED) with Advanced Search:
+   - Typeahead search (debounced 300ms)
+   - Advanced search modal: filter by name/phone/taxId/code; show last 5 suppliers used by this user; keyboard navigation.
+2) Supplier Invoice Number (REQUIRED, UNIQUE, non-repeat):
+   - Must be mandatory.
+   - Enforce uniqueness at DB level with unique index: (supplierId, supplierInvoiceNo).
+   - Also validate in API before save; show instant inline validation error.
+3) Receiving Warehouse (REQUIRED):
+   - Dropdown with search; default to user's last selected warehouse.
+4) Receiving Date/Time (default now; editable)
+5) Notes (optional)
+6) Status badge: DRAFT / POSTED_QTY_ONLY
+7) Save Draft / Post buttons (Post must be atomic and idempotent)
+
+The header container must stay visible while scrolling (sticky), and must show clear validation errors without popups.
+
+B) Line Entry Area (same style as Transfer screen)
+Implement the line grid matching your existing inventory transfer UX:
+- Add items via:
+  1) Barcode scan input (focused by default; fast; supports hardware scanner)
+  2) Advanced item search modal (by name/code/barcode/brand/active ingredient; filters by category; keyboard friendly)
+- When an item is selected (by scan or search):
+  - Immediately add a new line (or increment qty if same item+batch+expiry line exists)
+  - Default qty = 1 (auto-filled)
+  - Auto-fill guidance fields (read-only hints):
+    - Last Selling Price (from latest posted sale)
+    - Last Purchase Cost (from latest approved/costed purchase invoice ONLY)
+    - Average Cost (optional)
+    - Current OnHand per warehouse (inventory icon "إحصاء" like your system)
+  - Cursor jumps to qty cell for fast entry.
+
+Line columns (optimized for speed):
+- Barcode (readonly display)
+- Item Name
+- Unit (default base; allow unit selection if conversions exist)
+- Qty (default 1; plus/minus buttons; keyboard enter increments next line)
+- Batch No (required only if item.hasBatch==true)
+- Expiry Date (required only if item.hasExpiry==true)
+- Sale Price Hint (editable optional; DOES NOT affect costing)
+- Warnings/Info icon column
+- Remove line
+
+C) Decision Support (popups + warnings without annoyance)
+Implement smart warnings to help receiver decide accept/reject:
+1) Price mismatch warning:
+   - If entered Sale Price Hint differs materially from last selling price or current configured selling price -> show a non-blocking toast popup (appears 3s then fades) and a warning icon on the line.
+2) Expiry mismatch warning:
+   - If same item exists onhand with different expiry dates OR if expiry is too close (configurable threshold, default 90 days) -> toast + line icon.
+3) Batch duplication warning:
+   - If same batch already exists with different expiry -> toast + prevent silent merge; require confirmation.
+4) Supplier history hint:
+   - show last 3 purchase costs for this item from this supplier (if exists) in a hover tooltip (fast, cached).
+5) Stock context:
+   - Inventory “إحصاء” icon opens a side panel showing OnHand by warehouse, reserved qty, near-expiry lots.
+
+Warnings must be:
+- Clear Arabic labels
+- Non-blocking (except batch/expiry validation on POST)
+- Fast (no lag): use caching and lightweight queries.
+
+D) Performance & No-Lag Requirements (MANDATORY)
+- Backend endpoints must be optimized:
+  - Use indexed searches (barcode exact match, itemCode exact match)
+  - Use server-side pagination for advanced search modal
+  - Debounce frontend queries; cache recent item lookups (LRU cache 200 items per session)
+  - One bulk endpoint to fetch all needed hints (last sell, last cost, onhand summary) in a single call to avoid chatty API.
+- Use database indexes:
+  - Item(barcode), Item(code)
+  - StockBalance(itemId, warehouseId, batchNumber, expiryDate)
+  - SalesLine(itemId, createdAt desc)
+  - PurchaseCostHistory(itemId, supplierId, approvedAt desc)
+  - ReceivingHeader(supplierId, supplierInvoiceNo) UNIQUE
+
+E) Offline / Power Cut Resilience (MUST)
+Implement "Draft Auto-Save" + local persistence:
+- Every change (header or lines) autosaves:
+  - Locally (browser localStorage or IndexedDB) with key: receivingDraft:{userId}
+  - Also periodically to server as DRAFT when online.
+- On load:
+  - If there is an unsent local draft -> prompt to restore (with timestamp).
+- If electricity/internet cuts:
+  - User can continue editing locally.
+  - Once online, it syncs to server DRAFT safely (merge strategy: client version wins unless server is POSTED).
+- Add a "Resume Draft" action and show last saved time.
+
+F) Posting Logic (Qty-Only Receiving, Pending Cost)
+When user clicks POST:
+- Validate mandatory header fields: supplier, supplierInvoiceNo (unique), receivingWarehouse.
+- Validate batch/expiry rules:
+  - if item.hasBatch=false and hasExpiry=false -> forbid batch/expiry in payload and do not auto-generate.
+  - if hasBatch=true -> require batchNumber
+  - if hasExpiry=true -> require expiryDate
+- Execute in ONE DB transaction with row locks and idempotency:
+  - Create ReceivingHeader status=POSTED_QTY_ONLY (idempotencyKey required; if retry return success)
+  - Create ReceivingLines
+  - Create InventoryLedger txnType=RECEIVING_QTY_ONLY (qtyIn) and update StockBalance
+  - Create ValuationLayers with unitCost=0 and costStatus=PENDING for each receiving line (or configurable default cost, but default is 0)
+  - Create GL JournalEntry eventType=INVENTORY_RECEIPT (or RECEIVING_QTY_ONLY) using PostingRules:
+    - Dr UncostedInventory
+    - Cr GRNI_Clearing
+  - Ensure balanced journal lines, store sourceId=ReceivingHeader.id
+Return posted document number and printable receiving note.
+
+G) Security / Roles
+- Only users with role "WarehouseReceiver" can POST receiving.
+- Audit log every POST, line edit, delete, restore draft, and supplier change.
+
+H) Extra Value-Add Features (add them if helpful)
+- Quick supplier switch with confirmation (prevents accidental mixing)
+- Duplicate line prevention and fast merge rules (same item+batch+expiry merges)
+- Print Receiving Note with barcode and summary
+- Ability to mark "REJECTED LINE" with reason (damage/short expiry) without deleting; it won’t post.
+- Keyboard shortcuts:
+  - F2 open item search
+  - F4 focus barcode scan
+  - Ctrl+Enter post
+  - Del remove selected line
+
+I) Deliverables
+Provide:
+1) Prisma schema changes + migrations
+2) NestJS modules/controllers/services with clean architecture
+3) React screen "استلام من مورد" with components:
+   - HeaderContainer
+   - BarcodeInput
+   - AdvancedSearchModal (supplier + items)
+   - LineGrid
+   - StockSidePanel (إحصاء)
+   - Toast warnings
+   - DraftRecoveryManager
+4) Tests:
+   - uniqueness for supplierInvoiceNo per supplier
+   - posting idempotency
+   - batch/expiry validation
+   - offline draft restore logic (frontend unit test)
+5) Must be production-grade, minimal latency, no unnecessary re-renders, and avoid N+1 queries.
+
+Implement now.
