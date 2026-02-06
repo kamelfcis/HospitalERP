@@ -31,6 +31,7 @@ export const unitLevelEnum = pgEnum("unit_level", [
 ]);
 
 export const lotTxTypeEnum = pgEnum("lot_tx_type", ["in", "out", "adj"]);
+export const transferStatusEnum = pgEnum("transfer_status", ["draft", "executed"]);
 
 // المستخدمين
 export const users = pgTable("users", {
@@ -259,9 +260,21 @@ export const itemDepartmentPrices = pgTable("item_department_prices", {
   deptIdx: index("idx_item_dept_prices_dept").on(table.departmentId),
 }));
 
+export const warehouses = pgTable("warehouses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  warehouseCode: varchar("warehouse_code", { length: 20 }).notNull().unique(),
+  nameAr: text("name_ar").notNull(),
+  departmentId: varchar("department_id").references(() => departments.id),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  codeIdx: index("idx_warehouses_code").on(table.warehouseCode),
+}));
+
 export const inventoryLots = pgTable("inventory_lots", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  warehouseId: varchar("warehouse_id").references(() => warehouses.id),
   expiryDate: date("expiry_date"),
   receivedDate: date("received_date").notNull(),
   purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull(),
@@ -272,11 +285,14 @@ export const inventoryLots = pgTable("inventory_lots", {
 }, (table) => ({
   itemExpiryIdx: index("idx_lots_item_expiry").on(table.itemId, table.expiryDate),
   itemReceivedIdx: index("idx_lots_item_received").on(table.itemId, table.receivedDate),
+  itemWarehouseExpiryIdx: index("idx_lots_item_warehouse_expiry").on(table.itemId, table.warehouseId, table.expiryDate),
+  itemWarehouseIdx: index("idx_lots_item_warehouse").on(table.itemId, table.warehouseId),
 }));
 
 export const inventoryLotMovements = pgTable("inventory_lot_movements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   lotId: varchar("lot_id").notNull().references(() => inventoryLots.id, { onDelete: "restrict" }),
+  warehouseId: varchar("warehouse_id").references(() => warehouses.id),
   txDate: timestamp("tx_date").notNull().defaultNow(),
   txType: lotTxTypeEnum("tx_type").notNull(),
   qtyChangeInMinor: decimal("qty_change_in_minor", { precision: 18, scale: 4 }).notNull(),
@@ -286,6 +302,26 @@ export const inventoryLotMovements = pgTable("inventory_lot_movements", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   lotTxDateIdx: index("idx_lot_movements_lot_txdate").on(table.lotId, table.txDate),
+}));
+
+export const storeTransfers = pgTable("store_transfers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transferNumber: integer("transfer_number").notNull().unique(),
+  transferDate: date("transfer_date").notNull(),
+  sourceWarehouseId: varchar("source_warehouse_id").notNull().references(() => warehouses.id),
+  destinationWarehouseId: varchar("destination_warehouse_id").notNull().references(() => warehouses.id),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull(),
+  status: transferStatusEnum("status").notNull().default("draft"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  executedAt: timestamp("executed_at"),
+}, (table) => ({
+  transferNumberIdx: index("idx_transfers_number").on(table.transferNumber),
+  sourceWarehouseIdx: index("idx_transfers_source").on(table.sourceWarehouseId),
+  destWarehouseIdx: index("idx_transfers_dest").on(table.destinationWarehouseId),
+  itemIdx: index("idx_transfers_item").on(table.itemId),
+  dateIdx: index("idx_transfers_date").on(table.transferDate),
 }));
 
 export const itemBarcodes = pgTable("item_barcodes", {
@@ -322,9 +358,11 @@ export const insertPurchaseTransactionSchema = createInsertSchema(purchaseTransa
 export const insertSalesTransactionSchema = createInsertSchema(salesTransactions).omit({ id: true, createdAt: true });
 export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
 export const insertItemDepartmentPriceSchema = createInsertSchema(itemDepartmentPrices).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertWarehouseSchema = createInsertSchema(warehouses).omit({ id: true, createdAt: true });
 export const insertInventoryLotSchema = createInsertSchema(inventoryLots).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertInventoryLotMovementSchema = createInsertSchema(inventoryLotMovements).omit({ id: true, createdAt: true });
 export const insertItemBarcodeSchema = createInsertSchema(itemBarcodes).omit({ id: true, createdAt: true });
+export const insertStoreTransferSchema = createInsertSchema(storeTransfers).omit({ id: true, transferNumber: true, createdAt: true, executedAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -380,6 +418,12 @@ export type InventoryLotMovement = typeof inventoryLotMovements.$inferSelect;
 
 export type InsertItemBarcode = z.infer<typeof insertItemBarcodeSchema>;
 export type ItemBarcode = typeof itemBarcodes.$inferSelect;
+
+export type InsertWarehouse = z.infer<typeof insertWarehouseSchema>;
+export type Warehouse = typeof warehouses.$inferSelect;
+
+export type InsertStoreTransfer = z.infer<typeof insertStoreTransferSchema>;
+export type StoreTransfer = typeof storeTransfers.$inferSelect;
 
 // Extended types for API responses
 export type JournalEntryWithLines = JournalEntry & {
@@ -438,4 +482,17 @@ export type ItemWithFormType = Item & {
 // Extended type for ItemDepartmentPrice with department info
 export type ItemDepartmentPriceWithDepartment = ItemDepartmentPrice & {
   department?: Department;
+};
+
+// Extended type for StoreTransfer with related info
+export type StoreTransferWithDetails = StoreTransfer & {
+  sourceWarehouse?: Warehouse;
+  destinationWarehouse?: Warehouse;
+  item?: Item;
+};
+
+// Transfer status labels in Arabic
+export const transferStatusLabels: Record<string, string> = {
+  draft: "مسودة",
+  executed: "مُنفّذ"
 };

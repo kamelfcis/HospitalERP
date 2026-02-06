@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { accounts, costCenters, fiscalPeriods, journalEntries, journalLines, items, itemFormTypes, purchaseTransactions, salesTransactions, departments } from "@shared/schema";
-import { sql } from "drizzle-orm";
+import { accounts, costCenters, fiscalPeriods, journalEntries, journalLines, items, itemFormTypes, purchaseTransactions, salesTransactions, departments, warehouses, inventoryLots } from "@shared/schema";
+import { sql, eq, isNull } from "drizzle-orm";
 
 export async function seedDatabase() {
   try {
