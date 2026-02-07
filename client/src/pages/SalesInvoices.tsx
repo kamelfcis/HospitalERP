@@ -22,10 +22,12 @@ interface SalesLineLocal {
   unitLevel: string;
   qty: number;
   salePrice: number;
+  baseSalePrice: number;
   lineTotal: number;
   expiryMonth: number | null;
   expiryYear: number | null;
   lotId: string | null;
+  fefoLocked: boolean;
   expiryOptions?: { expiryMonth: number; expiryYear: number; qtyAvailableMinor: string }[];
 }
 
@@ -48,15 +50,31 @@ function genId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10);
 }
 
-function computeUnitPrice(item: any, unitLevel: string): number {
-  if (!item) return 0;
-  const basePrice = parseFloat(String(item.salePriceCurrent)) || 0;
-  if (unitLevel === "major" || !unitLevel) return basePrice;
+function calculateQtyInMinor(qty: number, unitLevel: string, item: any): number {
+  if (!item) return qty;
+  if (unitLevel === "minor") return qty;
+  if (unitLevel === "medium") return qty * (parseFloat(item.mediumToMinor) || 1);
+  return qty * (parseFloat(item.majorToMinor) || 1);
+}
+
+function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: any): number {
+  if (!item || !baseSalePrice) return baseSalePrice || 0;
+  if (unitLevel === "major" || !unitLevel) return baseSalePrice;
   const majorToMedium = parseFloat(String(item.majorToMedium)) || 1;
   const majorToMinor = parseFloat(String(item.majorToMinor)) || 1;
-  if (unitLevel === "medium") return +(basePrice / majorToMedium).toFixed(2);
-  if (unitLevel === "minor") return +(basePrice / majorToMinor).toFixed(2);
-  return basePrice;
+  if (unitLevel === "medium") return +(baseSalePrice / majorToMedium).toFixed(2);
+  if (unitLevel === "minor") return +(baseSalePrice / majorToMinor).toFixed(2);
+  return baseSalePrice;
+}
+
+function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: any): number {
+  let displayQty = allocMinor;
+  if (unitLevel === "major" && item?.majorToMinor) {
+    displayQty = allocMinor / parseFloat(item.majorToMinor);
+  } else if (unitLevel === "medium" && item?.mediumToMinor) {
+    displayQty = allocMinor / parseFloat(item.mediumToMinor);
+  }
+  return Math.round(displayQty * 10000) / 10000;
 }
 
 export default function SalesInvoices() {
@@ -102,6 +120,11 @@ export default function SalesInvoices() {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [fefoLoading, setFefoLoading] = useState(false);
+  const pendingQtyRef = useRef<Map<string, string>>(new Map());
+  const linesRef = useRef<SalesLineLocal[]>([]);
+  linesRef.current = lines;
 
   const qtyRefs = useRef<Map<number, HTMLInputElement>>(new Map());
 
@@ -186,10 +209,12 @@ export default function SalesInvoices() {
         unitLevel: ln.unitLevel || "major",
         qty: parseFloat(String(ln.qty)) || 0,
         salePrice: parseFloat(String(ln.salePrice)) || 0,
+        baseSalePrice: parseFloat(String(ln.salePrice)) || 0,
         lineTotal: parseFloat(String(ln.lineTotal)) || 0,
         expiryMonth: ln.expiryMonth ?? null,
         expiryYear: ln.expiryYear ?? null,
         lotId: ln.lotId ?? null,
+        fefoLocked: !!(ln.expiryMonth && ln.expiryYear),
       }));
       setLines(mapped);
     }
@@ -224,7 +249,7 @@ export default function SalesInvoices() {
       const updated = [...prev];
       const ln = { ...updated[index], ...patch };
       if (patch.unitLevel) {
-        ln.salePrice = computeUnitPrice(ln.item, ln.unitLevel);
+        ln.salePrice = computeUnitPriceFromBase(ln.baseSalePrice, ln.unitLevel, ln.item);
       }
       ln.lineTotal = +(ln.qty * ln.salePrice).toFixed(2);
       updated[index] = ln;
@@ -237,26 +262,101 @@ export default function SalesInvoices() {
   }, []);
 
   const addItemToLines = useCallback(async (itemData: any) => {
-    const existingIdx = lines.findIndex(
-      (l) => l.itemId === itemData.id && l.unitLevel === "major"
-    );
-    if (existingIdx >= 0) {
-      updateLine(existingIdx, { qty: lines[existingIdx].qty + 1 });
-      return;
-    }
-
-    let salePrice = parseFloat(String(itemData.salePriceCurrent)) || 0;
+    let baseSalePrice = parseFloat(String(itemData.salePriceCurrent)) || 0;
     if (warehouseId) {
       try {
         const priceRes = await fetch(`/api/pricing?itemId=${itemData.id}&warehouseId=${warehouseId}`);
         if (priceRes.ok) {
           const priceData = await priceRes.json();
           const resolved = parseFloat(priceData.price);
-          if (resolved > 0) salePrice = resolved;
+          if (resolved > 0) baseSalePrice = resolved;
         }
       } catch {}
     }
 
+    if (itemData.hasExpiry && warehouseId) {
+      const currentLines = linesRef.current;
+      const existingLinesForItem = currentLines.filter((l) => l.itemId === itemData.id);
+      const existingTotalMinor = existingLinesForItem.reduce(
+        (sum, l) => sum + calculateQtyInMinor(l.qty, l.unitLevel, l.item),
+        0
+      );
+      const additionalMinor = calculateQtyInMinor(1, "major", itemData);
+      const totalRequiredMinor = existingTotalMinor + additionalMinor;
+
+      setFefoLoading(true);
+      try {
+        const fefoParams = new URLSearchParams({
+          itemId: itemData.id,
+          warehouseId,
+          requiredQtyInMinor: String(totalRequiredMinor),
+          asOfDate: invoiceDate,
+        });
+        const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+        if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
+        const preview = await res.json();
+
+        if (!preview.fulfilled) {
+          toast({
+            title: "الكمية غير متاحة",
+            description: preview.shortfall ? `العجز: ${preview.shortfall}` : undefined,
+            variant: "destructive",
+          });
+          setFefoLoading(false);
+          return;
+        }
+
+        const unitLevel = existingLinesForItem.length > 0 ? existingLinesForItem[0].unitLevel : "major";
+        const salePrice = computeUnitPriceFromBase(baseSalePrice, unitLevel, itemData);
+
+        const newFefoLines: SalesLineLocal[] = preview.allocations
+          .filter((a: any) => parseFloat(a.allocatedQty) > 0)
+          .map((alloc: any) => {
+            const allocMinor = parseFloat(alloc.allocatedQty);
+            const displayQty = convertMinorToDisplayQty(allocMinor, unitLevel, itemData);
+            return {
+              tempId: genId(),
+              itemId: itemData.id,
+              item: itemData,
+              unitLevel,
+              qty: displayQty,
+              salePrice,
+              baseSalePrice,
+              lineTotal: +(displayQty * salePrice).toFixed(2),
+              expiryMonth: alloc.expiryMonth || null,
+              expiryYear: alloc.expiryYear || null,
+              lotId: alloc.lotId || null,
+              fefoLocked: true,
+            } as SalesLineLocal;
+          });
+
+        setLines((prev) => {
+          const filtered = prev.filter((l) => l.itemId !== itemData.id);
+          return [...filtered, ...newFefoLines];
+        });
+
+        if (newFefoLines.length > 1) {
+          toast({ title: `تمت إضافة: ${itemData.nameAr}`, description: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
+        } else {
+          toast({ title: `تمت إضافة: ${itemData.nameAr}` });
+        }
+      } catch (err: any) {
+        toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+      } finally {
+        setFefoLoading(false);
+      }
+      return;
+    }
+
+    const existingIdx = linesRef.current.findIndex(
+      (l) => l.itemId === itemData.id && l.unitLevel === "major"
+    );
+    if (existingIdx >= 0) {
+      updateLine(existingIdx, { qty: linesRef.current[existingIdx].qty + 1 });
+      return;
+    }
+
+    const salePrice = baseSalePrice;
     const newLine: SalesLineLocal = {
       tempId: genId(),
       itemId: itemData.id,
@@ -264,28 +364,109 @@ export default function SalesInvoices() {
       unitLevel: "major",
       qty: 1,
       salePrice,
+      baseSalePrice,
       lineTotal: salePrice,
       expiryMonth: null,
       expiryYear: null,
       lotId: null,
+      fefoLocked: false,
     };
 
-    if (itemData.hasExpiry && warehouseId) {
-      try {
-        const res = await fetch(`/api/items/${itemData.id}/expiry-options?warehouseId=${warehouseId}&asOfDate=${invoiceDate}`);
-        if (res.ok) {
-          const opts = await res.json();
-          newLine.expiryOptions = opts;
-          if (opts.length === 1) {
-            newLine.expiryMonth = opts[0].expiryMonth;
-            newLine.expiryYear = opts[0].expiryYear;
-          }
-        }
-      } catch {}
+    setLines((prev) => [...prev, newLine]);
+  }, [updateLine, warehouseId, invoiceDate, toast]);
+
+  const handleQtyConfirm = useCallback(async (tempId: string) => {
+    const currentLines = linesRef.current;
+    const index = currentLines.findIndex((l) => l.tempId === tempId);
+    const line = currentLines[index];
+    if (!line) return;
+
+    const pendingVal = pendingQtyRef.current.get(tempId);
+    const qtyEntered = parseFloat(pendingVal ?? String(line.qty)) || 0;
+    if (qtyEntered <= 0) {
+      toast({ title: "كمية غير صحيحة", variant: "destructive" });
+      return;
     }
 
-    setLines((prev) => [...prev, newLine]);
-  }, [lines, updateLine, warehouseId, invoiceDate]);
+    pendingQtyRef.current.delete(tempId);
+
+    if (line.item?.hasExpiry && warehouseId) {
+      const allLinesForItem = currentLines.filter((l) => l.itemId === line.itemId);
+      const otherLinesMinor = allLinesForItem
+        .filter((l) => l.tempId !== tempId)
+        .reduce((sum, l) => sum + calculateQtyInMinor(l.qty, l.unitLevel, l.item), 0);
+      const thisLineMinor = calculateQtyInMinor(qtyEntered, line.unitLevel, line.item);
+      const totalRequiredMinor = otherLinesMinor + thisLineMinor;
+
+      if (totalRequiredMinor <= 0) return;
+
+      setFefoLoading(true);
+      try {
+        const fefoParams = new URLSearchParams({
+          itemId: line.itemId,
+          warehouseId,
+          requiredQtyInMinor: String(totalRequiredMinor),
+          asOfDate: invoiceDate,
+        });
+        const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+        if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
+        const preview = await res.json();
+
+        if (!preview.fulfilled) {
+          toast({
+            title: "الكمية غير متاحة",
+            description: preview.shortfall ? `العجز: ${preview.shortfall}` : undefined,
+            variant: "destructive",
+          });
+          setFefoLoading(false);
+          return;
+        }
+
+        const unitLevel = line.unitLevel;
+        const baseSalePrice = line.baseSalePrice;
+        const salePrice = line.salePrice;
+        const itemData = line.item;
+
+        const newFefoLines: SalesLineLocal[] = preview.allocations
+          .filter((a: any) => parseFloat(a.allocatedQty) > 0)
+          .map((alloc: any) => {
+            const allocMinor = parseFloat(alloc.allocatedQty);
+            const displayQty = convertMinorToDisplayQty(allocMinor, unitLevel, itemData);
+            return {
+              tempId: genId(),
+              itemId: line.itemId,
+              item: itemData,
+              unitLevel,
+              qty: displayQty,
+              salePrice,
+              baseSalePrice,
+              lineTotal: +(displayQty * salePrice).toFixed(2),
+              expiryMonth: alloc.expiryMonth || null,
+              expiryYear: alloc.expiryYear || null,
+              lotId: alloc.lotId || null,
+              fefoLocked: true,
+            } as SalesLineLocal;
+          });
+
+        setLines((prev) => {
+          const filtered = prev.filter((l) => l.itemId !== line.itemId);
+          return [...filtered, ...newFefoLines];
+        });
+
+        if (newFefoLines.length > 1) {
+          toast({ title: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
+        }
+      } catch (err: any) {
+        toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+      } finally {
+        setFefoLoading(false);
+      }
+    } else {
+      updateLine(index, { qty: qtyEntered });
+    }
+
+    setTimeout(() => barcodeInputRef.current?.focus(), 50);
+  }, [warehouseId, invoiceDate, toast, updateLine]);
 
   const handleBarcodeScan = useCallback(async () => {
     const code = barcodeInput.trim();
@@ -536,6 +717,7 @@ export default function SalesInvoices() {
               {isNew ? "فاتورة بيع جديدة" : `فاتورة بيع #${invoiceDetail?.invoiceNumber}`}
             </h1>
             {!isNew && invoiceDetail && statusBadge(invoiceDetail.status)}
+            {fefoLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
           </div>
           {isDraft && (
             <div className="flex items-center gap-2">
@@ -573,7 +755,13 @@ export default function SalesInvoices() {
           <div className="flex items-center gap-1">
             <span className="font-semibold">التاريخ:</span>
             {isDraft ? (
-              <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="peachtree-input w-[130px]" data-testid="input-invoice-date" />
+              <input
+                type="date"
+                value={invoiceDate}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+                className="peachtree-input w-[130px]"
+                data-testid="input-invoice-date"
+              />
             ) : (
               <span data-testid="text-invoice-date">{formatDateShort(invoiceDate)}</span>
             )}
@@ -596,7 +784,7 @@ export default function SalesInvoices() {
             )}
           </div>
           <div className="flex items-center gap-1">
-            <span className="font-semibold">اسم العميل:</span>
+            <span className="font-semibold">العميل:</span>
             {isDraft ? (
               <input
                 type="text"
@@ -701,17 +889,31 @@ export default function SalesInvoices() {
                           type="number"
                           step="1"
                           min="1"
-                          value={ln.qty}
-                          onChange={(e) => updateLine(i, { qty: Math.max(1, parseInt(e.target.value) || 1) })}
+                          defaultValue={ln.qty}
+                          key={`qty-${ln.tempId}`}
+                          onChange={(e) => {
+                            if (ln.item?.hasExpiry) {
+                              pendingQtyRef.current.set(ln.tempId, e.target.value);
+                            } else {
+                              updateLine(i, { qty: Math.max(1, parseInt(e.target.value) || 1) });
+                            }
+                          }}
+                          onBlur={() => {
+                            if (ln.item?.hasExpiry) {
+                              handleQtyConfirm(ln.tempId);
+                            }
+                          }}
                           onKeyDown={(e) => {
-                            if (e.key === "Tab" || e.key === "Enter") {
+                            if (e.key === "Enter" || e.key === "Tab") {
                               e.preventDefault();
-                              const next = qtyRefs.current.get(i + 1);
-                              if (next) next.focus();
-                              else barcodeInputRef.current?.focus();
+                              if (ln.item?.hasExpiry) {
+                                handleQtyConfirm(ln.tempId);
+                              }
+                              setTimeout(() => barcodeInputRef.current?.focus(), 50);
                             }
                           }}
                           className="peachtree-input w-[60px] text-center"
+                          disabled={fefoLoading}
                           data-testid={`input-qty-${i}`}
                         />
                       ) : (
@@ -724,7 +926,9 @@ export default function SalesInvoices() {
                     <td className="text-center peachtree-amount font-semibold">{formatNumber(ln.lineTotal)}</td>
                     <td className="text-center text-[11px]">
                       {ln.item?.hasExpiry ? (
-                        isDraft && ln.expiryOptions && ln.expiryOptions.length > 0 ? (
+                        ln.fefoLocked && ln.expiryMonth && ln.expiryYear ? (
+                          <span data-testid={`text-expiry-${i}`}>{String(ln.expiryMonth).padStart(2, "0")}/{ln.expiryYear}</span>
+                        ) : isDraft && ln.expiryOptions && ln.expiryOptions.length > 0 ? (
                           <select
                             value={ln.expiryMonth && ln.expiryYear ? `${ln.expiryMonth}-${ln.expiryYear}` : ""}
                             onChange={(e) => {
@@ -742,7 +946,7 @@ export default function SalesInvoices() {
                             ))}
                           </select>
                         ) : ln.expiryMonth && ln.expiryYear ? (
-                          <span>{String(ln.expiryMonth).padStart(2, "0")}/{ln.expiryYear}</span>
+                          <span data-testid={`text-expiry-${i}`}>{String(ln.expiryMonth).padStart(2, "0")}/{ln.expiryYear}</span>
                         ) : (
                           <span className="text-yellow-600">مطلوب</span>
                         )
