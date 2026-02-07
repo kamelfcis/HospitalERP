@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, X, ScanBarcode, Truck, AlertTriangle, Check, BarChart3, RotateCcw } from "lucide-react";
+import { Loader2, Search, Package, Trash2, Send, Save, Plus, ChevronLeft, ChevronRight, Eye, X, ScanBarcode, Truck, AlertTriangle, Check, BarChart3, RotateCcw, FileText } from "lucide-react";
 import { ExpiryInput } from "@/components/ui/expiry-input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -127,6 +127,7 @@ export default function SupplierReceiving() {
   const [lineErrors, setLineErrors] = useState<{ lineIndex: number; field: string; messageAr: string }[]>([]);
   const [formCorrectionStatus, setFormCorrectionStatus] = useState<string | null>(null);
   const [formCorrectionOfId, setFormCorrectionOfId] = useState<string | null>(null);
+  const [formConvertedToInvoiceId, setFormConvertedToInvoiceId] = useState<string | null>(null);
 
   const [statsItemId, setStatsItemId] = useState<string | null>(null);
   const [statsData, setStatsData] = useState<any[]>([]);
@@ -432,6 +433,7 @@ export default function SupplierReceiving() {
 
       setFormCorrectionStatus((receiving as any).correctionStatus || null);
       setFormCorrectionOfId((receiving as any).correctionOfId || null);
+      setFormConvertedToInvoiceId((receiving as any).convertedToInvoiceId || null);
       setFormLines(loadedLines);
       setActiveTab("form");
     } catch (err: any) {
@@ -454,6 +456,7 @@ export default function SupplierReceiving() {
     setInvoiceDuplicateError("");
     setFormCorrectionStatus(null);
     setFormCorrectionOfId(null);
+    setFormConvertedToInvoiceId(null);
     setLineErrors([]);
   };
 
@@ -1568,6 +1571,33 @@ export default function SupplierReceiving() {
                 <Plus className="h-3 w-3 ml-1" />
                 إذن جديد
               </Button>
+              {formStatus === "posted_qty_only" && !formConvertedToInvoiceId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={convertToInvoiceMutation.isPending}
+                  onClick={() => editingReceivingId && handleConvertToInvoice(editingReceivingId)}
+                  data-testid="button-form-convert-to-invoice"
+                >
+                  {convertToInvoiceMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <FileText className="h-3 w-3 ml-1" />}
+                  تحويل إلى فاتورة شراء
+                </Button>
+              )}
+              {formStatus === "posted_qty_only" && formCorrectionStatus !== 'corrected' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={correctReceivingMutation.isPending}
+                  onClick={() => editingReceivingId && correctReceivingMutation.mutate(editingReceivingId)}
+                  data-testid="button-form-correct"
+                >
+                  {correctReceivingMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <RotateCcw className="h-3 w-3 ml-1" />}
+                  تصحيح
+                </Button>
+              )}
+              {formConvertedToInvoiceId && (
+                <Badge variant="default" className="text-[9px] bg-blue-600 no-default-hover-elevate no-default-active-elevate">تم التحويل إلى فاتورة شراء</Badge>
+              )}
               {formLines.length > 0 && (
                 <span className="text-[10px] text-muted-foreground mr-auto">
                   {formLines.length} صنف

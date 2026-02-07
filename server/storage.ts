@@ -2394,9 +2394,6 @@ export class DatabaseStorage implements IStorage {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
         
-        if (!item.majorUnitName) {
-          throw new Error(`الصنف "${item.nameAr}" يحتاج تحديد الوحدة الكبرى في بطاقة الصنف`);
-        }
         if (item.hasExpiry && (!line.expiryMonth || !line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية (شهر/سنة)`);
         if (!item.hasExpiry && (line.expiryMonth || line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);
         
@@ -2905,10 +2902,6 @@ export class DatabaseStorage implements IStorage {
 
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
-
-        if (!item.majorUnitName) {
-          throw new Error(`الصنف "${item.nameAr}" يحتاج تحديد الوحدة الكبرى في بطاقة الصنف`);
-        }
 
         const lotConditions = [
           eq(inventoryLots.itemId, line.itemId),
