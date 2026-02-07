@@ -242,7 +242,7 @@ export interface IStorage {
     pageSize: number;
   }): Promise<{data: StoreTransferWithDetails[]; total: number}>;
   getTransfer(id: string): Promise<StoreTransferWithDetails | undefined>;
-  createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer>;
+  createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer>;
   postTransfer(transferId: string): Promise<StoreTransfer>;
   deleteTransfer(id: string): Promise<boolean>;
   getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
@@ -1423,7 +1423,7 @@ export class DatabaseStorage implements IStorage {
     return { ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems };
   }
 
-  async createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer> {
+  async createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer> {
     return await db.transaction(async (tx) => {
       const [maxNum] = await tx.select({ max: sql<number>`COALESCE(MAX(${storeTransfers.transferNumber}), 0)` }).from(storeTransfers);
       const nextNumber = (maxNum?.max || 0) + 1;
@@ -1442,6 +1442,8 @@ export class DatabaseStorage implements IStorage {
           qtyEntered: line.qtyEntered,
           qtyInMinor: line.qtyInMinor,
           selectedExpiryDate: line.selectedExpiryDate || null,
+          selectedExpiryMonth: line.expiryMonth || null,
+          selectedExpiryYear: line.expiryYear || null,
           availableAtSaveMinor: line.availableAtSaveMinor || null,
           notes: line.notes || null,
         });
@@ -1472,7 +1474,35 @@ export class DatabaseStorage implements IStorage {
         let remaining = requiredQty;
         const allocations: { lotId: string; expiryDate: string | null; expiryMonth: number | null; expiryYear: number | null; allocatedQty: number; unitCost: string }[] = [];
 
-        if (line.selectedExpiryDate && item.hasExpiry) {
+        if (item.hasExpiry && line.selectedExpiryMonth && line.selectedExpiryYear) {
+          const selMonth = line.selectedExpiryMonth;
+          const selYear = line.selectedExpiryYear;
+          const selectedLots = await tx.select().from(inventoryLots)
+            .where(and(
+              eq(inventoryLots.itemId, line.itemId),
+              eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
+              eq(inventoryLots.isActive, true),
+              sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+              eq(inventoryLots.expiryMonth, selMonth),
+              eq(inventoryLots.expiryYear, selYear)
+            ))
+            .orderBy(asc(inventoryLots.receivedDate));
+
+          for (const lot of selectedLots) {
+            if (remaining <= 0) break;
+            const available = parseFloat(lot.qtyInMinor);
+            const allocated = Math.min(available, remaining);
+            allocations.push({
+              lotId: lot.id,
+              expiryDate: lot.expiryDate,
+              expiryMonth: lot.expiryMonth,
+              expiryYear: lot.expiryYear,
+              allocatedQty: allocated,
+              unitCost: lot.purchasePrice,
+            });
+            remaining -= allocated;
+          }
+        } else if (item.hasExpiry && line.selectedExpiryDate) {
           const selectedLots = await tx.select().from(inventoryLots)
             .where(and(
               eq(inventoryLots.itemId, line.itemId),
@@ -1500,12 +1530,20 @@ export class DatabaseStorage implements IStorage {
         }
 
         if (remaining > 0) {
+          const transferDateParsed = new Date(transfer.transferDate);
+          const tMonth = transferDateParsed.getMonth() + 1;
+          const tYear = transferDateParsed.getFullYear();
+
           const expiryCondition = item.hasExpiry
             ? and(
-                sql`${inventoryLots.expiryDate} IS NOT NULL`,
-                sql`${inventoryLots.expiryDate} >= ${transfer.transferDate}`
+                sql`${inventoryLots.expiryMonth} IS NOT NULL`,
+                sql`${inventoryLots.expiryYear} IS NOT NULL`,
+                sql`(${inventoryLots.expiryYear} > ${tYear} OR (${inventoryLots.expiryYear} = ${tYear} AND ${inventoryLots.expiryMonth} >= ${tMonth}))`
               )
-            : sql`${inventoryLots.expiryDate} IS NULL`;
+            : and(
+                sql`${inventoryLots.expiryMonth} IS NULL`,
+                sql`${inventoryLots.expiryYear} IS NULL`
+              );
 
           const alreadyUsedLotIds = allocations.map(a => a.lotId);
 
@@ -1520,7 +1558,7 @@ export class DatabaseStorage implements IStorage {
                 ? [sql`${inventoryLots.id} NOT IN (${sql.join(alreadyUsedLotIds.map(id => sql`${id}`), sql`, `)})`]
                 : [])
             ))
-            .orderBy(asc(inventoryLots.expiryDate), asc(inventoryLots.receivedDate));
+            .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth), asc(inventoryLots.receivedDate));
 
           for (const lot of fefoLots) {
             if (remaining <= 0) break;
