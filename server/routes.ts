@@ -2059,7 +2059,7 @@ export async function registerRoutes(
         errors.push({ lineIndex: i, field: "lineDiscountValue", messageAr: "قيمة الخصم أكبر من سعر البيع" });
       }
 
-      if (sp > 0) {
+      if (sp > 0 && (pct > 0 || dv > 0)) {
         const expectedDv = +(sp * (pct / 100)).toFixed(2);
         const expectedPp = +(sp - dv).toFixed(4);
         if (Math.abs(dv - expectedDv) > TOLERANCE) {
