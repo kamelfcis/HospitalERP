@@ -152,6 +152,9 @@ export default function StoreTransfers() {
   const formLinesRef = useRef<TransferLineLocal[]>([]);
 
   const availPopupCache = useRef<Record<string, {data: any[]; ts: number}>>({});
+  const expiryOptionsCache = useRef<Record<string, { data: ExpiryOption[]; ts: number }>>({});
+  const [lineExpiryOptions, setLineExpiryOptions] = useState<Record<string, ExpiryOption[]>>({});
+  const [expiryDropdownLoading, setExpiryDropdownLoading] = useState<string | null>(null);
 
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
@@ -870,6 +873,83 @@ export default function StoreTransfers() {
     }
   }, [sourceWarehouseId, transferDate, toast]);
 
+  const fetchExpiryOptions = useCallback(async (itemId: string): Promise<ExpiryOption[]> => {
+    const cacheKey = `${itemId}_${sourceWarehouseId}`;
+    const cached = expiryOptionsCache.current[cacheKey];
+    if (cached && Date.now() - cached.ts < 30000) return cached.data;
+
+    const params = new URLSearchParams({ warehouseId: sourceWarehouseId, asOfDate: transferDate });
+    const res = await fetch(`/api/items/${itemId}/expiry-options?${params}`);
+    if (!res.ok) return [];
+    const options: ExpiryOption[] = await res.json();
+    expiryOptionsCache.current[cacheKey] = { data: options, ts: Date.now() };
+    return options;
+  }, [sourceWarehouseId, transferDate]);
+
+  const loadExpiryOptionsForLine = useCallback(async (lineId: string, itemId: string) => {
+    if (lineExpiryOptions[lineId]) return;
+    setExpiryDropdownLoading(lineId);
+    try {
+      const options = await fetchExpiryOptions(itemId);
+      setLineExpiryOptions((prev) => ({ ...prev, [lineId]: options }));
+    } finally {
+      setExpiryDropdownLoading(null);
+    }
+  }, [fetchExpiryOptions, lineExpiryOptions]);
+
+  const handleExpiryChange = useCallback(async (lineId: string, expiryKey: string) => {
+    const lines = formLinesRef.current;
+    const index = lines.findIndex((l) => l.id === lineId);
+    const line = lines[index];
+    if (!line) return;
+
+    if (!expiryKey) {
+      setFormLines((prev) => {
+        const copy = [...prev];
+        copy[index] = {
+          ...copy[index],
+          selectedExpiryDate: null,
+          selectedExpiryMonth: null,
+          selectedExpiryYear: null,
+          availableQtyMinor: "0",
+          fefoLocked: false,
+        };
+        return copy;
+      });
+      return;
+    }
+
+    const [monthStr, yearStr] = expiryKey.split("/");
+    const month = parseInt(monthStr);
+    const year = parseInt(yearStr);
+
+    const options = await fetchExpiryOptions(line.itemId);
+    const opt = options.find((o) => o.expiryMonth === month && o.expiryYear === year);
+    const availMinor = opt ? parseFloat(opt.qtyAvailableMinor) : 0;
+
+    const qtyInMinor = line.qtyInMinor;
+    if (qtyInMinor > availMinor) {
+      toast({
+        title: "الكمية تتجاوز المتاح لهذه الصلاحية",
+        description: `المتاح: ${formatAvailability(String(availMinor), line.unitLevel, line.item)}`,
+        variant: "destructive",
+      });
+    }
+
+    setFormLines((prev) => {
+      const copy = [...prev];
+      copy[index] = {
+        ...copy[index],
+        selectedExpiryDate: opt?.expiryDate || null,
+        selectedExpiryMonth: month,
+        selectedExpiryYear: year,
+        availableQtyMinor: String(availMinor),
+        fefoLocked: true,
+      };
+      return copy;
+    });
+  }, [toast, fetchExpiryOptions]);
+
   const handleBarcodeScan = useCallback(async (barcodeValue: string) => {
     if (!barcodeValue.trim() || !sourceWarehouseId || barcodeLoading) return;
 
@@ -1380,12 +1460,40 @@ export default function StoreTransfers() {
                         <td className="py-0.5 px-2 whitespace-nowrap">
                           {fefoLoadingIndex === idx ? (
                             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground inline" />
-                          ) : line.selectedExpiryMonth && line.selectedExpiryYear ? (
-                            `${String(line.selectedExpiryMonth).padStart(2,'0')}/${line.selectedExpiryYear}`
-                          ) : line.selectedExpiryDate ? (
-                            formatDateShort(line.selectedExpiryDate)
+                          ) : isViewOnly || !line.item?.hasExpiry ? (
+                            line.selectedExpiryMonth && line.selectedExpiryYear
+                              ? `${String(line.selectedExpiryMonth).padStart(2,'0')}/${line.selectedExpiryYear}`
+                              : line.selectedExpiryDate
+                                ? formatDateShort(line.selectedExpiryDate)
+                                : "—"
                           ) : (
-                            "—"
+                            <select
+                              value={line.selectedExpiryMonth && line.selectedExpiryYear
+                                ? `${line.selectedExpiryMonth}/${line.selectedExpiryYear}`
+                                : ""}
+                              onFocus={() => loadExpiryOptionsForLine(line.id, line.itemId)}
+                              onChange={(e) => handleExpiryChange(line.id, e.target.value)}
+                              className="h-6 text-[12px] px-1 border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500 border-border min-w-[90px]"
+                              data-testid={`select-expiry-${idx}`}
+                            >
+                              {line.selectedExpiryMonth && line.selectedExpiryYear && (
+                                <option value={`${line.selectedExpiryMonth}/${line.selectedExpiryYear}`}>
+                                  {`${String(line.selectedExpiryMonth).padStart(2,'0')}/${line.selectedExpiryYear}`}
+                                </option>
+                              )}
+                              {!line.selectedExpiryMonth && <option value="">اختر...</option>}
+                              {expiryDropdownLoading === line.id && !lineExpiryOptions[line.id] ? (
+                                <option disabled>جاري التحميل...</option>
+                              ) : (
+                                (lineExpiryOptions[line.id] || [])
+                                  .filter((o) => !(o.expiryMonth === line.selectedExpiryMonth && o.expiryYear === line.selectedExpiryYear))
+                                  .map((o) => (
+                                    <option key={`${o.expiryMonth}/${o.expiryYear}`} value={`${o.expiryMonth}/${o.expiryYear}`}>
+                                      {`${String(o.expiryMonth).padStart(2,'0')}/${o.expiryYear} (${formatAvailability(o.qtyAvailableMinor, line.unitLevel, line.item)})`}
+                                    </option>
+                                  ))
+                              )}
+                            </select>
                           )}
                         </td>
                         <td className="py-0.5 px-2 whitespace-nowrap">
