@@ -1113,15 +1113,26 @@ export async function registerRoutes(
       if (!parsed.nameEn?.trim()) errors.push("الاسم الإنجليزي مطلوب");
       if (!parsed.formTypeId) errors.push("نوع الشكل مطلوب");
       if (!parsed.majorUnitName?.trim()) errors.push("الوحدة الكبرى مطلوبة");
-      if (!parsed.mediumUnitName?.trim()) errors.push("الوحدة المتوسطة مطلوبة");
-      if (!parsed.minorUnitName?.trim()) errors.push("الوحدة الصغرى مطلوبة");
 
-      const majorToMedium = parseFloat(parsed.majorToMedium as string || "0");
-      const majorToMinor = parseFloat(parsed.majorToMinor as string || "0");
-      const mediumToMinor = parseFloat(parsed.mediumToMinor as string || "0");
-      if (majorToMedium <= 0) errors.push("معامل التحويل كبرى ← متوسطة يجب أن يكون أكبر من صفر");
-      if (majorToMinor <= 0) errors.push("معامل التحويل كبرى ← صغرى يجب أن يكون أكبر من صفر");
-      if (mediumToMinor <= 0) errors.push("معامل التحويل متوسطة ← صغرى يجب أن يكون أكبر من صفر");
+      const hasMedium = !!parsed.mediumUnitName?.trim();
+      const hasMinor = !!parsed.minorUnitName?.trim();
+
+      if (hasMinor && !hasMedium) {
+        errors.push("يجب اختيار الوحدة المتوسطة قبل الصغرى");
+      }
+
+      if (hasMedium) {
+        const majorToMedium = parseFloat(parsed.majorToMedium as string || "0");
+        if (majorToMedium <= 0) errors.push("معامل التحويل كبرى ← متوسطة يجب أن يكون أكبر من صفر");
+      }
+      if (hasMinor) {
+        const majorToMinor = parseFloat(parsed.majorToMinor as string || "0");
+        if (majorToMinor <= 0) errors.push("معامل التحويل كبرى ← صغرى يجب أن يكون أكبر من صفر");
+        if (hasMedium) {
+          const mediumToMinor = parseFloat(parsed.mediumToMinor as string || "0");
+          if (mediumToMinor <= 0) errors.push("معامل التحويل متوسطة ← صغرى يجب أن يكون أكبر من صفر");
+        }
+      }
 
       if (errors.length > 0) {
         return res.status(400).json({ message: errors.join("، ") });
@@ -1141,6 +1152,15 @@ export async function registerRoutes(
         parsed.hasExpiry = false;
       } else if (parsed.category === "drug" && parsed.hasExpiry === undefined) {
         parsed.hasExpiry = true;
+      }
+      if (!parsed.mediumUnitName?.trim()) {
+        parsed.mediumUnitName = null as any;
+        parsed.majorToMedium = null as any;
+      }
+      if (!parsed.minorUnitName?.trim()) {
+        parsed.minorUnitName = null as any;
+        parsed.majorToMinor = null as any;
+        parsed.mediumToMinor = null as any;
       }
       const item = await storage.createItem(parsed);
       res.status(201).json(item);
@@ -1162,6 +1182,16 @@ export async function registerRoutes(
         if (uniqueErrors.length > 0) {
           return res.status(409).json({ message: uniqueErrors.join("، ") });
         }
+      }
+
+      if (parsed.mediumUnitName !== undefined && !parsed.mediumUnitName?.trim()) {
+        parsed.mediumUnitName = null as any;
+        parsed.majorToMedium = null as any;
+      }
+      if (parsed.minorUnitName !== undefined && !parsed.minorUnitName?.trim()) {
+        parsed.minorUnitName = null as any;
+        parsed.majorToMinor = null as any;
+        parsed.mediumToMinor = null as any;
       }
 
       const item = await storage.updateItem(req.params.id, parsed);

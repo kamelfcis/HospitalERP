@@ -338,15 +338,26 @@ export default function ItemCard() {
     if (!formData.nameEn?.trim()) errors.nameEn = "مطلوب";
     if (!formData.formTypeId) errors.formTypeId = "مطلوب";
     if (!formData.majorUnitName?.trim()) errors.majorUnitName = "مطلوب";
-    if (!formData.mediumUnitName?.trim()) errors.mediumUnitName = "مطلوب";
-    if (!formData.minorUnitName?.trim()) errors.minorUnitName = "مطلوب";
 
-    const majorToMedium = parseFloat(formData.majorToMedium as string || "0");
-    const majorToMinor = parseFloat(formData.majorToMinor as string || "0");
-    const mediumToMinor = parseFloat(formData.mediumToMinor as string || "0");
-    if (majorToMedium <= 0) errors.majorToMedium = "يجب > 0";
-    if (majorToMinor <= 0) errors.majorToMinor = "يجب > 0";
-    if (mediumToMinor <= 0) errors.mediumToMinor = "يجب > 0";
+    const hasMedium = !!formData.mediumUnitName?.trim();
+    const hasMinor = !!formData.minorUnitName?.trim();
+
+    if (hasMinor && !hasMedium) {
+      errors.mediumUnitName = "يجب اختيار المتوسطة قبل الصغرى";
+    }
+
+    if (hasMedium) {
+      const majorToMedium = parseFloat(formData.majorToMedium as string || "0");
+      if (majorToMedium <= 0) errors.majorToMedium = "يجب > 0";
+    }
+    if (hasMinor) {
+      const majorToMinor = parseFloat(formData.majorToMinor as string || "0");
+      if (majorToMinor <= 0) errors.majorToMinor = "يجب > 0";
+      if (hasMedium) {
+        const mediumToMinor = parseFloat(formData.mediumToMinor as string || "0");
+        if (mediumToMinor <= 0) errors.mediumToMinor = "يجب > 0";
+      }
+    }
 
     const units = [formData.majorUnitName, formData.mediumUnitName, formData.minorUnitName].filter(Boolean);
     const uniqueUnits = new Set(units.map(u => u?.trim().toLowerCase()));
@@ -390,7 +401,17 @@ export default function ItemCard() {
       toast({ title: "خطأ", description: "يرجى تصحيح الحقول المطلوبة", variant: "destructive" });
       return;
     }
-    saveMutation.mutate(formData);
+    const dataToSave = { ...formData };
+    if (!dataToSave.mediumUnitName?.trim()) {
+      dataToSave.mediumUnitName = "";
+      dataToSave.majorToMedium = null;
+    }
+    if (!dataToSave.minorUnitName?.trim()) {
+      dataToSave.minorUnitName = "";
+      dataToSave.majorToMinor = null;
+      dataToSave.mediumToMinor = null;
+    }
+    saveMutation.mutate(dataToSave);
   };
 
   const profitMargin = () => {
@@ -400,17 +421,23 @@ export default function ItemCard() {
     return ((sale - purchase) / purchase * 100).toFixed(1);
   };
 
+  const hasMediumUnit = !!formData.mediumUnitName?.trim();
+  const hasMinorUnit = !!formData.minorUnitName?.trim();
+
   const conversionExample = () => {
     const major = formData.majorUnitName || "وحدة كبرى";
     const medium = formData.mediumUnitName;
-    const minor = formData.minorUnitName || "وحدة صغرى";
+    const minor = formData.minorUnitName;
     const toMedium = formData.majorToMedium;
-    const toMinor = formData.majorToMinor || 1;
+    const toMinor = formData.majorToMinor;
     
-    if (medium && toMedium) {
+    if (medium && minor && toMedium && toMinor) {
       return `1 ${major} = ${toMedium} ${medium} = ${toMinor} ${minor}`;
     }
-    return `1 ${major} = ${toMinor} ${minor}`;
+    if (medium && toMedium) {
+      return `1 ${major} = ${toMedium} ${medium}`;
+    }
+    return `وحدة واحدة فقط: ${major}`;
   };
 
   const availableDepartments = departments?.filter(
@@ -750,10 +777,20 @@ export default function ItemCard() {
                     {validationErrors.majorUnitName && <span className="text-[9px] text-destructive">{validationErrors.majorUnitName}</span>}
                   </div>
                   <div>
-                    <Label className={`text-[10px] ${validationErrors.mediumUnitName ? "text-destructive" : "text-muted-foreground"}`}>المتوسطة *</Label>
+                    <Label className={`text-[10px] ${validationErrors.mediumUnitName ? "text-destructive" : "text-muted-foreground"}`}>المتوسطة</Label>
                     <Select
                       value={formData.mediumUnitName || "none"}
-                      onValueChange={(v) => setFormData({ ...formData, mediumUnitName: v === "none" ? "" : v })}
+                      onValueChange={(v) => {
+                        const newMedium = v === "none" ? "" : v;
+                        const updates: Partial<typeof formData> = { mediumUnitName: newMedium };
+                        if (!newMedium) {
+                          updates.majorToMedium = null;
+                          updates.mediumToMinor = null;
+                          updates.minorUnitName = "";
+                          updates.majorToMinor = null;
+                        }
+                        setFormData({ ...formData, ...updates });
+                      }}
                       disabled={!isEditing}
                     >
                       <SelectTrigger className={`h-6 text-[11px] px-1 ${validationErrors.mediumUnitName ? "border-destructive" : ""}`} data-testid="select-medium-unit">
@@ -769,10 +806,18 @@ export default function ItemCard() {
                     {validationErrors.mediumUnitName && <span className="text-[9px] text-destructive">{validationErrors.mediumUnitName}</span>}
                   </div>
                   <div>
-                    <Label className={`text-[10px] ${validationErrors.minorUnitName ? "text-destructive" : "text-muted-foreground"}`}>الصغرى *</Label>
+                    <Label className={`text-[10px] ${validationErrors.minorUnitName ? "text-destructive" : "text-muted-foreground"}`}>الصغرى</Label>
                     <Select
                       value={formData.minorUnitName || "none"}
-                      onValueChange={(v) => setFormData({ ...formData, minorUnitName: v === "none" ? "" : v })}
+                      onValueChange={(v) => {
+                        const newMinor = v === "none" ? "" : v;
+                        const updates: Partial<typeof formData> = { minorUnitName: newMinor };
+                        if (!newMinor) {
+                          updates.majorToMinor = null;
+                          updates.mediumToMinor = null;
+                        }
+                        setFormData({ ...formData, ...updates });
+                      }}
                       disabled={!isEditing}
                     >
                       <SelectTrigger className={`h-6 text-[11px] px-1 ${validationErrors.minorUnitName ? "border-destructive" : ""}`} data-testid="select-minor-unit">
@@ -796,60 +841,73 @@ export default function ItemCard() {
               </fieldset>
             </div>
 
-            <fieldset className="peachtree-grid p-2 flex-shrink-0">
-              <legend className="text-[11px] font-semibold px-1 text-primary">معاملات التحويل</legend>
-              <div className="grid grid-cols-4 gap-3 items-center">
-                <div>
-                  <Label className={`text-[10px] ${validationErrors.majorToMedium ? "text-destructive" : "text-muted-foreground"}`}>كبرى ← متوسطة *</Label>
-                  <Input
-                    type="number"
-                    step="0.0001"
-                    value={formData.majorToMedium || ""}
-                    onChange={(e) => setFormData({ ...formData, majorToMedium: e.target.value || null })}
-                    disabled={!isEditing}
-                    placeholder="3"
-                    className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMedium ? "border-destructive" : ""}`}
-                    dir="ltr"
-                    data-testid="input-major-to-medium"
-                  />
-                  {validationErrors.majorToMedium && <span className="text-[9px] text-destructive">{validationErrors.majorToMedium}</span>}
+            {(hasMediumUnit || hasMinorUnit) && (
+              <fieldset className="peachtree-grid p-2 flex-shrink-0">
+                <legend className="text-[11px] font-semibold px-1 text-primary">معاملات التحويل</legend>
+                <div className="grid grid-cols-4 gap-3 items-center">
+                  {hasMediumUnit && (
+                    <div>
+                      <Label className={`text-[10px] ${validationErrors.majorToMedium ? "text-destructive" : "text-muted-foreground"}`}>كبرى ← متوسطة *</Label>
+                      <Input
+                        type="number"
+                        step="0.0001"
+                        value={formData.majorToMedium || ""}
+                        onChange={(e) => setFormData({ ...formData, majorToMedium: e.target.value || null })}
+                        disabled={!isEditing}
+                        placeholder="3"
+                        className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMedium ? "border-destructive" : ""}`}
+                        dir="ltr"
+                        data-testid="input-major-to-medium"
+                      />
+                      {validationErrors.majorToMedium && <span className="text-[9px] text-destructive">{validationErrors.majorToMedium}</span>}
+                    </div>
+                  )}
+                  {hasMinorUnit && (
+                    <div>
+                      <Label className={`text-[10px] ${validationErrors.majorToMinor ? "text-destructive" : "text-muted-foreground"}`}>كبرى ← صغرى *</Label>
+                      <Input
+                        type="number"
+                        step="0.0001"
+                        value={formData.majorToMinor || ""}
+                        onChange={(e) => setFormData({ ...formData, majorToMinor: e.target.value || null })}
+                        disabled={!isEditing}
+                        placeholder="30"
+                        className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMinor ? "border-destructive" : ""}`}
+                        dir="ltr"
+                        data-testid="input-major-to-minor"
+                      />
+                      {validationErrors.majorToMinor && <span className="text-[9px] text-destructive">{validationErrors.majorToMinor}</span>}
+                    </div>
+                  )}
+                  {hasMediumUnit && hasMinorUnit && (
+                    <div>
+                      <Label className={`text-[10px] ${validationErrors.mediumToMinor ? "text-destructive" : "text-muted-foreground"}`}>متوسطة ← صغرى *</Label>
+                      <Input
+                        type="number"
+                        step="0.0001"
+                        value={formData.mediumToMinor || ""}
+                        onChange={(e) => setFormData({ ...formData, mediumToMinor: e.target.value || null })}
+                        disabled={!isEditing}
+                        placeholder="10"
+                        className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.mediumToMinor ? "border-destructive" : ""}`}
+                        dir="ltr"
+                        data-testid="input-medium-to-minor"
+                      />
+                      {validationErrors.mediumToMinor && <span className="text-[9px] text-destructive">{validationErrors.mediumToMinor}</span>}
+                    </div>
+                  )}
+                  <div className="bg-muted/50 rounded px-2 py-1 text-center">
+                    <span className="text-[10px] text-muted-foreground block">مثال:</span>
+                    <span className="text-[11px] font-medium">{conversionExample()}</span>
+                  </div>
                 </div>
-                <div>
-                  <Label className={`text-[10px] ${validationErrors.majorToMinor ? "text-destructive" : "text-muted-foreground"}`}>كبرى ← صغرى *</Label>
-                  <Input
-                    type="number"
-                    step="0.0001"
-                    value={formData.majorToMinor || ""}
-                    onChange={(e) => setFormData({ ...formData, majorToMinor: e.target.value || null })}
-                    disabled={!isEditing}
-                    placeholder="30"
-                    className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMinor ? "border-destructive" : ""}`}
-                    dir="ltr"
-                    data-testid="input-major-to-minor"
-                  />
-                  {validationErrors.majorToMinor && <span className="text-[9px] text-destructive">{validationErrors.majorToMinor}</span>}
-                </div>
-                <div>
-                  <Label className={`text-[10px] ${validationErrors.mediumToMinor ? "text-destructive" : "text-muted-foreground"}`}>متوسطة ← صغرى *</Label>
-                  <Input
-                    type="number"
-                    step="0.0001"
-                    value={formData.mediumToMinor || ""}
-                    onChange={(e) => setFormData({ ...formData, mediumToMinor: e.target.value || null })}
-                    disabled={!isEditing}
-                    placeholder="10"
-                    className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.mediumToMinor ? "border-destructive" : ""}`}
-                    dir="ltr"
-                    data-testid="input-medium-to-minor"
-                  />
-                  {validationErrors.mediumToMinor && <span className="text-[9px] text-destructive">{validationErrors.mediumToMinor}</span>}
-                </div>
-                <div className="bg-muted/50 rounded px-2 py-1 text-center">
-                  <span className="text-[10px] text-muted-foreground block">مثال:</span>
-                  <span className="text-[11px] font-medium">{conversionExample()}</span>
-                </div>
+              </fieldset>
+            )}
+            {!hasMediumUnit && !hasMinorUnit && (
+              <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-3 py-2">
+                الصنف بوحدة واحدة فقط ({formData.majorUnitName || "الكبرى"}) — يمكنك إضافة وحدة متوسطة أو صغرى اختيارياً
               </div>
-            </fieldset>
+            )}
 
             {!isNew && (
               <fieldset className="peachtree-grid p-2 flex-shrink-0">
