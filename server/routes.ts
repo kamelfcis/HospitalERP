@@ -1023,7 +1023,7 @@ export async function registerRoutes(
 
   app.get("/api/items/search", async (req, res) => {
     try {
-      const { warehouseId, mode, q, page, pageSize, includeZeroStock, drugsOnly } = req.query;
+      const { warehouseId, mode, q, page, pageSize, includeZeroStock, drugsOnly, excludeServices } = req.query;
       if (!warehouseId || !q) {
         return res.status(400).json({ message: "warehouseId و q مطلوبة" });
       }
@@ -1035,6 +1035,7 @@ export async function registerRoutes(
         pageSize: parseInt(pageSize as string) || 50,
         includeZeroStock: includeZeroStock === 'true',
         drugsOnly: drugsOnly === 'true',
+        excludeServices: excludeServices === 'true',
       });
       res.json(result);
     } catch (error: any) {
@@ -1894,12 +1895,11 @@ export async function registerRoutes(
       if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
       if (!header.supplierId) return res.status(400).json({ message: "المورد مطلوب" });
       if (!header.receiveDate) return res.status(400).json({ message: "تاريخ الاستلام مطلوب" });
+      if (!header.supplierInvoiceNo?.trim()) return res.status(400).json({ message: "رقم فاتورة المورد مطلوب" });
       if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
       
-      if (header.supplierId && header.supplierInvoiceNo?.trim()) {
-        const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo);
-        if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
-      }
+      const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo);
+      if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
       
       const lineErrors = await validateReceivingLines(lines);
       if (lineErrors.length > 0) {

@@ -127,6 +127,11 @@ export default function SupplierReceiving() {
   const [lineErrors, setLineErrors] = useState<{ lineIndex: number; field: string; messageAr: string }[]>([]);
   const [formCorrectionStatus, setFormCorrectionStatus] = useState<string | null>(null);
   const [formCorrectionOfId, setFormCorrectionOfId] = useState<string | null>(null);
+
+  const [showQuickSupplierDialog, setShowQuickSupplierDialog] = useState(false);
+  const [quickSupplierCode, setQuickSupplierCode] = useState("");
+  const [quickSupplierNameAr, setQuickSupplierNameAr] = useState("");
+  const [quickSupplierPhone, setQuickSupplierPhone] = useState("");
   const [formConvertedToInvoiceId, setFormConvertedToInvoiceId] = useState<string | null>(null);
 
   const [statsItemId, setStatsItemId] = useState<string | null>(null);
@@ -687,6 +692,38 @@ export default function SupplierReceiving() {
     });
   }, []);
 
+  const quickSupplierMutation = useMutation({
+    mutationFn: async (data: { code: string; nameAr: string; phone?: string }) => {
+      const res = await apiRequest("POST", "/api/suppliers", data);
+      return res.json();
+    },
+    onSuccess: (supplier: Supplier) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      supplierCacheRef.current.clear();
+      selectSupplier(supplier);
+      setShowQuickSupplierDialog(false);
+      setQuickSupplierCode("");
+      setQuickSupplierNameAr("");
+      setQuickSupplierPhone("");
+      toast({ title: "تم إضافة المورد بنجاح" });
+    },
+    onError: (err: any) => {
+      toast({ title: "خطأ", description: err.message || "فشل إضافة المورد", variant: "destructive" });
+    },
+  });
+
+  const handleQuickSupplierSave = () => {
+    if (!quickSupplierCode.trim() || !quickSupplierNameAr.trim()) {
+      toast({ title: "خطأ", description: "كود المورد والاسم العربي مطلوبان", variant: "destructive" });
+      return;
+    }
+    quickSupplierMutation.mutate({
+      code: quickSupplierCode.trim(),
+      nameAr: quickSupplierNameAr.trim(),
+      phone: quickSupplierPhone.trim() || undefined,
+    });
+  };
+
   const handleDeleteLine = (index: number) => {
     setFormLines((prev) => prev.filter((_, i) => i !== index));
   };
@@ -704,7 +741,7 @@ export default function SupplierReceiving() {
         return;
       }
 
-      const searchRes = await fetch(`/api/items/search?warehouseId=${warehouseId || ""}&mode=CODE&q=${encodeURIComponent(resolved.itemCode)}&page=1&pageSize=1&includeZeroStock=true&drugsOnly=false`);
+      const searchRes = await fetch(`/api/items/search?warehouseId=${warehouseId || ""}&mode=CODE&q=${encodeURIComponent(resolved.itemCode)}&page=1&pageSize=1&includeZeroStock=true&drugsOnly=false&excludeServices=true`);
       if (!searchRes.ok) throw new Error("فشل جلب بيانات الصنف");
       const searchData = await searchRes.json();
       const item = searchData.items?.[0];
@@ -770,6 +807,7 @@ export default function SupplierReceiving() {
         pageSize: "50",
         includeZeroStock: "true",
         drugsOnly: "false",
+        excludeServices: "true",
       });
       const res = await fetch(`/api/items/search?${params.toString()}`);
       if (res.ok) {
@@ -1180,7 +1218,15 @@ export default function SupplierReceiving() {
               </div>
 
               <div className="space-y-1 flex-1 min-w-[200px] relative">
-                <Label className="text-[10px] text-muted-foreground">المورد *</Label>
+                <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  المورد *
+                  {!isViewOnly && (
+                    <Button variant="outline" size="sm" className="text-[9px] gap-0.5 px-1 h-4" onClick={() => setShowQuickSupplierDialog(true)} data-testid="button-quick-add-supplier">
+                      <Plus className="h-2.5 w-2.5" />
+                      إضافة مورد
+                    </Button>
+                  )}
+                </Label>
                 <div className="relative">
                   <Input
                     ref={supplierSearchRef}
@@ -1755,6 +1801,57 @@ export default function SupplierReceiving() {
               ))}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showQuickSupplierDialog} onOpenChange={setShowQuickSupplierDialog}>
+        <DialogContent className="max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-sm">إضافة مورد سريع</DialogTitle>
+            <DialogDescription className="text-[10px]">أدخل بيانات المورد الأساسية</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-[10px]">كود المورد *</Label>
+              <Input
+                value={quickSupplierCode}
+                onChange={(e) => setQuickSupplierCode(e.target.value)}
+                placeholder="مثال: SUP001"
+                className="h-7 text-[11px] px-1"
+                dir="ltr"
+                data-testid="input-quick-supplier-code"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px]">اسم المورد *</Label>
+              <Input
+                value={quickSupplierNameAr}
+                onChange={(e) => setQuickSupplierNameAr(e.target.value)}
+                placeholder="اسم المورد بالعربي"
+                className="h-7 text-[11px] px-1"
+                data-testid="input-quick-supplier-name"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px]">الهاتف</Label>
+              <Input
+                value={quickSupplierPhone}
+                onChange={(e) => setQuickSupplierPhone(e.target.value)}
+                placeholder="اختياري"
+                className="h-7 text-[11px] px-1"
+                dir="ltr"
+                data-testid="input-quick-supplier-phone"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowQuickSupplierDialog(false)} data-testid="button-cancel-quick-supplier">
+              إلغاء
+            </Button>
+            <Button size="sm" onClick={handleQuickSupplierSave} disabled={quickSupplierMutation.isPending} data-testid="button-save-quick-supplier">
+              {quickSupplierMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "حفظ"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

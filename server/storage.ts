@@ -257,6 +257,7 @@ export interface IStorage {
     pageSize: number;
     includeZeroStock: boolean;
     drugsOnly: boolean;
+    excludeServices?: boolean;
   }): Promise<{items: any[]; total: number}>;
 
   // Pilot Test Seed
@@ -1782,8 +1783,9 @@ export class DatabaseStorage implements IStorage {
     pageSize: number;
     includeZeroStock: boolean;
     drugsOnly: boolean;
+    excludeServices?: boolean;
   }): Promise<{items: any[]; total: number}> {
-    const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly } = params;
+    const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly, excludeServices } = params;
     const offset = (page - 1) * pageSize;
 
     const buildPattern = (q: string) => q.includes('%') ? q : `${q}%`;
@@ -1812,6 +1814,9 @@ export class DatabaseStorage implements IStorage {
     const conditions: any[] = [eq(items.isActive, true), searchCondition];
     if (drugsOnly) {
       conditions.push(eq(items.category, 'drug'));
+    }
+    if (excludeServices) {
+      conditions.push(sql`${items.category} != 'service'`);
     }
 
     const itemIdRef = sql.raw(`"items"."id"`);
