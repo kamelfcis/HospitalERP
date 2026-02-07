@@ -259,6 +259,15 @@ export const departments = pgTable("departments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const userDepartments = pgTable("user_departments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserDept: uniqueIndex("idx_user_departments_unique").on(table.userId, table.departmentId),
+}));
+
 // أسعار الأصناف حسب القسم
 export const itemDepartmentPrices = pgTable("item_department_prices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -282,6 +291,15 @@ export const warehouses = pgTable("warehouses", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   codeIdx: index("idx_warehouses_code").on(table.warehouseCode),
+}));
+
+export const userWarehouses = pgTable("user_warehouses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserWh: uniqueIndex("idx_user_warehouses_unique").on(table.userId, table.warehouseId),
 }));
 
 export const inventoryLots = pgTable("inventory_lots", {
@@ -580,6 +598,7 @@ export const priceLists = pgTable("price_lists", {
   validTo: date("valid_to"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
+  departmentId: varchar("department_id").references(() => departments.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -638,6 +657,8 @@ export const insertSalesTransactionSchema = createInsertSchema(salesTransactions
 export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
 export const insertItemDepartmentPriceSchema = createInsertSchema(itemDepartmentPrices).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertWarehouseSchema = createInsertSchema(warehouses).omit({ id: true, createdAt: true });
+export const insertUserDepartmentSchema = createInsertSchema(userDepartments).omit({ id: true, createdAt: true });
+export const insertUserWarehouseSchema = createInsertSchema(userWarehouses).omit({ id: true, createdAt: true });
 export const insertInventoryLotSchema = createInsertSchema(inventoryLots).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertInventoryLotMovementSchema = createInsertSchema(inventoryLotMovements).omit({ id: true, createdAt: true });
 export const insertItemBarcodeSchema = createInsertSchema(itemBarcodes).omit({ id: true, createdAt: true });
@@ -715,6 +736,12 @@ export type ItemBarcode = typeof itemBarcodes.$inferSelect;
 
 export type InsertWarehouse = z.infer<typeof insertWarehouseSchema>;
 export type Warehouse = typeof warehouses.$inferSelect;
+
+export type InsertUserDepartment = z.infer<typeof insertUserDepartmentSchema>;
+export type UserDepartment = typeof userDepartments.$inferSelect;
+
+export type InsertUserWarehouse = z.infer<typeof insertUserWarehouseSchema>;
+export type UserWarehouse = typeof userWarehouses.$inferSelect;
 
 export type InsertStoreTransfer = z.infer<typeof insertStoreTransferSchema>;
 export type StoreTransfer = typeof storeTransfers.$inferSelect;
