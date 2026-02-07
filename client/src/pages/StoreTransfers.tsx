@@ -54,6 +54,14 @@ function getUnitName(item: any, unitLevel: string): string {
   return item.minorUnitName || "وحدة صغرى";
 }
 
+function getAvailableUnits(item: any): { value: string; label: string }[] {
+  const units: { value: string; label: string }[] = [];
+  if (item.majorUnitName) units.push({ value: "major", label: item.majorUnitName });
+  if (item.mediumUnitName) units.push({ value: "medium", label: item.mediumUnitName });
+  if (item.minorUnitName) units.push({ value: "minor", label: item.minorUnitName });
+  return units;
+}
+
 function formatAvailability(availQtyMinor: string, unitLevel: string, item: any): string {
   const minorQty = parseFloat(availQtyMinor);
   if (isNaN(minorQty)) return "0";
@@ -771,6 +779,97 @@ export default function StoreTransfers() {
     setTimeout(() => barcodeInputRef.current?.focus(), 50);
   }, [sourceWarehouseId, transferDate, toast]);
 
+  const handleUnitChange = useCallback(async (lineId: string, newUnitLevel: string) => {
+    const lines = formLinesRef.current;
+    const index = lines.findIndex((l) => l.id === lineId);
+    const line = lines[index];
+    if (!line) return;
+
+    const qtyEntered = line.qtyEntered;
+    const qtyInMinor = calculateQtyInMinor(qtyEntered, newUnitLevel, line.item);
+
+    if (line.item?.hasExpiry && qtyInMinor > 0) {
+      setFefoLoadingIndex(index);
+      try {
+        const params = new URLSearchParams({
+          itemId: line.itemId,
+          warehouseId: sourceWarehouseId,
+          requiredQtyInMinor: String(qtyInMinor),
+          asOfDate: transferDate,
+        });
+        const res = await fetch(`/api/transfer/fefo-preview?${params}`);
+        const preview = await res.json();
+
+        if (!preview.fulfilled) {
+          toast({
+            title: "الكمية غير متاحة بهذه الوحدة",
+            variant: "destructive",
+          });
+          setFefoLoadingIndex(null);
+          return;
+        }
+
+        const newLines: TransferLineLocal[] = preview.allocations
+          .filter((a: any) => parseFloat(a.allocatedQty) > 0)
+          .map((alloc: any) => {
+            const allocMinor = parseFloat(alloc.allocatedQty);
+            let displayQty = allocMinor;
+            if (newUnitLevel === "major" && line.item.majorToMinor) {
+              displayQty = allocMinor / parseFloat(line.item.majorToMinor);
+            } else if (newUnitLevel === "medium" && line.item.mediumToMinor) {
+              displayQty = allocMinor / parseFloat(line.item.mediumToMinor);
+            }
+            displayQty = Math.round(displayQty * 10000) / 10000;
+
+            return {
+              id: crypto.randomUUID(),
+              itemId: line.itemId,
+              item: line.item,
+              unitLevel: newUnitLevel,
+              qtyEntered: displayQty,
+              qtyInMinor: allocMinor,
+              selectedExpiryDate: alloc.expiryDate || null,
+              selectedExpiryMonth: alloc.expiryMonth || null,
+              selectedExpiryYear: alloc.expiryYear || null,
+              availableQtyMinor: alloc.availableQty || "0",
+              notes: line.notes || "",
+              fefoLocked: true,
+            } as TransferLineLocal;
+          });
+
+        setFormLines((prev) => {
+          const copy = [...prev];
+          copy.splice(index, 1, ...newLines);
+          return copy;
+        });
+      } catch (err: any) {
+        toast({ title: "خطأ في تغيير الوحدة", description: err.message, variant: "destructive" });
+      } finally {
+        setFefoLoadingIndex(null);
+      }
+    } else {
+      const totalAvail = parseFloat(line.item?.availableQtyMinor || "0");
+      if (qtyInMinor > totalAvail) {
+        toast({
+          title: "الكمية غير متاحة بهذه الوحدة",
+          description: `المطلوب: ${qtyEntered} ${getUnitName(line.item, newUnitLevel)} — المتاح: ${formatAvailability(String(totalAvail), newUnitLevel, line.item)}`,
+          variant: "destructive",
+        });
+        return;
+      }
+      setFormLines((prev) => {
+        const copy = [...prev];
+        copy[index] = {
+          ...copy[index],
+          unitLevel: newUnitLevel,
+          qtyInMinor,
+          fefoLocked: false,
+        };
+        return copy;
+      });
+    }
+  }, [sourceWarehouseId, transferDate, toast]);
+
   const handleBarcodeScan = useCallback(async (barcodeValue: string) => {
     if (!barcodeValue.trim() || !sourceWarehouseId || barcodeLoading) return;
 
@@ -1215,7 +1314,27 @@ export default function StoreTransfers() {
                           </div>
                         </td>
                         <td className="py-0.5 px-2 font-mono whitespace-nowrap">{line.item?.itemCode || "—"}</td>
-                        <td className="py-0.5 px-2 whitespace-nowrap">{line.item ? getUnitName(line.item, line.unitLevel) : "—"}</td>
+                        <td className="py-0.5 px-2 whitespace-nowrap">
+                          {isViewOnly || !line.item ? (
+                            <span>{line.item ? getUnitName(line.item, line.unitLevel) : "—"}</span>
+                          ) : (() => {
+                            const units = getAvailableUnits(line.item);
+                            return units.length <= 1 ? (
+                              <span>{getUnitName(line.item, line.unitLevel)}</span>
+                            ) : (
+                              <select
+                                value={line.unitLevel}
+                                onChange={(e) => handleUnitChange(line.id, e.target.value)}
+                                className="h-6 text-[12px] px-1 border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500 border-border"
+                                data-testid={`select-unit-${idx}`}
+                              >
+                                {units.map((u) => (
+                                  <option key={u.value} value={u.value}>{u.label}</option>
+                                ))}
+                              </select>
+                            );
+                          })()}
+                        </td>
                         <td className="py-0.5 px-2 whitespace-nowrap">
                           {isViewOnly ? (
                             <span data-testid={`text-qty-${idx}`}>{line.qtyEntered}</span>
