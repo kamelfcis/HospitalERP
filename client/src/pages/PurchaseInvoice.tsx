@@ -120,8 +120,10 @@ export default function PurchaseInvoice() {
 
   const [lines, setLines] = useState<InvoiceLineLocal[]>([]);
   const [invoiceDate, setInvoiceDate] = useState("");
-  const [discountType, setDiscountType] = useState("percent");
+  const [discountType, setDiscountType] = useState("value");
   const [discountValue, setDiscountValue] = useState(0);
+  const [invoiceDiscountPct, setInvoiceDiscountPct] = useState(0);
+  const [invoiceDiscountVal, setInvoiceDiscountVal] = useState(0);
   const [notes, setNotes] = useState("");
   const [confirmApproveOpen, setConfirmApproveOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -158,8 +160,25 @@ export default function PurchaseInvoice() {
   useEffect(() => {
     if (invoiceDetail) {
       setInvoiceDate(invoiceDetail.invoiceDate);
-      setDiscountType(invoiceDetail.discountType || "percent");
-      setDiscountValue(parseFloat(String(invoiceDetail.discountValue)) || 0);
+      const dt = invoiceDetail.discountType || "value";
+      const dv = parseFloat(String(invoiceDetail.discountValue)) || 0;
+      setDiscountType("value");
+
+      const totalBV = (invoiceDetail.lines || []).reduce((s: number, ln: any) => {
+        return s + (parseFloat(String(ln.qty)) || 0) * (parseFloat(String(ln.purchasePrice)) || 0);
+      }, 0);
+
+      if (dt === "percent") {
+        const calcVal = +(totalBV * (dv / 100)).toFixed(2);
+        setInvoiceDiscountPct(dv);
+        setInvoiceDiscountVal(calcVal);
+        setDiscountValue(calcVal);
+      } else {
+        setInvoiceDiscountVal(dv);
+        setDiscountValue(dv);
+        const calcPct = totalBV > 0 ? +((dv / totalBV) * 100).toFixed(4) : 0;
+        setInvoiceDiscountPct(calcPct);
+      }
       setNotes(invoiceDetail.notes || "");
       const mapped: InvoiceLineLocal[] = (invoiceDetail.lines || []).map((ln: any) => {
         const line: InvoiceLineLocal = {
@@ -197,13 +216,8 @@ export default function PurchaseInvoice() {
     const totalAfterVatBeforeDiscount = totalBeforeVat + totalVatBeforeDiscount;
     const totalLineDiscounts = lines.reduce((s, l) => s + l.lineDiscountValue, 0);
 
-    let invoiceDiscountAmount = 0;
-    if (discountType === "percent") {
-      invoiceDiscountAmount = totalBeforeVat * (discountValue / 100);
-    } else {
-      invoiceDiscountAmount = discountValue;
-    }
-    invoiceDiscountAmount = Math.min(invoiceDiscountAmount, totalBeforeVat);
+    let invoiceDiscountAmount = Math.min(invoiceDiscountVal, totalBeforeVat);
+    if (invoiceDiscountAmount < 0) invoiceDiscountAmount = 0;
 
     const discountRatio = totalBeforeVat > 0 ? (totalBeforeVat - invoiceDiscountAmount) / totalBeforeVat : 1;
     const adjustedVat = +(totalVatBeforeDiscount * discountRatio).toFixed(2);
@@ -218,7 +232,7 @@ export default function PurchaseInvoice() {
       adjustedVat,
       netPayable,
     };
-  }, [lines, discountType, discountValue]);
+  }, [lines, invoiceDiscountVal]);
 
   const handlePurchasePriceChange = useCallback((index: number, val: string) => {
     const newPrice = Math.max(0, parseFloat(val) || 0);
@@ -274,6 +288,26 @@ export default function PurchaseInvoice() {
       return updated;
     });
   }, []);
+
+  const handleInvoiceDiscountPctChange = useCallback((val: string) => {
+    const pct = Math.min(100, Math.max(0, parseFloat(val) || 0));
+    setInvoiceDiscountPct(+pct.toFixed(4));
+    const totalBV = lines.reduce((s, l) => s + l.valueBeforeVat, 0);
+    const calcVal = +(totalBV * (pct / 100)).toFixed(2);
+    setInvoiceDiscountVal(calcVal);
+    setDiscountType("value");
+    setDiscountValue(calcVal);
+  }, [lines]);
+
+  const handleInvoiceDiscountValChange = useCallback((val: string) => {
+    const totalBV = lines.reduce((s, l) => s + l.valueBeforeVat, 0);
+    const v = Math.min(totalBV, Math.max(0, parseFloat(val) || 0));
+    setInvoiceDiscountVal(+v.toFixed(2));
+    const calcPct = totalBV > 0 ? +((v / totalBV) * 100).toFixed(4) : 0;
+    setInvoiceDiscountPct(calcPct);
+    setDiscountType("value");
+    setDiscountValue(+v.toFixed(2));
+  }, [lines]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -615,27 +649,43 @@ export default function PurchaseInvoice() {
             </div>
             <div>
               <span className="font-semibold block">خصم إجمالي</span>
-              <div className="flex items-center gap-1 mt-0.5">
-                {isDraft ? (
-                  <>
-                    <select value={discountType} onChange={(e) => setDiscountType(e.target.value)} className="peachtree-select text-[11px]" data-testid="select-discount-type">
-                      <option value="percent">نسبة%</option>
-                      <option value="value">قيمة</option>
-                    </select>
+              {isDraft ? (
+                <div className="flex items-center gap-1 mt-0.5">
+                  <div className="flex items-center gap-0.5">
                     <input
                       type="number"
                       step="0.01"
                       min="0"
-                      value={discountValue}
-                      onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
-                      className="peachtree-input w-[70px] text-center"
-                      data-testid="input-discount-value"
+                      max="100"
+                      value={invoiceDiscountPct || ""}
+                      onChange={(e) => handleInvoiceDiscountPctChange(e.target.value)}
+                      className="peachtree-input w-[55px] text-center"
+                      placeholder="0"
+                      data-testid="input-invoice-discount-pct"
                     />
-                  </>
-                ) : (
-                  <span className="peachtree-amount">{discountType === "percent" ? `${formatNumber(discountValue)}%` : formatNumber(discountValue)}</span>
-                )}
-              </div>
+                    <span className="text-[10px] text-muted-foreground">%</span>
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={invoiceDiscountVal || ""}
+                      onChange={(e) => handleInvoiceDiscountValChange(e.target.value)}
+                      className="peachtree-input w-[80px] text-center"
+                      placeholder="0"
+                      data-testid="input-invoice-discount-val"
+                    />
+                    <span className="text-[10px] text-muted-foreground">ج.م</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 mt-0.5">
+                  <span className="peachtree-amount">{formatNumber(invoiceDiscountPct)}%</span>
+                  <span className="text-muted-foreground mx-0.5">=</span>
+                  <span className="peachtree-amount">{formatNumber(invoiceDiscountVal)}</span>
+                </div>
+              )}
             </div>
             <div>
               <span className="font-semibold block">صافي المستحق</span>
