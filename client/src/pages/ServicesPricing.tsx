@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -228,7 +227,7 @@ function ServicesTab() {
       </div>
 
       <div className="peachtree-grid overflow-hidden">
-        <table className="w-full">
+        <table className="w-full text-xs">
           <thead>
             <tr className="peachtree-grid-header" data-testid="header-services-table">
               <th>الكود</th>
@@ -251,17 +250,17 @@ function ServicesTab() {
             ) : (
               services.map(s => (
                 <tr key={s.id} className="peachtree-grid-row" data-testid={`row-service-${s.id}`}>
-                  <td className="font-mono text-xs">{s.code}</td>
-                  <td className="text-xs">{s.nameAr}</td>
-                  <td className="text-xs">{s.department?.nameAr || "-"}</td>
-                  <td className="text-xs">{s.category || "-"}</td>
-                  <td className="text-xs">{serviceTypeLabels[s.serviceType] || s.serviceType}</td>
-                  <td className="peachtree-amount text-xs">{formatNumber(s.basePrice)}</td>
+                  <td className="font-mono leading-tight">{s.code}</td>
+                  <td className="leading-tight">{s.nameAr}</td>
+                  <td className="leading-tight">{s.department?.nameAr || "-"}</td>
+                  <td className="leading-tight">{s.category || "-"}</td>
+                  <td className="leading-tight">{serviceTypeLabels[s.serviceType] || s.serviceType}</td>
+                  <td className="peachtree-amount leading-tight">{formatNumber(s.basePrice)}</td>
                   <td>
                     {s.isActive ? (
                       <Badge
                         variant="outline"
-                        className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 cursor-pointer"
+                        className="text-[10px] py-0 leading-tight bg-emerald-50 text-emerald-700 border-emerald-200 cursor-pointer no-default-active-elevate"
                         onClick={() => toggleActiveMutation.mutate({ id: s.id, isActive: !s.isActive })}
                         data-testid={`badge-active-${s.id}`}
                       >
@@ -270,7 +269,7 @@ function ServicesTab() {
                     ) : (
                       <Badge
                         variant="outline"
-                        className="text-xs bg-red-50 text-red-700 border-red-200 cursor-pointer"
+                        className="text-[10px] py-0 leading-tight bg-red-50 text-red-700 border-red-200 cursor-pointer no-default-active-elevate"
                         onClick={() => toggleActiveMutation.mutate({ id: s.id, isActive: !s.isActive })}
                         data-testid={`badge-active-${s.id}`}
                       >
@@ -279,8 +278,8 @@ function ServicesTab() {
                     )}
                   </td>
                   <td>
-                    <Button size="icon" variant="ghost" onClick={() => openEdit(s)} data-testid={`button-edit-service-${s.id}`}>
-                      <Pencil className="h-3 w-3" />
+                    <Button size="icon" variant="ghost" className="[&_svg]:h-2.5 [&_svg]:w-2.5" onClick={() => openEdit(s)} data-testid={`button-edit-service-${s.id}`}>
+                      <Pencil className="h-2.5 w-2.5" />
                     </Button>
                   </td>
                 </tr>
@@ -550,8 +549,8 @@ function PriceListsTab() {
   const selectedList = priceLists?.find(pl => pl.id === selectedListId);
 
   return (
-    <div className="p-2 flex gap-2 h-[calc(100vh-12rem)]" dir="rtl">
-      <div className="w-1/3 flex flex-col gap-2">
+    <div className="p-2 flex gap-2" style={{ height: "calc(100vh - 10rem)" }} dir="rtl">
+      <div className="flex flex-col gap-1" style={{ width: "320px", minWidth: "320px" }}>
         <div className="peachtree-toolbar flex items-center justify-between">
           <h3 className="text-sm font-semibold" data-testid="text-price-lists-title">قوائم الأسعار</h3>
           <Button size="sm" className="text-xs gap-1" onClick={openPlCreate} data-testid="button-add-price-list">
@@ -559,56 +558,72 @@ function PriceListsTab() {
             إضافة
           </Button>
         </div>
-        <div className="relative">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+        <div className="peachtree-toolbar flex items-center gap-2">
+          <Search className="h-3 w-3 text-muted-foreground" />
           <Input
             data-testid="input-search-price-lists"
             placeholder="بحث..."
             value={listSearch}
             onChange={e => setListSearch(e.target.value)}
-            className="peachtree-input pr-8"
+            className="peachtree-input flex-1"
           />
         </div>
-        <div className="flex-1 overflow-auto space-y-1">
+        <div className="flex-1 overflow-auto">
           {plLoading ? (
-            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)
+            <div className="peachtree-grid overflow-hidden">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="p-2 border-b"><Skeleton className="h-4 w-full" /></div>
+              ))}
+            </div>
           ) : filteredLists.length === 0 ? (
-            <p className="text-muted-foreground text-xs text-center py-4" data-testid="text-empty-price-lists">لا توجد قوائم أسعار</p>
+            <div className="peachtree-grid overflow-hidden">
+              <p className="text-muted-foreground text-xs text-center py-4" data-testid="text-empty-price-lists">لا توجد قوائم أسعار</p>
+            </div>
           ) : (
-            filteredLists.map(pl => (
-              <Card
-                key={pl.id}
-                className={`cursor-pointer hover-elevate ${selectedListId === pl.id ? "ring-2 ring-primary" : ""}`}
-                onClick={() => setSelectedListId(pl.id)}
-                data-testid={`card-price-list-${pl.id}`}
-              >
-                <CardContent className="p-2 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-xs">{pl.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">{pl.code}</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {pl.isActive ? (
-                      <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 no-default-active-elevate">
-                        نشط
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 no-default-active-elevate">
-                        غير نشط
-                      </Badge>
-                    )}
-                    <Button size="icon" variant="ghost" onClick={e => { e.stopPropagation(); openPlEdit(pl); }} data-testid={`button-edit-price-list-${pl.id}`}>
-                      <Pencil className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+            <div className="peachtree-grid overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="peachtree-grid-header">
+                    <th>الكود</th>
+                    <th>الاسم</th>
+                    <th>العملة</th>
+                    <th>الحالة</th>
+                    <th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredLists.map(pl => (
+                    <tr
+                      key={pl.id}
+                      className={`peachtree-grid-row cursor-pointer ${selectedListId === pl.id ? "!bg-blue-100" : ""}`}
+                      onClick={() => setSelectedListId(pl.id)}
+                      data-testid={`row-price-list-${pl.id}`}
+                    >
+                      <td className="font-mono text-xs">{pl.code}</td>
+                      <td className="text-xs font-medium">{pl.name}</td>
+                      <td className="text-xs text-center">{pl.currency}</td>
+                      <td>
+                        {pl.isActive ? (
+                          <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 no-default-active-elevate">نشط</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 no-default-active-elevate">غير نشط</Badge>
+                        )}
+                      </td>
+                      <td>
+                        <Button size="icon" variant="ghost" onClick={e => { e.stopPropagation(); openPlEdit(pl); }} data-testid={`button-edit-price-list-${pl.id}`}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
 
-      <div className="w-2/3 flex flex-col gap-2">
+      <div className="flex-1 flex flex-col gap-1 min-w-0">
         {!selectedListId ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs" data-testid="text-select-price-list-prompt">
             اختر قائمة أسعار من القائمة
