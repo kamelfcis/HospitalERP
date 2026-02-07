@@ -1,0 +1,160 @@
+You are a senior full-stack engineer. Build a clean, production-grade “Services & Price Lists” module for a Hospital/Pharmacy ERP. Focus on simplicity, performance, and bug-free logic. Use minimal, readable code and consistent patterns. No overengineering.
+
+TECH
+- Stack: (use the project’s existing stack and conventions)
+- DB: SQL (use existing connection / ORM already in the repo)
+- UI: fast searchable tables, modal forms, inline edit where appropriate
+- Add server-side validation + client-side validation
+- Must be performant with 10,000+ services and multiple price lists
+
+GOAL
+One module that supports:
+1) Defining services (Service Master)
+2) Creating multiple price lists (Cash, Insurance, Company A, etc.)
+3) Assigning a price for each service per price list
+4) Bulk adjustments: apply +/- % or fixed amount to a whole price list (optionally filtered by department/category)
+5) Smooth UX: quick search, filters, favorites, minimal clicks, no clutter
+
+CORE CONCEPTS
+- “Service Master” is the truth: service identity + department + accounting mapping (revenue account, cost center) + optional default warehouse for filtering only.
+- “Price List” contains prices per service (many price lists possible).
+- Service can have a BasePrice default, but actual price used in billing comes from selected price list; if missing, fallback to BasePrice (configurable).
+
+DATA MODEL (create tables if not exist, or migrate safely)
+1) Departments
+- id (PK), code (unique), name
+
+2) Warehouses
+- id (PK), code (unique), name, department_id (nullable)
+
+3) Services (Service Master)
+- id (PK)
+- code (unique, indexed)
+- name_ar, name_en (nullable)
+- department_id (FK, indexed)  -- required
+- category (string, nullable, indexed)  -- e.g., Surgery, ICU, Lab, Radiology, Accommodation, Devices, Gases
+- service_type (enum/string)  -- SERVICE / ACCOMMODATION / DEVICE / GAS / OTHER
+- default_warehouse_id (FK nullable) -- ONLY for filtering UX, not inventory movement
+- revenue_account_id (FK/number, required)
+- cost_center_id (FK/number, required)
+- base_price (decimal(18,2) default 0)
+- is_active (bool default true)
+- created_at, updated_at
+
+4) PriceLists
+- id (PK)
+- code (unique, indexed)
+- name
+- currency (default EGP)
+- valid_from (nullable), valid_to (nullable)
+- is_active (bool default true)
+- notes (nullable)
+- created_at, updated_at
+
+5) PriceListItems
+- id (PK)
+- price_list_id (FK, indexed)
+- service_id (FK, indexed)
+- price (decimal(18,2), required)
+- min_discount_pct (decimal(5,2) nullable)
+- max_discount_pct (decimal(5,2) nullable)
+- UNIQUE(price_list_id, service_id)
+- created_at, updated_at
+
+6) PriceAdjustmentsLog (audit trail)
+- id (PK)
+- price_list_id (FK)
+- action_type (PCT / FIXED / SET)
+- value (decimal(18,4))
+- filter_department_id (nullable)
+- filter_category (nullable)
+- affected_count (int)
+- created_by (nullable)
+- created_at
+
+RULES / VALIDATIONS
+- Service.code must be unique and required
+- Service.department_id required
+- Accounts and cost center required on service
+- PriceList.code unique and required
+- PriceListItem.price must be >= 0
+- Bulk adjustment must:
+  - Support +% / -% and +fixed / -fixed
+  - Optional filters: department, category, active only
+  - Provide a preview: show affected_count + sample of before/after for first 20 rows
+  - Confirm action
+  - Apply changes in a single DB transaction
+  - Round to 2 decimals using standard rounding
+  - Write one row to PriceAdjustmentsLog
+
+UX REQUIREMENTS (IMPORTANT)
+Create a single page with two main tabs:
+
+TAB A: “Services (Master)”
+- Table columns: Code, Arabic Name, Department, Category, Type, Base Price, Revenue Account, Cost Center, Active
+- Search box (instant, debounced) across code/name
+- Filters: Department, Category, Active
+- Buttons:
+  - Add Service (modal form)
+  - Edit Service (modal)
+  - Toggle Active
+- Keep forms clean with required fields clearly marked
+- Do NOT show all accounting lookups in a heavy way; use searchable dropdowns
+
+TAB B: “Price Lists”
+Layout:
+Left panel: list of price lists (search + add)
+Right panel: selected price list details + items grid
+
+Price list items grid:
+- Columns: Service Code, Service Name, Department, Category, Price, (optional discount limits), Updated At
+- Search and filters same as services
+- Inline edit Price cell (enter to save)
+- Button: “Add/Update Price” (modal) where user can pick services (multi-select) and set price
+- Button: “Copy From Another Price List” (choose source list, copy all items)
+- Button: “Bulk Adjustment” opens modal:
+  - Mode: Percentage or Fixed Amount
+  - Value: e.g., 10% or 25 EGP
+  - Direction: Increase / Decrease
+  - Filters: Department (optional), Category (optional), Active services only checkbox
+  - Preview area:
+     - affected_count
+     - mini table of 20 services showing old price → new price
+  - Confirm button:
+     - Applies within transaction
+     - Updates existing PriceListItems; if a service has no item in this list, create it using:
+        - base_price as starting price (config flag). Default: create missing items using base_price first.
+  - After apply: toast success + refresh grid
+
+PERFORMANCE
+- Server-side pagination for services and price list items (page size 50/100)
+- Proper indexes on code, department_id, category, price_list_id/service_id
+- Avoid N+1 queries; join to department names
+- Debounced search
+
+API ENDPOINTS (or equivalent actions)
+- GET /services?search=&department=&category=&active=&page=&pageSize=
+- POST /services
+- PUT /services/:id
+- GET /pricelists
+- POST /pricelists
+- PUT /pricelists/:id
+- GET /pricelists/:id/items?search=&department=&category=&page=&pageSize=
+- POST /pricelists/:id/items  (batch upsert)
+- POST /pricelists/:id/copy-from  (sourceListId)
+- POST /pricelists/:id/bulk-adjust  (mode, value, direction, filters, createMissingFromBasePrice=true)
+
+QUALITY
+- Use clean error handling with meaningful messages
+- Prevent duplicate submits
+- Unit tests (at least for bulk adjustment math and upsert uniqueness)
+- Ensure the module is safe and consistent (transactions for bulk operations, idempotent upserts)
+
+DELIVERABLE
+- Implement the full UI + DB migrations + backend routes + validations
+- Provide a short README section explaining how to use:
+  - create service
+  - create price list
+  - assign prices
+  - apply bulk adjustment with preview
+- Keep code neat, small, and easy to maintain.
