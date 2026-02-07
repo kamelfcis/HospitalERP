@@ -58,6 +58,7 @@ Preferred communication style: Simple, everyday language.
 - Receiving correction workflow: POST /api/receivings/:id/correct creates draft correction from posted doc with correctionOfId link. postReceivingCorrection reverses original inventory movements and posts new ones in single transaction with negative stock protection. Fields: correctionOfId, correctedById, correctionStatus (corrected/correction).
 - Frontend validation UI: red highlights on invalid fields, error banner, disabled expiry inputs for non-expiry items, focus-to-first-error, client-side validation mirrors backend.
 - Frontend correction UI: correction button for posted docs, CORRECTED (orange) and correction (purple) badges in register, correction info banners, CORRECTED status filter option.
+- Services & Price Lists module (/services-pricing): Two-tab page (Services Master + Price Lists). Services CRUD with department/category/serviceType filters, pagination, and toggle-active. Price Lists with split-view (left: list cards, right: items grid with inline price editing). Supports bulk price adjustment (PCT/FIXED, INCREASE/DECREASE, optional department/category filters, createMissingFromBasePrice), copy-from-list, and add-prices-from-services. Bulk adjust uses ROUND(expr, 2) in SQL, rejects negative prices. Tables: services, priceLists, priceListItems, priceAdjustmentsLog. 14 vitest tests for bulk adjustment calculations.
 
 ### Build and Deployment
 - **Development**: `npm run dev` with `tsx` and hot reload.

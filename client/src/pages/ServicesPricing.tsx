@@ -11,7 +11,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Search, ChevronLeft, ChevronRight, Pencil, Copy, Settings2, Eye, Check, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -62,7 +61,12 @@ function ServicesTab() {
   qp.set("pageSize", String(pageSize));
 
   const { data: servicesData, isLoading } = useQuery<{ data: ServiceWithDepartment[]; total: number }>({
-    queryKey: ["/api/services?" + qp.toString()],
+    queryKey: ["/api/services", qp.toString()],
+    queryFn: async () => {
+      const res = await fetch(`/api/services?${qp.toString()}`, { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
   });
 
   const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
@@ -143,130 +147,162 @@ function ServicesTab() {
 
   const canSave = form.code && form.nameAr && form.departmentId && form.serviceType && form.revenueAccountId && form.costCenterId && form.basePrice;
 
-  return (
-    <div className="p-4 space-y-4" dir="rtl">
-      <div className="flex flex-wrap items-center gap-4 justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              data-testid="input-search-services"
-              placeholder="بحث بالكود أو الاسم..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pr-9 w-60"
-            />
-          </div>
-          <Select value={filterDept} onValueChange={setFilterDept} data-testid="select-filter-department">
-            <SelectTrigger className="w-40" data-testid="select-trigger-filter-department">
-              <SelectValue placeholder="القسم" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل الأقسام</SelectItem>
-              {(departments || []).map(d => (
-                <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger className="w-40" data-testid="select-trigger-filter-category">
-              <SelectValue placeholder="الفئة" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل الفئات</SelectItem>
-              {(categories || []).map(c => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filterActive} onValueChange={setFilterActive}>
-            <SelectTrigger className="w-32" data-testid="select-trigger-filter-active">
-              <SelectValue placeholder="الحالة" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">الكل</SelectItem>
-              <SelectItem value="true">نشط</SelectItem>
-              <SelectItem value="false">غير نشط</SelectItem>
-            </SelectContent>
-          </Select>
+  if (isLoading) {
+    return (
+      <div className="p-2 space-y-2" dir="rtl">
+        <div className="peachtree-toolbar">
+          <Skeleton className="h-5 w-32" />
         </div>
-        <Button onClick={openCreate} data-testid="button-add-service">
-          <Plus className="h-4 w-4 ml-1" />
+        <div className="peachtree-grid">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="p-3 border-b">
+              <Skeleton className="h-4 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-2 space-y-2" dir="rtl">
+      <div className="peachtree-toolbar flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Settings2 className="h-4 w-4 text-muted-foreground" />
+          <h1 className="text-sm font-semibold text-foreground" data-testid="text-services-title">الخدمات</h1>
+          <span className="text-xs text-muted-foreground">|</span>
+          <span className="text-xs text-muted-foreground">إدارة الخدمات والتسعير</span>
+        </div>
+        <Button size="sm" className="text-xs gap-1" onClick={openCreate} data-testid="button-add-service">
+          <Plus className="h-3 w-3" />
           إضافة خدمة
         </Button>
       </div>
 
-      <div className="border rounded-md">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-right">الكود</TableHead>
-              <TableHead className="text-right">الاسم</TableHead>
-              <TableHead className="text-right">القسم</TableHead>
-              <TableHead className="text-right">الفئة</TableHead>
-              <TableHead className="text-right">النوع</TableHead>
-              <TableHead className="text-right">السعر الأساسي</TableHead>
-              <TableHead className="text-right">نشط</TableHead>
-              <TableHead className="text-right">إجراءات</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 8 }).map((_, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : services.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+      <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Search className="h-3 w-3 text-muted-foreground" />
+          <Input
+            data-testid="input-search-services"
+            placeholder="بحث بالكود أو الاسم..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="peachtree-input w-64"
+          />
+        </div>
+        <span className="text-xs font-medium">القسم:</span>
+        <Select value={filterDept} onValueChange={setFilterDept} data-testid="select-filter-department">
+          <SelectTrigger className="peachtree-select w-28" data-testid="select-trigger-filter-department">
+            <SelectValue placeholder="القسم" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">كل الأقسام</SelectItem>
+            {(departments || []).map(d => (
+              <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-xs font-medium">الفئة:</span>
+        <Select value={filterCategory} onValueChange={setFilterCategory}>
+          <SelectTrigger className="peachtree-select w-28" data-testid="select-trigger-filter-category">
+            <SelectValue placeholder="الفئة" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">كل الفئات</SelectItem>
+            {(categories || []).map(c => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-xs font-medium">الحالة:</span>
+        <Select value={filterActive} onValueChange={setFilterActive}>
+          <SelectTrigger className="peachtree-select w-24" data-testid="select-trigger-filter-active">
+            <SelectValue placeholder="الحالة" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">الكل</SelectItem>
+            <SelectItem value="true">نشط</SelectItem>
+            <SelectItem value="false">غير نشط</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="peachtree-grid overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="peachtree-grid-header" data-testid="header-services-table">
+              <th>الكود</th>
+              <th>الاسم</th>
+              <th>القسم</th>
+              <th>الفئة</th>
+              <th>النوع</th>
+              <th>السعر الأساسي</th>
+              <th>الحالة</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {services.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="p-8 text-center text-muted-foreground" data-testid="text-empty-services">
                   لا توجد خدمات
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             ) : (
               services.map(s => (
-                <TableRow key={s.id} data-testid={`row-service-${s.id}`}>
-                  <TableCell className="font-mono text-sm">{s.code}</TableCell>
-                  <TableCell>{s.nameAr}</TableCell>
-                  <TableCell>{s.department?.nameAr || "-"}</TableCell>
-                  <TableCell>{s.category || "-"}</TableCell>
-                  <TableCell>{serviceTypeLabels[s.serviceType] || s.serviceType}</TableCell>
-                  <TableCell>{formatNumber(s.basePrice)}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={s.isActive ? "default" : "secondary"}
-                      className="cursor-pointer"
-                      onClick={() => toggleActiveMutation.mutate({ id: s.id, isActive: !s.isActive })}
-                      data-testid={`badge-active-${s.id}`}
-                    >
-                      {s.isActive ? "نشط" : "غير نشط"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
+                <tr key={s.id} className="peachtree-grid-row" data-testid={`row-service-${s.id}`}>
+                  <td className="font-mono text-xs">{s.code}</td>
+                  <td className="text-xs">{s.nameAr}</td>
+                  <td className="text-xs">{s.department?.nameAr || "-"}</td>
+                  <td className="text-xs">{s.category || "-"}</td>
+                  <td className="text-xs">{serviceTypeLabels[s.serviceType] || s.serviceType}</td>
+                  <td className="peachtree-amount text-xs">{formatNumber(s.basePrice)}</td>
+                  <td>
+                    {s.isActive ? (
+                      <Badge
+                        variant="outline"
+                        className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 cursor-pointer"
+                        onClick={() => toggleActiveMutation.mutate({ id: s.id, isActive: !s.isActive })}
+                        data-testid={`badge-active-${s.id}`}
+                      >
+                        نشط
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-xs bg-red-50 text-red-700 border-red-200 cursor-pointer"
+                        onClick={() => toggleActiveMutation.mutate({ id: s.id, isActive: !s.isActive })}
+                        data-testid={`badge-active-${s.id}`}
+                      >
+                        غير نشط
+                      </Badge>
+                    )}
+                  </td>
+                  <td>
                     <Button size="icon" variant="ghost" onClick={() => openEdit(s)} data-testid={`button-edit-service-${s.id}`}>
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-3 w-3" />
                     </Button>
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ))
             )}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button size="icon" variant="outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)} data-testid="button-prev-page-services">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <span className="text-sm text-muted-foreground">
+        <div className="peachtree-toolbar flex items-center justify-between">
+          <span className="text-xs text-muted-foreground" data-testid="text-services-pagination">
             صفحة {page} من {totalPages} ({total} خدمة)
           </span>
-          <Button size="icon" variant="outline" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} data-testid="button-next-page-services">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)} data-testid="button-prev-page-services">
+              <ChevronRight className="h-3 w-3" />
+            </Button>
+            <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} data-testid="button-next-page-services">
+              <ChevronLeft className="h-3 w-3" />
+            </Button>
+          </div>
         </div>
       )}
 
@@ -514,30 +550,30 @@ function PriceListsTab() {
   const selectedList = priceLists?.find(pl => pl.id === selectedListId);
 
   return (
-    <div className="p-4 flex gap-4 h-[calc(100vh-12rem)]" dir="rtl">
-      <div className="w-1/3 flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-2 justify-between">
-          <h3 className="font-semibold">قوائم الأسعار</h3>
-          <Button size="sm" onClick={openPlCreate} data-testid="button-add-price-list">
-            <Plus className="h-4 w-4 ml-1" />
+    <div className="p-2 flex gap-2 h-[calc(100vh-12rem)]" dir="rtl">
+      <div className="w-1/3 flex flex-col gap-2">
+        <div className="peachtree-toolbar flex items-center justify-between">
+          <h3 className="text-sm font-semibold" data-testid="text-price-lists-title">قوائم الأسعار</h3>
+          <Button size="sm" className="text-xs gap-1" onClick={openPlCreate} data-testid="button-add-price-list">
+            <Plus className="h-3 w-3" />
             إضافة
           </Button>
         </div>
         <div className="relative">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
           <Input
             data-testid="input-search-price-lists"
             placeholder="بحث..."
             value={listSearch}
             onChange={e => setListSearch(e.target.value)}
-            className="pr-9"
+            className="peachtree-input pr-8"
           />
         </div>
-        <div className="flex-1 overflow-auto space-y-2">
+        <div className="flex-1 overflow-auto space-y-1">
           {plLoading ? (
-            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
+            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)
           ) : filteredLists.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-4">لا توجد قوائم أسعار</p>
+            <p className="text-muted-foreground text-xs text-center py-4" data-testid="text-empty-price-lists">لا توجد قوائم أسعار</p>
           ) : (
             filteredLists.map(pl => (
               <Card
@@ -546,15 +582,21 @@ function PriceListsTab() {
                 onClick={() => setSelectedListId(pl.id)}
                 data-testid={`card-price-list-${pl.id}`}
               >
-                <CardContent className="p-3 flex items-center justify-between gap-2">
+                <CardContent className="p-2 flex items-center justify-between gap-2">
                   <div>
-                    <p className="font-medium text-sm">{pl.name}</p>
+                    <p className="font-medium text-xs">{pl.name}</p>
                     <p className="text-xs text-muted-foreground font-mono">{pl.code}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={pl.isActive ? "default" : "secondary"} className="no-default-active-elevate">
-                      {pl.isActive ? "نشط" : "غير نشط"}
-                    </Badge>
+                  <div className="flex items-center gap-1">
+                    {pl.isActive ? (
+                      <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 no-default-active-elevate">
+                        نشط
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 no-default-active-elevate">
+                        غير نشط
+                      </Badge>
+                    )}
                     <Button size="icon" variant="ghost" onClick={e => { e.stopPropagation(); openPlEdit(pl); }} data-testid={`button-edit-price-list-${pl.id}`}>
                       <Pencil className="h-3 w-3" />
                     </Button>
@@ -566,44 +608,45 @@ function PriceListsTab() {
         </div>
       </div>
 
-      <div className="w-2/3 flex flex-col gap-4">
+      <div className="w-2/3 flex flex-col gap-2">
         {!selectedListId ? (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs" data-testid="text-select-price-list-prompt">
             اختر قائمة أسعار من القائمة
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-2 justify-between">
-              <h3 className="font-semibold">{selectedList?.name || ""}</h3>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" onClick={() => setAddPricesOpen(true)} data-testid="button-add-prices">
-                  <Plus className="h-4 w-4 ml-1" />
+            <div className="peachtree-toolbar flex items-center justify-between">
+              <h3 className="text-sm font-semibold" data-testid="text-selected-list-name">{selectedList?.name || ""}</h3>
+              <div className="flex items-center gap-1">
+                <Button size="sm" className="text-xs gap-1" onClick={() => setAddPricesOpen(true)} data-testid="button-add-prices">
+                  <Plus className="h-3 w-3" />
                   إضافة أسعار
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setCopyFromOpen(true)} data-testid="button-copy-from">
-                  <Copy className="h-4 w-4 ml-1" />
+                <Button size="sm" className="text-xs gap-1" variant="outline" onClick={() => setCopyFromOpen(true)} data-testid="button-copy-from">
+                  <Copy className="h-3 w-3" />
                   نسخ من قائمة أخرى
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setBulkAdjustOpen(true)} data-testid="button-bulk-adjust">
-                  <Settings2 className="h-4 w-4 ml-1" />
+                <Button size="sm" className="text-xs gap-1" variant="outline" onClick={() => setBulkAdjustOpen(true)} data-testid="button-bulk-adjust">
+                  <Settings2 className="h-3 w-3" />
                   تعديل جماعي
                 </Button>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Search className="h-3 w-3 text-muted-foreground" />
                 <Input
                   data-testid="input-search-price-items"
                   placeholder="بحث بالكود أو الاسم..."
                   value={itemSearch}
                   onChange={e => setItemSearch(e.target.value)}
-                  className="pr-9 w-52"
+                  className="peachtree-input w-52"
                 />
               </div>
+              <span className="text-xs font-medium">القسم:</span>
               <Select value={itemFilterDept} onValueChange={setItemFilterDept}>
-                <SelectTrigger className="w-40" data-testid="select-trigger-item-filter-dept">
+                <SelectTrigger className="peachtree-select w-28" data-testid="select-trigger-item-filter-dept">
                   <SelectValue placeholder="القسم" />
                 </SelectTrigger>
                 <SelectContent>
@@ -613,8 +656,9 @@ function PriceListsTab() {
                   ))}
                 </SelectContent>
               </Select>
+              <span className="text-xs font-medium">الفئة:</span>
               <Select value={itemFilterCat} onValueChange={setItemFilterCat}>
-                <SelectTrigger className="w-40" data-testid="select-trigger-item-filter-cat">
+                <SelectTrigger className="peachtree-select w-28" data-testid="select-trigger-item-filter-cat">
                   <SelectValue placeholder="الفئة" />
                 </SelectTrigger>
                 <SelectContent>
@@ -623,92 +667,96 @@ function PriceListsTab() {
               </Select>
             </div>
 
-            <div className="flex-1 overflow-auto border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-right">كود الخدمة</TableHead>
-                    <TableHead className="text-right">اسم الخدمة</TableHead>
-                    <TableHead className="text-right">القسم</TableHead>
-                    <TableHead className="text-right">الفئة</TableHead>
-                    <TableHead className="text-right">السعر</TableHead>
-                    <TableHead className="text-right">تحديث</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {itemsLoading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>
-                        {Array.from({ length: 6 }).map((_, j) => (
-                          <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
-                        ))}
-                      </TableRow>
-                    ))
-                  ) : items.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        لا توجد أسعار في هذه القائمة
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    items.map(item => (
-                      <TableRow key={item.id} data-testid={`row-price-item-${item.id}`}>
-                        <TableCell className="font-mono text-sm">{item.service?.code || "-"}</TableCell>
-                        <TableCell>{item.service?.nameAr || "-"}</TableCell>
-                        <TableCell>{item.service?.department?.nameAr || "-"}</TableCell>
-                        <TableCell>{item.service?.category || "-"}</TableCell>
-                        <TableCell>
-                          {editingPriceId === item.id ? (
-                            <div className="flex items-center gap-1">
-                              <Input
-                                data-testid={`input-price-${item.id}`}
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={editingPriceValue}
-                                onChange={e => setEditingPriceValue(e.target.value)}
-                                onKeyDown={e => { if (e.key === "Enter") savePrice(item); if (e.key === "Escape") setEditingPriceId(null); }}
-                                className="w-28"
-                                autoFocus
-                              />
-                              <Button size="icon" variant="ghost" onClick={() => savePrice(item)} data-testid={`button-save-price-${item.id}`}>
-                                <Check className="h-3 w-3" />
-                              </Button>
-                              <Button size="icon" variant="ghost" onClick={() => setEditingPriceId(null)} data-testid={`button-cancel-price-${item.id}`}>
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <span
-                              className="cursor-pointer hover:underline"
-                              onClick={() => startEditPrice(item)}
-                              data-testid={`text-price-${item.id}`}
-                            >
-                              {formatNumber(item.price)}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString("ar-EG") : "-"}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+            <div className="flex-1 overflow-auto">
+              <div className="peachtree-grid overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="peachtree-grid-header" data-testid="header-price-items-table">
+                      <th>كود الخدمة</th>
+                      <th>اسم الخدمة</th>
+                      <th>القسم</th>
+                      <th>الفئة</th>
+                      <th>السعر</th>
+                      <th>تحديث</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemsLoading ? (
+                      Array.from({ length: 5 }).map((_, i) => (
+                        <tr key={i} className="peachtree-grid-row">
+                          {Array.from({ length: 6 }).map((_, j) => (
+                            <td key={j}><Skeleton className="h-4 w-full" /></td>
+                          ))}
+                        </tr>
+                      ))
+                    ) : items.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center text-muted-foreground p-8 text-xs" data-testid="text-empty-price-items">
+                          لا توجد أسعار في هذه القائمة
+                        </td>
+                      </tr>
+                    ) : (
+                      items.map(item => (
+                        <tr key={item.id} className="peachtree-grid-row" data-testid={`row-price-item-${item.id}`}>
+                          <td className="font-mono text-xs">{item.service?.code || "-"}</td>
+                          <td className="text-xs">{item.service?.nameAr || "-"}</td>
+                          <td className="text-xs">{item.service?.department?.nameAr || "-"}</td>
+                          <td className="text-xs">{item.service?.category || "-"}</td>
+                          <td className="peachtree-amount text-xs">
+                            {editingPriceId === item.id ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  data-testid={`input-price-${item.id}`}
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={editingPriceValue}
+                                  onChange={e => setEditingPriceValue(e.target.value)}
+                                  onKeyDown={e => { if (e.key === "Enter") savePrice(item); if (e.key === "Escape") setEditingPriceId(null); }}
+                                  className="peachtree-input w-28"
+                                  autoFocus
+                                />
+                                <Button size="icon" variant="ghost" onClick={() => savePrice(item)} data-testid={`button-save-price-${item.id}`}>
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                                <Button size="icon" variant="ghost" onClick={() => setEditingPriceId(null)} data-testid={`button-cancel-price-${item.id}`}>
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <span
+                                className="cursor-pointer hover:underline"
+                                onClick={() => startEditPrice(item)}
+                                data-testid={`text-price-${item.id}`}
+                              >
+                                {formatNumber(item.price)}
+                              </span>
+                            )}
+                          </td>
+                          <td className="text-xs text-muted-foreground">
+                            {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString("ar-EG") : "-"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {itemTotalPages > 1 && (
-              <div className="flex items-center justify-center gap-2">
-                <Button size="icon" variant="outline" disabled={itemPage <= 1} onClick={() => setItemPage(p => p - 1)} data-testid="button-prev-page-items">
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-                <span className="text-sm text-muted-foreground">
+              <div className="peachtree-toolbar flex items-center justify-between">
+                <span className="text-xs text-muted-foreground" data-testid="text-items-pagination">
                   صفحة {itemPage} من {itemTotalPages}
                 </span>
-                <Button size="icon" variant="outline" disabled={itemPage >= itemTotalPages} onClick={() => setItemPage(p => p + 1)} data-testid="button-next-page-items">
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="outline" disabled={itemPage <= 1} onClick={() => setItemPage(p => p - 1)} data-testid="button-prev-page-items">
+                    <ChevronRight className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={itemPage >= itemTotalPages} onClick={() => setItemPage(p => p + 1)} data-testid="button-next-page-items">
+                    <ChevronLeft className="h-3 w-3" />
+                  </Button>
+                </div>
               </div>
             )}
           </>
@@ -816,7 +864,13 @@ function AddPricesModal({ open, onClose, listId }: { open: boolean; onClose: () 
   const [defaultPrice, setDefaultPrice] = useState("");
 
   const { data: servicesData } = useQuery<{ data: ServiceWithDepartment[]; total: number }>({
-    queryKey: ["/api/services?active=true&pageSize=200" + (debouncedSearch ? `&search=${debouncedSearch}` : "")],
+    queryKey: ["/api/services", "active=true&pageSize=200" + (debouncedSearch ? `&search=${debouncedSearch}` : "")],
+    queryFn: async () => {
+      const qs = "active=true&pageSize=200" + (debouncedSearch ? `&search=${debouncedSearch}` : "");
+      const res = await fetch(`/api/services?${qs}`, { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
     enabled: open,
   });
 
@@ -860,7 +914,7 @@ function AddPricesModal({ open, onClose, listId }: { open: boolean; onClose: () 
               placeholder="بحث عن خدمة..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="flex-1"
+              className="peachtree-input flex-1"
             />
             <Input
               data-testid="input-default-price"
@@ -870,38 +924,40 @@ function AddPricesModal({ open, onClose, listId }: { open: boolean; onClose: () 
               placeholder="السعر الافتراضي"
               value={defaultPrice}
               onChange={e => setDefaultPrice(e.target.value)}
-              className="w-36"
+              className="peachtree-input w-36"
             />
           </div>
-          <div className="max-h-60 overflow-auto border rounded-md">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right w-10"></TableHead>
-                  <TableHead className="text-right">الكود</TableHead>
-                  <TableHead className="text-right">الاسم</TableHead>
-                  <TableHead className="text-right">السعر الأساسي</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(servicesData?.data || []).map(s => {
-                  const isSelected = selected.some(x => x.serviceId === s.id);
-                  return (
-                    <TableRow key={s.id} className="cursor-pointer" onClick={() => toggleService(s)} data-testid={`row-add-service-${s.id}`}>
-                      <TableCell>
-                        <Checkbox checked={isSelected} data-testid={`checkbox-service-${s.id}`} />
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{s.code}</TableCell>
-                      <TableCell>{s.nameAr}</TableCell>
-                      <TableCell>{formatNumber(s.basePrice)}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+          <div className="max-h-60 overflow-auto">
+            <div className="peachtree-grid overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="peachtree-grid-header" data-testid="header-add-services-table">
+                    <th className="w-10"></th>
+                    <th>الكود</th>
+                    <th>الاسم</th>
+                    <th>السعر الأساسي</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(servicesData?.data || []).map(s => {
+                    const isSelected = selected.some(x => x.serviceId === s.id);
+                    return (
+                      <tr key={s.id} className="peachtree-grid-row cursor-pointer" onClick={() => toggleService(s)} data-testid={`row-add-service-${s.id}`}>
+                        <td>
+                          <Checkbox checked={isSelected} data-testid={`checkbox-service-${s.id}`} />
+                        </td>
+                        <td className="font-mono text-xs">{s.code}</td>
+                        <td className="text-xs">{s.nameAr}</td>
+                        <td className="peachtree-amount text-xs">{formatNumber(s.basePrice)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
           {selected.length > 0 && (
-            <p className="text-sm text-muted-foreground">تم اختيار {selected.length} خدمة</p>
+            <p className="text-xs text-muted-foreground" data-testid="text-selected-count">تم اختيار {selected.length} خدمة</p>
           )}
         </div>
         <DialogFooter>
@@ -981,9 +1037,9 @@ function BulkAdjustModal({ open, onClose, listId }: { open: boolean; onClose: ()
 
   const previewMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/price-lists/${listId}/bulk-adjust/preview`, {
-      actionType: mode, direction, value: parseFloat(value),
-      filterDepartmentId: filterDeptId || null,
-      filterCategory: filterCat || null,
+      mode, direction, value: parseFloat(value),
+      departmentId: filterDeptId || null,
+      category: filterCat || null,
       createMissingFromBasePrice: createMissing,
     }).then(r => r.json()),
     onSuccess: (data) => setPreview(data),
@@ -992,9 +1048,9 @@ function BulkAdjustModal({ open, onClose, listId }: { open: boolean; onClose: ()
 
   const applyMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/price-lists/${listId}/bulk-adjust/apply`, {
-      actionType: mode, direction, value: parseFloat(value),
-      filterDepartmentId: filterDeptId || null,
-      filterCategory: filterCat || null,
+      mode, direction, value: parseFloat(value),
+      departmentId: filterDeptId || null,
+      category: filterCat || null,
       createMissingFromBasePrice: createMissing,
     }),
     onSuccess: () => {
@@ -1084,32 +1140,34 @@ function BulkAdjustModal({ open, onClose, listId }: { open: boolean; onClose: ()
               معاينة
             </Button>
             {preview && (
-              <span className="text-sm text-muted-foreground">
+              <span className="text-xs text-muted-foreground" data-testid="text-affected-count">
                 عدد الخدمات المتأثرة: {preview.affectedCount}
               </span>
             )}
           </div>
 
-          {preview?.rows && preview.rows.length > 0 && (
-            <div className="max-h-48 overflow-auto border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-right">الخدمة</TableHead>
-                    <TableHead className="text-right">السعر القديم</TableHead>
-                    <TableHead className="text-right">السعر الجديد</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {preview.rows.map((r: any, i: number) => (
-                    <TableRow key={i}>
-                      <TableCell>{r.serviceName || r.serviceCode || "-"}</TableCell>
-                      <TableCell>{formatNumber(r.oldPrice)}</TableCell>
-                      <TableCell>{formatNumber(r.newPrice)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+          {preview?.preview && preview.preview.length > 0 && (
+            <div className="max-h-48 overflow-auto">
+              <div className="peachtree-grid overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="peachtree-grid-header" data-testid="header-bulk-preview-table">
+                      <th>الخدمة</th>
+                      <th>السعر القديم</th>
+                      <th>السعر الجديد</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.preview.map((r: any, i: number) => (
+                      <tr key={i} className="peachtree-grid-row">
+                        <td className="text-xs">{r.serviceNameAr || r.serviceCode || "-"}</td>
+                        <td className="peachtree-amount text-xs">{formatNumber(r.oldPrice)}</td>
+                        <td className="peachtree-amount text-xs">{formatNumber(r.newPrice)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -1127,9 +1185,9 @@ function BulkAdjustModal({ open, onClose, listId }: { open: boolean; onClose: ()
 
 export default function ServicesPricing() {
   return (
-    <div className="p-4" dir="rtl">
+    <div className="p-2" dir="rtl">
       <Tabs defaultValue="services" className="w-full">
-        <TabsList className="mb-4">
+        <TabsList className="mb-2">
           <TabsTrigger value="services" data-testid="tab-services">الخدمات</TabsTrigger>
           <TabsTrigger value="price-lists" data-testid="tab-price-lists">قوائم الأسعار</TabsTrigger>
         </TabsList>
