@@ -16,6 +16,8 @@ import {
   insertStoreTransferSchema,
   insertTransferLineSchema,
   insertSupplierSchema,
+  insertServiceSchema,
+  insertPriceListSchema,
   accounts,
   accountTypeLabels
 } from "@shared/schema";
@@ -1927,6 +1929,208 @@ export async function registerRoutes(
       const stats = await storage.getItemWarehouseStats(req.params.itemId);
       res.json(stats);
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== Services =====
+
+  app.get("/api/services", async (req, res) => {
+    try {
+      const { search, departmentId, category, active, page, pageSize } = req.query;
+      const result = await storage.getServices({
+        search: search as string,
+        departmentId: departmentId as string,
+        category: category as string,
+        active: active as string,
+        page: page ? parseInt(page as string) : undefined,
+        pageSize: pageSize ? parseInt(pageSize as string) : undefined,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/services", async (req, res) => {
+    try {
+      const validated = insertServiceSchema.parse(req.body);
+      const service = await storage.createService(validated);
+      res.status(201).json(service);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message?.includes("duplicate key") || error.code === "23505") {
+        return res.status(409).json({ message: "كود الخدمة مكرر" });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/services/:id", async (req, res) => {
+    try {
+      const validated = insertServiceSchema.partial().parse(req.body);
+      const service = await storage.updateService(req.params.id, validated);
+      if (!service) {
+        return res.status(404).json({ message: "الخدمة غير موجودة" });
+      }
+      res.json(service);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message?.includes("duplicate key") || error.code === "23505") {
+        return res.status(409).json({ message: "كود الخدمة مكرر" });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/service-categories", async (req, res) => {
+    try {
+      const categories = await storage.getServiceCategories();
+      res.json(categories);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== Price Lists =====
+
+  app.get("/api/price-lists", async (req, res) => {
+    try {
+      const lists = await storage.getPriceLists();
+      res.json(lists);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/price-lists", async (req, res) => {
+    try {
+      const validated = insertPriceListSchema.parse(req.body);
+      const list = await storage.createPriceList(validated);
+      res.status(201).json(list);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message?.includes("duplicate key") || error.code === "23505") {
+        return res.status(409).json({ message: "كود قائمة الأسعار مكرر" });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/price-lists/:id", async (req, res) => {
+    try {
+      const validated = insertPriceListSchema.partial().parse(req.body);
+      const list = await storage.updatePriceList(req.params.id, validated);
+      if (!list) {
+        return res.status(404).json({ message: "قائمة الأسعار غير موجودة" });
+      }
+      res.json(list);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message?.includes("duplicate key") || error.code === "23505") {
+        return res.status(409).json({ message: "كود قائمة الأسعار مكرر" });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== Price List Items =====
+
+  app.get("/api/price-lists/:id/items", async (req, res) => {
+    try {
+      const { search, departmentId, category, page, pageSize } = req.query;
+      const result = await storage.getPriceListItems(req.params.id, {
+        search: search as string,
+        departmentId: departmentId as string,
+        category: category as string,
+        page: page ? parseInt(page as string) : undefined,
+        pageSize: pageSize ? parseInt(pageSize as string) : undefined,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const priceListItemsBodySchema = z.object({
+    items: z.array(z.object({
+      serviceId: z.string(),
+      price: z.string(),
+      minDiscountPct: z.string().optional(),
+      maxDiscountPct: z.string().optional(),
+    })).min(1, "يجب إرسال بند واحد على الأقل"),
+  });
+
+  app.post("/api/price-lists/:id/items", async (req, res) => {
+    try {
+      const validated = priceListItemsBodySchema.parse(req.body);
+      await storage.upsertPriceListItems(req.params.id, validated.items);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/price-lists/:id/copy-from", async (req, res) => {
+    try {
+      const { sourceListId } = z.object({ sourceListId: z.string() }).parse(req.body);
+      await storage.copyPriceList(req.params.id, sourceListId);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== Bulk Adjustment =====
+
+  const bulkAdjustBodySchema = z.object({
+    mode: z.enum(['PCT', 'FIXED']),
+    direction: z.enum(['INCREASE', 'DECREASE']),
+    value: z.number().positive("القيمة يجب أن تكون أكبر من صفر"),
+    departmentId: z.string().optional(),
+    category: z.string().optional(),
+    createMissingFromBasePrice: z.boolean().optional(),
+  });
+
+  app.post("/api/price-lists/:id/bulk-adjust/preview", async (req, res) => {
+    try {
+      const validated = bulkAdjustBodySchema.parse(req.body);
+      const result = await storage.bulkAdjustPreview(req.params.id, validated);
+      res.json(result);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/price-lists/:id/bulk-adjust/apply", async (req, res) => {
+    try {
+      const validated = bulkAdjustBodySchema.parse(req.body);
+      const result = await storage.bulkAdjustApply(req.params.id, validated);
+      res.json(result);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message?.includes("أسعار سالبة")) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(500).json({ message: error.message });
     }
   });

@@ -1,0 +1,152 @@
+You are a senior engineer working in an existing codebase with:
+- Backend: Node.js (Express 5) + TypeScript (server/index.ts, tsx)
+- DB: PostgreSQL (pg)
+- ORM/Migrations: Drizzle ORM + drizzle-kit (db:push)
+- Frontend: React + Vite + TypeScript
+- Routing: wouter
+- UI: Radix UI + Tailwind
+Follow existing folder structure and patterns in this repo. Do NOT introduce new frameworks.
+
+TASK
+Implement a full “Services & Price Lists” module with clean UX and strong DB logic.
+
+REPO CONVENTIONS
+1) Use Drizzle ORM for schema + queries.
+2) Add migrations using drizzle-kit style already used in this repo.
+3) Add Express routes under the existing server routing pattern.
+4) Frontend pages/components should use React Query (@tanstack/react-query) for data fetching/mutations.
+5) Use zod + drizzle-zod for validation on both server and client.
+
+DATA MODEL (Drizzle schema)
+Create these tables if not exist, or extend safely if similar exists:
+
+A) departments
+- id (serial PK)
+- code (varchar unique, not null)
+- name (varchar not null)
+
+B) warehouses
+- id (serial PK)
+- code (varchar unique, not null)
+- name (varchar not null)
+- department_id (int FK -> departments.id, nullable)
+
+C) services
+- id (serial PK)
+- code (varchar unique, not null, indexed)
+- name_ar (varchar not null)
+- name_en (varchar nullable)
+- department_id (int FK not null, indexed)
+- category (varchar nullable, indexed)
+- service_type (varchar not null) // SERVICE | ACCOMMODATION | DEVICE | GAS | OTHER
+- default_warehouse_id (int FK -> warehouses.id, nullable) // for filtering UX only
+- revenue_account_id (int not null) // integrate with existing accounts table if present
+- cost_center_id (int not null) // integrate with existing cost centers if present
+- base_price (numeric(18,2) not null default 0)
+- is_active (boolean not null default true)
+- created_at, updated_at (timestamps)
+
+D) price_lists
+- id (serial PK)
+- code (varchar unique, not null)
+- name (varchar not null)
+- currency (varchar not null default 'EGP')
+- valid_from (date nullable)
+- valid_to (date nullable)
+- is_active (boolean not null default true)
+- notes (text nullable)
+- created_at, updated_at
+
+E) price_list_items
+- id (serial PK)
+- price_list_id (int FK not null, indexed)
+- service_id (int FK not null, indexed)
+- price (numeric(18,2) not null)
+- min_discount_pct (numeric(5,2) nullable)
+- max_discount_pct (numeric(5,2) nullable)
+- created_at, updated_at
+- UNIQUE(price_list_id, service_id)
+
+F) price_adjustments_log
+- id (serial PK)
+- price_list_id (int FK not null)
+- action_type (varchar not null) // PCT | FIXED
+- direction (varchar not null) // INCREASE | DECREASE
+- value (numeric(18,4) not null)
+- filter_department_id (int nullable)
+- filter_category (varchar nullable)
+- affected_count (int not null)
+- created_at
+
+BUSINESS RULES
+1) Setting a service price:
+- If user sets price for a service in a price list -> upsert price_list_items.
+2) Bulk adjustment on a price list:
+- Support mode=PCT or FIXED
+- direction=INCREASE/DECREASE
+- Optional filters: department_id, category, activeOnly
+- Must provide PREVIEW endpoint that returns:
+  - affected_count
+  - first 20 rows: service_code, service_name_ar, old_price, new_price
+- Apply endpoint:
+  - Runs in ONE DB transaction
+  - For services without existing price_list_items:
+     - if createMissingFromBasePrice=true: create item using base_price as old_price
+     - then apply adjustment
+  - Round final price to 2 decimals (standard rounding)
+  - Ensure price never becomes < 0 (clamp to 0 OR reject; choose REJECT with clear message)
+  - Write one row into price_adjustments_log
+
+PERFORMANCE
+- Use server-side pagination for services and price list items (pageSize 50/100)
+- Add indexes on services(code, department_id, category), price_list_items(price_list_id, service_id)
+- Avoid N+1: join departments in list endpoints
+
+API (Express routes)
+- GET /api/services?search=&departmentId=&category=&active=&page=&pageSize=
+- POST /api/services
+- PUT /api/services/:id
+- GET /api/price-lists
+- POST /api/price-lists
+- PUT /api/price-lists/:id
+- GET /api/price-lists/:id/items?search=&departmentId=&category=&page=&pageSize=
+- POST /api/price-lists/:id/items (batch upsert; accepts [{serviceId, price, minDiscountPct?, maxDiscountPct?}])
+- POST /api/price-lists/:id/copy-from (body: {sourceListId})
+- POST /api/price-lists/:id/bulk-adjust/preview
+- POST /api/price-lists/:id/bulk-adjust/apply
+
+FRONTEND UI (React + Wouter)
+Create one route/page: /settings/services-pricing
+Two tabs:
+
+TAB 1: Services (Master)
+- Table with search (debounced), filters: department, category, active
+- Add/Edit modal using react-hook-form + zod resolver
+- Toggle active
+- Clean searchable dropdowns for department and accounts/cost centers (use existing tables if available)
+
+TAB 2: Price Lists
+- Left: price lists list + add
+- Right: selected list items grid:
+   - Search + filters + pagination
+   - Inline edit price (enter to save)
+   - Buttons:
+      - Add/Update Prices (multi-select services modal)
+      - Copy From Another List
+      - Bulk Adjustment (modal):
+         - mode (PCT/FIXED), direction, value
+         - filters: department, category, activeOnly
+         - preview panel calls preview endpoint
+         - confirm calls apply endpoint
+- Success/error toasts and disabled states to prevent double-submit
+
+TESTS
+- Add vitest unit tests for adjustment math and rounding and preventing negative prices.
+- Add test for upsert uniqueness.
+
+DELIVERABLE
+- Drizzle schema + migrations
+- Express routes + validations
+- React page + components
+- Works end-to-end with Postgres
+- Minimal, clean code; no clutter; follow repo conventions.

@@ -492,6 +492,72 @@ export const purchaseInvoiceLines = pgTable("purchase_invoice_lines", {
   itemIdx: index("idx_pi_lines_item").on(table.itemId),
 }));
 
+// الخدمات (Service Master)
+export const services = pgTable("services", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code", { length: 30 }).notNull().unique(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en"),
+  departmentId: varchar("department_id").notNull().references(() => departments.id),
+  category: text("category"),
+  serviceType: text("service_type").notNull().default("SERVICE"),
+  defaultWarehouseId: varchar("default_warehouse_id").references(() => warehouses.id),
+  revenueAccountId: varchar("revenue_account_id").notNull().references(() => accounts.id),
+  costCenterId: varchar("cost_center_id").notNull().references(() => costCenters.id),
+  basePrice: decimal("base_price", { precision: 18, scale: 2 }).notNull().default("0"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  codeIdx: index("idx_services_code").on(table.code),
+  deptIdx: index("idx_services_department").on(table.departmentId),
+  categoryIdx: index("idx_services_category").on(table.category),
+  activeIdx: index("idx_services_active").on(table.isActive),
+}));
+
+// قوائم الأسعار
+export const priceLists = pgTable("price_lists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code", { length: 30 }).notNull().unique(),
+  name: text("name").notNull(),
+  currency: text("currency").notNull().default("EGP"),
+  validFrom: date("valid_from"),
+  validTo: date("valid_to"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// بنود قوائم الأسعار
+export const priceListItems = pgTable("price_list_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id, { onDelete: "cascade" }),
+  serviceId: varchar("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  price: decimal("price", { precision: 18, scale: 2 }).notNull(),
+  minDiscountPct: decimal("min_discount_pct", { precision: 5, scale: 2 }),
+  maxDiscountPct: decimal("max_discount_pct", { precision: 5, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  priceListIdx: index("idx_pli_price_list").on(table.priceListId),
+  serviceIdx: index("idx_pli_service").on(table.serviceId),
+  uniquePriceListService: uniqueIndex("idx_pli_unique").on(table.priceListId, table.serviceId),
+}));
+
+// سجل تعديلات الأسعار
+export const priceAdjustmentsLog = pgTable("price_adjustments_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  priceListId: varchar("price_list_id").notNull().references(() => priceLists.id),
+  actionType: text("action_type").notNull(),
+  direction: text("direction").notNull(),
+  value: decimal("value", { precision: 18, scale: 4 }).notNull(),
+  filterDepartmentId: varchar("filter_department_id"),
+  filterCategory: text("filter_category"),
+  affectedCount: integer("affected_count").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
@@ -527,6 +593,11 @@ export const insertReceivingHeaderSchema = createInsertSchema(receivingHeaders).
 export const insertReceivingLineSchema = createInsertSchema(receivingLines).omit({ id: true, createdAt: true });
 export const insertPurchaseInvoiceHeaderSchema = createInsertSchema(purchaseInvoiceHeaders).omit({ id: true, invoiceNumber: true, createdAt: true, updatedAt: true, approvedAt: true, approvedBy: true });
 export const insertPurchaseInvoiceLineSchema = createInsertSchema(purchaseInvoiceLines).omit({ id: true, createdAt: true });
+
+export const insertServiceSchema = createInsertSchema(services).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPriceListSchema = createInsertSchema(priceLists).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPriceAdjustmentLogSchema = createInsertSchema(priceAdjustmentsLog).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -722,4 +793,34 @@ export type PurchaseInvoiceWithDetails = PurchaseInvoiceHeader & {
 export const purchaseInvoiceStatusLabels: Record<string, string> = {
   draft: "مسودة",
   approved_costed: "مُعتمد ومُسعّر"
+};
+
+export type InsertService = z.infer<typeof insertServiceSchema>;
+export type Service = typeof services.$inferSelect;
+
+export type InsertPriceList = z.infer<typeof insertPriceListSchema>;
+export type PriceList = typeof priceLists.$inferSelect;
+
+export type InsertPriceListItem = z.infer<typeof insertPriceListItemSchema>;
+export type PriceListItem = typeof priceListItems.$inferSelect;
+
+export type InsertPriceAdjustmentLog = z.infer<typeof insertPriceAdjustmentLogSchema>;
+export type PriceAdjustmentLog = typeof priceAdjustmentsLog.$inferSelect;
+
+export type ServiceWithDepartment = Service & {
+  department?: Department;
+  revenueAccount?: Account;
+  costCenter?: CostCenter;
+};
+
+export type PriceListItemWithService = PriceListItem & {
+  service?: Service & { department?: Department };
+};
+
+export const serviceTypeLabels: Record<string, string> = {
+  SERVICE: "خدمة",
+  ACCOMMODATION: "إقامة",
+  DEVICE: "جهاز",
+  GAS: "غاز",
+  OTHER: "أخرى"
 };

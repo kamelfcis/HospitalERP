@@ -82,6 +82,17 @@ import {
   type ReceivingLine,
   type InsertReceivingLine,
   type ReceivingLineWithItem,
+  services,
+  priceLists,
+  priceListItems,
+  priceAdjustmentsLog,
+  type Service,
+  type InsertService,
+  type ServiceWithDepartment,
+  type PriceList,
+  type InsertPriceList,
+  type PriceListItem,
+  type PriceListItemWithService,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -2952,6 +2963,298 @@ export class DatabaseStorage implements IStorage {
     if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة معتمدة ومُسعّرة");
     await db.delete(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
     return true;
+  }
+
+  // ===== Services =====
+
+  async getServices(params: { search?: string; departmentId?: string; category?: string; active?: string; page?: number; pageSize?: number }): Promise<{ data: ServiceWithDepartment[]; total: number }> {
+    const page = params.page || 1;
+    const pageSize = params.pageSize || 50;
+    const offset = (page - 1) * pageSize;
+
+    const conditions: any[] = [];
+    if (params.search) {
+      conditions.push(or(ilike(services.code, `%${params.search}%`), ilike(services.nameAr, `%${params.search}%`)));
+    }
+    if (params.departmentId) {
+      conditions.push(eq(services.departmentId, params.departmentId));
+    }
+    if (params.category) {
+      conditions.push(eq(services.category, params.category));
+    }
+    if (params.active !== undefined && params.active !== '') {
+      conditions.push(eq(services.isActive, params.active === 'true'));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)::int` }).from(services).where(whereClause);
+    const total = countResult.count;
+
+    const rows = await db.select({
+      service: services,
+      department: departments,
+      revenueAccount: accounts,
+      costCenter: costCenters,
+    })
+      .from(services)
+      .leftJoin(departments, eq(services.departmentId, departments.id))
+      .leftJoin(accounts, eq(services.revenueAccountId, accounts.id))
+      .leftJoin(costCenters, eq(services.costCenterId, costCenters.id))
+      .where(whereClause)
+      .orderBy(asc(services.code))
+      .limit(pageSize)
+      .offset(offset);
+
+    const data: ServiceWithDepartment[] = rows.map((r) => ({
+      ...r.service,
+      department: r.department || undefined,
+      revenueAccount: r.revenueAccount || undefined,
+      costCenter: r.costCenter || undefined,
+    }));
+
+    return { data, total };
+  }
+
+  async createService(data: InsertService): Promise<Service> {
+    const [row] = await db.insert(services).values(data).returning();
+    return row;
+  }
+
+  async updateService(id: string, data: Partial<InsertService>): Promise<Service | null> {
+    const [row] = await db.update(services).set({ ...data, updatedAt: new Date() }).where(eq(services.id, id)).returning();
+    return row || null;
+  }
+
+  async getServiceCategories(): Promise<string[]> {
+    const rows = await db.selectDistinct({ category: services.category }).from(services).where(isNotNull(services.category));
+    return rows.map((r) => r.category).filter(Boolean) as string[];
+  }
+
+  // ===== Price Lists =====
+
+  async getPriceLists(): Promise<PriceList[]> {
+    return db.select().from(priceLists).orderBy(asc(priceLists.code));
+  }
+
+  async createPriceList(data: InsertPriceList): Promise<PriceList> {
+    const [row] = await db.insert(priceLists).values(data).returning();
+    return row;
+  }
+
+  async updatePriceList(id: string, data: Partial<InsertPriceList>): Promise<PriceList | null> {
+    const [row] = await db.update(priceLists).set({ ...data, updatedAt: new Date() }).where(eq(priceLists.id, id)).returning();
+    return row || null;
+  }
+
+  // ===== Price List Items =====
+
+  async getPriceListItems(priceListId: string, params: { search?: string; departmentId?: string; category?: string; page?: number; pageSize?: number }): Promise<{ data: PriceListItemWithService[]; total: number }> {
+    const page = params.page || 1;
+    const pageSize = params.pageSize || 50;
+    const offset = (page - 1) * pageSize;
+
+    const conditions: any[] = [eq(priceListItems.priceListId, priceListId)];
+    if (params.search) {
+      conditions.push(or(ilike(services.code, `%${params.search}%`), ilike(services.nameAr, `%${params.search}%`)));
+    }
+    if (params.departmentId) {
+      conditions.push(eq(services.departmentId, params.departmentId));
+    }
+    if (params.category) {
+      conditions.push(eq(services.category, params.category));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(priceListItems)
+      .innerJoin(services, eq(priceListItems.serviceId, services.id))
+      .where(whereClause);
+    const total = countResult.count;
+
+    const rows = await db.select({
+      item: priceListItems,
+      service: services,
+      department: departments,
+    })
+      .from(priceListItems)
+      .innerJoin(services, eq(priceListItems.serviceId, services.id))
+      .leftJoin(departments, eq(services.departmentId, departments.id))
+      .where(whereClause)
+      .orderBy(asc(services.code))
+      .limit(pageSize)
+      .offset(offset);
+
+    const data: PriceListItemWithService[] = rows.map((r) => ({
+      ...r.item,
+      service: { ...r.service, department: r.department || undefined },
+    }));
+
+    return { data, total };
+  }
+
+  async upsertPriceListItems(priceListId: string, itemsData: { serviceId: string; price: string; minDiscountPct?: string; maxDiscountPct?: string }[]): Promise<void> {
+    if (itemsData.length === 0) return;
+
+    const values = itemsData.map((item) => ({
+      priceListId,
+      serviceId: item.serviceId,
+      price: item.price,
+      minDiscountPct: item.minDiscountPct || null,
+      maxDiscountPct: item.maxDiscountPct || null,
+    }));
+
+    await db.insert(priceListItems).values(values).onConflictDoUpdate({
+      target: [priceListItems.priceListId, priceListItems.serviceId],
+      set: {
+        price: sql`excluded.price`,
+        minDiscountPct: sql`excluded.min_discount_pct`,
+        maxDiscountPct: sql`excluded.max_discount_pct`,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async copyPriceList(targetListId: string, sourceListId: string): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO price_list_items (id, price_list_id, service_id, price, min_discount_pct, max_discount_pct, created_at, updated_at)
+      SELECT gen_random_uuid(), ${targetListId}, service_id, price, min_discount_pct, max_discount_pct, now(), now()
+      FROM price_list_items
+      WHERE price_list_id = ${sourceListId}
+      ON CONFLICT (price_list_id, service_id)
+      DO UPDATE SET price = excluded.price, min_discount_pct = excluded.min_discount_pct, max_discount_pct = excluded.max_discount_pct, updated_at = now()
+    `);
+  }
+
+  // ===== Bulk Adjustment =====
+
+  private _buildBulkAdjustQuery(priceListId: string, params: { mode: 'PCT' | 'FIXED'; direction: 'INCREASE' | 'DECREASE'; value: number; departmentId?: string; category?: string; createMissingFromBasePrice?: boolean }) {
+    const sign = params.direction === 'INCREASE' ? 1 : -1;
+    let newPriceExpr: string;
+    if (params.mode === 'PCT') {
+      newPriceExpr = `ROUND(old_price + old_price * ${sign} * ${params.value} / 100.0, 2)`;
+    } else {
+      newPriceExpr = `ROUND(old_price + ${sign} * ${params.value}, 2)`;
+    }
+
+    const filterParts: string[] = [];
+    if (params.departmentId) {
+      filterParts.push(`s.department_id = '${params.departmentId}'`);
+    }
+    if (params.category) {
+      filterParts.push(`s.category = '${params.category}'`);
+    }
+    const filterWhere = filterParts.length > 0 ? `AND ${filterParts.join(' AND ')}` : '';
+
+    return { newPriceExpr, filterWhere };
+  }
+
+  async bulkAdjustPreview(priceListId: string, params: { mode: 'PCT' | 'FIXED'; direction: 'INCREASE' | 'DECREASE'; value: number; departmentId?: string; category?: string; createMissingFromBasePrice?: boolean }): Promise<{ affectedCount: number; preview: { serviceCode: string; serviceNameAr: string; oldPrice: string; newPrice: string }[] }> {
+    const { newPriceExpr, filterWhere } = this._buildBulkAdjustQuery(priceListId, params);
+
+    let unionPart = '';
+    if (params.createMissingFromBasePrice) {
+      unionPart = `
+        UNION ALL
+        SELECT s.code AS service_code, s.name_ar AS service_name_ar, s.base_price::numeric AS old_price, (${newPriceExpr.replace(/old_price/g, 's.base_price::numeric')}) AS new_price
+        FROM services s
+        WHERE s.is_active = true
+          AND NOT EXISTS (SELECT 1 FROM price_list_items pli WHERE pli.price_list_id = '${priceListId}' AND pli.service_id = s.id)
+          ${filterWhere}
+      `;
+    }
+
+    const result = await db.execute(sql.raw(`
+      WITH adjusted AS (
+        SELECT s.code AS service_code, s.name_ar AS service_name_ar, pli.price::numeric AS old_price, (${newPriceExpr.replace(/old_price/g, 'pli.price::numeric')}) AS new_price
+        FROM price_list_items pli
+        JOIN services s ON s.id = pli.service_id
+        WHERE pli.price_list_id = '${priceListId}'
+          ${filterWhere}
+        ${unionPart}
+      )
+      SELECT service_code, service_name_ar, old_price::text, new_price::text, count(*) OVER() AS total_count
+      FROM adjusted
+      ORDER BY service_code
+      LIMIT 20
+    `));
+
+    const rows = result.rows as any[];
+    const affectedCount = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
+    const preview = rows.map((r: any) => ({
+      serviceCode: r.service_code,
+      serviceNameAr: r.service_name_ar,
+      oldPrice: r.old_price,
+      newPrice: r.new_price,
+    }));
+
+    return { affectedCount, preview };
+  }
+
+  async bulkAdjustApply(priceListId: string, params: { mode: 'PCT' | 'FIXED'; direction: 'INCREASE' | 'DECREASE'; value: number; departmentId?: string; category?: string; createMissingFromBasePrice?: boolean }): Promise<{ affectedCount: number }> {
+    const { newPriceExpr, filterWhere } = this._buildBulkAdjustQuery(priceListId, params);
+
+    return await db.transaction(async (tx) => {
+      const negativeCheck = await tx.execute(sql.raw(`
+        SELECT count(*) AS cnt FROM (
+          SELECT (${newPriceExpr.replace(/old_price/g, 'pli.price::numeric')}) AS new_price
+          FROM price_list_items pli
+          JOIN services s ON s.id = pli.service_id
+          WHERE pli.price_list_id = '${priceListId}'
+            ${filterWhere}
+          ${params.createMissingFromBasePrice ? `
+          UNION ALL
+          SELECT (${newPriceExpr.replace(/old_price/g, 's.base_price::numeric')}) AS new_price
+          FROM services s
+          WHERE s.is_active = true
+            AND NOT EXISTS (SELECT 1 FROM price_list_items pli2 WHERE pli2.price_list_id = '${priceListId}' AND pli2.service_id = s.id)
+            ${filterWhere}
+          ` : ''}
+        ) sub WHERE sub.new_price < 0
+      `));
+
+      const negCount = parseInt((negativeCheck.rows as any[])[0].cnt);
+      if (negCount > 0) {
+        throw new Error(`التعديل سيؤدي إلى أسعار سالبة لـ ${negCount} خدمة. يُرجى تقليل القيمة.`);
+      }
+
+      const updateResult = await tx.execute(sql.raw(`
+        UPDATE price_list_items pli
+        SET price = GREATEST(0, (${newPriceExpr.replace(/old_price/g, 'pli.price::numeric')})),
+            updated_at = now()
+        FROM services s
+        WHERE s.id = pli.service_id
+          AND pli.price_list_id = '${priceListId}'
+          ${filterWhere}
+      `));
+
+      let updatedCount = (updateResult as any).rowCount || 0;
+
+      if (params.createMissingFromBasePrice) {
+        const insertResult = await tx.execute(sql.raw(`
+          INSERT INTO price_list_items (id, price_list_id, service_id, price, created_at, updated_at)
+          SELECT gen_random_uuid(), '${priceListId}', s.id, GREATEST(0, (${newPriceExpr.replace(/old_price/g, 's.base_price::numeric')})), now(), now()
+          FROM services s
+          WHERE s.is_active = true
+            AND NOT EXISTS (SELECT 1 FROM price_list_items pli WHERE pli.price_list_id = '${priceListId}' AND pli.service_id = s.id)
+            ${filterWhere}
+        `));
+        updatedCount += (insertResult as any).rowCount || 0;
+      }
+
+      await tx.insert(priceAdjustmentsLog).values({
+        priceListId,
+        actionType: params.mode,
+        direction: params.direction,
+        value: params.value.toString(),
+        filterDepartmentId: params.departmentId || null,
+        filterCategory: params.category || null,
+        affectedCount: updatedCount,
+      });
+
+      return { affectedCount: updatedCount };
+    });
   }
 }
 
