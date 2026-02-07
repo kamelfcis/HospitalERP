@@ -47,10 +47,55 @@ function recalcLine(line: InvoiceLineLocal): InvoiceLineLocal {
 
 function getLineDiscountErrors(ln: InvoiceLineLocal): { field: string; message: string }[] {
   const errors: { field: string; message: string }[] = [];
-  if (ln.purchasePrice < 0) errors.push({ field: 'purchasePrice', message: 'سعر الشراء لا يمكن أن يكون سالب' });
-  if (ln.lineDiscountPct >= 100) errors.push({ field: 'discountPct', message: 'نسبة الخصم لا يمكن أن تكون 100% أو أكثر' });
-  if (ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice) errors.push({ field: 'discountValue', message: 'قيمة الخصم أكبر من سعر البيع' });
+  if (ln.purchasePrice < 0) errors.push({ field: "purchasePrice", message: "سعر الشراء لا يمكن أن يكون سالب" });
+  if (ln.lineDiscountPct >= 100) errors.push({ field: "discountPct", message: "نسبة الخصم لا يمكن أن تكون 100% أو أكثر" });
+  if (ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice) errors.push({ field: "discountValue", message: "قيمة الخصم أكبر من سعر البيع" });
   return errors;
+}
+
+function itemRequiresExpiry(item: any): boolean {
+  return Boolean(
+    item?.expiryIndicator === 1 ||
+      item?.expiryIndicator === true ||
+      item?.hasExpiry === true ||
+      item?.expiryRequired === true ||
+      item?.trackExpiry === true
+  );
+}
+
+function getLineCoreErrors(ln: InvoiceLineLocal): { field: string; message: string }[] {
+  const errors: { field: string; message: string }[] = [];
+
+  // سعر البيع إلزامي
+  if (!ln.sellingPrice || ln.sellingPrice <= 0) {
+    errors.push({ field: "sellingPrice", message: "سعر البيع إلزامي ولازم يكون أكبر من صفر" });
+  }
+
+  // الصلاحية إلزامية فقط لو الصنف له صلاحية
+  const requiresExpiry = itemRequiresExpiry(ln.item);
+  if (requiresExpiry) {
+    if (!ln.expiryMonth || !ln.expiryYear) {
+      errors.push({ field: "expiry", message: "تاريخ الصلاحية إلزامي لهذا الصنف" });
+    }
+  }
+
+  return errors;
+}
+
+function formatLineErrors(lines: InvoiceLineLocal[]): string {
+  const bad: { index: number; messages: string[] }[] = [];
+
+  lines.forEach((ln, i) => {
+    const errs = [...getLineCoreErrors(ln), ...getLineDiscountErrors(ln)];
+    if (errs.length) bad.push({ index: i + 1, messages: errs.map((e) => e.message) });
+  });
+
+  if (!bad.length) return "";
+
+  return bad
+    .slice(0, 8)
+    .map((x) => `سطر ${x.index}: ${Array.from(new Set(x.messages)).join(" | ")}`)
+    .join("\n");
 }
 
 function getUnitName(item: any, unitLevel: string): string {
@@ -91,7 +136,13 @@ export default function PurchaseInvoice() {
   });
 
   const { data: listData, isLoading: listLoading } = useQuery<{ data: PurchaseInvoiceWithDetails[]; total: number }>({
-    queryKey: [`/api/purchase-invoices?page=${page}&pageSize=${pageSize}${filterStatus !== "all" ? `&status=${filterStatus}` : ""}${filterSupplierId !== "all" ? `&supplierId=${filterSupplierId}` : ""}${filterDateFrom ? `&dateFrom=${filterDateFrom}` : ""}${filterDateTo ? `&dateTo=${filterDateTo}` : ""}`],
+    queryKey: [
+      `/api/purchase-invoices?page=${page}&pageSize=${pageSize}${
+        filterStatus !== "all" ? `&status=${filterStatus}` : ""
+      }${filterSupplierId !== "all" ? `&supplierId=${filterSupplierId}` : ""}${filterDateFrom ? `&dateFrom=${filterDateFrom}` : ""}${
+        filterDateTo ? `&dateTo=${filterDateTo}` : ""
+      }`,
+    ],
     enabled: !editId,
   });
 
@@ -171,7 +222,7 @@ export default function PurchaseInvoice() {
 
   const handlePurchasePriceChange = useCallback((index: number, val: string) => {
     const newPrice = Math.max(0, parseFloat(val) || 0);
-    setLines(prev => {
+    setLines((prev) => {
       const updated = [...prev];
       const ln = { ...updated[index] };
       ln.purchasePrice = newPrice;
@@ -187,7 +238,7 @@ export default function PurchaseInvoice() {
 
   const handleDiscountPctChange = useCallback((index: number, val: string) => {
     const pct = +Math.min(99.99, Math.max(0, parseFloat(val) || 0)).toFixed(2);
-    setLines(prev => {
+    setLines((prev) => {
       const updated = [...prev];
       const ln = { ...updated[index] };
       ln.lineDiscountPct = pct;
@@ -199,7 +250,7 @@ export default function PurchaseInvoice() {
   }, []);
 
   const handleDiscountValueChange = useCallback((index: number, val: string) => {
-    setLines(prev => {
+    setLines((prev) => {
       const updated = [...prev];
       const ln = { ...updated[index] };
       const dv = parseFloat(val) || 0;
@@ -215,7 +266,7 @@ export default function PurchaseInvoice() {
 
   const handleVatRateChange = useCallback((index: number, val: string) => {
     const rate = Math.max(0, parseFloat(val) || 0);
-    setLines(prev => {
+    setLines((prev) => {
       const updated = [...prev];
       const ln = { ...updated[index] };
       ln.vatRate = rate;
@@ -226,14 +277,13 @@ export default function PurchaseInvoice() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const hasDiscountErrors = lines.some(ln =>
-        ln.purchasePrice < 0 || ln.lineDiscountPct >= 100 || (ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice)
-      );
-      if (hasDiscountErrors) {
-        throw new Error('يوجد أخطاء في بيانات الخصم، يرجى مراجعة الأسطر');
+      const errorText = formatLineErrors(lines);
+      if (errorText) {
+        throw new Error(`لا يمكن الحفظ بسبب أخطاء في بيانات الأصناف:\n${errorText}`);
       }
+
       const body = {
-        lines: lines.map(ln => ({
+        lines: lines.map((ln) => ({
           id: ln.id,
           receivingLineId: ln.receivingLineId,
           itemId: ln.itemId,
@@ -257,6 +307,7 @@ export default function PurchaseInvoice() {
         invoiceDate,
         notes,
       };
+
       await apiRequest("PATCH", `/api/purchase-invoices/${editId}`, body);
     },
     onSuccess: () => {
@@ -271,14 +322,13 @@ export default function PurchaseInvoice() {
 
   const approveMutation = useMutation({
     mutationFn: async () => {
-      const hasDiscountErrors = lines.some(ln =>
-        ln.purchasePrice < 0 || ln.lineDiscountPct >= 100 || (ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice)
-      );
-      if (hasDiscountErrors) {
-        throw new Error('يوجد أخطاء في بيانات الخصم، يرجى مراجعة الأسطر');
+      const errorText = formatLineErrors(lines);
+      if (errorText) {
+        throw new Error(`لا يمكن الاعتماد بسبب أخطاء في بيانات الأصناف:\n${errorText}`);
       }
+
       const body = {
-        lines: lines.map(ln => ({
+        lines: lines.map((ln) => ({
           id: ln.id,
           receivingLineId: ln.receivingLineId,
           itemId: ln.itemId,
@@ -302,6 +352,7 @@ export default function PurchaseInvoice() {
         invoiceDate,
         notes,
       };
+
       await apiRequest("PATCH", `/api/purchase-invoices/${editId}`, body);
       await apiRequest("POST", `/api/purchase-invoices/${editId}/approve`);
     },
@@ -331,12 +382,12 @@ export default function PurchaseInvoice() {
   });
 
   const supplierName = (id: string) => {
-    const s = suppliers.find(s => s.id === id);
+    const s = suppliers.find((s) => s.id === id);
     return s ? s.nameAr : "";
   };
 
   const warehouseName = (id: string) => {
-    const w = warehouses?.find(w => w.id === id);
+    const w = warehouses?.find((w) => w.id === id);
     return w ? w.nameAr : "";
   };
 
@@ -411,13 +462,7 @@ export default function PurchaseInvoice() {
           <div className="flex items-center gap-1">
             <span className="font-semibold">التاريخ:</span>
             {isDraft ? (
-              <input
-                type="date"
-                value={invoiceDate}
-                onChange={(e) => setInvoiceDate(e.target.value)}
-                className="peachtree-input w-[130px]"
-                data-testid="input-invoice-date"
-              />
+              <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="peachtree-input w-[130px]" data-testid="input-invoice-date" />
             ) : (
               <span data-testid="text-invoice-date">{formatDateShort(invoiceDate)}</span>
             )}
@@ -447,8 +492,16 @@ export default function PurchaseInvoice() {
             <tbody>
               {lines.map((ln, i) => {
                 const priceWarning = ln.purchasePrice > ln.sellingPrice && ln.sellingPrice > 0;
+                const hasCoreErrors = getLineCoreErrors(ln).length > 0;
+
                 return (
-                  <tr key={ln.id} className={`peachtree-grid-row ${priceWarning ? "bg-orange-50 dark:bg-orange-900/20" : ""}`} data-testid={`row-line-${i}`}>
+                  <tr
+                    key={ln.id}
+                    className={`peachtree-grid-row ${hasCoreErrors ? "bg-red-50 dark:bg-red-900/20" : ""} ${
+                      priceWarning ? "bg-orange-50 dark:bg-orange-900/20" : ""
+                    }`}
+                    data-testid={`row-line-${i}`}
+                  >
                     <td className="text-center">{i + 1}</td>
                     <td className="max-w-[160px] truncate" title={ln.item?.nameAr || ""}>
                       {ln.item?.nameAr || ln.itemId}
@@ -527,9 +580,7 @@ export default function PurchaseInvoice() {
                     <td className="text-center peachtree-amount">{formatNumber(ln.valueAfterVat)}</td>
                     <td className="text-center text-[11px]">
                       {ln.batchNumber && <span className="ml-1">{ln.batchNumber}</span>}
-                      {ln.expiryMonth && ln.expiryYear && (
-                        <span>{ln.expiryMonth}/{ln.expiryYear}</span>
-                      )}
+                      {ln.expiryMonth && ln.expiryYear && <span>{ln.expiryMonth}/{ln.expiryYear}</span>}
                       {!ln.batchNumber && !ln.expiryMonth && "-"}
                     </td>
                   </tr>
@@ -567,12 +618,7 @@ export default function PurchaseInvoice() {
               <div className="flex items-center gap-1 mt-0.5">
                 {isDraft ? (
                   <>
-                    <select
-                      value={discountType}
-                      onChange={(e) => setDiscountType(e.target.value)}
-                      className="peachtree-select text-[11px]"
-                      data-testid="select-discount-type"
-                    >
+                    <select value={discountType} onChange={(e) => setDiscountType(e.target.value)} className="peachtree-select text-[11px]" data-testid="select-discount-type">
                       <option value="percent">نسبة%</option>
                       <option value="value">قيمة</option>
                     </select>
@@ -602,9 +648,7 @@ export default function PurchaseInvoice() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>تأكيد الاعتماد والتسعير</DialogTitle>
-              <DialogDescription>
-                هل أنت متأكد من اعتماد هذه الفاتورة وتسعيرها؟ لا يمكن التراجع عن هذا الإجراء.
-              </DialogDescription>
+              <DialogDescription>هل أنت متأكد من اعتماد هذه الفاتورة وتسعيرها؟ لا يمكن التراجع عن هذا الإجراء.</DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setConfirmApproveOpen(false)} data-testid="button-cancel-approve">
@@ -763,25 +807,11 @@ export default function PurchaseInvoice() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 py-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(p => p - 1)}
-            data-testid="button-prev-page"
-          >
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} data-testid="button-prev-page">
             <ChevronRight className="h-3 w-3" />
           </Button>
-          <span className="text-xs text-muted-foreground">
-            صفحة {page} من {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage(p => p + 1)}
-            data-testid="button-next-page"
-          >
+          <span className="text-xs text-muted-foreground">صفحة {page} من {totalPages}</span>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} data-testid="button-next-page">
             <ChevronLeft className="h-3 w-3" />
           </Button>
         </div>
@@ -791,21 +821,15 @@ export default function PurchaseInvoice() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>تأكيد الحذف</DialogTitle>
-            <DialogDescription>
-              هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
+            <DialogDescription>هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConfirmDeleteId(null)} data-testid="button-cancel-delete">
-              إلغاء
-            </Button>
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)} data-testid="button-cancel-delete">إلغاء</Button>
             <Button
               variant="destructive"
               onClick={() => {
                 if (confirmDeleteId) {
-                  deleteMutation.mutate(confirmDeleteId, {
-                    onSettled: () => setConfirmDeleteId(null),
-                  });
+                  deleteMutation.mutate(confirmDeleteId, { onSettled: () => setConfirmDeleteId(null) });
                 }
               }}
               disabled={deleteMutation.isPending}
