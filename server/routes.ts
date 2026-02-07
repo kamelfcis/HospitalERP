@@ -19,7 +19,9 @@ import {
   insertServiceSchema,
   insertPriceListSchema,
   accounts,
-  accountTypeLabels
+  accountTypeLabels,
+  salesInvoiceHeaders,
+  salesInvoiceLines
 } from "@shared/schema";
 import { z } from "zod";
 import * as XLSX from "xlsx";
@@ -2130,6 +2132,102 @@ export async function registerRoutes(
       }
       if (error.message?.includes("أسعار سالبة")) {
         return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== Sales Invoices ====================
+  
+  app.get("/api/sales-invoices", async (req, res) => {
+    try {
+      const { status, dateFrom, dateTo, customerType, search, page, pageSize } = req.query;
+      const result = await storage.getSalesInvoices({
+        status: status as string,
+        dateFrom: dateFrom as string,
+        dateTo: dateTo as string,
+        customerType: customerType as string,
+        search: search as string,
+        page: parseInt(page as string) || 1,
+        pageSize: parseInt(pageSize as string) || 20,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/sales-invoices/:id", async (req, res) => {
+    try {
+      const invoice = await storage.getSalesInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      res.json(invoice);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/sales-invoices", async (req, res) => {
+    try {
+      const { header, lines } = req.body;
+      if (!header?.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
+      if (!header?.invoiceDate) return res.status(400).json({ message: "تاريخ الفاتورة مطلوب" });
+      if (!lines || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
+      
+      for (const line of lines) {
+        if (!line.itemId) return res.status(400).json({ message: "الصنف مطلوب في كل سطر" });
+        if (!line.qty || parseFloat(line.qty) <= 0) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
+      }
+
+      const invoice = await storage.createSalesInvoice(header, lines);
+      res.status(201).json(invoice);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/sales-invoices/:id", async (req, res) => {
+    try {
+      const { header, lines } = req.body;
+      if (!lines || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
+      
+      for (const line of lines) {
+        if (!line.itemId) return res.status(400).json({ message: "الصنف مطلوب في كل سطر" });
+        if (!line.qty || parseFloat(line.qty) <= 0) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
+      }
+
+      const invoice = await storage.updateSalesInvoice(req.params.id, header || {}, lines);
+      res.json(invoice);
+    } catch (error: any) {
+      if (error.message.includes("نهائية") || error.message.includes("معتمدة")) {
+        return res.status(409).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/sales-invoices/:id/finalize", async (req, res) => {
+    try {
+      const invoice = await storage.finalizeSalesInvoice(req.params.id);
+      res.json(invoice);
+    } catch (error: any) {
+      if (error.message.includes("ليست مسودة") || error.message.includes("نهائية")) {
+        return res.status(409).json({ message: error.message });
+      }
+      if (error.message.includes("غير كاف") || error.message.includes("يتطلب") || error.message.includes("بدون أصناف")) {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/sales-invoices/:id", async (req, res) => {
+    try {
+      await storage.deleteSalesInvoice(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error.message.includes("نهائية")) {
+        return res.status(409).json({ message: error.message });
       }
       res.status(500).json({ message: error.message });
     }

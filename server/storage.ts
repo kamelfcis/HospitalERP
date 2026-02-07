@@ -93,6 +93,12 @@ import {
   type InsertPriceList,
   type PriceListItem,
   type PriceListItemWithService,
+  salesInvoiceHeaders,
+  salesInvoiceLines,
+  type SalesInvoiceHeader,
+  type SalesInvoiceLine,
+  type SalesInvoiceWithDetails,
+  type SalesInvoiceLineWithItem,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -261,6 +267,15 @@ export interface IStorage {
   savePurchaseInvoice(invoiceId: string, lines: any[], headerUpdates?: any): Promise<any>;
   approvePurchaseInvoice(id: string): Promise<any>;
   deletePurchaseInvoice(id: string): Promise<boolean>;
+
+  // Sales Invoices
+  getNextSalesInvoiceNumber(): Promise<number>;
+  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}>;
+  getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined>;
+  createSalesInvoice(header: any, lines: any[]): Promise<SalesInvoiceHeader>;
+  updateSalesInvoice(id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader>;
+  finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader>;
+  deleteSalesInvoice(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3255,6 +3270,294 @@ export class DatabaseStorage implements IStorage {
 
       return { affectedCount: updatedCount };
     });
+  }
+
+  async getNextSalesInvoiceNumber(): Promise<number> {
+    const [result] = await db.select({ max: sql<number>`COALESCE(MAX(invoice_number), 0)` }).from(salesInvoiceHeaders);
+    return (result?.max || 0) + 1;
+  }
+
+  async getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}> {
+    const conditions: any[] = [];
+    if (filters.status && filters.status !== "all") conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
+    if (filters.dateFrom) conditions.push(sql`${salesInvoiceHeaders.invoiceDate} >= ${filters.dateFrom}`);
+    if (filters.dateTo) conditions.push(sql`${salesInvoiceHeaders.invoiceDate} <= ${filters.dateTo}`);
+    if (filters.customerType && filters.customerType !== "all") conditions.push(eq(salesInvoiceHeaders.customerType, filters.customerType as any));
+    if (filters.search) {
+      conditions.push(or(
+        ilike(salesInvoiceHeaders.customerName, `%${filters.search}%`),
+        sql`${salesInvoiceHeaders.invoiceNumber}::text LIKE ${`%${filters.search}%`}`
+      ));
+    }
+
+    const page = filters.page || 1;
+    const pageSize = filters.pageSize || 20;
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(salesInvoiceHeaders).where(whereClause);
+
+    const headers = await db.select().from(salesInvoiceHeaders)
+      .where(whereClause)
+      .orderBy(desc(salesInvoiceHeaders.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+
+    const data = [];
+    for (const h of headers) {
+      const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
+      data.push({ ...h, warehouse: wh });
+    }
+
+    return { data, total: Number(countResult.count) };
+  }
+
+  async getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined> {
+    const [h] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+    if (!h) return undefined;
+    const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
+    const lines = await db.select().from(salesInvoiceLines)
+      .where(eq(salesInvoiceLines.invoiceId, h.id))
+      .orderBy(asc(salesInvoiceLines.lineNo));
+    const linesWithItems: SalesInvoiceLineWithItem[] = [];
+    for (const line of lines) {
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      linesWithItems.push({ ...line, item });
+    }
+    return { ...h, warehouse: wh, lines: linesWithItems };
+  }
+
+  async createSalesInvoice(header: any, lines: any[]): Promise<SalesInvoiceHeader> {
+    return await db.transaction(async (tx) => {
+      const nextNum = await this.getNextSalesInvoiceNumber();
+      
+      let subtotal = 0;
+      for (const line of lines) {
+        const qty = parseFloat(line.qty) || 0;
+        const salePrice = parseFloat(line.salePrice) || 0;
+        subtotal += qty * salePrice;
+      }
+
+      const discountPercent = parseFloat(header.discountPercent) || 0;
+      const discountValue = parseFloat(header.discountValue) || 0;
+      const discountType = header.discountType || "percent";
+      let actualDiscount = 0;
+      if (discountType === "percent") {
+        actualDiscount = subtotal * (discountPercent / 100);
+      } else {
+        actualDiscount = discountValue;
+      }
+      const netTotal = subtotal - actualDiscount;
+
+      const [invoice] = await tx.insert(salesInvoiceHeaders).values({
+        invoiceNumber: nextNum,
+        invoiceDate: header.invoiceDate,
+        warehouseId: header.warehouseId,
+        customerType: header.customerType || "cash",
+        customerName: header.customerName || null,
+        contractCompany: header.contractCompany || null,
+        status: "draft",
+        subtotal: String(subtotal.toFixed(2)),
+        discountType,
+        discountPercent: String(discountPercent),
+        discountValue: String(actualDiscount.toFixed(2)),
+        netTotal: String(netTotal.toFixed(2)),
+        notes: header.notes || null,
+      }).returning();
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const qty = parseFloat(line.qty) || 0;
+        const salePrice = parseFloat(line.salePrice) || 0;
+        const lineTotal = qty * salePrice;
+
+        let qtyInMinor = qty;
+        if (line.unitLevel === "major" || !line.unitLevel) {
+          const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+          if (item) {
+            const conv = parseFloat(item.majorToMinor || "1") || 1;
+            qtyInMinor = qty * conv;
+          }
+        }
+
+        await tx.insert(salesInvoiceLines).values({
+          invoiceId: invoice.id,
+          lineNo: i + 1,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel || "major",
+          qty: String(qty),
+          qtyInMinor: String(qtyInMinor),
+          salePrice: String(salePrice),
+          lineTotal: String(lineTotal.toFixed(2)),
+          expiryMonth: line.expiryMonth || null,
+          expiryYear: line.expiryYear || null,
+          lotId: line.lotId || null,
+        });
+      }
+
+      return invoice;
+    });
+  }
+
+  async updateSalesInvoice(id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader> {
+    return await db.transaction(async (tx) => {
+      const [invoice] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+      if (!invoice) throw new Error("الفاتورة غير موجودة");
+      if (invoice.status !== "draft") throw new Error("لا يمكن تعديل فاتورة نهائية");
+
+      await tx.delete(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
+
+      let subtotal = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const qty = parseFloat(line.qty) || 0;
+        const salePrice = parseFloat(line.salePrice) || 0;
+        const lineTotal = qty * salePrice;
+        subtotal += lineTotal;
+
+        let qtyInMinor = qty;
+        if (line.unitLevel === "major" || !line.unitLevel) {
+          const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+          if (item) {
+            const conv = parseFloat(item.majorToMinor || "1") || 1;
+            qtyInMinor = qty * conv;
+          }
+        }
+
+        await tx.insert(salesInvoiceLines).values({
+          invoiceId: id,
+          lineNo: i + 1,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel || "major",
+          qty: String(qty),
+          qtyInMinor: String(qtyInMinor),
+          salePrice: String(salePrice),
+          lineTotal: String(lineTotal.toFixed(2)),
+          expiryMonth: line.expiryMonth || null,
+          expiryYear: line.expiryYear || null,
+          lotId: line.lotId || null,
+        });
+      }
+
+      const discountPercent = parseFloat(header.discountPercent) || 0;
+      const discountValue = parseFloat(header.discountValue) || 0;
+      const discountType = header.discountType || invoice.discountType || "percent";
+      let actualDiscount = 0;
+      if (discountType === "percent") {
+        actualDiscount = subtotal * (discountPercent / 100);
+      } else {
+        actualDiscount = discountValue;
+      }
+      const netTotal = subtotal - actualDiscount;
+
+      await tx.update(salesInvoiceHeaders).set({
+        invoiceDate: header.invoiceDate || invoice.invoiceDate,
+        warehouseId: header.warehouseId || invoice.warehouseId,
+        customerType: header.customerType || invoice.customerType,
+        customerName: header.customerName !== undefined ? header.customerName : invoice.customerName,
+        contractCompany: header.contractCompany !== undefined ? header.contractCompany : invoice.contractCompany,
+        subtotal: String(subtotal.toFixed(2)),
+        discountType,
+        discountPercent: String(discountPercent),
+        discountValue: String(actualDiscount.toFixed(2)),
+        netTotal: String(netTotal.toFixed(2)),
+        notes: header.notes !== undefined ? header.notes : invoice.notes,
+        updatedAt: new Date(),
+      }).where(eq(salesInvoiceHeaders.id, id));
+
+      const [updated] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+      return updated;
+    });
+  }
+
+  async finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader> {
+    return await db.transaction(async (tx) => {
+      const [invoice] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+      if (!invoice) throw new Error("الفاتورة غير موجودة");
+      if (invoice.status !== "draft") throw new Error("الفاتورة ليست مسودة");
+
+      const lines = await tx.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
+      if (lines.length === 0) throw new Error("لا يمكن اعتماد فاتورة بدون أصناف");
+
+      for (const line of lines) {
+        const qtyNeeded = parseFloat(line.qtyInMinor);
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        if (!item) throw new Error(`الصنف غير موجود: ${line.itemId}`);
+
+        if (item.hasExpiry && !line.expiryMonth) {
+          throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية`);
+        }
+
+        const lotConditions: any[] = [
+          eq(inventoryLots.itemId, line.itemId),
+          eq(inventoryLots.warehouseId, invoice.warehouseId),
+          eq(inventoryLots.isActive, true),
+          sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+        ];
+        
+        if (line.expiryMonth && line.expiryYear) {
+          lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
+          lotConditions.push(eq(inventoryLots.expiryYear, line.expiryYear));
+        }
+
+        const lots = await tx.select().from(inventoryLots)
+          .where(and(...lotConditions))
+          .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth));
+
+        let remaining = qtyNeeded;
+        for (const lot of lots) {
+          if (remaining <= 0) break;
+          const available = parseFloat(lot.qtyInMinor);
+          const deduct = Math.min(available, remaining);
+
+          await tx.update(inventoryLots).set({
+            qtyInMinor: String(available - deduct),
+            updatedAt: new Date(),
+          }).where(eq(inventoryLots.id, lot.id));
+
+          await tx.insert(inventoryLotMovements).values({
+            lotId: lot.id,
+            warehouseId: invoice.warehouseId,
+            txType: "out",
+            qtyChangeInMinor: String(-deduct),
+            unitCost: line.salePrice,
+            referenceType: "sales_invoice",
+            referenceId: invoice.id,
+          });
+
+          remaining -= deduct;
+        }
+
+        if (remaining > 0) {
+          throw new Error(`رصيد غير كاف للصنف "${item.nameAr}" - المطلوب: ${qtyNeeded}, النقص: ${remaining.toFixed(2)}`);
+        }
+
+        await tx.insert(salesTransactions).values({
+          itemId: line.itemId,
+          txDate: invoice.invoiceDate,
+          qty: line.qtyInMinor,
+          unitLevel: "minor",
+          salePrice: line.salePrice,
+          total: line.lineTotal,
+        });
+      }
+
+      await tx.update(salesInvoiceHeaders).set({
+        status: "finalized",
+        finalizedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(salesInvoiceHeaders.id, id));
+
+      const [updated] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+      return updated;
+    });
+  }
+
+  async deleteSalesInvoice(id: string): Promise<boolean> {
+    const [invoice] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+    if (!invoice) throw new Error("الفاتورة غير موجودة");
+    if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة نهائية");
+    await db.delete(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+    return true;
   }
 }
 

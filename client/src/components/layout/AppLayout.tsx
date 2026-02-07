@@ -35,6 +35,7 @@ import {
   Truck,
   Receipt,
   Stethoscope,
+  ShoppingCart,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,11 @@ const mainNavItems = [
     title: "تحويل مخزني",
     href: "/store-transfers",
     icon: ArrowLeftRight,
+  },
+  {
+    title: "فواتير البيع",
+    href: "/sales-invoices",
+    icon: ShoppingCart,
   },
   {
     title: "الخدمات والأسعار",
