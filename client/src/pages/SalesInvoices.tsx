@@ -245,7 +245,18 @@ export default function SalesInvoices() {
       return;
     }
 
-    const salePrice = parseFloat(String(itemData.salePriceCurrent)) || 0;
+    let salePrice = parseFloat(String(itemData.salePriceCurrent)) || 0;
+    if (warehouseId) {
+      try {
+        const priceRes = await fetch(`/api/pricing?itemId=${itemData.id}&warehouseId=${warehouseId}`);
+        if (priceRes.ok) {
+          const priceData = await priceRes.json();
+          const resolved = parseFloat(priceData.price);
+          if (resolved > 0) salePrice = resolved;
+        }
+      } catch {}
+    }
+
     const newLine: SalesLineLocal = {
       tempId: genId(),
       itemId: itemData.id,

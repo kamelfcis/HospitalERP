@@ -1400,15 +1400,24 @@ export async function registerRoutes(
 
   app.get("/api/pricing", async (req, res) => {
     try {
-      const { itemId, departmentId } = req.query;
-      if (!itemId || !departmentId) {
-        return res.status(400).json({ message: "itemId و departmentId مطلوبان" });
+      const { itemId, departmentId, warehouseId } = req.query;
+      if (!itemId) {
+        return res.status(400).json({ message: "itemId مطلوب" });
       }
-      const price = await storage.getItemPriceForDepartment(
-        itemId as string,
-        departmentId as string
-      );
-      res.json({ price });
+      let resolvedDeptId = departmentId as string | undefined;
+      if (!resolvedDeptId && warehouseId) {
+        const wh = await storage.getWarehouse(warehouseId as string);
+        resolvedDeptId = wh?.departmentId || undefined;
+      }
+      if (resolvedDeptId) {
+        const price = await storage.getItemPriceForDepartment(
+          itemId as string,
+          resolvedDeptId
+        );
+        return res.json({ price });
+      }
+      const item = await storage.getItem(itemId as string);
+      res.json({ price: item?.salePriceCurrent || "0" });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
