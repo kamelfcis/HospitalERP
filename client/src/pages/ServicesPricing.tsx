@@ -164,21 +164,12 @@ function ServicesTab() {
   }
 
   return (
-    <div className="p-2 space-y-2" dir="rtl">
-      <div className="peachtree-toolbar flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Settings2 className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-semibold text-foreground" data-testid="text-services-title">الخدمات</h1>
-          <span className="text-xs text-muted-foreground">|</span>
-          <span className="text-xs text-muted-foreground">إدارة الخدمات والتسعير</span>
-        </div>
+    <div className="space-y-1" dir="rtl">
+      <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
         <Button size="sm" className="text-xs gap-1" onClick={openCreate} data-testid="button-add-service">
           <Plus className="h-3 w-3" />
           إضافة خدمة
         </Button>
-      </div>
-
-      <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Search className="h-3 w-3 text-muted-foreground" />
           <Input
@@ -549,7 +540,7 @@ function PriceListsTab() {
   const selectedList = priceLists?.find(pl => pl.id === selectedListId);
 
   return (
-    <div className="p-2 flex gap-2" style={{ height: "calc(100vh - 10rem)" }} dir="rtl">
+    <div className="flex gap-2" style={{ height: "calc(100vh - 8rem)" }} dir="rtl">
       <div className="flex flex-col gap-1" style={{ width: "320px", minWidth: "320px" }}>
         <div className="peachtree-toolbar flex items-center justify-between">
           <h3 className="text-sm font-semibold" data-testid="text-price-lists-title">قوائم الأسعار</h3>
@@ -1202,14 +1193,21 @@ export default function ServicesPricing() {
   return (
     <div className="p-2" dir="rtl">
       <Tabs defaultValue="services" className="w-full">
-        <TabsList className="mb-2">
-          <TabsTrigger value="services" data-testid="tab-services">الخدمات</TabsTrigger>
-          <TabsTrigger value="price-lists" data-testid="tab-price-lists">قوائم الأسعار</TabsTrigger>
-        </TabsList>
-        <TabsContent value="services">
+        <div className="peachtree-toolbar flex items-center justify-between mb-1">
+          <div className="flex items-center gap-3">
+            <Settings2 className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-semibold text-foreground">إدارة الخدمات والتسعير</span>
+            <span className="text-xs text-muted-foreground">|</span>
+            <TabsList className="h-auto p-0 bg-transparent gap-0">
+              <TabsTrigger value="services" data-testid="tab-services" className="text-xs px-3 py-1 rounded-none data-[state=active]:bg-blue-100 data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-blue-600">الخدمات</TabsTrigger>
+              <TabsTrigger value="price-lists" data-testid="tab-price-lists" className="text-xs px-3 py-1 rounded-none data-[state=active]:bg-blue-100 data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-blue-600">قوائم الأسعار</TabsTrigger>
+            </TabsList>
+          </div>
+        </div>
+        <TabsContent value="services" className="mt-0">
           <ServicesTab />
         </TabsContent>
-        <TabsContent value="price-lists">
+        <TabsContent value="price-lists" className="mt-0">
           <PriceListsTab />
         </TabsContent>
       </Tabs>
