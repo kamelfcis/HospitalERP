@@ -1,0 +1,77 @@
+I) ITEM CREATION SCREEN – STRICT MASTER DATA CONTROLS (NON-NEGOTIABLE)
+You must harden the “Add New Item” screen and backend validations. No free text for Units or Form Type. No saving unless all required master data is present and unique.
+
+1) Units of Measure (UOM) – NO FREE TEXT
+- Replace any free-text unit fields with a controlled selection (Dropdown/Combobox).
+- Add a button next to the Units selector: “+ Add Unit”
+  * Opens a modal to create a new unit master record (e.g., unit code + Arabic/English name + optional description).
+  * After creation, it must be immediately selectable in the item screen without page refresh (invalidate query).
+- The item screen MUST require choosing:
+  * Minor unit (required)
+  * Medium unit (required)
+  * Major unit (required)
+  * Conversion factors required (e.g., mediumToMinor, majorToMedium) and must be > 0
+- Prevent saving if:
+  * Any required unit not selected
+  * Any conversion missing/invalid
+  * Units selected are duplicated (same unit used as minor and medium etc.)
+
+Backend requirements:
+- Add/ensure a Units master table and schema (if not already present).
+- Enforce referential integrity: items store unit IDs not strings.
+- Add unique constraint on unit code (and optionally Arabic/English names).
+
+2) Form Type (Item Form Type) – NO FREE TEXT + ADD BUTTON
+- For “نوع الشكل” (form type), use a dropdown from Item Form Types master table.
+- Add a “+ Add Form Type” button next to it:
+  * Opens modal to add new form type (Arabic/English name + optional code)
+  * Immediately selectable after save.
+
+Backend requirements:
+- Ensure form types have unique code (if used) and prevent duplicates by normalized Arabic/English name.
+
+3) REQUIRED FIELDS – BLOCK SAVE IF EMPTY
+On Add Item screen, do not allow save unless all required fields are provided:
+- Item Code (required)
+- Arabic Name (required)
+- English Name (required)
+- Category (required)
+- Form Type (required)
+- Units (minor/medium/major) + conversions (required)
+- Selling price basis fields required (according to your pricing model)
+- Expiry flag (hasExpiry) required or derived by category rules but never left undefined
+
+Frontend:
+- Show inline validation messages + disable Save button until valid.
+- Backend must also validate and return structured Zod errors; frontend must display them.
+
+4) STRICT UNIQUENESS RULES (AR/EN NAME + CODE)
+- Item code MUST be unique (case-insensitive, trimmed).
+- Item Arabic name MUST be unique (case-insensitive, trimmed, normalize Arabic variants like أ/ا/إ and remove double spaces).
+- Item English name MUST be unique (case-insensitive, trimmed).
+- Do NOT allow saving if any of the above duplicates exist.
+
+Backend:
+- Add endpoints for uniqueness checks (fast):
+  * GET /api/items/check-unique?code=&nameAr=&nameEn=&excludeId=
+  returns { codeUnique, nameArUnique, nameEnUnique }
+- ALSO enforce at DB level:
+  * Unique index on normalized item code.
+  * Unique index on normalized Arabic name.
+  * Unique index on normalized English name.
+  (If DB can’t normalize Arabic well, enforce in app + add best-effort index.)
+
+5) UX REQUIREMENTS
+- Next to Units selectors and Form Type selector, keep “+ Add” buttons aligned visually with existing shadcn/ui pattern.
+- Modals must follow existing style (same as other master data add modals in repo).
+- After creating a unit or form type, auto-select it in the item form if that selector was active.
+
+6) TESTS
+Add backend tests:
+- Cannot create item with missing units/form type.
+- Cannot create item with duplicate code.
+- Cannot create item with duplicate Arabic name.
+- Cannot create item with duplicate English name.
+- Creating a new unit/form type then creating item referencing it succeeds.
+
+Deliver code consistent with existing repo patterns, strict typing, and ensure build passes.

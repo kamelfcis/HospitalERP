@@ -29,7 +29,7 @@ Preferred communication style: Simple, everyday language.
 - **Database**: PostgreSQL (configured via `DATABASE_URL`)
 - **Connection Pooling**: pg Pool
 - **Schema Management**: Drizzle Kit (`db:push` for migrations)
-- **Key Entities**: Users, Accounts (hierarchical), Cost Centers (hierarchical), Fiscal Periods, Journal Entries/Lines, Journal Templates, Audit Log, Receiving Headers/Lines, Purchase Invoice Headers/Lines, Sales Invoice Headers/Lines.
+- **Key Entities**: Users, Accounts (hierarchical), Cost Centers (hierarchical), Fiscal Periods, Journal Entries/Lines, Journal Templates, Audit Log, Receiving Headers/Lines, Purchase Invoice Headers/Lines, Sales Invoice Headers/Lines, Item UOMs (Units of Measure master).
 
 ### Core Features
 - Dashboard with financial statistics.
@@ -60,6 +60,7 @@ Preferred communication style: Simple, everyday language.
 - Frontend validation UI: red highlights on invalid fields, error banner, disabled expiry inputs for non-expiry items, focus-to-first-error, client-side validation mirrors backend.
 - Frontend correction UI: correction button for posted docs, CORRECTED (orange) and correction (purple) badges in register, correction info banners, CORRECTED status filter option.
 - Services & Price Lists module (/services-pricing): Two-tab page (Services Master + Price Lists). Services CRUD with department/category/serviceType filters, pagination, and toggle-active. Price Lists with split-view (left: list cards, right: items grid with inline price editing). Supports bulk price adjustment (PCT/FIXED, INCREASE/DECREASE, optional department/category filters, createMissingFromBasePrice), copy-from-list, and add-prices-from-services. Bulk adjust uses ROUND(expr, 2) in SQL, rejects negative prices. Tables: services, priceLists, priceListItems, priceAdjustmentsLog. 14 vitest tests for bulk adjustment calculations.
+- Item Master Data Controls: UOM master table (item_uoms) with code/nameAr/nameEn, CRUD via GET/POST /api/uoms. Item creation form uses UOM dropdowns (single "+ إضافة وحدة" button opens dialog to add new UOMs). Required field validation: itemCode, nameAr, nameEn, formTypeId, all 3 unit names, all 3 conversion factors > 0. Real-time uniqueness checking via GET /api/items/check-unique (debounced 500ms, case-insensitive LOWER(TRIM(...))), with inline warnings. Backend enforces validation (400 for missing fields, 409 for duplicates). Duplicate unit selection prevented. 11 vitest tests for UOM CRUD, uniqueness checks, and item creation validation.
 
 ### Build and Deployment
 - **Development**: `npm run dev` with `tsx` and hot reload.

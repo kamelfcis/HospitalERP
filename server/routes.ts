@@ -9,6 +9,7 @@ import {
   insertJournalTemplateSchema,
   insertItemSchema,
   insertItemFormTypeSchema,
+  insertItemUomSchema,
   insertDepartmentSchema,
   insertItemDepartmentPriceSchema,
   insertItemBarcodeSchema,
@@ -1062,6 +1063,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/items/check-unique", async (req, res) => {
+    try {
+      const { code, nameAr, nameEn, excludeId } = req.query as { code?: string; nameAr?: string; nameEn?: string; excludeId?: string };
+      const result = await storage.checkItemUniqueness(code, nameAr, nameEn, excludeId);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/items/:id", async (req, res) => {
     try {
       const item = await storage.getItem(req.params.id);
@@ -1076,35 +1087,70 @@ export async function registerRoutes(
 
   app.post("/api/items", async (req, res) => {
     try {
-      const validated = insertItemSchema.parse(req.body);
-      if (validated.category === "service") {
-        validated.hasExpiry = false;
-      } else if (validated.category === "drug" && validated.hasExpiry === undefined) {
-        validated.hasExpiry = true;
+      const parsed = insertItemSchema.parse(req.body);
+
+      const errors: string[] = [];
+      if (!parsed.itemCode?.trim()) errors.push("كود الصنف مطلوب");
+      if (!parsed.nameAr?.trim()) errors.push("الاسم العربي مطلوب");
+      if (!parsed.nameEn?.trim()) errors.push("الاسم الإنجليزي مطلوب");
+      if (!parsed.formTypeId) errors.push("نوع الشكل مطلوب");
+      if (!parsed.majorUnitName?.trim()) errors.push("الوحدة الكبرى مطلوبة");
+      if (!parsed.mediumUnitName?.trim()) errors.push("الوحدة المتوسطة مطلوبة");
+      if (!parsed.minorUnitName?.trim()) errors.push("الوحدة الصغرى مطلوبة");
+
+      const majorToMedium = parseFloat(parsed.majorToMedium as string || "0");
+      const majorToMinor = parseFloat(parsed.majorToMinor as string || "0");
+      const mediumToMinor = parseFloat(parsed.mediumToMinor as string || "0");
+      if (majorToMedium <= 0) errors.push("معامل التحويل كبرى ← متوسطة يجب أن يكون أكبر من صفر");
+      if (majorToMinor <= 0) errors.push("معامل التحويل كبرى ← صغرى يجب أن يكون أكبر من صفر");
+      if (mediumToMinor <= 0) errors.push("معامل التحويل متوسطة ← صغرى يجب أن يكون أكبر من صفر");
+
+      if (errors.length > 0) {
+        return res.status(400).json({ message: errors.join("، ") });
       }
-      const item = await storage.createItem(validated);
+
+      const uniqueness = await storage.checkItemUniqueness(parsed.itemCode, parsed.nameAr, parsed.nameEn);
+      const uniqueErrors: string[] = [];
+      if (!uniqueness.codeUnique) uniqueErrors.push("كود الصنف مسجل بالفعل");
+      if (!uniqueness.nameArUnique) uniqueErrors.push("الاسم العربي مسجل بالفعل");
+      if (!uniqueness.nameEnUnique) uniqueErrors.push("الاسم الإنجليزي مسجل بالفعل");
+
+      if (uniqueErrors.length > 0) {
+        return res.status(409).json({ message: uniqueErrors.join("، ") });
+      }
+
+      if (parsed.category === "service") {
+        parsed.hasExpiry = false;
+      } else if (parsed.category === "drug" && parsed.hasExpiry === undefined) {
+        parsed.hasExpiry = true;
+      }
+      const item = await storage.createItem(parsed);
       res.status(201).json(item);
     } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
-      }
-      res.status(500).json({ message: error.message });
+      res.status(400).json({ message: error.message });
     }
   });
 
   app.put("/api/items/:id", async (req, res) => {
     try {
-      const validated = insertItemSchema.partial().parse(req.body);
-      const item = await storage.updateItem(req.params.id, validated);
-      if (!item) {
-        return res.status(404).json({ message: "الصنف غير موجود" });
+      const parsed = insertItemSchema.partial().parse(req.body);
+
+      if (parsed.itemCode || parsed.nameAr || parsed.nameEn) {
+        const uniqueness = await storage.checkItemUniqueness(parsed.itemCode, parsed.nameAr, parsed.nameEn, req.params.id);
+        const uniqueErrors: string[] = [];
+        if (parsed.itemCode && !uniqueness.codeUnique) uniqueErrors.push("كود الصنف مسجل بالفعل");
+        if (parsed.nameAr && !uniqueness.nameArUnique) uniqueErrors.push("الاسم العربي مسجل بالفعل");
+        if (parsed.nameEn && !uniqueness.nameEnUnique) uniqueErrors.push("الاسم الإنجليزي مسجل بالفعل");
+        if (uniqueErrors.length > 0) {
+          return res.status(409).json({ message: uniqueErrors.join("، ") });
+        }
       }
+
+      const item = await storage.updateItem(req.params.id, parsed);
+      if (!item) return res.status(404).json({ message: "الصنف غير موجود" });
       res.json(item);
     } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
-      }
-      res.status(500).json({ message: error.message });
+      res.status(400).json({ message: error.message });
     }
   });
 
@@ -1141,6 +1187,30 @@ export async function registerRoutes(
         return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
       }
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== ITEM UOMS =====
+  app.get("/api/uoms", async (req, res) => {
+    try {
+      const uoms = await storage.getItemUoms();
+      res.json(uoms);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/uoms", async (req, res) => {
+    try {
+      const parsed = insertItemUomSchema.parse(req.body);
+      const uom = await storage.createItemUom(parsed);
+      res.status(201).json(uom);
+    } catch (error: any) {
+      if (error.code === '23505') {
+        res.status(409).json({ message: "كود الوحدة مسجل بالفعل" });
+      } else {
+        res.status(400).json({ message: error.message });
+      }
     }
   });
 

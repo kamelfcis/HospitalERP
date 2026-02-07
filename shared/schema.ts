@@ -179,6 +179,17 @@ export const itemFormTypes = pgTable("item_form_types", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// وحدات القياس
+export const itemUoms = pgTable("item_uoms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code", { length: 20 }).notNull().unique(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en"),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // الأصناف
 export const items = pgTable("items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -620,6 +631,7 @@ export const insertJournalTemplateSchema = createInsertSchema(journalTemplates).
 export const insertTemplateLineSchema = createInsertSchema(templateLines).omit({ id: true });
 export const insertAuditLogSchema = createInsertSchema(auditLog).omit({ id: true, createdAt: true });
 export const insertItemFormTypeSchema = createInsertSchema(itemFormTypes).omit({ id: true, createdAt: true });
+export const insertItemUomSchema = createInsertSchema(itemUoms).omit({ id: true, createdAt: true });
 export const insertItemSchema = createInsertSchema(items).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPurchaseTransactionSchema = createInsertSchema(purchaseTransactions).omit({ id: true, createdAt: true });
 export const insertSalesTransactionSchema = createInsertSchema(salesTransactions).omit({ id: true, createdAt: true });
@@ -673,6 +685,9 @@ export type AuditLog = typeof auditLog.$inferSelect;
 
 export type InsertItemFormType = z.infer<typeof insertItemFormTypeSchema>;
 export type ItemFormType = typeof itemFormTypes.$inferSelect;
+
+export type InsertItemUom = z.infer<typeof insertItemUomSchema>;
+export type ItemUom = typeof itemUoms.$inferSelect;
 
 export type InsertItem = z.infer<typeof insertItemSchema>;
 export type Item = typeof items.$inferSelect;

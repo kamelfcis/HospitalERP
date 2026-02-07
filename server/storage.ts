@@ -46,6 +46,9 @@ import {
   type InsertItem,
   type ItemFormType,
   type InsertItemFormType,
+  itemUoms,
+  type ItemUom,
+  type InsertItemUom,
   type ItemWithFormType,
   type PurchaseTransaction,
   type Department,
@@ -168,10 +171,15 @@ export interface IStorage {
   createItem(item: InsertItem): Promise<Item>;
   updateItem(id: string, item: Partial<InsertItem>): Promise<Item | undefined>;
   deleteItem(id: string): Promise<boolean>;
+  checkItemUniqueness(code?: string, nameAr?: string, nameEn?: string, excludeId?: string): Promise<{ codeUnique: boolean; nameArUnique: boolean; nameEnUnique: boolean }>;
 
   // Item Form Types
   getItemFormTypes(): Promise<ItemFormType[]>;
   createItemFormType(formType: InsertItemFormType): Promise<ItemFormType>;
+
+  // Item UOMs
+  getItemUoms(): Promise<ItemUom[]>;
+  createItemUom(data: InsertItemUom): Promise<ItemUom>;
 
   // Purchase & Sales Transactions
   getLastPurchases(itemId: string, limit?: number): Promise<PurchaseTransaction[]>;
@@ -1041,6 +1049,38 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
+  async checkItemUniqueness(code?: string, nameAr?: string, nameEn?: string, excludeId?: string): Promise<{ codeUnique: boolean; nameArUnique: boolean; nameEnUnique: boolean }> {
+    let codeUnique = true;
+    let nameArUnique = true;
+    let nameEnUnique = true;
+
+    if (code) {
+      const trimmed = code.trim();
+      const conditions: any[] = [sql`LOWER(TRIM(${items.itemCode})) = LOWER(${trimmed})`];
+      if (excludeId) conditions.push(sql`${items.id} != ${excludeId}`);
+      const [result] = await db.select({ count: sql<number>`count(*)` }).from(items).where(and(...conditions));
+      codeUnique = Number(result.count) === 0;
+    }
+
+    if (nameAr) {
+      const trimmed = nameAr.trim();
+      const conditions: any[] = [sql`LOWER(TRIM(${items.nameAr})) = LOWER(${trimmed})`];
+      if (excludeId) conditions.push(sql`${items.id} != ${excludeId}`);
+      const [result] = await db.select({ count: sql<number>`count(*)` }).from(items).where(and(...conditions));
+      nameArUnique = Number(result.count) === 0;
+    }
+
+    if (nameEn) {
+      const trimmed = nameEn.trim();
+      const conditions: any[] = [sql`LOWER(TRIM(${items.nameEn})) = LOWER(${trimmed})`];
+      if (excludeId) conditions.push(sql`${items.id} != ${excludeId}`);
+      const [result] = await db.select({ count: sql<number>`count(*)` }).from(items).where(and(...conditions));
+      nameEnUnique = Number(result.count) === 0;
+    }
+
+    return { codeUnique, nameArUnique, nameEnUnique };
+  }
+
   // Item Form Types
   async getItemFormTypes(): Promise<ItemFormType[]> {
     return db.select().from(itemFormTypes).orderBy(asc(itemFormTypes.sortOrder));
@@ -1049,6 +1089,15 @@ export class DatabaseStorage implements IStorage {
   async createItemFormType(formType: InsertItemFormType): Promise<ItemFormType> {
     const [newFormType] = await db.insert(itemFormTypes).values(formType).returning();
     return newFormType;
+  }
+
+  async getItemUoms(): Promise<ItemUom[]> {
+    return await db.select().from(itemUoms).where(eq(itemUoms.isActive, true)).orderBy(asc(itemUoms.nameAr));
+  }
+
+  async createItemUom(data: InsertItemUom): Promise<ItemUom> {
+    const [uom] = await db.insert(itemUoms).values(data).returning();
+    return uom;
   }
 
   // Purchase & Sales Transactions

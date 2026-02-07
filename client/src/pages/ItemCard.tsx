@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Item, ItemFormType, PurchaseTransaction, InsertItem, Department, ItemDepartmentPriceWithDepartment, ItemBarcode } from "@shared/schema";
+import type { Item, ItemFormType, PurchaseTransaction, InsertItem, Department, ItemDepartmentPriceWithDepartment, ItemBarcode, ItemUom } from "@shared/schema";
 
 interface ItemWithFormType extends Item {
   formType?: ItemFormType;
@@ -66,6 +66,12 @@ export default function ItemCard() {
   const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
   const [newBarcodeValue, setNewBarcodeValue] = useState("");
   const [newBarcodeType, setNewBarcodeType] = useState("EAN-13");
+  const [showUomDialog, setShowUomDialog] = useState(false);
+  const [newUomCode, setNewUomCode] = useState("");
+  const [newUomNameAr, setNewUomNameAr] = useState("");
+  const [newUomNameEn, setNewUomNameEn] = useState("");
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [uniquenessResult, setUniquenessResult] = useState<{ codeUnique: boolean; nameArUnique: boolean; nameEnUnique: boolean } | null>(null);
 
   const [formData, setFormData] = useState<Partial<InsertItem>>({
     itemCode: "",
@@ -94,6 +100,10 @@ export default function ItemCard() {
 
   const { data: formTypes, refetch: refetchFormTypes } = useQuery<ItemFormType[]>({
     queryKey: ["/api/form-types"],
+  });
+
+  const { data: uoms, refetch: refetchUoms } = useQuery<ItemUom[]>({
+    queryKey: ["/api/uoms"],
   });
 
   const { data: lastPurchases } = useQuery<PurchaseTransaction[]>({
@@ -304,9 +314,80 @@ export default function ItemCard() {
     },
   });
 
+  const createUomMutation = useMutation({
+    mutationFn: async (data: { code: string; nameAr: string; nameEn?: string }) => {
+      return apiRequest("POST", "/api/uoms", data);
+    },
+    onSuccess: async () => {
+      refetchUoms();
+      setShowUomDialog(false);
+      setNewUomCode("");
+      setNewUomNameAr("");
+      setNewUomNameEn("");
+      toast({ title: "تم إضافة وحدة القياس بنجاح" });
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const validateForm = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!formData.itemCode?.trim()) errors.itemCode = "مطلوب";
+    if (!formData.nameAr?.trim()) errors.nameAr = "مطلوب";
+    if (!formData.nameEn?.trim()) errors.nameEn = "مطلوب";
+    if (!formData.formTypeId) errors.formTypeId = "مطلوب";
+    if (!formData.majorUnitName?.trim()) errors.majorUnitName = "مطلوب";
+    if (!formData.mediumUnitName?.trim()) errors.mediumUnitName = "مطلوب";
+    if (!formData.minorUnitName?.trim()) errors.minorUnitName = "مطلوب";
+
+    const majorToMedium = parseFloat(formData.majorToMedium as string || "0");
+    const majorToMinor = parseFloat(formData.majorToMinor as string || "0");
+    const mediumToMinor = parseFloat(formData.mediumToMinor as string || "0");
+    if (majorToMedium <= 0) errors.majorToMedium = "يجب > 0";
+    if (majorToMinor <= 0) errors.majorToMinor = "يجب > 0";
+    if (mediumToMinor <= 0) errors.mediumToMinor = "يجب > 0";
+
+    const units = [formData.majorUnitName, formData.mediumUnitName, formData.minorUnitName].filter(Boolean);
+    const uniqueUnits = new Set(units.map(u => u?.trim().toLowerCase()));
+    if (units.length > 0 && uniqueUnits.size < units.length) {
+      errors.unitDuplicate = "لا يمكن تكرار نفس الوحدة";
+    }
+
+    return errors;
+  };
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const timer = setTimeout(async () => {
+      const params = new URLSearchParams();
+      if (formData.itemCode?.trim()) params.set("code", formData.itemCode.trim());
+      if (formData.nameAr?.trim()) params.set("nameAr", formData.nameAr.trim());
+      if (formData.nameEn?.trim()) params.set("nameEn", formData.nameEn.trim());
+      if (itemId) params.set("excludeId", itemId);
+      if (params.toString()) {
+        try {
+          const res = await fetch(`/api/items/check-unique?${params}`);
+          const data = await res.json();
+          setUniquenessResult(data);
+        } catch {}
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [formData.itemCode, formData.nameAr, formData.nameEn, isEditing, itemId]);
+
   const handleSave = () => {
-    if (!formData.itemCode || !formData.nameAr) {
-      toast({ title: "خطأ", description: "الكود والاسم العربي مطلوبان", variant: "destructive" });
+    const errors = validateForm();
+
+    if (uniquenessResult) {
+      if (!uniquenessResult.codeUnique) errors.itemCode = "كود مكرر";
+      if (!uniquenessResult.nameArUnique) errors.nameAr = "اسم عربي مكرر";
+      if (!uniquenessResult.nameEnUnique) errors.nameEn = "اسم إنجليزي مكرر";
+    }
+
+    setValidationErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      toast({ title: "خطأ", description: "يرجى تصحيح الحقول المطلوبة", variant: "destructive" });
       return;
     }
     saveMutation.mutate(formData);
@@ -438,7 +519,7 @@ export default function ItemCard() {
               </Button>
             </>
           ) : (
-            <Button size="sm" className="text-[11px] px-2" onClick={() => setIsEditing(true)} data-testid="button-edit">
+            <Button size="sm" className="text-[11px] px-2" onClick={() => { setIsEditing(true); setValidationErrors({}); }} data-testid="button-edit">
               تعديل
             </Button>
           )}
@@ -456,14 +537,18 @@ export default function ItemCard() {
               <legend className="text-[11px] font-semibold px-1 text-primary">البيانات الأساسية</legend>
               <div className="grid grid-cols-6 gap-x-3 gap-y-1">
                 <div className="col-span-1">
-                  <Label className="text-[10px] text-muted-foreground">كود الصنف</Label>
+                  <Label className={`text-[10px] ${validationErrors.itemCode ? "text-destructive" : "text-muted-foreground"}`}>كود الصنف *</Label>
                   <Input
                     value={formData.itemCode || ""}
                     onChange={(e) => setFormData({ ...formData, itemCode: e.target.value })}
                     disabled={!isEditing || (!isNew && !!item)}
-                    className="h-6 text-[11px] px-1"
+                    className={`h-6 text-[11px] px-1 ${validationErrors.itemCode ? "border-destructive" : ""}`}
                     data-testid="input-item-code"
                   />
+                  {validationErrors.itemCode && <span className="text-[9px] text-destructive">{validationErrors.itemCode}</span>}
+                  {uniquenessResult && !uniquenessResult.codeUnique && (
+                    <span className="text-[9px] text-destructive">كود مكرر</span>
+                  )}
                 </div>
                 <div className="col-span-1">
                   <Label className="text-[10px] text-muted-foreground">التصنيف</Label>
@@ -483,34 +568,42 @@ export default function ItemCard() {
                   </Select>
                 </div>
                 <div className="col-span-2">
-                  <Label className="text-[10px] text-muted-foreground">الاسم عربي</Label>
+                  <Label className={`text-[10px] ${validationErrors.nameAr ? "text-destructive" : "text-muted-foreground"}`}>الاسم عربي *</Label>
                   <Input
                     value={formData.nameAr || ""}
                     onChange={(e) => setFormData({ ...formData, nameAr: e.target.value })}
                     disabled={!isEditing}
-                    className="h-6 text-[11px] px-1"
+                    className={`h-6 text-[11px] px-1 ${validationErrors.nameAr ? "border-destructive" : ""}`}
                     data-testid="input-name-ar"
                   />
+                  {validationErrors.nameAr && <span className="text-[9px] text-destructive">{validationErrors.nameAr}</span>}
+                  {uniquenessResult && !uniquenessResult.nameArUnique && (
+                    <span className="text-[9px] text-destructive">اسم عربي مكرر</span>
+                  )}
                 </div>
                 <div className="col-span-2">
-                  <Label className="text-[10px] text-muted-foreground">الاسم إنجليزي</Label>
+                  <Label className={`text-[10px] ${validationErrors.nameEn ? "text-destructive" : "text-muted-foreground"}`}>الاسم إنجليزي *</Label>
                   <Input
                     value={formData.nameEn || ""}
                     onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
                     disabled={!isEditing}
-                    className="h-6 text-[11px] px-1"
+                    className={`h-6 text-[11px] px-1 ${validationErrors.nameEn ? "border-destructive" : ""}`}
                     data-testid="input-name-en"
                   />
+                  {validationErrors.nameEn && <span className="text-[9px] text-destructive">{validationErrors.nameEn}</span>}
+                  {uniquenessResult && !uniquenessResult.nameEnUnique && (
+                    <span className="text-[9px] text-destructive">اسم إنجليزي مكرر</span>
+                  )}
                 </div>
                 <div className="col-span-2">
-                  <Label className="text-[10px] text-muted-foreground">نوع الشكل</Label>
+                  <Label className={`text-[10px] ${validationErrors.formTypeId ? "text-destructive" : "text-muted-foreground"}`}>نوع الشكل *</Label>
                   <div className="flex gap-1">
                     <Select
                       value={formData.formTypeId || "none"}
                       onValueChange={(v) => setFormData({ ...formData, formTypeId: v === "none" ? null : v })}
                       disabled={!isEditing}
                     >
-                      <SelectTrigger className="h-6 text-[11px] px-1 flex-1" data-testid="select-form-type">
+                      <SelectTrigger className={`h-6 text-[11px] px-1 flex-1 ${validationErrors.formTypeId ? "border-destructive" : ""}`} data-testid="select-form-type">
                         <SelectValue placeholder="اختر..." />
                       </SelectTrigger>
                       <SelectContent>
@@ -627,42 +720,79 @@ export default function ItemCard() {
               </fieldset>
 
               <fieldset className="peachtree-grid p-2">
-                <legend className="text-[11px] font-semibold px-1 text-primary">وحدات القياس</legend>
+                <legend className="text-[11px] font-semibold px-1 text-primary flex items-center gap-1">
+                  وحدات القياس
+                  {isEditing && (
+                    <Button variant="outline" size="sm" className="text-[9px] gap-0.5 px-1 h-4" onClick={() => setShowUomDialog(true)} data-testid="button-add-uom">
+                      <Plus className="h-2.5 w-2.5" />
+                      إضافة وحدة
+                    </Button>
+                  )}
+                </legend>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <Label className="text-[10px] text-muted-foreground">الكبرى</Label>
-                    <Input
-                      value={formData.majorUnitName || ""}
-                      onChange={(e) => setFormData({ ...formData, majorUnitName: e.target.value })}
+                    <Label className={`text-[10px] ${validationErrors.majorUnitName ? "text-destructive" : "text-muted-foreground"}`}>الكبرى *</Label>
+                    <Select
+                      value={formData.majorUnitName || "none"}
+                      onValueChange={(v) => setFormData({ ...formData, majorUnitName: v === "none" ? "" : v })}
                       disabled={!isEditing}
-                      placeholder="علبة"
-                      className="h-6 text-[11px] px-1"
-                      data-testid="input-major-unit"
-                    />
+                    >
+                      <SelectTrigger className={`h-6 text-[11px] px-1 ${validationErrors.majorUnitName ? "border-destructive" : ""}`} data-testid="select-major-unit">
+                        <SelectValue placeholder="اختر..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">—</SelectItem>
+                        {uoms?.map((u) => (
+                          <SelectItem key={u.id} value={u.nameAr}>{u.nameAr} ({u.code})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {validationErrors.majorUnitName && <span className="text-[9px] text-destructive">{validationErrors.majorUnitName}</span>}
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground">المتوسطة</Label>
-                    <Input
-                      value={formData.mediumUnitName || ""}
-                      onChange={(e) => setFormData({ ...formData, mediumUnitName: e.target.value })}
+                    <Label className={`text-[10px] ${validationErrors.mediumUnitName ? "text-destructive" : "text-muted-foreground"}`}>المتوسطة *</Label>
+                    <Select
+                      value={formData.mediumUnitName || "none"}
+                      onValueChange={(v) => setFormData({ ...formData, mediumUnitName: v === "none" ? "" : v })}
                       disabled={!isEditing}
-                      placeholder="شريط"
-                      className="h-6 text-[11px] px-1"
-                      data-testid="input-medium-unit"
-                    />
+                    >
+                      <SelectTrigger className={`h-6 text-[11px] px-1 ${validationErrors.mediumUnitName ? "border-destructive" : ""}`} data-testid="select-medium-unit">
+                        <SelectValue placeholder="اختر..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">—</SelectItem>
+                        {uoms?.map((u) => (
+                          <SelectItem key={u.id} value={u.nameAr}>{u.nameAr} ({u.code})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {validationErrors.mediumUnitName && <span className="text-[9px] text-destructive">{validationErrors.mediumUnitName}</span>}
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground">الصغرى</Label>
-                    <Input
-                      value={formData.minorUnitName || ""}
-                      onChange={(e) => setFormData({ ...formData, minorUnitName: e.target.value })}
+                    <Label className={`text-[10px] ${validationErrors.minorUnitName ? "text-destructive" : "text-muted-foreground"}`}>الصغرى *</Label>
+                    <Select
+                      value={formData.minorUnitName || "none"}
+                      onValueChange={(v) => setFormData({ ...formData, minorUnitName: v === "none" ? "" : v })}
                       disabled={!isEditing}
-                      placeholder="قرص"
-                      className="h-6 text-[11px] px-1"
-                      data-testid="input-minor-unit"
-                    />
+                    >
+                      <SelectTrigger className={`h-6 text-[11px] px-1 ${validationErrors.minorUnitName ? "border-destructive" : ""}`} data-testid="select-minor-unit">
+                        <SelectValue placeholder="اختر..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">—</SelectItem>
+                        {uoms?.map((u) => (
+                          <SelectItem key={u.id} value={u.nameAr}>{u.nameAr} ({u.code})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {validationErrors.minorUnitName && <span className="text-[9px] text-destructive">{validationErrors.minorUnitName}</span>}
                   </div>
                 </div>
+                {validationErrors.unitDuplicate && (
+                  <div className="text-[10px] text-destructive bg-destructive/10 rounded px-2 py-1 mt-1">
+                    {validationErrors.unitDuplicate}
+                  </div>
+                )}
               </fieldset>
             </div>
 
@@ -670,7 +800,7 @@ export default function ItemCard() {
               <legend className="text-[11px] font-semibold px-1 text-primary">معاملات التحويل</legend>
               <div className="grid grid-cols-4 gap-3 items-center">
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">كبرى ← متوسطة</Label>
+                  <Label className={`text-[10px] ${validationErrors.majorToMedium ? "text-destructive" : "text-muted-foreground"}`}>كبرى ← متوسطة *</Label>
                   <Input
                     type="number"
                     step="0.0001"
@@ -678,13 +808,14 @@ export default function ItemCard() {
                     onChange={(e) => setFormData({ ...formData, majorToMedium: e.target.value || null })}
                     disabled={!isEditing}
                     placeholder="3"
-                    className="h-6 text-[11px] px-1 font-mono text-left"
+                    className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMedium ? "border-destructive" : ""}`}
                     dir="ltr"
                     data-testid="input-major-to-medium"
                   />
+                  {validationErrors.majorToMedium && <span className="text-[9px] text-destructive">{validationErrors.majorToMedium}</span>}
                 </div>
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">كبرى ← صغرى</Label>
+                  <Label className={`text-[10px] ${validationErrors.majorToMinor ? "text-destructive" : "text-muted-foreground"}`}>كبرى ← صغرى *</Label>
                   <Input
                     type="number"
                     step="0.0001"
@@ -692,13 +823,14 @@ export default function ItemCard() {
                     onChange={(e) => setFormData({ ...formData, majorToMinor: e.target.value || null })}
                     disabled={!isEditing}
                     placeholder="30"
-                    className="h-6 text-[11px] px-1 font-mono text-left"
+                    className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMinor ? "border-destructive" : ""}`}
                     dir="ltr"
                     data-testid="input-major-to-minor"
                   />
+                  {validationErrors.majorToMinor && <span className="text-[9px] text-destructive">{validationErrors.majorToMinor}</span>}
                 </div>
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">متوسطة ← صغرى</Label>
+                  <Label className={`text-[10px] ${validationErrors.mediumToMinor ? "text-destructive" : "text-muted-foreground"}`}>متوسطة ← صغرى *</Label>
                   <Input
                     type="number"
                     step="0.0001"
@@ -706,10 +838,11 @@ export default function ItemCard() {
                     onChange={(e) => setFormData({ ...formData, mediumToMinor: e.target.value || null })}
                     disabled={!isEditing}
                     placeholder="10"
-                    className="h-6 text-[11px] px-1 font-mono text-left"
+                    className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.mediumToMinor ? "border-destructive" : ""}`}
                     dir="ltr"
                     data-testid="input-medium-to-minor"
                   />
+                  {validationErrors.mediumToMinor && <span className="text-[9px] text-destructive">{validationErrors.mediumToMinor}</span>}
                 </div>
                 <div className="bg-muted/50 rounded px-2 py-1 text-center">
                   <span className="text-[10px] text-muted-foreground block">مثال:</span>
@@ -1116,6 +1249,61 @@ export default function ItemCard() {
               ) : (
                 "إضافة"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showUomDialog} onOpenChange={setShowUomDialog}>
+        <DialogContent className="sm:max-w-[300px]">
+          <DialogHeader>
+            <DialogTitle className="text-sm">إضافة وحدة قياس جديدة</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            <div>
+              <Label className="text-xs">الكود</Label>
+              <Input
+                value={newUomCode}
+                onChange={(e) => setNewUomCode(e.target.value)}
+                placeholder="مثال: BOX"
+                className="mt-1 h-7 text-xs font-mono text-left"
+                dir="ltr"
+                data-testid="input-uom-code"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">الاسم عربي</Label>
+              <Input
+                value={newUomNameAr}
+                onChange={(e) => setNewUomNameAr(e.target.value)}
+                placeholder="مثال: علبة"
+                className="mt-1 h-7 text-xs"
+                data-testid="input-uom-name-ar"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">الاسم إنجليزي</Label>
+              <Input
+                value={newUomNameEn}
+                onChange={(e) => setNewUomNameEn(e.target.value)}
+                placeholder="مثال: Box"
+                className="mt-1 h-7 text-xs"
+                data-testid="input-uom-name-en"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowUomDialog(false)}>
+              إلغاء
+            </Button>
+            <Button
+              size="sm"
+              className="text-xs"
+              onClick={() => createUomMutation.mutate({ code: newUomCode, nameAr: newUomNameAr, nameEn: newUomNameEn || undefined })}
+              disabled={!newUomCode || !newUomNameAr || createUomMutation.isPending}
+              data-testid="button-save-uom"
+            >
+              {createUomMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "إضافة"}
             </Button>
           </DialogFooter>
         </DialogContent>
