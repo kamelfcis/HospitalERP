@@ -141,12 +141,15 @@ export default function StoreTransfers() {
   const qtyInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   const pendingQtyRef = useRef<Map<string, string>>(new Map());
   const [focusedLineIdx, setFocusedLineIdx] = useState<number | null>(null);
+  const formLinesRef = useRef<TransferLineLocal[]>([]);
 
   const availPopupCache = useRef<Record<string, {data: any[]; ts: number}>>({});
 
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
   });
+
+  formLinesRef.current = formLines;
 
   const buildLogQueryString = () => {
     const params = new URLSearchParams();
@@ -654,8 +657,9 @@ export default function StoreTransfers() {
   };
 
   const handleQtyConfirm = useCallback(async (lineId: string) => {
-    const index = formLines.findIndex((l) => l.id === lineId);
-    const line = formLines[index];
+    const lines = formLinesRef.current;
+    const index = lines.findIndex((l) => l.id === lineId);
+    const line = lines[index];
     if (!line) return;
     const pendingVal = pendingQtyRef.current.get(lineId);
     const qtyEntered = parseFloat(pendingVal ?? String(line.qtyEntered)) || 0;
@@ -765,7 +769,7 @@ export default function StoreTransfers() {
     }
 
     setTimeout(() => barcodeInputRef.current?.focus(), 50);
-  }, [formLines, sourceWarehouseId, transferDate, toast]);
+  }, [sourceWarehouseId, transferDate, toast]);
 
   const handleBarcodeScan = useCallback(async (barcodeValue: string) => {
     if (!barcodeValue.trim() || !sourceWarehouseId || barcodeLoading) return;
@@ -839,7 +843,7 @@ export default function StoreTransfers() {
       }
       if (e.key === "Escape" && focusedLineIdx !== null) {
         e.preventDefault();
-        const line = formLines[focusedLineIdx];
+        const line = formLinesRef.current[focusedLineIdx];
         if (line) {
           pendingQtyRef.current.delete(line.id);
         }
@@ -849,7 +853,7 @@ export default function StoreTransfers() {
     };
     document.addEventListener("keydown", handleGlobalKeyDown);
     return () => document.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [focusedLineIdx, formLines]);
+  }, [focusedLineIdx]);
 
   useEffect(() => {
     if (activeTab === "form" && !modalOpen && focusedLineIdx === null) {
@@ -1217,16 +1221,15 @@ export default function StoreTransfers() {
                             <span data-testid={`text-qty-${idx}`}>{line.qtyEntered}</span>
                           ) : (
                             <input
+                              key={`qty-${line.id}-${line.qtyEntered}`}
                               ref={(el) => {
                                 if (el) qtyInputRefs.current.set(line.id, el);
                                 else qtyInputRefs.current.delete(line.id);
                               }}
                               type="number"
-                              value={pendingQtyRef.current.get(line.id) ?? String(line.qtyEntered)}
+                              defaultValue={line.qtyEntered}
                               onChange={(e) => {
                                 pendingQtyRef.current.set(line.id, e.target.value);
-                                const el = qtyInputRefs.current.get(line.id);
-                                if (el) el.value = e.target.value;
                               }}
                               onFocus={(e) => {
                                 setFocusedLineIdx(idx);
