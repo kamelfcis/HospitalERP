@@ -48,6 +48,17 @@ function genId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10);
 }
 
+function computeUnitPrice(item: any, unitLevel: string): number {
+  if (!item) return 0;
+  const basePrice = parseFloat(String(item.salePriceCurrent)) || 0;
+  if (unitLevel === "major" || !unitLevel) return basePrice;
+  const majorToMedium = parseFloat(String(item.majorToMedium)) || 1;
+  const majorToMinor = parseFloat(String(item.majorToMinor)) || 1;
+  if (unitLevel === "medium") return +(basePrice / majorToMedium).toFixed(2);
+  if (unitLevel === "minor") return +(basePrice / majorToMinor).toFixed(2);
+  return basePrice;
+}
+
 export default function SalesInvoices() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -80,6 +91,9 @@ export default function SalesInvoices() {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [barcodeLoading, setBarcodeLoading] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+  const [seedLoading, setSeedLoading] = useState(false);
+  const [quickTestLoading, setQuickTestLoading] = useState(false);
 
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [searchMode, setSearchMode] = useState("AR");
@@ -209,6 +223,9 @@ export default function SalesInvoices() {
     setLines((prev) => {
       const updated = [...prev];
       const ln = { ...updated[index], ...patch };
+      if (patch.unitLevel) {
+        ln.salePrice = computeUnitPrice(ln.item, ln.unitLevel);
+      }
       ln.lineTotal = +(ln.qty * ln.salePrice).toFixed(2);
       updated[index] = ln;
       return updated;
@@ -420,6 +437,56 @@ export default function SalesInvoices() {
     if (status === "cancelled")
       return <Badge className="bg-red-600 text-white no-default-hover-elevate no-default-active-elevate" data-testid="badge-status">{label}</Badge>;
     return <Badge variant="secondary" data-testid="badge-status">{label}</Badge>;
+  };
+
+  const handleSeedDemo = async () => {
+    setSeedLoading(true);
+    try {
+      const res = await fetch("/api/seed/pharmacy-sales-demo", { method: "POST" });
+      if (!res.ok) throw new Error("Seed failed");
+      const data = await res.json();
+      toast({ title: "تم تحميل البيانات التجريبية", description: `${data.items.length} أصناف + مخزون تجريبي` });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/warehouses"] });
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } finally {
+      setSeedLoading(false);
+    }
+  };
+
+  const handleQuickTest = async () => {
+    setQuickTestLoading(true);
+    try {
+      const seedRes = await fetch("/api/seed/pharmacy-sales-demo", { method: "POST" });
+      if (!seedRes.ok) throw new Error("Seed failed");
+      const seedData = await seedRes.json();
+      const wId = seedData.warehouseId;
+      const testItem = seedData.items[0];
+
+      const createRes = await apiRequest("POST", "/api/sales-invoices", {
+        header: {
+          invoiceDate: today,
+          warehouseId: wId,
+          customerType: "cash",
+          customerName: "عميل اختبار سريع",
+        },
+        lines: [{
+          itemId: testItem.id,
+          unitLevel: "minor",
+          qty: "7",
+          salePrice: "0",
+        }],
+      });
+      const invoice = await createRes.json();
+      toast({ title: "تم إنشاء فاتورة اختبار", description: `فاتورة #${invoice.invoiceNumber} - تحقق من التقسيم FEFO` });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
+      navigate(`/sales-invoices?id=${invoice.id}`);
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } finally {
+      setQuickTestLoading(false);
+    }
   };
 
   if (editId) {
@@ -641,19 +708,7 @@ export default function SalesInvoices() {
                       )}
                     </td>
                     <td className="text-center">
-                      {isDraft ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={ln.salePrice}
-                          onChange={(e) => updateLine(i, { salePrice: Math.max(0, parseFloat(e.target.value) || 0) })}
-                          className="peachtree-input w-[80px] text-center"
-                          data-testid={`input-sale-price-${i}`}
-                        />
-                      ) : (
-                        <span className="peachtree-amount">{formatNumber(ln.salePrice)}</span>
-                      )}
+                      <span className="peachtree-amount" data-testid={`text-sale-price-${i}`}>{formatNumber(ln.salePrice)}</span>
                     </td>
                     <td className="text-center peachtree-amount font-semibold">{formatNumber(ln.lineTotal)}</td>
                     <td className="text-center text-[11px]">
@@ -852,10 +907,20 @@ export default function SalesInvoices() {
           <h1 className="text-sm font-bold text-foreground">فواتير البيع</h1>
           <span className="text-xs text-muted-foreground">({totalInvoices} فاتورة)</span>
         </div>
-        <Button size="sm" onClick={() => navigate("/sales-invoices?id=new")} data-testid="button-new-invoice">
-          <Plus className="h-3 w-3 ml-1" />
-          فاتورة جديدة
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={handleSeedDemo} disabled={seedLoading} data-testid="button-seed-demo">
+            {seedLoading ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : null}
+            Seed Demo Data
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleQuickTest} disabled={quickTestLoading} data-testid="button-quick-test">
+            {quickTestLoading ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : null}
+            Quick Test Invoice
+          </Button>
+          <Button size="sm" onClick={() => navigate("/sales-invoices?id=new")} data-testid="button-new-invoice">
+            <Plus className="h-3 w-3 ml-1" />
+            فاتورة جديدة
+          </Button>
+        </div>
       </div>
 
       <div className="peachtree-toolbar flex items-center gap-2 flex-wrap text-[12px]">

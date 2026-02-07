@@ -3326,15 +3326,102 @@ export class DatabaseStorage implements IStorage {
     return { ...h, warehouse: wh, lines: linesWithItems };
   }
 
+  private async expandLinesFEFO(tx: any, warehouseId: string, rawLines: any[]): Promise<any[]> {
+    const expanded: any[] = [];
+    for (const line of rawLines) {
+      const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+      if (!item || !item.hasExpiry || line.expiryMonth || line.expiryYear) {
+        expanded.push(line);
+        continue;
+      }
+
+      let totalMinor = parseFloat(line.qty) || 0;
+      if (line.unitLevel === "major" || !line.unitLevel) {
+        totalMinor *= parseFloat(item.majorToMinor || "1") || 1;
+      } else if (line.unitLevel === "medium") {
+        totalMinor *= parseFloat(item.mediumToMinor || "1") || 1;
+      }
+
+      const lots = await tx.select().from(inventoryLots)
+        .where(and(
+          eq(inventoryLots.itemId, line.itemId),
+          eq(inventoryLots.warehouseId, warehouseId),
+          eq(inventoryLots.isActive, true),
+          sql`${inventoryLots.qtyInMinor}::numeric > 0`
+        ))
+        .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth));
+
+      let remaining = totalMinor;
+      const beforeLen = expanded.length;
+      for (const lot of lots) {
+        if (remaining <= 0) break;
+        const available = parseFloat(lot.qtyInMinor);
+        const take = Math.min(available, remaining);
+
+        expanded.push({
+          ...line,
+          unitLevel: "minor",
+          qty: String(take),
+          salePrice: line.salePrice,
+          expiryMonth: lot.expiryMonth,
+          expiryYear: lot.expiryYear,
+          lotId: lot.id,
+        });
+        remaining -= take;
+      }
+
+      if (expanded.length === beforeLen || remaining > 0) {
+        if (remaining === totalMinor) {
+          expanded.push(line);
+        }
+      }
+    }
+    return expanded;
+  }
+
   async createSalesInvoice(header: any, lines: any[]): Promise<SalesInvoiceHeader> {
     return await db.transaction(async (tx) => {
       const nextNum = await this.getNextSalesInvoiceNumber();
-      
+
+      const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId, lines);
+
       let subtotal = 0;
-      for (const line of lines) {
+      const processedLines: { line: any; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number }[] = [];
+
+      for (const line of expandedLines) {
         const qty = parseFloat(line.qty) || 0;
-        const salePrice = parseFloat(line.salePrice) || 0;
-        subtotal += qty * salePrice;
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+
+        let salePrice = parseFloat(line.salePrice) || 0;
+        if (item) {
+          const masterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
+          if (line.unitLevel === "medium") {
+            const majorToMedium = parseFloat(item.majorToMedium || "1") || 1;
+            salePrice = masterPrice / majorToMedium;
+          } else if (line.unitLevel === "minor") {
+            const majorToMinor = parseFloat(item.majorToMinor || "1") || 1;
+            salePrice = masterPrice / majorToMinor;
+          } else {
+            salePrice = masterPrice;
+          }
+        }
+
+        let qtyInMinor = qty;
+        if (line.unitLevel !== "minor") {
+          if (item) {
+            if (line.unitLevel === "medium") {
+              const conv = parseFloat(item.mediumToMinor || "1") || 1;
+              qtyInMinor = qty * conv;
+            } else {
+              const conv = parseFloat(item.majorToMinor || "1") || 1;
+              qtyInMinor = qty * conv;
+            }
+          }
+        }
+
+        const lineTotal = qty * salePrice;
+        subtotal += lineTotal;
+        processedLines.push({ line, qty, salePrice, qtyInMinor, lineTotal });
       }
 
       const discountPercent = parseFloat(header.discountPercent) || 0;
@@ -3364,20 +3451,8 @@ export class DatabaseStorage implements IStorage {
         notes: header.notes || null,
       }).returning();
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const qty = parseFloat(line.qty) || 0;
-        const salePrice = parseFloat(line.salePrice) || 0;
-        const lineTotal = qty * salePrice;
-
-        let qtyInMinor = qty;
-        if (line.unitLevel === "major" || !line.unitLevel) {
-          const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
-          if (item) {
-            const conv = parseFloat(item.majorToMinor || "1") || 1;
-            qtyInMinor = qty * conv;
-          }
-        }
+      for (let i = 0; i < processedLines.length; i++) {
+        const { line, qty, salePrice, qtyInMinor, lineTotal } = processedLines[i];
 
         await tx.insert(salesInvoiceLines).values({
           invoiceId: invoice.id,
@@ -3406,22 +3481,49 @@ export class DatabaseStorage implements IStorage {
 
       await tx.delete(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
 
-      let subtotal = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const qty = parseFloat(line.qty) || 0;
-        const salePrice = parseFloat(line.salePrice) || 0;
-        const lineTotal = qty * salePrice;
-        subtotal += lineTotal;
+      const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId || invoice.warehouseId, lines);
 
-        let qtyInMinor = qty;
-        if (line.unitLevel === "major" || !line.unitLevel) {
-          const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
-          if (item) {
-            const conv = parseFloat(item.majorToMinor || "1") || 1;
-            qtyInMinor = qty * conv;
+      let subtotal = 0;
+      const processedLines: { line: any; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number }[] = [];
+
+      for (const line of expandedLines) {
+        const qty = parseFloat(line.qty) || 0;
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+
+        let salePrice = parseFloat(line.salePrice) || 0;
+        if (item) {
+          const masterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
+          if (line.unitLevel === "medium") {
+            const majorToMedium = parseFloat(item.majorToMedium || "1") || 1;
+            salePrice = masterPrice / majorToMedium;
+          } else if (line.unitLevel === "minor") {
+            const majorToMinor = parseFloat(item.majorToMinor || "1") || 1;
+            salePrice = masterPrice / majorToMinor;
+          } else {
+            salePrice = masterPrice;
           }
         }
+
+        let qtyInMinor = qty;
+        if (line.unitLevel !== "minor") {
+          if (item) {
+            if (line.unitLevel === "medium") {
+              const conv = parseFloat(item.mediumToMinor || "1") || 1;
+              qtyInMinor = qty * conv;
+            } else {
+              const conv = parseFloat(item.majorToMinor || "1") || 1;
+              qtyInMinor = qty * conv;
+            }
+          }
+        }
+
+        const lineTotal = qty * salePrice;
+        subtotal += lineTotal;
+        processedLines.push({ line, qty, salePrice, qtyInMinor, lineTotal });
+      }
+
+      for (let i = 0; i < processedLines.length; i++) {
+        const { line, qty, salePrice, qtyInMinor, lineTotal } = processedLines[i];
 
         await tx.insert(salesInvoiceLines).values({
           invoiceId: id,

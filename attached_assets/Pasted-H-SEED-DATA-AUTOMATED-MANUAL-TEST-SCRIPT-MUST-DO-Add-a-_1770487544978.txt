@@ -1,0 +1,62 @@
+H) SEED DATA + AUTOMATED MANUAL TEST SCRIPT (MUST DO)
+Add a deterministic seed + test harness so we can validate the whole Sales Invoice workflow end-to-end without guessing.
+
+1) Seed endpoint (DEV ONLY)
+- Implement POST /api/seed/pharmacy-sales-demo
+- This endpoint MUST:
+  a) Create (or reuse if exists) ONE pharmacy warehouse (e.g., code: WH-PHARM, name: Pharmacy Warehouse).
+  b) Create 10 demo items (mix of hasExpiry true/false; all category "drug" except 1-2 supplies if needed).
+     For each item:
+       - Assign barcode(s) (unique)
+       - Define units structure with at least:
+         * minor unit (e.g., tablet)
+         * medium unit (e.g., strip)
+         * major unit (e.g., box)
+       - Define conversion factors (example):
+         * 1 major = 10 medium, 1 medium = 10 minor (so 1 major = 100 minor)
+       - Define a selling price rule that is strictly read-only on sales screen.
+         IMPORTANT: Selling price behavior on unit selection:
+           - If your system stores price per minor only, then switching unit must update displayed unit price proportionally (readonly).
+           - If your system stores price per major, then switching unit must compute per selected unit proportionally (readonly).
+         In all cases: user cannot type/edit price; only derived by unit selection and conversion.
+  c) Create inventory lots for EACH expirable item with at least 2-3 different expiry dates and quantities:
+       - Example per item:
+         * Lot A expiry older: qty 5 (minor)
+         * Lot B expiry newer: qty 5 (minor)
+         * Lot C expiry newest: qty 20 (minor)
+     Ensure at least ONE item matches the scenario: old(5) + new(5) so that selling qty=7 triggers auto-split into 5+2.
+  d) For non-expiry items, seed a normal on-hand qty in warehouse (e.g., 50 minor).
+  e) Return a JSON summary: warehouseId, itemIds, barcodes, per-item lots/expiry, unit conversions, and selling price basis.
+
+- Safety:
+  * Seed must be idempotent (re-run safe): detect existing demo codes and avoid duplicates.
+  * Only enabled in dev/test (guard by NODE_ENV !== 'production').
+
+2) Automated test cases (backend integration tests)
+Add tests that call seed and then verify:
+- Allocation auto-split:
+  * Create a sales invoice draft with a single request line for an expirable item, qty=7 (minor) without specifying expiry.
+  * Backend MUST persist as 2+ lines split FEFO: first expiry qty 5, next expiry qty 2.
+  * Verify totals match sum(line totals) and cannot “stick” after removing a line.
+- Selling price immutability:
+  * Attempt PATCH with modified sellingPrice -> must fail with 400/409 and a clear message.
+- Discount linkage:
+  * Apply invoice discount pct and value; verify server recomputes net total correctly.
+- Unit selection readonly pricing:
+  * When switching from minor -> medium -> major, confirm displayed price changes proportionally based on conversion, but stays readonly.
+  * Confirm stored line price corresponds to selected unit and conversion (or stored per minor with conversion), consistent with your system design.
+- Stock validation:
+  * Try selling qty > available -> must reject.
+- Status rules:
+  * Draft editable, Final not editable.
+
+3) Frontend “Demo” button (DEV ONLY)
+- Add a button on Sales Invoice list page: “Seed Demo Data”
+- Calls POST /api/seed/pharmacy-sales-demo and shows a success toast with “10 items created + lots seeded”
+- Also add a “Quick Test Invoice” button that:
+  a) Creates a new draft
+  b) Adds one seeded item by barcode
+  c) Sets qty=7 for the special item and visually confirms 2 lines appear (5 + 2) automatically (no manual expiry selection)
+  d) Toggles unit minor/medium to observe readonly price recalculation
+  e) Applies discount % and value and confirms totals update instantly
+This is dev-only UI (hide in production).
