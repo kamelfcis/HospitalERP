@@ -216,12 +216,10 @@ export default function PurchaseInvoice() {
     const totalAfterVatBeforeDiscount = totalBeforeVat + totalVatBeforeDiscount;
     const totalLineDiscounts = lines.reduce((s, l) => s + l.lineDiscountValue, 0);
 
-    let invoiceDiscountAmount = Math.min(invoiceDiscountVal, totalBeforeVat);
+    let invoiceDiscountAmount = Math.min(invoiceDiscountVal, totalAfterVatBeforeDiscount);
     if (invoiceDiscountAmount < 0) invoiceDiscountAmount = 0;
 
-    const discountRatio = totalBeforeVat > 0 ? (totalBeforeVat - invoiceDiscountAmount) / totalBeforeVat : 1;
-    const adjustedVat = +(totalVatBeforeDiscount * discountRatio).toFixed(2);
-    const netPayable = +((totalBeforeVat - invoiceDiscountAmount) + adjustedVat).toFixed(2);
+    const netPayable = +(totalAfterVatBeforeDiscount - invoiceDiscountAmount).toFixed(2);
 
     return {
       totalBeforeVat: +totalBeforeVat.toFixed(2),
@@ -229,7 +227,6 @@ export default function PurchaseInvoice() {
       totalAfterVat: +totalAfterVatBeforeDiscount.toFixed(2),
       totalLineDiscounts: +totalLineDiscounts.toFixed(2),
       invoiceDiscountAmount: +invoiceDiscountAmount.toFixed(2),
-      adjustedVat,
       netPayable,
     };
   }, [lines, invoiceDiscountVal]);
