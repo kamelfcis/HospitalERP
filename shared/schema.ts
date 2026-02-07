@@ -32,6 +32,8 @@ export const unitLevelEnum = pgEnum("unit_level", [
 
 export const lotTxTypeEnum = pgEnum("lot_tx_type", ["in", "out", "adj"]);
 export const transferStatusEnum = pgEnum("transfer_status", ["draft", "executed"]);
+export const salesInvoiceStatusEnum = pgEnum("sales_invoice_status", ["draft", "finalized", "cancelled"]);
+export const customerTypeEnum = pgEnum("customer_type", ["cash", "credit", "contract"]);
 
 // المستخدمين
 export const users = pgTable("users", {
@@ -492,6 +494,48 @@ export const purchaseInvoiceLines = pgTable("purchase_invoice_lines", {
   itemIdx: index("idx_pi_lines_item").on(table.itemId),
 }));
 
+// فواتير المبيعات
+export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNumber: integer("invoice_number").notNull().unique(),
+  invoiceDate: date("invoice_date").notNull(),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id),
+  customerType: customerTypeEnum("customer_type").notNull().default("cash"),
+  customerName: text("customer_name"),
+  contractCompany: text("contract_company"),
+  status: salesInvoiceStatusEnum("status").notNull().default("draft"),
+  subtotal: decimal("subtotal", { precision: 18, scale: 2 }).notNull().default("0"),
+  discountType: text("discount_type").default("percent"),
+  discountPercent: decimal("discount_percent", { precision: 8, scale: 4 }).notNull().default("0"),
+  discountValue: decimal("discount_value", { precision: 18, scale: 2 }).notNull().default("0"),
+  netTotal: decimal("net_total", { precision: 18, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  createdBy: varchar("created_by"),
+  finalizedAt: timestamp("finalized_at"),
+  finalizedBy: varchar("finalized_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  dateIdx: index("idx_sales_inv_date").on(table.invoiceDate),
+  statusIdx: index("idx_sales_inv_status").on(table.status),
+}));
+
+export const salesInvoiceLines = pgTable("sales_invoice_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => salesInvoiceHeaders.id, { onDelete: "cascade" }),
+  lineNo: integer("line_no").notNull(),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  unitLevel: unitLevelEnum("unit_level").notNull().default("major"),
+  qty: decimal("qty", { precision: 18, scale: 4 }).notNull(),
+  qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull(),
+  salePrice: decimal("sale_price", { precision: 18, scale: 2 }).notNull(),
+  lineTotal: decimal("line_total", { precision: 18, scale: 2 }).notNull().default("0"),
+  expiryMonth: integer("expiry_month"),
+  expiryYear: integer("expiry_year"),
+  lotId: varchar("lot_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // الخدمات (Service Master)
 export const services = pgTable("services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -823,4 +867,33 @@ export const serviceTypeLabels: Record<string, string> = {
   DEVICE: "جهاز",
   GAS: "غاز",
   OTHER: "أخرى"
+};
+
+export const insertSalesInvoiceHeaderSchema = createInsertSchema(salesInvoiceHeaders).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSalesInvoiceLineSchema = createInsertSchema(salesInvoiceLines).omit({ id: true, createdAt: true });
+
+export type InsertSalesInvoiceHeader = z.infer<typeof insertSalesInvoiceHeaderSchema>;
+export type SalesInvoiceHeader = typeof salesInvoiceHeaders.$inferSelect;
+export type InsertSalesInvoiceLine = z.infer<typeof insertSalesInvoiceLineSchema>;
+export type SalesInvoiceLine = typeof salesInvoiceLines.$inferSelect;
+
+export type SalesInvoiceLineWithItem = SalesInvoiceLine & {
+  item?: Item;
+};
+
+export type SalesInvoiceWithDetails = SalesInvoiceHeader & {
+  warehouse?: Warehouse;
+  lines?: SalesInvoiceLineWithItem[];
+};
+
+export const salesInvoiceStatusLabels: Record<string, string> = {
+  draft: "مسودة",
+  finalized: "نهائي",
+  cancelled: "ملغي",
+};
+
+export const customerTypeLabels: Record<string, string> = {
+  cash: "نقدي",
+  credit: "آجل",
+  contract: "تعاقد",
 };

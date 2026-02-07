@@ -1,0 +1,188 @@
+You are working inside an existing full-stack ERP repo (React+Vite+TS frontend, wouter routing, TanStack Query, shadcn/ui, Express backend with registerRoutes in server/routes.ts and storage layer using Drizzle schema in @shared/schema). Implement a complete Pharmacy Sales Invoice (Draft) workflow designed for pharmacist entry + cashier collection queue. Follow existing folder structure, coding style, components, and API patterns already used in Receiving and Purchase Invoice screens.
+
+GOALS (non-negotiable):
+1) Create a NEW module: Sales Invoice (Pharmacy) with strict status control:
+   - status: 'draft' (unpaid, visible to cashier collection screen)
+   - status: 'final' (saved/locked; also can be posted/collected)
+   Ensure no ambiguity and no race conditions causing duplicates or stuck invoices.
+2) UI MUST match existing design of Receiving/Purchase Invoice screens:
+   - No page-level scroll (no browser vertical scrolling); internal scrolling only in table areas
+   - Same typography scale, spacing, sticky header/toolbars, and layout patterns used there
+3) Pharmacist entry optimized for speed:
+   - When opening New Sales Invoice, cursor auto-focuses barcode input.
+   - Barcode scanner workflow:
+     * scan -> resolve item -> add as a line (or increase qty if same item+expiry rule matches) -> immediately refocus barcode input.
+   - Manual add workflow:
+     * Advanced Search modal (like Receiving item search but STRONGER + faster + stable):
+       - does NOT close after selecting an item (only closes by explicit Close button)
+       - allow selecting multiple items quickly from the same results without refresh
+       - supports advanced search modes:
+         a) Arabic name partial
+         b) English name partial
+         c) Code search
+         d) Barcode search
+         e) multi-term search using “%” delimiter to require multiple tokens (e.g. "para%100")
+         f) optionally search by selling price exact/approx (server support)
+       - results show: item name, category, selling price, total stock, and expiry availability summary
+       - highlight rows: no stock (distinct style) vs in-stock (distinct style)
+4) Each invoice line must show (with BIGGER font for item name than other columns):
+   - Item Name (large font)
+   - Quantity
+   - Expiry (month/year or full date depending on project standard)
+   - Warehouse stock (current available)
+   - Selling Price
+   - Line Total
+   - An “analytics” icon button (like your existing per-line stats icon) opening a small drawer/popover with:
+     * availability summary
+     * expiry options
+     * last purchases (already in API)
+     * avg sales (already in API)
+5) Expiry / lots rules:
+   - Default allocation is FIFO/FEFO (use existing lots APIs in backend: /api/items/:itemId/expiry-options, /api/fefo/preview, availability endpoints)
+   - If an item has multiple expiry options, show expiry cell highlighted (distinct color) prompting selection.
+   - Prevent saving invoice if any expirable item is missing expiry selection.
+6) Pricing rules:
+   - Use item selling price as default.
+   - If item has “two prices / two batches / two lots” relevant, visually indicate price cell (distinct color) when multiple valid selling prices could apply (use existing endpoints like item hints if available; if not, implement a lightweight hints endpoint via storage).
+7) Invoice header:
+   - Customer type: (Cash default), Credit (Ajel), Contract
+   - Customer name
+   - If Contract selected: show extra field “Parent Contract Company” (Company Mother) required.
+   - Warehouse selection (default pharmacy warehouse if there is a configured default; otherwise prompt once).
+   - Invoice date defaults to today.
+8) Invoice-level discount:
+   - Discount can be percent OR value (both editable).
+   - Changing one recalculates the other and updates grand totals immediately.
+   - Discount affects final totals (subtotal -> discount -> net).
+9) Strict validation before save:
+   - No empty lines.
+   - Each line must have qty > 0.
+   - Qty must be available (stock check) BEFORE saving draft, and rechecked on finalization.
+   - Removing a line must instantly recalc totals; totals must NEVER stay the same after line removal.
+   - If user deletes a line among 10 lines, totals update immediately and correctly without needing refresh.
+10) Status & cashier queue safety:
+   - Draft invoices are visible to cashier collection screen (to be built later).
+   - Ensure stable status transitions to avoid “stuck invoice” or “double collection”.
+   - Add defensive backend checks and DB constraints to prevent duplicate finalization/collection.
+11) Add a “Sales Invoices List” tab/page:
+   - shows invoices with filters:
+     * date from/to (default = today)
+     * status (draft/final)
+   - stable pagination and fast search.
+12) Testing:
+   - Add backend unit/integration tests for:
+     * create draft with valid lines
+     * reject save if insufficient stock
+     * reject save if missing expiry for expirable items
+     * totals recompute correctly
+     * cannot modify after final
+   - Add frontend lightweight tests or at least robust runtime guards; follow existing repo test approach.
+
+IMPLEMENTATION DETAILS (must align to existing repo):
+A) DATABASE
+- Inspect current Drizzle schema in @shared/schema.
+- If sales invoice tables already exist, reuse them.
+- If not, add normalized tables similar to purchase invoices:
+  - sales_invoices (id, invoice_no, invoice_date, warehouse_id, customer_type, customer_name, contract_parent_company, status, subtotal, discount_pct, discount_value, net_total, created_at, updated_at)
+  - sales_invoice_lines (id, sales_invoice_id, line_no, item_id, qty_in_minor, expiry_date nullable, selling_price, line_total)
+  - optionally sales_collections/receipts for cashier (prepare minimal fields but do not build cashier UI now).
+- Add indexes: invoice_date, status, invoice_no unique.
+- Ensure constraints to prevent invalid statuses.
+
+B) BACKEND APIs (Express)
+Create routes under /api/sales-invoices:
+- GET /api/sales-invoices?dateFrom&dateTo&status&page&pageSize&search
+- GET /api/sales-invoices/:id (include lines)
+- POST /api/sales-invoices (create draft; strict validation)
+- PATCH /api/sales-invoices/:id (update draft only; revalidate)
+- POST /api/sales-invoices/:id/finalize (move draft -> final after strict recheck)
+- DELETE /api/sales-invoices/:id (delete draft only)
+Validation rules must reuse existing patterns (Zod) and reuse existing inventory/lot utilities in storage.
+Stock checks:
+- Use existing lots and movements logic; implement helper:
+  * checkItemAvailabilityForSale(itemId, warehouseId, qtyInMinor, expiryDate?)
+  * If expiry chosen: check that lot availability >= qty
+  * If expiry not chosen but item hasExpiry: reject
+- If “FIFO default” and expiry not selected: front-end must request expiry options and auto-select earliest expiry with available qty; BUT still allow user to override.
+
+Also strengthen item search for sales screen:
+- Reuse existing /api/items/search which already supports mode 'AR'|'EN'|'CODE'|'BARCODE'. Extend it to support:
+  * multi-term tokenization with '%' meaning AND tokens
+  * optional price filter
+Return in results:
+- availableQtyMinor (warehouse), totalQty, hasExpiry, sellingPrice, and a boolean hasMultipleExpiryOptions.
+Add a fast barcode resolve endpoint if not already:
+- Use existing /api/barcode/resolve (reuse).
+
+C) STORAGE LAYER
+Implement storage methods:
+- createDraftSalesInvoice(header, lines)
+- updateDraftSalesInvoice(id, header, lines)
+- getSalesInvoice(id)
+- getSalesInvoicesFiltered(...)
+- finalizeSalesInvoice(id)
+- deleteSalesInvoice(id)
+Each write must be transactional.
+Compute totals server-side; never trust client totals.
+
+D) FRONTEND UI
+Add a new page under existing routing:
+- /sales-invoices (list with filters and a button “New Invoice”)
+- /sales-invoices/new or /sales-invoices/:id
+Use the same page layout scaffolding used in Receiving/Purchase Invoice to avoid mismatched font sizes and page scroll.
+Invoice Form:
+- Header section: customer type default Cash, customer name, contract parent company conditional, warehouse, date.
+- Tabs inside the page:
+  1) “Invoice” (entry form)
+  2) “Invoices List” (embedded list, or separate page; but user asked a tab showing invoices)
+Line entry:
+- Barcode input pinned at top of lines area; auto-focus on mount and after each scan.
+- On scan:
+  * call /api/barcode/resolve?value=...
+  * fetch item details and expiry options/availability summary
+  * add line with default expiry allocation: earliest FEFO option that can satisfy qty=1; else require selection.
+- Manual add:
+  * Search modal stays open; selecting adds a line; does not clear results.
+  * Provide ability to select multiple items quickly.
+  * Provide stable virtualized list if large results (avoid lag).
+  * Show row styles: no-stock highlighted, in-stock normal.
+  * Show badges:
+    - “Multiple Expiry” badge -> expiry cell highlight
+    - “Price Variance” badge -> price cell highlight (if hints indicate multi prices)
+Line fields:
+- qty editable with immediate validation; if qty exceeds stock show inline error and block save.
+- expiry selectable from dropdown of options (month/year).
+- show current stock and lot stock.
+- price editable only if allowed by your business rule; default to selling price.
+- line total auto updates.
+Totals panel:
+- subtotal, discount% and discount value both editable and mutually recalculated, net total.
+- Ensure net total updates instantly on any change (add/remove line, qty change, discount change).
+Actions:
+- Save Draft (creates/updates; status stays draft)
+- Finalize (locks; status final; blocks further edits)
+- Clear/Reset if new invoice
+Strictly prevent leaving broken drafts: show clear error list from server lineErrors, highlight affected lines.
+
+E) UX/Performance requirements
+- No global scroll: page wrapper must be height: 100% with internal table scroll.
+- Search modal should not rerender entire page; keep state stable.
+- Debounce search requests.
+- Use TanStack Query caching keys by warehouseId+mode+query.
+- Ensure removing lines and reordering does not break totals.
+
+F) Styling cues requested
+- Items with zero stock: row background subtle highlight + “No Stock” badge.
+- Items with multiple expiry options: expiry cell highlighted.
+- Items with multiple selling prices: price cell highlighted.
+Do not hardcode colors globally; use existing shadcn classes and semantic variants consistent with repo.
+
+DELIVERABLES
+- All necessary new/updated files committed in repo:
+  * shared schema updates (if needed)
+  * server routes + storage methods
+  * client pages + components + hooks
+  * tests
+- Ensure lint/build passes and app runs.
+
+IMPORTANT: Do not change unrelated modules. Do not introduce new UI libraries. Keep code strict, typed, and aligned with current patterns in Receiving and Purchase Invoices.
