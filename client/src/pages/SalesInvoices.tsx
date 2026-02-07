@@ -247,7 +247,19 @@ export default function SalesInvoices() {
   const updateLine = useCallback((index: number, patch: Partial<SalesLineLocal>) => {
     setLines((prev) => {
       const updated = [...prev];
-      const ln = { ...updated[index], ...patch };
+      const target = updated[index];
+      if (patch.unitLevel && target.fefoLocked) {
+        const newUnit = patch.unitLevel;
+        const newSalePrice = computeUnitPriceFromBase(target.baseSalePrice, newUnit, target.item);
+        return updated.map((ln) => {
+          if (ln.itemId !== target.itemId) return ln;
+          const oldMinor = calculateQtyInMinor(ln.qty, ln.unitLevel, ln.item);
+          const newQty = convertMinorToDisplayQty(oldMinor, newUnit, ln.item);
+          const total = +(newQty * newSalePrice).toFixed(2);
+          return { ...ln, unitLevel: newUnit, salePrice: newSalePrice, qty: newQty, lineTotal: total };
+        });
+      }
+      const ln = { ...target, ...patch };
       if (patch.unitLevel) {
         ln.salePrice = computeUnitPriceFromBase(ln.baseSalePrice, ln.unitLevel, ln.item);
       }
