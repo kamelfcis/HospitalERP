@@ -26,6 +26,8 @@ import SupplierReceiving from "@/pages/SupplierReceiving";
 import PurchaseInvoice from "@/pages/PurchaseInvoice";
 import ServicesPricing from "@/pages/ServicesPricing";
 import SalesInvoices from "@/pages/SalesInvoices";
+import Warehouses from "@/pages/Warehouses";
+import Departments from "@/pages/Departments";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -54,6 +56,8 @@ function Router() {
         <Route path="/purchase-invoices" component={PurchaseInvoice} />
         <Route path="/sales-invoices" component={SalesInvoices} />
         <Route path="/services-pricing" component={ServicesPricing} />
+        <Route path="/warehouses" component={Warehouses} />
+        <Route path="/departments" component={Departments} />
         <Route path="/audit-log" component={AuditLog} />
         <Route component={NotFound} />
       </Switch>

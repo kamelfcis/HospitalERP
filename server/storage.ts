@@ -20,6 +20,8 @@ import {
   inventoryLotMovements,
   itemBarcodes,
   warehouses,
+  userDepartments,
+  userWarehouses,
   storeTransfers,
   transferLines,
   transferLineAllocations,
@@ -216,6 +218,16 @@ export interface IStorage {
   getWarehouses(): Promise<Warehouse[]>;
   getWarehouse(id: string): Promise<Warehouse | undefined>;
   createWarehouse(wh: InsertWarehouse): Promise<Warehouse>;
+  updateWarehouse(id: string, wh: Partial<InsertWarehouse>): Promise<Warehouse | undefined>;
+  deleteWarehouse(id: string): Promise<boolean>;
+
+  // User-Department assignments
+  getUserDepartments(userId: string): Promise<Department[]>;
+  setUserDepartments(userId: string, departmentIds: string[]): Promise<void>;
+
+  // User-Warehouse assignments
+  getUserWarehouses(userId: string): Promise<Warehouse[]>;
+  setUserWarehouses(userId: string, warehouseIds: string[]): Promise<void>;
 
   // Store Transfers
   getTransfers(): Promise<StoreTransferWithDetails[]>;
@@ -1315,7 +1327,6 @@ export class DatabaseStorage implements IStorage {
   // Warehouses
   async getWarehouses(): Promise<Warehouse[]> {
     return db.select().from(warehouses)
-      .where(eq(warehouses.isActive, true))
       .orderBy(asc(warehouses.warehouseCode));
   }
 
@@ -1327,6 +1338,53 @@ export class DatabaseStorage implements IStorage {
   async createWarehouse(wh: InsertWarehouse): Promise<Warehouse> {
     const [newWh] = await db.insert(warehouses).values(wh).returning();
     return newWh;
+  }
+
+  async updateWarehouse(id: string, wh: Partial<InsertWarehouse>): Promise<Warehouse | undefined> {
+    const [updated] = await db.update(warehouses)
+      .set(wh)
+      .where(eq(warehouses.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteWarehouse(id: string): Promise<boolean> {
+    await db.delete(warehouses).where(eq(warehouses.id, id));
+    return true;
+  }
+
+  async getUserDepartments(userId: string): Promise<Department[]> {
+    const rows = await db.select({ department: departments })
+      .from(userDepartments)
+      .innerJoin(departments, eq(userDepartments.departmentId, departments.id))
+      .where(eq(userDepartments.userId, userId));
+    return rows.map(r => r.department);
+  }
+
+  async setUserDepartments(userId: string, departmentIds: string[]): Promise<void> {
+    await db.delete(userDepartments).where(eq(userDepartments.userId, userId));
+    if (departmentIds.length > 0) {
+      await db.insert(userDepartments).values(
+        departmentIds.map(deptId => ({ userId, departmentId: deptId }))
+      );
+    }
+  }
+
+  async getUserWarehouses(userId: string): Promise<Warehouse[]> {
+    const rows = await db.select({ warehouse: warehouses })
+      .from(userWarehouses)
+      .innerJoin(warehouses, eq(userWarehouses.warehouseId, warehouses.id))
+      .where(eq(userWarehouses.userId, userId));
+    return rows.map(r => r.warehouse);
+  }
+
+  async setUserWarehouses(userId: string, warehouseIds: string[]): Promise<void> {
+    await db.delete(userWarehouses).where(eq(userWarehouses.userId, userId));
+    if (warehouseIds.length > 0) {
+      await db.insert(userWarehouses).values(
+        warehouseIds.map(whId => ({ userId, warehouseId: whId }))
+      );
+    }
   }
 
   // Store Transfers

@@ -29,7 +29,7 @@ Preferred communication style: Simple, everyday language.
 - **Database**: PostgreSQL (configured via `DATABASE_URL`)
 - **Connection Pooling**: pg Pool
 - **Schema Management**: Drizzle Kit (`db:push` for migrations)
-- **Key Entities**: Users, Accounts (hierarchical), Cost Centers (hierarchical), Fiscal Periods, Journal Entries/Lines, Journal Templates, Audit Log, Receiving Headers/Lines, Purchase Invoice Headers/Lines, Sales Invoice Headers/Lines, Item UOMs (Units of Measure master).
+- **Key Entities**: Users, Accounts (hierarchical), Cost Centers (hierarchical), Fiscal Periods, Journal Entries/Lines, Journal Templates, Audit Log, Receiving Headers/Lines, Purchase Invoice Headers/Lines, Sales Invoice Headers/Lines, Item UOMs (Units of Measure master), Departments, Warehouses, User-Department assignments, User-Warehouse assignments.
 
 ### Core Features
 - Dashboard with financial statistics.

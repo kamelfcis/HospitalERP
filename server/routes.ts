@@ -88,6 +88,24 @@ const journalEntryUpdateSchema = z.object({
   lines: z.array(journalLineSchema).min(2, "يجب أن يحتوي القيد على سطرين على الأقل").optional(),
 });
 
+// Warehouse update schema
+const warehouseUpdateSchema = z.object({
+  warehouseCode: z.string().min(1).optional(),
+  nameAr: z.string().min(1).optional(),
+  departmentId: z.string().optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
+// User departments assignment schema
+const userDepartmentsAssignmentSchema = z.object({
+  departmentIds: z.array(z.string()),
+});
+
+// User warehouses assignment schema
+const userWarehousesAssignmentSchema = z.object({
+  warehouseIds: z.array(z.string()),
+});
+
 async function validateReceivingLines(lines: any[]): Promise<{ lineIndex: number; field: string; messageAr: string }[]> {
   const errors: { lineIndex: number; field: string; messageAr: string }[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -1518,6 +1536,83 @@ export async function registerRoutes(
     } catch (error: any) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/warehouses/:id", async (req, res) => {
+    try {
+      const validated = warehouseUpdateSchema.parse(req.body);
+      const { warehouseCode, nameAr, departmentId, isActive } = validated;
+      const updateData: any = {};
+      if (warehouseCode !== undefined) updateData.warehouseCode = warehouseCode;
+      if (nameAr !== undefined) updateData.nameAr = nameAr;
+      if (departmentId !== undefined) updateData.departmentId = departmentId;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      const wh = await storage.updateWarehouse(req.params.id, updateData);
+      if (!wh) return res.status(404).json({ message: "المخزن غير موجود" });
+      res.json(wh);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/warehouses/:id", async (req, res) => {
+    try {
+      await storage.deleteWarehouse(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // User-Department assignments
+  app.get("/api/users/:id/departments", async (req, res) => {
+    try {
+      const depts = await storage.getUserDepartments(req.params.id);
+      res.json(depts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/users/:id/departments", async (req, res) => {
+    try {
+      const validated = userDepartmentsAssignmentSchema.parse(req.body);
+      const { departmentIds } = validated;
+      await storage.setUserDepartments(req.params.id, departmentIds || []);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "departmentIds يجب أن يكون مصفوفة" });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // User-Warehouse assignments
+  app.get("/api/users/:id/warehouses", async (req, res) => {
+    try {
+      const whs = await storage.getUserWarehouses(req.params.id);
+      res.json(whs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/users/:id/warehouses", async (req, res) => {
+    try {
+      const validated = userWarehousesAssignmentSchema.parse(req.body);
+      const { warehouseIds } = validated;
+      await storage.setUserWarehouses(req.params.id, warehouseIds || []);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "warehouseIds يجب أن يكون مصفوفة" });
       }
       res.status(500).json({ message: error.message });
     }
