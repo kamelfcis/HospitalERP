@@ -1112,25 +1112,30 @@ export async function registerRoutes(
       if (!parsed.nameAr?.trim()) errors.push("الاسم العربي مطلوب");
       if (!parsed.nameEn?.trim()) errors.push("الاسم الإنجليزي مطلوب");
       if (!parsed.formTypeId) errors.push("نوع الشكل مطلوب");
-      if (!parsed.majorUnitName?.trim()) errors.push("الوحدة الكبرى مطلوبة");
 
-      const hasMedium = !!parsed.mediumUnitName?.trim();
-      const hasMinor = !!parsed.minorUnitName?.trim();
+      const isServiceItem = parsed.category === "service";
 
-      if (hasMinor && !hasMedium) {
-        errors.push("يجب اختيار الوحدة المتوسطة قبل الصغرى");
-      }
+      if (!isServiceItem) {
+        if (!parsed.majorUnitName?.trim()) errors.push("الوحدة الكبرى مطلوبة");
 
-      if (hasMedium) {
-        const majorToMedium = parseFloat(parsed.majorToMedium as string || "0");
-        if (majorToMedium <= 0) errors.push("معامل التحويل كبرى ← متوسطة يجب أن يكون أكبر من صفر");
-      }
-      if (hasMinor) {
-        const majorToMinor = parseFloat(parsed.majorToMinor as string || "0");
-        if (majorToMinor <= 0) errors.push("معامل التحويل كبرى ← صغرى يجب أن يكون أكبر من صفر");
+        const hasMedium = !!parsed.mediumUnitName?.trim();
+        const hasMinor = !!parsed.minorUnitName?.trim();
+
+        if (hasMinor && !hasMedium) {
+          errors.push("يجب اختيار الوحدة المتوسطة قبل الصغرى");
+        }
+
         if (hasMedium) {
-          const mediumToMinor = parseFloat(parsed.mediumToMinor as string || "0");
-          if (mediumToMinor <= 0) errors.push("معامل التحويل متوسطة ← صغرى يجب أن يكون أكبر من صفر");
+          const majorToMedium = parseFloat(parsed.majorToMedium as string || "0");
+          if (majorToMedium <= 0) errors.push("معامل التحويل كبرى ← متوسطة يجب أن يكون أكبر من صفر");
+        }
+        if (hasMinor) {
+          const majorToMinor = parseFloat(parsed.majorToMinor as string || "0");
+          if (majorToMinor <= 0) errors.push("معامل التحويل كبرى ← صغرى يجب أن يكون أكبر من صفر");
+          if (hasMedium) {
+            const mediumToMinor = parseFloat(parsed.mediumToMinor as string || "0");
+            if (mediumToMinor <= 0) errors.push("معامل التحويل متوسطة ← صغرى يجب أن يكون أكبر من صفر");
+          }
         }
       }
 
@@ -1150,6 +1155,12 @@ export async function registerRoutes(
 
       if (parsed.category === "service") {
         parsed.hasExpiry = false;
+        parsed.majorUnitName = null as any;
+        parsed.mediumUnitName = null as any;
+        parsed.minorUnitName = null as any;
+        parsed.majorToMedium = null as any;
+        parsed.majorToMinor = null as any;
+        parsed.mediumToMinor = null as any;
       } else if (parsed.category === "drug" && parsed.hasExpiry === undefined) {
         parsed.hasExpiry = true;
       }

@@ -337,32 +337,37 @@ export default function ItemCard() {
     if (!formData.nameAr?.trim()) errors.nameAr = "مطلوب";
     if (!formData.nameEn?.trim()) errors.nameEn = "مطلوب";
     if (!formData.formTypeId) errors.formTypeId = "مطلوب";
-    if (!formData.majorUnitName?.trim()) errors.majorUnitName = "مطلوب";
 
-    const hasMedium = !!formData.mediumUnitName?.trim();
-    const hasMinor = !!formData.minorUnitName?.trim();
+    const isServiceItem = formData.category === "service";
 
-    if (hasMinor && !hasMedium) {
-      errors.mediumUnitName = "يجب اختيار المتوسطة قبل الصغرى";
-    }
+    if (!isServiceItem) {
+      if (!formData.majorUnitName?.trim()) errors.majorUnitName = "مطلوب";
 
-    if (hasMedium) {
-      const majorToMedium = parseFloat(formData.majorToMedium as string || "0");
-      if (majorToMedium <= 0) errors.majorToMedium = "يجب > 0";
-    }
-    if (hasMinor) {
-      const majorToMinor = parseFloat(formData.majorToMinor as string || "0");
-      if (majorToMinor <= 0) errors.majorToMinor = "يجب > 0";
-      if (hasMedium) {
-        const mediumToMinor = parseFloat(formData.mediumToMinor as string || "0");
-        if (mediumToMinor <= 0) errors.mediumToMinor = "يجب > 0";
+      const hasMedium = !!formData.mediumUnitName?.trim();
+      const hasMinor = !!formData.minorUnitName?.trim();
+
+      if (hasMinor && !hasMedium) {
+        errors.mediumUnitName = "يجب اختيار المتوسطة قبل الصغرى";
       }
-    }
 
-    const units = [formData.majorUnitName, formData.mediumUnitName, formData.minorUnitName].filter(Boolean);
-    const uniqueUnits = new Set(units.map(u => u?.trim().toLowerCase()));
-    if (units.length > 0 && uniqueUnits.size < units.length) {
-      errors.unitDuplicate = "لا يمكن تكرار نفس الوحدة";
+      if (hasMedium) {
+        const majorToMedium = parseFloat(formData.majorToMedium as string || "0");
+        if (majorToMedium <= 0) errors.majorToMedium = "يجب > 0";
+      }
+      if (hasMinor) {
+        const majorToMinor = parseFloat(formData.majorToMinor as string || "0");
+        if (majorToMinor <= 0) errors.majorToMinor = "يجب > 0";
+        if (hasMedium) {
+          const mediumToMinor = parseFloat(formData.mediumToMinor as string || "0");
+          if (mediumToMinor <= 0) errors.mediumToMinor = "يجب > 0";
+        }
+      }
+
+      const units = [formData.majorUnitName, formData.mediumUnitName, formData.minorUnitName].filter(Boolean);
+      const uniqueUnits = new Set(units.map(u => u?.trim().toLowerCase()));
+      if (units.length > 0 && uniqueUnits.size < units.length) {
+        errors.unitDuplicate = "لا يمكن تكرار نفس الوحدة";
+      }
     }
 
     return errors;
@@ -402,14 +407,23 @@ export default function ItemCard() {
       return;
     }
     const dataToSave = { ...formData };
-    if (!dataToSave.mediumUnitName?.trim()) {
+    if (dataToSave.category === "service") {
+      dataToSave.majorUnitName = "";
       dataToSave.mediumUnitName = "";
-      dataToSave.majorToMedium = null;
-    }
-    if (!dataToSave.minorUnitName?.trim()) {
       dataToSave.minorUnitName = "";
+      dataToSave.majorToMedium = null;
       dataToSave.majorToMinor = null;
       dataToSave.mediumToMinor = null;
+    } else {
+      if (!dataToSave.mediumUnitName?.trim()) {
+        dataToSave.mediumUnitName = "";
+        dataToSave.majorToMedium = null;
+      }
+      if (!dataToSave.minorUnitName?.trim()) {
+        dataToSave.minorUnitName = "";
+        dataToSave.majorToMinor = null;
+        dataToSave.mediumToMinor = null;
+      }
     }
     saveMutation.mutate(dataToSave);
   };
@@ -485,7 +499,8 @@ export default function ItemCard() {
     addBarcodeMutation.mutate({ barcodeValue: trimmed, barcodeType: newBarcodeType });
   };
 
-  const isExpiryLocked = formData.category === "service";
+  const isService = formData.category === "service";
+  const isExpiryLocked = isService;
   const activeBarcodes = barcodes?.filter(b => b.isActive) || [];
 
   if (isLoading && !isNew) {
@@ -707,7 +722,7 @@ export default function ItemCard() {
               </div>
             </fieldset>
 
-            <div className="grid grid-cols-2 gap-2 flex-shrink-0">
+            <div className={`grid ${isService ? "grid-cols-1" : "grid-cols-2"} gap-2 flex-shrink-0`}>
               <fieldset className="peachtree-grid p-2">
                 <legend className="text-[11px] font-semibold px-1 text-primary">الأسعار</legend>
                 <div className="grid grid-cols-3 gap-2">
@@ -746,7 +761,7 @@ export default function ItemCard() {
                 </div>
               </fieldset>
 
-              <fieldset className="peachtree-grid p-2">
+              {!isService && <fieldset className="peachtree-grid p-2">
                 <legend className="text-[11px] font-semibold px-1 text-primary flex items-center gap-1">
                   وحدات القياس
                   {isEditing && (
@@ -838,10 +853,10 @@ export default function ItemCard() {
                     {validationErrors.unitDuplicate}
                   </div>
                 )}
-              </fieldset>
+              </fieldset>}
             </div>
 
-            {(hasMediumUnit || hasMinorUnit) && (
+            {!isService && (hasMediumUnit || hasMinorUnit) && (
               <fieldset className="peachtree-grid p-2 flex-shrink-0">
                 <legend className="text-[11px] font-semibold px-1 text-primary">معاملات التحويل</legend>
                 <div className="grid grid-cols-4 gap-3 items-center">
@@ -903,34 +918,43 @@ export default function ItemCard() {
                 </div>
               </fieldset>
             )}
-            {!hasMediumUnit && !hasMinorUnit && (
+            {!isService && !hasMediumUnit && !hasMinorUnit && (
               <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-3 py-2">
                 الصنف بوحدة واحدة فقط ({formData.majorUnitName || "الكبرى"}) — يمكنك إضافة وحدة متوسطة أو صغرى اختيارياً
               </div>
             )}
+            {isService && (
+              <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-3 py-2" data-testid="text-service-no-units">
+                صنف خدمة — لا يحتاج وحدات قياس
+              </div>
+            )}
 
-            {!isNew && (
-              <fieldset className="peachtree-grid p-2 flex-shrink-0">
+            <fieldset className="peachtree-grid p-2 flex-shrink-0">
                 <legend className="text-[11px] font-semibold px-1 text-primary flex items-center gap-1">
                   <Barcode className="h-3.5 w-3.5" />
                   الباركود / الكود الدولي
                 </legend>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] text-muted-foreground">
-                    {activeBarcodes.length > 0 ? `${activeBarcodes.length} باركود مسجل` : "لا يوجد باركود"}
+                    {isNew ? "احفظ الصنف أولاً ثم أضف الباركود" : activeBarcodes.length > 0 ? `${activeBarcodes.length} باركود مسجل` : "لا يوجد باركود"}
                   </span>
                   <Button
                     variant="outline"
                     size="sm"
                     className="text-[10px] gap-0.5 px-1"
                     onClick={() => setShowBarcodeDialog(true)}
+                    disabled={isNew}
                     data-testid="button-add-barcode"
                   >
                     <Plus className="h-3 w-3" />
                     إضافة باركود
                   </Button>
                 </div>
-                {activeBarcodes.length > 0 ? (
+                {isNew ? (
+                  <div className="text-[10px] text-muted-foreground text-center py-3 border border-dashed rounded">
+                    يمكنك إضافة الباركود بعد حفظ الصنف
+                  </div>
+                ) : activeBarcodes.length > 0 ? (
                   <table className="w-full text-[10px]">
                     <thead>
                       <tr className="border-b bg-muted/30">
@@ -972,7 +996,6 @@ export default function ItemCard() {
                   </div>
                 )}
               </fieldset>
-            )}
           </div>
 
           {!isNew && (
