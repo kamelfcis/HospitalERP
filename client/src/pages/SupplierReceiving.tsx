@@ -463,6 +463,8 @@ export default function SupplierReceiving() {
     setFormCorrectionOfId(null);
     setFormConvertedToInvoiceId(null);
     setLineErrors([]);
+    lastAutoSaveDataRef.current = "";
+    setAutoSaveStatus("idle");
   };
 
   const grandTotal = formLines.reduce((sum, l) => sum + l.lineTotal, 0);
@@ -494,6 +496,101 @@ export default function SupplierReceiving() {
     }
     return errors;
   }, [formLines]);
+
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoSaveDataRef = useRef<string>("");
+
+  const performAutoSave = useCallback(async () => {
+    if (formStatus !== "draft") return;
+    if (!supplierId || !warehouseId) return;
+
+    const payload = {
+      header: {
+        supplierId,
+        supplierInvoiceNo,
+        warehouseId,
+        receiveDate,
+        notes: formNotes || undefined,
+      },
+      lines: formLines.map((l) => ({
+        itemId: l.itemId,
+        unitLevel: l.unitLevel,
+        qtyEntered: String(l.qtyEntered),
+        qtyInMinor: String(l.qtyInMinor),
+        bonusQty: String(l.bonusQty),
+        bonusQtyInMinor: String(l.bonusQtyInMinor),
+        purchasePrice: String(l.purchasePrice),
+        lineTotal: String(l.lineTotal),
+        batchNumber: l.batchNumber || undefined,
+        expiryMonth: l.expiryMonth || undefined,
+        expiryYear: l.expiryYear || undefined,
+        salePrice: l.salePrice != null ? String(l.salePrice) : undefined,
+        notes: l.notes || undefined,
+        isRejected: l.isRejected,
+        rejectionReason: l.rejectionReason || undefined,
+      })),
+      existingId: editingReceivingId || undefined,
+    };
+
+    const dataKey = JSON.stringify(payload);
+    if (dataKey === lastAutoSaveDataRef.current) return;
+
+    setAutoSaveStatus("saving");
+    try {
+      const res = await fetch("/api/receivings/auto-save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        lastAutoSaveDataRef.current = dataKey;
+        if (!editingReceivingId && data.id) {
+          setEditingReceivingId(data.id);
+          if (data.receivingNumber) setFormReceivingNumber(data.receivingNumber);
+        }
+        setAutoSaveStatus("saved");
+        queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
+      } else {
+        setAutoSaveStatus("error");
+      }
+    } catch {
+      setAutoSaveStatus("error");
+    }
+  }, [supplierId, warehouseId, supplierInvoiceNo, receiveDate, formNotes, formLines, formStatus, editingReceivingId]);
+
+  useEffect(() => {
+    if (formStatus !== "draft" || !supplierId || !warehouseId) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 15000);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [supplierId, warehouseId, supplierInvoiceNo, receiveDate, formNotes, formLines, performAutoSave, formStatus]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (formStatus === "draft" && supplierId && warehouseId) {
+        const payload = {
+          header: { supplierId, supplierInvoiceNo, warehouseId, receiveDate, notes: formNotes || undefined },
+          lines: formLines.map((l) => ({
+            itemId: l.itemId, unitLevel: l.unitLevel, qtyEntered: String(l.qtyEntered),
+            qtyInMinor: String(l.qtyInMinor), bonusQty: String(l.bonusQty), bonusQtyInMinor: String(l.bonusQtyInMinor),
+            purchasePrice: String(l.purchasePrice), lineTotal: String(l.lineTotal),
+            batchNumber: l.batchNumber || undefined, expiryMonth: l.expiryMonth || undefined,
+            expiryYear: l.expiryYear || undefined, salePrice: l.salePrice != null ? String(l.salePrice) : undefined,
+          })),
+          existingId: editingReceivingId || undefined,
+        };
+        navigator.sendBeacon("/api/receivings/auto-save", new Blob([JSON.stringify(payload)], { type: "application/json" }));
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [formStatus, supplierId, warehouseId, supplierInvoiceNo, receiveDate, formNotes, formLines, editingReceivingId]);
 
   const saveDraftMutation = useMutation({
     mutationFn: async () => {
@@ -544,6 +641,8 @@ export default function SupplierReceiving() {
     },
     onSuccess: async (res) => {
       toast({ title: "تم حفظ المسودة بنجاح" });
+      lastAutoSaveDataRef.current = "";
+      setAutoSaveStatus("idle");
       if (!editingReceivingId) {
         try {
           const data = await res.json();
@@ -1580,6 +1679,18 @@ export default function SupplierReceiving() {
                 {saveDraftMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
                 حفظ مسودة
               </Button>
+              {autoSaveStatus === "saving" && (
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  جاري الحفظ التلقائي...
+                </span>
+              )}
+              {autoSaveStatus === "saved" && (
+                <span className="text-[10px] text-green-600 flex items-center gap-1" data-testid="text-auto-save-status">
+                  <Check className="h-3 w-3" />
+                  تم الحفظ التلقائي
+                </span>
+              )}
               <Button
                 variant="outline"
                 size="sm"

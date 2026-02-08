@@ -1740,6 +1740,32 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/transfers/auto-save", async (req, res) => {
+    try {
+      const { header, lines, existingId } = req.body;
+      if (!header) return res.status(400).json({ message: "بيانات ناقصة" });
+      const { transferDate, sourceWarehouseId, destinationWarehouseId, notes } = header;
+      if (!sourceWarehouseId || !destinationWarehouseId) {
+        return res.status(400).json({ message: "يجب اختيار مخزن المصدر والوجهة" });
+      }
+      const safeLines = Array.isArray(lines) ? lines.filter((l: any) => l.itemId) : [];
+      const safeHeader = { transferDate: transferDate || new Date().toISOString().split("T")[0], sourceWarehouseId, destinationWarehouseId, notes: notes || null };
+
+      if (existingId) {
+        const existing = await storage.getTransfer(existingId);
+        if (!existing) return res.status(404).json({ message: "التحويل غير موجود" });
+        if (existing.status !== "draft") return res.status(409).json({ message: "لا يمكن تعديل تحويل مُرحّل" });
+        await storage.updateDraftTransfer(existingId, safeHeader, safeLines);
+        return res.json({ id: existingId, transferNumber: existing.transferNumber });
+      } else {
+        const transfer = await storage.createDraftTransfer(safeHeader, safeLines);
+        return res.status(201).json({ id: transfer.id, transferNumber: transfer.transferNumber });
+      }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/transfers", async (req, res) => {
     try {
       const { transferDate, sourceWarehouseId, destinationWarehouseId, notes, lines } = req.body;
@@ -1893,6 +1919,53 @@ export async function registerRoutes(
       const receiving = await storage.getReceiving(req.params.id);
       if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
       res.json(receiving);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/receivings/auto-save", async (req, res) => {
+    try {
+      const { header, lines, existingId } = req.body;
+      if (!header) return res.status(400).json({ message: "بيانات ناقصة" });
+      
+      const receiveDate = header.receiveDate || new Date().toISOString().split("T")[0];
+      const supplierId = header.supplierId || null;
+      const warehouseId = header.warehouseId || null;
+      let supplierInvoiceNo = header.supplierInvoiceNo?.trim() || "";
+      
+      if (!supplierId || !warehouseId) {
+        return res.status(400).json({ message: "يجب اختيار المورد والمخزن أولاً للحفظ التلقائي" });
+      }
+      
+      if (!supplierInvoiceNo) {
+        supplierInvoiceNo = `__AUTO_${Date.now()}`;
+      }
+      
+      const safeHeader = { ...header, supplierId, warehouseId, receiveDate, supplierInvoiceNo };
+      const safeLines = Array.isArray(lines) ? lines.filter((l: any) => l.itemId) : [];
+      
+      if (existingId) {
+        const existing = await storage.getReceiving(existingId);
+        if (!existing) return res.status(404).json({ message: "المستند غير موجود" });
+        if (existing.status !== "draft") return res.status(409).json({ message: "لا يمكن تعديل مستند مُرحّل" });
+        
+        if (supplierInvoiceNo && !supplierInvoiceNo.startsWith("__AUTO_")) {
+          const isUnique = await storage.checkSupplierInvoiceUnique(supplierId, supplierInvoiceNo, existingId);
+          if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر" });
+        }
+        
+        const result = await storage.saveDraftReceiving(safeHeader, safeLines, existingId);
+        return res.json(result);
+      } else {
+        if (supplierInvoiceNo && !supplierInvoiceNo.startsWith("__AUTO_")) {
+          const isUnique = await storage.checkSupplierInvoiceUnique(supplierId, supplierInvoiceNo);
+          if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر" });
+        }
+        
+        const result = await storage.saveDraftReceiving(safeHeader, safeLines);
+        return res.status(201).json(result);
+      }
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -2081,6 +2154,20 @@ export async function registerRoutes(
     });
     return errors;
   }
+
+  app.post("/api/purchase-invoices/:id/auto-save", async (req, res) => {
+    try {
+      const invoice = await storage.getPurchaseInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (invoice.status !== "draft") return res.status(409).json({ message: "لا يمكن تعديل فاتورة معتمدة" });
+      const { lines, ...headerUpdates } = req.body;
+      const safeLines = Array.isArray(lines) ? lines : [];
+      const result = await storage.savePurchaseInvoice(req.params.id, safeLines, headerUpdates);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
 
   app.patch("/api/purchase-invoices/:id", async (req, res) => {
     try {
@@ -2383,6 +2470,31 @@ export async function registerRoutes(
       const invoice = await storage.getSalesInvoice(req.params.id);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       res.json(invoice);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/sales-invoices/auto-save", async (req, res) => {
+    try {
+      const { header, lines, existingId } = req.body;
+      if (!header?.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
+      const safeLines = Array.isArray(lines) ? lines.filter((l: any) => l.itemId) : [];
+
+      if (existingId) {
+        const existing = await storage.getSalesInvoice(existingId);
+        if (!existing) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+        if (existing.status !== "draft") return res.status(409).json({ message: "لا يمكن تعديل فاتورة معتمدة" });
+        const invoice = await storage.updateSalesInvoice(existingId, header, safeLines);
+        return res.json(invoice);
+      } else {
+        if (safeLines.length === 0) {
+          const invoice = await storage.createSalesInvoice(header, []);
+          return res.status(201).json(invoice);
+        }
+        const invoice = await storage.createSalesInvoice(header, safeLines);
+        return res.status(201).json(invoice);
+      }
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

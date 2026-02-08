@@ -117,6 +117,10 @@ export default function StoreTransfers() {
   const [formStatus, setFormStatus] = useState<string>("draft");
   const [formTransferNumber, setFormTransferNumber] = useState<number | null>(null);
 
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoSaveDataRef = useRef<string>("");
+
   const [modalOpen, setModalOpen] = useState(false);
   const [modalSearchMode, setModalSearchMode] = useState("AR");
   const [modalSearchText, setModalSearchText] = useState("");
@@ -228,6 +232,107 @@ export default function StoreTransfers() {
     }
   }, [toast]);
 
+  const performAutoSave = useCallback(async () => {
+    if (formStatus !== "draft" || !sourceWarehouseId || !destWarehouseId) return;
+
+    const lines = formLines.map((l) => ({
+      itemId: l.itemId,
+      unitLevel: l.unitLevel,
+      qtyEntered: String(l.qtyEntered),
+      qtyInMinor: String(l.qtyInMinor),
+      selectedExpiryDate: l.selectedExpiryDate || undefined,
+      expiryMonth: l.selectedExpiryMonth || undefined,
+      expiryYear: l.selectedExpiryYear || undefined,
+      availableAtSaveMinor: l.availableQtyMinor || undefined,
+      notes: l.notes || undefined,
+    }));
+
+    const payload = {
+      header: {
+        transferDate,
+        sourceWarehouseId,
+        destinationWarehouseId: destWarehouseId,
+        notes: formNotes,
+      },
+      lines,
+      existingId: editingTransferId || undefined,
+    };
+
+    const dataStr = JSON.stringify(payload);
+    if (dataStr === lastAutoSaveDataRef.current) return;
+
+    setAutoSaveStatus("saving");
+    try {
+      const res = await fetch("/api/transfers/auto-save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: dataStr,
+      });
+      if (!res.ok) throw new Error("Auto-save failed");
+      const result = await res.json();
+      lastAutoSaveDataRef.current = dataStr;
+      setAutoSaveStatus("saved");
+      if (!editingTransferId && result.id) {
+        setEditingTransferId(result.id);
+        if (result.transferNumber) setFormTransferNumber(result.transferNumber);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
+    } catch {
+      setAutoSaveStatus("error");
+    }
+  }, [formStatus, sourceWarehouseId, destWarehouseId, transferDate, formNotes, formLines, editingTransferId]);
+
+  useEffect(() => {
+    if (formStatus !== "draft" || !sourceWarehouseId || !destWarehouseId) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 15000);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [formStatus, sourceWarehouseId, destWarehouseId, transferDate, formNotes, formLines, performAutoSave]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (formStatus !== "draft" || !sourceWarehouseId || !destWarehouseId) return;
+
+      const lines = formLines.map((l) => ({
+        itemId: l.itemId,
+        unitLevel: l.unitLevel,
+        qtyEntered: String(l.qtyEntered),
+        qtyInMinor: String(l.qtyInMinor),
+        selectedExpiryDate: l.selectedExpiryDate || undefined,
+        expiryMonth: l.selectedExpiryMonth || undefined,
+        expiryYear: l.selectedExpiryYear || undefined,
+        availableAtSaveMinor: l.availableQtyMinor || undefined,
+        notes: l.notes || undefined,
+      }));
+
+      const payload = {
+        header: {
+          transferDate,
+          sourceWarehouseId,
+          destinationWarehouseId: destWarehouseId,
+          notes: formNotes,
+        },
+        lines,
+        existingId: editingTransferId || undefined,
+      };
+
+      const dataStr = JSON.stringify(payload);
+      if (dataStr === lastAutoSaveDataRef.current) return;
+
+      navigator.sendBeacon(
+        "/api/transfers/auto-save",
+        new Blob([dataStr], { type: "application/json" })
+      );
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [formStatus, sourceWarehouseId, destWarehouseId, transferDate, formNotes, formLines, editingTransferId]);
+
   const saveDraftMutation = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -250,6 +355,8 @@ export default function StoreTransfers() {
       return apiRequest("POST", "/api/transfers", payload);
     },
     onSuccess: () => {
+      lastAutoSaveDataRef.current = "";
+      setAutoSaveStatus("idle");
       toast({ title: "تم حفظ المسودة بنجاح" });
       resetForm();
       queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
@@ -334,6 +441,8 @@ export default function StoreTransfers() {
     setFocusedLineIdx(null);
     setFefoLoadingIndex(null);
     pendingQtyRef.current.clear();
+    lastAutoSaveDataRef.current = "";
+    setAutoSaveStatus("idle");
   };
 
   const canSaveDraft =
@@ -1548,6 +1657,18 @@ export default function StoreTransfers() {
                 {saveDraftMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
                 حفظ كمسودة
               </Button>
+              {autoSaveStatus === "saving" && (
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  جاري الحفظ التلقائي...
+                </span>
+              )}
+              {autoSaveStatus === "saved" && (
+                <span className="text-[10px] text-green-600 flex items-center gap-1" data-testid="text-auto-save-status">
+                  <Check className="h-3 w-3" />
+                  تم الحفظ التلقائي
+                </span>
+              )}
               <Button
                 variant="outline"
                 size="sm"

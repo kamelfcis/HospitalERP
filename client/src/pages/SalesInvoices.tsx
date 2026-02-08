@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, ArrowRight, Save, CheckCircle, Trash2, ChevronLeft, ChevronRight, ShoppingCart, Search, X, Plus, Barcode } from "lucide-react";
+import { Loader2, ArrowRight, Save, CheckCircle, Trash2, ChevronLeft, ChevronRight, ShoppingCart, Search, X, Plus, Barcode, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatDateShort } from "@/lib/formatters";
@@ -112,6 +112,11 @@ export default function SalesInvoices() {
 
   const [seedLoading, setSeedLoading] = useState(false);
   const [quickTestLoading, setQuickTestLoading] = useState(false);
+
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoSaveDataRef = useRef<string>("");
+  const autoSaveIdRef = useRef<string | null>(null);
 
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [searchMode, setSearchMode] = useState("AR");
@@ -542,6 +547,112 @@ export default function SalesInvoices() {
     } catch {}
   }, [warehouseId, invoiceDate]);
 
+  const performAutoSave = useCallback(async () => {
+    if (!isDraft || !warehouseId) return;
+    const header = {
+      warehouseId,
+      invoiceDate,
+      customerType,
+      customerName: customerName || null,
+      contractCompany: customerType === "contract" ? contractCompany : null,
+      discountPercent: discountPct,
+      discountValue,
+      subtotal: +subtotal.toFixed(2),
+      netTotal: +netTotal.toFixed(2),
+      notes: notes || null,
+    };
+    const linesPayload = lines.map((ln, i) => ({
+      itemId: ln.itemId,
+      unitLevel: ln.unitLevel,
+      qty: ln.qty,
+      salePrice: ln.salePrice,
+      lineTotal: ln.lineTotal,
+      expiryMonth: ln.expiryMonth,
+      expiryYear: ln.expiryYear,
+      lotId: ln.lotId,
+      lineNo: i + 1,
+    }));
+    const existingId = autoSaveIdRef.current || (editId !== "new" ? editId : undefined);
+    const payload = { header, lines: linesPayload, existingId };
+    const dataStr = JSON.stringify(payload);
+    if (dataStr === lastAutoSaveDataRef.current) return;
+    setAutoSaveStatus("saving");
+    try {
+      const res = await fetch("/api/sales-invoices/auto-save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: dataStr,
+      });
+      if (!res.ok) throw new Error("Auto-save failed");
+      const data = await res.json();
+      lastAutoSaveDataRef.current = dataStr;
+      setAutoSaveStatus("saved");
+      if (isNew && !autoSaveIdRef.current && data?.id) {
+        autoSaveIdRef.current = data.id;
+        navigate(`/sales-invoices?id=${data.id}`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
+    } catch {
+      setAutoSaveStatus("error");
+    }
+  }, [isDraft, warehouseId, invoiceDate, customerType, customerName, contractCompany, discountPct, discountValue, subtotal, netTotal, notes, lines, editId, isNew, navigate]);
+
+  useEffect(() => {
+    if (!isDraft || !warehouseId) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 15000);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [isDraft, warehouseId, invoiceDate, customerType, customerName, contractCompany, discountPct, discountValue, lines, notes, performAutoSave]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!isDraft || !warehouseId) return;
+      const header = {
+        warehouseId,
+        invoiceDate,
+        customerType,
+        customerName: customerName || null,
+        contractCompany: customerType === "contract" ? contractCompany : null,
+        discountPercent: discountPct,
+        discountValue,
+        subtotal: +subtotal.toFixed(2),
+        netTotal: +netTotal.toFixed(2),
+        notes: notes || null,
+      };
+      const linesPayload = lines.map((ln, i) => ({
+        itemId: ln.itemId,
+        unitLevel: ln.unitLevel,
+        qty: ln.qty,
+        salePrice: ln.salePrice,
+        lineTotal: ln.lineTotal,
+        expiryMonth: ln.expiryMonth,
+        expiryYear: ln.expiryYear,
+        lotId: ln.lotId,
+        lineNo: i + 1,
+      }));
+      const existingId = autoSaveIdRef.current || (editId !== "new" ? editId : undefined);
+      const payload = JSON.stringify({ header, lines: linesPayload, existingId });
+      if (payload === lastAutoSaveDataRef.current) return;
+      navigator.sendBeacon("/api/sales-invoices/auto-save", new Blob([payload], { type: "application/json" }));
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDraft, warehouseId, invoiceDate, customerType, customerName, contractCompany, discountPct, discountValue, subtotal, netTotal, notes, lines, editId]);
+
+  useEffect(() => {
+    if (isNew) {
+      autoSaveIdRef.current = null;
+      lastAutoSaveDataRef.current = "";
+      setAutoSaveStatus("idle");
+    } else if (editId && editId !== "new") {
+      autoSaveIdRef.current = editId;
+    }
+  }, [isNew, editId]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!warehouseId) throw new Error("يجب اختيار المخزن");
@@ -582,6 +693,8 @@ export default function SalesInvoices() {
     },
     onSuccess: (data) => {
       toast({ title: "تم الحفظ بنجاح" });
+      lastAutoSaveDataRef.current = "";
+      setAutoSaveStatus("idle");
       queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
       if (isNew && data?.id) {
         navigate(`/sales-invoices?id=${data.id}`);
@@ -737,6 +850,18 @@ export default function SalesInvoices() {
                 {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
                 حفظ
               </Button>
+              {autoSaveStatus === "saving" && (
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  جاري الحفظ التلقائي...
+                </span>
+              )}
+              {autoSaveStatus === "saved" && (
+                <span className="text-[10px] text-green-600 flex items-center gap-1" data-testid="text-auto-save-status">
+                  <Check className="h-3 w-3" />
+                  تم الحفظ التلقائي
+                </span>
+              )}
               <Button size="sm" onClick={() => setConfirmFinalizeOpen(true)} disabled={finalizeMutation.isPending} data-testid="button-finalize">
                 {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
                 اعتماد نهائي

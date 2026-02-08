@@ -243,6 +243,7 @@ export interface IStorage {
   }): Promise<{data: StoreTransferWithDetails[]; total: number}>;
   getTransfer(id: string): Promise<StoreTransferWithDetails | undefined>;
   createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer>;
+  updateDraftTransfer(transferId: string, header: any, lines: any[]): Promise<StoreTransfer>;
   postTransfer(transferId: string): Promise<StoreTransfer>;
   deleteTransfer(id: string): Promise<boolean>;
   getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
@@ -1450,6 +1451,37 @@ export class DatabaseStorage implements IStorage {
       }
 
       return transfer;
+    });
+  }
+
+  async updateDraftTransfer(transferId: string, header: any, lines: any[]): Promise<StoreTransfer> {
+    return await db.transaction(async (tx) => {
+      await tx.update(storeTransfers).set({
+        transferDate: header.transferDate,
+        sourceWarehouseId: header.sourceWarehouseId,
+        destinationWarehouseId: header.destinationWarehouseId,
+        notes: header.notes || null,
+      }).where(eq(storeTransfers.id, transferId));
+
+      await tx.delete(transferLines).where(eq(transferLines.transferId, transferId));
+
+      for (const line of lines) {
+        await tx.insert(transferLines).values({
+          transferId,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel as any,
+          qtyEntered: line.qtyEntered,
+          qtyInMinor: line.qtyInMinor,
+          selectedExpiryDate: line.selectedExpiryDate || null,
+          selectedExpiryMonth: line.expiryMonth || null,
+          selectedExpiryYear: line.expiryYear || null,
+          availableAtSaveMinor: line.availableAtSaveMinor || null,
+          notes: line.notes || null,
+        });
+      }
+
+      const [updated] = await tx.select().from(storeTransfers).where(eq(storeTransfers.id, transferId));
+      return updated;
     });
   }
 

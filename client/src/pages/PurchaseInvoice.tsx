@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Loader2, ArrowRight, Save, CheckCircle, Eye, Trash2, ChevronLeft, ChevronRight, FileText, AlertTriangle } from "lucide-react";
+import { Loader2, ArrowRight, Save, CheckCircle, Eye, Trash2, ChevronLeft, ChevronRight, FileText, AlertTriangle, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateShort, formatNumber } from "@/lib/formatters";
@@ -127,6 +127,9 @@ export default function PurchaseInvoice() {
   const [notes, setNotes] = useState("");
   const [confirmApproveOpen, setConfirmApproveOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoSaveDataRef = useRef<string>("");
 
   const { data: suppliersData } = useQuery<{ suppliers: Supplier[]; total: number }>({
     queryKey: ["/api/suppliers?page=1&pageSize=500"],
@@ -306,6 +309,93 @@ export default function PurchaseInvoice() {
     setDiscountValue(+v.toFixed(2));
   }, [lines]);
 
+  const performAutoSave = useCallback(async () => {
+    if (!isDraft || !editId) return;
+    const payload = {
+      lines: lines.map((ln) => ({
+        id: ln.id,
+        receivingLineId: ln.receivingLineId,
+        itemId: ln.itemId,
+        unitLevel: ln.unitLevel,
+        qty: ln.qty,
+        bonusQty: ln.bonusQty,
+        sellingPrice: ln.sellingPrice,
+        purchasePrice: ln.purchasePrice,
+        lineDiscountPct: ln.lineDiscountPct,
+        lineDiscountValue: ln.lineDiscountValue,
+        vatRate: ln.vatRate,
+        valueBeforeVat: ln.valueBeforeVat,
+        vatAmount: ln.vatAmount,
+        valueAfterVat: ln.valueAfterVat,
+        batchNumber: ln.batchNumber,
+        expiryMonth: ln.expiryMonth,
+        expiryYear: ln.expiryYear,
+      })),
+      discountType,
+      discountValue,
+      invoiceDate,
+      notes,
+    };
+    const dataStr = JSON.stringify(payload);
+    if (dataStr === lastAutoSaveDataRef.current) return;
+    try {
+      setAutoSaveStatus("saving");
+      await apiRequest("POST", `/api/purchase-invoices/${editId}/auto-save`, payload);
+      lastAutoSaveDataRef.current = dataStr;
+      setAutoSaveStatus("saved");
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
+    } catch {
+      setAutoSaveStatus("error");
+    }
+  }, [isDraft, editId, lines, discountType, discountValue, invoiceDate, notes]);
+
+  useEffect(() => {
+    if (!isDraft || !editId) return;
+    autoSaveTimerRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 15000);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [isDraft, editId, lines, invoiceDate, notes, discountType, discountValue, performAutoSave]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!isDraft || !editId) return;
+      const payload = {
+        lines: lines.map((ln) => ({
+          id: ln.id,
+          receivingLineId: ln.receivingLineId,
+          itemId: ln.itemId,
+          unitLevel: ln.unitLevel,
+          qty: ln.qty,
+          bonusQty: ln.bonusQty,
+          sellingPrice: ln.sellingPrice,
+          purchasePrice: ln.purchasePrice,
+          lineDiscountPct: ln.lineDiscountPct,
+          lineDiscountValue: ln.lineDiscountValue,
+          vatRate: ln.vatRate,
+          valueBeforeVat: ln.valueBeforeVat,
+          vatAmount: ln.vatAmount,
+          valueAfterVat: ln.valueAfterVat,
+          batchNumber: ln.batchNumber,
+          expiryMonth: ln.expiryMonth,
+          expiryYear: ln.expiryYear,
+        })),
+        discountType,
+        discountValue,
+        invoiceDate,
+        notes,
+      };
+      navigator.sendBeacon(
+        `/api/purchase-invoices/${editId}/auto-save`,
+        new Blob([JSON.stringify(payload)], { type: "application/json" })
+      );
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDraft, editId, lines, discountType, discountValue, invoiceDate, notes]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const errorText = formatLineErrors(lines);
@@ -342,6 +432,8 @@ export default function PurchaseInvoice() {
       await apiRequest("PATCH", `/api/purchase-invoices/${editId}`, body);
     },
     onSuccess: () => {
+      lastAutoSaveDataRef.current = "";
+      setAutoSaveStatus("idle");
       toast({ title: "تم الحفظ بنجاح" });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
       queryClient.invalidateQueries({ queryKey: [`/api/purchase-invoices/${editId}`] });
@@ -473,6 +565,18 @@ export default function PurchaseInvoice() {
                 {approveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
                 اعتماد وتسعير
               </Button>
+              {autoSaveStatus === "saving" && (
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  جاري الحفظ التلقائي...
+                </span>
+              )}
+              {autoSaveStatus === "saved" && (
+                <span className="text-[10px] text-green-600 flex items-center gap-1" data-testid="text-auto-save-status">
+                  <Check className="h-3 w-3" />
+                  تم الحفظ التلقائي
+                </span>
+              )}
             </div>
           )}
         </div>

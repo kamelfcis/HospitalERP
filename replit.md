@@ -97,6 +97,18 @@ Preferred communication style: Simple, everyday language.
 - postReceiving route returns 400 for validation errors (not 500).
 - Transfer delete/post routes return proper HTTP status codes (400 for validation, 409 for immutability).
 
+### Auto-Save System
+- All document entry forms (Supplier Receiving, Purchase Invoice, Sales Invoice, Store Transfer) have auto-save functionality.
+- Auto-save triggers every 15 seconds after form state changes when minimum required fields are set.
+- Minimum requirements: Receiving needs supplierId + warehouseId; Transfers need source + destination warehouses; Purchase Invoices need an existing editId (always draft); Sales Invoices need warehouseId.
+- Temporary invoice numbers (`__AUTO_${timestamp}`) used for receiving auto-saves to avoid unique constraint conflicts until user provides real invoice number.
+- Uses `lastAutoSaveDataRef` (JSON.stringify comparison) to skip duplicate saves of identical data.
+- Visual status indicators: "جاري الحفظ التلقائي..." (saving) and "تم الحفظ التلقائي" (saved) with icons.
+- `beforeunload` handler uses `navigator.sendBeacon` for final save attempt on page close.
+- Auto-save state resets on manual save and on form reset.
+- Backend auto-save endpoints skip strict validation (empty lines allowed, no discount validation for purchase invoices).
+- API endpoints: POST `/api/receivings/auto-save`, POST `/api/transfers/auto-save`, POST `/api/purchase-invoices/:id/auto-save`, POST `/api/sales-invoices/auto-save`.
+
 ### Reusable UI Components
 - ExpiryInput (`client/src/components/ui/expiry-input.tsx`): Single text input for MM/YYYY format with auto-slash, supports MMYY/MMYYYY/MM/YY/MM/YYYY parsing. Exports `parseExpiryFinal` for testability. Key design: onChange only fires on blur/Enter/Tab, never during typing, to prevent premature year expansion (e.g., "12/20" → 2020 bug).
 
