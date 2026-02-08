@@ -1015,8 +1015,17 @@ export default function SalesInvoices() {
               </tr>
             </thead>
             <tbody>
-              {lines.map((ln, i) => {
+              {(() => {
+                const itemPriceMap = new Map<string, Set<number>>();
+                lines.forEach((ln) => {
+                  if (!itemPriceMap.has(ln.itemId)) itemPriceMap.set(ln.itemId, new Set());
+                  itemPriceMap.get(ln.itemId)!.add(ln.baseSalePrice);
+                });
+                const multiPriceItems = new Set<string>();
+                itemPriceMap.forEach((prices, itemId) => { if (prices.size > 1) multiPriceItems.add(itemId); });
+                return lines.map((ln, i) => {
                 const needsExpiry = ln.item?.hasExpiry && !ln.expiryMonth;
+                const hasMultiPrice = multiPriceItems.has(ln.itemId);
                 return (
                   <tr
                     key={ln.tempId}
@@ -1043,7 +1052,7 @@ export default function SalesInvoices() {
                         getUnitName(ln.item, ln.unitLevel)
                       )}
                     </td>
-                    <td className="text-center">
+                    <td className={`text-center ${hasMultiPrice ? "bg-amber-100 dark:bg-amber-900/30" : ""}`}>
                       {isDraft ? (
                         <input
                           ref={(el) => { if (el) qtyRefs.current.set(i, el); else qtyRefs.current.delete(i); }}
@@ -1124,7 +1133,8 @@ export default function SalesInvoices() {
                     )}
                   </tr>
                 );
-              })}
+              });
+              })()}
               {lines.length === 0 && (
                 <tr>
                   <td colSpan={isDraft ? 8 : 7} className="text-center text-muted-foreground py-6">لا توجد أصناف - امسح الباركود أو استخدم البحث لإضافة أصناف</td>
