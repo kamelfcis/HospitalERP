@@ -2314,6 +2314,39 @@ export async function registerRoutes(
     }
   });
 
+  // ===== Service Consumables =====
+
+  app.get("/api/services/:id/consumables", async (req, res) => {
+    try {
+      const consumables = await storage.getServiceConsumables(req.params.id);
+      res.json(consumables);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/services/:id/consumables", async (req, res) => {
+    try {
+      const lines = req.body;
+      if (!Array.isArray(lines)) {
+        return res.status(400).json({ message: "يجب إرسال مصفوفة من المستهلكات" });
+      }
+      const validUnitLevels = ["major", "medium", "minor"];
+      for (const line of lines) {
+        if (!line.itemId || !line.quantity || Number(line.quantity) <= 0) {
+          return res.status(400).json({ message: "كل مستهلك يجب أن يحتوي على صنف وكمية صحيحة" });
+        }
+        if (line.unitLevel && !validUnitLevels.includes(line.unitLevel)) {
+          return res.status(400).json({ message: "مستوى الوحدة غير صالح" });
+        }
+      }
+      const result = await storage.replaceServiceConsumables(req.params.id, lines);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ===== Price Lists =====
 
   app.get("/api/price-lists", async (req, res) => {

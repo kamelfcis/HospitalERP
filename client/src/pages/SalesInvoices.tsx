@@ -126,6 +126,14 @@ export default function SalesInvoices() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [serviceModalOpen, setServiceModalOpen] = useState(false);
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [serviceResults, setServiceResults] = useState<any[]>([]);
+  const [serviceSearchLoading, setServiceSearchLoading] = useState(false);
+  const [addingServiceId, setAddingServiceId] = useState<string | null>(null);
+  const serviceSearchRef = useRef<HTMLInputElement>(null);
+  const serviceDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [fefoLoading, setFefoLoading] = useState(false);
   const pendingQtyRef = useRef<Map<string, string>>(new Map());
   const linesRef = useRef<SalesLineLocal[]>([]);
@@ -278,7 +286,7 @@ export default function SalesInvoices() {
     setLines((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const addItemToLines = useCallback(async (itemData: any) => {
+  const addItemToLines = useCallback(async (itemData: any, overrides?: { qty?: number; unitLevel?: string }) => {
     let baseSalePrice = parseFloat(String(itemData.salePriceCurrent)) || 0;
     let priceSource = "item";
     if (warehouseId) {
@@ -301,7 +309,9 @@ export default function SalesInvoices() {
         (sum, l) => sum + calculateQtyInMinor(l.qty, l.unitLevel, l.item),
         0
       );
-      const additionalMinor = calculateQtyInMinor(1, "major", itemData);
+      const overrideQty = overrides?.qty ?? 1;
+      const overrideUnit = overrides?.unitLevel ?? "major";
+      const additionalMinor = calculateQtyInMinor(overrideQty, overrideUnit, itemData);
       const totalRequiredMinor = existingTotalMinor + additionalMinor;
 
       setFefoLoading(true);
@@ -326,7 +336,7 @@ export default function SalesInvoices() {
           return;
         }
 
-        const unitLevel = existingLinesForItem.length > 0 ? existingLinesForItem[0].unitLevel : "major";
+        const unitLevel = overrides?.unitLevel ?? (existingLinesForItem.length > 0 ? existingLinesForItem[0].unitLevel : "major");
 
         const newFefoLines: SalesLineLocal[] = preview.allocations
           .filter((a: any) => parseFloat(a.allocatedQty) > 0)
@@ -371,24 +381,29 @@ export default function SalesInvoices() {
       return;
     }
 
-    const existingIdx = linesRef.current.findIndex(
-      (l) => l.itemId === itemData.id && l.unitLevel === "major"
-    );
-    if (existingIdx >= 0) {
-      updateLine(existingIdx, { qty: linesRef.current[existingIdx].qty + 1 });
-      return;
+    const targetUnit = overrides?.unitLevel ?? "major";
+    const targetQty = overrides?.qty ?? 1;
+
+    if (!overrides) {
+      const existingIdx = linesRef.current.findIndex(
+        (l) => l.itemId === itemData.id && l.unitLevel === targetUnit
+      );
+      if (existingIdx >= 0) {
+        updateLine(existingIdx, { qty: linesRef.current[existingIdx].qty + targetQty });
+        return;
+      }
     }
 
-    const salePrice = baseSalePrice;
+    const salePrice = computeUnitPriceFromBase(baseSalePrice, targetUnit, itemData);
     const newLine: SalesLineLocal = {
       tempId: genId(),
       itemId: itemData.id,
       item: itemData,
-      unitLevel: "major",
-      qty: 1,
+      unitLevel: targetUnit,
+      qty: targetQty,
       salePrice,
       baseSalePrice,
-      lineTotal: salePrice,
+      lineTotal: +(targetQty * salePrice).toFixed(2),
       expiryMonth: null,
       expiryYear: null,
       lotId: null,
@@ -397,6 +412,88 @@ export default function SalesInvoices() {
 
     setLines((prev) => [...prev, newLine]);
   }, [updateLine, warehouseId, invoiceDate, toast]);
+
+  const onServiceSearchChange = useCallback((q: string) => {
+    setServiceSearch(q);
+    if (serviceDebounceRef.current) clearTimeout(serviceDebounceRef.current);
+    if (!q || q.length < 2) { setServiceResults([]); return; }
+    setServiceSearchLoading(true);
+    serviceDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/services?search=${encodeURIComponent(q)}&active=true&page=1&pageSize=20`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setServiceResults(data.data || []);
+        }
+      } catch {} finally { setServiceSearchLoading(false); }
+    }, 300);
+  }, []);
+
+  const addServiceConsumables = useCallback(async (serviceId: string, serviceName: string) => {
+    if (!warehouseId) {
+      toast({ title: "اختر المخزن أولاً", variant: "destructive" });
+      return;
+    }
+    setAddingServiceId(serviceId);
+    try {
+      const res = await fetch(`/api/services/${serviceId}/consumables`, { credentials: "include" });
+      if (!res.ok) throw new Error("فشل تحميل المستهلكات");
+      const consumables = await res.json();
+
+      if (!consumables || consumables.length === 0) {
+        toast({ title: serviceName, description: "لا توجد مستهلكات مرتبطة بهذه الخدمة" });
+        setAddingServiceId(null);
+        return;
+      }
+
+      const warnings: string[] = [];
+      let addedCount = 0;
+
+      for (const cons of consumables) {
+        if (!cons.item) continue;
+        const itemRes = await fetch(`/api/items/${cons.itemId}`, { credentials: "include" });
+        if (!itemRes.ok) continue;
+        const itemData = await itemRes.json();
+
+        const qtyMinor = calculateQtyInMinor(parseFloat(cons.quantity), cons.unitLevel, itemData);
+
+        if (warehouseId) {
+          try {
+            const stockRes = await fetch(`/api/transfer/fefo-preview?itemId=${cons.itemId}&warehouseId=${warehouseId}&requiredQtyInMinor=${qtyMinor}&asOfDate=${invoiceDate}`);
+            if (stockRes.ok) {
+              const stockData = await stockRes.json();
+              if (!stockData.fulfilled) {
+                warnings.push(`${itemData.nameAr}: الكمية غير كافية (المطلوب: ${cons.quantity} ${getUnitName(itemData, cons.unitLevel)})`);
+              }
+            }
+          } catch {}
+        }
+
+        await addItemToLines(itemData, { qty: parseFloat(cons.quantity) || 1, unitLevel: cons.unitLevel || "major" });
+        addedCount++;
+      }
+
+      if (warnings.length > 0) {
+        toast({
+          title: `تنبيه مخزون - ${serviceName}`,
+          description: warnings.join(" | "),
+          variant: "destructive",
+          duration: 8000,
+        });
+      }
+
+      if (addedCount > 0) {
+        toast({
+          title: `تمت إضافة مستهلكات: ${serviceName}`,
+          description: `تم إضافة ${addedCount} صنف`,
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } finally {
+      setAddingServiceId(null);
+    }
+  }, [warehouseId, invoiceDate, addItemToLines, toast]);
 
   const handleQtyConfirm = useCallback(async (tempId: string) => {
     const currentLines = linesRef.current;
@@ -997,6 +1094,10 @@ export default function SalesInvoices() {
               <Search className="h-3 w-3 ml-1" />
               بحث
             </Button>
+            <Button variant="outline" size="sm" onClick={() => { setServiceModalOpen(true); setServiceSearch(""); setServiceResults([]); setTimeout(() => serviceSearchRef.current?.focus(), 100); }} data-testid="button-open-service-search">
+              <ShoppingCart className="h-3 w-3 ml-1" />
+              خدمة + مستهلكات
+            </Button>
           </div>
         )}
 
@@ -1275,6 +1376,78 @@ export default function SalesInvoices() {
             </ScrollArea>
             <div className="flex justify-end mt-2">
               <Button variant="outline" size="sm" onClick={() => setSearchModalOpen(false)} data-testid="button-close-search">
+                <X className="h-3 w-3 ml-1" />
+                إغلاق
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={serviceModalOpen} onOpenChange={setServiceModalOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh]" dir="rtl">
+            <DialogHeader>
+              <DialogTitle>إضافة خدمة مع مستهلكات</DialogTitle>
+              <DialogDescription>اختر خدمة لإضافة مستهلكاتها تلقائياً للفاتورة</DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center gap-2 mb-2">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <input
+                ref={serviceSearchRef}
+                type="text"
+                value={serviceSearch}
+                onChange={(e) => onServiceSearchChange(e.target.value)}
+                placeholder="ابحث عن خدمة بالكود أو الاسم..."
+                className="peachtree-input flex-1"
+                data-testid="input-service-search-invoice"
+              />
+              {serviceSearchLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+            </div>
+            <ScrollArea className="max-h-[50vh]">
+              <table className="peachtree-grid w-full text-[12px]" data-testid="table-service-results">
+                <thead>
+                  <tr className="peachtree-grid-header">
+                    <th>الكود</th>
+                    <th>اسم الخدمة</th>
+                    <th>القسم</th>
+                    <th>السعر</th>
+                    <th>إضافة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {serviceResults.map((svc: any) => (
+                    <tr key={svc.id} className="peachtree-grid-row" data-testid={`row-service-${svc.id}`}>
+                      <td className="text-center font-mono">{svc.code}</td>
+                      <td className="font-semibold">{svc.nameAr}</td>
+                      <td className="text-center">{svc.department?.nameAr || "-"}</td>
+                      <td className="text-center peachtree-amount">{formatNumber(svc.basePrice)}</td>
+                      <td className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={addingServiceId === svc.id}
+                          onClick={() => addServiceConsumables(svc.id, svc.nameAr)}
+                          data-testid={`button-add-service-${svc.id}`}
+                        >
+                          {addingServiceId === svc.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {serviceResults.length === 0 && serviceSearch && !serviceSearchLoading && (
+                    <tr>
+                      <td colSpan={5} className="text-center text-muted-foreground py-4">لا توجد نتائج</td>
+                    </tr>
+                  )}
+                  {!serviceSearch && (
+                    <tr>
+                      <td colSpan={5} className="text-center text-muted-foreground py-4">ابحث عن خدمة لإضافة مستهلكاتها</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </ScrollArea>
+            <div className="flex justify-end mt-2">
+              <Button variant="outline" size="sm" onClick={() => setServiceModalOpen(false)} data-testid="button-close-service-search">
                 <X className="h-3 w-3 ml-1" />
                 إغلاق
               </Button>

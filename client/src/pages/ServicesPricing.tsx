@@ -16,9 +16,11 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber } from "@/lib/formatters";
 import type {
   Service, ServiceWithDepartment, PriceList, PriceListItem,
-  PriceListItemWithService, Department, Account, CostCenter, Warehouse
+  PriceListItemWithService, Department, Account, CostCenter, Warehouse,
+  Item, ServiceConsumableWithItem
 } from "@shared/schema";
 import { serviceTypeLabels } from "@shared/schema";
+import { Trash2 } from "lucide-react";
 
 function useDebounce(value: string, delay: number) {
   const [debounced, setDebounced] = useState(value);
@@ -49,7 +51,47 @@ function ServicesTab() {
     costCenterId: "", basePrice: "0", isActive: true,
   });
 
+  const [consumables, setConsumables] = useState<{ itemId: string; quantity: string; unitLevel: string; notes: string; item?: any }[]>([]);
+  const [consumableSearch, setConsumableSearch] = useState("");
+  const [consumableResults, setConsumableResults] = useState<Item[]>([]);
+  const [searchingItems, setSearchingItems] = useState(false);
+
   useEffect(() => { setPage(1); }, [debouncedSearch, filterDept, filterCategory, filterActive]);
+
+  useEffect(() => {
+    if (!consumableSearch || consumableSearch.length < 2) {
+      setConsumableResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    setSearchingItems(true);
+    fetch(`/api/items?search=${encodeURIComponent(consumableSearch)}&limit=10&page=1`, { signal: controller.signal, credentials: "include" })
+      .then(r => r.json())
+      .then(data => {
+        const existingIds = new Set(consumables.map(c => c.itemId));
+        setConsumableResults((data.items || []).filter((i: Item) => !existingIds.has(i.id)));
+        setSearchingItems(false);
+      })
+      .catch(() => setSearchingItems(false));
+    return () => controller.abort();
+  }, [consumableSearch]);
+
+  useEffect(() => {
+    if (editingService) {
+      fetch(`/api/services/${editingService.id}/consumables`, { credentials: "include" })
+        .then(r => r.json())
+        .then((data: ServiceConsumableWithItem[]) => {
+          setConsumables(data.map(c => ({
+            itemId: c.itemId,
+            quantity: String(c.quantity),
+            unitLevel: c.unitLevel,
+            notes: c.notes || "",
+            item: c.item,
+          })));
+        })
+        .catch(() => {});
+    }
+  }, [editingService]);
 
   const qp = new URLSearchParams();
   if (debouncedSearch) qp.set("search", debouncedSearch);
@@ -79,8 +121,16 @@ function ServicesTab() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/services", data),
-    onSuccess: () => {
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/services", data);
+      return res.json();
+    },
+    onSuccess: async (created: any) => {
+      if (created?.id && consumables.length > 0) {
+        await apiRequest("PUT", `/api/services/${created.id}/consumables`, consumables.map(c => ({
+          itemId: c.itemId, quantity: c.quantity, unitLevel: c.unitLevel, notes: c.notes || null,
+        })));
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/services"] });
       toast({ title: "تم إنشاء الخدمة بنجاح" });
       closeModal();
@@ -89,8 +139,14 @@ function ServicesTab() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => apiRequest("PUT", `/api/services/${id}`, data),
-    onSuccess: () => {
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      await apiRequest("PUT", `/api/services/${id}`, data);
+      return id;
+    },
+    onSuccess: async (serviceId: string) => {
+      await apiRequest("PUT", `/api/services/${serviceId}/consumables`, consumables.map(c => ({
+        itemId: c.itemId, quantity: c.quantity, unitLevel: c.unitLevel, notes: c.notes || null,
+      })));
       queryClient.invalidateQueries({ queryKey: ["/api/services"] });
       toast({ title: "تم تحديث الخدمة بنجاح" });
       closeModal();
@@ -110,6 +166,9 @@ function ServicesTab() {
   function openCreate() {
     setEditingService(null);
     setForm({ code: "", nameAr: "", nameEn: "", departmentId: "", category: "", serviceType: "SERVICE", defaultWarehouseId: "", revenueAccountId: "", costCenterId: "", basePrice: "0", isActive: true });
+    setConsumables([]);
+    setConsumableSearch("");
+    setConsumableResults([]);
     setModalOpen(true);
   }
 
@@ -125,7 +184,7 @@ function ServicesTab() {
     setModalOpen(true);
   }
 
-  function closeModal() { setModalOpen(false); setEditingService(null); }
+  function closeModal() { setModalOpen(false); setEditingService(null); setConsumables([]); setConsumableSearch(""); setConsumableResults([]); }
 
   function handleSave() {
     const payload = {
@@ -140,6 +199,26 @@ function ServicesTab() {
     } else {
       createMutation.mutate(payload);
     }
+  }
+
+  function addConsumable(item: Item) {
+    setConsumables(prev => [...prev, {
+      itemId: item.id,
+      quantity: "1",
+      unitLevel: "minor",
+      notes: "",
+      item,
+    }]);
+    setConsumableSearch("");
+    setConsumableResults([]);
+  }
+
+  function removeConsumable(idx: number) {
+    setConsumables(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateConsumable(idx: number, field: string, value: string) {
+    setConsumables(prev => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c));
   }
 
   const saving = createMutation.isPending || updateMutation.isPending;
@@ -398,6 +477,114 @@ function ServicesTab() {
               <Label htmlFor="svc-active">نشط</Label>
             </div>
           </div>
+
+          <div className="border-t pt-3 mt-2">
+            <Label className="text-sm font-semibold">المستهلكات المرتبطة بالخدمة</Label>
+            <p className="text-xs text-muted-foreground mb-2">حدد الأصناف التي تُستهلك عند تقديم هذه الخدمة (مثال: سرنجة، كوب تحليل)</p>
+
+            <div className="relative mb-2">
+              <Input
+                data-testid="input-consumable-search"
+                placeholder="ابحث عن صنف لإضافته..."
+                value={consumableSearch}
+                onChange={e => setConsumableSearch(e.target.value)}
+                className="peachtree-input"
+              />
+              {searchingItems && <Loader2 className="h-3 w-3 animate-spin absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />}
+              {consumableResults.length > 0 && (
+                <div className="absolute z-50 top-full right-0 left-0 mt-1 bg-background border rounded-md shadow-md max-h-40 overflow-auto">
+                  {consumableResults.map(item => (
+                    <div
+                      key={item.id}
+                      className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex items-center justify-between"
+                      onClick={() => addConsumable(item)}
+                      data-testid={`consumable-result-${item.id}`}
+                    >
+                      <span>{item.nameAr} ({item.itemCode})</span>
+                      <span className="text-muted-foreground">{item.minorUnitName || item.majorUnitName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {consumables.length > 0 && (
+              <div className="border rounded-md overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-muted/50">
+                      <th className="text-right p-1.5">الصنف</th>
+                      <th className="text-right p-1.5 w-20">الكمية</th>
+                      <th className="text-right p-1.5 w-28">الوحدة</th>
+                      <th className="text-right p-1.5 w-32">ملاحظات</th>
+                      <th className="w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consumables.map((c, idx) => (
+                      <tr key={c.itemId} className="border-t" data-testid={`consumable-row-${idx}`}>
+                        <td className="p-1.5">
+                          <span className="font-medium">{c.item?.nameAr || c.itemId}</span>
+                          {c.item?.itemCode && <span className="text-muted-foreground mr-1">({c.item.itemCode})</span>}
+                        </td>
+                        <td className="p-1.5">
+                          <Input
+                            data-testid={`input-consumable-qty-${idx}`}
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={c.quantity}
+                            onChange={e => updateConsumable(idx, "quantity", e.target.value)}
+                            className="h-7 text-xs w-full"
+                          />
+                        </td>
+                        <td className="p-1.5">
+                          <Select value={c.unitLevel} onValueChange={v => updateConsumable(idx, "unitLevel", v)}>
+                            <SelectTrigger className="h-7 text-xs" data-testid={`select-consumable-unit-${idx}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {c.item?.minorUnitName && <SelectItem value="minor">{c.item.minorUnitName}</SelectItem>}
+                              {c.item?.mediumUnitName && <SelectItem value="medium">{c.item.mediumUnitName}</SelectItem>}
+                              {c.item?.majorUnitName && <SelectItem value="major">{c.item.majorUnitName}</SelectItem>}
+                              {!c.item?.minorUnitName && !c.item?.mediumUnitName && !c.item?.majorUnitName && (
+                                <>
+                                  <SelectItem value="minor">صغرى</SelectItem>
+                                  <SelectItem value="medium">وسطى</SelectItem>
+                                  <SelectItem value="major">كبرى</SelectItem>
+                                </>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="p-1.5">
+                          <Input
+                            data-testid={`input-consumable-notes-${idx}`}
+                            value={c.notes}
+                            onChange={e => updateConsumable(idx, "notes", e.target.value)}
+                            className="h-7 text-xs w-full"
+                            placeholder="اختياري"
+                          />
+                        </td>
+                        <td className="p-1.5">
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeConsumable(idx)} data-testid={`button-remove-consumable-${idx}`}>
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {consumables.length === 0 && (
+              <div className="text-xs text-muted-foreground text-center py-3 border rounded-md bg-muted/20">
+                لا توجد مستهلكات مرتبطة - ابحث عن صنف لإضافته
+              </div>
+            )}
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={closeModal} data-testid="button-cancel-service">إلغاء</Button>
             <Button onClick={handleSave} disabled={saving || !canSave} data-testid="button-save-service">

@@ -91,6 +91,7 @@ import {
   priceLists,
   priceListItems,
   priceAdjustmentsLog,
+  serviceConsumables,
   type Service,
   type InsertService,
   type ServiceWithDepartment,
@@ -98,6 +99,8 @@ import {
   type InsertPriceList,
   type PriceListItem,
   type PriceListItemWithService,
+  type ServiceConsumable,
+  type ServiceConsumableWithItem,
   salesInvoiceHeaders,
   salesInvoiceLines,
   type SalesInvoiceHeader,
@@ -290,6 +293,10 @@ export interface IStorage {
   savePurchaseInvoice(invoiceId: string, lines: any[], headerUpdates?: any): Promise<any>;
   approvePurchaseInvoice(id: string): Promise<any>;
   deletePurchaseInvoice(id: string): Promise<boolean>;
+
+  // Service Consumables
+  getServiceConsumables(serviceId: string): Promise<ServiceConsumableWithItem[]>;
+  replaceServiceConsumables(serviceId: string, lines: { itemId: string; quantity: string; unitLevel: string; notes?: string | null }[]): Promise<ServiceConsumable[]>;
 
   // Sales Invoices
   getNextSalesInvoiceNumber(): Promise<number>;
@@ -3245,6 +3252,56 @@ export class DatabaseStorage implements IStorage {
   async getServiceCategories(): Promise<string[]> {
     const rows = await db.selectDistinct({ category: services.category }).from(services).where(isNotNull(services.category));
     return rows.map((r) => r.category).filter(Boolean) as string[];
+  }
+
+  // ===== Service Consumables =====
+
+  async getServiceConsumables(serviceId: string): Promise<ServiceConsumableWithItem[]> {
+    const rows = await db
+      .select({
+        id: serviceConsumables.id,
+        serviceId: serviceConsumables.serviceId,
+        itemId: serviceConsumables.itemId,
+        quantity: serviceConsumables.quantity,
+        unitLevel: serviceConsumables.unitLevel,
+        notes: serviceConsumables.notes,
+        itemCode: items.itemCode,
+        itemNameAr: items.nameAr,
+        itemNameEn: items.nameEn,
+        majorUnitName: items.majorUnitName,
+        mediumUnitName: items.mediumUnitName,
+        minorUnitName: items.minorUnitName,
+      })
+      .from(serviceConsumables)
+      .leftJoin(items, eq(serviceConsumables.itemId, items.id))
+      .where(eq(serviceConsumables.serviceId, serviceId));
+
+    return rows.map(r => ({
+      id: r.id,
+      serviceId: r.serviceId,
+      itemId: r.itemId,
+      quantity: r.quantity,
+      unitLevel: r.unitLevel,
+      notes: r.notes,
+      item: r.itemCode ? {
+        id: r.itemId,
+        itemCode: r.itemCode,
+        nameAr: r.itemNameAr!,
+        nameEn: r.itemNameEn,
+        majorUnitName: r.majorUnitName,
+        mediumUnitName: r.mediumUnitName,
+        minorUnitName: r.minorUnitName,
+      } as any : undefined,
+    }));
+  }
+
+  async replaceServiceConsumables(serviceId: string, lines: { itemId: string; quantity: string; unitLevel: string; notes?: string | null }[]): Promise<ServiceConsumable[]> {
+    await db.delete(serviceConsumables).where(eq(serviceConsumables.serviceId, serviceId));
+    if (lines.length === 0) return [];
+    const rows = await db.insert(serviceConsumables).values(
+      lines.map(l => ({ serviceId, itemId: l.itemId, quantity: l.quantity, unitLevel: l.unitLevel, notes: l.notes || null }))
+    ).returning();
+    return rows;
   }
 
   // ===== Price Lists =====

@@ -635,6 +635,19 @@ export const priceAdjustmentsLog = pgTable("price_adjustments_log", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// مستهلكات الخدمات
+export const serviceConsumables = pgTable("service_consumables", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceId: varchar("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").notNull().references(() => items.id),
+  quantity: decimal("quantity", { precision: 10, scale: 4 }).notNull().default("1"),
+  unitLevel: text("unit_level").notNull().default("minor"),
+  notes: text("notes"),
+}, (table) => ({
+  serviceIdx: index("idx_sc_service").on(table.serviceId),
+  uniqueServiceItem: uniqueIndex("idx_sc_unique").on(table.serviceId, table.itemId),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
@@ -678,6 +691,7 @@ export const insertServiceSchema = createInsertSchema(services).omit({ id: true,
 export const insertPriceListSchema = createInsertSchema(priceLists).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPriceAdjustmentLogSchema = createInsertSchema(priceAdjustmentsLog).omit({ id: true, createdAt: true });
+export const insertServiceConsumableSchema = createInsertSchema(serviceConsumables).omit({ id: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -895,6 +909,13 @@ export type PriceListItem = typeof priceListItems.$inferSelect;
 
 export type InsertPriceAdjustmentLog = z.infer<typeof insertPriceAdjustmentLogSchema>;
 export type PriceAdjustmentLog = typeof priceAdjustmentsLog.$inferSelect;
+
+export type InsertServiceConsumable = z.infer<typeof insertServiceConsumableSchema>;
+export type ServiceConsumable = typeof serviceConsumables.$inferSelect;
+
+export type ServiceConsumableWithItem = ServiceConsumable & {
+  item?: Item;
+};
 
 export type ServiceWithDepartment = Service & {
   department?: Department;
