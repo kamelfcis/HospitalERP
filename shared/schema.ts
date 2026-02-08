@@ -311,6 +311,7 @@ export const inventoryLots = pgTable("inventory_lots", {
   expiryYear: integer("expiry_year"),
   receivedDate: date("received_date").notNull(),
   purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull(),
+  salePrice: decimal("sale_price", { precision: 18, scale: 2 }).notNull().default("0"),
   qtyInMinor: decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull().default("0"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),

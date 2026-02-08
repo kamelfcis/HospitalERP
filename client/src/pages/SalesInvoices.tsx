@@ -280,6 +280,7 @@ export default function SalesInvoices() {
 
   const addItemToLines = useCallback(async (itemData: any) => {
     let baseSalePrice = parseFloat(String(itemData.salePriceCurrent)) || 0;
+    let priceSource = "item";
     if (warehouseId) {
       try {
         const priceRes = await fetch(`/api/pricing?itemId=${itemData.id}&warehouseId=${warehouseId}`);
@@ -287,9 +288,11 @@ export default function SalesInvoices() {
           const priceData = await priceRes.json();
           const resolved = parseFloat(priceData.price);
           if (resolved > 0) baseSalePrice = resolved;
+          if (priceData.source) priceSource = priceData.source;
         }
       } catch {}
     }
+    const isDeptPrice = priceSource === "department";
 
     if (itemData.hasExpiry && warehouseId) {
       const currentLines = linesRef.current;
@@ -324,22 +327,25 @@ export default function SalesInvoices() {
         }
 
         const unitLevel = existingLinesForItem.length > 0 ? existingLinesForItem[0].unitLevel : "major";
-        const salePrice = computeUnitPriceFromBase(baseSalePrice, unitLevel, itemData);
 
         const newFefoLines: SalesLineLocal[] = preview.allocations
           .filter((a: any) => parseFloat(a.allocatedQty) > 0)
           .map((alloc: any) => {
             const allocMinor = parseFloat(alloc.allocatedQty);
             const displayQty = convertMinorToDisplayQty(allocMinor, unitLevel, itemData);
+            const lineBaseSalePrice = isDeptPrice
+              ? baseSalePrice
+              : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : baseSalePrice);
+            const lineSalePrice = computeUnitPriceFromBase(lineBaseSalePrice, unitLevel, itemData);
             return {
               tempId: genId(),
               itemId: itemData.id,
               item: itemData,
               unitLevel,
               qty: displayQty,
-              salePrice,
-              baseSalePrice,
-              lineTotal: +(displayQty * salePrice).toFixed(2),
+              salePrice: lineSalePrice,
+              baseSalePrice: lineBaseSalePrice,
+              lineTotal: +(displayQty * lineSalePrice).toFixed(2),
               expiryMonth: alloc.expiryMonth || null,
               expiryYear: alloc.expiryYear || null,
               lotId: alloc.lotId || null,
@@ -440,24 +446,42 @@ export default function SalesInvoices() {
         }
 
         const unitLevel = line.unitLevel;
-        const baseSalePrice = line.baseSalePrice;
-        const salePrice = line.salePrice;
         const itemData = line.item;
+        const itemCardPrice = parseFloat(String(itemData?.salePriceCurrent)) || 0;
+
+        let deptBaseSalePrice = 0;
+        let redistribIsDeptPrice = false;
+        if (warehouseId) {
+          try {
+            const priceRes = await fetch(`/api/pricing?itemId=${line.itemId}&warehouseId=${warehouseId}`);
+            if (priceRes.ok) {
+              const priceData = await priceRes.json();
+              if (priceData.source === "department") {
+                redistribIsDeptPrice = true;
+                deptBaseSalePrice = parseFloat(priceData.price) || 0;
+              }
+            }
+          } catch {}
+        }
 
         const newFefoLines: SalesLineLocal[] = preview.allocations
           .filter((a: any) => parseFloat(a.allocatedQty) > 0)
           .map((alloc: any) => {
             const allocMinor = parseFloat(alloc.allocatedQty);
             const displayQty = convertMinorToDisplayQty(allocMinor, unitLevel, itemData);
+            const lineBase = redistribIsDeptPrice
+              ? deptBaseSalePrice
+              : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : itemCardPrice);
+            const linePrice = computeUnitPriceFromBase(lineBase, unitLevel, itemData);
             return {
               tempId: genId(),
               itemId: line.itemId,
               item: itemData,
               unitLevel,
               qty: displayQty,
-              salePrice,
-              baseSalePrice,
-              lineTotal: +(displayQty * salePrice).toFixed(2),
+              salePrice: linePrice,
+              baseSalePrice: lineBase,
+              lineTotal: +(displayQty * linePrice).toFixed(2),
               expiryMonth: alloc.expiryMonth || null,
               expiryYear: alloc.expiryYear || null,
               lotId: alloc.lotId || null,

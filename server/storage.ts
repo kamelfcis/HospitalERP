@@ -203,6 +203,7 @@ export interface IStorage {
 
   // Inventory Lots
   getLots(itemId: string): Promise<InventoryLot[]>;
+  getLot(lotId: string): Promise<InventoryLot | undefined>;
   createLot(lot: InsertInventoryLot): Promise<InventoryLot>;
 
   // FEFO Preview
@@ -1233,6 +1234,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(inventoryLots.expiryDate));
   }
 
+  async getLot(lotId: string): Promise<InventoryLot | undefined> {
+    const [lot] = await db.select().from(inventoryLots).where(eq(inventoryLots.id, lotId));
+    return lot;
+  }
+
   async createLot(lot: InsertInventoryLot): Promise<InventoryLot> {
     const [newLot] = await db.insert(inventoryLots).values(lot).returning();
     await db.insert(inventoryLotMovements).values({
@@ -1531,6 +1537,7 @@ export class DatabaseStorage implements IStorage {
               expiryYear: lot.expiryYear,
               allocatedQty: allocated,
               unitCost: lot.purchasePrice,
+              lotSalePrice: lot.salePrice || "0",
             });
             remaining -= allocated;
           }
@@ -1556,6 +1563,7 @@ export class DatabaseStorage implements IStorage {
               expiryYear: lot.expiryYear,
               allocatedQty: allocated,
               unitCost: lot.purchasePrice,
+              lotSalePrice: lot.salePrice || "0",
             });
             remaining -= allocated;
           }
@@ -1603,6 +1611,7 @@ export class DatabaseStorage implements IStorage {
               expiryYear: lot.expiryYear,
               allocatedQty: allocated,
               unitCost: lot.purchasePrice,
+              lotSalePrice: lot.salePrice || "0",
             });
             remaining -= allocated;
           }
@@ -1646,9 +1655,13 @@ export class DatabaseStorage implements IStorage {
 
           if (existingDestLots.length > 0) {
             destLotId = existingDestLots[0].id;
+            const allocSalePrice = parseFloat(alloc.lotSalePrice || "0");
+            const existingSalePrice = parseFloat(existingDestLots[0].salePrice || "0");
+            const destSalePrice = allocSalePrice > 0 ? alloc.lotSalePrice : (existingSalePrice > 0 ? existingDestLots[0].salePrice : "0");
             await tx.execute(sql`
               UPDATE inventory_lots 
               SET qty_in_minor = qty_in_minor::numeric + ${alloc.allocatedQty.toFixed(4)}::numeric,
+                  sale_price = ${destSalePrice},
                   updated_at = NOW()
               WHERE id = ${destLotId}
             `);
@@ -1661,6 +1674,7 @@ export class DatabaseStorage implements IStorage {
               expiryYear: item.hasExpiry ? (alloc.expiryYear || null) : null,
               receivedDate: transfer.transferDate,
               purchasePrice: alloc.unitCost,
+              salePrice: alloc.lotSalePrice || "0",
               qtyInMinor: alloc.allocatedQty.toFixed(4),
               isActive: true,
             }).returning();
@@ -1747,6 +1761,7 @@ export class DatabaseStorage implements IStorage {
         availableQty: available.toFixed(4),
         allocatedQty: allocated.toFixed(4),
         unitCost: lot.purchasePrice,
+        lotSalePrice: lot.salePrice || "0",
       });
       remaining -= allocated;
     }
@@ -2596,12 +2611,15 @@ export class DatabaseStorage implements IStorage {
         const existingLots = await tx.select().from(inventoryLots).where(and(...lotConditions));
         let lotId: string;
         
+        const lotSalePrice = line.salePrice || "0";
+        
         if (existingLots.length > 0) {
           const lot = existingLots[0];
           const newQty = parseFloat(lot.qtyInMinor) + qtyMinor;
           await tx.update(inventoryLots).set({ 
             qtyInMinor: newQty.toFixed(4),
             purchasePrice: line.purchasePrice,
+            salePrice: lotSalePrice,
             updatedAt: new Date(),
           }).where(eq(inventoryLots.id, lot.id));
           lotId = lot.id;
@@ -2614,6 +2632,7 @@ export class DatabaseStorage implements IStorage {
             expiryYear: line.expiryYear || null,
             receivedDate: header.receive_date,
             purchasePrice: line.purchasePrice,
+            salePrice: lotSalePrice,
             qtyInMinor: qtyMinor.toFixed(4),
           }).returning();
           lotId = newLot.id;
@@ -3102,12 +3121,15 @@ export class DatabaseStorage implements IStorage {
         const existingLots = await tx.select().from(inventoryLots).where(and(...lotConditions));
         let lotId: string;
 
+        const corrLotSalePrice = line.salePrice || "0";
+        
         if (existingLots.length > 0) {
           const lot = existingLots[0];
           const newQty = parseFloat(lot.qtyInMinor as string) + qtyMinor;
           await tx.update(inventoryLots).set({ 
             qtyInMinor: newQty.toFixed(4),
             purchasePrice: line.purchasePrice,
+            salePrice: corrLotSalePrice,
             updatedAt: new Date(),
           }).where(eq(inventoryLots.id, lot.id));
           lotId = lot.id;
@@ -3120,6 +3142,7 @@ export class DatabaseStorage implements IStorage {
             expiryYear: line.expiryYear || null,
             receivedDate: correction.receive_date,
             purchasePrice: line.purchasePrice,
+            salePrice: corrLotSalePrice,
             qtyInMinor: qtyMinor.toFixed(4),
           }).returning();
           lotId = newLot.id;

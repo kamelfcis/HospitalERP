@@ -1400,7 +1400,7 @@ export async function registerRoutes(
 
   app.get("/api/pricing", async (req, res) => {
     try {
-      const { itemId, departmentId, warehouseId } = req.query;
+      const { itemId, departmentId, warehouseId, lotId } = req.query;
       if (!itemId) {
         return res.status(400).json({ message: "itemId مطلوب" });
       }
@@ -1414,10 +1414,18 @@ export async function registerRoutes(
           itemId as string,
           resolvedDeptId
         );
-        return res.json({ price });
+        if (price && parseFloat(price) > 0) {
+          return res.json({ price, source: "department" });
+        }
+      }
+      if (lotId) {
+        const lot = await storage.getLot(lotId as string);
+        if (lot && lot.itemId === (itemId as string) && lot.salePrice && parseFloat(lot.salePrice) > 0) {
+          return res.json({ price: lot.salePrice, source: "lot" });
+        }
       }
       const item = await storage.getItem(itemId as string);
-      res.json({ price: item?.salePriceCurrent || "0" });
+      res.json({ price: item?.salePriceCurrent || "0", source: "item" });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
