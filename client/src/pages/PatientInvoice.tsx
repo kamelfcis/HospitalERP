@@ -888,7 +888,7 @@ export default function PatientInvoice() {
   return (
     <div className="patient-invoice-page p-2 space-y-2" dir="rtl" lang="ar" data-testid="page-patient-invoice">
       <Tabs value={mainTab} onValueChange={setMainTab}>
-        <TabsList className="w-full justify-end" data-testid="tabs-main">
+        <TabsList className="w-full justify-start" data-testid="tabs-main">
           <TabsTrigger value="invoice" data-testid="tab-invoice">
             <FileText className="h-4 w-4 ml-1" />
             فاتورة مريض
@@ -1027,7 +1027,7 @@ export default function PatientInvoice() {
 
             <div className="border rounded-md p-2">
               <Tabs value={subTab} onValueChange={setSubTab}>
-                <TabsList className="w-full justify-end flex-wrap" data-testid="tabs-sub">
+                <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
                   <TabsTrigger value="services" data-testid="tab-services">خدمات</TabsTrigger>
                   <TabsTrigger value="drugs" data-testid="tab-drugs">أدوية</TabsTrigger>
                   <TabsTrigger value="consumables" data-testid="tab-consumables">مستهلكات</TabsTrigger>
