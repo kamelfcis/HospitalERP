@@ -1331,7 +1331,7 @@ export default function SalesInvoices() {
                       )}
                     </td>
                     <td className="text-center">
-                      <Button variant="ghost" size="icon" onClick={() => openStats(ln.itemId)} data-testid={`button-stats-${i}`}>
+                      <Button variant="outline" size="icon" onClick={(e) => { e.stopPropagation(); openStats(ln.itemId); }} data-testid={`button-stats-${i}`}>
                         <BarChart3 className="h-3 w-3" />
                       </Button>
                     </td>
@@ -1564,6 +1564,37 @@ export default function SalesInvoices() {
             </div>
           </DialogContent>
         </Dialog>
+        <Dialog open={!!statsItemId} onOpenChange={(open) => !open && setStatsItemId(null)}>
+          <DialogContent className="max-w-md" dir="rtl">
+            <DialogHeader>
+              <DialogTitle>إحصاء المخزون</DialogTitle>
+              <DialogDescription>الكميات المتاحة في جميع المستودعات</DialogDescription>
+            </DialogHeader>
+            {statsLoading ? (
+              <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
+            ) : statsData.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4">لا يوجد مخزون</p>
+            ) : (
+              <div className="space-y-2 max-h-[300px] overflow-auto">
+                {statsData.map((wh: any, idx: number) => (
+                  <div key={idx} className="border rounded p-2 text-[12px]">
+                    <div className="font-bold">{wh.warehouseCode} - {wh.warehouseName}</div>
+                    <div>الكمية: <span className="font-mono">{parseFloat(wh.qtyMinor).toFixed(2)}</span></div>
+                    {wh.expiryBreakdown && wh.expiryBreakdown.length > 0 && (
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {wh.expiryBreakdown.map((eb: any, j: number) => (
+                          <div key={j}>
+                            {eb.expiryMonth && eb.expiryYear ? `${String(eb.expiryMonth).padStart(2,'0')}/${eb.expiryYear}` : "بدون صلاحية"}: {parseFloat(eb.qty).toFixed(2)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -1761,37 +1792,6 @@ export default function SalesInvoices() {
               تأكيد الحذف
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={!!statsItemId} onOpenChange={(open) => !open && setStatsItemId(null)}>
-        <DialogContent className="max-w-md" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>إحصاء المخزون</DialogTitle>
-            <DialogDescription>الكميات المتاحة في جميع المستودعات</DialogDescription>
-          </DialogHeader>
-          {statsLoading ? (
-            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
-          ) : statsData.length === 0 ? (
-            <p className="text-center text-muted-foreground py-4">لا يوجد مخزون</p>
-          ) : (
-            <div className="space-y-2 max-h-[300px] overflow-auto">
-              {statsData.map((wh: any, i: number) => (
-                <div key={i} className="border rounded p-2 text-[12px]">
-                  <div className="font-bold">{wh.warehouseCode} - {wh.warehouseName}</div>
-                  <div>الكمية: <span className="font-mono">{parseFloat(wh.qtyMinor).toFixed(2)}</span></div>
-                  {wh.expiryBreakdown && wh.expiryBreakdown.length > 0 && (
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      {wh.expiryBreakdown.map((eb: any, j: number) => (
-                        <div key={j}>
-                          {eb.expiryMonth && eb.expiryYear ? `${String(eb.expiryMonth).padStart(2,'0')}/${eb.expiryYear}` : "بدون صلاحية"}: {parseFloat(eb.qty).toFixed(2)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
         </DialogContent>
       </Dialog>
     </div>
