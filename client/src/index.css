@@ -172,6 +172,29 @@
   --warning-border: hsl(from hsl(var(--warning)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
+.patient-invoice-page {
+  direction: rtl;
+}
+
+.patient-invoice-page input,
+.patient-invoice-page select,
+.patient-invoice-page textarea {
+  text-align: right;
+  direction: rtl;
+}
+
+.patient-invoice-page input[type="number"],
+.patient-invoice-page input[type="date"],
+.patient-invoice-page input[type="tel"] {
+  direction: ltr;
+  text-align: right;
+}
+
+.patient-invoice-page [role="tablist"] {
+  display: flex;
+  flex-direction: row-reverse !important;
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -184,13 +207,6 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
     font-feature-settings: "ss01", "ss02";
-    text-align: right;
-  }
-
-  input[type="number"],
-  input[type="date"],
-  input[type="tel"] {
-    direction: ltr;
     text-align: right;
   }
 

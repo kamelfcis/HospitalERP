@@ -458,7 +458,7 @@ export default function PatientInvoice() {
     return (
       <div className="space-y-3">
         {type !== "service" ? (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -473,7 +473,7 @@ export default function PatientInvoice() {
             {searchingItems && <Loader2 className="h-4 w-4 animate-spin" />}
           </div>
         ) : (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -494,7 +494,7 @@ export default function PatientInvoice() {
             {serviceResults.map((svc: any) => (
               <div
                 key={svc.id}
-                className="flex items-center justify-between gap-2 p-2 hover-elevate cursor-pointer"
+                className="flex flex-row-reverse items-center justify-between gap-2 p-2 hover-elevate cursor-pointer"
                 onClick={() => addServiceLine(svc)}
                 data-testid={`result-service-${svc.id}`}
               >
@@ -510,7 +510,7 @@ export default function PatientInvoice() {
             {itemResults.map((item: any) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between gap-2 p-2 hover-elevate cursor-pointer"
+                className="flex flex-row-reverse items-center justify-between gap-2 p-2 hover-elevate cursor-pointer"
                 onClick={() => addItemLine(item, type as "drug" | "consumable" | "equipment")}
                 data-testid={`result-item-${type}-${item.id}`}
               >
@@ -886,9 +886,9 @@ export default function PatientInvoice() {
   }
 
   return (
-    <div className="p-2 space-y-2" dir="rtl" data-testid="page-patient-invoice">
+    <div className="patient-invoice-page p-2 space-y-2" dir="rtl" lang="ar" data-testid="page-patient-invoice">
       <Tabs value={mainTab} onValueChange={setMainTab}>
-        <TabsList className="w-full justify-start" data-testid="tabs-main">
+        <TabsList className="w-full justify-end" data-testid="tabs-main">
           <TabsTrigger value="invoice" data-testid="tab-invoice">
             <FileText className="h-4 w-4 ml-1" />
             فاتورة مريض
@@ -902,13 +902,13 @@ export default function PatientInvoice() {
         <TabsContent value="invoice" className="mt-2">
           <div className="space-y-2">
             <div className="border rounded-md p-2 space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
                 {invoiceId && (
                   <Badge className={getStatusBadgeClass(status)} data-testid="badge-invoice-status">
                     {patientInvoiceStatusLabels[status] || status}
                   </Badge>
                 )}
-                <div className="flex items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">رقم:</Label>
                   <Input
                     value={invoiceNumber}
@@ -918,7 +918,7 @@ export default function PatientInvoice() {
                     data-testid="input-invoice-number"
                   />
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">تاريخ:</Label>
                   <Input
                     type="date"
@@ -929,7 +929,7 @@ export default function PatientInvoice() {
                     data-testid="input-invoice-date"
                   />
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
                   <Input
                     value={patientName}
@@ -939,7 +939,7 @@ export default function PatientInvoice() {
                     data-testid="input-patient-name"
                   />
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">هاتف:</Label>
                   <Input
                     value={patientPhone}
@@ -949,7 +949,7 @@ export default function PatientInvoice() {
                     data-testid="input-patient-phone"
                   />
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
                   <Select value={departmentId} onValueChange={setDepartmentId} disabled={!isDraft}>
                     <SelectTrigger className="h-7 text-xs w-32" data-testid="select-department">
@@ -962,7 +962,7 @@ export default function PatientInvoice() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
                   <Input
                     value={doctorName}
@@ -972,9 +972,9 @@ export default function PatientInvoice() {
                     data-testid="input-doctor-name"
                   />
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">النوع:</Label>
-                  <label className="flex items-center gap-1 cursor-pointer text-xs">
+                  <label className="flex flex-row-reverse items-center gap-1 cursor-pointer text-xs">
                     <input
                       type="radio"
                       name="patientType"
@@ -986,7 +986,7 @@ export default function PatientInvoice() {
                     />
                     {patientTypeLabels.cash}
                   </label>
-                  <label className="flex items-center gap-1 cursor-pointer text-xs">
+                  <label className="flex flex-row-reverse items-center gap-1 cursor-pointer text-xs">
                     <input
                       type="radio"
                       name="patientType"
@@ -1000,7 +1000,7 @@ export default function PatientInvoice() {
                   </label>
                 </div>
                 {patientType === "contract" && (
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-row-reverse items-center gap-1">
                     <Label className="text-xs text-muted-foreground whitespace-nowrap">جهة:</Label>
                     <Input
                       value={contractName}
@@ -1012,7 +1012,7 @@ export default function PatientInvoice() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs text-muted-foreground whitespace-nowrap">ملاحظات:</Label>
                 <Input
                   value={notes}
@@ -1027,7 +1027,7 @@ export default function PatientInvoice() {
 
             <div className="border rounded-md p-2">
               <Tabs value={subTab} onValueChange={setSubTab}>
-                <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
+                <TabsList className="w-full justify-end flex-wrap" data-testid="tabs-sub">
                   <TabsTrigger value="services" data-testid="tab-services">خدمات</TabsTrigger>
                   <TabsTrigger value="drugs" data-testid="tab-drugs">أدوية</TabsTrigger>
                   <TabsTrigger value="consumables" data-testid="tab-consumables">مستهلكات</TabsTrigger>
@@ -1046,32 +1046,32 @@ export default function PatientInvoice() {
             </div>
 
             <div className="border rounded-md p-2">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3 text-sm">
-                  <div className="flex items-center gap-1">
+              <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-row-reverse flex-wrap items-center gap-3 text-sm">
+                  <div className="flex flex-row-reverse items-center gap-1">
                     <span className="text-muted-foreground text-xs">الإجمالي:</span>
                     <span className="font-bold text-xs" data-testid="text-footer-total">{formatCurrency(totals.totalAmount)}</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-row-reverse items-center gap-1">
                     <span className="text-muted-foreground text-xs">الخصم:</span>
                     <span className="font-bold text-xs" data-testid="text-footer-discount">{formatCurrency(totals.discountAmount)}</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-row-reverse items-center gap-1">
                     <span className="text-muted-foreground text-xs">الصافي:</span>
                     <span className="font-bold text-xs" data-testid="text-footer-net">{formatCurrency(totals.netAmount)}</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-row-reverse items-center gap-1">
                     <span className="text-muted-foreground text-xs">المدفوع:</span>
                     <span className="font-bold text-xs" data-testid="text-footer-paid">{formatCurrency(totals.paidAmount)}</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-row-reverse items-center gap-1">
                     <span className="text-muted-foreground text-xs">المتبقي:</span>
                     <span className={`font-bold text-xs ${totals.remaining > 0 ? "text-destructive" : ""}`} data-testid="text-footer-remaining">
                       {formatCurrency(totals.remaining)}
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
                   <Button
                     variant="outline"
                     size="sm"
@@ -1127,8 +1127,8 @@ export default function PatientInvoice() {
 
         <TabsContent value="registry" className="mt-2">
           <div className="border rounded-md p-2 space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1">
+            <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
+              <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs text-muted-foreground whitespace-nowrap">من:</Label>
                 <Input
                   type="date"
@@ -1138,7 +1138,7 @@ export default function PatientInvoice() {
                   data-testid="input-reg-date-from"
                 />
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs text-muted-foreground whitespace-nowrap">إلى:</Label>
                 <Input
                   type="date"
@@ -1148,7 +1148,7 @@ export default function PatientInvoice() {
                   data-testid="input-reg-date-to"
                 />
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
                 <Input
                   value={regPatientName}
@@ -1158,7 +1158,7 @@ export default function PatientInvoice() {
                   data-testid="input-reg-patient-name"
                 />
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
                 <Input
                   value={regDoctorName}
@@ -1168,7 +1168,7 @@ export default function PatientInvoice() {
                   data-testid="input-reg-doctor-name"
                 />
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs text-muted-foreground whitespace-nowrap">الحالة:</Label>
                 <Select value={regStatus} onValueChange={(v) => { setRegStatus(v); setRegPage(1); }}>
                   <SelectTrigger className="h-7 text-xs w-24" data-testid="select-reg-status">
