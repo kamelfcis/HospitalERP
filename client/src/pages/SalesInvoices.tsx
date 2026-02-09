@@ -29,6 +29,7 @@ interface SalesLineLocal {
   lotId: string | null;
   fefoLocked: boolean;
   priceSource?: string;
+  availableQtyMinor?: string;
   expiryOptions?: { expiryMonth: number; expiryYear: number; qtyAvailableMinor: string; lotId?: string; lotSalePrice?: string }[];
 }
 
@@ -57,6 +58,39 @@ function getEffectiveMediumToMinor(item: any): number {
   const maj2min = parseFloat(item?.majorToMinor) || 1;
   const maj2med = parseFloat(item?.majorToMedium) || 1;
   return maj2min / maj2med;
+}
+
+function formatAvailability(availQtyMinor: string, unitLevel: string, item: any): string {
+  const minorQty = parseFloat(availQtyMinor);
+  if (isNaN(minorQty)) return "0";
+
+  if (item && unitLevel === "major") {
+    const factor = parseFloat(item.majorToMinor);
+    if (factor > 0 && factor !== 1) {
+      const wholeMajor = Math.floor(minorQty / factor);
+      const remainderMinor = Math.round(minorQty - (wholeMajor * factor));
+      if (remainderMinor > 0) {
+        return `${wholeMajor} ${item.majorUnitName || ""} + ${remainderMinor} ${item.minorUnitName || ""}`;
+      }
+      return `${wholeMajor} ${item.majorUnitName || ""}`;
+    }
+    return `${minorQty} ${item.majorUnitName || "وحدة"}`;
+  }
+
+  if (item && unitLevel === "medium") {
+    const factor = getEffectiveMediumToMinor(item);
+    if (factor > 0 && factor !== 1) {
+      const wholeMed = Math.floor(minorQty / factor);
+      const remainderMinor = Math.round(minorQty - (wholeMed * factor));
+      if (remainderMinor > 0) {
+        return `${wholeMed} ${item.mediumUnitName || ""} + ${remainderMinor} ${item.minorUnitName || ""}`;
+      }
+      return `${wholeMed} ${item.mediumUnitName || ""}`;
+    }
+    return `${minorQty} ${item.mediumUnitName || "وحدة"}`;
+  }
+
+  return `${minorQty} ${item?.minorUnitName || item?.majorUnitName || "وحدة"}`;
 }
 
 function calculateQtyInMinor(qty: number, unitLevel: string, item: any): number {
@@ -261,9 +295,29 @@ export default function SalesInvoices() {
       }));
       setLines(mapped);
 
-      if (invoiceDetail.status === "draft") {
+      if (invoiceDetail.status === "draft" && invoiceDetail.warehouseId) {
+        const allItemIds = Array.from(new Set(mapped.map((l) => l.itemId)));
         const expiryItemIds = Array.from(new Set(mapped.filter((l) => l.item?.hasExpiry).map((l) => l.itemId)));
-        if (expiryItemIds.length > 0 && invoiceDetail.warehouseId) {
+
+        if (allItemIds.length > 0) {
+          Promise.all(
+            allItemIds.map(async (itemId) => {
+              try {
+                const availRes = await fetch(`/api/items/${itemId}/availability?warehouseId=${invoiceDetail.warehouseId}`);
+                const availData = availRes.ok ? await availRes.json() : { availableQtyMinor: "0" };
+                return { itemId, available: availData.availableQtyMinor || "0" };
+              } catch { return { itemId, available: "0" }; }
+            })
+          ).then((availResults) => {
+            const availMap = new Map(availResults.map((r) => [r.itemId, r.available]));
+            setLines((prev) => prev.map((l) => ({
+              ...l,
+              availableQtyMinor: availMap.get(l.itemId) || l.availableQtyMinor || "0",
+            })));
+          });
+        }
+
+        if (expiryItemIds.length > 0) {
           Promise.all(
             expiryItemIds.map(async (itemId) => {
               try {
@@ -437,6 +491,7 @@ export default function SalesInvoices() {
               lotId: alloc.lotId || null,
               fefoLocked: true,
               priceSource,
+              availableQtyMinor: itemData.availableQtyMinor || "0",
               expiryOptions: allExpiryOptions,
             } as SalesLineLocal;
           });
@@ -487,6 +542,7 @@ export default function SalesInvoices() {
       lotId: null,
       fefoLocked: false,
       priceSource,
+      availableQtyMinor: itemData.availableQtyMinor || "0",
     };
 
     setLines((prev) => [...prev, newLine]);
@@ -681,6 +737,7 @@ export default function SalesInvoices() {
               lotId: alloc.lotId || null,
               fefoLocked: true,
               priceSource: redistribIsDeptPrice ? "department" : (parseFloat(alloc.lotSalePrice || "0") > 0 ? "lot" : "item"),
+              availableQtyMinor: line.availableQtyMinor || "0",
               expiryOptions: redistribExpiryOptions,
             } as SalesLineLocal;
           });
@@ -1221,6 +1278,7 @@ export default function SalesInvoices() {
                 <th className="w-24">سعر البيع</th>
                 <th className="w-24">إجمالي السطر</th>
                 <th className="w-28">الصلاحية</th>
+                <th className="w-24">الرصيد المتاح</th>
                 <th className="w-10">إحصاء</th>
                 {isDraft && <th className="w-10">حذف</th>}
               </tr>
@@ -1371,6 +1429,9 @@ export default function SalesInvoices() {
                         "-"
                       )}
                     </td>
+                    <td className="text-center whitespace-nowrap text-[11px]" data-testid={`text-available-${i}`}>
+                      {ln.item ? formatAvailability(ln.availableQtyMinor || "0", ln.unitLevel, ln.item) : "—"}
+                    </td>
                     <td className="text-center">
                       <Button variant="outline" size="icon" onClick={(e) => { e.stopPropagation(); openStats(ln.itemId); }} data-testid={`button-stats-${i}`}>
                         <BarChart3 className="h-3 w-3" />
@@ -1389,7 +1450,7 @@ export default function SalesInvoices() {
               })()}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={isDraft ? 9 : 8} className="text-center text-muted-foreground py-6">لا توجد أصناف - امسح الباركود أو استخدم البحث لإضافة أصناف</td>
+                  <td colSpan={isDraft ? 10 : 9} className="text-center text-muted-foreground py-6">لا توجد أصناف - امسح الباركود أو استخدم البحث لإضافة أصناف</td>
                 </tr>
               )}
             </tbody>
