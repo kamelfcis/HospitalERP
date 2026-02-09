@@ -29,7 +29,7 @@ interface SalesLineLocal {
   lotId: string | null;
   fefoLocked: boolean;
   priceSource?: string;
-  expiryOptions?: { expiryMonth: number; expiryYear: number; qtyAvailableMinor: string }[];
+  expiryOptions?: { expiryMonth: number; expiryYear: number; qtyAvailableMinor: string; lotId?: string; lotSalePrice?: string }[];
 }
 
 function getUnitName(item: any, unitLevel: string): string {
@@ -339,6 +339,16 @@ export default function SalesInvoices() {
 
         const unitLevel = overrides?.unitLevel ?? (existingLinesForItem.length > 0 ? existingLinesForItem[0].unitLevel : "major");
 
+        const allExpiryOptions = preview.allocations
+          .filter((a: any) => a.expiryMonth && a.expiryYear)
+          .map((a: any) => ({
+            expiryMonth: a.expiryMonth as number,
+            expiryYear: a.expiryYear as number,
+            qtyAvailableMinor: a.availableQty as string,
+            lotId: a.lotId as string,
+            lotSalePrice: a.lotSalePrice || "0",
+          }));
+
         const newFefoLines: SalesLineLocal[] = preview.allocations
           .filter((a: any) => parseFloat(a.allocatedQty) > 0)
           .map((alloc: any) => {
@@ -362,6 +372,7 @@ export default function SalesInvoices() {
               lotId: alloc.lotId || null,
               fefoLocked: true,
               priceSource,
+              expiryOptions: allExpiryOptions,
             } as SalesLineLocal;
           });
 
@@ -564,6 +575,16 @@ export default function SalesInvoices() {
           } catch {}
         }
 
+        const redistribExpiryOptions = preview.allocations
+          .filter((a: any) => a.expiryMonth && a.expiryYear)
+          .map((a: any) => ({
+            expiryMonth: a.expiryMonth as number,
+            expiryYear: a.expiryYear as number,
+            qtyAvailableMinor: a.availableQty as string,
+            lotId: a.lotId as string,
+            lotSalePrice: a.lotSalePrice || "0",
+          }));
+
         const newFefoLines: SalesLineLocal[] = preview.allocations
           .filter((a: any) => parseFloat(a.allocatedQty) > 0)
           .map((alloc: any) => {
@@ -587,6 +608,7 @@ export default function SalesInvoices() {
               lotId: alloc.lotId || null,
               fefoLocked: true,
               priceSource: redistribIsDeptPrice ? "department" : (parseFloat(alloc.lotSalePrice || "0") > 0 ? "lot" : "item"),
+              expiryOptions: redistribExpiryOptions,
             } as SalesLineLocal;
           });
 
@@ -1203,32 +1225,37 @@ export default function SalesInvoices() {
                     <td className="text-center peachtree-amount font-semibold">{formatNumber(ln.lineTotal)}</td>
                     <td className="text-center text-[11px]">
                       {ln.item?.hasExpiry ? (
-                        isDraft && ln.fefoLocked && ln.expiryMonth && ln.expiryYear ? (
-                          <input
-                            type="text"
-                            defaultValue={`${String(ln.expiryMonth).padStart(2, "0")}/${ln.expiryYear}`}
-                            key={`expiry-${ln.tempId}`}
-                            placeholder="MM/YYYY"
-                            className="peachtree-input w-[80px] text-center text-[11px]"
-                            onBlur={(e) => {
-                              const val = e.target.value.trim();
-                              const match = val.match(/^(\d{1,2})\/?(\d{2,4})$/);
-                              if (match) {
-                                let m = parseInt(match[1]);
-                                let y = parseInt(match[2]);
-                                if (y < 100) y += 2000;
-                                if (m >= 1 && m <= 12 && y >= 2000 && y <= 2100) {
-                                  updateLine(i, { expiryMonth: m, expiryYear: y });
-                                  return;
+                        isDraft && ln.fefoLocked && ln.expiryOptions && ln.expiryOptions.length > 0 ? (
+                          <select
+                            value={ln.expiryMonth && ln.expiryYear && ln.lotId ? `${ln.lotId}` : ""}
+                            onChange={(e) => {
+                              const selectedLotId = e.target.value;
+                              const opt = ln.expiryOptions?.find((o) => o.lotId === selectedLotId);
+                              if (opt) {
+                                const updates: Partial<SalesLineLocal> = {
+                                  expiryMonth: opt.expiryMonth,
+                                  expiryYear: opt.expiryYear,
+                                  lotId: opt.lotId || null,
+                                };
+                                if (opt.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
+                                  const newBase = parseFloat(opt.lotSalePrice);
+                                  const newPrice = computeUnitPriceFromBase(newBase, ln.unitLevel, ln.item);
+                                  updates.baseSalePrice = newBase;
+                                  updates.salePrice = newPrice;
+                                  updates.lineTotal = +(ln.qty * newPrice).toFixed(2);
                                 }
+                                updateLine(i, updates);
                               }
-                              e.target.value = `${String(ln.expiryMonth).padStart(2, "0")}/${ln.expiryYear}`;
                             }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
-                            }}
-                            data-testid={`input-expiry-${i}`}
-                          />
+                            className={`peachtree-select w-full text-[11px] ${needsExpiry ? "border-yellow-400" : ""}`}
+                            data-testid={`select-expiry-${i}`}
+                          >
+                            {ln.expiryOptions.map((opt) => (
+                              <option key={opt.lotId} value={opt.lotId}>
+                                {String(opt.expiryMonth).padStart(2, "0")}/{opt.expiryYear} ({formatNumber(opt.qtyAvailableMinor)})
+                              </option>
+                            ))}
+                          </select>
                         ) : !isDraft && ln.expiryMonth && ln.expiryYear ? (
                           <span data-testid={`text-expiry-${i}`}>{String(ln.expiryMonth).padStart(2, "0")}/{ln.expiryYear}</span>
                         ) : isDraft && ln.expiryOptions && ln.expiryOptions.length > 0 ? (
@@ -1238,7 +1265,7 @@ export default function SalesInvoices() {
                               const [m, y] = e.target.value.split("-").map(Number);
                               updateLine(i, { expiryMonth: m || null, expiryYear: y || null });
                             }}
-                            className={`peachtree-select w-full ${needsExpiry ? "border-yellow-400" : ""}`}
+                            className={`peachtree-select w-full text-[11px] ${needsExpiry ? "border-yellow-400" : ""}`}
                             data-testid={`select-expiry-${i}`}
                           >
                             <option value="">اختر الصلاحية</option>
