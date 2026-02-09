@@ -28,6 +28,7 @@ interface SalesLineLocal {
   expiryYear: number | null;
   lotId: string | null;
   fefoLocked: boolean;
+  priceSource?: string;
   expiryOptions?: { expiryMonth: number; expiryYear: number; qtyAvailableMinor: string }[];
 }
 
@@ -360,6 +361,7 @@ export default function SalesInvoices() {
               expiryYear: alloc.expiryYear || null,
               lotId: alloc.lotId || null,
               fefoLocked: true,
+              priceSource,
             } as SalesLineLocal;
           });
 
@@ -408,6 +410,7 @@ export default function SalesInvoices() {
       expiryYear: null,
       lotId: null,
       fefoLocked: false,
+      priceSource,
     };
 
     setLines((prev) => [...prev, newLine]);
@@ -583,6 +586,7 @@ export default function SalesInvoices() {
               expiryYear: alloc.expiryYear || null,
               lotId: alloc.lotId || null,
               fefoLocked: true,
+              priceSource: redistribIsDeptPrice ? "department" : (parseFloat(alloc.lotSalePrice || "0") > 0 ? "lot" : "item"),
             } as SalesLineLocal;
           });
 
@@ -1118,15 +1122,17 @@ export default function SalesInvoices() {
             <tbody>
               {(() => {
                 const itemPriceMap = new Map<string, Set<number>>();
+                const deptPriceItems = new Set<string>();
                 lines.forEach((ln) => {
                   if (!itemPriceMap.has(ln.itemId)) itemPriceMap.set(ln.itemId, new Set());
                   itemPriceMap.get(ln.itemId)!.add(ln.baseSalePrice);
+                  if (ln.priceSource === "department") deptPriceItems.add(ln.itemId);
                 });
                 const multiPriceItems = new Set<string>();
                 itemPriceMap.forEach((prices, itemId) => { if (prices.size > 1) multiPriceItems.add(itemId); });
                 return lines.map((ln, i) => {
                 const needsExpiry = ln.item?.hasExpiry && !ln.expiryMonth;
-                const hasMultiPrice = multiPriceItems.has(ln.itemId);
+                const hasMultiPrice = multiPriceItems.has(ln.itemId) || deptPriceItems.has(ln.itemId);
                 return (
                   <tr
                     key={ln.tempId}
@@ -1153,7 +1159,7 @@ export default function SalesInvoices() {
                         getUnitName(ln.item, ln.unitLevel)
                       )}
                     </td>
-                    <td className={`text-center ${hasMultiPrice ? "bg-amber-100 dark:bg-amber-900/30" : ""}`}>
+                    <td className={`text-center ${hasMultiPrice ? "bg-amber-100 dark:bg-amber-900/30" : ""}`} title={hasMultiPrice ? "تنبيه: هذا الصنف له أكثر من سعر" : ""}>
                       {isDraft ? (
                         <input
                           ref={(el) => { if (el) qtyRefs.current.set(i, el); else qtyRefs.current.delete(i); }}
@@ -1161,7 +1167,7 @@ export default function SalesInvoices() {
                           step="1"
                           min="1"
                           defaultValue={ln.qty}
-                          key={`qty-${ln.tempId}`}
+                          key={`qty-${ln.tempId}-${ln.unitLevel}`}
                           onChange={(e) => {
                             if (ln.item?.hasExpiry) {
                               pendingQtyRef.current.set(ln.tempId, e.target.value);
@@ -1197,7 +1203,33 @@ export default function SalesInvoices() {
                     <td className="text-center peachtree-amount font-semibold">{formatNumber(ln.lineTotal)}</td>
                     <td className="text-center text-[11px]">
                       {ln.item?.hasExpiry ? (
-                        ln.fefoLocked && ln.expiryMonth && ln.expiryYear ? (
+                        isDraft && ln.fefoLocked && ln.expiryMonth && ln.expiryYear ? (
+                          <input
+                            type="text"
+                            defaultValue={`${String(ln.expiryMonth).padStart(2, "0")}/${ln.expiryYear}`}
+                            key={`expiry-${ln.tempId}`}
+                            placeholder="MM/YYYY"
+                            className="peachtree-input w-[80px] text-center text-[11px]"
+                            onBlur={(e) => {
+                              const val = e.target.value.trim();
+                              const match = val.match(/^(\d{1,2})\/?(\d{2,4})$/);
+                              if (match) {
+                                let m = parseInt(match[1]);
+                                let y = parseInt(match[2]);
+                                if (y < 100) y += 2000;
+                                if (m >= 1 && m <= 12 && y >= 2000 && y <= 2100) {
+                                  updateLine(i, { expiryMonth: m, expiryYear: y });
+                                  return;
+                                }
+                              }
+                              e.target.value = `${String(ln.expiryMonth).padStart(2, "0")}/${ln.expiryYear}`;
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
+                            }}
+                            data-testid={`input-expiry-${i}`}
+                          />
+                        ) : !isDraft && ln.expiryMonth && ln.expiryYear ? (
                           <span data-testid={`text-expiry-${i}`}>{String(ln.expiryMonth).padStart(2, "0")}/{ln.expiryYear}</span>
                         ) : isDraft && ln.expiryOptions && ln.expiryOptions.length > 0 ? (
                           <select

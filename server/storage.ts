@@ -1880,7 +1880,7 @@ export class DatabaseStorage implements IStorage {
     const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly, excludeServices } = params;
     const offset = (page - 1) * pageSize;
 
-    const buildPattern = (q: string) => q.includes('%') ? q : `${q}%`;
+    const buildPattern = (q: string) => q.includes('%') ? q : `%${q}%`;
 
     let searchCondition: any;
     let joinBarcode = false;
