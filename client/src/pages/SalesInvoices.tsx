@@ -206,8 +206,12 @@ export default function SalesInvoices() {
     }
   }, [isNew, warehouses, today]);
 
+  const loadedInvoiceIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (invoiceDetail && !isNew) {
+      if (loadedInvoiceIdRef.current === invoiceDetail.id) return;
+      loadedInvoiceIdRef.current = invoiceDetail.id;
       setWarehouseId(invoiceDetail.warehouseId);
       setInvoiceDate(invoiceDetail.invoiceDate);
       setCustomerType(invoiceDetail.customerType);
@@ -231,6 +235,35 @@ export default function SalesInvoices() {
         fefoLocked: !!(ln.expiryMonth && ln.expiryYear),
       }));
       setLines(mapped);
+
+      if (invoiceDetail.status === "draft") {
+        const expiryItemIds = Array.from(new Set(mapped.filter((l) => l.item?.hasExpiry && l.fefoLocked).map((l) => l.itemId)));
+        if (expiryItemIds.length > 0 && invoiceDetail.warehouseId) {
+          Promise.all(
+            expiryItemIds.map(async (itemId) => {
+              try {
+                const minorQty = mapped.filter((l) => l.itemId === itemId).reduce((s, l) => s + calculateQtyInMinor(l.qty, l.unitLevel, l.item), 0);
+                const params = new URLSearchParams({ itemId, warehouseId: invoiceDetail.warehouseId, requiredQtyInMinor: String(Math.max(minorQty, 1)), asOfDate: invoiceDetail.invoiceDate });
+                const res = await fetch(`/api/transfer/fefo-preview?${params}`);
+                if (!res.ok) return { itemId, options: [] };
+                const preview = await res.json();
+                const options = preview.allocations
+                  .filter((a: any) => a.expiryMonth && a.expiryYear)
+                  .map((a: any) => ({ expiryMonth: a.expiryMonth, expiryYear: a.expiryYear, qtyAvailableMinor: a.availableQty, lotId: a.lotId, lotSalePrice: a.lotSalePrice || "0" }));
+                return { itemId, options };
+              } catch { return { itemId, options: [] }; }
+            })
+          ).then((results) => {
+            const optionsMap = new Map(results.map((r) => [r.itemId, r.options]));
+            setLines((prev) => prev.map((l) => {
+              if (l.fefoLocked && optionsMap.has(l.itemId)) {
+                return { ...l, expiryOptions: optionsMap.get(l.itemId) };
+              }
+              return l;
+            }));
+          });
+        }
+      }
     }
   }, [invoiceDetail, isNew]);
 
@@ -736,7 +769,7 @@ export default function SalesInvoices() {
       setAutoSaveStatus("saved");
       if (isNew && !autoSaveIdRef.current && data?.id) {
         autoSaveIdRef.current = data.id;
-        navigate(`/sales-invoices?id=${data.id}`);
+        window.history.replaceState(null, "", `/sales-invoices?id=${data.id}`);
       }
       queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
     } catch {
