@@ -199,7 +199,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full bg-background">
+      <div className="flex h-screen w-full bg-background" dir="rtl">
         <Sidebar side="right" collapsible="icon" className="no-print" data-sidebar="main">
           <SidebarHeader className="border-b border-border/50 p-4">
             <div className="flex flex-row-reverse items-center gap-3">
