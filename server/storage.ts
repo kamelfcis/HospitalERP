@@ -1529,7 +1529,7 @@ export class DatabaseStorage implements IStorage {
         if (requiredQty <= 0) throw new Error(`الكمية يجب أن تكون أكبر من صفر: ${item.nameAr}`);
 
         let remaining = requiredQty;
-        const allocations: { lotId: string; expiryDate: string | null; expiryMonth: number | null; expiryYear: number | null; allocatedQty: number; unitCost: string }[] = [];
+        const allocations: { lotId: string; expiryDate: string | null; expiryMonth: number | null; expiryYear: number | null; allocatedQty: number; unitCost: string; lotSalePrice: string }[] = [];
 
         if (item.hasExpiry && line.selectedExpiryMonth && line.selectedExpiryYear) {
           const selMonth = line.selectedExpiryMonth;
@@ -1659,14 +1659,29 @@ export class DatabaseStorage implements IStorage {
             referenceId: transfer.id,
           } as any);
 
+          const expiryMatchConditions = [];
+          if (alloc.expiryDate) {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryDate} = ${alloc.expiryDate}`);
+          } else {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryDate} IS NULL`);
+          }
+          if (alloc.expiryMonth != null) {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryMonth} = ${alloc.expiryMonth}`);
+          } else {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryMonth} IS NULL`);
+          }
+          if (alloc.expiryYear != null) {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryYear} = ${alloc.expiryYear}`);
+          } else {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryYear} IS NULL`);
+          }
+
           const existingDestLots = await tx.select().from(inventoryLots)
             .where(and(
               eq(inventoryLots.itemId, line.itemId),
               eq(inventoryLots.warehouseId, transfer.destinationWarehouseId),
               eq(inventoryLots.isActive, true),
-              alloc.expiryDate
-                ? sql`${inventoryLots.expiryDate} = ${alloc.expiryDate}`
-                : sql`${inventoryLots.expiryDate} IS NULL`,
+              ...expiryMatchConditions,
               sql`${inventoryLots.purchasePrice}::numeric = ${alloc.unitCost}::numeric`
             ));
 
