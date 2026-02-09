@@ -1047,9 +1047,7 @@ export default function SupplierReceiving() {
                   type="date"
                   value={filterFromDate}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    setFilterFromDate(val);
-                    if (filterToDate && val > filterToDate) setFilterToDate(val);
+                    setFilterFromDate(e.target.value);
                     setLogPage(1);
                   }}
                   className="h-7 text-[11px] px-1 w-[120px]"
@@ -1062,9 +1060,7 @@ export default function SupplierReceiving() {
                   type="date"
                   value={filterToDate}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    setFilterToDate(val);
-                    if (filterFromDate && val < filterFromDate) setFilterFromDate(val);
+                    setFilterToDate(e.target.value);
                     setLogPage(1);
                   }}
                   className="h-7 text-[11px] px-1 w-[120px]"
