@@ -3603,7 +3603,9 @@ export class DatabaseStorage implements IStorage {
       if (line.unitLevel === "major" || !line.unitLevel) {
         totalMinor *= parseFloat(item.majorToMinor || "1") || 1;
       } else if (line.unitLevel === "medium") {
-        totalMinor *= parseFloat(item.mediumToMinor || "1") || 1;
+        const m2m = parseFloat(item.mediumToMinor || "0");
+        const effectiveMediumToMinor = m2m > 0 ? m2m : (parseFloat(item.majorToMinor || "1") || 1) / (parseFloat(item.majorToMedium || "1") || 1);
+        totalMinor *= effectiveMediumToMinor;
       }
 
       const lots = await tx.select().from(inventoryLots)
@@ -3674,7 +3676,8 @@ export class DatabaseStorage implements IStorage {
         if (line.unitLevel !== "minor") {
           if (item) {
             if (line.unitLevel === "medium") {
-              const conv = parseFloat(item.mediumToMinor || "1") || 1;
+              const m2m = parseFloat(item.mediumToMinor || "0");
+              const conv = m2m > 0 ? m2m : (parseFloat(item.majorToMinor || "1") || 1) / (parseFloat(item.majorToMedium || "1") || 1);
               qtyInMinor = qty * conv;
             } else {
               const conv = parseFloat(item.majorToMinor || "1") || 1;
@@ -3772,7 +3775,8 @@ export class DatabaseStorage implements IStorage {
         if (line.unitLevel !== "minor") {
           if (item) {
             if (line.unitLevel === "medium") {
-              const conv = parseFloat(item.mediumToMinor || "1") || 1;
+              const m2m = parseFloat(item.mediumToMinor || "0");
+              const conv = m2m > 0 ? m2m : (parseFloat(item.majorToMinor || "1") || 1) / (parseFloat(item.majorToMedium || "1") || 1);
               qtyInMinor = qty * conv;
             } else {
               const conv = parseFloat(item.majorToMinor || "1") || 1;

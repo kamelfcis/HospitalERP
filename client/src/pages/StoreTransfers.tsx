@@ -37,9 +37,17 @@ interface ExpiryOption {
   qtyAvailableMinor: string;
 }
 
+function getEffectiveMediumToMinor(item: any): number {
+  const m2m = parseFloat(item?.mediumToMinor);
+  if (m2m > 0) return m2m;
+  const maj2min = parseFloat(item?.majorToMinor) || 1;
+  const maj2med = parseFloat(item?.majorToMedium) || 1;
+  return maj2min / maj2med;
+}
+
 function calculateQtyInMinor(qtyEntered: number, unitLevel: string, item: any): number {
-  if (unitLevel === "major" && item.majorToMinor) return qtyEntered * parseFloat(item.majorToMinor);
-  if (unitLevel === "medium" && item.mediumToMinor) return qtyEntered * parseFloat(item.mediumToMinor);
+  if (unitLevel === "major") return qtyEntered * (parseFloat(item?.majorToMinor) || 1);
+  if (unitLevel === "medium") return qtyEntered * getEffectiveMediumToMinor(item);
   return qtyEntered;
 }
 
@@ -78,8 +86,8 @@ function formatAvailability(availQtyMinor: string, unitLevel: string, item: any)
     }
   }
 
-  if (item && unitLevel === "medium" && item.mediumToMinor) {
-    const factor = parseFloat(item.mediumToMinor);
+  if (item && unitLevel === "medium") {
+    const factor = getEffectiveMediumToMinor(item);
     if (factor > 0) {
       const wholeMed = Math.floor(minorQty / factor);
       const remainderMinor = Math.round(minorQty - (wholeMed * factor));
@@ -680,10 +688,10 @@ export default function StoreTransfers() {
           .map((alloc: any) => {
             const allocMinor = parseFloat(alloc.allocatedQty);
             let displayQty = allocMinor;
-            if (unitLevel === "major" && item.majorToMinor) {
-              displayQty = allocMinor / parseFloat(item.majorToMinor);
-            } else if (unitLevel === "medium" && item.mediumToMinor) {
-              displayQty = allocMinor / parseFloat(item.mediumToMinor);
+            if (unitLevel === "major") {
+              displayQty = allocMinor / (parseFloat(item.majorToMinor) || 1);
+            } else if (unitLevel === "medium") {
+              displayQty = allocMinor / getEffectiveMediumToMinor(item);
             }
             displayQty = Math.round(displayQty * 10000) / 10000;
 
@@ -838,10 +846,10 @@ export default function StoreTransfers() {
           .map((alloc: any) => {
             const allocMinor = parseFloat(alloc.allocatedQty);
             let displayQty = allocMinor;
-            if (line.unitLevel === "major" && line.item.majorToMinor) {
-              displayQty = allocMinor / parseFloat(line.item.majorToMinor);
-            } else if (line.unitLevel === "medium" && line.item.mediumToMinor) {
-              displayQty = allocMinor / parseFloat(line.item.mediumToMinor);
+            if (line.unitLevel === "major") {
+              displayQty = allocMinor / (parseFloat(line.item.majorToMinor) || 1);
+            } else if (line.unitLevel === "medium") {
+              displayQty = allocMinor / getEffectiveMediumToMinor(line.item);
             }
             displayQty = Math.round(displayQty * 10000) / 10000;
 
@@ -926,10 +934,10 @@ export default function StoreTransfers() {
           .map((alloc: any) => {
             const allocMinor = parseFloat(alloc.allocatedQty);
             let displayQty = allocMinor;
-            if (newUnitLevel === "major" && line.item.majorToMinor) {
-              displayQty = allocMinor / parseFloat(line.item.majorToMinor);
-            } else if (newUnitLevel === "medium" && line.item.mediumToMinor) {
-              displayQty = allocMinor / parseFloat(line.item.mediumToMinor);
+            if (newUnitLevel === "major") {
+              displayQty = allocMinor / (parseFloat(line.item.majorToMinor) || 1);
+            } else if (newUnitLevel === "medium") {
+              displayQty = allocMinor / getEffectiveMediumToMinor(line.item);
             }
             displayQty = Math.round(displayQty * 10000) / 10000;
 

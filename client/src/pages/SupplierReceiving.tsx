@@ -40,9 +40,17 @@ interface ReceivingLineLocal {
   rejectionReason: string;
 }
 
+function getEffectiveMediumToMinor(item: any): number {
+  const m2m = parseFloat(item?.mediumToMinor);
+  if (m2m > 0) return m2m;
+  const maj2min = parseFloat(item?.majorToMinor) || 1;
+  const maj2med = parseFloat(item?.majorToMedium) || 1;
+  return maj2min / maj2med;
+}
+
 function calculateQtyInMinor(qtyEntered: number, unitLevel: string, item: any): number {
-  if (unitLevel === "major" && item.majorToMinor) return qtyEntered * parseFloat(item.majorToMinor);
-  if (unitLevel === "medium" && item.mediumToMinor) return qtyEntered * parseFloat(item.mediumToMinor);
+  if (unitLevel === "major") return qtyEntered * (parseFloat(item?.majorToMinor) || 1);
+  if (unitLevel === "medium") return qtyEntered * getEffectiveMediumToMinor(item);
   return qtyEntered;
 }
 

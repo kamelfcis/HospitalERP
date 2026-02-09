@@ -51,10 +51,18 @@ function genId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10);
 }
 
+function getEffectiveMediumToMinor(item: any): number {
+  const m2m = parseFloat(item?.mediumToMinor);
+  if (m2m > 0) return m2m;
+  const maj2min = parseFloat(item?.majorToMinor) || 1;
+  const maj2med = parseFloat(item?.majorToMedium) || 1;
+  return maj2min / maj2med;
+}
+
 function calculateQtyInMinor(qty: number, unitLevel: string, item: any): number {
   if (!item) return qty;
   if (unitLevel === "minor") return qty;
-  if (unitLevel === "medium") return qty * (parseFloat(item.mediumToMinor) || 1);
+  if (unitLevel === "medium") return qty * getEffectiveMediumToMinor(item);
   return qty * (parseFloat(item.majorToMinor) || 1);
 }
 
@@ -70,12 +78,15 @@ function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item
 
 function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: any): number {
   let displayQty = allocMinor;
-  if (unitLevel === "major" && item?.majorToMinor) {
-    displayQty = allocMinor / parseFloat(item.majorToMinor);
-  } else if (unitLevel === "medium" && item?.mediumToMinor) {
-    displayQty = allocMinor / parseFloat(item.mediumToMinor);
+  if (unitLevel === "major") {
+    displayQty = allocMinor / (parseFloat(item?.majorToMinor) || 1);
+  } else if (unitLevel === "medium") {
+    displayQty = allocMinor / getEffectiveMediumToMinor(item);
   }
-  return Math.round(displayQty * 10000) / 10000;
+  const rounded = Math.round(displayQty * 10000) / 10000;
+  const nearest = Math.round(rounded);
+  if (Math.abs(rounded - nearest) < 0.005) return nearest;
+  return rounded;
 }
 
 export default function SalesInvoices() {
