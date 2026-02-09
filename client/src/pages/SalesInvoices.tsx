@@ -251,18 +251,17 @@ export default function SalesInvoices() {
       setLines(mapped);
 
       if (invoiceDetail.status === "draft") {
-        const expiryItemIds = Array.from(new Set(mapped.filter((l) => l.item?.hasExpiry && l.fefoLocked).map((l) => l.itemId)));
+        const expiryItemIds = Array.from(new Set(mapped.filter((l) => l.item?.hasExpiry).map((l) => l.itemId)));
         if (expiryItemIds.length > 0 && invoiceDetail.warehouseId) {
           Promise.all(
             expiryItemIds.map(async (itemId) => {
               try {
-                const minorQty = mapped.filter((l) => l.itemId === itemId).reduce((s, l) => s + calculateQtyInMinor(l.qty, l.unitLevel, l.item), 0);
-                const params = new URLSearchParams({ itemId, warehouseId: invoiceDetail.warehouseId, requiredQtyInMinor: String(Math.max(minorQty, 1)), asOfDate: invoiceDetail.invoiceDate });
+                const params = new URLSearchParams({ itemId, warehouseId: invoiceDetail.warehouseId, requiredQtyInMinor: "999999", asOfDate: invoiceDetail.invoiceDate });
                 const res = await fetch(`/api/transfer/fefo-preview?${params}`);
                 if (!res.ok) return { itemId, options: [] };
                 const preview = await res.json();
                 const options = preview.allocations
-                  .filter((a: any) => a.expiryMonth && a.expiryYear)
+                  .filter((a: any) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty) > 0)
                   .map((a: any) => ({ expiryMonth: a.expiryMonth, expiryYear: a.expiryYear, qtyAvailableMinor: a.availableQty, lotId: a.lotId, lotSalePrice: a.lotSalePrice || "0" }));
                 return { itemId, options };
               } catch { return { itemId, options: [] }; }
@@ -270,7 +269,7 @@ export default function SalesInvoices() {
           ).then((results) => {
             const optionsMap = new Map(results.map((r) => [r.itemId, r.options]));
             setLines((prev) => prev.map((l) => {
-              if (l.fefoLocked && optionsMap.has(l.itemId)) {
+              if (l.item?.hasExpiry && optionsMap.has(l.itemId)) {
                 return { ...l, expiryOptions: optionsMap.get(l.itemId) };
               }
               return l;
@@ -386,8 +385,16 @@ export default function SalesInvoices() {
 
         const unitLevel = overrides?.unitLevel ?? (existingLinesForItem.length > 0 ? existingLinesForItem[0].unitLevel : "major");
 
-        const allExpiryOptions = preview.allocations
-          .filter((a: any) => a.expiryMonth && a.expiryYear)
+        const allLotsParams = new URLSearchParams({
+          itemId: itemData.id,
+          warehouseId,
+          requiredQtyInMinor: "999999",
+          asOfDate: invoiceDate,
+        });
+        const allLotsRes = await fetch(`/api/transfer/fefo-preview?${allLotsParams.toString()}`);
+        const allLotsPreview = allLotsRes.ok ? await allLotsRes.json() : { allocations: [] };
+        const allExpiryOptions = allLotsPreview.allocations
+          .filter((a: any) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty) > 0)
           .map((a: any) => ({
             expiryMonth: a.expiryMonth as number,
             expiryYear: a.expiryYear as number,
@@ -622,8 +629,16 @@ export default function SalesInvoices() {
           } catch {}
         }
 
-        const redistribExpiryOptions = preview.allocations
-          .filter((a: any) => a.expiryMonth && a.expiryYear)
+        const allLotsParams2 = new URLSearchParams({
+          itemId: line.itemId,
+          warehouseId,
+          requiredQtyInMinor: "999999",
+          asOfDate: invoiceDate,
+        });
+        const allLotsRes2 = await fetch(`/api/transfer/fefo-preview?${allLotsParams2.toString()}`);
+        const allLotsPreview2 = allLotsRes2.ok ? await allLotsRes2.json() : { allocations: [] };
+        const redistribExpiryOptions = allLotsPreview2.allocations
+          .filter((a: any) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty) > 0)
           .map((a: any) => ({
             expiryMonth: a.expiryMonth as number,
             expiryYear: a.expiryYear as number,
@@ -729,9 +744,19 @@ export default function SalesInvoices() {
   const fetchExpiryOptions = useCallback(async (itemId: string, lineIndex: number) => {
     if (!warehouseId) return;
     try {
-      const res = await fetch(`/api/items/${itemId}/expiry-options?warehouseId=${warehouseId}&asOfDate=${invoiceDate}`);
+      const params = new URLSearchParams({ itemId, warehouseId, requiredQtyInMinor: "999999", asOfDate: invoiceDate });
+      const res = await fetch(`/api/transfer/fefo-preview?${params}`);
       if (res.ok) {
-        const opts = await res.json();
+        const preview = await res.json();
+        const opts = preview.allocations
+          .filter((a: any) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty) > 0)
+          .map((a: any) => ({
+            expiryMonth: a.expiryMonth as number,
+            expiryYear: a.expiryYear as number,
+            qtyAvailableMinor: a.availableQty as string,
+            lotId: a.lotId as string,
+            lotSalePrice: a.lotSalePrice || "0",
+          }));
         setLines((prev) => {
           const updated = [...prev];
           updated[lineIndex] = { ...updated[lineIndex], expiryOptions: opts };
@@ -1191,13 +1216,18 @@ export default function SalesInvoices() {
             </thead>
             <tbody>
               {(() => {
-                const itemPriceMap = new Map<string, Set<number>>();
-                lines.forEach((ln) => {
-                  if (!itemPriceMap.has(ln.itemId)) itemPriceMap.set(ln.itemId, new Set());
-                  itemPriceMap.get(ln.itemId)!.add(ln.baseSalePrice);
-                });
                 const multiPriceItems = new Set<string>();
-                itemPriceMap.forEach((prices, itemId) => { if (prices.size > 1) multiPriceItems.add(itemId); });
+                lines.forEach((ln) => {
+                  if (ln.expiryOptions && ln.expiryOptions.length > 1) {
+                    const prices = new Set(ln.expiryOptions.map((o) => parseFloat(o.lotSalePrice || "0")));
+                    if (prices.size > 1) multiPriceItems.add(ln.itemId);
+                  }
+                  const sameLinesForItem = lines.filter((l) => l.itemId === ln.itemId);
+                  if (sameLinesForItem.length > 1) {
+                    const linePrices = new Set(sameLinesForItem.map((l) => l.baseSalePrice));
+                    if (linePrices.size > 1) multiPriceItems.add(ln.itemId);
+                  }
+                });
                 return lines.map((ln, i) => {
                 const needsExpiry = ln.item?.hasExpiry && !ln.expiryMonth;
                 const hasMultiPrice = multiPriceItems.has(ln.itemId);
