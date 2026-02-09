@@ -37,6 +37,7 @@ import {
   Stethoscope,
   ShoppingCart,
   Warehouse,
+  UserRound,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -101,6 +102,11 @@ const mainNavItems = [
     title: "فواتير البيع",
     href: "/sales-invoices",
     icon: ShoppingCart,
+  },
+  {
+    title: "فاتورة مريض",
+    href: "/patient-invoices",
+    icon: UserRound,
   },
   {
     title: "الخدمات والأسعار",

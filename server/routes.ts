@@ -20,6 +20,9 @@ import {
   insertSupplierSchema,
   insertServiceSchema,
   insertPriceListSchema,
+  insertPatientInvoiceHeaderSchema,
+  insertPatientInvoiceLineSchema,
+  insertPatientInvoicePaymentSchema,
   accounts,
   accountTypeLabels,
   salesInvoiceHeaders,
@@ -2754,6 +2757,105 @@ export async function registerRoutes(
         items: resultItems,
       });
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============= Patient Invoices =============
+
+  app.get("/api/patient-invoices/next-number", async (_req, res) => {
+    try {
+      const num = await storage.getNextPatientInvoiceNumber();
+      res.json({ nextNumber: num });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/patient-invoices", async (req, res) => {
+    try {
+      const filters = {
+        status: req.query.status as string,
+        dateFrom: req.query.dateFrom as string,
+        dateTo: req.query.dateTo as string,
+        patientName: req.query.patientName as string,
+        doctorName: req.query.doctorName as string,
+        page: req.query.page ? parseInt(req.query.page as string) : 1,
+        pageSize: req.query.pageSize ? parseInt(req.query.pageSize as string) : 20,
+      };
+      const result = await storage.getPatientInvoices(filters);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/patient-invoices/:id", async (req, res) => {
+    try {
+      const invoice = await storage.getPatientInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "فاتورة المريض غير موجودة" });
+      res.json(invoice);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/patient-invoices", async (req, res) => {
+    try {
+      const { header, lines, payments } = req.body;
+
+      const headerParsed = insertPatientInvoiceHeaderSchema.parse(header);
+      const linesParsed = (lines || []).map((l: any) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
+      const paymentsParsed = (payments || []).map((p: any) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
+
+      const result = await storage.createPatientInvoice(headerParsed, linesParsed, paymentsParsed);
+      res.status(201).json(result);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+        return res.status(409).json({ message: "رقم الفاتورة مكرر" });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/patient-invoices/:id", async (req, res) => {
+    try {
+      const { header, lines, payments } = req.body;
+
+      const headerParsed = insertPatientInvoiceHeaderSchema.partial().parse(header);
+      const linesParsed = (lines || []).map((l: any) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
+      const paymentsParsed = (payments || []).map((p: any) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
+
+      const result = await storage.updatePatientInvoice(req.params.id, headerParsed, linesParsed, paymentsParsed);
+      res.json(result);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+      }
+      if (error.message?.includes("نهائية")) return res.status(409).json({ message: error.message });
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/patient-invoices/:id/finalize", async (req, res) => {
+    try {
+      const result = await storage.finalizePatientInvoice(req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      if (error.message?.includes("مسودة")) return res.status(409).json({ message: error.message });
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/patient-invoices/:id", async (req, res) => {
+    try {
+      await storage.deletePatientInvoice(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error.message?.includes("نهائية")) return res.status(409).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
   });

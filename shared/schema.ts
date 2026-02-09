@@ -34,6 +34,10 @@ export const lotTxTypeEnum = pgEnum("lot_tx_type", ["in", "out", "adj"]);
 export const transferStatusEnum = pgEnum("transfer_status", ["draft", "executed"]);
 export const salesInvoiceStatusEnum = pgEnum("sales_invoice_status", ["draft", "finalized", "cancelled"]);
 export const customerTypeEnum = pgEnum("customer_type", ["cash", "credit", "contract"]);
+export const patientInvoiceStatusEnum = pgEnum("patient_invoice_status", ["draft", "finalized", "cancelled"]);
+export const patientTypeEnum = pgEnum("patient_type", ["cash", "contract"]);
+export const patientInvoiceLineTypeEnum = pgEnum("patient_invoice_line_type", ["service", "drug", "consumable", "equipment"]);
+export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank_transfer", "insurance"]);
 
 // المستخدمين
 export const users = pgTable("users", {
@@ -648,6 +652,69 @@ export const serviceConsumables = pgTable("service_consumables", {
   uniqueServiceItem: uniqueIndex("idx_sc_unique").on(table.serviceId, table.itemId),
 }));
 
+// فواتير المرضى - رأس الفاتورة
+export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceNumber: varchar("invoice_number", { length: 30 }).notNull().unique(),
+  invoiceDate: date("invoice_date").notNull(),
+  patientName: text("patient_name").notNull(),
+  patientPhone: text("patient_phone"),
+  patientType: patientTypeEnum("patient_type").notNull().default("cash"),
+  departmentId: varchar("department_id").references(() => departments.id),
+  doctorName: text("doctor_name"),
+  contractName: text("contract_name"),
+  notes: text("notes"),
+  status: patientInvoiceStatusEnum("status").notNull().default("draft"),
+  totalAmount: decimal("total_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  discountAmount: decimal("discount_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  netAmount: decimal("net_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  paidAmount: decimal("paid_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  finalizedAt: timestamp("finalized_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  invoiceNumIdx: index("idx_pat_inv_number").on(table.invoiceNumber),
+  dateIdx: index("idx_pat_inv_date").on(table.invoiceDate),
+  patientIdx: index("idx_pat_inv_patient").on(table.patientName),
+  doctorIdx: index("idx_pat_inv_doctor").on(table.doctorName),
+  statusIdx: index("idx_pat_inv_status").on(table.status),
+}));
+
+// فواتير المرضى - بنود الفاتورة
+export const patientInvoiceLines = pgTable("patient_invoice_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  headerId: varchar("header_id").notNull().references(() => patientInvoiceHeaders.id, { onDelete: "cascade" }),
+  lineType: patientInvoiceLineTypeEnum("line_type").notNull(),
+  serviceId: varchar("service_id").references(() => services.id),
+  itemId: varchar("item_id").references(() => items.id),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 4 }).notNull().default("1"),
+  unitPrice: decimal("unit_price", { precision: 18, scale: 2 }).notNull().default("0"),
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
+  discountAmount: decimal("discount_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  totalPrice: decimal("total_price", { precision: 18, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  headerIdx: index("idx_pat_line_header").on(table.headerId),
+  typeIdx: index("idx_pat_line_type").on(table.lineType),
+}));
+
+// فواتير المرضى - سداد الدفعات
+export const patientInvoicePayments = pgTable("patient_invoice_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  headerId: varchar("header_id").notNull().references(() => patientInvoiceHeaders.id, { onDelete: "cascade" }),
+  paymentDate: date("payment_date").notNull(),
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  paymentMethod: paymentMethodEnum("payment_method").notNull().default("cash"),
+  referenceNumber: text("reference_number"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  headerIdx: index("idx_pat_pay_header").on(table.headerId),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
@@ -692,6 +759,10 @@ export const insertPriceListSchema = createInsertSchema(priceLists).omit({ id: t
 export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPriceAdjustmentLogSchema = createInsertSchema(priceAdjustmentsLog).omit({ id: true, createdAt: true });
 export const insertServiceConsumableSchema = createInsertSchema(serviceConsumables).omit({ id: true });
+
+export const insertPatientInvoiceHeaderSchema = createInsertSchema(patientInvoiceHeaders).omit({ id: true, createdAt: true, updatedAt: true, finalizedAt: true });
+export const insertPatientInvoiceLineSchema = createInsertSchema(patientInvoiceLines).omit({ id: true, createdAt: true });
+export const insertPatientInvoicePaymentSchema = createInsertSchema(patientInvoicePayments).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -962,4 +1033,50 @@ export const customerTypeLabels: Record<string, string> = {
   cash: "نقدي",
   credit: "آجل",
   contract: "تعاقد",
+};
+
+export const insertPatientInvoiceHeader = insertPatientInvoiceHeaderSchema;
+export type InsertPatientInvoiceHeader = z.infer<typeof insertPatientInvoiceHeaderSchema>;
+export type PatientInvoiceHeader = typeof patientInvoiceHeaders.$inferSelect;
+
+export type InsertPatientInvoiceLine = z.infer<typeof insertPatientInvoiceLineSchema>;
+export type PatientInvoiceLine = typeof patientInvoiceLines.$inferSelect;
+
+export type InsertPatientInvoicePayment = z.infer<typeof insertPatientInvoicePaymentSchema>;
+export type PatientInvoicePayment = typeof patientInvoicePayments.$inferSelect;
+
+export type PatientInvoiceLineWithDetails = PatientInvoiceLine & {
+  service?: Service;
+  item?: Item;
+};
+
+export type PatientInvoiceWithDetails = PatientInvoiceHeader & {
+  department?: Department;
+  lines?: PatientInvoiceLineWithDetails[];
+  payments?: PatientInvoicePayment[];
+};
+
+export const patientInvoiceStatusLabels: Record<string, string> = {
+  draft: "مسودة",
+  finalized: "نهائي",
+  cancelled: "ملغي",
+};
+
+export const patientTypeLabels: Record<string, string> = {
+  cash: "نقدي",
+  contract: "تعاقد",
+};
+
+export const lineTypeLabels: Record<string, string> = {
+  service: "خدمة",
+  drug: "دواء",
+  consumable: "مستهلكات",
+  equipment: "أجهزة",
+};
+
+export const paymentMethodLabels: Record<string, string> = {
+  cash: "نقدي",
+  card: "بطاقة",
+  bank_transfer: "تحويل بنكي",
+  insurance: "تأمين",
 };

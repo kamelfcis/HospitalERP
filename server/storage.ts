@@ -107,6 +107,13 @@ import {
   type SalesInvoiceLine,
   type SalesInvoiceWithDetails,
   type SalesInvoiceLineWithItem,
+  patientInvoiceHeaders,
+  patientInvoiceLines,
+  patientInvoicePayments,
+  type PatientInvoiceHeader,
+  type PatientInvoiceLine,
+  type PatientInvoicePayment,
+  type PatientInvoiceWithDetails,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -306,6 +313,15 @@ export interface IStorage {
   updateSalesInvoice(id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader>;
   finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader>;
   deleteSalesInvoice(id: string): Promise<boolean>;
+
+  // Patient Invoices
+  getNextPatientInvoiceNumber(): Promise<number>;
+  getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}>;
+  getPatientInvoice(id: string): Promise<PatientInvoiceWithDetails | undefined>;
+  createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
+  updatePatientInvoice(id: string, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
+  finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader>;
+  deletePatientInvoice(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3933,6 +3949,154 @@ export class DatabaseStorage implements IStorage {
     if (!invoice) throw new Error("الفاتورة غير موجودة");
     if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة نهائية");
     await db.delete(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+    return true;
+  }
+
+  // Patient Invoices
+  async getNextPatientInvoiceNumber(): Promise<number> {
+    const result = await db.select({ max: sql<string>`COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0)` }).from(patientInvoiceHeaders);
+    return (parseInt(result[0]?.max || "0") || 0) + 1;
+  }
+
+  async getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}> {
+    const conditions: any[] = [];
+    if (filters.status) conditions.push(eq(patientInvoiceHeaders.status, filters.status as any));
+    if (filters.dateFrom) conditions.push(gte(patientInvoiceHeaders.invoiceDate, filters.dateFrom));
+    if (filters.dateTo) conditions.push(lte(patientInvoiceHeaders.invoiceDate, filters.dateTo));
+    if (filters.patientName) conditions.push(ilike(patientInvoiceHeaders.patientName, `%${filters.patientName}%`));
+    if (filters.doctorName) conditions.push(ilike(patientInvoiceHeaders.doctorName, `%${filters.doctorName}%`));
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const page = filters.page || 1;
+    const pageSize = filters.pageSize || 20;
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(patientInvoiceHeaders).where(where);
+    const total = Number(countResult?.count || 0);
+
+    const data = await db.select({
+      header: patientInvoiceHeaders,
+      department: departments,
+    })
+      .from(patientInvoiceHeaders)
+      .leftJoin(departments, eq(patientInvoiceHeaders.departmentId, departments.id))
+      .where(where)
+      .orderBy(desc(patientInvoiceHeaders.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+
+    return {
+      data: data.map(r => ({ ...r.header, department: r.department })),
+      total,
+    };
+  }
+
+  async getPatientInvoice(id: string): Promise<PatientInvoiceWithDetails | undefined> {
+    const [headerRow] = await db.select({
+      header: patientInvoiceHeaders,
+      department: departments,
+    })
+      .from(patientInvoiceHeaders)
+      .leftJoin(departments, eq(patientInvoiceHeaders.departmentId, departments.id))
+      .where(eq(patientInvoiceHeaders.id, id));
+
+    if (!headerRow) return undefined;
+
+    const lines = await db.select({
+      line: patientInvoiceLines,
+      service: services,
+      item: items,
+    })
+      .from(patientInvoiceLines)
+      .leftJoin(services, eq(patientInvoiceLines.serviceId, services.id))
+      .leftJoin(items, eq(patientInvoiceLines.itemId, items.id))
+      .where(eq(patientInvoiceLines.headerId, id))
+      .orderBy(asc(patientInvoiceLines.sortOrder));
+
+    const payments = await db.select()
+      .from(patientInvoicePayments)
+      .where(eq(patientInvoicePayments.headerId, id))
+      .orderBy(asc(patientInvoicePayments.createdAt));
+
+    return {
+      ...headerRow.header,
+      department: headerRow.department || undefined,
+      lines: lines.map(l => ({ ...l.line, service: l.service || undefined, item: l.item || undefined })),
+      payments,
+    };
+  }
+
+  async createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader> {
+    return await db.transaction(async (tx) => {
+      const [created] = await tx.insert(patientInvoiceHeaders).values(header).returning();
+
+      if (lines.length > 0) {
+        await tx.insert(patientInvoiceLines).values(
+          lines.map((l: any, i: number) => ({ ...l, headerId: created.id, sortOrder: i }))
+        );
+      }
+
+      if (payments.length > 0) {
+        await tx.insert(patientInvoicePayments).values(
+          payments.map((p: any) => ({ ...p, headerId: created.id }))
+        );
+      }
+
+      const totalPaid = payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || "0"), 0);
+      await tx.update(patientInvoiceHeaders).set({ paidAmount: String(totalPaid) }).where(eq(patientInvoiceHeaders.id, created.id));
+
+      const [result] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, created.id));
+      return result;
+    });
+  }
+
+  async updatePatientInvoice(id: string, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader> {
+    return await db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
+      if (!existing) throw new Error("فاتورة المريض غير موجودة");
+      if (existing.status !== "draft") throw new Error("لا يمكن تعديل فاتورة نهائية");
+
+      await tx.update(patientInvoiceHeaders).set({ ...header, updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, id));
+
+      await tx.delete(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, id));
+      if (lines.length > 0) {
+        await tx.insert(patientInvoiceLines).values(
+          lines.map((l: any, i: number) => ({ ...l, headerId: id, sortOrder: i }))
+        );
+      }
+
+      await tx.delete(patientInvoicePayments).where(eq(patientInvoicePayments.headerId, id));
+      if (payments.length > 0) {
+        await tx.insert(patientInvoicePayments).values(
+          payments.map((p: any) => ({ ...p, headerId: id }))
+        );
+      }
+
+      const totalPaid = payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || "0"), 0);
+      await tx.update(patientInvoiceHeaders).set({ paidAmount: String(totalPaid) }).where(eq(patientInvoiceHeaders.id, id));
+
+      const [result] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
+      return result;
+    });
+  }
+
+  async finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader> {
+    const [existing] = await db.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
+    if (!existing) throw new Error("فاتورة المريض غير موجودة");
+    if (existing.status !== "draft") throw new Error("الفاتورة ليست مسودة");
+
+    const [updated] = await db.update(patientInvoiceHeaders).set({
+      status: "finalized",
+      finalizedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(patientInvoiceHeaders.id, id)).returning();
+    return updated;
+  }
+
+  async deletePatientInvoice(id: string): Promise<boolean> {
+    const [invoice] = await db.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
+    if (!invoice) throw new Error("فاتورة المريض غير موجودة");
+    if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة نهائية");
+    await db.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
     return true;
   }
 }
