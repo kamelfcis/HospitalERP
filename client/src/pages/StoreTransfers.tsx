@@ -76,9 +76,9 @@ function formatAvailability(availQtyMinor: string, unitLevel: string, item: any)
   const minorQty = parseFloat(availQtyMinor);
   if (isNaN(minorQty)) return "0";
 
-  if (item && unitLevel === "major" && item.majorToMinor) {
+  if (item && unitLevel === "major") {
     const factor = parseFloat(item.majorToMinor);
-    if (factor > 0) {
+    if (factor > 0 && factor !== 1) {
       const wholeMajor = Math.floor(minorQty / factor);
       const remainderMinor = Math.round(minorQty - (wholeMajor * factor));
       if (remainderMinor > 0) {
@@ -86,11 +86,12 @@ function formatAvailability(availQtyMinor: string, unitLevel: string, item: any)
       }
       return `${wholeMajor} ${item.majorUnitName || ""}`;
     }
+    return `${minorQty} ${item.majorUnitName || "وحدة"}`;
   }
 
   if (item && unitLevel === "medium") {
     const factor = getEffectiveMediumToMinor(item);
-    if (factor > 0) {
+    if (factor > 0 && factor !== 1) {
       const wholeMed = Math.floor(minorQty / factor);
       const remainderMinor = Math.round(minorQty - (wholeMed * factor));
       if (remainderMinor > 0) {
@@ -98,9 +99,10 @@ function formatAvailability(availQtyMinor: string, unitLevel: string, item: any)
       }
       return `${wholeMed} ${item.mediumUnitName || ""}`;
     }
+    return `${minorQty} ${item.mediumUnitName || "وحدة"}`;
   }
 
-  return `${minorQty.toFixed(3)} ${item?.minorUnitName || "وحدة"}`;
+  return `${minorQty} ${item?.minorUnitName || item?.majorUnitName || "وحدة"}`;
 }
 
 export default function StoreTransfers() {
@@ -873,6 +875,7 @@ export default function StoreTransfers() {
               availableQtyMinor: alloc.availableQty || "0",
               notes: "",
               fefoLocked: true,
+              lotSalePrice: alloc.lotSalePrice || undefined,
             } as TransferLineLocal;
           });
 
@@ -912,16 +915,25 @@ export default function StoreTransfers() {
     const line = lines[index];
     if (!line) return;
 
-    const qtyEntered = line.qtyEntered;
-    const qtyInMinor = calculateQtyInMinor(qtyEntered, newUnitLevel, line.item);
+    if (line.item?.hasExpiry) {
+      const sameItemLines = lines.filter((l) => l.itemId === line.itemId);
+      const totalQtyInMinor = sameItemLines.reduce((sum, l) => sum + l.qtyInMinor, 0);
 
-    if (line.item?.hasExpiry && qtyInMinor > 0) {
+      if (totalQtyInMinor <= 0) {
+        setFormLines((prev) => {
+          const copy = [...prev];
+          copy[index] = { ...copy[index], unitLevel: newUnitLevel };
+          return copy;
+        });
+        return;
+      }
+
       setFefoLoadingIndex(index);
       try {
         const params = new URLSearchParams({
           itemId: line.itemId,
           warehouseId: sourceWarehouseId,
-          requiredQtyInMinor: String(qtyInMinor),
+          requiredQtyInMinor: String(totalQtyInMinor),
           asOfDate: transferDate,
         });
         const res = await fetch(`/api/transfer/fefo-preview?${params}`);
@@ -936,24 +948,28 @@ export default function StoreTransfers() {
           return;
         }
 
+        const convertMinorToDisplay = (minorQty: number): number => {
+          let displayQty = minorQty;
+          if (newUnitLevel === "major") {
+            displayQty = minorQty / (parseFloat(line.item.majorToMinor) || 1);
+          } else if (newUnitLevel === "medium") {
+            displayQty = minorQty / getEffectiveMediumToMinor(line.item);
+          }
+          const rounded = Math.round(displayQty * 10000) / 10000;
+          if (Math.abs(rounded - Math.round(rounded)) < 0.005) return Math.round(rounded);
+          return rounded;
+        };
+
         const newLines: TransferLineLocal[] = preview.allocations
           .filter((a: any) => parseFloat(a.allocatedQty) > 0)
           .map((alloc: any) => {
             const allocMinor = parseFloat(alloc.allocatedQty);
-            let displayQty = allocMinor;
-            if (newUnitLevel === "major") {
-              displayQty = allocMinor / (parseFloat(line.item.majorToMinor) || 1);
-            } else if (newUnitLevel === "medium") {
-              displayQty = allocMinor / getEffectiveMediumToMinor(line.item);
-            }
-            displayQty = Math.round(displayQty * 10000) / 10000;
-
             return {
               id: crypto.randomUUID(),
               itemId: line.itemId,
               item: line.item,
               unitLevel: newUnitLevel,
-              qtyEntered: displayQty,
+              qtyEntered: convertMinorToDisplay(allocMinor),
               qtyInMinor: allocMinor,
               selectedExpiryDate: alloc.expiryDate || null,
               selectedExpiryMonth: alloc.expiryMonth || null,
@@ -961,12 +977,16 @@ export default function StoreTransfers() {
               availableQtyMinor: alloc.availableQty || "0",
               notes: line.notes || "",
               fefoLocked: true,
+              lotSalePrice: alloc.lotSalePrice || undefined,
             } as TransferLineLocal;
           });
 
+        const targetItemId = line.itemId;
         setFormLines((prev) => {
-          const copy = [...prev];
-          copy.splice(index, 1, ...newLines);
+          const firstIdx = prev.findIndex((l) => l.itemId === targetItemId);
+          const copy = prev.filter((l) => l.itemId !== targetItemId);
+          const insertAt = Math.min(firstIdx >= 0 ? firstIdx : copy.length, copy.length);
+          copy.splice(insertAt, 0, ...newLines);
           return copy;
         });
       } catch (err: any) {
@@ -975,22 +995,18 @@ export default function StoreTransfers() {
         setFefoLoadingIndex(null);
       }
     } else {
-      const totalAvail = parseFloat(line.item?.availableQtyMinor || "0");
-      if (qtyInMinor > totalAvail) {
-        toast({
-          title: "الكمية غير متاحة بهذه الوحدة",
-          description: `المطلوب: ${qtyEntered} ${getUnitName(line.item, newUnitLevel)} — المتاح: ${formatAvailability(String(totalAvail), newUnitLevel, line.item)}`,
-          variant: "destructive",
-        });
-        return;
-      }
+      const qtyInMinor = line.qtyInMinor;
       setFormLines((prev) => {
         const copy = [...prev];
+        const displayQty = newUnitLevel === "major"
+          ? qtyInMinor / (parseFloat(line.item?.majorToMinor) || 1)
+          : newUnitLevel === "medium"
+            ? qtyInMinor / getEffectiveMediumToMinor(line.item)
+            : qtyInMinor;
         copy[index] = {
           ...copy[index],
           unitLevel: newUnitLevel,
-          qtyInMinor,
-          fefoLocked: false,
+          qtyEntered: Math.round(displayQty * 10000) / 10000,
         };
         return copy;
       });
