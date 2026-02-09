@@ -114,8 +114,9 @@ export default function PatientInvoice() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const [regPage, setRegPage] = useState(1);
-  const [regDateFrom, setRegDateFrom] = useState("");
-  const [regDateTo, setRegDateTo] = useState("");
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [regDateFrom, setRegDateFrom] = useState(todayStr);
+  const [regDateTo, setRegDateTo] = useState(todayStr);
   const [regPatientName, setRegPatientName] = useState("");
   const [regDoctorName, setRegDoctorName] = useState("");
   const [regStatus, setRegStatus] = useState("all");
