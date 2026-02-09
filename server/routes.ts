@@ -1413,12 +1413,12 @@ export async function registerRoutes(
         resolvedDeptId = wh?.departmentId || undefined;
       }
       if (resolvedDeptId) {
-        const price = await storage.getItemPriceForDepartment(
+        const deptPrice = await storage.getItemPriceForDepartment(
           itemId as string,
           resolvedDeptId
         );
-        if (price && parseFloat(price) > 0) {
-          return res.json({ price, source: "department" });
+        if (deptPrice && parseFloat(deptPrice) > 0) {
+          return res.json({ price: deptPrice, source: "department" });
         }
       }
       if (lotId) {

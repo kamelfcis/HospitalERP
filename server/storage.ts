@@ -209,7 +209,7 @@ export interface IStorage {
   createItemDepartmentPrice(price: InsertItemDepartmentPrice): Promise<ItemDepartmentPrice>;
   updateItemDepartmentPrice(id: string, price: Partial<InsertItemDepartmentPrice>): Promise<ItemDepartmentPrice | undefined>;
   deleteItemDepartmentPrice(id: string): Promise<boolean>;
-  getItemPriceForDepartment(itemId: string, departmentId: string): Promise<string>;
+  getItemPriceForDepartment(itemId: string, departmentId: string): Promise<string | null>;
 
   // Inventory Lots
   getLots(itemId: string): Promise<InventoryLot[]>;
@@ -1231,7 +1231,7 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  async getItemPriceForDepartment(itemId: string, departmentId: string): Promise<string> {
+  async getItemPriceForDepartment(itemId: string, departmentId: string): Promise<string | null> {
     const [deptPrice] = await db.select()
       .from(itemDepartmentPrices)
       .where(and(
@@ -1239,15 +1239,11 @@ export class DatabaseStorage implements IStorage {
         eq(itemDepartmentPrices.departmentId, departmentId)
       ));
 
-    if (deptPrice) {
+    if (deptPrice && parseFloat(deptPrice.salePrice) > 0) {
       return deptPrice.salePrice;
     }
 
-    const [item] = await db.select({ salePriceCurrent: items.salePriceCurrent })
-      .from(items)
-      .where(eq(items.id, itemId));
-
-    return item?.salePriceCurrent || "0";
+    return null;
   }
 
   // Inventory Lots
