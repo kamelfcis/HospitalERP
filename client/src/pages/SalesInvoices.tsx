@@ -1307,8 +1307,9 @@ export default function SalesInvoices() {
                     data-testid={`row-line-${i}`}
                   >
                     <td className="text-center">{i + 1}</td>
-                    <td className="max-w-[200px] truncate" title={ln.item?.nameAr || ""}>
-                      <span className="font-semibold text-[13px]">{ln.item?.nameAr || ln.itemId}</span>
+                    <td className="max-w-[200px]" title={`${ln.item?.nameAr || ""} — ${ln.item?.itemCode || ""}`}>
+                      <span className="text-foreground leading-tight line-clamp-2" style={{ fontSize: "14px", fontWeight: 700, wordBreak: "break-word" }}>{ln.item?.nameAr || ln.itemId}</span>
+                      <span className="text-muted-foreground text-[10px] block">{ln.item?.itemCode || ""}</span>
                     </td>
                     <td className="text-center">
                       {isDraft ? (
