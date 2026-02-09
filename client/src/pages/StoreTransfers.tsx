@@ -726,6 +726,15 @@ export default function StoreTransfers() {
           title: `تمت إضافة: ${item.nameAr}`,
           description: lotCount > 1 ? `تم التوزيع على ${lotCount} دفعات (FEFO)` : undefined,
         });
+        fetchExpiryOptions(item.id).then((opts) => {
+          if (opts && opts.length > 0) {
+            setLineExpiryOptions((prev) => {
+              const update: Record<string, ExpiryOption[]> = {};
+              newLines.forEach((nl) => { update[nl.id] = opts; });
+              return { ...prev, ...update };
+            });
+          }
+        });
         return true;
       } catch (err: any) {
         toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
@@ -884,6 +893,15 @@ export default function StoreTransfers() {
           copy.splice(index, 1, ...newLines);
           return copy;
         });
+        fetchExpiryOptions(line.itemId).then((opts) => {
+          if (opts && opts.length > 0) {
+            setLineExpiryOptions((prev) => {
+              const update: Record<string, ExpiryOption[]> = {};
+              newLines.forEach((nl) => { update[nl.id] = opts; });
+              return { ...prev, ...update };
+            });
+          }
+        });
 
         if (newLines.length > 1) {
           toast({ title: `تم التوزيع على ${newLines.length} دفعات (FEFO)` });
@@ -988,6 +1006,15 @@ export default function StoreTransfers() {
           const insertAt = Math.min(firstIdx >= 0 ? firstIdx : copy.length, copy.length);
           copy.splice(insertAt, 0, ...newLines);
           return copy;
+        });
+        fetchExpiryOptions(line.itemId).then((opts) => {
+          if (opts && opts.length > 0) {
+            setLineExpiryOptions((prev) => {
+              const update: Record<string, ExpiryOption[]> = {};
+              newLines.forEach((nl) => { update[nl.id] = opts; });
+              return { ...prev, ...update };
+            });
+          }
         });
       } catch (err: any) {
         toast({ title: "خطأ في تغيير الوحدة", description: err.message, variant: "destructive" });
