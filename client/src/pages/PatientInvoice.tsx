@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -887,7 +886,7 @@ export default function PatientInvoice() {
   }
 
   return (
-    <div className="p-4 space-y-4" dir="rtl" data-testid="page-patient-invoice">
+    <div className="p-2 space-y-2" dir="rtl" data-testid="page-patient-invoice">
       <Tabs value={mainTab} onValueChange={setMainTab}>
         <TabsList className="w-full justify-start" data-testid="tabs-main">
           <TabsTrigger value="invoice" data-testid="tab-invoice">
@@ -900,391 +899,389 @@ export default function PatientInvoice() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="invoice">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between gap-2 flex-wrap">
-                <CardTitle className="text-base">بيانات المريض</CardTitle>
+        <TabsContent value="invoice" className="mt-2">
+          <div className="space-y-2">
+            <div className="border rounded-md p-2 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {invoiceId && (
                   <Badge className={getStatusBadgeClass(status)} data-testid="badge-invoice-status">
                     {patientInvoiceStatusLabels[status] || status}
                   </Badge>
                 )}
-              </CardHeader>
-              <CardContent className="p-4 pt-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">رقم الفاتورة</Label>
-                    <Input
-                      value={invoiceNumber}
-                      onChange={(e) => setInvoiceNumber(e.target.value)}
-                      disabled={!isDraft}
-                      data-testid="input-invoice-number"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">تاريخ الفاتورة</Label>
-                    <Input
-                      type="date"
-                      value={invoiceDate}
-                      onChange={(e) => setInvoiceDate(e.target.value)}
-                      disabled={!isDraft}
-                      data-testid="input-invoice-date"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">اسم المريض</Label>
-                    <Input
-                      value={patientName}
-                      onChange={(e) => setPatientName(e.target.value)}
-                      disabled={!isDraft}
-                      data-testid="input-patient-name"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">رقم الهاتف</Label>
-                    <Input
-                      value={patientPhone}
-                      onChange={(e) => setPatientPhone(e.target.value)}
-                      disabled={!isDraft}
-                      data-testid="input-patient-phone"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">القسم</Label>
-                    <Select value={departmentId} onValueChange={setDepartmentId} disabled={!isDraft}>
-                      <SelectTrigger data-testid="select-department">
-                        <SelectValue placeholder="اختر القسم" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(departments || []).map((dept) => (
-                          <SelectItem key={dept.id} value={dept.id}>{dept.nameAr}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">الطبيب</Label>
-                    <Input
-                      value={doctorName}
-                      onChange={(e) => setDoctorName(e.target.value)}
-                      disabled={!isDraft}
-                      data-testid="input-doctor-name"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">نوع المريض</Label>
-                    <div className="flex items-center gap-4 h-9">
-                      <label className="flex items-center gap-1 cursor-pointer text-sm">
-                        <input
-                          type="radio"
-                          name="patientType"
-                          value="cash"
-                          checked={patientType === "cash"}
-                          onChange={() => setPatientType("cash")}
-                          disabled={!isDraft}
-                          data-testid="radio-patient-type-cash"
-                        />
-                        {patientTypeLabels.cash}
-                      </label>
-                      <label className="flex items-center gap-1 cursor-pointer text-sm">
-                        <input
-                          type="radio"
-                          name="patientType"
-                          value="contract"
-                          checked={patientType === "contract"}
-                          onChange={() => setPatientType("contract")}
-                          disabled={!isDraft}
-                          data-testid="radio-patient-type-contract"
-                        />
-                        {patientTypeLabels.contract}
-                      </label>
-                    </div>
-                  </div>
-                  {patientType === "contract" && (
-                    <div className="space-y-1">
-                      <Label className="text-xs">جهة التعاقد</Label>
-                      <Input
-                        value={contractName}
-                        onChange={(e) => setContractName(e.target.value)}
-                        disabled={!isDraft}
-                        data-testid="input-contract-name"
-                      />
-                    </div>
-                  )}
-                  <div className="space-y-1 md:col-span-2 lg:col-span-4">
-                    <Label className="text-xs">ملاحظات</Label>
-                    <Textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      disabled={!isDraft}
-                      rows={2}
-                      className="resize-none text-sm"
-                      data-testid="input-notes"
-                    />
-                  </div>
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">رقم:</Label>
+                  <Input
+                    value={invoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    disabled={!isDraft}
+                    className="h-7 text-xs w-24"
+                    data-testid="input-invoice-number"
+                  />
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <Tabs value={subTab} onValueChange={setSubTab}>
-                  <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
-                    <TabsTrigger value="services" data-testid="tab-services">خدمات</TabsTrigger>
-                    <TabsTrigger value="drugs" data-testid="tab-drugs">أدوية</TabsTrigger>
-                    <TabsTrigger value="consumables" data-testid="tab-consumables">مستهلكات</TabsTrigger>
-                    <TabsTrigger value="equipment" data-testid="tab-equipment">أجهزة</TabsTrigger>
-                    <TabsTrigger value="payments" data-testid="tab-payments">سداد دفعات</TabsTrigger>
-                    <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="services">{renderLineGrid("service")}</TabsContent>
-                  <TabsContent value="drugs">{renderLineGrid("drug")}</TabsContent>
-                  <TabsContent value="consumables">{renderLineGrid("consumable")}</TabsContent>
-                  <TabsContent value="equipment">{renderLineGrid("equipment")}</TabsContent>
-                  <TabsContent value="payments">{renderPaymentsTab()}</TabsContent>
-                  <TabsContent value="consolidated">{renderConsolidatedTab()}</TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-4 text-sm">
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground text-xs">الإجمالي</span>
-                      <span className="font-bold" data-testid="text-footer-total">{formatCurrency(totals.totalAmount)}</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground text-xs">الخصم</span>
-                      <span className="font-bold" data-testid="text-footer-discount">{formatCurrency(totals.discountAmount)}</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground text-xs">الصافي</span>
-                      <span className="font-bold" data-testid="text-footer-net">{formatCurrency(totals.netAmount)}</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground text-xs">المدفوع</span>
-                      <span className="font-bold" data-testid="text-footer-paid">{formatCurrency(totals.paidAmount)}</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground text-xs">المتبقي</span>
-                      <span className={`font-bold ${totals.remaining > 0 ? "text-destructive" : ""}`} data-testid="text-footer-remaining">
-                        {formatCurrency(totals.remaining)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Button
-                      variant="outline"
-                      onClick={resetForm}
-                      data-testid="button-new"
-                    >
-                      <Plus className="h-4 w-4 ml-1" />
-                      جديد
-                    </Button>
-                    {isDraft && (
-                      <>
-                        <Button
-                          onClick={() => saveMutation.mutate()}
-                          disabled={saveMutation.isPending || !patientName || !invoiceNumber}
-                          data-testid="button-save"
-                        >
-                          {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Save className="h-4 w-4 ml-1" />}
-                          حفظ
-                        </Button>
-                        {invoiceId && (
-                          <Button
-                            variant="default"
-                            onClick={() => finalizeMutation.mutate()}
-                            disabled={finalizeMutation.isPending}
-                            className="bg-green-600 text-white border-green-700"
-                            data-testid="button-finalize"
-                          >
-                            {finalizeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <CheckCircle className="h-4 w-4 ml-1" />}
-                            اعتماد
-                          </Button>
-                        )}
-                        {invoiceId && (
-                          <Button
-                            variant="destructive"
-                            onClick={() => setConfirmDeleteId(invoiceId)}
-                            disabled={deleteMutation.isPending}
-                            data-testid="button-delete"
-                          >
-                            <Trash2 className="h-4 w-4 ml-1" />
-                            حذف
-                          </Button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="registry">
-          <Card>
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-base">سجل المرضى</CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-2 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">من تاريخ</Label>
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">تاريخ:</Label>
                   <Input
                     type="date"
-                    value={regDateFrom}
-                    onChange={(e) => { setRegDateFrom(e.target.value); setRegPage(1); }}
-                    data-testid="input-reg-date-from"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    disabled={!isDraft}
+                    className="h-7 text-xs w-36"
+                    data-testid="input-invoice-date"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">إلى تاريخ</Label>
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
                   <Input
-                    type="date"
-                    value={regDateTo}
-                    onChange={(e) => { setRegDateTo(e.target.value); setRegPage(1); }}
-                    data-testid="input-reg-date-to"
+                    value={patientName}
+                    onChange={(e) => setPatientName(e.target.value)}
+                    disabled={!isDraft}
+                    className="h-7 text-xs w-40"
+                    data-testid="input-patient-name"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">اسم المريض</Label>
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">هاتف:</Label>
                   <Input
-                    value={regPatientName}
-                    onChange={(e) => { setRegPatientName(e.target.value); setRegPage(1); }}
-                    placeholder="بحث..."
-                    data-testid="input-reg-patient-name"
+                    value={patientPhone}
+                    onChange={(e) => setPatientPhone(e.target.value)}
+                    disabled={!isDraft}
+                    className="h-7 text-xs w-28"
+                    data-testid="input-patient-phone"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">اسم الطبيب</Label>
-                  <Input
-                    value={regDoctorName}
-                    onChange={(e) => { setRegDoctorName(e.target.value); setRegPage(1); }}
-                    placeholder="بحث..."
-                    data-testid="input-reg-doctor-name"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">الحالة</Label>
-                  <Select value={regStatus} onValueChange={(v) => { setRegStatus(v); setRegPage(1); }}>
-                    <SelectTrigger data-testid="select-reg-status">
-                      <SelectValue />
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
+                  <Select value={departmentId} onValueChange={setDepartmentId} disabled={!isDraft}>
+                    <SelectTrigger className="h-7 text-xs w-32" data-testid="select-department">
+                      <SelectValue placeholder="اختر" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">الكل</SelectItem>
-                      <SelectItem value="draft">مسودة</SelectItem>
-                      <SelectItem value="finalized">نهائي</SelectItem>
-                      <SelectItem value="cancelled">ملغي</SelectItem>
+                      {(departments || []).map((dept) => (
+                        <SelectItem key={dept.id} value={dept.id}>{dept.nameAr}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
+                  <Input
+                    value={doctorName}
+                    onChange={(e) => setDoctorName(e.target.value)}
+                    disabled={!isDraft}
+                    className="h-7 text-xs w-32"
+                    data-testid="input-doctor-name"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">النوع:</Label>
+                  <label className="flex items-center gap-1 cursor-pointer text-xs">
+                    <input
+                      type="radio"
+                      name="patientType"
+                      value="cash"
+                      checked={patientType === "cash"}
+                      onChange={() => setPatientType("cash")}
+                      disabled={!isDraft}
+                      data-testid="radio-patient-type-cash"
+                    />
+                    {patientTypeLabels.cash}
+                  </label>
+                  <label className="flex items-center gap-1 cursor-pointer text-xs">
+                    <input
+                      type="radio"
+                      name="patientType"
+                      value="contract"
+                      checked={patientType === "contract"}
+                      onChange={() => setPatientType("contract")}
+                      disabled={!isDraft}
+                      data-testid="radio-patient-type-contract"
+                    />
+                    {patientTypeLabels.contract}
+                  </label>
+                </div>
+                {patientType === "contract" && (
+                  <div className="flex items-center gap-1">
+                    <Label className="text-xs text-muted-foreground whitespace-nowrap">جهة:</Label>
+                    <Input
+                      value={contractName}
+                      onChange={(e) => setContractName(e.target.value)}
+                      disabled={!isDraft}
+                      className="h-7 text-xs w-32"
+                      data-testid="input-contract-name"
+                    />
+                  </div>
+                )}
               </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">ملاحظات:</Label>
+                <Input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={!isDraft}
+                  className="h-7 text-xs flex-1"
+                  placeholder="ملاحظات..."
+                  data-testid="input-notes"
+                />
+              </div>
+            </div>
 
-              {regLoading ? (
-                <div className="space-y-2">
-                  {[...Array(5)].map((_, i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
+            <div className="border rounded-md p-2">
+              <Tabs value={subTab} onValueChange={setSubTab}>
+                <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
+                  <TabsTrigger value="services" data-testid="tab-services">خدمات</TabsTrigger>
+                  <TabsTrigger value="drugs" data-testid="tab-drugs">أدوية</TabsTrigger>
+                  <TabsTrigger value="consumables" data-testid="tab-consumables">مستهلكات</TabsTrigger>
+                  <TabsTrigger value="equipment" data-testid="tab-equipment">أجهزة</TabsTrigger>
+                  <TabsTrigger value="payments" data-testid="tab-payments">سداد دفعات</TabsTrigger>
+                  <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="services" className="mt-2">{renderLineGrid("service")}</TabsContent>
+                <TabsContent value="drugs" className="mt-2">{renderLineGrid("drug")}</TabsContent>
+                <TabsContent value="consumables" className="mt-2">{renderLineGrid("consumable")}</TabsContent>
+                <TabsContent value="equipment" className="mt-2">{renderLineGrid("equipment")}</TabsContent>
+                <TabsContent value="payments" className="mt-2">{renderPaymentsTab()}</TabsContent>
+                <TabsContent value="consolidated" className="mt-2">{renderConsolidatedTab()}</TabsContent>
+              </Tabs>
+            </div>
+
+            <div className="border rounded-md p-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground text-xs">الإجمالي:</span>
+                    <span className="font-bold text-xs" data-testid="text-footer-total">{formatCurrency(totals.totalAmount)}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground text-xs">الخصم:</span>
+                    <span className="font-bold text-xs" data-testid="text-footer-discount">{formatCurrency(totals.discountAmount)}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground text-xs">الصافي:</span>
+                    <span className="font-bold text-xs" data-testid="text-footer-net">{formatCurrency(totals.netAmount)}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground text-xs">المدفوع:</span>
+                    <span className="font-bold text-xs" data-testid="text-footer-paid">{formatCurrency(totals.paidAmount)}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground text-xs">المتبقي:</span>
+                    <span className={`font-bold text-xs ${totals.remaining > 0 ? "text-destructive" : ""}`} data-testid="text-footer-remaining">
+                      {formatCurrency(totals.remaining)}
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <div className="overflow-x-auto border rounded-md">
-                  <table className="peachtree-grid w-full text-sm">
-                    <thead>
-                      <tr className="peachtree-grid-header">
-                        <th className="text-center" style={{ width: 40 }}>#</th>
-                        <th className="text-center">رقم الفاتورة</th>
-                        <th className="text-center">التاريخ</th>
-                        <th className="text-right">اسم المريض</th>
-                        <th className="text-center">القسم</th>
-                        <th className="text-right">الطبيب</th>
-                        <th className="text-center">الإجمالي</th>
-                        <th className="text-center">الحالة</th>
-                        <th className="text-center" style={{ width: 60 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(registryData?.data || []).map((inv: any, i: number) => (
-                        <tr
-                          key={inv.id}
-                          className="peachtree-grid-row cursor-pointer"
-                          onClick={() => loadInvoice(inv.id)}
-                          data-testid={`row-registry-${inv.id}`}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetForm}
+                    data-testid="button-new"
+                  >
+                    <Plus className="h-3 w-3 ml-1" />
+                    جديد
+                  </Button>
+                  {isDraft && (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => saveMutation.mutate()}
+                        disabled={saveMutation.isPending || !patientName || !invoiceNumber}
+                        data-testid="button-save"
+                      >
+                        {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
+                        حفظ
+                      </Button>
+                      {invoiceId && (
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => finalizeMutation.mutate()}
+                          disabled={finalizeMutation.isPending}
+                          className="bg-green-600 text-white border-green-700"
+                          data-testid="button-finalize"
                         >
-                          <td className="text-center">{(regPage - 1) * regPageSize + i + 1}</td>
-                          <td className="text-center font-mono">{inv.invoiceNumber}</td>
-                          <td className="text-center">{formatDateShort(inv.invoiceDate)}</td>
-                          <td>{inv.patientName}</td>
-                          <td className="text-center">{inv.department?.nameAr || ""}</td>
-                          <td>{inv.doctorName || ""}</td>
-                          <td className="text-center">{formatNumber(inv.netAmount)}</td>
-                          <td className="text-center">
-                            <Badge
-                              className={getStatusBadgeClass(inv.status)}
-                              data-testid={`badge-reg-status-${inv.id}`}
-                            >
-                              {patientInvoiceStatusLabels[inv.status] || inv.status}
-                            </Badge>
-                          </td>
-                          <td className="text-center">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                loadInvoice(inv.id);
-                              }}
-                              data-testid={`button-view-reg-${inv.id}`}
-                            >
-                              <Eye className="h-3 w-3" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                      {(registryData?.data || []).length === 0 && (
-                        <tr>
-                          <td colSpan={9} className="text-center text-muted-foreground py-6">
-                            لا توجد فواتير
-                          </td>
-                        </tr>
+                          {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
+                          اعتماد
+                        </Button>
                       )}
-                    </tbody>
-                  </table>
+                      {invoiceId && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setConfirmDeleteId(invoiceId)}
+                          disabled={deleteMutation.isPending}
+                          data-testid="button-delete"
+                        >
+                          <Trash2 className="h-3 w-3 ml-1" />
+                          حذف
+                        </Button>
+                      )}
+                    </>
+                  )}
                 </div>
-              )}
+              </div>
+            </div>
+          </div>
+        </TabsContent>
 
-              {regTotalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 py-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={regPage <= 1}
-                    onClick={() => setRegPage((p) => p - 1)}
-                    data-testid="button-reg-prev-page"
-                  >
-                    <ChevronRight className="h-3 w-3" />
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    صفحة {regPage} من {regTotalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={regPage >= regTotalPages}
-                    onClick={() => setRegPage((p) => p + 1)}
-                    data-testid="button-reg-next-page"
-                  >
-                    <ChevronLeft className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="registry" className="mt-2">
+          <div className="border rounded-md p-2 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">من:</Label>
+                <Input
+                  type="date"
+                  value={regDateFrom}
+                  onChange={(e) => { setRegDateFrom(e.target.value); setRegPage(1); }}
+                  className="h-7 text-xs w-36"
+                  data-testid="input-reg-date-from"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">إلى:</Label>
+                <Input
+                  type="date"
+                  value={regDateTo}
+                  onChange={(e) => { setRegDateTo(e.target.value); setRegPage(1); }}
+                  className="h-7 text-xs w-36"
+                  data-testid="input-reg-date-to"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
+                <Input
+                  value={regPatientName}
+                  onChange={(e) => { setRegPatientName(e.target.value); setRegPage(1); }}
+                  placeholder="بحث..."
+                  className="h-7 text-xs w-36"
+                  data-testid="input-reg-patient-name"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
+                <Input
+                  value={regDoctorName}
+                  onChange={(e) => { setRegDoctorName(e.target.value); setRegPage(1); }}
+                  placeholder="بحث..."
+                  className="h-7 text-xs w-32"
+                  data-testid="input-reg-doctor-name"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">الحالة:</Label>
+                <Select value={regStatus} onValueChange={(v) => { setRegStatus(v); setRegPage(1); }}>
+                  <SelectTrigger className="h-7 text-xs w-24" data-testid="select-reg-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">الكل</SelectItem>
+                    <SelectItem value="draft">مسودة</SelectItem>
+                    <SelectItem value="finalized">نهائي</SelectItem>
+                    <SelectItem value="cancelled">ملغي</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {regLoading ? (
+              <div className="space-y-2">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-x-auto border rounded-md">
+                <table className="peachtree-grid w-full text-sm">
+                  <thead>
+                    <tr className="peachtree-grid-header">
+                      <th className="text-center" style={{ width: 40 }}>#</th>
+                      <th className="text-center">رقم الفاتورة</th>
+                      <th className="text-center">التاريخ</th>
+                      <th className="text-right">اسم المريض</th>
+                      <th className="text-center">القسم</th>
+                      <th className="text-right">الطبيب</th>
+                      <th className="text-center">الإجمالي</th>
+                      <th className="text-center">الحالة</th>
+                      <th className="text-center" style={{ width: 60 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(registryData?.data || []).map((inv: any, i: number) => (
+                      <tr
+                        key={inv.id}
+                        className="peachtree-grid-row cursor-pointer"
+                        onClick={() => loadInvoice(inv.id)}
+                        data-testid={`row-registry-${inv.id}`}
+                      >
+                        <td className="text-center">{(regPage - 1) * regPageSize + i + 1}</td>
+                        <td className="text-center font-mono">{inv.invoiceNumber}</td>
+                        <td className="text-center">{formatDateShort(inv.invoiceDate)}</td>
+                        <td>{inv.patientName}</td>
+                        <td className="text-center">{inv.department?.nameAr || ""}</td>
+                        <td>{inv.doctorName || ""}</td>
+                        <td className="text-center">{formatNumber(inv.netAmount)}</td>
+                        <td className="text-center">
+                          <Badge
+                            className={getStatusBadgeClass(inv.status)}
+                            data-testid={`badge-reg-status-${inv.id}`}
+                          >
+                            {patientInvoiceStatusLabels[inv.status] || inv.status}
+                          </Badge>
+                        </td>
+                        <td className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              loadInvoice(inv.id);
+                            }}
+                            data-testid={`button-view-reg-${inv.id}`}
+                          >
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {(registryData?.data || []).length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="text-center text-muted-foreground py-4">
+                          لا توجد فواتير
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {regTotalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 py-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={regPage <= 1}
+                  onClick={() => setRegPage((p) => p - 1)}
+                  data-testid="button-reg-prev-page"
+                >
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  صفحة {regPage} من {regTotalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={regPage >= regTotalPages}
+                  onClick={() => setRegPage((p) => p + 1)}
+                  data-testid="button-reg-next-page"
+                >
+                  <ChevronLeft className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 
