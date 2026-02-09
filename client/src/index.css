@@ -184,11 +184,22 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
     font-feature-settings: "ss01", "ss02";
+    text-align: right;
   }
 
-  /* RTL specific adjustments */
-  [dir="rtl"] input[type="number"] {
-    text-align: left;
+  input[type="number"],
+  input[type="date"],
+  input[type="tel"] {
+    direction: ltr;
+    text-align: right;
+  }
+
+  table {
+    direction: rtl;
+  }
+
+  th, td {
+    text-align: right;
   }
 
   /* Accounting table styles */
@@ -358,14 +369,14 @@
 
   .peachtree-grid-header th {
     padding: 6px 8px;
-    border-left: 1px solid hsl(215 40% 50%);
+    border-right: 1px solid hsl(215 40% 50%);
     border-bottom: 2px solid hsl(215 50% 25%);
     text-align: center;
     white-space: nowrap;
   }
 
   .peachtree-grid-header th:first-child {
-    border-left: none;
+    border-right: none;
   }
 
   .peachtree-grid-row {
@@ -382,14 +393,14 @@
 
   .peachtree-grid-row td {
     padding: 1px 4px;
-    border-left: 1px solid hsl(210 10% 88%);
+    border-right: 1px solid hsl(210 10% 88%);
     vertical-align: middle;
     line-height: 1.15;
     font-size: 13px;
   }
 
   .peachtree-grid-row td:first-child {
-    border-left: none;
+    border-right: none;
   }
 
   .peachtree-input {
