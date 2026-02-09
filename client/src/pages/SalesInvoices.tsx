@@ -1177,17 +1177,15 @@ export default function SalesInvoices() {
             <tbody>
               {(() => {
                 const itemPriceMap = new Map<string, Set<number>>();
-                const deptPriceItems = new Set<string>();
                 lines.forEach((ln) => {
                   if (!itemPriceMap.has(ln.itemId)) itemPriceMap.set(ln.itemId, new Set());
                   itemPriceMap.get(ln.itemId)!.add(ln.baseSalePrice);
-                  if (ln.priceSource === "department") deptPriceItems.add(ln.itemId);
                 });
                 const multiPriceItems = new Set<string>();
                 itemPriceMap.forEach((prices, itemId) => { if (prices.size > 1) multiPriceItems.add(itemId); });
                 return lines.map((ln, i) => {
                 const needsExpiry = ln.item?.hasExpiry && !ln.expiryMonth;
-                const hasMultiPrice = multiPriceItems.has(ln.itemId) || deptPriceItems.has(ln.itemId);
+                const hasMultiPrice = multiPriceItems.has(ln.itemId);
                 return (
                   <tr
                     key={ln.tempId}
