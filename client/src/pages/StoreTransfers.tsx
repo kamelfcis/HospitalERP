@@ -28,6 +28,7 @@ interface TransferLineLocal {
   availableQtyMinor: string;
   notes: string;
   fefoLocked: boolean;
+  lotSalePrice?: string;
 }
 
 interface ExpiryOption {
@@ -35,6 +36,7 @@ interface ExpiryOption {
   expiryMonth: number | null;
   expiryYear: number | null;
   qtyAvailableMinor: string;
+  lotSalePrice?: string;
 }
 
 function getEffectiveMediumToMinor(item: any): number {
@@ -113,6 +115,7 @@ export default function StoreTransfers() {
   const [filterDestWarehouse, setFilterDestWarehouse] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterSearch, setFilterSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [logPage, setLogPage] = useState(1);
   const logPageSize = 20;
 
@@ -174,6 +177,14 @@ export default function StoreTransfers() {
 
   formLinesRef.current = formLines;
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(filterSearch.trim());
+      setLogPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [filterSearch]);
+
   const buildLogQueryString = () => {
     const params = new URLSearchParams();
     params.set("page", logPage.toString());
@@ -183,12 +194,12 @@ export default function StoreTransfers() {
     if (filterSourceWarehouse) params.set("sourceWarehouseId", filterSourceWarehouse);
     if (filterDestWarehouse) params.set("destWarehouseId", filterDestWarehouse);
     if (filterStatus && filterStatus !== "all") params.set("status", filterStatus);
-    if (filterSearch) params.set("search", filterSearch);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     return params.toString();
   };
 
   const { data: transfersData, isLoading: transfersLoading } = useQuery<{ data: StoreTransferWithDetails[]; total: number }>({
-    queryKey: ["/api/transfers", logPage, filterFromDate, filterToDate, filterSourceWarehouse, filterDestWarehouse, filterStatus, filterSearch],
+    queryKey: ["/api/transfers", logPage, filterFromDate, filterToDate, filterSourceWarehouse, filterDestWarehouse, filterStatus, debouncedSearch],
     queryFn: async () => {
       const res = await fetch(`/api/transfers?${buildLogQueryString()}`);
       if (!res.ok) throw new Error("Failed to fetch transfers");
@@ -199,11 +210,6 @@ export default function StoreTransfers() {
   const transfers = transfersData?.data || [];
   const totalTransfers = transfersData?.total || 0;
   const totalPages = Math.max(1, Math.ceil(totalTransfers / logPageSize));
-
-  const handleFilterSearch = () => {
-    setLogPage(1);
-    queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
-  };
 
   const loadTransferForEditing = useCallback(async (transferId: string) => {
     try {
@@ -708,6 +714,7 @@ export default function StoreTransfers() {
               availableQtyMinor: alloc.availableQty || "0",
               notes: "",
               fefoLocked: true,
+              lotSalePrice: alloc.lotSalePrice || undefined,
             } as TransferLineLocal;
           });
 
@@ -1062,6 +1069,7 @@ export default function StoreTransfers() {
         selectedExpiryYear: year,
         availableQtyMinor: String(availMinor),
         fefoLocked: true,
+        lotSalePrice: opt?.lotSalePrice || undefined,
       };
       return copy;
     });
@@ -1243,15 +1251,10 @@ export default function StoreTransfers() {
               type="text"
               value={filterSearch}
               onChange={(e) => setFilterSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleFilterSearch()}
-              placeholder="بحث نصي..."
-              className="h-7 text-[11px] px-1 w-[140px]"
+              placeholder="بحث (استخدم % كمقطع)..."
+              className="h-7 text-[11px] px-1 w-[160px]"
               data-testid="filter-search"
             />
-            <Button size="sm" onClick={handleFilterSearch} data-testid="button-filter-search">
-              <Search className="h-3 w-3 ml-1" />
-              بحث
-            </Button>
           </div>
 
           <div className="peachtree-grid">
@@ -1487,8 +1490,24 @@ export default function StoreTransfers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {formLines.length > 0 ? (
-                    formLines.map((line, idx) => (
+                  {(() => {
+                    const multiPriceItems = new Set<string>();
+                    formLines.forEach((ln) => {
+                      const sameLinesForItem = formLines.filter((l) => l.itemId === ln.itemId);
+                      if (sameLinesForItem.length > 1) {
+                        const prices = new Set(sameLinesForItem.map((l) => l.lotSalePrice || "0").filter(p => p !== "0"));
+                        if (prices.size > 1) multiPriceItems.add(ln.itemId);
+                      }
+                      const opts = lineExpiryOptions[ln.id];
+                      if (opts && opts.length > 1) {
+                        const optPrices = new Set(opts.map((o) => o.lotSalePrice || "0").filter(p => p !== "0"));
+                        if (optPrices.size > 1) multiPriceItems.add(ln.itemId);
+                      }
+                    });
+                    return formLines.length > 0 ? (
+                    formLines.map((line, idx) => {
+                      const hasMultiPrice = multiPriceItems.has(line.itemId);
+                      return (
                       <tr
                         key={line.id}
                         className={`peachtree-grid-row ${!line.fefoLocked ? "bg-yellow-50 dark:bg-yellow-900/20" : ""} ${focusedLineIdx === idx ? "ring-1 ring-blue-300 dark:ring-blue-700" : ""}`}
@@ -1532,7 +1551,7 @@ export default function StoreTransfers() {
                             );
                           })()}
                         </td>
-                        <td className="py-0.5 px-2 whitespace-nowrap">
+                        <td className={`py-0.5 px-2 whitespace-nowrap ${hasMultiPrice ? "bg-amber-100 dark:bg-amber-900/30" : ""}`} title={hasMultiPrice ? "تنبيه: هذا الصنف له أكثر من سعر بيع" : ""}>
                           {isViewOnly ? (
                             <span data-testid={`text-qty-${idx}`}>{line.qtyEntered}</span>
                           ) : (
@@ -1630,14 +1649,16 @@ export default function StoreTransfers() {
                           </td>
                         )}
                       </tr>
-                    ))
+                    );
+                    })
                   ) : (
                     <tr>
                       <td colSpan={isViewOnly ? 7 : 8} className="py-4 text-center text-muted-foreground">
                         لا توجد أصناف - اضغط "إضافة صنف" لإضافة أصناف
                       </td>
                     </tr>
-                  )}
+                  )
+                  })()}
                 </tbody>
               </table>
             </div>

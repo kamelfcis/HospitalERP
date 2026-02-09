@@ -253,7 +253,7 @@ export interface IStorage {
   getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
   getItemAvailability(itemId: string, warehouseId: string): Promise<string>;
   searchItemsForTransfer(query: string, warehouseId: string, limit?: number): Promise<any[]>;
-  getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; expiryMonth: number | null; expiryYear: number | null; qtyAvailableMinor: string}[]>;
+  getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; expiryMonth: number | null; expiryYear: number | null; qtyAvailableMinor: string; lotSalePrice?: string}[]>;
   searchItemsAdvanced(params: {
     mode: 'AR' | 'EN' | 'CODE' | 'BARCODE';
     query: string;
@@ -1794,7 +1794,7 @@ export class DatabaseStorage implements IStorage {
     return result?.total || "0";
   }
 
-  async getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; expiryMonth: number | null; expiryYear: number | null; qtyAvailableMinor: string}[]> {
+  async getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; expiryMonth: number | null; expiryYear: number | null; qtyAvailableMinor: string; lotSalePrice?: string}[]> {
     const [item] = await db.select().from(items).where(eq(items.id, itemId));
     if (!item || !item.hasExpiry) return [];
     
@@ -1806,6 +1806,8 @@ export class DatabaseStorage implements IStorage {
       expiryMonth: inventoryLots.expiryMonth,
       expiryYear: inventoryLots.expiryYear,
       qtyAvailableMinor: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+      minSalePrice: sql<string>`MIN(${inventoryLots.salePrice})::text`,
+      maxSalePrice: sql<string>`MAX(${inventoryLots.salePrice})::text`,
     })
       .from(inventoryLots)
       .where(and(
@@ -1825,6 +1827,7 @@ export class DatabaseStorage implements IStorage {
       expiryMonth: r.expiryMonth,
       expiryYear: r.expiryYear,
       qtyAvailableMinor: r.qtyAvailableMinor,
+      lotSalePrice: r.minSalePrice || undefined,
     }));
   }
 
