@@ -525,44 +525,58 @@ export default function PatientInvoice() {
           <table className="peachtree-grid w-full text-sm">
             <thead>
               <tr className="peachtree-grid-header">
-                {isDraft && <th className="text-center" style={{ width: 50 }}></th>}
-                <th className="text-center" style={{ width: 110 }}>الإجمالي</th>
-                <th className="text-center" style={{ width: 100 }}>قيمة الخصم</th>
-                <th className="text-center" style={{ width: 80 }}>خصم %</th>
-                <th className="text-center" style={{ width: 100 }}>سعر الوحدة</th>
-                <th className="text-center" style={{ width: 80 }}>الكمية</th>
-                <th className="text-right">الوصف</th>
                 <th className="text-center" style={{ width: 40 }}>#</th>
+                <th>الوصف</th>
+                <th className="text-center" style={{ width: 80 }}>الكمية</th>
+                <th className="text-center" style={{ width: 100 }}>سعر الوحدة</th>
+                <th className="text-center" style={{ width: 80 }}>خصم %</th>
+                <th className="text-center" style={{ width: 100 }}>قيمة الخصم</th>
+                <th className="text-center" style={{ width: 110 }}>الإجمالي</th>
+                {isDraft && <th className="text-center" style={{ width: 50 }}></th>}
               </tr>
             </thead>
             <tbody>
               {typeLines.map((line, i) => (
                 <tr key={line.tempId} className="peachtree-grid-row" data-testid={`row-line-${type}-${i}`}>
-                  {isDraft && (
-                    <td className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeLine(line.tempId)}
-                        data-testid={`button-remove-line-${type}-${i}`}
-                      >
-                        <X className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </td>
-                  )}
-                  <td className="text-center font-bold">{formatNumber(line.totalPrice)}</td>
+                  <td className="text-center">{i + 1}</td>
+                  <td>
+                    {isDraft ? (
+                      <Input
+                        value={line.description}
+                        onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
+                        className="h-7 text-xs"
+                        data-testid={`input-desc-${type}-${i}`}
+                      />
+                    ) : (
+                      line.description
+                    )}
+                  </td>
                   <td className="text-center">
                     {isDraft ? (
                       <Input
                         type="number"
-                        value={line.discountAmount}
+                        value={line.quantity}
                         min={0}
-                        onChange={(e) => updateLine(line.tempId, "discountAmount", parseFloat(e.target.value) || 0)}
+                        onChange={(e) => updateLine(line.tempId, "quantity", parseFloat(e.target.value) || 0)}
                         className="h-7 text-xs text-center"
-                        data-testid={`input-disc-amt-${type}-${i}`}
+                        data-testid={`input-qty-${type}-${i}`}
                       />
                     ) : (
-                      formatNumber(line.discountAmount)
+                      formatNumber(line.quantity)
+                    )}
+                  </td>
+                  <td className="text-center">
+                    {isDraft ? (
+                      <Input
+                        type="number"
+                        value={line.unitPrice}
+                        min={0}
+                        onChange={(e) => updateLine(line.tempId, "unitPrice", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs text-center"
+                        data-testid={`input-price-${type}-${i}`}
+                      />
+                    ) : (
+                      formatNumber(line.unitPrice)
                     )}
                   </td>
                   <td className="text-center">
@@ -584,43 +598,29 @@ export default function PatientInvoice() {
                     {isDraft ? (
                       <Input
                         type="number"
-                        value={line.unitPrice}
+                        value={line.discountAmount}
                         min={0}
-                        onChange={(e) => updateLine(line.tempId, "unitPrice", parseFloat(e.target.value) || 0)}
+                        onChange={(e) => updateLine(line.tempId, "discountAmount", parseFloat(e.target.value) || 0)}
                         className="h-7 text-xs text-center"
-                        data-testid={`input-price-${type}-${i}`}
+                        data-testid={`input-disc-amt-${type}-${i}`}
                       />
                     ) : (
-                      formatNumber(line.unitPrice)
+                      formatNumber(line.discountAmount)
                     )}
                   </td>
-                  <td className="text-center">
-                    {isDraft ? (
-                      <Input
-                        type="number"
-                        value={line.quantity}
-                        min={0}
-                        onChange={(e) => updateLine(line.tempId, "quantity", parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-center"
-                        data-testid={`input-qty-${type}-${i}`}
-                      />
-                    ) : (
-                      formatNumber(line.quantity)
-                    )}
-                  </td>
-                  <td>
-                    {isDraft ? (
-                      <Input
-                        value={line.description}
-                        onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
-                        className="h-7 text-xs"
-                        data-testid={`input-desc-${type}-${i}`}
-                      />
-                    ) : (
-                      line.description
-                    )}
-                  </td>
-                  <td className="text-center">{i + 1}</td>
+                  <td className="text-center font-bold">{formatNumber(line.totalPrice)}</td>
+                  {isDraft && (
+                    <td className="text-center">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeLine(line.tempId)}
+                        data-testid={`button-remove-line-${type}-${i}`}
+                      >
+                        <X className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               ))}
               {typeLines.length === 0 && (
@@ -650,52 +650,44 @@ export default function PatientInvoice() {
           <table className="peachtree-grid w-full text-sm">
             <thead>
               <tr className="peachtree-grid-header">
-                {isDraft && <th className="text-center" style={{ width: 50 }}></th>}
-                <th className="text-right">ملاحظات</th>
-                <th className="text-right">المرجع</th>
-                <th className="text-center" style={{ width: 140 }}>طريقة الدفع</th>
-                <th className="text-center" style={{ width: 120 }}>المبلغ</th>
-                <th className="text-center" style={{ width: 130 }}>التاريخ</th>
                 <th className="text-center" style={{ width: 40 }}>#</th>
+                <th className="text-center" style={{ width: 130 }}>التاريخ</th>
+                <th className="text-center" style={{ width: 120 }}>المبلغ</th>
+                <th className="text-center" style={{ width: 140 }}>طريقة الدفع</th>
+                <th>المرجع</th>
+                <th>ملاحظات</th>
+                {isDraft && <th className="text-center" style={{ width: 50 }}></th>}
               </tr>
             </thead>
             <tbody>
               {payments.map((p, i) => (
                 <tr key={p.tempId} className="peachtree-grid-row" data-testid={`row-payment-${i}`}>
-                  {isDraft && (
-                    <td className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removePayment(p.tempId)}
-                        data-testid={`button-remove-payment-${i}`}
-                      >
-                        <X className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </td>
-                  )}
-                  <td>
+                  <td className="text-center">{i + 1}</td>
+                  <td className="text-center">
                     {isDraft ? (
                       <Input
-                        value={p.notes}
-                        onChange={(e) => updatePayment(p.tempId, "notes", e.target.value)}
+                        type="date"
+                        value={p.paymentDate}
+                        onChange={(e) => updatePayment(p.tempId, "paymentDate", e.target.value)}
                         className="h-7 text-xs"
-                        data-testid={`input-pay-notes-${i}`}
+                        data-testid={`input-pay-date-${i}`}
                       />
                     ) : (
-                      p.notes
+                      formatDateShort(p.paymentDate)
                     )}
                   </td>
-                  <td>
+                  <td className="text-center">
                     {isDraft ? (
                       <Input
-                        value={p.referenceNumber}
-                        onChange={(e) => updatePayment(p.tempId, "referenceNumber", e.target.value)}
-                        className="h-7 text-xs"
-                        data-testid={`input-pay-ref-${i}`}
+                        type="number"
+                        value={p.amount}
+                        min={0}
+                        onChange={(e) => updatePayment(p.tempId, "amount", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs text-center"
+                        data-testid={`input-pay-amount-${i}`}
                       />
                     ) : (
-                      p.referenceNumber
+                      formatNumber(p.amount)
                     )}
                   </td>
                   <td className="text-center">
@@ -717,34 +709,42 @@ export default function PatientInvoice() {
                       paymentMethodLabels[p.paymentMethod] || p.paymentMethod
                     )}
                   </td>
-                  <td className="text-center">
+                  <td>
                     {isDraft ? (
                       <Input
-                        type="number"
-                        value={p.amount}
-                        min={0}
-                        onChange={(e) => updatePayment(p.tempId, "amount", parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-center"
-                        data-testid={`input-pay-amount-${i}`}
-                      />
-                    ) : (
-                      formatNumber(p.amount)
-                    )}
-                  </td>
-                  <td className="text-center">
-                    {isDraft ? (
-                      <Input
-                        type="date"
-                        value={p.paymentDate}
-                        onChange={(e) => updatePayment(p.tempId, "paymentDate", e.target.value)}
+                        value={p.referenceNumber}
+                        onChange={(e) => updatePayment(p.tempId, "referenceNumber", e.target.value)}
                         className="h-7 text-xs"
-                        data-testid={`input-pay-date-${i}`}
+                        data-testid={`input-pay-ref-${i}`}
                       />
                     ) : (
-                      formatDateShort(p.paymentDate)
+                      p.referenceNumber
                     )}
                   </td>
-                  <td className="text-center">{i + 1}</td>
+                  <td>
+                    {isDraft ? (
+                      <Input
+                        value={p.notes}
+                        onChange={(e) => updatePayment(p.tempId, "notes", e.target.value)}
+                        className="h-7 text-xs"
+                        data-testid={`input-pay-notes-${i}`}
+                      />
+                    ) : (
+                      p.notes
+                    )}
+                  </td>
+                  {isDraft && (
+                    <td className="text-center">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removePayment(p.tempId)}
+                        data-testid={`button-remove-payment-${i}`}
+                      >
+                        <X className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               ))}
               {payments.length === 0 && (
@@ -776,14 +776,14 @@ export default function PatientInvoice() {
           <table className="peachtree-grid w-full text-sm">
             <thead>
               <tr className="peachtree-grid-header">
-                <th className="text-center" style={{ width: 110 }}>الإجمالي</th>
-                <th className="text-center" style={{ width: 100 }}>قيمة الخصم</th>
-                <th className="text-center" style={{ width: 80 }}>خصم %</th>
-                <th className="text-center" style={{ width: 100 }}>سعر الوحدة</th>
-                <th className="text-center" style={{ width: 80 }}>الكمية</th>
-                <th className="text-right">الوصف</th>
-                <th className="text-right">النوع</th>
                 <th className="text-center" style={{ width: 40 }}>#</th>
+                <th>النوع</th>
+                <th>الوصف</th>
+                <th className="text-center" style={{ width: 80 }}>الكمية</th>
+                <th className="text-center" style={{ width: 100 }}>سعر الوحدة</th>
+                <th className="text-center" style={{ width: 80 }}>خصم %</th>
+                <th className="text-center" style={{ width: 100 }}>قيمة الخصم</th>
+                <th className="text-center" style={{ width: 110 }}>الإجمالي</th>
               </tr>
             </thead>
             <tbody>
@@ -794,18 +794,18 @@ export default function PatientInvoice() {
                   counter++;
                   return (
                     <tr key={line.tempId} className="peachtree-grid-row" data-testid={`row-consolidated-${counter}`}>
-                      <td className="text-center font-bold">{formatNumber(line.totalPrice)}</td>
-                      <td className="text-center">{formatNumber(line.discountAmount)}</td>
-                      <td className="text-center">{formatNumber(line.discountPercent)}</td>
-                      <td className="text-center">{formatNumber(line.unitPrice)}</td>
-                      <td className="text-center">{formatNumber(line.quantity)}</td>
-                      <td>{line.description}</td>
+                      <td className="text-center">{counter}</td>
                       <td>
                         <Badge variant="secondary" className="text-xs">
                           {lineTypeLabels[line.lineType] || line.lineType}
                         </Badge>
                       </td>
-                      <td className="text-center">{counter}</td>
+                      <td>{line.description}</td>
+                      <td className="text-center">{formatNumber(line.quantity)}</td>
+                      <td className="text-center">{formatNumber(line.unitPrice)}</td>
+                      <td className="text-center">{formatNumber(line.discountPercent)}</td>
+                      <td className="text-center">{formatNumber(line.discountAmount)}</td>
+                      <td className="text-center font-bold">{formatNumber(line.totalPrice)}</td>
                     </tr>
                   );
                 });
@@ -858,21 +858,21 @@ export default function PatientInvoice() {
                 <table className="peachtree-grid w-full text-sm">
                   <thead>
                     <tr className="peachtree-grid-header">
-                      <th className="text-right">المرجع</th>
-                      <th className="text-center">طريقة الدفع</th>
-                      <th className="text-center">المبلغ</th>
-                      <th className="text-center">التاريخ</th>
                       <th className="text-center">#</th>
+                      <th className="text-center">التاريخ</th>
+                      <th className="text-center">المبلغ</th>
+                      <th className="text-center">طريقة الدفع</th>
+                      <th>المرجع</th>
                     </tr>
                   </thead>
                   <tbody>
                     {payments.map((p, i) => (
                       <tr key={p.tempId} className="peachtree-grid-row">
-                        <td>{p.referenceNumber}</td>
-                        <td className="text-center">{paymentMethodLabels[p.paymentMethod]}</td>
-                        <td className="text-center font-bold">{formatNumber(p.amount)}</td>
-                        <td className="text-center">{formatDateShort(p.paymentDate)}</td>
                         <td className="text-center">{i + 1}</td>
+                        <td className="text-center">{formatDateShort(p.paymentDate)}</td>
+                        <td className="text-center font-bold">{formatNumber(p.amount)}</td>
+                        <td className="text-center">{paymentMethodLabels[p.paymentMethod]}</td>
+                        <td>{p.referenceNumber}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1195,15 +1195,15 @@ export default function PatientInvoice() {
                 <table className="peachtree-grid w-full text-sm">
                   <thead>
                     <tr className="peachtree-grid-header">
-                      <th className="text-center" style={{ width: 60 }}></th>
-                      <th className="text-center">الحالة</th>
-                      <th className="text-center">الإجمالي</th>
-                      <th className="text-right">الطبيب</th>
-                      <th className="text-center">القسم</th>
-                      <th className="text-right">اسم المريض</th>
-                      <th className="text-center">التاريخ</th>
-                      <th className="text-center">رقم الفاتورة</th>
                       <th className="text-center" style={{ width: 40 }}>#</th>
+                      <th className="text-center">رقم الفاتورة</th>
+                      <th className="text-center">التاريخ</th>
+                      <th>اسم المريض</th>
+                      <th className="text-center">القسم</th>
+                      <th>الطبيب</th>
+                      <th className="text-center">الإجمالي</th>
+                      <th className="text-center">الحالة</th>
+                      <th className="text-center" style={{ width: 60 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1214,6 +1214,21 @@ export default function PatientInvoice() {
                         onClick={() => loadInvoice(inv.id)}
                         data-testid={`row-registry-${inv.id}`}
                       >
+                        <td className="text-center">{(regPage - 1) * regPageSize + i + 1}</td>
+                        <td className="text-center font-mono">{inv.invoiceNumber}</td>
+                        <td className="text-center">{formatDateShort(inv.invoiceDate)}</td>
+                        <td>{inv.patientName}</td>
+                        <td className="text-center">{inv.department?.nameAr || ""}</td>
+                        <td>{inv.doctorName || ""}</td>
+                        <td className="text-center">{formatNumber(inv.netAmount)}</td>
+                        <td className="text-center">
+                          <Badge
+                            className={getStatusBadgeClass(inv.status)}
+                            data-testid={`badge-reg-status-${inv.id}`}
+                          >
+                            {patientInvoiceStatusLabels[inv.status] || inv.status}
+                          </Badge>
+                        </td>
                         <td className="text-center">
                           <Button
                             variant="ghost"
@@ -1227,21 +1242,6 @@ export default function PatientInvoice() {
                             <Eye className="h-3 w-3" />
                           </Button>
                         </td>
-                        <td className="text-center">
-                          <Badge
-                            className={getStatusBadgeClass(inv.status)}
-                            data-testid={`badge-reg-status-${inv.id}`}
-                          >
-                            {patientInvoiceStatusLabels[inv.status] || inv.status}
-                          </Badge>
-                        </td>
-                        <td className="text-center">{formatNumber(inv.netAmount)}</td>
-                        <td>{inv.doctorName || ""}</td>
-                        <td className="text-center">{inv.department?.nameAr || ""}</td>
-                        <td>{inv.patientName}</td>
-                        <td className="text-center">{formatDateShort(inv.invoiceDate)}</td>
-                        <td className="text-center font-mono">{inv.invoiceNumber}</td>
-                        <td className="text-center">{(regPage - 1) * regPageSize + i + 1}</td>
                       </tr>
                     ))}
                     {(registryData?.data || []).length === 0 && (
