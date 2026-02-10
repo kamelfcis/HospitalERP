@@ -2860,5 +2860,111 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Cashier API ====================
+
+  app.post("/api/cashier/shift/open", async (req, res) => {
+    try {
+      const { cashierId, cashierName, openingCash } = req.body;
+      if (!cashierId || !cashierName) return res.status(400).json({ message: "بيانات الكاشير مطلوبة" });
+      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0");
+      res.json(shift);
+    } catch (error: any) {
+      if (error.message?.includes("مفتوحة")) return res.status(409).json({ message: error.message });
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/shift/active/:cashierId", async (req, res) => {
+    try {
+      const shift = await storage.getActiveShift(req.params.cashierId);
+      res.json(shift);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/cashier/shift/:shiftId/close", async (req, res) => {
+    try {
+      const { closingCash } = req.body;
+      if (closingCash === undefined) return res.status(400).json({ message: "المبلغ النقدي الفعلي مطلوب" });
+      const shift = await storage.closeCashierShift(req.params.shiftId, closingCash);
+      res.json(shift);
+    } catch (error: any) {
+      if (error.message?.includes("معلقة") || error.message?.includes("مغلقة")) return res.status(409).json({ message: error.message });
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/shift/:shiftId/totals", async (req, res) => {
+    try {
+      const totals = await storage.getShiftTotals(req.params.shiftId);
+      res.json(totals);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/pending-sales", async (req, res) => {
+    try {
+      const search = req.query.search as string | undefined;
+      const invoices = await storage.getPendingSalesInvoices(search);
+      res.json(invoices);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/pending-returns", async (req, res) => {
+    try {
+      const search = req.query.search as string | undefined;
+      const invoices = await storage.getPendingReturnInvoices(search);
+      res.json(invoices);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/invoice/:id/details", async (req, res) => {
+    try {
+      const details = await storage.getSalesInvoiceDetails(req.params.id);
+      if (!details) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      res.json(details);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/cashier/collect", async (req, res) => {
+    try {
+      const { shiftId, invoiceIds, collectedBy } = req.body;
+      if (!shiftId || !invoiceIds?.length || !collectedBy) {
+        return res.status(400).json({ message: "بيانات التحصيل غير مكتملة" });
+      }
+      const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy);
+      res.json(result);
+    } catch (error: any) {
+      if (error.message?.includes("محصّلة") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
+        return res.status(409).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/cashier/refund", async (req, res) => {
+    try {
+      const { shiftId, invoiceIds, refundedBy } = req.body;
+      if (!shiftId || !invoiceIds?.length || !refundedBy) {
+        return res.status(400).json({ message: "بيانات الصرف غير مكتملة" });
+      }
+      const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy);
+      res.json(result);
+    } catch (error: any) {
+      if (error.message?.includes("مصروف") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
+        return res.status(409).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   return httpServer;
 }

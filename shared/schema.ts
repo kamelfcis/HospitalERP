@@ -723,6 +723,70 @@ export const patientInvoicePayments = pgTable("patient_invoice_payments", {
   headerIdx: index("idx_pat_pay_header").on(table.headerId),
 }));
 
+// ورديات الكاشير
+export const cashierShifts = pgTable("cashier_shifts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  cashierId: varchar("cashier_id").notNull(),
+  cashierName: text("cashier_name").notNull(),
+  status: cashierShiftStatusEnum("status").notNull().default("open"),
+  openingCash: decimal("opening_cash", { precision: 18, scale: 2 }).notNull().default("0"),
+  closingCash: decimal("closing_cash", { precision: 18, scale: 2 }).notNull().default("0"),
+  expectedCash: decimal("expected_cash", { precision: 18, scale: 2 }).notNull().default("0"),
+  variance: decimal("variance", { precision: 18, scale: 2 }).notNull().default("0"),
+  openedAt: timestamp("opened_at").notNull().defaultNow(),
+  closedAt: timestamp("closed_at"),
+}, (table) => ({
+  cashierIdx: index("idx_cashier_shifts_cashier").on(table.cashierId),
+  statusIdx: index("idx_cashier_shifts_status").on(table.status),
+  openedAtIdx: index("idx_cashier_shifts_opened").on(table.openedAt),
+}));
+
+// إيصالات تحصيل الكاشير
+export const cashierReceipts = pgTable("cashier_receipts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receiptNumber: integer("receipt_number").notNull(),
+  shiftId: varchar("shift_id").notNull().references(() => cashierShifts.id),
+  invoiceId: varchar("invoice_id").notNull().references(() => salesInvoiceHeaders.id),
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  collectedBy: text("collected_by").notNull(),
+  collectedAt: timestamp("collected_at").notNull().defaultNow(),
+}, (table) => ({
+  shiftIdx: index("idx_cashier_receipts_shift").on(table.shiftId),
+  invoiceUniq: uniqueIndex("idx_cashier_receipts_invoice_unique").on(table.invoiceId),
+  receiptNumIdx: index("idx_cashier_receipts_number").on(table.receiptNumber),
+}));
+
+// إيصالات رد المرتجعات
+export const cashierRefundReceipts = pgTable("cashier_refund_receipts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receiptNumber: integer("receipt_number").notNull(),
+  shiftId: varchar("shift_id").notNull().references(() => cashierShifts.id),
+  invoiceId: varchar("invoice_id").notNull().references(() => salesInvoiceHeaders.id),
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  refundedBy: text("refunded_by").notNull(),
+  refundedAt: timestamp("refunded_at").notNull().defaultNow(),
+}, (table) => ({
+  shiftIdx: index("idx_cashier_refunds_shift").on(table.shiftId),
+  invoiceUniq: uniqueIndex("idx_cashier_refunds_invoice_unique").on(table.invoiceId),
+  receiptNumIdx: index("idx_cashier_refunds_number").on(table.receiptNumber),
+}));
+
+// سجل أحداث الكاشير
+export const cashierAuditLog = pgTable("cashier_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  shiftId: varchar("shift_id").references(() => cashierShifts.id),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: varchar("entity_id"),
+  details: text("details"),
+  performedBy: text("performed_by").notNull(),
+  performedAt: timestamp("performed_at").notNull().defaultNow(),
+}, (table) => ({
+  shiftIdx: index("idx_cashier_audit_shift").on(table.shiftId),
+  actionIdx: index("idx_cashier_audit_action").on(table.action),
+  performedAtIdx: index("idx_cashier_audit_performed").on(table.performedAt),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
@@ -771,6 +835,11 @@ export const insertServiceConsumableSchema = createInsertSchema(serviceConsumabl
 export const insertPatientInvoiceHeaderSchema = createInsertSchema(patientInvoiceHeaders).omit({ id: true, createdAt: true, updatedAt: true, finalizedAt: true });
 export const insertPatientInvoiceLineSchema = createInsertSchema(patientInvoiceLines).omit({ id: true, createdAt: true });
 export const insertPatientInvoicePaymentSchema = createInsertSchema(patientInvoicePayments).omit({ id: true, createdAt: true });
+
+export const insertCashierShiftSchema = createInsertSchema(cashierShifts).omit({ id: true, openedAt: true, closedAt: true });
+export const insertCashierReceiptSchema = createInsertSchema(cashierReceipts).omit({ id: true, collectedAt: true });
+export const insertCashierRefundReceiptSchema = createInsertSchema(cashierRefundReceipts).omit({ id: true, refundedAt: true });
+export const insertCashierAuditLogSchema = createInsertSchema(cashierAuditLog).omit({ id: true, performedAt: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -1034,6 +1103,7 @@ export type SalesInvoiceWithDetails = SalesInvoiceHeader & {
 export const salesInvoiceStatusLabels: Record<string, string> = {
   draft: "مسودة",
   finalized: "نهائي",
+  collected: "مُحصّل",
   cancelled: "ملغي",
 };
 
@@ -1087,4 +1157,21 @@ export const paymentMethodLabels: Record<string, string> = {
   card: "بطاقة",
   bank_transfer: "تحويل بنكي",
   insurance: "تأمين",
+};
+
+export type InsertCashierShift = z.infer<typeof insertCashierShiftSchema>;
+export type CashierShift = typeof cashierShifts.$inferSelect;
+
+export type InsertCashierReceipt = z.infer<typeof insertCashierReceiptSchema>;
+export type CashierReceipt = typeof cashierReceipts.$inferSelect;
+
+export type InsertCashierRefundReceipt = z.infer<typeof insertCashierRefundReceiptSchema>;
+export type CashierRefundReceipt = typeof cashierRefundReceipts.$inferSelect;
+
+export type InsertCashierAuditLog = z.infer<typeof insertCashierAuditLogSchema>;
+export type CashierAuditLogEntry = typeof cashierAuditLog.$inferSelect;
+
+export const cashierShiftStatusLabels: Record<string, string> = {
+  open: "مفتوحة",
+  closed: "مغلقة",
 };

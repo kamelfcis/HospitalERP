@@ -29,6 +29,7 @@ import SalesInvoices from "@/pages/SalesInvoices";
 import Warehouses from "@/pages/Warehouses";
 import Departments from "@/pages/Departments";
 import PatientInvoice from "@/pages/PatientInvoice";
+import CashierCollection from "@/pages/CashierCollection";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -61,6 +62,7 @@ function Router() {
         <Route path="/departments" component={Departments} />
         <Route path="/patient-invoices" component={PatientInvoice} />
         <Route path="/audit-log" component={AuditLog} />
+        <Route path="/cashier-collection" component={CashierCollection} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

@@ -114,6 +114,13 @@ import {
   type PatientInvoiceLine,
   type PatientInvoicePayment,
   type PatientInvoiceWithDetails,
+  cashierShifts,
+  cashierReceipts,
+  cashierRefundReceipts,
+  cashierAuditLog,
+  type CashierShift,
+  type CashierReceipt,
+  type CashierRefundReceipt,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -322,6 +329,19 @@ export interface IStorage {
   updatePatientInvoice(id: string, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
   finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader>;
   deletePatientInvoice(id: string): Promise<boolean>;
+
+  // Cashier
+  openCashierShift(cashierId: string, cashierName: string, openingCash: string): Promise<any>;
+  getActiveShift(cashierId: string): Promise<any>;
+  closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
+  getPendingSalesInvoices(search?: string): Promise<any[]>;
+  getPendingReturnInvoices(search?: string): Promise<any[]>;
+  getSalesInvoiceDetails(invoiceId: string): Promise<any>;
+  collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string): Promise<any>;
+  refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string): Promise<any>;
+  getShiftTotals(shiftId: string): Promise<any>;
+  getNextCashierReceiptNumber(): Promise<number>;
+  getNextCashierRefundReceiptNumber(): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4109,6 +4129,318 @@ export class DatabaseStorage implements IStorage {
     if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة نهائية");
     await db.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
     return true;
+  }
+
+  // ==================== Cashier ====================
+
+  async openCashierShift(cashierId: string, cashierName: string, openingCash: string): Promise<CashierShift> {
+    const [existingOpen] = await db.select().from(cashierShifts)
+      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.status, "open")));
+    if (existingOpen) throw new Error("يوجد وردية مفتوحة بالفعل لهذا الكاشير");
+
+    const [shift] = await db.insert(cashierShifts).values({
+      cashierId,
+      cashierName,
+      openingCash,
+      status: "open",
+    }).returning();
+
+    await db.insert(cashierAuditLog).values({
+      shiftId: shift.id,
+      action: "open_shift",
+      entityType: "shift",
+      entityId: shift.id,
+      details: `فتح وردية - رصيد افتتاحي: ${openingCash}`,
+      performedBy: cashierName,
+    });
+
+    return shift;
+  }
+
+  async getActiveShift(cashierId: string): Promise<CashierShift | null> {
+    const [shift] = await db.select().from(cashierShifts)
+      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.status, "open")));
+    return shift || null;
+  }
+
+  async closeCashierShift(shiftId: string, closingCash: string): Promise<CashierShift> {
+    const [shift] = await db.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
+    if (!shift) throw new Error("الوردية غير موجودة");
+    if (shift.status !== "open") throw new Error("الوردية مغلقة بالفعل");
+
+    const totals = await this.getShiftTotals(shiftId);
+    const expectedCash = (parseFloat(shift.openingCash) + parseFloat(totals.totalCollected) - parseFloat(totals.totalRefunded)).toFixed(2);
+    const variance = (parseFloat(closingCash) - parseFloat(expectedCash)).toFixed(2);
+
+    const [updated] = await db.update(cashierShifts).set({
+      status: "closed",
+      closingCash,
+      expectedCash,
+      variance,
+      closedAt: new Date(),
+    }).where(eq(cashierShifts.id, shiftId)).returning();
+
+    await db.insert(cashierAuditLog).values({
+      shiftId,
+      action: "close_shift",
+      entityType: "shift",
+      entityId: shiftId,
+      details: `إغلاق وردية - النقدية الفعلية: ${closingCash} | المتوقعة: ${expectedCash} | الفرق: ${variance}`,
+      performedBy: shift.cashierName,
+    });
+
+    return updated;
+  }
+
+  async getPendingSalesInvoices(search?: string): Promise<any[]> {
+    const conditions = [
+      eq(salesInvoiceHeaders.status, "finalized"),
+      eq(salesInvoiceHeaders.isReturn, false),
+    ];
+
+    let query = db.select({
+      id: salesInvoiceHeaders.id,
+      invoiceNumber: salesInvoiceHeaders.invoiceNumber,
+      invoiceDate: salesInvoiceHeaders.invoiceDate,
+      customerType: salesInvoiceHeaders.customerType,
+      customerName: salesInvoiceHeaders.customerName,
+      subtotal: salesInvoiceHeaders.subtotal,
+      discountValue: salesInvoiceHeaders.discountValue,
+      netTotal: salesInvoiceHeaders.netTotal,
+      createdBy: salesInvoiceHeaders.createdBy,
+      status: salesInvoiceHeaders.status,
+      createdAt: salesInvoiceHeaders.createdAt,
+      warehouseName: warehouses.nameAr,
+    })
+    .from(salesInvoiceHeaders)
+    .leftJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
+    .where(and(...conditions))
+    .orderBy(asc(salesInvoiceHeaders.createdAt));
+
+    const results = await query;
+
+    if (search) {
+      const s = search.toLowerCase();
+      return results.filter(r =>
+        String(r.invoiceNumber).includes(s) ||
+        (r.customerName && r.customerName.toLowerCase().includes(s)) ||
+        (r.createdBy && r.createdBy.toLowerCase().includes(s))
+      );
+    }
+
+    return results;
+  }
+
+  async getPendingReturnInvoices(search?: string): Promise<any[]> {
+    const conditions = [
+      eq(salesInvoiceHeaders.status, "finalized"),
+      eq(salesInvoiceHeaders.isReturn, true),
+    ];
+
+    let query = db.select({
+      id: salesInvoiceHeaders.id,
+      invoiceNumber: salesInvoiceHeaders.invoiceNumber,
+      invoiceDate: salesInvoiceHeaders.invoiceDate,
+      customerType: salesInvoiceHeaders.customerType,
+      customerName: salesInvoiceHeaders.customerName,
+      subtotal: salesInvoiceHeaders.subtotal,
+      discountValue: salesInvoiceHeaders.discountValue,
+      netTotal: salesInvoiceHeaders.netTotal,
+      createdBy: salesInvoiceHeaders.createdBy,
+      originalInvoiceId: salesInvoiceHeaders.originalInvoiceId,
+      status: salesInvoiceHeaders.status,
+      createdAt: salesInvoiceHeaders.createdAt,
+      warehouseName: warehouses.nameAr,
+    })
+    .from(salesInvoiceHeaders)
+    .leftJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
+    .where(and(...conditions))
+    .orderBy(asc(salesInvoiceHeaders.createdAt));
+
+    const results = await query;
+
+    if (search) {
+      const s = search.toLowerCase();
+      return results.filter(r =>
+        String(r.invoiceNumber).includes(s) ||
+        (r.customerName && r.customerName.toLowerCase().includes(s))
+      );
+    }
+
+    return results;
+  }
+
+  async getSalesInvoiceDetails(invoiceId: string): Promise<any> {
+    const [header] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
+    if (!header) return null;
+
+    const lines = await db.select({
+      id: salesInvoiceLines.id,
+      lineNo: salesInvoiceLines.lineNo,
+      itemId: salesInvoiceLines.itemId,
+      unitLevel: salesInvoiceLines.unitLevel,
+      qty: salesInvoiceLines.qty,
+      salePrice: salesInvoiceLines.salePrice,
+      lineTotal: salesInvoiceLines.lineTotal,
+      itemName: items.nameAr,
+      itemCode: items.itemCode,
+    })
+    .from(salesInvoiceLines)
+    .leftJoin(items, eq(salesInvoiceLines.itemId, items.id))
+    .where(eq(salesInvoiceLines.invoiceId, invoiceId))
+    .orderBy(asc(salesInvoiceLines.lineNo));
+
+    return { ...header, lines };
+  }
+
+  async getNextCashierReceiptNumber(): Promise<number> {
+    const [result] = await db.select({ maxNum: sql<number>`COALESCE(MAX(receipt_number), 0)` }).from(cashierReceipts);
+    return (result?.maxNum || 0) + 1;
+  }
+
+  async getNextCashierRefundReceiptNumber(): Promise<number> {
+    const [result] = await db.select({ maxNum: sql<number>`COALESCE(MAX(receipt_number), 0)` }).from(cashierRefundReceipts);
+    return (result?.maxNum || 0) + 1;
+  }
+
+  async collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string): Promise<any> {
+    return await db.transaction(async (tx) => {
+      const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
+      if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
+
+      const [maxNumResult] = await tx.select({ maxNum: sql<number>`COALESCE(MAX(receipt_number), 0)` }).from(cashierReceipts);
+      let nextReceiptNumber = (maxNumResult?.maxNum || 0) + 1;
+
+      const receipts: any[] = [];
+      let totalCollected = 0;
+
+      for (const invoiceId of invoiceIds) {
+        const [invoice] = await tx.select().from(salesInvoiceHeaders)
+          .where(eq(salesInvoiceHeaders.id, invoiceId))
+          .for("update");
+
+        if (!invoice) throw new Error(`الفاتورة ${invoiceId} غير موجودة`);
+        if (invoice.status !== "finalized") throw new Error(`الفاتورة ${invoice.invoiceNumber} ليست في حالة نهائي`);
+        if (invoice.isReturn) throw new Error(`الفاتورة ${invoice.invoiceNumber} هي مرتجع`);
+
+        const [existingReceipt] = await tx.select().from(cashierReceipts)
+          .where(eq(cashierReceipts.invoiceId, invoiceId));
+        if (existingReceipt) throw new Error(`الفاتورة ${invoice.invoiceNumber} محصّلة بالفعل`);
+
+        const amount = invoice.netTotal;
+        totalCollected += parseFloat(amount);
+
+        const [receipt] = await tx.insert(cashierReceipts).values({
+          receiptNumber: nextReceiptNumber++,
+          shiftId,
+          invoiceId,
+          amount,
+          collectedBy,
+        }).returning();
+
+        await tx.update(salesInvoiceHeaders).set({
+          status: "collected",
+          updatedAt: new Date(),
+        }).where(eq(salesInvoiceHeaders.id, invoiceId));
+
+        await tx.insert(cashierAuditLog).values({
+          shiftId,
+          action: "collect",
+          entityType: "sales_invoice",
+          entityId: invoiceId,
+          details: `تحصيل فاتورة رقم ${invoice.invoiceNumber} - المبلغ: ${amount}`,
+          performedBy: collectedBy,
+        });
+
+        receipts.push({ ...receipt, invoiceNumber: invoice.invoiceNumber });
+      }
+
+      return { receipts, totalCollected: totalCollected.toFixed(2), count: receipts.length };
+    });
+  }
+
+  async refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string): Promise<any> {
+    return await db.transaction(async (tx) => {
+      const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
+      if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
+
+      const [maxNumResult] = await tx.select({ maxNum: sql<number>`COALESCE(MAX(receipt_number), 0)` }).from(cashierRefundReceipts);
+      let nextRefundNumber = (maxNumResult?.maxNum || 0) + 1;
+
+      const receipts: any[] = [];
+      let totalRefunded = 0;
+
+      for (const invoiceId of invoiceIds) {
+        const [invoice] = await tx.select().from(salesInvoiceHeaders)
+          .where(eq(salesInvoiceHeaders.id, invoiceId))
+          .for("update");
+
+        if (!invoice) throw new Error(`الفاتورة ${invoiceId} غير موجودة`);
+        if (invoice.status !== "finalized") throw new Error(`الفاتورة ${invoice.invoiceNumber} ليست في حالة نهائي`);
+        if (!invoice.isReturn) throw new Error(`الفاتورة ${invoice.invoiceNumber} ليست مرتجع`);
+
+        const [existingRefund] = await tx.select().from(cashierRefundReceipts)
+          .where(eq(cashierRefundReceipts.invoiceId, invoiceId));
+        if (existingRefund) throw new Error(`مرتجع الفاتورة ${invoice.invoiceNumber} مصروف بالفعل`);
+
+        const amount = invoice.netTotal;
+        totalRefunded += parseFloat(amount);
+
+        const [receipt] = await tx.insert(cashierRefundReceipts).values({
+          receiptNumber: nextRefundNumber++,
+          shiftId,
+          invoiceId,
+          amount,
+          refundedBy,
+        }).returning();
+
+        await tx.update(salesInvoiceHeaders).set({
+          status: "collected",
+          updatedAt: new Date(),
+        }).where(eq(salesInvoiceHeaders.id, invoiceId));
+
+        await tx.insert(cashierAuditLog).values({
+          shiftId,
+          action: "refund",
+          entityType: "return_invoice",
+          entityId: invoiceId,
+          details: `صرف مرتجع فاتورة رقم ${invoice.invoiceNumber} - المبلغ: ${amount}`,
+          performedBy: refundedBy,
+        });
+
+        receipts.push({ ...receipt, invoiceNumber: invoice.invoiceNumber });
+      }
+
+      return { receipts, totalRefunded: totalRefunded.toFixed(2), count: receipts.length };
+    });
+  }
+
+  async getShiftTotals(shiftId: string): Promise<any> {
+    const [collectResult] = await db.select({
+      total: sql<string>`COALESCE(SUM(amount), 0)`,
+      count: sql<number>`COUNT(*)`,
+    }).from(cashierReceipts).where(eq(cashierReceipts.shiftId, shiftId));
+
+    const [refundResult] = await db.select({
+      total: sql<string>`COALESCE(SUM(amount), 0)`,
+      count: sql<number>`COUNT(*)`,
+    }).from(cashierRefundReceipts).where(eq(cashierRefundReceipts.shiftId, shiftId));
+
+    const [shift] = await db.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
+
+    const totalCollected = collectResult?.total || "0";
+    const totalRefunded = refundResult?.total || "0";
+    const openingCash = shift?.openingCash || "0";
+    const netCash = (parseFloat(openingCash) + parseFloat(totalCollected) - parseFloat(totalRefunded)).toFixed(2);
+
+    return {
+      openingCash,
+      totalCollected,
+      collectCount: collectResult?.count || 0,
+      totalRefunded,
+      refundCount: refundResult?.count || 0,
+      netCash,
+    };
   }
 }
 
