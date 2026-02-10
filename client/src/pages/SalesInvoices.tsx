@@ -1006,12 +1006,16 @@ export default function SalesInvoices() {
       }
     },
     onSuccess: () => {
-      toast({ title: "تم الاعتماد النهائي بنجاح" });
+      toast({ title: "تم الاعتماد النهائي بنجاح", description: "تم فتح فاتورة جديدة تلقائياً" });
       queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
       if (editId && editId !== "new") {
         queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices", editId] });
       }
       setConfirmFinalizeOpen(false);
+      lastAutoSaveDataRef.current = "";
+      autoSaveIdRef.current = null;
+      loadedInvoiceIdRef.current = null;
+      navigate("/sales-invoices?id=new");
     },
     onError: (err: Error) => {
       toast({ title: "خطأ في الاعتماد", description: err.message, variant: "destructive" });
