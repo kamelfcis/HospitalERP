@@ -31,7 +31,7 @@ function useDebounce(value: string, delay: number) {
   return debounced;
 }
 
-const SERVICE_TYPES = ["SERVICE", "ACCOMMODATION", "DEVICE", "GAS", "OTHER"] as const;
+const SERVICE_TYPES = ["SERVICE", "ACCOMMODATION", "OPERATING_ROOM", "DEVICE", "GAS", "OTHER"] as const;
 
 function ServicesTab() {
   const { toast } = useToast();

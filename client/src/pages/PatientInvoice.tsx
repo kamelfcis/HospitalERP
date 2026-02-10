@@ -46,6 +46,7 @@ interface LineLocal {
   requiresNurse: boolean;
   notes: string;
   sortOrder: number;
+  serviceType: string;
 }
 
 interface PaymentLocal {
@@ -82,6 +83,16 @@ function getStatusBadgeClass(status: string) {
   if (status === "draft") return "bg-yellow-500 text-white no-default-hover-elevate no-default-active-elevate";
   if (status === "finalized") return "bg-green-600 text-white no-default-hover-elevate no-default-active-elevate";
   if (status === "cancelled") return "bg-red-600 text-white no-default-hover-elevate no-default-active-elevate";
+  return "";
+}
+
+function getServiceRowClass(serviceType: string): string {
+  if (serviceType === "ACCOMMODATION") {
+    return "bg-amber-50 dark:bg-amber-950/30";
+  }
+  if (serviceType === "OPERATING_ROOM") {
+    return "bg-indigo-50 dark:bg-indigo-950/30";
+  }
   return "";
 }
 
@@ -365,6 +376,7 @@ export default function PatientInvoice() {
         totalPrice: parseFloat(l.totalPrice) || 0,
         notes: l.notes || "",
         sortOrder: l.sortOrder || 0,
+        serviceType: l.service?.serviceType || "",
       }));
       setLines(loadedLines);
 
@@ -403,6 +415,7 @@ export default function PatientInvoice() {
       requiresNurse: svc.requiresNurse ?? false,
       notes: "",
       sortOrder: lines.filter((l) => l.lineType === "service").length,
+      serviceType: svc.serviceType || "SERVICE",
     };
     setLines((prev) => [...prev, newLine]);
     setServiceSearch("");
@@ -428,6 +441,7 @@ export default function PatientInvoice() {
       requiresNurse: false,
       notes: "",
       sortOrder: lines.filter((l) => l.lineType === lineType).length,
+      serviceType: "",
     };
     setLines((prev) => [...prev, newLine]);
     setItemSearch("");
@@ -566,7 +580,11 @@ export default function PatientInvoice() {
             </thead>
             <tbody>
               {typeLines.map((line, i) => (
-                <tr key={line.tempId} className="peachtree-grid-row" data-testid={`row-line-${type}-${i}`}>
+                <tr
+                  key={line.tempId}
+                  className={`peachtree-grid-row ${type === "service" ? getServiceRowClass(line.serviceType) : ""}`}
+                  data-testid={`row-line-${type}-${i}`}
+                >
                   <td className="text-center">{i + 1}</td>
                   <td>
                     {isDraft ? (
@@ -624,6 +642,7 @@ export default function PatientInvoice() {
                         type="number"
                         value={line.quantity}
                         min={0}
+                        step="any"
                         onChange={(e) => updateLine(line.tempId, "quantity", parseFloat(e.target.value) || 0)}
                         className="h-7 text-xs text-center"
                         data-testid={`input-qty-${type}-${i}`}
@@ -860,7 +879,11 @@ export default function PatientInvoice() {
                 return group.map((line, i) => {
                   counter++;
                   return (
-                    <tr key={line.tempId} className="peachtree-grid-row" data-testid={`row-consolidated-${counter}`}>
+                    <tr
+                      key={line.tempId}
+                      className={`peachtree-grid-row ${line.lineType === "service" ? getServiceRowClass(line.serviceType) : ""}`}
+                      data-testid={`row-consolidated-${counter}`}
+                    >
                       <td className="text-center">{counter}</td>
                       <td>
                         <Badge variant="secondary" className="text-xs">

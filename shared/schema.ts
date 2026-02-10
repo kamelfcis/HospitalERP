@@ -1095,6 +1095,7 @@ export type PriceListItemWithService = PriceListItem & {
 export const serviceTypeLabels: Record<string, string> = {
   SERVICE: "خدمة",
   ACCOMMODATION: "إقامة",
+  OPERATING_ROOM: "فتح غرفة عمليات",
   DEVICE: "جهاز",
   GAS: "غاز",
   OTHER: "أخرى"
