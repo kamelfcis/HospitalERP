@@ -839,8 +839,7 @@ export default function PatientInvoice() {
     const oldLevel = line.unitLevel;
     if (oldLevel === newLevel) return;
 
-    const qtyInMinor = calculateQtyInMinor(line.quantity, oldLevel, line.item);
-    const newDisplayQty = convertMinorToDisplayQty(qtyInMinor, newLevel, line.item);
+    const newDisplayQty = 1;
     const baseSalePrice = parseFloat(String(line.item.salePriceCurrent || line.item.purchasePriceLast || "0")) || 0;
     let newUnitPrice = computeUnitPriceFromBase(baseSalePrice, newLevel, line.item);
 
@@ -860,8 +859,10 @@ export default function PatientInvoice() {
 
     const isExpiry = !!(line.lotId || line.expiryMonth || line.expiryYear);
     if (isExpiry && warehouseId) {
-      const allLinesForItem = currentLines.filter(l => l.itemId === line.itemId);
-      const totalMinor = allLinesForItem.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity, l.unitLevel, l.item || line.item), 0);
+      const otherLines = currentLines.filter(l => l.itemId === line.itemId && l.tempId !== tempId);
+      const otherMinor = otherLines.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity, l.unitLevel, l.item || line.item), 0);
+      const thisMinor = calculateQtyInMinor(newDisplayQty, newLevel, line.item);
+      const totalMinor = otherMinor + thisMinor;
 
       setFefoLoading(true);
       try {
