@@ -188,7 +188,12 @@ export default function PatientInvoice() {
   const [itemSearch, setItemSearch] = useState("");
   const [itemResults, setItemResults] = useState<Item[]>([]);
   const [searchingItems, setSearchingItems] = useState(false);
-  const debouncedItemSearch = useDebounce(itemSearch, 300);
+  const debouncedItemSearch = useDebounce(itemSearch, 150);
+  const itemSearchRef = useRef<HTMLInputElement>(null);
+  const itemDropdownRef = useRef<HTMLDivElement>(null);
+  const serviceSearchRef = useRef<HTMLInputElement>(null);
+  const serviceDropdownRef = useRef<HTMLDivElement>(null);
+  const addingItemRef = useRef<Set<string>>(new Set());
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -259,6 +264,40 @@ export default function PatientInvoice() {
       .catch(() => setSearchingItems(false));
     return () => controller.abort();
   }, [debouncedItemSearch]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        itemDropdownRef.current &&
+        !itemDropdownRef.current.contains(e.target as Node) &&
+        itemSearchRef.current &&
+        !itemSearchRef.current.contains(e.target as Node)
+      ) {
+        setItemResults([]);
+      }
+    }
+    if (itemResults.length > 0) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [itemResults.length]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        serviceDropdownRef.current &&
+        !serviceDropdownRef.current.contains(e.target as Node) &&
+        serviceSearchRef.current &&
+        !serviceSearchRef.current.contains(e.target as Node)
+      ) {
+        setServiceResults([]);
+      }
+    }
+    if (serviceResults.length > 0) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [serviceResults.length]);
 
   const regQp = useMemo(() => {
     const qp = new URLSearchParams();
@@ -510,27 +549,10 @@ export default function PatientInvoice() {
     setServiceResults([]);
   }, [lines]);
 
-  const addItemLine = useCallback(async (item: any, lineType: "drug" | "consumable" | "equipment") => {
-    let baseSalePrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
-    let priceSource = "item";
-
-    if (departmentId || warehouseId) {
-      try {
-        const params = new URLSearchParams({ itemId: item.id });
-        if (departmentId) params.set("departmentId", departmentId);
-        if (warehouseId) params.set("warehouseId", warehouseId);
-        const priceRes = await fetch(`/api/pricing?${params.toString()}`);
-        if (priceRes.ok) {
-          const priceData = await priceRes.json();
-          const resolved = parseFloat(priceData.price);
-          if (resolved > 0) baseSalePrice = resolved;
-          if (priceData.source) priceSource = priceData.source;
-        }
-      } catch {}
-    }
-    const isDeptPrice = priceSource === "department";
-
+  const addItemLine = useCallback((item: any, lineType: "drug" | "consumable" | "equipment") => {
     const defaultUnit: "major" | "medium" | "minor" = "minor";
+    const baseSalePrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
+    const unitPrice = computeUnitPriceFromBase(baseSalePrice, defaultUnit, item);
 
     if (item.hasExpiry && !warehouseId) {
       toast({
@@ -543,95 +565,9 @@ export default function PatientInvoice() {
       return;
     }
 
-    if (item.hasExpiry && warehouseId) {
-      setFefoLoading(true);
-      try {
-        const existingLines = lines.filter(l => l.itemId === item.id);
-        const existingQtyMinor = existingLines.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity, l.unitLevel, l.item || item), 0);
-        const additionalMinor = calculateQtyInMinor(1, defaultUnit, item);
-        const totalRequiredMinor = existingQtyMinor + additionalMinor;
-
-        const fefoParams = new URLSearchParams({
-          itemId: item.id,
-          warehouseId,
-          requiredQtyInMinor: String(totalRequiredMinor),
-          asOfDate: invoiceDate,
-        });
-        const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
-        if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
-        const preview = await res.json();
-
-        if (!preview.fulfilled) {
-          toast({
-            title: "الكمية غير متاحة",
-            description: preview.shortfall ? `العجز: ${preview.shortfall}` : "الرصيد غير كافي",
-            variant: "destructive",
-          });
-          setFefoLoading(false);
-          return;
-        }
-
-        const newFefoLines: LineLocal[] = preview.allocations
-          .filter((a: any) => parseFloat(a.allocatedQty) > 0)
-          .map((alloc: any) => {
-            const allocMinor = parseFloat(alloc.allocatedQty);
-            const displayQty = convertMinorToDisplayQty(allocMinor, defaultUnit, item);
-            const lineBasePrice = isDeptPrice
-              ? baseSalePrice
-              : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : baseSalePrice);
-            const linePrice = computeUnitPriceFromBase(lineBasePrice, defaultUnit, item);
-            const lineTotal = +(displayQty * linePrice).toFixed(2);
-
-            return {
-              tempId: genId(),
-              lineType,
-              serviceId: null,
-              itemId: item.id,
-              description: item.nameAr || item.itemCode,
-              quantity: displayQty,
-              unitPrice: linePrice,
-              discountPercent: 0,
-              discountAmount: 0,
-              totalPrice: lineTotal,
-              doctorName: "",
-              nurseName: "",
-              requiresDoctor: false,
-              requiresNurse: false,
-              notes: "",
-              sortOrder: 0,
-              serviceType: "",
-              unitLevel: defaultUnit,
-              item,
-              lotId: alloc.lotId || null,
-              expiryMonth: alloc.expiryMonth || null,
-              expiryYear: alloc.expiryYear || null,
-              priceSource,
-            } as LineLocal;
-          });
-
-        setLines(prev => {
-          const filtered = prev.filter(l => l.itemId !== item.id);
-          return [...filtered, ...newFefoLines];
-        });
-
-        if (newFefoLines.length > 1) {
-          toast({ title: `تمت إضافة: ${item.nameAr}`, description: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
-        } else if (newFefoLines.length === 1) {
-          toast({ title: `تمت إضافة: ${item.nameAr}` });
-        }
-      } catch (err: any) {
-        toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
-      } finally {
-        setFefoLoading(false);
-      }
-      setItemSearch("");
-      setItemResults([]);
-      return;
-    }
-
-    const unitPrice = computeUnitPriceFromBase(baseSalePrice, defaultUnit, item);
-    const newLine: LineLocal = {
-      tempId: genId(),
+    const tempLineId = genId();
+    const placeholderLine: LineLocal = {
+      tempId: tempLineId,
       lineType,
       serviceId: null,
       itemId: item.id,
@@ -646,19 +582,142 @@ export default function PatientInvoice() {
       requiresDoctor: false,
       requiresNurse: false,
       notes: "",
-      sortOrder: lines.filter((l) => l.lineType === lineType).length,
+      sortOrder: 0,
       serviceType: "",
       unitLevel: defaultUnit,
       item,
       lotId: null,
       expiryMonth: null,
       expiryYear: null,
-      priceSource,
+      priceSource: "item",
     };
-    setLines((prev) => [...prev, newLine]);
+
+    setLines((prev) => [...prev, placeholderLine]);
     setItemSearch("");
     setItemResults([]);
-  }, [lines, departmentId, warehouseId, invoiceDate, toast]);
+    requestAnimationFrame(() => itemSearchRef.current?.focus());
+
+    const asyncToken = genId();
+    addingItemRef.current.add(asyncToken);
+
+    (async () => {
+      try {
+        let resolvedPrice = baseSalePrice;
+        let priceSource = "item";
+        if (departmentId || warehouseId) {
+          try {
+            const params = new URLSearchParams({ itemId: item.id });
+            if (departmentId) params.set("departmentId", departmentId);
+            if (warehouseId) params.set("warehouseId", warehouseId);
+            const priceRes = await fetch(`/api/pricing?${params.toString()}`);
+            if (priceRes.ok) {
+              const priceData = await priceRes.json();
+              const resolved = parseFloat(priceData.price);
+              if (resolved > 0) resolvedPrice = resolved;
+              if (priceData.source) priceSource = priceData.source;
+            }
+          } catch {}
+        }
+        const isDeptPrice = priceSource === "department";
+        const finalUnitPrice = computeUnitPriceFromBase(resolvedPrice, defaultUnit, item);
+
+        if (!addingItemRef.current.has(asyncToken)) return;
+
+        if (item.hasExpiry && warehouseId) {
+          setFefoLoading(true);
+          try {
+            const currentLines = linesRef.current;
+            const existingLines = currentLines.filter(l => l.itemId === item.id && l.tempId !== tempLineId);
+            const existingQtyMinor = existingLines.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity, l.unitLevel, l.item || item), 0);
+            const additionalMinor = calculateQtyInMinor(1, defaultUnit, item);
+            const totalRequiredMinor = existingQtyMinor + additionalMinor;
+
+            const fefoParams = new URLSearchParams({
+              itemId: item.id,
+              warehouseId,
+              requiredQtyInMinor: String(totalRequiredMinor),
+              asOfDate: invoiceDate,
+            });
+            const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+            if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
+            const preview = await res.json();
+
+            if (!addingItemRef.current.has(asyncToken)) return;
+
+            if (!preview.fulfilled) {
+              setLines(prev => prev.filter(l => l.tempId !== tempLineId));
+              toast({
+                title: "الكمية غير متاحة",
+                description: preview.shortfall ? `العجز: ${preview.shortfall}` : "الرصيد غير كافي",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            const newFefoLines: LineLocal[] = preview.allocations
+              .filter((a: any) => parseFloat(a.allocatedQty) > 0)
+              .map((alloc: any) => {
+                const allocMinor = parseFloat(alloc.allocatedQty);
+                const displayQty = convertMinorToDisplayQty(allocMinor, defaultUnit, item);
+                const lineBasePrice = isDeptPrice
+                  ? resolvedPrice
+                  : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
+                const linePrice = computeUnitPriceFromBase(lineBasePrice, defaultUnit, item);
+                const lineTotal = +(displayQty * linePrice).toFixed(2);
+
+                return {
+                  tempId: genId(),
+                  lineType,
+                  serviceId: null,
+                  itemId: item.id,
+                  description: item.nameAr || item.itemCode,
+                  quantity: displayQty,
+                  unitPrice: linePrice,
+                  discountPercent: 0,
+                  discountAmount: 0,
+                  totalPrice: lineTotal,
+                  doctorName: "",
+                  nurseName: "",
+                  requiresDoctor: false,
+                  requiresNurse: false,
+                  notes: "",
+                  sortOrder: 0,
+                  serviceType: "",
+                  unitLevel: defaultUnit,
+                  item,
+                  lotId: alloc.lotId || null,
+                  expiryMonth: alloc.expiryMonth || null,
+                  expiryYear: alloc.expiryYear || null,
+                  priceSource,
+                } as LineLocal;
+              });
+
+            setLines(prev => {
+              const filtered = prev.filter(l => l.itemId !== item.id);
+              return [...filtered, ...newFefoLines];
+            });
+
+            if (newFefoLines.length > 1) {
+              toast({ title: `${item.nameAr}`, description: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
+            }
+          } catch (err: any) {
+            toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+          } finally {
+            setFefoLoading(false);
+          }
+        } else {
+          if (finalUnitPrice !== unitPrice || priceSource !== "item") {
+            setLines(prev => prev.map(l => {
+              if (l.tempId !== tempLineId) return l;
+              return { ...l, unitPrice: finalUnitPrice, totalPrice: +(l.quantity * finalUnitPrice).toFixed(2), priceSource };
+            }));
+          }
+        }
+      } finally {
+        addingItemRef.current.delete(asyncToken);
+      }
+    })();
+  }, [departmentId, warehouseId, invoiceDate, toast]);
 
   const updateLine = useCallback((tempId: string, field: string, value: any) => {
     setLines((prev) =>
@@ -961,9 +1020,16 @@ export default function PatientInvoice() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
+                ref={itemSearchRef}
                 placeholder="بحث عن صنف... (استخدم % للبحث المتقدم)"
                 value={itemSearch}
                 onChange={(e) => setItemSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setItemSearch("");
+                    setItemResults([]);
+                  }
+                }}
                 className="pr-8"
                 disabled={!isDraft}
                 data-testid={`input-item-search-${type}`}
@@ -977,9 +1043,16 @@ export default function PatientInvoice() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
+                ref={serviceSearchRef}
                 placeholder="بحث عن خدمة..."
                 value={serviceSearch}
                 onChange={(e) => setServiceSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setServiceSearch("");
+                    setServiceResults([]);
+                  }
+                }}
                 className="pr-8"
                 disabled={!isDraft}
                 data-testid="input-service-search"
@@ -990,40 +1063,44 @@ export default function PatientInvoice() {
         )}
 
         {type === "service" && serviceResults.length > 0 && (
-          <div className="border rounded-md max-h-40 overflow-y-auto">
-            {serviceResults.map((svc: any) => (
-              <div
-                key={svc.id}
-                className="flex flex-row-reverse items-center justify-between gap-2 p-2 hover-elevate cursor-pointer"
-                onClick={() => addServiceLine(svc)}
-                data-testid={`result-service-${svc.id}`}
-              >
-                <span className="text-sm">{svc.nameAr || svc.code}</span>
-                <span className="text-xs text-muted-foreground">{formatNumber(svc.basePrice)}</span>
-              </div>
-            ))}
+          <div className="relative" style={{ zIndex: 50 }}>
+            <div ref={serviceDropdownRef} className="absolute top-0 right-0 left-0 border rounded-md max-h-48 overflow-y-auto bg-popover shadow-lg">
+              {serviceResults.map((svc: any) => (
+                <div
+                  key={svc.id}
+                  className="flex flex-row-reverse items-center justify-between gap-2 p-2 hover-elevate cursor-pointer border-b last:border-b-0"
+                  onClick={() => addServiceLine(svc)}
+                  data-testid={`result-service-${svc.id}`}
+                >
+                  <span className="text-sm">{svc.nameAr || svc.code}</span>
+                  <span className="text-xs text-muted-foreground">{formatNumber(svc.basePrice)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {type !== "service" && itemResults.length > 0 && (
-          <div className="border rounded-md max-h-40 overflow-y-auto">
-            {itemResults.map((item: any) => (
-              <div
-                key={item.id}
-                className="flex flex-row-reverse items-center justify-between gap-2 p-2 hover-elevate cursor-pointer"
-                onClick={() => addItemLine(item, type as "drug" | "consumable" | "equipment")}
-                data-testid={`result-item-${type}-${item.id}`}
-              >
-                <div className="flex flex-row-reverse items-center gap-2">
-                  <span className="text-sm">{item.nameAr || item.itemCode}</span>
-                  {item.itemCode && <span className="text-[10px] text-muted-foreground">({item.itemCode})</span>}
+          <div className="relative" style={{ zIndex: 50 }}>
+            <div ref={itemDropdownRef} className="absolute top-0 right-0 left-0 border rounded-md max-h-48 overflow-y-auto bg-popover shadow-lg">
+              {itemResults.map((item: any) => (
+                <div
+                  key={item.id}
+                  className="flex flex-row-reverse items-center justify-between gap-2 p-2 hover-elevate cursor-pointer border-b last:border-b-0"
+                  onClick={() => addItemLine(item, type as "drug" | "consumable" | "equipment")}
+                  data-testid={`result-item-${type}-${item.id}`}
+                >
+                  <div className="flex flex-row-reverse items-center gap-2">
+                    <span className="text-sm">{item.nameAr || item.itemCode}</span>
+                    {item.itemCode && <span className="text-[10px] text-muted-foreground">({item.itemCode})</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.minorUnitName && <span className="text-[10px] text-muted-foreground">{item.minorUnitName}</span>}
+                    <span className="text-xs text-muted-foreground">{formatNumber(item.salePriceCurrent || item.purchasePriceLast || 0)}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {item.minorUnitName && <span className="text-[10px] text-muted-foreground">{item.minorUnitName}</span>}
-                  <span className="text-xs text-muted-foreground">{formatNumber(item.salePriceCurrent || item.purchasePriceLast || 0)}</span>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
