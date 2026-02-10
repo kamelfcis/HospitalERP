@@ -316,7 +316,7 @@ export default function CashierCollection() {
     setSelected: (s: Set<string>) => void,
     testPrefix: string,
   ) => (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -331,35 +331,35 @@ export default function CashierCollection() {
       </div>
 
       {loading ? (
-        <div className="space-y-2">
+        <div className="space-y-1">
           {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-10 w-full" />
+            <Skeleton key={i} className="h-7 w-full" />
           ))}
         </div>
       ) : (
         <div className="border rounded-md">
-          <Table dir="rtl">
+          <Table dir="rtl" className="text-xs">
             <TableHeader>
-              <TableRow>
-                <TableHead className="text-right w-10">
+              <TableRow className="h-8">
+                <TableHead className="text-right w-8 py-1 px-2">
                   <Checkbox
                     checked={invoices.length > 0 && selected.size === invoices.length}
                     onCheckedChange={() => toggleAllSelection(invoices, selected, setSelected)}
                     data-testid={`checkbox-${testPrefix}-select-all`}
                   />
                 </TableHead>
-                <TableHead className="text-right">رقم الفاتورة</TableHead>
-                <TableHead className="text-right">الإجمالي قبل الخصم</TableHead>
-                <TableHead className="text-right">الصافي</TableHead>
-                <TableHead className="text-right">الصيدلي</TableHead>
-                <TableHead className="text-right">تاريخ الإنشاء</TableHead>
-                <TableHead className="text-right">الحالة</TableHead>
+                <TableHead className="text-right py-1 px-2">رقم الفاتورة</TableHead>
+                <TableHead className="text-right py-1 px-2">الإجمالي</TableHead>
+                <TableHead className="text-right py-1 px-2">الصافي</TableHead>
+                <TableHead className="text-right py-1 px-2">الصيدلي</TableHead>
+                <TableHead className="text-right py-1 px-2">التاريخ</TableHead>
+                <TableHead className="text-right py-1 px-2">الحالة</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {invoices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-6 text-xs">
                     لا توجد فواتير معلّقة
                   </TableCell>
                 </TableRow>
@@ -367,23 +367,23 @@ export default function CashierCollection() {
                 invoices.map((inv) => (
                   <TableRow
                     key={inv.id}
-                    className={selected.has(inv.id) ? "bg-muted" : ""}
+                    className={`h-7 ${selected.has(inv.id) ? "bg-muted" : ""}`}
                     data-testid={`row-${testPrefix}-${inv.id}`}
                   >
-                    <TableCell>
+                    <TableCell className="py-1 px-2">
                       <Checkbox
                         checked={selected.has(inv.id)}
                         onCheckedChange={() => toggleSelection(inv.id, selected, setSelected)}
                         data-testid={`checkbox-${testPrefix}-${inv.id}`}
                       />
                     </TableCell>
-                    <TableCell className="text-right font-medium">{inv.invoiceNumber}</TableCell>
-                    <TableCell className="text-right">{formatNumber(inv.subtotal)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatNumber(inv.netTotal)}</TableCell>
-                    <TableCell className="text-right">{inv.createdBy || "-"}</TableCell>
-                    <TableCell className="text-right">{formatDateShort(inv.createdAt)}</TableCell>
-                    <TableCell className="text-right">
-                      <Badge className={getStatusBadgeClass(inv.status)}>
+                    <TableCell className="text-right font-medium py-1 px-2">{inv.invoiceNumber}</TableCell>
+                    <TableCell className="text-right py-1 px-2">{formatNumber(inv.subtotal)}</TableCell>
+                    <TableCell className="text-right font-medium py-1 px-2">{formatNumber(inv.netTotal)}</TableCell>
+                    <TableCell className="text-right py-1 px-2">{inv.createdBy || "-"}</TableCell>
+                    <TableCell className="text-right py-1 px-2">{formatDateShort(inv.createdAt)}</TableCell>
+                    <TableCell className="text-right py-1 px-2">
+                      <Badge className={`text-[10px] px-1.5 py-0 ${getStatusBadgeClass(inv.status)}`}>
                         {salesInvoiceStatusLabels[inv.status] || inv.status}
                       </Badge>
                     </TableCell>
@@ -404,20 +404,20 @@ export default function CashierCollection() {
     testPrefix: string,
   ) => (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">تفاصيل الفاتورة</CardTitle>
+      <CardHeader className="py-2 px-3">
+        <CardTitle className="text-xs">تفاصيل الفاتورة</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-3 pb-3 pt-0">
         {selected.size === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">
+          <p className="text-xs text-muted-foreground text-center py-4">
             اختر فاتورة لعرض التفاصيل
           </p>
         ) : selected.size === 1 && details ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 text-sm" dir="rtl">
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs" dir="rtl">
               <div className="text-muted-foreground">رقم الفاتورة:</div>
               <div data-testid={`text-${testPrefix}-detail-number`}>{details.invoiceNumber}</div>
-              <div className="text-muted-foreground">الإجمالي قبل الخصم:</div>
+              <div className="text-muted-foreground">الإجمالي:</div>
               <div>{formatNumber(details.subtotal)}</div>
               <div className="text-muted-foreground">الصافي:</div>
               <div className="font-medium">{formatNumber(details.netTotal)}</div>
@@ -426,26 +426,26 @@ export default function CashierCollection() {
             </div>
             {details.lines && details.lines.length > 0 && (
               <div className="border rounded-md">
-                <Table dir="rtl">
+                <Table dir="rtl" className="text-[11px]">
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-right">#</TableHead>
-                      <TableHead className="text-right">كود الصنف</TableHead>
-                      <TableHead className="text-right">اسم الصنف</TableHead>
-                      <TableHead className="text-right">الكمية</TableHead>
-                      <TableHead className="text-right">السعر</TableHead>
-                      <TableHead className="text-right">الإجمالي</TableHead>
+                    <TableRow className="h-7">
+                      <TableHead className="text-right py-1 px-1.5">#</TableHead>
+                      <TableHead className="text-right py-1 px-1.5">الكود</TableHead>
+                      <TableHead className="text-right py-1 px-1.5">الصنف</TableHead>
+                      <TableHead className="text-right py-1 px-1.5">الكمية</TableHead>
+                      <TableHead className="text-right py-1 px-1.5">السعر</TableHead>
+                      <TableHead className="text-right py-1 px-1.5">الإجمالي</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {details.lines.map((line, idx) => (
-                      <TableRow key={line.id} data-testid={`row-${testPrefix}-detail-line-${idx}`}>
-                        <TableCell className="text-right">{line.lineNo || idx + 1}</TableCell>
-                        <TableCell className="text-right">{line.itemCode}</TableCell>
-                        <TableCell className="text-right">{line.itemName}</TableCell>
-                        <TableCell className="text-right">{formatNumber(line.qty)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(line.salePrice)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(line.lineTotal)}</TableCell>
+                      <TableRow key={line.id} className="h-6" data-testid={`row-${testPrefix}-detail-line-${idx}`}>
+                        <TableCell className="text-right py-0.5 px-1.5">{line.lineNo || idx + 1}</TableCell>
+                        <TableCell className="text-right py-0.5 px-1.5">{line.itemCode}</TableCell>
+                        <TableCell className="text-right py-0.5 px-1.5">{line.itemName}</TableCell>
+                        <TableCell className="text-right py-0.5 px-1.5">{formatNumber(line.qty)}</TableCell>
+                        <TableCell className="text-right py-0.5 px-1.5">{formatNumber(line.salePrice)}</TableCell>
+                        <TableCell className="text-right py-0.5 px-1.5">{formatNumber(line.lineTotal)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -454,18 +454,18 @@ export default function CashierCollection() {
             )}
           </div>
         ) : selected.size === 1 ? (
-          <div className="flex items-center justify-center py-6">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : aggregated ? (
-          <div className="space-y-4" dir="rtl">
-            <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="space-y-2" dir="rtl">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs">
               <div className="text-muted-foreground">عدد الفواتير المحددة:</div>
               <div className="font-medium" data-testid={`text-${testPrefix}-agg-count`}>{aggregated.count}</div>
               <div className="text-muted-foreground">إجمالي قبل الخصم:</div>
               <div>{formatNumber(aggregated.subtotal)}</div>
               <div className="text-muted-foreground">إجمالي الصافي:</div>
-              <div className="font-medium text-lg">{formatNumber(aggregated.netTotal)}</div>
+              <div className="font-medium">{formatNumber(aggregated.netTotal)}</div>
             </div>
           </div>
         ) : null}
@@ -474,35 +474,36 @@ export default function CashierCollection() {
   );
 
   return (
-    <div className="p-4 space-y-4" dir="rtl" data-testid="page-cashier-collection">
-      <h1 className="text-xl font-bold text-right">شاشة تحصيل الكاشير</h1>
+    <div className="p-3 space-y-3" dir="rtl" data-testid="page-cashier-collection">
+      <h1 className="text-lg font-bold text-right">شاشة تحصيل الكاشير</h1>
 
       <Card>
-        <CardContent className="p-4">
+        <CardContent className="p-3">
           {shiftLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : hasActiveShift ? (
-            <div className="flex flex-row-reverse items-center justify-between gap-4 flex-wrap">
-              <div className="flex flex-row-reverse items-center gap-4 flex-wrap">
-                <Badge className="bg-green-600 text-white no-default-hover-elevate no-default-active-elevate">
+            <div className="flex flex-row-reverse items-center justify-between gap-3 flex-wrap">
+              <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
+                <Badge className="text-[10px] px-1.5 py-0 bg-green-600 text-white no-default-hover-elevate no-default-active-elevate">
                   وردية مفتوحة
                 </Badge>
-                <span className="text-sm" data-testid="text-shift-cashier-name">
+                <span className="text-xs" data-testid="text-shift-cashier-name">
                   الكاشير: {activeShift.cashierName}
                 </span>
-                <span className="text-sm text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   رصيد الافتتاح: {formatNumber(activeShift.openingCash)}
                 </span>
               </div>
               <Button
                 variant="destructive"
+                size="sm"
                 onClick={() => {
                   setClosingCash("0");
                   setCloseDialogOpen(true);
                 }}
                 data-testid="button-close-shift"
               >
-                <LogOut className="ml-2 h-4 w-4" />
+                <LogOut className="ml-1 h-3 w-3" />
                 إغلاق الوردية
               </Button>
             </div>
@@ -595,7 +596,7 @@ export default function CashierCollection() {
           </TabsList>
 
           <TabsContent value="sales">
-            <div className="flex flex-row-reverse gap-4">
+            <div className="flex flex-row-reverse gap-3">
               <div className="w-[60%] min-w-0">
                 {renderInvoiceTable(
                   pendingSales || [],
@@ -606,21 +607,22 @@ export default function CashierCollection() {
                   setSalesSelected,
                   "sales",
                 )}
-                <div className="mt-4 flex flex-row-reverse items-center gap-4 flex-wrap">
+                <div className="mt-2 flex flex-row-reverse items-center gap-3 flex-wrap">
                   <Button
+                    size="sm"
                     onClick={() => collectMutation.mutate()}
                     disabled={salesSelected.size === 0 || !hasActiveShift || collectMutation.isPending}
                     data-testid="button-collect"
                   >
                     {collectMutation.isPending ? (
-                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="ml-1 h-3 w-3 animate-spin" />
                     ) : (
-                      <DollarSign className="ml-2 h-4 w-4" />
+                      <DollarSign className="ml-1 h-3 w-3" />
                     )}
-                    تحصيل الفواتير المحددة ({salesSelected.size})
+                    تحصيل ({salesSelected.size})
                   </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Ctrl+Enter / F9 للتحصيل السريع
+                  <span className="text-[10px] text-muted-foreground">
+                    Ctrl+Enter / F9
                   </span>
                 </div>
               </div>
@@ -631,7 +633,7 @@ export default function CashierCollection() {
           </TabsContent>
 
           <TabsContent value="returns">
-            <div className="flex flex-row-reverse gap-4">
+            <div className="flex flex-row-reverse gap-3">
               <div className="w-[60%] min-w-0">
                 {renderInvoiceTable(
                   pendingReturns || [],
@@ -642,21 +644,22 @@ export default function CashierCollection() {
                   setReturnsSelected,
                   "returns",
                 )}
-                <div className="mt-4 flex flex-row-reverse items-center gap-4 flex-wrap">
+                <div className="mt-2 flex flex-row-reverse items-center gap-3 flex-wrap">
                   <Button
+                    size="sm"
                     onClick={() => refundMutation.mutate()}
                     disabled={returnsSelected.size === 0 || !hasActiveShift || refundMutation.isPending}
                     data-testid="button-refund"
                   >
                     {refundMutation.isPending ? (
-                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="ml-1 h-3 w-3 animate-spin" />
                     ) : (
-                      <Undo2 className="ml-2 h-4 w-4" />
+                      <Undo2 className="ml-1 h-3 w-3" />
                     )}
-                    صرف المرتجع وحفظ نهائي ({returnsSelected.size})
+                    صرف المرتجع ({returnsSelected.size})
                   </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Ctrl+Enter / F9 للصرف السريع
+                  <span className="text-[10px] text-muted-foreground">
+                    Ctrl+Enter / F9
                   </span>
                 </div>
               </div>
@@ -669,25 +672,25 @@ export default function CashierCollection() {
       )}
 
       {hasActiveShift && shiftTotals && (
-        <div className="fixed bottom-4 left-4 z-50" data-testid="widget-shift-totals">
-          <Card className="w-64">
-            <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-xs flex flex-row-reverse items-center gap-1">
+        <div className="fixed bottom-3 left-3 z-50" data-testid="widget-shift-totals">
+          <Card className="w-56">
+            <CardHeader className="pb-1 pt-2 px-3">
+              <CardTitle className="text-[10px] flex flex-row-reverse items-center gap-1">
                 <Wallet className="h-3 w-3" />
                 ملخص الوردية
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-4 pb-3 space-y-1" dir="rtl">
-              <div className="flex flex-row-reverse justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">إجمالي الإيراد النقدي:</span>
+            <CardContent className="px-3 pb-2 space-y-0.5" dir="rtl">
+              <div className="flex flex-row-reverse justify-between gap-2 text-[11px]">
+                <span className="text-muted-foreground">التحصيل:</span>
                 <span className="font-medium" data-testid="text-total-collected">{formatNumber(shiftTotals.totalCollected)}</span>
               </div>
-              <div className="flex flex-row-reverse justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">إجمالي رد المرتجعات:</span>
+              <div className="flex flex-row-reverse justify-between gap-2 text-[11px]">
+                <span className="text-muted-foreground">المرتجعات:</span>
                 <span className="font-medium" data-testid="text-total-refunded">{formatNumber(shiftTotals.totalRefunded)}</span>
               </div>
-              <div className="border-t pt-1 flex flex-row-reverse justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">صافي الخزنة:</span>
+              <div className="border-t pt-0.5 flex flex-row-reverse justify-between gap-2 text-[11px]">
+                <span className="text-muted-foreground">الصافي:</span>
                 <span className="font-bold" data-testid="text-net-cash">{formatNumber(shiftTotals.netCash)}</span>
               </div>
             </CardContent>
