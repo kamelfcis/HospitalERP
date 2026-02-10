@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loader2, Eye, X, FileText } from "lucide-react";
+import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loader2, Eye, X, FileText, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatCurrency, formatDateShort } from "@/lib/formatters";
@@ -119,6 +119,11 @@ export default function PatientInvoice() {
 
   const [warehouseId, setWarehouseId] = useState("");
   const [fefoLoading, setFefoLoading] = useState(false);
+
+  const [statsItemId, setStatsItemId] = useState<string | null>(null);
+  const [statsItemName, setStatsItemName] = useState("");
+  const [statsData, setStatsData] = useState<any[] | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   const [lines, setLines] = useState<LineLocal[]>([]);
   const [payments, setPayments] = useState<PaymentLocal[]>([]);
@@ -632,6 +637,21 @@ export default function PatientInvoice() {
     [lines]
   );
 
+  const openStatsPopup = useCallback(async (itemId: string, itemName: string) => {
+    setStatsItemId(itemId);
+    setStatsItemName(itemName);
+    setStatsData(null);
+    setStatsLoading(true);
+    try {
+      const res = await fetch(`/api/items/${itemId}/warehouse-stats`);
+      if (res.ok) {
+        setStatsData(await res.json());
+      }
+    } catch {} finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
   function renderLineGrid(type: string) {
     const typeLines = filteredLines(type);
     return (
@@ -728,12 +748,25 @@ export default function PatientInvoice() {
                   <td>
                     {isDraft ? (
                       <div className="space-y-0.5">
-                        <Input
-                          value={line.description}
-                          onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
-                          className="h-7 text-xs"
-                          data-testid={`input-desc-${type}-${i}`}
-                        />
+                        <div className="flex flex-row-reverse items-center gap-1">
+                          <Input
+                            value={line.description}
+                            onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
+                            className="h-7 text-xs flex-1"
+                            data-testid={`input-desc-${type}-${i}`}
+                          />
+                          {(type === "drug" || type === "consumable") && line.itemId && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0"
+                              onClick={() => openStatsPopup(line.itemId!, line.description)}
+                              data-testid={`button-stock-stats-${type}-${i}`}
+                            >
+                              <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+                            </Button>
+                          )}
+                        </div>
                         {(type === "drug" || type === "consumable") && line.expiryMonth && line.expiryYear && (
                           <div className="flex flex-row-reverse items-center gap-1">
                             <Badge variant="secondary" className="text-[10px]">
@@ -747,7 +780,20 @@ export default function PatientInvoice() {
                       </div>
                     ) : (
                       <div>
-                        <span>{line.description}</span>
+                        <div className="flex flex-row-reverse items-center gap-1">
+                          <span>{line.description}</span>
+                          {(type === "drug" || type === "consumable") && line.itemId && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0"
+                              onClick={() => openStatsPopup(line.itemId!, line.description)}
+                              data-testid={`button-stock-stats-${type}-${i}`}
+                            >
+                              <BarChart3 className="h-3 w-3 text-muted-foreground" />
+                            </Button>
+                          )}
+                        </div>
                         {(type === "drug" || type === "consumable") && line.expiryMonth && line.expiryYear && (
                           <div className="flex flex-row-reverse items-center gap-1 mt-0.5">
                             <Badge variant="secondary" className="text-[10px]">
@@ -1584,6 +1630,64 @@ export default function PatientInvoice() {
               تأكيد الحذف
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!statsItemId} onOpenChange={(open) => { if (!open) { setStatsItemId(null); setStatsData(null); } }}>
+        <DialogContent className="max-w-lg" dir="rtl" data-testid="dialog-stock-stats">
+          <DialogHeader>
+            <DialogTitle className="text-right flex flex-row-reverse items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              <span>أرصدة المخازن - {statsItemName}</span>
+            </DialogTitle>
+            <DialogDescription className="text-right">كميات الصنف وتواريخ الصلاحية في جميع المخازن</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[400px] overflow-y-auto">
+            {statsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : statsData && statsData.length > 0 ? (
+              <div className="space-y-3">
+                {statsData.map((wh: any) => (
+                  <div key={wh.warehouseId} className="border rounded-md p-3">
+                    <div className="flex flex-row-reverse items-center justify-between gap-2 mb-2">
+                      <span className="font-semibold text-sm">{wh.warehouseName}</span>
+                      <Badge variant="secondary" data-testid={`text-wh-total-${wh.warehouseId}`}>
+                        {formatNumber(parseFloat(wh.qtyMinor))}
+                      </Badge>
+                    </div>
+                    {wh.expiryBreakdown && wh.expiryBreakdown.length > 0 ? (
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-right py-1 font-medium text-muted-foreground">الصلاحية</th>
+                            <th className="text-center py-1 font-medium text-muted-foreground">الكمية</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {wh.expiryBreakdown.map((eb: any, idx: number) => (
+                            <tr key={idx} className="border-b last:border-b-0">
+                              <td className="text-right py-1">
+                                {eb.expiryMonth && eb.expiryYear
+                                  ? `${String(eb.expiryMonth).padStart(2, "0")}/${eb.expiryYear}`
+                                  : "بدون صلاحية"}
+                              </td>
+                              <td className="text-center py-1">{formatNumber(parseFloat(eb.qty))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">لا توجد تفاصيل صلاحية</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-muted-foreground py-8">لا توجد أرصدة لهذا الصنف</div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
