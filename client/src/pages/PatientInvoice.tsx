@@ -40,6 +40,10 @@ interface LineLocal {
   discountPercent: number;
   discountAmount: number;
   totalPrice: number;
+  doctorName: string;
+  nurseName: string;
+  requiresDoctor: boolean;
+  requiresNurse: boolean;
   notes: string;
   sortOrder: number;
 }
@@ -238,6 +242,8 @@ export default function PatientInvoice() {
         discountPercent: String(l.discountPercent),
         discountAmount: String(l.discountAmount),
         totalPrice: String(l.totalPrice),
+        doctorName: l.doctorName || null,
+        nurseName: l.nurseName || null,
         notes: l.notes || null,
         sortOrder: i,
       }));
@@ -272,6 +278,14 @@ export default function PatientInvoice() {
   const finalizeMutation = useMutation({
     mutationFn: async () => {
       if (!invoiceId) throw new Error("يجب حفظ الفاتورة أولاً");
+      const missingDoctor = lines.filter(l => l.lineType === "service" && l.requiresDoctor && !l.doctorName.trim());
+      const missingNurse = lines.filter(l => l.lineType === "service" && l.requiresNurse && !l.nurseName.trim());
+      if (missingDoctor.length > 0) {
+        throw new Error(`يجب إدخال اسم الطبيب للخدمات: ${missingDoctor.map(l => l.description).join("، ")}`);
+      }
+      if (missingNurse.length > 0) {
+        throw new Error(`يجب إدخال اسم الممرض للخدمات: ${missingNurse.map(l => l.description).join("، ")}`);
+      }
       const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/finalize`);
       return res.json();
     },
@@ -340,6 +354,10 @@ export default function PatientInvoice() {
         serviceId: l.serviceId,
         itemId: l.itemId,
         description: l.description,
+        doctorName: l.doctorName || "",
+        nurseName: l.nurseName || "",
+        requiresDoctor: l.service?.requiresDoctor ?? l.requiresDoctor ?? false,
+        requiresNurse: l.service?.requiresNurse ?? l.requiresNurse ?? false,
         quantity: parseFloat(l.quantity) || 1,
         unitPrice: parseFloat(l.unitPrice) || 0,
         discountPercent: parseFloat(l.discountPercent) || 0,
@@ -379,6 +397,10 @@ export default function PatientInvoice() {
       discountPercent: 0,
       discountAmount: 0,
       totalPrice: parseFloat(svc.basePrice) || 0,
+      doctorName: "",
+      nurseName: "",
+      requiresDoctor: svc.requiresDoctor ?? false,
+      requiresNurse: svc.requiresNurse ?? false,
       notes: "",
       sortOrder: lines.filter((l) => l.lineType === "service").length,
     };
@@ -400,6 +422,10 @@ export default function PatientInvoice() {
       discountPercent: 0,
       discountAmount: 0,
       totalPrice: price,
+      doctorName: "",
+      nurseName: "",
+      requiresDoctor: false,
+      requiresNurse: false,
       notes: "",
       sortOrder: lines.filter((l) => l.lineType === lineType).length,
     };
@@ -528,6 +554,8 @@ export default function PatientInvoice() {
               <tr className="peachtree-grid-header">
                 <th className="text-center" style={{ width: 40 }}>#</th>
                 <th>الوصف</th>
+                {type === "service" && <th className="text-center" style={{ width: 120 }}>الطبيب</th>}
+                {type === "service" && <th className="text-center" style={{ width: 120 }}>الممرض</th>}
                 <th className="text-center" style={{ width: 80 }}>الكمية</th>
                 <th className="text-center" style={{ width: 100 }}>سعر الوحدة</th>
                 <th className="text-center" style={{ width: 80 }}>خصم %</th>
@@ -552,6 +580,44 @@ export default function PatientInvoice() {
                       line.description
                     )}
                   </td>
+                  {type === "service" && (
+                    <td className={`text-center ${line.requiresDoctor ? "bg-blue-50 dark:bg-blue-950/40" : ""}`}>
+                      {line.requiresDoctor ? (
+                        isDraft ? (
+                          <Input
+                            value={line.doctorName}
+                            onChange={(e) => updateLine(line.tempId, "doctorName", e.target.value)}
+                            placeholder="اسم الطبيب *"
+                            className={`h-7 text-xs ${!line.doctorName ? "border-blue-400 dark:border-blue-600" : ""}`}
+                            data-testid={`input-doctor-${i}`}
+                          />
+                        ) : (
+                          <span className="text-xs">{line.doctorName || "-"}</span>
+                        )
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </td>
+                  )}
+                  {type === "service" && (
+                    <td className={`text-center ${line.requiresNurse ? "bg-purple-50 dark:bg-purple-950/40" : ""}`}>
+                      {line.requiresNurse ? (
+                        isDraft ? (
+                          <Input
+                            value={line.nurseName}
+                            onChange={(e) => updateLine(line.tempId, "nurseName", e.target.value)}
+                            placeholder="اسم الممرض *"
+                            className={`h-7 text-xs ${!line.nurseName ? "border-purple-400 dark:border-purple-600" : ""}`}
+                            data-testid={`input-nurse-${i}`}
+                          />
+                        ) : (
+                          <span className="text-xs">{line.nurseName || "-"}</span>
+                        )
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </td>
+                  )}
                   <td className="text-center">
                     {isDraft ? (
                       <Input
@@ -626,7 +692,7 @@ export default function PatientInvoice() {
               ))}
               {typeLines.length === 0 && (
                 <tr>
-                  <td colSpan={isDraft ? 8 : 7} className="text-center text-muted-foreground py-4">
+                  <td colSpan={type === "service" ? (isDraft ? 10 : 9) : (isDraft ? 8 : 7)} className="text-center text-muted-foreground py-4">
                     لا توجد بنود
                   </td>
                 </tr>

@@ -48,7 +48,7 @@ function ServicesTab() {
   const [form, setForm] = useState({
     code: "", nameAr: "", nameEn: "", departmentId: "", category: "",
     serviceType: "SERVICE", defaultWarehouseId: "", revenueAccountId: "",
-    costCenterId: "", basePrice: "0", isActive: true,
+    costCenterId: "", basePrice: "0", requiresDoctor: false, requiresNurse: false, isActive: true,
   });
 
   const [consumables, setConsumables] = useState<{ itemId: string; quantity: string; unitLevel: string; notes: string; item?: any }[]>([]);
@@ -165,7 +165,7 @@ function ServicesTab() {
 
   function openCreate() {
     setEditingService(null);
-    setForm({ code: "", nameAr: "", nameEn: "", departmentId: "", category: "", serviceType: "SERVICE", defaultWarehouseId: "", revenueAccountId: "", costCenterId: "", basePrice: "0", isActive: true });
+    setForm({ code: "", nameAr: "", nameEn: "", departmentId: "", category: "", serviceType: "SERVICE", defaultWarehouseId: "", revenueAccountId: "", costCenterId: "", basePrice: "0", requiresDoctor: false, requiresNurse: false, isActive: true });
     setConsumables([]);
     setConsumableSearch("");
     setConsumableResults([]);
@@ -179,7 +179,7 @@ function ServicesTab() {
       departmentId: s.departmentId, category: s.category || "",
       serviceType: s.serviceType, defaultWarehouseId: s.defaultWarehouseId || "",
       revenueAccountId: s.revenueAccountId, costCenterId: s.costCenterId,
-      basePrice: String(s.basePrice), isActive: s.isActive,
+      basePrice: String(s.basePrice), requiresDoctor: s.requiresDoctor ?? false, requiresNurse: s.requiresNurse ?? false, isActive: s.isActive,
     });
     setModalOpen(true);
   }
@@ -306,6 +306,7 @@ function ServicesTab() {
               <th>الفئة</th>
               <th>النوع</th>
               <th>السعر الأساسي</th>
+              <th>مطلوب</th>
               <th>الحالة</th>
               <th>إجراءات</th>
             </tr>
@@ -313,7 +314,7 @@ function ServicesTab() {
           <tbody>
             {services.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-8 text-center text-muted-foreground" data-testid="text-empty-services">
+                <td colSpan={9} className="p-8 text-center text-muted-foreground" data-testid="text-empty-services">
                   لا توجد خدمات
                 </td>
               </tr>
@@ -326,6 +327,17 @@ function ServicesTab() {
                   <td className="leading-tight">{s.category || "-"}</td>
                   <td className="leading-tight">{serviceTypeLabels[s.serviceType] || s.serviceType}</td>
                   <td className="peachtree-amount leading-tight">{formatNumber(s.basePrice)}</td>
+                  <td className="leading-tight">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {s.requiresDoctor && (
+                        <Badge variant="outline" className="text-[10px] py-0 leading-tight bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800 no-default-active-elevate" data-testid={`badge-doctor-${s.id}`}>طبيب</Badge>
+                      )}
+                      {s.requiresNurse && (
+                        <Badge variant="outline" className="text-[10px] py-0 leading-tight bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800 no-default-active-elevate" data-testid={`badge-nurse-${s.id}`}>ممرض</Badge>
+                      )}
+                      {!s.requiresDoctor && !s.requiresNurse && <span className="text-muted-foreground">-</span>}
+                    </div>
+                  </td>
                   <td>
                     {s.isActive ? (
                       <Badge
@@ -467,14 +479,34 @@ function ServicesTab() {
               <Label>السعر الأساسي *</Label>
               <Input data-testid="input-service-basePrice" type="number" min="0" step="0.01" value={form.basePrice} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
             </div>
-            <div className="flex items-center gap-2 col-span-2">
-              <Checkbox
-                id="svc-active"
-                checked={form.isActive}
-                onCheckedChange={v => setForm(f => ({ ...f, isActive: !!v }))}
-                data-testid="checkbox-service-active"
-              />
-              <Label htmlFor="svc-active">نشط</Label>
+            <div className="flex items-center gap-6 col-span-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="svc-requires-doctor"
+                  checked={form.requiresDoctor}
+                  onCheckedChange={v => setForm(f => ({ ...f, requiresDoctor: !!v }))}
+                  data-testid="checkbox-service-requires-doctor"
+                />
+                <Label htmlFor="svc-requires-doctor">تتطلب طبيب</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="svc-requires-nurse"
+                  checked={form.requiresNurse}
+                  onCheckedChange={v => setForm(f => ({ ...f, requiresNurse: !!v }))}
+                  data-testid="checkbox-service-requires-nurse"
+                />
+                <Label htmlFor="svc-requires-nurse">تتطلب ممرض</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="svc-active"
+                  checked={form.isActive}
+                  onCheckedChange={v => setForm(f => ({ ...f, isActive: !!v }))}
+                  data-testid="checkbox-service-active"
+                />
+                <Label htmlFor="svc-active">نشط</Label>
+              </div>
             </div>
           </div>
 
