@@ -207,6 +207,19 @@ export default function PatientInvoice() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [patientName, setPatientName] = useState("");
+
+  useEffect(() => {
+    const originalTitle = document.title;
+    return () => { document.title = originalTitle; };
+  }, []);
+
+  useEffect(() => {
+    if (patientName.trim()) {
+      document.title = `فاتورة: ${patientName.trim()}`;
+    } else {
+      document.title = "فاتورة مريض جديدة";
+    }
+  }, [patientName]);
   const [patientPhone, setPatientPhone] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [doctorName, setDoctorName] = useState("");
