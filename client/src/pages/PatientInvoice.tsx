@@ -550,7 +550,9 @@ export default function PatientInvoice() {
   }, [lines]);
 
   const addItemLine = useCallback((item: any, lineType: "drug" | "consumable" | "equipment") => {
-    const defaultUnit: "major" | "medium" | "minor" = "minor";
+    const hasMajor = parseFloat(String(item.majorToMinor)) > 1;
+    const hasMedium = parseFloat(String(item.majorToMedium)) > 1 || parseFloat(String(item.mediumToMinor)) > 1;
+    const defaultUnit: "major" | "medium" | "minor" = hasMajor ? "major" : hasMedium ? "medium" : "minor";
     const baseSalePrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
     const unitPrice = computeUnitPriceFromBase(baseSalePrice, defaultUnit, item);
 
@@ -1095,7 +1097,7 @@ export default function PatientInvoice() {
                     {item.itemCode && <span className="text-[10px] text-muted-foreground">({item.itemCode})</span>}
                   </div>
                   <div className="flex items-center gap-2">
-                    {item.minorUnitName && <span className="text-[10px] text-muted-foreground">{item.minorUnitName}</span>}
+                    <span className="text-[10px] text-muted-foreground">{item.majorUnitName || item.mediumUnitName || item.minorUnitName || "وحدة"}</span>
                     <span className="text-xs text-muted-foreground">{formatNumber(item.salePriceCurrent || item.purchasePriceLast || 0)}</span>
                   </div>
                 </div>
@@ -1238,13 +1240,13 @@ export default function PatientInvoice() {
                           className="h-7 text-xs text-center bg-transparent border rounded px-1 w-full"
                           data-testid={`select-unit-${type}-${i}`}
                         >
-                          <option value="minor">{line.item?.minorUnitName || "صغرى"}</option>
-                          {(parseFloat(String(line.item?.majorToMedium)) > 1 || parseFloat(String(line.item?.mediumToMinor)) > 1) && (
-                            <option value="medium">{line.item?.mediumUnitName || "متوسطة"}</option>
-                          )}
                           {parseFloat(String(line.item?.majorToMinor)) > 1 && (
                             <option value="major">{line.item?.majorUnitName || "كبرى"}</option>
                           )}
+                          {(parseFloat(String(line.item?.majorToMedium)) > 1 || parseFloat(String(line.item?.mediumToMinor)) > 1) && (
+                            <option value="medium">{line.item?.mediumUnitName || "متوسطة"}</option>
+                          )}
+                          <option value="minor">{line.item?.minorUnitName || "صغرى"}</option>
                         </select>
                       ) : (
                         <span className="text-xs">{line.item ? getUnitName(line.item, line.unitLevel) : "-"}</span>
