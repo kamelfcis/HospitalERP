@@ -2896,6 +2896,27 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/patient-invoices/:id/distribute", async (req, res) => {
+    try {
+      const { patients } = req.body;
+      if (!Array.isArray(patients) || patients.length < 2) {
+        return res.status(400).json({ message: "يجب تحديد مريضين على الأقل" });
+      }
+      for (const p of patients) {
+        if (!p.name || !p.name.trim()) {
+          return res.status(400).json({ message: "يجب إدخال اسم كل مريض" });
+        }
+      }
+      const result = await storage.distributePatientInvoice(req.params.id, patients);
+      res.json({ invoices: result });
+    } catch (error: any) {
+      if (error.message?.includes("نهائية") || error.message?.includes("غير موجودة") || error.message?.includes("لا تحتوي")) {
+        return res.status(409).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.delete("/api/patient-invoices/:id", async (req, res) => {
     try {
       await storage.deletePatientInvoice(req.params.id);

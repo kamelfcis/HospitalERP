@@ -334,6 +334,7 @@ export interface IStorage {
   updatePatientInvoice(id: string, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
   finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader>;
   deletePatientInvoice(id: string): Promise<boolean>;
+  distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]>;
 
   // Pharmacies
   getPharmacies(): Promise<Pharmacy[]>;
@@ -4196,6 +4197,119 @@ export class DatabaseStorage implements IStorage {
     if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة نهائية");
     await db.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
     return true;
+  }
+
+  async distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]> {
+    return await db.transaction(async (tx) => {
+      const [source] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, sourceId));
+      if (!source) throw new Error("فاتورة المصدر غير موجودة");
+      if (source.status !== "draft") throw new Error("لا يمكن توزيع فاتورة نهائية");
+
+      const sourceLines = await tx.select().from(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, sourceId)).orderBy(asc(patientInvoiceLines.sortOrder));
+      if (sourceLines.length === 0) throw new Error("الفاتورة لا تحتوي على بنود");
+
+      const numPatients = patients.length;
+
+      const maxNumResult = await tx.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM patient_invoice_headers FOR UPDATE`);
+      const baseNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
+
+      const createdInvoices: PatientInvoiceHeader[] = [];
+      const allocatedSoFar: Record<number, number> = {};
+
+      for (let pi = 0; pi < numPatients; pi++) {
+        const patient = patients[pi];
+        const invNumber = String(baseNum + pi);
+
+        const [newHeader] = await tx.insert(patientInvoiceHeaders).values({
+          invoiceNumber: invNumber,
+          invoiceDate: source.invoiceDate,
+          patientName: patient.name,
+          patientPhone: patient.phone || null,
+          patientType: source.patientType,
+          departmentId: source.departmentId,
+          warehouseId: source.warehouseId,
+          doctorName: source.doctorName,
+          contractName: source.contractName,
+          notes: source.notes,
+          status: "draft",
+          totalAmount: "0",
+          discountAmount: "0",
+          netAmount: "0",
+          paidAmount: "0",
+        }).returning();
+
+        const newLines: any[] = [];
+
+        for (let li = 0; li < sourceLines.length; li++) {
+          const line = sourceLines[li];
+          const totalQty = parseFloat(line.quantity);
+
+          if (!allocatedSoFar[li]) allocatedSoFar[li] = 0;
+          let share: number;
+          if (pi === numPatients - 1) {
+            share = +(totalQty - allocatedSoFar[li]).toFixed(4);
+          } else {
+            share = +(Math.floor((totalQty / numPatients) * 10000) / 10000).toFixed(4);
+            const intQty = Math.round(totalQty);
+            if (Math.abs(totalQty - intQty) < 0.0001) {
+              const baseShare = Math.floor(intQty / numPatients);
+              const remainder = intQty - baseShare * numPatients;
+              share = pi < remainder ? baseShare + 1 : baseShare;
+            }
+          }
+          allocatedSoFar[li] = +(allocatedSoFar[li] + share).toFixed(4);
+
+          if (share <= 0) continue;
+
+          const unitPrice = parseFloat(line.unitPrice);
+          const origDiscPct = parseFloat(line.discountPercent || "0");
+          const lineGross = +(share * unitPrice).toFixed(2);
+          const lineDiscAmt = +(lineGross * origDiscPct / 100).toFixed(2);
+          const lineTotal = +(lineGross - lineDiscAmt).toFixed(2);
+
+          newLines.push({
+            headerId: newHeader.id,
+            lineType: line.lineType,
+            serviceId: line.serviceId,
+            itemId: line.itemId,
+            description: line.description,
+            quantity: String(share),
+            unitPrice: line.unitPrice,
+            discountPercent: line.discountPercent,
+            discountAmount: String(lineDiscAmt),
+            totalPrice: String(lineTotal),
+            unitLevel: line.unitLevel,
+            lotId: line.lotId,
+            expiryMonth: line.expiryMonth,
+            expiryYear: line.expiryYear,
+            priceSource: line.priceSource,
+            doctorName: line.doctorName,
+            nurseName: line.nurseName,
+            notes: line.notes,
+            sortOrder: line.sortOrder,
+          });
+        }
+
+        if (newLines.length > 0) {
+          await tx.insert(patientInvoiceLines).values(newLines);
+          const totalAmount = newLines.reduce((s: number, l: any) => s + parseFloat(l.quantity) * parseFloat(l.unitPrice), 0);
+          const totalDiscount = newLines.reduce((s: number, l: any) => s + parseFloat(l.discountAmount), 0);
+          const netAmount = totalAmount - totalDiscount;
+          await tx.update(patientInvoiceHeaders).set({
+            totalAmount: String(+totalAmount.toFixed(2)),
+            discountAmount: String(+totalDiscount.toFixed(2)),
+            netAmount: String(+netAmount.toFixed(2)),
+          }).where(eq(patientInvoiceHeaders.id, newHeader.id));
+        }
+
+        const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));
+        createdInvoices.push(finalHeader);
+      }
+
+      await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, sourceId));
+
+      return createdInvoices;
+    });
   }
 
   // ==================== Cashier ====================

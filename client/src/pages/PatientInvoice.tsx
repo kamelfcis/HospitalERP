@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loader2, Eye, X, FileText, BarChart3 } from "lucide-react";
+import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loader2, Eye, X, FileText, BarChart3, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatCurrency, formatDateShort } from "@/lib/formatters";
@@ -236,6 +236,11 @@ export default function PatientInvoice() {
   const [statsData, setStatsData] = useState<any[] | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
+  const [distOpen, setDistOpen] = useState(false);
+  const [distCount, setDistCount] = useState(2);
+  const [distPatients, setDistPatients] = useState<{ name: string; phone: string }[]>([{ name: "", phone: "" }, { name: "", phone: "" }]);
+  const [distLoading, setDistLoading] = useState(false);
+
   const [lines, setLines] = useState<LineLocal[]>([]);
   const linesRef = useRef(lines);
   useEffect(() => { linesRef.current = lines; }, [lines]);
@@ -282,6 +287,15 @@ export default function PatientInvoice() {
       setInvoiceNumber(nextNumberData.nextNumber);
     }
   }, [nextNumberData, invoiceId, invoiceNumber]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const loadId = params.get("loadId");
+    if (loadId) {
+      loadInvoice(loadId);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     if (!debouncedServiceSearch || debouncedServiceSearch.length < 2) {
@@ -501,6 +515,30 @@ export default function PatientInvoice() {
     },
   });
 
+  const openDistributeDialog = useCallback(() => {
+    if (!invoiceId) {
+      toast({ title: "تنبيه", description: "يجب حفظ الفاتورة أولاً قبل التوزيع", variant: "destructive" });
+      return;
+    }
+    if (lines.length === 0) {
+      toast({ title: "تنبيه", description: "الفاتورة لا تحتوي على بنود للتوزيع", variant: "destructive" });
+      return;
+    }
+    setDistCount(2);
+    setDistPatients([{ name: "", phone: "" }, { name: "", phone: "" }]);
+    setDistOpen(true);
+  }, [invoiceId, lines, toast]);
+
+  const handleDistCountChange = useCallback((newCount: number) => {
+    const count = Math.max(2, Math.min(50, newCount));
+    setDistCount(count);
+    setDistPatients(prev => {
+      const updated = [...prev];
+      while (updated.length < count) updated.push({ name: "", phone: "" });
+      return updated.slice(0, count);
+    });
+  }, []);
+
   const resetForm = useCallback(() => {
     setInvoiceId(null);
     setInvoiceNumber(nextNumberData?.nextNumber || "");
@@ -518,6 +556,38 @@ export default function PatientInvoice() {
     setPayments([]);
     setSubTab("services");
   }, [nextNumberData]);
+
+  const handleDistribute = useCallback(async () => {
+    if (!invoiceId) return;
+    const emptyNames = distPatients.slice(0, distCount).filter(p => !p.name.trim());
+    if (emptyNames.length > 0) {
+      toast({ title: "تنبيه", description: "يجب إدخال اسم كل مريض", variant: "destructive" });
+      return;
+    }
+    setDistLoading(true);
+    try {
+      const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/distribute`, {
+        patients: distPatients.slice(0, distCount).map(p => ({ name: p.name.trim(), phone: p.phone.trim() || undefined })),
+      });
+      const data = await res.json();
+      const newInvoices: PatientInvoiceHeader[] = data.invoices;
+
+      setDistOpen(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices/next-number"] });
+
+      toast({ title: "تم التوزيع", description: `تم إنشاء ${newInvoices.length} فاتورة بنجاح` });
+
+      for (const inv of newInvoices) {
+        window.open(`/patient-invoices?loadId=${inv.id}`, "_blank");
+      }
+    } catch (error: any) {
+      toast({ title: "خطأ في التوزيع", description: error.message, variant: "destructive" });
+    } finally {
+      setDistLoading(false);
+    }
+  }, [invoiceId, distPatients, distCount, toast, resetForm]);
 
   const loadInvoice = useCallback(async (id: string) => {
     try {
@@ -1932,6 +2002,18 @@ export default function PatientInvoice() {
                           حذف
                         </Button>
                       )}
+                      {invoiceId && lines.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={openDistributeDialog}
+                          data-testid="button-distribute"
+                          className="border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                        >
+                          <Users className="h-3 w-3 ml-1" />
+                          توزيع على حالات
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>
@@ -2122,6 +2204,117 @@ export default function PatientInvoice() {
             >
               {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin ml-1" />}
               تأكيد الحذف
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={distOpen} onOpenChange={(open) => { if (!open) setDistOpen(false); }}>
+        <DialogContent className="max-w-2xl" dir="rtl" data-testid="dialog-distribute">
+          <DialogHeader>
+            <DialogTitle className="text-right flex flex-row-reverse items-center gap-2">
+              <Users className="h-4 w-4" />
+              <span>توزيع على حالات عمليات</span>
+            </DialogTitle>
+            <DialogDescription className="text-right">
+              سيتم تقسيم الأدوية والمستهلكات بالتساوي على المرضى المحددين وحذف الفاتورة الأصلية
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex flex-row-reverse items-center gap-3">
+              <Label className="text-sm whitespace-nowrap">عدد الحالات:</Label>
+              <Input
+                type="number"
+                min={2}
+                max={50}
+                value={distCount}
+                onChange={(e) => handleDistCountChange(parseInt(e.target.value) || 2)}
+                className="w-24 text-center"
+                data-testid="input-dist-count"
+              />
+            </div>
+            <div className="border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 border-b">
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground w-12">#</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">اسم المريض</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground w-40">رقم التليفون</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {distPatients.slice(0, distCount).map((p, idx) => (
+                    <tr key={idx} className="border-b last:border-b-0">
+                      <td className="py-1.5 px-3 text-muted-foreground text-center">{idx + 1}</td>
+                      <td className="py-1.5 px-3">
+                        <Input
+                          value={p.name}
+                          onChange={(e) => {
+                            const updated = [...distPatients];
+                            updated[idx] = { ...updated[idx], name: e.target.value };
+                            setDistPatients(updated);
+                          }}
+                          placeholder={`اسم المريض ${idx + 1}`}
+                          className="h-8 text-sm"
+                          data-testid={`input-dist-name-${idx}`}
+                        />
+                      </td>
+                      <td className="py-1.5 px-3">
+                        <Input
+                          value={p.phone}
+                          onChange={(e) => {
+                            const updated = [...distPatients];
+                            updated[idx] = { ...updated[idx], phone: e.target.value };
+                            setDistPatients(updated);
+                          }}
+                          placeholder="اختياري"
+                          className="h-8 text-sm"
+                          data-testid={`input-dist-phone-${idx}`}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="border rounded-md p-3 bg-muted/30">
+              <p className="text-xs font-medium text-muted-foreground mb-2 text-right">معاينة التوزيع:</p>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {lines.filter(l => l.lineType === "drug" || l.lineType === "consumable").map((l) => {
+                  const totalQty = l.quantity;
+                  const baseShare = Math.floor(totalQty / distCount);
+                  const remainder = totalQty - baseShare * distCount;
+                  const unitName = l.unitLevel === "major" ? (l.item?.majorUnitName || "وحدة")
+                    : l.unitLevel === "medium" ? (l.item?.mediumUnitName || "وحدة")
+                    : (l.item?.minorUnitName || l.item?.mediumUnitName || "وحدة");
+                  return (
+                    <div key={l.tempId} className="flex flex-row-reverse items-center justify-between text-xs gap-2">
+                      <span className="truncate flex-1 text-right">{l.description}</span>
+                      <span className="text-muted-foreground whitespace-nowrap">
+                        {totalQty} {unitName} = {baseShare}{remainder > 0 ? `~${baseShare + 1}` : ""} لكل حالة
+                      </span>
+                    </div>
+                  );
+                })}
+                {lines.filter(l => l.lineType === "service").length > 0 && (
+                  <div className="text-xs text-muted-foreground text-right mt-1 border-t pt-1">
+                    الخدمات ({lines.filter(l => l.lineType === "service").length}) ستوزع أيضاً
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDistOpen(false)} data-testid="button-dist-cancel">
+              إلغاء
+            </Button>
+            <Button
+              onClick={handleDistribute}
+              disabled={distLoading}
+              data-testid="button-dist-confirm"
+            >
+              {distLoading ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Users className="h-4 w-4 ml-1" />}
+              تنفيذ التوزيع
             </Button>
           </DialogFooter>
         </DialogContent>

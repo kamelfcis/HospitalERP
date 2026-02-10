@@ -18,7 +18,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Inventory & Sales**:
     - **Receiving**: Supplier Receiving with quantity-only workflow, editable selling price, bonus quantity tracking, sale price/near-expiry warnings, and receiving-to-invoice conversion. Includes an auto-save mechanism.
     - **Sales Invoicing**: Barcode scanning, item search, editable lines with FEFO allocation, bidirectional discount editing, customer types (Cash/Credit/Contract), and atomic stock deduction. Auto-save is implemented.
-    - **Patient Invoicing**: Patient information, services, drugs, consumables, equipment, payments, and consolidated invoices with status tracking and payment methods.
+    - **Patient Invoicing**: Patient information, services, drugs, consumables, equipment, payments, and consolidated invoices with status tracking and payment methods. Includes "Distribute to Cases" feature for splitting drugs/consumables across multiple surgery patients equally, with automatic invoice creation and browser tab opening per patient.
 - **Master Data & Pricing**: Item Master Data with Unit of Measure (UOM) management, department-based pricing, lot-level sale price tracking, expiry management (MM/YYYY), and barcode management.
 - **Services & Price Lists**: CRUD for services, price lists with inline editing, bulk price adjustment, and integration of service consumables into sales invoices.
 - **Multi-Pharmacy Support**: Multiple pharmacies (e.g., Main Pharmacy, Emergency Pharmacy), each with dedicated cashiers. Pharmacy-level isolation ensures invoices don't mix between pharmacies. Warehouses map to pharmacies, and invoices auto-inherit pharmacyId from their warehouse.
