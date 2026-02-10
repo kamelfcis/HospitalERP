@@ -507,34 +507,75 @@ export default function CashierCollection() {
               </Button>
             </div>
           ) : (
-            <div className="flex flex-row-reverse items-center gap-4 flex-wrap">
-              <Input
-                placeholder="اسم الكاشير"
-                value={cashierName}
-                onChange={(e) => setCashierName(e.target.value)}
-                className="w-48 text-right"
-                data-testid="input-cashier-name"
-              />
-              <Input
-                type="number"
-                placeholder="رصيد الافتتاح"
-                value={openingCash}
-                onChange={(e) => setOpeningCash(e.target.value)}
-                className="w-40 text-right"
-                data-testid="input-opening-cash"
-              />
-              <Button
-                onClick={() => openShiftMutation.mutate()}
-                disabled={!cashierName.trim() || openShiftMutation.isPending}
-                data-testid="button-open-shift"
-              >
-                {openShiftMutation.isPending ? (
-                  <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <LogIn className="ml-2 h-4 w-4" />
-                )}
-                فتح وردية
-              </Button>
+            <div className="space-y-6 py-4">
+              <div className="text-center space-y-2">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mx-auto">
+                  <Wallet className="h-8 w-8 text-primary" />
+                </div>
+                <h2 className="text-lg font-semibold">لا توجد وردية مفتوحة</h2>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  لبدء تحصيل الفواتير، قم بفتح وردية جديدة. أدخل اسمك والمبلغ النقدي الموجود في الخزنة حالياً.
+                </p>
+              </div>
+
+              <div className="max-w-sm mx-auto space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium block text-right">اسم الكاشير</label>
+                  <Input
+                    placeholder="أدخل اسمك هنا..."
+                    value={cashierName}
+                    onChange={(e) => setCashierName(e.target.value)}
+                    className="text-right"
+                    data-testid="input-cashier-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium block text-right">رصيد الافتتاح (ج.م)</label>
+                  <Input
+                    type="number"
+                    placeholder="المبلغ النقدي الموجود في الخزنة"
+                    value={openingCash}
+                    onChange={(e) => setOpeningCash(e.target.value)}
+                    className="text-right"
+                    data-testid="input-opening-cash"
+                  />
+                  <p className="text-xs text-muted-foreground text-right">المبلغ النقدي الفعلي المتواجد في درج الكاشير عند بداية الوردية</p>
+                </div>
+                <Button
+                  onClick={() => openShiftMutation.mutate()}
+                  disabled={!cashierName.trim() || openShiftMutation.isPending}
+                  className="w-full"
+                  data-testid="button-open-shift"
+                >
+                  {openShiftMutation.isPending ? (
+                    <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogIn className="ml-2 h-4 w-4" />
+                  )}
+                  فتح وردية جديدة
+                </Button>
+              </div>
+
+              <div className="border-t pt-4 mt-4">
+                <h3 className="text-sm font-medium text-center mb-3">كيف تعمل شاشة التحصيل؟</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto">
+                  <div className="text-center space-y-1 p-3 rounded-md bg-muted/50">
+                    <div className="text-2xl font-bold text-primary">1</div>
+                    <div className="text-sm font-medium">افتح الوردية</div>
+                    <div className="text-xs text-muted-foreground">أدخل اسمك ورصيد الخزنة الافتتاحي</div>
+                  </div>
+                  <div className="text-center space-y-1 p-3 rounded-md bg-muted/50">
+                    <div className="text-2xl font-bold text-primary">2</div>
+                    <div className="text-sm font-medium">حصّل الفواتير</div>
+                    <div className="text-xs text-muted-foreground">اختر الفواتير الجاهزة واضغط تحصيل لتسجيل الدفع</div>
+                  </div>
+                  <div className="text-center space-y-1 p-3 rounded-md bg-muted/50">
+                    <div className="text-2xl font-bold text-primary">3</div>
+                    <div className="text-sm font-medium">أغلق الوردية</div>
+                    <div className="text-xs text-muted-foreground">أدخل المبلغ الفعلي بالخزنة وأغلق الوردية</div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
