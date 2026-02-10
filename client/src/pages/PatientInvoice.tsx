@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,6 +126,9 @@ export default function PatientInvoice() {
   const [statsLoading, setStatsLoading] = useState(false);
 
   const [lines, setLines] = useState<LineLocal[]>([]);
+  const linesRef = useRef(lines);
+  useEffect(() => { linesRef.current = lines; }, [lines]);
+  const pendingQtyRef = useRef<Map<string, string>>(new Map());
   const [payments, setPayments] = useState<PaymentLocal[]>([]);
 
   const [serviceSearch, setServiceSearch] = useState("");
@@ -652,6 +655,123 @@ export default function PatientInvoice() {
     }
   }, []);
 
+  const handleQtyConfirm = useCallback(async (tempId: string) => {
+    const currentLines = linesRef.current;
+    const line = currentLines.find(l => l.tempId === tempId);
+    if (!line || !line.itemId) return;
+
+    const pendingVal = pendingQtyRef.current.get(tempId);
+    const qtyEntered = parseFloat(pendingVal ?? String(line.quantity)) || 0;
+    pendingQtyRef.current.delete(tempId);
+
+    if (qtyEntered <= 0) {
+      toast({ title: "كمية غير صحيحة", variant: "destructive" });
+      return;
+    }
+
+    const isExpiry = !!(line.lotId || line.expiryMonth || line.expiryYear);
+    if (!isExpiry || !warehouseId) {
+      updateLine(tempId, "quantity", qtyEntered);
+      return;
+    }
+
+    const allLinesForItem = currentLines.filter(l => l.itemId === line.itemId);
+    const otherLinesQty = allLinesForItem
+      .filter(l => l.tempId !== tempId)
+      .reduce((sum, l) => sum + l.quantity, 0);
+    const totalRequired = otherLinesQty + qtyEntered;
+
+    if (totalRequired <= 0) return;
+
+    setFefoLoading(true);
+    try {
+      const fefoParams = new URLSearchParams({
+        itemId: line.itemId,
+        warehouseId,
+        requiredQtyInMinor: String(totalRequired),
+        asOfDate: invoiceDate,
+      });
+      const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+      if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
+      const preview = await res.json();
+
+      if (!preview.fulfilled) {
+        toast({
+          title: "الكمية غير متاحة",
+          description: preview.shortfall ? `العجز: ${preview.shortfall}` : "الرصيد غير كافي",
+          variant: "destructive",
+        });
+        setFefoLoading(false);
+        return;
+      }
+
+      let resolvedPrice = parseFloat(String(line.unitPrice)) || 0;
+      let isDeptPrice = line.priceSource === "department";
+
+      if (departmentId || warehouseId) {
+        try {
+          const params = new URLSearchParams({ itemId: line.itemId });
+          if (departmentId) params.set("departmentId", departmentId);
+          if (warehouseId) params.set("warehouseId", warehouseId);
+          const priceRes = await fetch(`/api/pricing?${params.toString()}`);
+          if (priceRes.ok) {
+            const priceData = await priceRes.json();
+            const resolved = parseFloat(priceData.price);
+            if (resolved > 0) resolvedPrice = resolved;
+            isDeptPrice = priceData.source === "department";
+          }
+        } catch {}
+      }
+
+      const newFefoLines: LineLocal[] = preview.allocations
+        .filter((a: any) => parseFloat(a.allocatedQty) > 0)
+        .map((alloc: any) => {
+          const allocQty = parseFloat(alloc.allocatedQty);
+          const linePrice = isDeptPrice
+            ? resolvedPrice
+            : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
+          const lineTotal = +(allocQty * linePrice).toFixed(2);
+
+          return {
+            tempId: genId(),
+            lineType: line.lineType,
+            serviceId: null,
+            itemId: line.itemId,
+            description: line.description,
+            quantity: allocQty,
+            unitPrice: linePrice,
+            discountPercent: 0,
+            discountAmount: 0,
+            totalPrice: lineTotal,
+            doctorName: "",
+            nurseName: "",
+            requiresDoctor: false,
+            requiresNurse: false,
+            notes: "",
+            sortOrder: 0,
+            serviceType: "",
+            lotId: alloc.lotId || null,
+            expiryMonth: alloc.expiryMonth || null,
+            expiryYear: alloc.expiryYear || null,
+            priceSource: isDeptPrice ? "department" : (parseFloat(alloc.lotSalePrice || "0") > 0 ? "lot" : "item"),
+          } as LineLocal;
+        });
+
+      setLines(prev => {
+        const filtered = prev.filter(l => l.itemId !== line.itemId);
+        return [...filtered, ...newFefoLines];
+      });
+
+      if (newFefoLines.length > 1) {
+        toast({ title: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
+      }
+    } catch (err: any) {
+      toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+    } finally {
+      setFefoLoading(false);
+    }
+  }, [warehouseId, invoiceDate, departmentId, toast, updateLine]);
+
   function renderLineGrid(type: string) {
     const typeLines = filteredLines(type);
     return (
@@ -847,15 +967,36 @@ export default function PatientInvoice() {
                   )}
                   <td className="text-center">
                     {isDraft ? (
-                      <Input
-                        type="number"
-                        value={line.quantity}
-                        min={0}
-                        step="any"
-                        onChange={(e) => updateLine(line.tempId, "quantity", parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-center"
-                        data-testid={`input-qty-${type}-${i}`}
-                      />
+                      (type === "drug" || type === "consumable") && line.lotId ? (
+                        <Input
+                          type="number"
+                          defaultValue={line.quantity}
+                          min={0}
+                          step="any"
+                          onChange={(e) => {
+                            pendingQtyRef.current.set(line.tempId, e.target.value);
+                          }}
+                          onBlur={() => handleQtyConfirm(line.tempId)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleQtyConfirm(line.tempId);
+                            }
+                          }}
+                          className="h-7 text-xs text-center"
+                          data-testid={`input-qty-${type}-${i}`}
+                        />
+                      ) : (
+                        <Input
+                          type="number"
+                          value={line.quantity}
+                          min={0}
+                          step="any"
+                          onChange={(e) => updateLine(line.tempId, "quantity", parseFloat(e.target.value) || 0)}
+                          className="h-7 text-xs text-center"
+                          data-testid={`input-qty-${type}-${i}`}
+                        />
+                      )
                     ) : (
                       formatNumber(line.quantity)
                     )}
