@@ -13,7 +13,7 @@ import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loa
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatCurrency, formatDateShort } from "@/lib/formatters";
-import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item } from "@shared/schema";
+import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item, Warehouse } from "@shared/schema";
 import { patientInvoiceStatusLabels, patientTypeLabels, lineTypeLabels, paymentMethodLabels } from "@shared/schema";
 
 function useDebounce(value: string, delay: number) {
@@ -47,6 +47,10 @@ interface LineLocal {
   notes: string;
   sortOrder: number;
   serviceType: string;
+  lotId: string | null;
+  expiryMonth: number | null;
+  expiryYear: number | null;
+  priceSource: string;
 }
 
 interface PaymentLocal {
@@ -113,6 +117,9 @@ export default function PatientInvoice() {
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState("draft");
 
+  const [warehouseId, setWarehouseId] = useState("");
+  const [fefoLoading, setFefoLoading] = useState(false);
+
   const [lines, setLines] = useState<LineLocal[]>([]);
   const [payments, setPayments] = useState<PaymentLocal[]>([]);
 
@@ -144,6 +151,7 @@ export default function PatientInvoice() {
   });
 
   const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
+  const { data: warehouses } = useQuery<any[]>({ queryKey: ["/api/warehouses"] });
 
   useEffect(() => {
     if (nextNumberData?.nextNumber && !invoiceId && !invoiceNumber) {
@@ -234,6 +242,7 @@ export default function PatientInvoice() {
         patientPhone: patientPhone || null,
         patientType,
         departmentId: departmentId || null,
+        warehouseId: warehouseId || null,
         doctorName: doctorName || null,
         contractName: patientType === "contract" ? contractName : null,
         notes: notes || null,
@@ -257,6 +266,10 @@ export default function PatientInvoice() {
         nurseName: l.nurseName || null,
         notes: l.notes || null,
         sortOrder: i,
+        lotId: l.lotId || null,
+        expiryMonth: l.expiryMonth || null,
+        expiryYear: l.expiryYear || null,
+        priceSource: l.priceSource || null,
       }));
       const payData = payments.map((p) => ({
         paymentDate: p.paymentDate,
@@ -332,6 +345,7 @@ export default function PatientInvoice() {
     setPatientName("");
     setPatientPhone("");
     setDepartmentId("");
+    setWarehouseId("");
     setDoctorName("");
     setPatientType("cash");
     setContractName("");
@@ -353,6 +367,7 @@ export default function PatientInvoice() {
       setPatientName(data.patientName);
       setPatientPhone(data.patientPhone || "");
       setDepartmentId(data.departmentId || "");
+      setWarehouseId(data.warehouseId || "");
       setDoctorName(data.doctorName || "");
       setPatientType(data.patientType || "cash");
       setContractName(data.contractName || "");
@@ -377,6 +392,10 @@ export default function PatientInvoice() {
         notes: l.notes || "",
         sortOrder: l.sortOrder || 0,
         serviceType: l.service?.serviceType || "",
+        lotId: l.line?.lotId || l.lotId || null,
+        expiryMonth: l.line?.expiryMonth || l.expiryMonth || null,
+        expiryYear: l.line?.expiryYear || l.expiryYear || null,
+        priceSource: l.line?.priceSource || l.priceSource || "",
       }));
       setLines(loadedLines);
 
@@ -416,14 +435,129 @@ export default function PatientInvoice() {
       notes: "",
       sortOrder: lines.filter((l) => l.lineType === "service").length,
       serviceType: svc.serviceType || "SERVICE",
+      lotId: null,
+      expiryMonth: null,
+      expiryYear: null,
+      priceSource: "service",
     };
     setLines((prev) => [...prev, newLine]);
     setServiceSearch("");
     setServiceResults([]);
   }, [lines]);
 
-  const addItemLine = useCallback((item: Item, lineType: "drug" | "consumable" | "equipment") => {
-    const price = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
+  const addItemLine = useCallback(async (item: Item, lineType: "drug" | "consumable" | "equipment") => {
+    let resolvedPrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
+    let priceSource = "item";
+
+    if (departmentId || warehouseId) {
+      try {
+        const params = new URLSearchParams({ itemId: item.id });
+        if (departmentId) params.set("departmentId", departmentId);
+        if (warehouseId) params.set("warehouseId", warehouseId);
+        const priceRes = await fetch(`/api/pricing?${params.toString()}`);
+        if (priceRes.ok) {
+          const priceData = await priceRes.json();
+          const resolved = parseFloat(priceData.price);
+          if (resolved > 0) resolvedPrice = resolved;
+          if (priceData.source) priceSource = priceData.source;
+        }
+      } catch {}
+    }
+    const isDeptPrice = priceSource === "department";
+
+    if ((item as any).hasExpiry && !warehouseId) {
+      toast({
+        title: "يجب اختيار المخزن",
+        description: "اختر المخزن أولاً لتفعيل التوزيع التلقائي للصلاحية (FEFO)",
+        variant: "destructive",
+      });
+      setItemSearch("");
+      setItemResults([]);
+      return;
+    }
+
+    if ((item as any).hasExpiry && warehouseId) {
+      setFefoLoading(true);
+      try {
+        const existingLines = lines.filter(l => l.itemId === item.id);
+        const existingQtyMinor = existingLines.reduce((sum, l) => sum + l.quantity, 0);
+        const additionalQty = 1;
+        const totalRequiredMinor = existingQtyMinor + additionalQty;
+
+        const fefoParams = new URLSearchParams({
+          itemId: item.id,
+          warehouseId,
+          requiredQtyInMinor: String(totalRequiredMinor),
+          asOfDate: invoiceDate,
+        });
+        const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+        if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
+        const preview = await res.json();
+
+        if (!preview.fulfilled) {
+          toast({
+            title: "الكمية غير متاحة",
+            description: preview.shortfall ? `العجز: ${preview.shortfall}` : "الرصيد غير كافي",
+            variant: "destructive",
+          });
+          setFefoLoading(false);
+          return;
+        }
+
+        const newFefoLines: LineLocal[] = preview.allocations
+          .filter((a: any) => parseFloat(a.allocatedQty) > 0)
+          .map((alloc: any, idx: number) => {
+            const allocQty = parseFloat(alloc.allocatedQty);
+            const linePrice = isDeptPrice
+              ? resolvedPrice
+              : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
+            const lineTotal = +(allocQty * linePrice).toFixed(2);
+
+            return {
+              tempId: genId(),
+              lineType,
+              serviceId: null,
+              itemId: item.id,
+              description: item.nameAr || item.itemCode,
+              quantity: allocQty,
+              unitPrice: linePrice,
+              discountPercent: 0,
+              discountAmount: 0,
+              totalPrice: lineTotal,
+              doctorName: "",
+              nurseName: "",
+              requiresDoctor: false,
+              requiresNurse: false,
+              notes: "",
+              sortOrder: 0,
+              serviceType: "",
+              lotId: alloc.lotId || null,
+              expiryMonth: alloc.expiryMonth || null,
+              expiryYear: alloc.expiryYear || null,
+              priceSource,
+            } as LineLocal;
+          });
+
+        setLines(prev => {
+          const filtered = prev.filter(l => l.itemId !== item.id);
+          return [...filtered, ...newFefoLines];
+        });
+
+        if (newFefoLines.length > 1) {
+          toast({ title: `تمت إضافة: ${item.nameAr}`, description: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
+        } else if (newFefoLines.length === 1) {
+          toast({ title: `تمت إضافة: ${item.nameAr}` });
+        }
+      } catch (err: any) {
+        toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+      } finally {
+        setFefoLoading(false);
+      }
+      setItemSearch("");
+      setItemResults([]);
+      return;
+    }
+
     const newLine: LineLocal = {
       tempId: genId(),
       lineType,
@@ -431,10 +565,10 @@ export default function PatientInvoice() {
       itemId: item.id,
       description: item.nameAr || item.itemCode,
       quantity: 1,
-      unitPrice: price,
+      unitPrice: resolvedPrice,
       discountPercent: 0,
       discountAmount: 0,
-      totalPrice: price,
+      totalPrice: resolvedPrice,
       doctorName: "",
       nurseName: "",
       requiresDoctor: false,
@@ -442,11 +576,15 @@ export default function PatientInvoice() {
       notes: "",
       sortOrder: lines.filter((l) => l.lineType === lineType).length,
       serviceType: "",
+      lotId: null,
+      expiryMonth: null,
+      expiryYear: null,
+      priceSource,
     };
     setLines((prev) => [...prev, newLine]);
     setItemSearch("");
     setItemResults([]);
-  }, [lines]);
+  }, [lines, departmentId, warehouseId, invoiceDate, toast]);
 
   const updateLine = useCallback((tempId: string, field: string, value: any) => {
     setLines((prev) =>
@@ -512,6 +650,7 @@ export default function PatientInvoice() {
               />
             </div>
             {searchingItems && <Loader2 className="h-4 w-4 animate-spin" />}
+            {fefoLoading && <Badge variant="secondary" className="text-xs">جاري توزيع الصلاحية...</Badge>}
           </div>
         ) : (
           <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
@@ -588,14 +727,38 @@ export default function PatientInvoice() {
                   <td className="text-center">{i + 1}</td>
                   <td>
                     {isDraft ? (
-                      <Input
-                        value={line.description}
-                        onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
-                        className="h-7 text-xs"
-                        data-testid={`input-desc-${type}-${i}`}
-                      />
+                      <div className="space-y-0.5">
+                        <Input
+                          value={line.description}
+                          onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
+                          className="h-7 text-xs"
+                          data-testid={`input-desc-${type}-${i}`}
+                        />
+                        {(type === "drug" || type === "consumable") && line.expiryMonth && line.expiryYear && (
+                          <div className="flex flex-row-reverse items-center gap-1">
+                            <Badge variant="secondary" className="text-[10px]">
+                              {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
+                            </Badge>
+                            {line.priceSource === "department" && (
+                              <Badge variant="secondary" className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">سعر القسم</Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     ) : (
-                      line.description
+                      <div>
+                        <span>{line.description}</span>
+                        {(type === "drug" || type === "consumable") && line.expiryMonth && line.expiryYear && (
+                          <div className="flex flex-row-reverse items-center gap-1 mt-0.5">
+                            <Badge variant="secondary" className="text-[10px]">
+                              {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
+                            </Badge>
+                            {line.priceSource === "department" && (
+                              <Badge variant="secondary" className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">سعر القسم</Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </td>
                   {type === "service" && (
@@ -890,7 +1053,16 @@ export default function PatientInvoice() {
                           {lineTypeLabels[line.lineType] || line.lineType}
                         </Badge>
                       </td>
-                      <td>{line.description}</td>
+                      <td>
+                        <span>{line.description}</span>
+                        {(line.lineType === "drug" || line.lineType === "consumable") && line.expiryMonth && line.expiryYear && (
+                          <span className="mr-2">
+                            <Badge variant="secondary" className="text-[10px]">
+                              {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
+                            </Badge>
+                          </span>
+                        )}
+                      </td>
                       <td className="text-center">{formatNumber(line.quantity)}</td>
                       <td className="text-center">{formatNumber(line.unitPrice)}</td>
                       <td className="text-center">{formatNumber(line.discountPercent)}</td>
@@ -1048,6 +1220,19 @@ export default function PatientInvoice() {
                     <SelectContent>
                       {(departments || []).map((dept) => (
                         <SelectItem key={dept.id} value={dept.id}>{dept.nameAr}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-row-reverse items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">المخزن:</Label>
+                  <Select value={warehouseId} onValueChange={setWarehouseId} disabled={!isDraft}>
+                    <SelectTrigger className="h-7 text-xs w-36" data-testid="select-warehouse">
+                      <SelectValue placeholder="اختر مخزن" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(warehouses || []).filter((w: any) => w.isActive).map((w: any) => (
+                        <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
