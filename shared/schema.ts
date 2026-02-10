@@ -287,15 +287,27 @@ export const itemDepartmentPrices = pgTable("item_department_prices", {
   deptIdx: index("idx_item_dept_prices_dept").on(table.departmentId),
 }));
 
+export const pharmacies = pgTable("pharmacies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code", { length: 20 }).notNull().unique(),
+  nameAr: text("name_ar").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  codeIdx: index("idx_pharmacies_code").on(table.code),
+}));
+
 export const warehouses = pgTable("warehouses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   warehouseCode: varchar("warehouse_code", { length: 20 }).notNull().unique(),
   nameAr: text("name_ar").notNull(),
   departmentId: varchar("department_id").references(() => departments.id),
+  pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   codeIdx: index("idx_warehouses_code").on(table.warehouseCode),
+  pharmacyIdx: index("idx_warehouses_pharmacy").on(table.pharmacyId),
 }));
 
 export const userWarehouses = pgTable("user_warehouses", {
@@ -537,6 +549,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   invoiceNumber: integer("invoice_number").notNull().unique(),
   invoiceDate: date("invoice_date").notNull(),
   warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id),
+  pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
   customerType: customerTypeEnum("customer_type").notNull().default("cash"),
   customerName: text("customer_name"),
   contractCompany: text("contract_company"),
@@ -558,6 +571,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   dateIdx: index("idx_sales_inv_date").on(table.invoiceDate),
   statusIdx: index("idx_sales_inv_status").on(table.status),
   isReturnIdx: index("idx_sales_inv_is_return").on(table.isReturn),
+  pharmacyIdx: index("idx_sales_inv_pharmacy").on(table.pharmacyId),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {
@@ -728,6 +742,7 @@ export const cashierShifts = pgTable("cashier_shifts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   cashierId: varchar("cashier_id").notNull(),
   cashierName: text("cashier_name").notNull(),
+  pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
   status: cashierShiftStatusEnum("status").notNull().default("open"),
   openingCash: decimal("opening_cash", { precision: 18, scale: 2 }).notNull().default("0"),
   closingCash: decimal("closing_cash", { precision: 18, scale: 2 }).notNull().default("0"),
@@ -739,6 +754,7 @@ export const cashierShifts = pgTable("cashier_shifts", {
   cashierIdx: index("idx_cashier_shifts_cashier").on(table.cashierId),
   statusIdx: index("idx_cashier_shifts_status").on(table.status),
   openedAtIdx: index("idx_cashier_shifts_opened").on(table.openedAt),
+  pharmacyIdx: index("idx_cashier_shifts_pharmacy").on(table.pharmacyId),
 }));
 
 // إيصالات تحصيل الكاشير
@@ -836,6 +852,7 @@ export const insertPatientInvoiceHeaderSchema = createInsertSchema(patientInvoic
 export const insertPatientInvoiceLineSchema = createInsertSchema(patientInvoiceLines).omit({ id: true, createdAt: true });
 export const insertPatientInvoicePaymentSchema = createInsertSchema(patientInvoicePayments).omit({ id: true, createdAt: true });
 
+export const insertPharmacySchema = createInsertSchema(pharmacies).omit({ id: true, createdAt: true });
 export const insertCashierShiftSchema = createInsertSchema(cashierShifts).omit({ id: true, openedAt: true, closedAt: true });
 export const insertCashierReceiptSchema = createInsertSchema(cashierReceipts).omit({ id: true, collectedAt: true });
 export const insertCashierRefundReceiptSchema = createInsertSchema(cashierRefundReceipts).omit({ id: true, refundedAt: true });
@@ -1158,6 +1175,9 @@ export const paymentMethodLabels: Record<string, string> = {
   bank_transfer: "تحويل بنكي",
   insurance: "تأمين",
 };
+
+export type InsertPharmacy = z.infer<typeof insertPharmacySchema>;
+export type Pharmacy = typeof pharmacies.$inferSelect;
 
 export type InsertCashierShift = z.infer<typeof insertCashierShiftSchema>;
 export type CashierShift = typeof cashierShifts.$inferSelect;

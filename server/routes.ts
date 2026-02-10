@@ -1,7 +1,22 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
+
+const sseClients = new Map<string, Set<Response>>();
+
+export function broadcastToPharmacy(pharmacyId: string, event: string, data: any) {
+  const clients = sseClients.get(pharmacyId);
+  if (!clients) return;
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  clients.forEach((res) => {
+    try {
+      res.write(payload);
+    } catch {
+      clients.delete(res);
+    }
+  });
+}
 import { 
   insertAccountSchema, 
   insertCostCenterSchema, 
@@ -145,6 +160,19 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  (async () => {
+    try {
+      const existing = await storage.getPharmacies();
+      if (existing.length === 0) {
+        await storage.createPharmacy({ code: "PH01", nameAr: "الصيدلية الرئيسية", isActive: true });
+        await storage.createPharmacy({ code: "PH02", nameAr: "صيدلية الطوارئ", isActive: true });
+        console.log("Seeded default pharmacies");
+      }
+    } catch (e) {
+      console.error("Failed to seed pharmacies:", e);
+    }
+  })();
+
   // Dashboard
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
@@ -2586,6 +2614,15 @@ export async function registerRoutes(
   app.post("/api/sales-invoices/:id/finalize", async (req, res) => {
     try {
       const invoice = await storage.finalizeSalesInvoice(req.params.id);
+      if (invoice.pharmacyId) {
+        broadcastToPharmacy(invoice.pharmacyId, "invoice_finalized", {
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          netTotal: invoice.netTotal,
+          isReturn: invoice.isReturn,
+          pharmacyId: invoice.pharmacyId,
+        });
+      }
       res.json(invoice);
     } catch (error: any) {
       if (error.message.includes("ليست مسودة") || error.message.includes("نهائية")) {
@@ -2860,13 +2897,77 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Pharmacy API ====================
+
+  app.get("/api/pharmacies", async (_req, res) => {
+    try {
+      const list = await storage.getPharmacies();
+      res.json(list);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/pharmacies/:id", async (req, res) => {
+    try {
+      const pharmacy = await storage.getPharmacy(req.params.id);
+      if (!pharmacy) return res.status(404).json({ message: "الصيدلية غير موجودة" });
+      res.json(pharmacy);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pharmacies", async (req, res) => {
+    try {
+      const pharmacy = await storage.createPharmacy(req.body);
+      res.json(pharmacy);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== SSE for Real-time Invoice Updates ====================
+
+  app.get("/api/cashier/sse/:pharmacyId", (req, res) => {
+    const { pharmacyId } = req.params;
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    res.write(`event: connected\ndata: ${JSON.stringify({ pharmacyId })}\n\n`);
+
+    if (!sseClients.has(pharmacyId)) {
+      sseClients.set(pharmacyId, new Set());
+    }
+    sseClients.get(pharmacyId)!.add(res);
+
+    const keepAlive = setInterval(() => {
+      try { res.write(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
+    }, 15000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      const clients = sseClients.get(pharmacyId);
+      if (clients) {
+        clients.delete(res);
+        if (clients.size === 0) sseClients.delete(pharmacyId);
+      }
+    });
+  });
+
   // ==================== Cashier API ====================
 
   app.post("/api/cashier/shift/open", async (req, res) => {
     try {
-      const { cashierId, cashierName, openingCash } = req.body;
+      const { cashierId, cashierName, openingCash, pharmacyId } = req.body;
       if (!cashierId || !cashierName) return res.status(400).json({ message: "بيانات الكاشير مطلوبة" });
-      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0");
+      if (!pharmacyId) return res.status(400).json({ message: "يجب اختيار الصيدلية" });
+      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", pharmacyId);
       res.json(shift);
     } catch (error: any) {
       if (error.message?.includes("مفتوحة")) return res.status(409).json({ message: error.message });
@@ -2876,7 +2977,9 @@ export async function registerRoutes(
 
   app.get("/api/cashier/shift/active/:cashierId", async (req, res) => {
     try {
-      const shift = await storage.getActiveShift(req.params.cashierId);
+      const pharmacyId = req.query.pharmacyId as string;
+      if (!pharmacyId) return res.status(400).json({ message: "يجب تحديد الصيدلية" });
+      const shift = await storage.getActiveShift(req.params.cashierId, pharmacyId);
       res.json(shift);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -2906,8 +3009,10 @@ export async function registerRoutes(
 
   app.get("/api/cashier/pending-sales", async (req, res) => {
     try {
+      const pharmacyId = req.query.pharmacyId as string;
+      if (!pharmacyId) return res.status(400).json({ message: "يجب تحديد الصيدلية" });
       const search = req.query.search as string | undefined;
-      const invoices = await storage.getPendingSalesInvoices(search);
+      const invoices = await storage.getPendingSalesInvoices(pharmacyId, search);
       res.json(invoices);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -2916,8 +3021,10 @@ export async function registerRoutes(
 
   app.get("/api/cashier/pending-returns", async (req, res) => {
     try {
+      const pharmacyId = req.query.pharmacyId as string;
+      if (!pharmacyId) return res.status(400).json({ message: "يجب تحديد الصيدلية" });
       const search = req.query.search as string | undefined;
-      const invoices = await storage.getPendingReturnInvoices(search);
+      const invoices = await storage.getPendingReturnInvoices(pharmacyId, search);
       res.json(invoices);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

@@ -21,6 +21,8 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
     - **Patient Invoicing**: Patient information, services, drugs, consumables, equipment, payments, and consolidated invoices with status tracking and payment methods.
 - **Master Data & Pricing**: Item Master Data with Unit of Measure (UOM) management, department-based pricing, lot-level sale price tracking, expiry management (MM/YYYY), and barcode management.
 - **Services & Price Lists**: CRUD for services, price lists with inline editing, bulk price adjustment, and integration of service consumables into sales invoices.
+- **Multi-Pharmacy Support**: Multiple pharmacies (e.g., Main Pharmacy, Emergency Pharmacy), each with dedicated cashiers. Pharmacy-level isolation ensures invoices don't mix between pharmacies. Warehouses map to pharmacies, and invoices auto-inherit pharmacyId from their warehouse.
+- **Real-Time SSE**: Server-Sent Events at `/api/cashier/sse/:pharmacyId` broadcast `invoice_finalized` events when pharmacists finalize invoices, enabling instant invoice visibility for cashiers (supports 20+ concurrent users with keep-alive and cleanup).
 - **Audit & Validation**: Full audit trail, advanced search, strict line-level validation (frontend and backend), and HTTP 409 conflict responses for immutability violations.
 - **User Experience**: Collapsible sidebar, professional A4 print styles, focus management for barcode scanning and inline editing, and visual auto-save indicators.
 

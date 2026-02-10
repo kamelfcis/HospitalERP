@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,13 +9,21 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, DollarSign, LogIn, LogOut, Search, Receipt, Undo2, Wallet } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, DollarSign, LogIn, LogOut, Search, Receipt, Undo2, Wallet, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatDateShort } from "@/lib/formatters";
 import { salesInvoiceStatusLabels } from "@shared/schema";
 
 const CASHIER_ID = "cashier-1";
+
+interface Pharmacy {
+  id: string;
+  code: string;
+  nameAr: string;
+  isActive: boolean;
+}
 
 interface PendingInvoice {
   id: string;
@@ -60,6 +68,7 @@ interface CashierShift {
   id: string;
   cashierId: string;
   cashierName: string;
+  pharmacyId: string;
   status: string;
   openingCash: string;
   closingCash: string;
@@ -81,6 +90,7 @@ export default function CashierCollection() {
   const { toast } = useToast();
   const [cashierName, setCashierName] = useState("");
   const [openingCash, setOpeningCash] = useState("0");
+  const [selectedPharmacyId, setSelectedPharmacyId] = useState("");
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closingCash, setClosingCash] = useState("0");
 
@@ -91,18 +101,28 @@ export default function CashierCollection() {
   const [returnsSelected, setReturnsSelected] = useState<Set<string>>(new Set());
 
   const [activeTab, setActiveTab] = useState("sales");
+  const sseRef = useRef<EventSource | null>(null);
+
+  const { data: pharmaciesList } = useQuery<Pharmacy[]>({
+    queryKey: ["/api/pharmacies"],
+  });
+
+  const activePharmacyId = selectedPharmacyId || (pharmaciesList && pharmaciesList.length > 0 ? pharmaciesList[0].id : "");
 
   const { data: activeShift, isLoading: shiftLoading } = useQuery<CashierShift | null>({
-    queryKey: ["/api/cashier/shift/active", CASHIER_ID],
+    queryKey: ["/api/cashier/shift/active", CASHIER_ID, activePharmacyId],
     queryFn: async () => {
-      const res = await fetch(`/api/cashier/shift/active/${CASHIER_ID}`, { credentials: "include" });
+      if (!activePharmacyId) return null;
+      const res = await fetch(`/api/cashier/shift/active/${CASHIER_ID}?pharmacyId=${activePharmacyId}`, { credentials: "include" });
       if (!res.ok) throw new Error("فشل جلب بيانات الوردية");
       return res.json();
     },
+    enabled: !!activePharmacyId,
   });
 
   const shiftId = activeShift?.id;
   const hasActiveShift = !!activeShift && activeShift.status === "open";
+  const shiftPharmacyId = activeShift?.pharmacyId || activePharmacyId;
 
   const { data: shiftTotals } = useQuery<ShiftTotals>({
     queryKey: ["/api/cashier/shift", shiftId, "totals"],
@@ -115,30 +135,61 @@ export default function CashierCollection() {
   });
 
   const { data: pendingSales, isLoading: salesLoading } = useQuery<PendingInvoice[]>({
-    queryKey: ["/api/cashier/pending-sales", salesSearch],
+    queryKey: ["/api/cashier/pending-sales", shiftPharmacyId, salesSearch],
     queryFn: async () => {
-      const url = salesSearch
-        ? `/api/cashier/pending-sales?search=${encodeURIComponent(salesSearch)}`
-        : "/api/cashier/pending-sales";
-      const res = await fetch(url, { credentials: "include" });
+      const params = new URLSearchParams({ pharmacyId: shiftPharmacyId });
+      if (salesSearch) params.set("search", salesSearch);
+      const res = await fetch(`/api/cashier/pending-sales?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("فشل جلب الفواتير");
       return res.json();
     },
-    enabled: hasActiveShift,
+    enabled: hasActiveShift && !!shiftPharmacyId,
   });
 
   const { data: pendingReturns, isLoading: returnsLoading } = useQuery<PendingInvoice[]>({
-    queryKey: ["/api/cashier/pending-returns", returnsSearch],
+    queryKey: ["/api/cashier/pending-returns", shiftPharmacyId, returnsSearch],
     queryFn: async () => {
-      const url = returnsSearch
-        ? `/api/cashier/pending-returns?search=${encodeURIComponent(returnsSearch)}`
-        : "/api/cashier/pending-returns";
-      const res = await fetch(url, { credentials: "include" });
+      const params = new URLSearchParams({ pharmacyId: shiftPharmacyId });
+      if (returnsSearch) params.set("search", returnsSearch);
+      const res = await fetch(`/api/cashier/pending-returns?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("فشل جلب المرتجعات");
       return res.json();
     },
-    enabled: hasActiveShift,
+    enabled: hasActiveShift && !!shiftPharmacyId,
   });
+
+  useEffect(() => {
+    if (!hasActiveShift || !shiftPharmacyId) {
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+      return;
+    }
+
+    const es = new EventSource(`/api/cashier/sse/${shiftPharmacyId}`);
+    sseRef.current = es;
+
+    es.addEventListener("invoice_finalized", () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-sales", shiftPharmacyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-returns", shiftPharmacyId] });
+    });
+
+    es.onerror = () => {
+      es.close();
+      setTimeout(() => {
+        if (hasActiveShift && shiftPharmacyId) {
+          queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-sales", shiftPharmacyId] });
+          queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-returns", shiftPharmacyId] });
+        }
+      }, 3000);
+    };
+
+    return () => {
+      es.close();
+      sseRef.current = null;
+    };
+  }, [hasActiveShift, shiftPharmacyId]);
 
   const singleSalesId = salesSelected.size === 1 ? Array.from(salesSelected)[0] : null;
   const singleReturnsId = returnsSelected.size === 1 ? Array.from(returnsSelected)[0] : null;
@@ -169,12 +220,13 @@ export default function CashierCollection() {
         cashierId: CASHIER_ID,
         cashierName: cashierName.trim(),
         openingCash,
+        pharmacyId: activePharmacyId,
       });
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "تم فتح الوردية بنجاح" });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift/active", CASHIER_ID] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift/active", CASHIER_ID, activePharmacyId] });
     },
     onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
@@ -193,7 +245,7 @@ export default function CashierCollection() {
       setCloseDialogOpen(false);
       setSalesSelected(new Set());
       setReturnsSelected(new Set());
-      queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift/active", CASHIER_ID] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift/active", CASHIER_ID, activePharmacyId] });
     },
     onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
@@ -215,7 +267,7 @@ export default function CashierCollection() {
         description: `عدد الفواتير: ${data.count} - الإجمالي: ${formatNumber(data.totalCollected)}`,
       });
       setSalesSelected(new Set());
-      queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-sales"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-sales", shiftPharmacyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift", shiftId, "totals"] });
     },
     onError: (error: Error) => {
@@ -238,7 +290,7 @@ export default function CashierCollection() {
         description: `عدد الفواتير: ${data.count} - الإجمالي: ${formatNumber(data.totalRefunded)}`,
       });
       setReturnsSelected(new Set());
-      queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-returns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-returns", shiftPharmacyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift", shiftId, "totals"] });
     },
     onError: (error: Error) => {
@@ -487,6 +539,12 @@ export default function CashierCollection() {
                 <Badge className="text-[10px] px-1.5 py-0 bg-green-600 text-white no-default-hover-elevate no-default-active-elevate">
                   وردية مفتوحة
                 </Badge>
+                {pharmaciesList && pharmaciesList.length > 0 && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 no-default-hover-elevate no-default-active-elevate" data-testid="text-shift-pharmacy">
+                    <Building2 className="h-2.5 w-2.5 ml-1" />
+                    {pharmaciesList.find(p => p.id === shiftPharmacyId)?.nameAr || shiftPharmacyId}
+                  </Badge>
+                )}
                 <span className="text-xs" data-testid="text-shift-cashier-name">
                   الكاشير: {activeShift.cashierName}
                 </span>
@@ -515,11 +573,29 @@ export default function CashierCollection() {
                 </div>
                 <h2 className="text-lg font-semibold">لا توجد وردية مفتوحة</h2>
                 <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                  لبدء تحصيل الفواتير، قم بفتح وردية جديدة. أدخل اسمك والمبلغ النقدي الموجود في الخزنة حالياً.
+                  لبدء تحصيل الفواتير، قم بفتح وردية جديدة. اختر الصيدلية وأدخل اسمك والمبلغ النقدي الموجود في الخزنة حالياً.
                 </p>
               </div>
 
               <div className="max-w-sm mx-auto space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium block text-right">الصيدلية</label>
+                  <Select value={activePharmacyId} onValueChange={setSelectedPharmacyId} data-testid="select-pharmacy">
+                    <SelectTrigger className="text-right" data-testid="select-pharmacy-trigger">
+                      <SelectValue placeholder="اختر الصيدلية..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(pharmaciesList || []).filter(p => p.isActive).map(p => (
+                        <SelectItem key={p.id} value={p.id} data-testid={`select-pharmacy-option-${p.id}`}>
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-3 w-3" />
+                            <span>{p.nameAr}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium block text-right">اسم الكاشير</label>
                   <Input
@@ -544,7 +620,7 @@ export default function CashierCollection() {
                 </div>
                 <Button
                   onClick={() => openShiftMutation.mutate()}
-                  disabled={!cashierName.trim() || openShiftMutation.isPending}
+                  disabled={!cashierName.trim() || !activePharmacyId || openShiftMutation.isPending}
                   className="w-full"
                   data-testid="button-open-shift"
                 >

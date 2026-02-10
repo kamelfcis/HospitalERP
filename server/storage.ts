@@ -118,9 +118,12 @@ import {
   cashierReceipts,
   cashierRefundReceipts,
   cashierAuditLog,
+  pharmacies,
   type CashierShift,
   type CashierReceipt,
   type CashierRefundReceipt,
+  type Pharmacy,
+  type InsertPharmacy,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -330,18 +333,25 @@ export interface IStorage {
   finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader>;
   deletePatientInvoice(id: string): Promise<boolean>;
 
+  // Pharmacies
+  getPharmacies(): Promise<Pharmacy[]>;
+  getPharmacy(id: string): Promise<Pharmacy | undefined>;
+  createPharmacy(data: InsertPharmacy): Promise<Pharmacy>;
+  updatePharmacy(id: string, data: Partial<InsertPharmacy>): Promise<Pharmacy>;
+
   // Cashier
-  openCashierShift(cashierId: string, cashierName: string, openingCash: string): Promise<any>;
-  getActiveShift(cashierId: string): Promise<any>;
+  openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string): Promise<any>;
+  getActiveShift(cashierId: string, pharmacyId: string): Promise<any>;
   closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
-  getPendingSalesInvoices(search?: string): Promise<any[]>;
-  getPendingReturnInvoices(search?: string): Promise<any[]>;
+  getPendingSalesInvoices(pharmacyId: string, search?: string): Promise<any[]>;
+  getPendingReturnInvoices(pharmacyId: string, search?: string): Promise<any[]>;
   getSalesInvoiceDetails(invoiceId: string): Promise<any>;
   collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string): Promise<any>;
   refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string): Promise<any>;
   getShiftTotals(shiftId: string): Promise<any>;
   getNextCashierReceiptNumber(): Promise<number>;
   getNextCashierRefundReceiptNumber(): Promise<number>;
+  getPendingInvoiceCountForPharmacy(pharmacyId: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3755,10 +3765,17 @@ export class DatabaseStorage implements IStorage {
       }
       const netTotal = subtotal - actualDiscount;
 
+      let pharmacyId = header.pharmacyId || null;
+      if (!pharmacyId && header.warehouseId) {
+        const [wh] = await tx.select({ pharmacyId: warehouses.pharmacyId }).from(warehouses).where(eq(warehouses.id, header.warehouseId));
+        if (wh?.pharmacyId) pharmacyId = wh.pharmacyId;
+      }
+
       const [invoice] = await tx.insert(salesInvoiceHeaders).values({
         invoiceNumber: nextNum,
         invoiceDate: header.invoiceDate,
         warehouseId: header.warehouseId,
+        pharmacyId,
         customerType: header.customerType || "cash",
         customerName: header.customerName || null,
         contractCompany: header.contractCompany || null,
@@ -3872,9 +3889,17 @@ export class DatabaseStorage implements IStorage {
       }
       const netTotal = subtotal - actualDiscount;
 
+      let pharmacyId = header.pharmacyId || invoice.pharmacyId || null;
+      const effectiveWarehouseId = header.warehouseId || invoice.warehouseId;
+      if (header.warehouseId && header.warehouseId !== invoice.warehouseId) {
+        const [wh] = await tx.select({ pharmacyId: warehouses.pharmacyId }).from(warehouses).where(eq(warehouses.id, header.warehouseId));
+        if (wh?.pharmacyId) pharmacyId = wh.pharmacyId;
+      }
+
       await tx.update(salesInvoiceHeaders).set({
         invoiceDate: header.invoiceDate || invoice.invoiceDate,
-        warehouseId: header.warehouseId || invoice.warehouseId,
+        warehouseId: effectiveWarehouseId,
+        pharmacyId,
         customerType: header.customerType || invoice.customerType,
         customerName: header.customerName !== undefined ? header.customerName : invoice.customerName,
         contractCompany: header.contractCompany !== undefined ? header.contractCompany : invoice.contractCompany,
@@ -4133,14 +4158,34 @@ export class DatabaseStorage implements IStorage {
 
   // ==================== Cashier ====================
 
-  async openCashierShift(cashierId: string, cashierName: string, openingCash: string): Promise<CashierShift> {
+  async getPharmacies(): Promise<Pharmacy[]> {
+    return db.select().from(pharmacies).orderBy(asc(pharmacies.code));
+  }
+
+  async getPharmacy(id: string): Promise<Pharmacy | undefined> {
+    const [pharmacy] = await db.select().from(pharmacies).where(eq(pharmacies.id, id));
+    return pharmacy;
+  }
+
+  async createPharmacy(data: InsertPharmacy): Promise<Pharmacy> {
+    const [pharmacy] = await db.insert(pharmacies).values(data).returning();
+    return pharmacy;
+  }
+
+  async updatePharmacy(id: string, data: Partial<InsertPharmacy>): Promise<Pharmacy> {
+    const [pharmacy] = await db.update(pharmacies).set(data).where(eq(pharmacies.id, id)).returning();
+    return pharmacy;
+  }
+
+  async openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string): Promise<CashierShift> {
     const [existingOpen] = await db.select().from(cashierShifts)
-      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.status, "open")));
-    if (existingOpen) throw new Error("يوجد وردية مفتوحة بالفعل لهذا الكاشير");
+      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.pharmacyId, pharmacyId), eq(cashierShifts.status, "open")));
+    if (existingOpen) throw new Error("يوجد وردية مفتوحة بالفعل لهذا الكاشير في هذه الصيدلية");
 
     const [shift] = await db.insert(cashierShifts).values({
       cashierId,
       cashierName,
+      pharmacyId,
       openingCash,
       status: "open",
     }).returning();
@@ -4150,23 +4195,41 @@ export class DatabaseStorage implements IStorage {
       action: "open_shift",
       entityType: "shift",
       entityId: shift.id,
-      details: `فتح وردية - رصيد افتتاحي: ${openingCash}`,
+      details: `فتح وردية - رصيد افتتاحي: ${openingCash} - صيدلية: ${pharmacyId}`,
       performedBy: cashierName,
     });
 
     return shift;
   }
 
-  async getActiveShift(cashierId: string): Promise<CashierShift | null> {
+  async getActiveShift(cashierId: string, pharmacyId: string): Promise<CashierShift | null> {
     const [shift] = await db.select().from(cashierShifts)
-      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.status, "open")));
+      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.pharmacyId, pharmacyId), eq(cashierShifts.status, "open")));
     return shift || null;
+  }
+
+  async getPendingInvoiceCountForPharmacy(pharmacyId: string): Promise<number> {
+    const [result] = await db.select({
+      count: sql<number>`COUNT(*)`,
+    }).from(salesInvoiceHeaders)
+      .where(and(
+        eq(salesInvoiceHeaders.pharmacyId, pharmacyId),
+        eq(salesInvoiceHeaders.status, "finalized"),
+      ));
+    return result?.count || 0;
   }
 
   async closeCashierShift(shiftId: string, closingCash: string): Promise<CashierShift> {
     const [shift] = await db.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
     if (!shift) throw new Error("الوردية غير موجودة");
     if (shift.status !== "open") throw new Error("الوردية مغلقة بالفعل");
+
+    if (shift.pharmacyId) {
+      const pendingCount = await this.getPendingInvoiceCountForPharmacy(shift.pharmacyId);
+      if (pendingCount > 0) {
+        throw new Error(`لا يمكن إغلاق الوردية - يوجد ${pendingCount} فاتورة معلقة لم يتم تحصيلها`);
+      }
+    }
 
     const totals = await this.getShiftTotals(shiftId);
     const expectedCash = (parseFloat(shift.openingCash) + parseFloat(totals.totalCollected) - parseFloat(totals.totalRefunded)).toFixed(2);
@@ -4192,10 +4255,11 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getPendingSalesInvoices(search?: string): Promise<any[]> {
+  async getPendingSalesInvoices(pharmacyId: string, search?: string): Promise<any[]> {
     const conditions = [
       eq(salesInvoiceHeaders.status, "finalized"),
       eq(salesInvoiceHeaders.isReturn, false),
+      eq(salesInvoiceHeaders.pharmacyId, pharmacyId),
     ];
 
     let query = db.select({
@@ -4231,10 +4295,11 @@ export class DatabaseStorage implements IStorage {
     return results;
   }
 
-  async getPendingReturnInvoices(search?: string): Promise<any[]> {
+  async getPendingReturnInvoices(pharmacyId: string, search?: string): Promise<any[]> {
     const conditions = [
       eq(salesInvoiceHeaders.status, "finalized"),
       eq(salesInvoiceHeaders.isReturn, true),
+      eq(salesInvoiceHeaders.pharmacyId, pharmacyId),
     ];
 
     let query = db.select({
