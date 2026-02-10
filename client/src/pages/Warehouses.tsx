@@ -21,9 +21,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Search, Edit2, Trash2, Loader2, Warehouse as WarehouseIcon } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Loader2, Warehouse as WarehouseIcon, Building2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Warehouse, Department } from "@shared/schema";
+
+interface Pharmacy {
+  id: string;
+  code: string;
+  nameAr: string;
+  isActive: boolean;
+}
 
 export default function Warehouses() {
   const { toast } = useToast();
@@ -35,11 +42,13 @@ export default function Warehouses() {
     warehouseCode: string;
     nameAr: string;
     departmentId: string | null;
+    pharmacyId: string | null;
     isActive: boolean;
   }>({
     warehouseCode: "",
     nameAr: "",
     departmentId: null,
+    pharmacyId: null,
     isActive: true,
   });
 
@@ -49,6 +58,10 @@ export default function Warehouses() {
 
   const { data: departments } = useQuery<Department[]>({
     queryKey: ["/api/departments"],
+  });
+
+  const { data: pharmacies } = useQuery<Pharmacy[]>({
+    queryKey: ["/api/pharmacies"],
   });
 
   const createMutation = useMutation({
@@ -99,6 +112,7 @@ export default function Warehouses() {
         warehouseCode: warehouse.warehouseCode,
         nameAr: warehouse.nameAr,
         departmentId: warehouse.departmentId,
+        pharmacyId: warehouse.pharmacyId || null,
         isActive: warehouse.isActive,
       });
     } else {
@@ -107,6 +121,7 @@ export default function Warehouses() {
         warehouseCode: "",
         nameAr: "",
         departmentId: null,
+        pharmacyId: null,
         isActive: true,
       });
     }
@@ -120,6 +135,7 @@ export default function Warehouses() {
       warehouseCode: "",
       nameAr: "",
       departmentId: null,
+      pharmacyId: null,
       isActive: true,
     });
   };
@@ -149,6 +165,12 @@ export default function Warehouses() {
     if (!departmentId || !departments) return "-";
     const dept = departments.find((d) => d.id === departmentId);
     return dept ? dept.nameAr : "-";
+  };
+
+  const getPharmacyName = (pharmacyId: string | null | undefined) => {
+    if (!pharmacyId || !pharmacies) return "-";
+    const ph = pharmacies.find((p) => p.id === pharmacyId);
+    return ph ? ph.nameAr : "-";
   };
 
   if (isLoading) {
@@ -200,6 +222,7 @@ export default function Warehouses() {
               <tr>
                 <th className="w-[100px] text-right">الكود</th>
                 <th className="text-right">الاسم</th>
+                <th className="text-right">الصيدلية</th>
                 <th className="text-right">القسم</th>
                 <th className="w-[70px] text-center">الحالة</th>
                 <th className="w-[80px] text-center">الإجراءات</th>
@@ -208,7 +231,7 @@ export default function Warehouses() {
             <tbody>
               {filteredWarehouses.length === 0 ? (
                 <tr className="peachtree-grid-row">
-                  <td colSpan={5} className="text-center py-6 text-muted-foreground text-xs">
+                  <td colSpan={6} className="text-center py-6 text-muted-foreground text-xs">
                     لا توجد مستودعات
                   </td>
                 </tr>
@@ -221,6 +244,14 @@ export default function Warehouses() {
                   >
                     <td className="font-mono text-xs font-medium" data-testid={`text-warehouse-code-${wh.id}`}>{wh.warehouseCode}</td>
                     <td className="text-xs font-medium" data-testid={`text-warehouse-name-${wh.id}`}>{wh.nameAr}</td>
+                    <td className="text-xs" data-testid={`text-warehouse-pharmacy-${wh.id}`}>
+                      {getPharmacyName(wh.pharmacyId) !== "-" ? (
+                        <span className="flex items-center gap-1">
+                          <Building2 className="h-3 w-3 text-muted-foreground" />
+                          {getPharmacyName(wh.pharmacyId)}
+                        </span>
+                      ) : "-"}
+                    </td>
                     <td className="text-xs" data-testid={`text-warehouse-department-${wh.id}`}>{getDepartmentName(wh.departmentId)}</td>
                     <td className="text-center">
                       <Badge
@@ -294,6 +325,30 @@ export default function Warehouses() {
                 className="peachtree-input w-full text-xs"
                 data-testid="input-warehouse-name"
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="pharmacyId" className="text-xs">الصيدلية التابع لها</Label>
+              <Select
+                value={formData.pharmacyId || "none"}
+                onValueChange={(value) => setFormData({ ...formData, pharmacyId: value === "none" ? null : value })}
+              >
+                <SelectTrigger id="pharmacyId" className="h-7 text-xs" data-testid="select-warehouse-pharmacy">
+                  <SelectValue placeholder="اختر الصيدلية" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" className="text-xs">بدون صيدلية</SelectItem>
+                  {pharmacies
+                    ?.filter((p) => p.isActive)
+                    .map((ph) => (
+                      <SelectItem key={ph.id} value={ph.id} className="text-xs">
+                        <span className="flex items-center gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {ph.nameAr}
+                        </span>
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label htmlFor="departmentId" className="text-xs">القسم</Label>

@@ -111,6 +111,7 @@ const warehouseUpdateSchema = z.object({
   warehouseCode: z.string().min(1).optional(),
   nameAr: z.string().min(1).optional(),
   departmentId: z.string().optional().nullable(),
+  pharmacyId: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -1634,11 +1635,12 @@ export async function registerRoutes(
   app.put("/api/warehouses/:id", async (req, res) => {
     try {
       const validated = warehouseUpdateSchema.parse(req.body);
-      const { warehouseCode, nameAr, departmentId, isActive } = validated;
+      const { warehouseCode, nameAr, departmentId, pharmacyId, isActive } = validated;
       const updateData: any = {};
       if (warehouseCode !== undefined) updateData.warehouseCode = warehouseCode;
       if (nameAr !== undefined) updateData.nameAr = nameAr;
       if (departmentId !== undefined) updateData.departmentId = departmentId;
+      if (pharmacyId !== undefined) updateData.pharmacyId = pharmacyId;
       if (isActive !== undefined) updateData.isActive = isActive;
       const wh = await storage.updateWarehouse(req.params.id, updateData);
       if (!wh) return res.status(404).json({ message: "المخزن غير موجود" });
