@@ -1055,21 +1055,28 @@ export async function registerRoutes(
 
   app.get("/api/items/search", async (req, res) => {
     try {
-      const { warehouseId, mode, q, page, pageSize, includeZeroStock, drugsOnly, excludeServices } = req.query;
-      if (!warehouseId || !q) {
-        return res.status(400).json({ message: "warehouseId و q مطلوبة" });
+      const { warehouseId, mode, q, limit, page, pageSize, includeZeroStock, drugsOnly, excludeServices } = req.query;
+      if (!q) {
+        return res.status(400).json({ message: "q مطلوب" });
       }
-      const result = await storage.searchItemsAdvanced({
-        mode: (mode as string || 'AR') as 'AR' | 'EN' | 'CODE' | 'BARCODE',
-        query: q as string,
-        warehouseId: warehouseId as string,
-        page: parseInt(page as string) || 1,
-        pageSize: parseInt(pageSize as string) || 50,
-        includeZeroStock: includeZeroStock === 'true',
-        drugsOnly: drugsOnly === 'true',
-        excludeServices: excludeServices === 'true',
-      });
-      res.json(result);
+      if (warehouseId) {
+        const result = await storage.searchItemsAdvanced({
+          mode: (mode as string || 'AR') as 'AR' | 'EN' | 'CODE' | 'BARCODE',
+          query: q as string,
+          warehouseId: warehouseId as string,
+          page: parseInt(page as string) || 1,
+          pageSize: parseInt(pageSize as string || limit as string) || 50,
+          includeZeroStock: includeZeroStock === 'true',
+          drugsOnly: drugsOnly === 'true',
+          excludeServices: excludeServices === 'true',
+        });
+        res.json(result);
+      } else {
+        const searchLimit = parseInt(limit as string || pageSize as string) || 15;
+        const searchQuery = (q as string).replace(/%/g, '%');
+        const items = await storage.searchItemsByPattern(searchQuery, searchLimit);
+        res.json(items);
+      }
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

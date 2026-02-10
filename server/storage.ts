@@ -282,6 +282,8 @@ export interface IStorage {
     excludeServices?: boolean;
   }): Promise<{items: any[]; total: number}>;
 
+  searchItemsByPattern(query: string, limit: number): Promise<any[]>;
+
   // Pilot Test Seed
   seedPilotTest(): Promise<{ warehouses: any[]; items: any[]; lots: any[] }>;
 
@@ -2153,6 +2155,46 @@ export class DatabaseStorage implements IStorage {
       .offset(offset);
 
     return { items: results, total };
+  }
+
+  async searchItemsByPattern(query: string, limit: number): Promise<any[]> {
+    const buildPattern = (q: string) => {
+      if (!q.includes('%')) return `%${q}%`;
+      let p = q;
+      if (!p.startsWith('%')) p = `%${p}`;
+      if (!p.endsWith('%')) p = `${p}%`;
+      return p;
+    };
+
+    const pattern = buildPattern(query);
+    const searchCondition = or(
+      ilike(items.nameAr, pattern),
+      ilike(sql`COALESCE(${items.nameEn}, '')`, pattern),
+      ilike(items.itemCode, pattern)
+    );
+
+    const results = await db.select({
+      id: items.id,
+      itemCode: items.itemCode,
+      nameAr: items.nameAr,
+      nameEn: items.nameEn,
+      hasExpiry: items.hasExpiry,
+      category: items.category,
+      majorUnitName: items.majorUnitName,
+      minorUnitName: items.minorUnitName,
+      majorToMinor: items.majorToMinor,
+      majorToMedium: items.majorToMedium,
+      mediumUnitName: items.mediumUnitName,
+      mediumToMinor: items.mediumToMinor,
+      salePriceCurrent: items.salePriceCurrent,
+      purchasePriceLast: items.purchasePriceLast,
+    })
+      .from(items)
+      .where(and(eq(items.isActive, true), searchCondition))
+      .orderBy(asc(items.itemCode))
+      .limit(limit);
+
+    return results;
   }
 
   async getTransfersFiltered(params: {

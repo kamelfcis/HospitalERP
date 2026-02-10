@@ -714,6 +714,7 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
   discountAmount: decimal("discount_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   totalPrice: decimal("total_price", { precision: 18, scale: 2 }).notNull().default("0"),
+  unitLevel: text("unit_level").notNull().default("minor"),
   lotId: varchar("lot_id"),
   expiryMonth: integer("expiry_month"),
   expiryYear: integer("expiry_year"),

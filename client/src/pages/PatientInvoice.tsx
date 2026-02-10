@@ -47,10 +47,59 @@ interface LineLocal {
   notes: string;
   sortOrder: number;
   serviceType: string;
+  unitLevel: "major" | "medium" | "minor";
+  item?: any;
   lotId: string | null;
   expiryMonth: number | null;
   expiryYear: number | null;
   priceSource: string;
+}
+
+function getEffectiveMediumToMinor(item: any): number {
+  if (!item) return 1;
+  const m2m = parseFloat(String(item.mediumToMinor));
+  if (m2m > 0) return m2m;
+  const maj2med = parseFloat(String(item.majorToMedium)) || 1;
+  const maj2min = parseFloat(String(item.majorToMinor)) || 1;
+  if (maj2med > 1) return maj2min / maj2med;
+  return 1;
+}
+
+function calculateQtyInMinor(qty: number, unitLevel: string, item: any): number {
+  if (!item) return qty;
+  if (unitLevel === "minor") return qty;
+  if (unitLevel === "medium") return qty * getEffectiveMediumToMinor(item);
+  return qty * (parseFloat(String(item.majorToMinor)) || 1);
+}
+
+function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: any): number {
+  if (!item || !baseSalePrice) return baseSalePrice || 0;
+  if (unitLevel === "major" || !unitLevel) return baseSalePrice;
+  const majorToMedium = parseFloat(String(item.majorToMedium)) || 1;
+  const majorToMinor = parseFloat(String(item.majorToMinor)) || 1;
+  if (unitLevel === "medium") return +(baseSalePrice / majorToMedium).toFixed(2);
+  if (unitLevel === "minor") return +(baseSalePrice / majorToMinor).toFixed(2);
+  return baseSalePrice;
+}
+
+function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: any): number {
+  let displayQty = allocMinor;
+  if (unitLevel === "major") {
+    displayQty = allocMinor / (parseFloat(item?.majorToMinor) || 1);
+  } else if (unitLevel === "medium") {
+    displayQty = allocMinor / getEffectiveMediumToMinor(item);
+  }
+  const rounded = Math.round(displayQty * 10000) / 10000;
+  const nearest = Math.round(rounded);
+  if (Math.abs(rounded - nearest) < 0.005) return nearest;
+  return rounded;
+}
+
+function getUnitName(item: any, unitLevel: string): string {
+  if (!item) return "";
+  if (unitLevel === "major") return item.majorUnitName || "وحدة كبرى";
+  if (unitLevel === "medium") return item.mediumUnitName || "وحدة متوسطة";
+  return item.minorUnitName || "وحدة صغرى";
 }
 
 interface PaymentLocal {
@@ -188,19 +237,23 @@ export default function PatientInvoice() {
   }, [debouncedServiceSearch]);
 
   useEffect(() => {
-    if (!debouncedItemSearch || debouncedItemSearch.length < 2) {
+    if (!debouncedItemSearch || debouncedItemSearch.length < 1) {
       setItemResults([]);
       return;
     }
     const controller = new AbortController();
     setSearchingItems(true);
-    fetch(`/api/items?search=${encodeURIComponent(debouncedItemSearch)}&limit=10&page=1`, {
+    const useAdvanced = debouncedItemSearch.includes("%");
+    const url = useAdvanced
+      ? `/api/items/search?q=${encodeURIComponent(debouncedItemSearch)}&limit=15`
+      : `/api/items?search=${encodeURIComponent(debouncedItemSearch)}&limit=15&page=1`;
+    fetch(url, {
       signal: controller.signal,
       credentials: "include",
     })
       .then((r) => r.json())
       .then((data) => {
-        setItemResults(data.items || []);
+        setItemResults(useAdvanced ? (data || []) : (data.items || []));
         setSearchingItems(false);
       })
       .catch(() => setSearchingItems(false));
@@ -270,6 +323,7 @@ export default function PatientInvoice() {
         discountPercent: String(l.discountPercent),
         discountAmount: String(l.discountAmount),
         totalPrice: String(l.totalPrice),
+        unitLevel: l.unitLevel || "minor",
         doctorName: l.doctorName || null,
         nurseName: l.nurseName || null,
         notes: l.notes || null,
@@ -400,6 +454,8 @@ export default function PatientInvoice() {
         notes: l.notes || "",
         sortOrder: l.sortOrder || 0,
         serviceType: l.service?.serviceType || "",
+        unitLevel: l.unitLevel || "minor",
+        item: l.itemData || null,
         lotId: l.line?.lotId || l.lotId || null,
         expiryMonth: l.line?.expiryMonth || l.expiryMonth || null,
         expiryYear: l.line?.expiryYear || l.expiryYear || null,
@@ -443,6 +499,7 @@ export default function PatientInvoice() {
       notes: "",
       sortOrder: lines.filter((l) => l.lineType === "service").length,
       serviceType: svc.serviceType || "SERVICE",
+      unitLevel: "minor" as const,
       lotId: null,
       expiryMonth: null,
       expiryYear: null,
@@ -453,8 +510,8 @@ export default function PatientInvoice() {
     setServiceResults([]);
   }, [lines]);
 
-  const addItemLine = useCallback(async (item: Item, lineType: "drug" | "consumable" | "equipment") => {
-    let resolvedPrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
+  const addItemLine = useCallback(async (item: any, lineType: "drug" | "consumable" | "equipment") => {
+    let baseSalePrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
     let priceSource = "item";
 
     if (departmentId || warehouseId) {
@@ -466,14 +523,16 @@ export default function PatientInvoice() {
         if (priceRes.ok) {
           const priceData = await priceRes.json();
           const resolved = parseFloat(priceData.price);
-          if (resolved > 0) resolvedPrice = resolved;
+          if (resolved > 0) baseSalePrice = resolved;
           if (priceData.source) priceSource = priceData.source;
         }
       } catch {}
     }
     const isDeptPrice = priceSource === "department";
 
-    if ((item as any).hasExpiry && !warehouseId) {
+    const defaultUnit: "major" | "medium" | "minor" = "minor";
+
+    if (item.hasExpiry && !warehouseId) {
       toast({
         title: "يجب اختيار المخزن",
         description: "اختر المخزن أولاً لتفعيل التوزيع التلقائي للصلاحية (FEFO)",
@@ -484,13 +543,13 @@ export default function PatientInvoice() {
       return;
     }
 
-    if ((item as any).hasExpiry && warehouseId) {
+    if (item.hasExpiry && warehouseId) {
       setFefoLoading(true);
       try {
         const existingLines = lines.filter(l => l.itemId === item.id);
-        const existingQtyMinor = existingLines.reduce((sum, l) => sum + l.quantity, 0);
-        const additionalQty = 1;
-        const totalRequiredMinor = existingQtyMinor + additionalQty;
+        const existingQtyMinor = existingLines.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity, l.unitLevel, l.item || item), 0);
+        const additionalMinor = calculateQtyInMinor(1, defaultUnit, item);
+        const totalRequiredMinor = existingQtyMinor + additionalMinor;
 
         const fefoParams = new URLSearchParams({
           itemId: item.id,
@@ -514,12 +573,14 @@ export default function PatientInvoice() {
 
         const newFefoLines: LineLocal[] = preview.allocations
           .filter((a: any) => parseFloat(a.allocatedQty) > 0)
-          .map((alloc: any, idx: number) => {
-            const allocQty = parseFloat(alloc.allocatedQty);
-            const linePrice = isDeptPrice
-              ? resolvedPrice
-              : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
-            const lineTotal = +(allocQty * linePrice).toFixed(2);
+          .map((alloc: any) => {
+            const allocMinor = parseFloat(alloc.allocatedQty);
+            const displayQty = convertMinorToDisplayQty(allocMinor, defaultUnit, item);
+            const lineBasePrice = isDeptPrice
+              ? baseSalePrice
+              : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : baseSalePrice);
+            const linePrice = computeUnitPriceFromBase(lineBasePrice, defaultUnit, item);
+            const lineTotal = +(displayQty * linePrice).toFixed(2);
 
             return {
               tempId: genId(),
@@ -527,7 +588,7 @@ export default function PatientInvoice() {
               serviceId: null,
               itemId: item.id,
               description: item.nameAr || item.itemCode,
-              quantity: allocQty,
+              quantity: displayQty,
               unitPrice: linePrice,
               discountPercent: 0,
               discountAmount: 0,
@@ -539,6 +600,8 @@ export default function PatientInvoice() {
               notes: "",
               sortOrder: 0,
               serviceType: "",
+              unitLevel: defaultUnit,
+              item,
               lotId: alloc.lotId || null,
               expiryMonth: alloc.expiryMonth || null,
               expiryYear: alloc.expiryYear || null,
@@ -566,6 +629,7 @@ export default function PatientInvoice() {
       return;
     }
 
+    const unitPrice = computeUnitPriceFromBase(baseSalePrice, defaultUnit, item);
     const newLine: LineLocal = {
       tempId: genId(),
       lineType,
@@ -573,10 +637,10 @@ export default function PatientInvoice() {
       itemId: item.id,
       description: item.nameAr || item.itemCode,
       quantity: 1,
-      unitPrice: resolvedPrice,
+      unitPrice,
       discountPercent: 0,
       discountAmount: 0,
-      totalPrice: resolvedPrice,
+      totalPrice: unitPrice,
       doctorName: "",
       nurseName: "",
       requiresDoctor: false,
@@ -584,6 +648,8 @@ export default function PatientInvoice() {
       notes: "",
       sortOrder: lines.filter((l) => l.lineType === lineType).length,
       serviceType: "",
+      unitLevel: defaultUnit,
+      item,
       lotId: null,
       expiryMonth: null,
       expiryYear: null,
@@ -655,6 +721,112 @@ export default function PatientInvoice() {
     }
   }, []);
 
+  const handleUnitLevelChange = useCallback(async (tempId: string, newLevel: "major" | "medium" | "minor") => {
+    const currentLines = linesRef.current;
+    const line = currentLines.find(l => l.tempId === tempId);
+    if (!line || !line.itemId || !line.item) return;
+
+    const oldLevel = line.unitLevel;
+    if (oldLevel === newLevel) return;
+
+    const qtyInMinor = calculateQtyInMinor(line.quantity, oldLevel, line.item);
+    const newDisplayQty = convertMinorToDisplayQty(qtyInMinor, newLevel, line.item);
+    const baseSalePrice = parseFloat(String(line.item.salePriceCurrent || line.item.purchasePriceLast || "0")) || 0;
+    let newUnitPrice = computeUnitPriceFromBase(baseSalePrice, newLevel, line.item);
+
+    if (line.priceSource === "department" && departmentId) {
+      try {
+        const params = new URLSearchParams({ itemId: line.itemId });
+        if (departmentId) params.set("departmentId", departmentId);
+        if (warehouseId) params.set("warehouseId", warehouseId);
+        const priceRes = await fetch(`/api/pricing?${params.toString()}`);
+        if (priceRes.ok) {
+          const priceData = await priceRes.json();
+          const resolved = parseFloat(priceData.price);
+          if (resolved > 0) newUnitPrice = computeUnitPriceFromBase(resolved, newLevel, line.item);
+        }
+      } catch {}
+    }
+
+    const isExpiry = !!(line.lotId || line.expiryMonth || line.expiryYear);
+    if (isExpiry && warehouseId) {
+      const allLinesForItem = currentLines.filter(l => l.itemId === line.itemId);
+      const totalMinor = allLinesForItem.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity, l.unitLevel, l.item || line.item), 0);
+
+      setFefoLoading(true);
+      try {
+        const fefoParams = new URLSearchParams({
+          itemId: line.itemId,
+          warehouseId,
+          requiredQtyInMinor: String(totalMinor),
+          asOfDate: invoiceDate,
+        });
+        const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+        if (!res.ok) throw new Error("فشل حساب التوزيع");
+        const preview = await res.json();
+
+        if (preview.fulfilled) {
+          const isDeptPrice = line.priceSource === "department";
+          const newFefoLines: LineLocal[] = preview.allocations
+            .filter((a: any) => parseFloat(a.allocatedQty) > 0)
+            .map((alloc: any) => {
+              const allocMinor = parseFloat(alloc.allocatedQty);
+              const displayQty = convertMinorToDisplayQty(allocMinor, newLevel, line.item);
+              const lotBase = isDeptPrice
+                ? newUnitPrice
+                : computeUnitPriceFromBase(
+                    parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : baseSalePrice,
+                    newLevel,
+                    line.item
+                  );
+              const lineTotal = +(displayQty * lotBase).toFixed(2);
+
+              return {
+                tempId: genId(),
+                lineType: line.lineType,
+                serviceId: null,
+                itemId: line.itemId,
+                description: line.description,
+                quantity: displayQty,
+                unitPrice: lotBase,
+                discountPercent: 0,
+                discountAmount: 0,
+                totalPrice: lineTotal,
+                doctorName: "",
+                nurseName: "",
+                requiresDoctor: false,
+                requiresNurse: false,
+                notes: "",
+                sortOrder: 0,
+                serviceType: "",
+                unitLevel: newLevel,
+                item: line.item,
+                lotId: alloc.lotId || null,
+                expiryMonth: alloc.expiryMonth || null,
+                expiryYear: alloc.expiryYear || null,
+                priceSource: line.priceSource,
+              } as LineLocal;
+            });
+
+          setLines(prev => {
+            const filtered = prev.filter(l => l.itemId !== line.itemId);
+            return [...filtered, ...newFefoLines];
+          });
+        }
+      } catch (err: any) {
+        toast({ title: "خطأ", description: err.message, variant: "destructive" });
+      } finally {
+        setFefoLoading(false);
+      }
+    } else {
+      setLines(prev => prev.map(l => {
+        if (l.tempId !== tempId) return l;
+        const total = +(newDisplayQty * newUnitPrice).toFixed(2);
+        return { ...l, unitLevel: newLevel, quantity: newDisplayQty, unitPrice: newUnitPrice, totalPrice: total, discountPercent: 0, discountAmount: 0 };
+      }));
+    }
+  }, [warehouseId, invoiceDate, departmentId, toast]);
+
   const handleQtyConfirm = useCallback(async (tempId: string) => {
     const currentLines = linesRef.current;
     const line = currentLines.find(l => l.tempId === tempId);
@@ -676,10 +848,11 @@ export default function PatientInvoice() {
     }
 
     const allLinesForItem = currentLines.filter(l => l.itemId === line.itemId);
-    const otherLinesQty = allLinesForItem
+    const otherLinesMinor = allLinesForItem
       .filter(l => l.tempId !== tempId)
-      .reduce((sum, l) => sum + l.quantity, 0);
-    const totalRequired = otherLinesQty + qtyEntered;
+      .reduce((sum, l) => sum + calculateQtyInMinor(l.quantity, l.unitLevel, l.item), 0);
+    const enteredMinor = calculateQtyInMinor(qtyEntered, line.unitLevel, line.item);
+    const totalRequired = otherLinesMinor + enteredMinor;
 
     if (totalRequired <= 0) return;
 
@@ -723,14 +896,19 @@ export default function PatientInvoice() {
         } catch {}
       }
 
+      const ul = line.unitLevel || "minor";
+      const itemRef = line.item;
+
       const newFefoLines: LineLocal[] = preview.allocations
         .filter((a: any) => parseFloat(a.allocatedQty) > 0)
         .map((alloc: any) => {
-          const allocQty = parseFloat(alloc.allocatedQty);
-          const linePrice = isDeptPrice
+          const allocMinor = parseFloat(alloc.allocatedQty);
+          const displayQty = convertMinorToDisplayQty(allocMinor, ul, itemRef);
+          const basePrice = isDeptPrice
             ? resolvedPrice
             : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
-          const lineTotal = +(allocQty * linePrice).toFixed(2);
+          const linePrice = computeUnitPriceFromBase(basePrice, ul, itemRef);
+          const lineTotal = +(displayQty * linePrice).toFixed(2);
 
           return {
             tempId: genId(),
@@ -738,7 +916,7 @@ export default function PatientInvoice() {
             serviceId: null,
             itemId: line.itemId,
             description: line.description,
-            quantity: allocQty,
+            quantity: displayQty,
             unitPrice: linePrice,
             discountPercent: 0,
             discountAmount: 0,
@@ -750,6 +928,8 @@ export default function PatientInvoice() {
             notes: "",
             sortOrder: 0,
             serviceType: "",
+            unitLevel: ul,
+            item: itemRef,
             lotId: alloc.lotId || null,
             expiryMonth: alloc.expiryMonth || null,
             expiryYear: alloc.expiryYear || null,
@@ -781,7 +961,7 @@ export default function PatientInvoice() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="بحث عن صنف..."
+                placeholder="بحث عن صنف... (استخدم % للبحث المتقدم)"
                 value={itemSearch}
                 onChange={(e) => setItemSearch(e.target.value)}
                 className="pr-8"
@@ -834,8 +1014,14 @@ export default function PatientInvoice() {
                 onClick={() => addItemLine(item, type as "drug" | "consumable" | "equipment")}
                 data-testid={`result-item-${type}-${item.id}`}
               >
-                <span className="text-sm">{item.nameAr || item.itemCode}</span>
-                <span className="text-xs text-muted-foreground">{formatNumber(item.salePriceCurrent || item.purchasePriceLast || 0)}</span>
+                <div className="flex flex-row-reverse items-center gap-2">
+                  <span className="text-sm">{item.nameAr || item.itemCode}</span>
+                  {item.itemCode && <span className="text-[10px] text-muted-foreground">({item.itemCode})</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  {item.minorUnitName && <span className="text-[10px] text-muted-foreground">{item.minorUnitName}</span>}
+                  <span className="text-xs text-muted-foreground">{formatNumber(item.salePriceCurrent || item.purchasePriceLast || 0)}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -849,6 +1035,7 @@ export default function PatientInvoice() {
                 <th>الوصف</th>
                 {type === "service" && <th className="text-center" style={{ width: 120 }}>الطبيب</th>}
                 {type === "service" && <th className="text-center" style={{ width: 120 }}>الممرض</th>}
+                {type !== "service" && <th className="text-center" style={{ width: 80 }}>الوحدة</th>}
                 <th className="text-center" style={{ width: 80 }}>الكمية</th>
                 <th className="text-center" style={{ width: 100 }}>سعر الوحدة</th>
                 <th className="text-center" style={{ width: 80 }}>خصم %</th>
@@ -962,6 +1149,28 @@ export default function PatientInvoice() {
                         )
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </td>
+                  )}
+                  {type !== "service" && (
+                    <td className="text-center">
+                      {isDraft && line.itemId && line.item ? (
+                        <select
+                          value={line.unitLevel}
+                          onChange={(e) => handleUnitLevelChange(line.tempId, e.target.value as "major" | "medium" | "minor")}
+                          className="h-7 text-xs text-center bg-transparent border rounded px-1 w-full"
+                          data-testid={`select-unit-${type}-${i}`}
+                        >
+                          <option value="minor">{line.item?.minorUnitName || "صغرى"}</option>
+                          {(parseFloat(String(line.item?.majorToMedium)) > 1 || parseFloat(String(line.item?.mediumToMinor)) > 1) && (
+                            <option value="medium">{line.item?.mediumUnitName || "متوسطة"}</option>
+                          )}
+                          {parseFloat(String(line.item?.majorToMinor)) > 1 && (
+                            <option value="major">{line.item?.majorUnitName || "كبرى"}</option>
+                          )}
+                        </select>
+                      ) : (
+                        <span className="text-xs">{line.item ? getUnitName(line.item, line.unitLevel) : "-"}</span>
                       )}
                     </td>
                   )}
