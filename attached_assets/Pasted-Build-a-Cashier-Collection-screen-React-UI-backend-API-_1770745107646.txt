@@ -1,0 +1,120 @@
+Build a Cashier Collection screen (React UI + backend API + SQL) for my hospital/pharmacy ERP with STRICT anti-duplication and no-stuck-invoices rules.
+
+GENERAL UI LAYOUT
+1) The page name: "Cashier Collection"
+2) The screen is split into TWO MAIN HALVES (Top/Bottom OR Left/Right – choose the best for speed):
+   - Half A: a table/list of pending invoices (saved temporarily by pharmacist).
+   - Half B: invoice details panel for the selected invoice(s).
+
+3) Add TWO TABS at the top:
+   - Tab 1: "Collect Sales Invoices"
+   - Tab 2: "Collect Return Refunds" (returns)
+
+TAB 1: COLLECT SALES INVOICES (Pending sales)
+A) Pending invoices list (Half A)
+Show rows (one line per invoice), sortable and searchable, with columns:
+- InvoiceNo
+- GrossTotal (before discount)
+- NetTotal (after discount)
+- CreatedByUser (pharmacist username)
+- CreatedAt
+- Status (Pending / Collecting / Collected)
+
+If there are 20 invoices, show 20 rows.
+
+B) Details panel (Half B)
+When cashier selects ONE invoice:
+- Show full items lines (ItemName, Unit, Qty, Price, Discount, LineTotal)
+- Show invoice totals summary at the bottom (Gross, Discount, Net)
+
+Multi-select requirement:
+- Allow cashier to select multiple invoices (checkbox per row).
+- In details panel show combined totals for selected invoices:
+  - SelectedGrossTotal
+  - SelectedNetTotal
+
+C) Collect + Print flow (STRICT)
+- Cashier action is ONLY "Collect & Finalize" (NO cancel, NO delete for cashier).
+- When cashier presses a button OR keyboard shortcut (e.g. F9 or Enter with confirmation),
+  do the following as ONE ATOMIC TRANSACTION:
+  1) Mark invoice as Collected (finalize it)
+  2) Create a cashier receipt record
+  3) Increase cashier cashbox balance (or cashier custody balance)
+  4) Print the receipt automatically DIRECTLY from cashier screen
+  5) Immediately remove the invoice from the pending list UI
+
+D) No-duplication / No-double-save rules (very important)
+- Prevent cashier from collecting the same invoice twice بأي شكل:
+  - Disable the button while processing (loading state)
+  - Use server-side idempotency: if invoice already collected => return "Already Collected" and do nothing
+  - Use DB constraints/unique keys to prevent duplicate receipt for same invoice
+  - Use row locking / transaction isolation to prevent two sessions collecting same invoice simultaneously
+- If network fails after printing or during save:
+  - The system must still guarantee no double collection.
+  - On retry, it should detect existing successful collection and just show success + reprint option (optional).
+
+E) "No stuck invoices" rule
+- Do not allow invoices to remain stuck in "Collecting" state.
+- If a process crashes, automatically revert "Collecting" to "Pending" after a safe timeout (e.g. 2 minutes),
+  OR finalize properly if the transaction completed.
+- Create an audit log for every state change (Pending -> Collecting -> Collected) with user, timestamp, device/session.
+
+TAB 2: COLLECT RETURN REFUNDS (Returns)
+Same exact UI/logic, but for return invoices:
+- List pending return invoices created by pharmacist.
+- Cashier action: "Refund & Finalize" (still no cancel/delete).
+- Atomic transaction:
+  - Finalize return
+  - Create refund receipt
+  - Decrease cashier cashbox balance
+  - Print refund receipt
+  - Remove from pending list
+
+SIDE MINI WIDGET (always visible)
+Add a small fixed widget (sticky panel) on the side of the screen showing real-time totals for the CURRENT SHIFT (or current day if shift not implemented yet):
+- Cash Sales Total (total collected cash sales)
+- Credit/Ajel Sales Total (if applicable)
+- Cash Refunds Total (total refunded cash returns)
+- Cash Expenses Total (paid out from cashier custody, if you have expenses)
+- Net Cashbox Balance = Cash Sales - Cash Refunds - Cash Expenses
+This widget must update instantly after each collection/refund.
+
+SHIFT HANDOVER / CASHIER CUSTODY CONTROL (strict)
+- Each cashier has their own login and their own Cashbox/Custody.
+- Add Start Shift / End Shift:
+  - Start Shift: open a new shift record with start time, opening float (optional)
+  - End Shift: system MUST block shift closing if there is ANY pending/collecting invoice in that cashier scope.
+  - End Shift prints a Shift Summary (totals + expected cashbox balance).
+- Handover logic:
+  - Cashier submits end-shift amount.
+  - Record actual counted cash and difference (over/short).
+  - Transfer to "Cashier Custody" or "Main Safe" as per my workflow (Cashier Custody then next morning to Main Safe).
+
+PERMISSIONS
+- Cashier cannot cancel/delete invoices.
+- Only Admin/Supervisor can void, with strict reason + approval + audit (separate screen, not cashier screen).
+
+TECHNICAL REQUIREMENTS
+- Backend: create endpoints for:
+  - GET pending sales invoices
+  - GET pending return invoices
+  - GET invoice details
+  - POST collect sales invoice(s) (supports multi-select)
+  - POST refund return invoice(s)
+  - Shift start/end endpoints
+  - GET widget totals (real-time)
+- Database:
+  - Tables for invoices, invoice_lines, receipts, shifts, cashier_cashbox, audit_log
+  - Add unique constraint: one receipt per invoice per type (sale/return)
+  - Use transaction + locking to enforce idempotency and prevent duplicates.
+
+UX SPEED
+- Keyboard first:
+  - Up/Down to move rows
+  - Enter to open details
+  - F9 (or Ctrl+Enter) to Collect/Refund
+- Fast loading and no lag; optimize queries and indexes.
+
+DELIVERABLE
+Implement the full feature end-to-end (UI + API + DB + validations + audit logging) and ensure it works with my existing temporary-save workflow:
+Pharmacist saves temporary -> invoice appears in cashier pending list -> cashier finalizes once -> prints -> disappears.

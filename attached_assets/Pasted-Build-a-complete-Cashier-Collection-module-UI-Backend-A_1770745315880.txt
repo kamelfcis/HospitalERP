@@ -1,0 +1,213 @@
+Build a complete Cashier Collection module (UI + Backend API + Database)
+for a Hospital / Pharmacy ERP system with STRICT control, zero tolerance
+for invoice duplication, and no stuck or pending invoices.
+
+=====================================================
+MANDATORY RTL REQUIREMENT (NON-NEGOTIABLE)
+=====================================================
+- The entire system MUST be Right-To-Left (RTL).
+- Page direction must be RTL.
+- All texts, labels, inputs, buttons, and headings are RTL.
+- Tables are RTL:
+  - First column starts from the RIGHT.
+  - Table headers aligned RTL.
+  - Rows flow from right to left.
+- Forms, totals, widgets, popups, and dialogs are RTL.
+- Numbers remain LTR naturally but positioned RTL.
+- Keyboard navigation respects RTL order.
+- Enforce RTL explicitly (HTML dir="rtl" + CSS direction: rtl).
+- No LTR fallback is allowed anywhere in this screen.
+
+=====================================================
+PAGE NAME
+=====================================================
+"شاشة تحصيل الكاشير"
+
+=====================================================
+GENERAL UI LAYOUT
+=====================================================
+- Screen is split into TWO MAIN SECTIONS (choose fastest layout: Right/Left or Top/Bottom):
+  Section A (Primary): List of pending invoices.
+  Section B (Secondary): Details of selected invoice(s).
+
+- Add TWO MAIN TABS at the top:
+  1) "تحصيل فواتير البيع"
+  2) "رد مرتجعات"
+
+=====================================================
+TAB 1: تحصيل فواتير البيع
+=====================================================
+A) Pending Invoices List (Section A)
+Display one row per invoice with the following RTL columns:
+- رقم الفاتورة
+- الإجمالي قبل الخصم
+- الإجمالي بعد الخصم (الصافي)
+- اسم المستخدم (الصيدلي)
+- تاريخ الإنشاء
+- الحالة (Pending / Collecting / Collected)
+
+Features:
+- Fast loading
+- Search + sort
+- Keyboard navigation
+- Checkbox per row for MULTI-SELECT
+
+B) Invoice Details Panel (Section B)
+- When ONE invoice is selected:
+  - Show full invoice items:
+    (اسم الصنف – الوحدة – الكمية – السعر – الخصم – إجمالي السطر)
+  - Show totals summary:
+    الإجمالي – الخصم – الصافي
+
+- When MULTIPLE invoices are selected:
+  - Show aggregated totals ONLY:
+    - إجمالي قبل الخصم
+    - إجمالي بعد الخصم (الصافي)
+  - Clearly indicate number of selected invoices
+
+C) Collect & Finalize (STRICT FLOW)
+Cashier permissions:
+- Collect only
+- Finalize only
+- Print only
+- NO cancel
+- NO delete
+- NO edit
+
+When cashier confirms (button OR keyboard shortcut like F9 / Ctrl+Enter):
+Execute ALL steps as ONE ATOMIC TRANSACTION:
+1) Finalize selected invoice(s)
+2) Create cashier receipt(s)
+3) Increase cashier cash balance
+4) Auto-print receipt(s) immediately
+5) Remove invoice(s) instantly from pending list UI
+
+No partial success allowed.
+
+D) Anti-Duplication & Security Rules (CRITICAL)
+- Cashier cannot collect same invoice twice بأي شكل.
+- Disable collect button during processing.
+- Backend idempotency check (invoice already collected = block).
+- Database UNIQUE constraint (one receipt per invoice).
+- Row-level locking / transaction isolation.
+- If network disconnects:
+  - Never allow double save.
+  - On retry, detect completed transaction and block duplication.
+- Create full audit log for every action.
+
+E) No Stuck Invoices Policy
+- No invoice may remain in "Collecting" state.
+- If crash occurs:
+  - Auto-rollback to Pending after safe timeout.
+- Log every state change:
+  Pending → Collecting → Collected
+  (User, timestamp, device/session).
+
+=====================================================
+TAB 2: رد مرتجعات
+=====================================================
+This tab is a FULL MIRROR of "تحصيل فواتير البيع"
+with the SAME:
+- Layout
+- RTL behavior
+- Multi-select
+- Keyboard shortcuts
+- Validations
+- Audit logging
+- Anti-duplication logic
+
+Differences:
+- Displays pending RETURN invoices.
+- Action button name:
+  "صرف المرتجع وحفظ نهائي"
+- Cash effect:
+  DECREASE cashier cash balance.
+- Generate refund receipt.
+- Appears in cash refund totals.
+
+Rules:
+- No cancel
+- No delete
+- No multiple refunds
+- Atomic transaction only
+- Immediate removal from pending list
+
+=====================================================
+SIDE MINI WIDGET (ALWAYS VISIBLE – RTL)
+=====================================================
+Add a small fixed RTL widget on screen showing real-time shift totals:
+- إجمالي الإيراد النقدي
+- إجمالي الإيراد الآجل (إن وجد)
+- إجمالي رد المرتجعات النقدي
+- إجمالي المصروفات النقدية
+- صافي الخزنة =
+  (إيراد نقدي − رد مرتجعات − مصروفات)
+
+Widget updates instantly after every operation.
+
+=====================================================
+SHIFT & CASHIER CUSTODY CONTROL
+=====================================================
+- Each cashier has:
+  - Separate login
+  - Separate cash custody
+- Start Shift:
+  - Create shift record with start time
+  - Optional opening float
+- End Shift:
+  - System MUST block closing if ANY invoice is Pending or Collecting
+  - Show shift summary:
+    - Expected cash
+    - Actual counted cash
+    - Over / Short difference
+  - Print shift report
+- Cash transfer:
+  - End-shift amount moves to "عهدة الكاشير"
+  - Admin later transfers to "الخزنة الرئيسية"
+
+=====================================================
+PERMISSIONS
+=====================================================
+- Cashier:
+  - Collect / Refund only
+- Admin / Supervisor:
+  - Void with mandatory reason + approval
+  - Separate screen (NOT cashier screen)
+  - Full audit trail
+
+=====================================================
+TECHNICAL REQUIREMENTS
+=====================================================
+Backend APIs:
+- GET pending sales invoices
+- GET pending return invoices
+- GET invoice details
+- POST collect sales invoices (supports multi-select)
+- POST refund return invoices
+- POST start shift
+- POST end shift
+- GET real-time widget totals
+
+Database:
+- invoices
+- invoice_lines
+- receipts
+- refund_receipts
+- shifts
+- cashier_custody
+- audit_logs
+- UNIQUE constraints + transactions required
+
+=====================================================
+DELIVERABLE
+=====================================================
+Implement full solution end-to-end:
+UI + Backend + Database + Validations + Audit Logs
+
+Must work seamlessly with this workflow:
+Pharmacist saves invoice temporarily →
+Invoice appears in cashier screen →
+Cashier finalizes ONCE →
+Receipt prints →
+Invoice disappears →
+No duplicates, no hanging invoices, no manipulation.

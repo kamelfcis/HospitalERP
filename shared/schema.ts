@@ -32,7 +32,8 @@ export const unitLevelEnum = pgEnum("unit_level", [
 
 export const lotTxTypeEnum = pgEnum("lot_tx_type", ["in", "out", "adj"]);
 export const transferStatusEnum = pgEnum("transfer_status", ["draft", "executed"]);
-export const salesInvoiceStatusEnum = pgEnum("sales_invoice_status", ["draft", "finalized", "cancelled"]);
+export const salesInvoiceStatusEnum = pgEnum("sales_invoice_status", ["draft", "finalized", "collected", "cancelled"]);
+export const cashierShiftStatusEnum = pgEnum("cashier_shift_status", ["open", "closed"]);
 export const customerTypeEnum = pgEnum("customer_type", ["cash", "credit", "contract"]);
 export const patientInvoiceStatusEnum = pgEnum("patient_invoice_status", ["draft", "finalized", "cancelled"]);
 export const patientTypeEnum = pgEnum("patient_type", ["cash", "contract"]);
@@ -549,11 +550,14 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   createdBy: varchar("created_by"),
   finalizedAt: timestamp("finalized_at"),
   finalizedBy: varchar("finalized_by"),
+  isReturn: boolean("is_return").notNull().default(false),
+  originalInvoiceId: varchar("original_invoice_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   dateIdx: index("idx_sales_inv_date").on(table.invoiceDate),
   statusIdx: index("idx_sales_inv_status").on(table.status),
+  isReturnIdx: index("idx_sales_inv_is_return").on(table.isReturn),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {
