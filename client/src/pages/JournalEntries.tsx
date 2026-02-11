@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, apiRequestJson, queryClient } from "@/lib/queryClient";
 import {
   Plus,
   Search,
@@ -84,8 +84,7 @@ export default function JournalEntries() {
 
   const batchPostMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      const res = await apiRequest("POST", "/api/journal-entries/batch-post", { ids, userId: "system" });
-      return await res.json();
+      return apiRequestJson("POST", "/api/journal-entries/batch-post", { ids, userId: "system" });
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/journal-entries"] });
