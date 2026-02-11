@@ -655,11 +655,11 @@ export default function CashierCollection() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground text-right">حساب خزنة الكاشير لتسجيل القيود المحاسبية</p>
+                  <p className="text-xs text-muted-foreground text-right">حساب خزنة الكاشير لتسجيل القيود المحاسبية (إجباري)</p>
                 </div>
                 <Button
                   onClick={() => openShiftMutation.mutate()}
-                  disabled={!cashierName.trim() || !activePharmacyId || openShiftMutation.isPending}
+                  disabled={!cashierName.trim() || !activePharmacyId || !shiftGlAccountId || openShiftMutation.isPending}
                   className="w-full"
                   data-testid="button-open-shift"
                 >

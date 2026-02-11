@@ -4423,10 +4423,8 @@ export class DatabaseStorage implements IStorage {
       }
     }
     if (!cashAccountId) {
-      const cashMapping = mappingMap.get("cash");
-      if (cashMapping?.debitAccountId) {
-        cashAccountId = cashMapping.debitAccountId;
-      }
+      console.error("Sales invoice journal: no cashier GL account found for pharmacy", invoice.pharmacyId);
+      return null;
     }
 
     let inventoryAccountId: string | null = null;

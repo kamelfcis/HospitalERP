@@ -3214,7 +3214,8 @@ export async function registerRoutes(
       const { cashierId, cashierName, openingCash, pharmacyId, glAccountId } = req.body;
       if (!cashierId || !cashierName) return res.status(400).json({ message: "بيانات الكاشير مطلوبة" });
       if (!pharmacyId) return res.status(400).json({ message: "يجب اختيار الصيدلية" });
-      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", pharmacyId, glAccountId || null);
+      if (!glAccountId) return res.status(400).json({ message: "يجب اختيار حساب الخزنة" });
+      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", pharmacyId, glAccountId);
       res.json(shift);
     } catch (error: any) {
       if (error.message?.includes("مفتوحة")) return res.status(409).json({ message: error.message });
