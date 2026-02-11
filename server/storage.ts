@@ -4243,7 +4243,7 @@ export class DatabaseStorage implements IStorage {
 
       const numPatients = patients.length;
 
-      const itemIds = [...new Set(sourceLines.filter(l => l.itemId).map(l => l.itemId!))];
+      const itemIds = Array.from(new Set(sourceLines.filter(l => l.itemId).map(l => l.itemId!)));
       const itemMap: Record<string, any> = {};
       if (itemIds.length > 0) {
         const fetchedItems = await tx.select().from(items).where(
@@ -4336,7 +4336,8 @@ export class DatabaseStorage implements IStorage {
             share = +(totalQty - allocatedSoFar[li]).toFixed(4);
           } else {
             const intQty = Math.round(totalQty);
-            if (Math.abs(totalQty - intQty) < 0.0001 && intQty > 0) {
+            const isInt = Math.abs(totalQty - intQty) < 0.0001 && intQty > 0;
+            if (isInt && intQty >= numPatients) {
               const baseShare = Math.floor(intQty / numPatients);
               const remainder = intQty - baseShare * numPatients;
               share = pi < remainder ? baseShare + 1 : baseShare;
@@ -4418,7 +4419,7 @@ export class DatabaseStorage implements IStorage {
     return await db.transaction(async (tx) => {
       const numPatients = patients.length;
 
-      const itemIds = [...new Set(sourceLines.filter((l: any) => l.itemId).map((l: any) => l.itemId))];
+      const itemIds = Array.from(new Set(sourceLines.filter((l: any) => l.itemId).map((l: any) => l.itemId)));
       const itemMap: Record<string, any> = {};
       if (itemIds.length > 0) {
         const fetchedItems = await tx.select().from(items).where(
@@ -4511,7 +4512,8 @@ export class DatabaseStorage implements IStorage {
             share = +(totalQty - allocatedSoFar[li]).toFixed(4);
           } else {
             const intQty = Math.round(totalQty);
-            if (Math.abs(totalQty - intQty) < 0.0001 && intQty > 0) {
+            const isInt = Math.abs(totalQty - intQty) < 0.0001 && intQty > 0;
+            if (isInt && intQty >= numPatients) {
               const baseShare = Math.floor(intQty / numPatients);
               const remainder = intQty - baseShare * numPatients;
               share = pi < remainder ? baseShare + 1 : baseShare;

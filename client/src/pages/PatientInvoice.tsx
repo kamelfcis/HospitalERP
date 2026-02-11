@@ -2591,7 +2591,7 @@ export default function PatientInvoice() {
                   const isInt = Math.abs(convQtyRounded - intQty) < 0.0001 && intQty > 0;
                   let baseShare: number;
                   let remainder = 0;
-                  if (isInt) {
+                  if (isInt && intQty >= distCount) {
                     baseShare = Math.floor(intQty / distCount);
                     remainder = intQty - baseShare * distCount;
                   } else {
