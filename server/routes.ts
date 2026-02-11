@@ -2917,6 +2917,30 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/patient-invoices/distribute-direct", async (req, res) => {
+    try {
+      const { patients, lines, invoiceDate, departmentId, warehouseId, doctorName, patientType, contractName, notes } = req.body;
+      if (!Array.isArray(patients) || patients.length < 2) {
+        return res.status(400).json({ message: "يجب تحديد مريضين على الأقل" });
+      }
+      for (const p of patients) {
+        if (!p.name || !p.name.trim()) {
+          return res.status(400).json({ message: "يجب إدخال اسم كل مريض" });
+        }
+      }
+      if (!Array.isArray(lines) || lines.length === 0) {
+        return res.status(400).json({ message: "لا توجد بنود للتوزيع" });
+      }
+      const result = await storage.distributePatientInvoiceDirect({
+        patients, lines, invoiceDate: invoiceDate || new Date().toISOString().split("T")[0],
+        departmentId, warehouseId, doctorName, patientType, contractName, notes,
+      });
+      res.json({ invoices: result });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.delete("/api/patient-invoices/:id", async (req, res) => {
     try {
       await storage.deletePatientInvoice(req.params.id);

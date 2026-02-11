@@ -516,18 +516,14 @@ export default function PatientInvoice() {
   });
 
   const openDistributeDialog = useCallback(() => {
-    if (!invoiceId) {
-      toast({ title: "تنبيه", description: "يجب حفظ الفاتورة أولاً قبل التوزيع", variant: "destructive" });
-      return;
-    }
     if (lines.length === 0) {
-      toast({ title: "تنبيه", description: "الفاتورة لا تحتوي على بنود للتوزيع", variant: "destructive" });
+      toast({ title: "تنبيه", description: "لا توجد بنود للتوزيع", variant: "destructive" });
       return;
     }
     setDistCount(2);
     setDistPatients([{ name: "", phone: "" }, { name: "", phone: "" }]);
     setDistOpen(true);
-  }, [invoiceId, lines, toast]);
+  }, [lines, toast]);
 
   const handleDistCountChange = useCallback((newCount: number) => {
     const count = Math.max(2, Math.min(50, newCount));
@@ -558,21 +554,56 @@ export default function PatientInvoice() {
   }, [nextNumberData]);
 
   const handleDistribute = useCallback(async () => {
-    if (!invoiceId) return;
     const emptyNames = distPatients.slice(0, distCount).filter(p => !p.name.trim());
     if (emptyNames.length > 0) {
       toast({ title: "تنبيه", description: "يجب إدخال اسم كل مريض", variant: "destructive" });
       return;
     }
+    if (lines.length === 0) {
+      toast({ title: "تنبيه", description: "لا توجد بنود للتوزيع", variant: "destructive" });
+      return;
+    }
     setDistLoading(true);
     try {
-      const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/distribute`, {
+      const linesToSend = lines.map(l => ({
+        lineType: l.lineType,
+        serviceId: l.serviceId,
+        itemId: l.itemId,
+        description: l.description,
+        quantity: String(l.quantity),
+        unitPrice: String(l.unitPrice),
+        discountPercent: String(l.discountPercent),
+        discountAmount: String(l.discountAmount),
+        totalPrice: String(l.totalPrice),
+        unitLevel: l.unitLevel,
+        lotId: l.lotId,
+        expiryMonth: l.expiryMonth,
+        expiryYear: l.expiryYear,
+        priceSource: l.priceSource,
+        doctorName: l.doctorName,
+        nurseName: l.nurseName,
+        notes: l.notes,
+        sortOrder: l.sortOrder,
+      }));
+
+      const res = await apiRequest("POST", `/api/patient-invoices/distribute-direct`, {
         patients: distPatients.slice(0, distCount).map(p => ({ name: p.name.trim(), phone: p.phone.trim() || undefined })),
+        lines: linesToSend,
+        invoiceDate,
+        departmentId: departmentId || null,
+        warehouseId: warehouseId || null,
+        doctorName: doctorName || null,
+        patientType,
+        contractName: contractName || null,
+        notes,
       });
       const data = await res.json();
       const newInvoices: PatientInvoiceHeader[] = data.invoices;
 
       setDistOpen(false);
+      if (invoiceId) {
+        try { await apiRequest("DELETE", `/api/patient-invoices/${invoiceId}`); } catch {}
+      }
       resetForm();
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices/next-number"] });
@@ -587,7 +618,7 @@ export default function PatientInvoice() {
     } finally {
       setDistLoading(false);
     }
-  }, [invoiceId, distPatients, distCount, toast, resetForm]);
+  }, [lines, distPatients, distCount, toast, resetForm, invoiceId, invoiceDate, departmentId, warehouseId, doctorName, patientType, contractName, notes]);
 
   const loadInvoice = useCallback(async (id: string) => {
     try {
