@@ -4334,10 +4334,12 @@ export class DatabaseStorage implements IStorage {
             discountAmount: String(+totalDiscount.toFixed(2)),
             netAmount: String(+netAmount.toFixed(2)),
           }).where(eq(patientInvoiceHeaders.id, newHeader.id));
-        }
 
-        const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));
-        createdInvoices.push(finalHeader);
+          const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));
+          createdInvoices.push(finalHeader);
+        } else {
+          await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));
+        }
       }
 
       await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, sourceId));
@@ -4454,10 +4456,12 @@ export class DatabaseStorage implements IStorage {
             discountAmount: String(+totalDiscount.toFixed(2)),
             netAmount: String(+netAmount.toFixed(2)),
           }).where(eq(patientInvoiceHeaders.id, newHeader.id));
-        }
 
-        const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));
-        createdInvoices.push(finalHeader);
+          const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));
+          createdInvoices.push(finalHeader);
+        } else {
+          await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));
+        }
       }
 
       return createdInvoices;

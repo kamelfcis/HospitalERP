@@ -723,7 +723,11 @@ export default function PatientInvoice() {
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices/next-number"] });
 
-      toast({ title: "تم التوزيع", description: `تم إنشاء ${newInvoices.length} فاتورة بنجاح` });
+      const skipped = distCount - newInvoices.length;
+      const desc = skipped > 0
+        ? `تم إنشاء ${newInvoices.length} فاتورة (${skipped} مريض لم يحصل على كمية كافية)`
+        : `تم إنشاء ${newInvoices.length} فاتورة بنجاح`;
+      toast({ title: "تم التوزيع", description: desc });
 
       for (const inv of newInvoices) {
         window.open(`/patient-invoices?loadId=${inv.id}`, "_blank");
