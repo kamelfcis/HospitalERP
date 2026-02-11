@@ -5564,6 +5564,7 @@ export class DatabaseStorage implements IStorage {
     return await db.transaction(async (tx) => {
       const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
       if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
+      if (!shift.glAccountId) throw new Error("الوردية لا تحتوي على حساب خزنة - يجب إغلاق الوردية وفتح وردية جديدة مع اختيار حساب الخزنة");
 
       const [maxNumResult] = await tx.select({ maxNum: sql<number>`COALESCE(MAX(receipt_number), 0)` }).from(cashierReceipts);
       let nextReceiptNumber = (maxNumResult?.maxNum || 0) + 1;
@@ -5626,6 +5627,7 @@ export class DatabaseStorage implements IStorage {
     return await db.transaction(async (tx) => {
       const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
       if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
+      if (!shift.glAccountId) throw new Error("الوردية لا تحتوي على حساب خزنة - يجب إغلاق الوردية وفتح وردية جديدة مع اختيار حساب الخزنة");
 
       const [maxNumResult] = await tx.select({ maxNum: sql<number>`COALESCE(MAX(receipt_number), 0)` }).from(cashierRefundReceipts);
       let nextRefundNumber = (maxNumResult?.maxNum || 0) + 1;
