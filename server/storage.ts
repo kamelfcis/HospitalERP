@@ -409,7 +409,7 @@ export interface IStorage {
   getAccountMapping(id: string): Promise<AccountMapping | undefined>;
   upsertAccountMapping(data: InsertAccountMapping): Promise<AccountMapping>;
   deleteAccountMapping(id: string): Promise<boolean>;
-  getMappingsForTransaction(transactionType: string): Promise<AccountMapping[]>;
+  getMappingsForTransaction(transactionType: string, warehouseId?: string | null): Promise<AccountMapping[]>;
 
   // Auto Journal Entry
   generateJournalEntry(params: {
@@ -4400,7 +4400,7 @@ export class DatabaseStorage implements IStorage {
       ));
     if (existingEntries.length > 0) return existingEntries[0];
 
-    const mappings = await this.getMappingsForTransaction("sales_invoice");
+    const mappings = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId);
     const mappingMap = new Map<string, AccountMapping>();
     for (const m of mappings) {
       mappingMap.set(m.lineType, m);
@@ -5772,11 +5772,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertAccountMapping(data: InsertAccountMapping): Promise<AccountMapping> {
+    const conditions = [
+      eq(accountMappings.transactionType, data.transactionType),
+      eq(accountMappings.lineType, data.lineType),
+    ];
+    if (data.warehouseId) {
+      conditions.push(eq(accountMappings.warehouseId, data.warehouseId));
+    } else {
+      conditions.push(isNull(accountMappings.warehouseId));
+    }
+
     const existing = await db.select().from(accountMappings)
-      .where(and(
-        eq(accountMappings.transactionType, data.transactionType),
-        eq(accountMappings.lineType, data.lineType)
-      ));
+      .where(and(...conditions));
     
     if (existing.length > 0) {
       const [updated] = await db.update(accountMappings)
@@ -5795,13 +5802,25 @@ export class DatabaseStorage implements IStorage {
     return (result as any).rowCount > 0;
   }
 
-  async getMappingsForTransaction(transactionType: string): Promise<AccountMapping[]> {
-    return db.select().from(accountMappings)
+  async getMappingsForTransaction(transactionType: string, warehouseId?: string | null): Promise<AccountMapping[]> {
+    const allMappings = await db.select().from(accountMappings)
       .where(and(
         eq(accountMappings.transactionType, transactionType),
         eq(accountMappings.isActive, true)
       ))
       .orderBy(asc(accountMappings.lineType));
+
+    if (!warehouseId) {
+      return allMappings.filter(m => !m.warehouseId);
+    }
+
+    const warehouseSpecific = allMappings.filter(m => m.warehouseId === warehouseId);
+    const generic = allMappings.filter(m => !m.warehouseId);
+
+    const warehouseLineTypes = new Set(warehouseSpecific.map(m => m.lineType));
+    const fallbackGeneric = generic.filter(m => !warehouseLineTypes.has(m.lineType));
+
+    return [...warehouseSpecific, ...fallbackGeneric];
   }
 
   async generateJournalEntry(params: {

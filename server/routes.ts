@@ -3344,12 +3344,12 @@ export async function registerRoutes(
 
   app.post("/api/account-mappings", async (req, res) => {
     try {
-      const { transactionType, lineType, debitAccountId, creditAccountId, description, isActive } = req.body;
+      const { transactionType, lineType, debitAccountId, creditAccountId, description, isActive, warehouseId } = req.body;
       if (!transactionType || !lineType) {
         return res.status(400).json({ message: "نوع العملية ونوع السطر مطلوبان" });
       }
       const mapping = await storage.upsertAccountMapping({
-        transactionType, lineType, debitAccountId, creditAccountId, description, isActive
+        transactionType, lineType, debitAccountId, creditAccountId, description, isActive, warehouseId: warehouseId || null
       });
       res.json(mapping);
     } catch (error: any) {

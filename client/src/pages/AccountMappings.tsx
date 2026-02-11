@@ -20,6 +20,7 @@ import {
   mappingLineTypeLabels,
   type Account,
   type AccountMapping,
+  type Warehouse,
 } from "@shared/schema";
 
 const transactionTypes = Object.keys(transactionTypeLabels);
@@ -156,12 +157,17 @@ function SearchableAccountSelect({
 export default function AccountMappings() {
   const { toast } = useToast();
   const [selectedTxType, setSelectedTxType] = useState<string>(transactionTypes[0]);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("__generic__");
   const [rows, setRows] = useState<MappingRow[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   let keyCounter = useRef(0);
 
   const { data: accounts, isLoading: accountsLoading } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
+  });
+
+  const { data: warehouses } = useQuery<Warehouse[]>({
+    queryKey: ["/api/warehouses"],
   });
 
   const { data: mappings, isLoading: mappingsLoading } = useQuery<AccountMapping[]>({
@@ -175,14 +181,18 @@ export default function AccountMappings() {
 
   useEffect(() => {
     if (mappingsLoading) return;
-    const savedMappings = mappings || [];
+    const allMappings = mappings || [];
+    const effectiveWarehouseId = selectedWarehouseId === "__generic__" ? null : selectedWarehouseId;
+    const filteredMappings = effectiveWarehouseId
+      ? allMappings.filter(m => m.warehouseId === effectiveWarehouseId)
+      : allMappings.filter(m => !m.warehouseId);
     const suggested = suggestedLineTypes[selectedTxType] || [];
 
-    const combined = savedMappings.map(m => m.lineType).concat(suggested);
+    const combined = filteredMappings.map(m => m.lineType).concat(suggested);
     const allLineTypes = Array.from(new Set(combined));
 
     const newRows: MappingRow[] = allLineTypes.map(lt => {
-      const existing = savedMappings.find(m => m.lineType === lt);
+      const existing = filteredMappings.find(m => m.lineType === lt);
       return {
         key: `row-${keyCounter.current++}`,
         lineType: lt,
@@ -193,7 +203,7 @@ export default function AccountMappings() {
 
     setRows(newRows);
     setHasChanges(false);
-  }, [mappings, mappingsLoading, selectedTxType]);
+  }, [mappings, mappingsLoading, selectedTxType, selectedWarehouseId]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: any[]) => {
@@ -240,6 +250,7 @@ export default function AccountMappings() {
       lineType: r.lineType,
       debitAccountId: r.debitAccountId || null,
       creditAccountId: r.creditAccountId || null,
+      warehouseId: selectedWarehouseId === "__generic__" ? null : (selectedWarehouseId || null),
       isActive: true,
     }));
     saveMutation.mutate(toSave);
@@ -296,6 +307,22 @@ export default function AccountMappings() {
                 ))}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">المستودع</span>
+              <Select value={selectedWarehouseId} onValueChange={setSelectedWarehouseId}>
+                <SelectTrigger className="w-[220px]" data-testid="select-warehouse-filter">
+                  <SelectValue placeholder="عام (لجميع المستودعات)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__generic__" data-testid="option-warehouse-generic">عام (لجميع المستودعات)</SelectItem>
+                  {(warehouses || []).map(w => (
+                    <SelectItem key={w.id} value={w.id} data-testid={`option-warehouse-${w.id}`}>
+                      {w.nameAr}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -385,6 +412,7 @@ export default function AccountMappings() {
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>عند اعتماد أو ترحيل أي عملية، يتم إنشاء قيد يومية تلقائي بحالة "مسودة" بناءً على الإعدادات المحددة هنا.</p>
           <p>يمكنك إضافة أي عدد من السطور لكل نوع عملية، واختيار الحسابات بالبحث بالكود أو الاسم.</p>
+          <p>يمكنك تخصيص حسابات مختلفة لكل مستودع (مثلاً: صيدلية خارجية مقابل صيدلية داخلية). الإعدادات "العامة" تُستخدم كاحتياطي لأي مستودع ليس له إعدادات خاصة.</p>
           <p>القيد التلقائي لا يؤثر على أرصدة الحسابات حتى يتم ترحيله يدوياً من شاشة القيود اليومية.</p>
         </CardContent>
       </Card>

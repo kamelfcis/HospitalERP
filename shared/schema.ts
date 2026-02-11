@@ -1288,13 +1288,13 @@ export const accountMappings = pgTable("account_mappings", {
   lineType: text("line_type").notNull(),
   debitAccountId: varchar("debit_account_id").references(() => accounts.id),
   creditAccountId: varchar("credit_account_id").references(() => accounts.id),
+  warehouseId: varchar("warehouse_id").references(() => warehouses.id),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   txTypeIdx: index("idx_acct_map_tx_type").on(table.transactionType),
-  uniqueMapping: uniqueIndex("idx_acct_map_unique").on(table.transactionType, table.lineType),
 }));
 
 export const insertAccountMappingSchema = createInsertSchema(accountMappings).omit({ id: true, createdAt: true, updatedAt: true });
