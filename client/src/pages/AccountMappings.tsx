@@ -28,6 +28,8 @@ const lineTypesForTransaction: Record<string, string[]> = {
   patient_invoice: ["cash", "receivables", "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment", "cogs", "inventory"],
   receiving: ["inventory", "payables"],
   purchase_invoice: ["payables", "expense_general", "inventory"],
+  cashier_collection: ["cash", "receivables", "revenue_drugs", "revenue_general"],
+  cashier_refund: ["cash", "returns", "revenue_drugs", "inventory"],
 };
 
 export default function AccountMappings() {

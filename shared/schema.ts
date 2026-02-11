@@ -40,7 +40,7 @@ export const patientTypeEnum = pgEnum("patient_type", ["cash", "contract"]);
 export const patientInvoiceLineTypeEnum = pgEnum("patient_invoice_line_type", ["service", "drug", "consumable", "equipment"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank_transfer", "insurance"]);
 export const admissionStatusEnum = pgEnum("admission_status", ["active", "discharged", "cancelled"]);
-export const transactionTypeEnum = pgEnum("transaction_type", ["sales_invoice", "patient_invoice", "receiving", "purchase_invoice"]);
+export const transactionTypeEnum = pgEnum("transaction_type", ["sales_invoice", "patient_invoice", "receiving", "purchase_invoice", "cashier_collection", "cashier_refund"]);
 export const mappingLineTypeEnum = pgEnum("mapping_line_type", [
   "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment",
   "cogs", "inventory", "cash", "receivables", "payables", "returns",
@@ -1301,6 +1301,8 @@ export const transactionTypeLabels: Record<string, string> = {
   patient_invoice: "فاتورة مريض",
   receiving: "استلام مورد",
   purchase_invoice: "فاتورة مشتريات",
+  cashier_collection: "تحصيل كاشير",
+  cashier_refund: "مرتجع كاشير",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
@@ -1323,5 +1325,7 @@ export const sourceTypeLabels: Record<string, string> = {
   patient_invoice: "فاتورة مريض",
   receiving: "استلام مورد",
   purchase_invoice: "فاتورة مشتريات",
+  cashier_collection: "تحصيل كاشير",
+  cashier_refund: "مرتجع كاشير",
   manual: "يدوي",
 };

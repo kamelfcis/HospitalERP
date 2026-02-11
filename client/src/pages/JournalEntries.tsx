@@ -157,6 +157,8 @@ export default function JournalEntries() {
     patient_invoice: "/patient-invoices",
     receiving: "/supplier-receiving",
     purchase_invoice: "/purchase-invoices",
+    cashier_collection: "/cashier",
+    cashier_refund: "/cashier",
   };
 
   const getSourceBadge = (entry: JournalEntry) => {
@@ -252,11 +254,9 @@ export default function JournalEntries() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all" className="text-xs">جميع المصادر</SelectItem>
-            <SelectItem value="manual" className="text-xs">يدوي</SelectItem>
-            <SelectItem value="sales_invoice" className="text-xs">فاتورة مبيعات</SelectItem>
-            <SelectItem value="patient_invoice" className="text-xs">فاتورة مريض</SelectItem>
-            <SelectItem value="receiving" className="text-xs">استلام مورد</SelectItem>
-            <SelectItem value="purchase_invoice" className="text-xs">فاتورة مشتريات</SelectItem>
+            {Object.entries(sourceTypeLabels).map(([key, label]) => (
+              <SelectItem key={key} value={key} className="text-xs">{label}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <div className="flex items-center gap-1">

@@ -4981,7 +4981,21 @@ export class DatabaseStorage implements IStorage {
         receipts.push({ ...receipt, invoiceNumber: invoice.invoiceNumber });
       }
 
-      return { receipts, totalCollected: totalCollected.toFixed(2), count: receipts.length };
+      const result = { receipts, totalCollected: totalCollected.toFixed(2), count: receipts.length };
+
+      this.generateJournalEntry({
+        sourceType: "cashier_collection",
+        sourceDocumentId: shiftId,
+        reference: `CSH-${receipts.map(r => r.invoiceNumber).join(",")}`,
+        description: `تحصيل كاشير - ${receipts.length} فاتورة - المبلغ: ${totalCollected.toFixed(2)}`,
+        entryDate: new Date().toISOString().split("T")[0],
+        lines: [
+          { lineType: "cash", amount: totalCollected.toFixed(2) },
+          { lineType: "receivables", amount: totalCollected.toFixed(2) },
+        ],
+      }).catch(err => console.error("Auto journal for cashier collection failed:", err));
+
+      return result;
     });
   }
 
@@ -5037,7 +5051,21 @@ export class DatabaseStorage implements IStorage {
         receipts.push({ ...receipt, invoiceNumber: invoice.invoiceNumber });
       }
 
-      return { receipts, totalRefunded: totalRefunded.toFixed(2), count: receipts.length };
+      const result = { receipts, totalRefunded: totalRefunded.toFixed(2), count: receipts.length };
+
+      this.generateJournalEntry({
+        sourceType: "cashier_refund",
+        sourceDocumentId: shiftId,
+        reference: `RFD-${receipts.map(r => r.invoiceNumber).join(",")}`,
+        description: `مرتجع كاشير - ${receipts.length} فاتورة - المبلغ: ${totalRefunded.toFixed(2)}`,
+        entryDate: new Date().toISOString().split("T")[0],
+        lines: [
+          { lineType: "returns", amount: totalRefunded.toFixed(2) },
+          { lineType: "cash", amount: totalRefunded.toFixed(2) },
+        ],
+      }).catch(err => console.error("Auto journal for cashier refund failed:", err));
+
+      return result;
     });
   }
 
