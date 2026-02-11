@@ -43,8 +43,10 @@ export const admissionStatusEnum = pgEnum("admission_status", ["active", "discha
 export const transactionTypeEnum = pgEnum("transaction_type", ["sales_invoice", "patient_invoice", "receiving", "purchase_invoice", "cashier_collection", "cashier_refund"]);
 export const mappingLineTypeEnum = pgEnum("mapping_line_type", [
   "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment",
-  "cogs", "inventory", "cash", "receivables", "payables", "returns",
-  "revenue_general", "expense_general"
+  "cogs", "cogs_drugs", "cogs_supplies", "inventory", "cash", "receivables",
+  "payables", "payables_drugs", "payables_consumables", "returns",
+  "revenue_general", "expense_general",
+  "discount_allowed", "discount_earned", "vat_input", "vat_output"
 ]);
 
 // المستخدمين
@@ -765,6 +767,7 @@ export const cashierShifts = pgTable("cashier_shifts", {
   cashierId: varchar("cashier_id").notNull(),
   cashierName: text("cashier_name").notNull(),
   pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
+  glAccountId: varchar("gl_account_id").references(() => accounts.id),
   status: cashierShiftStatusEnum("status").notNull().default("open"),
   openingCash: decimal("opening_cash", { precision: 18, scale: 2 }).notNull().default("0"),
   closingCash: decimal("closing_cash", { precision: 18, scale: 2 }).notNull().default("0"),
@@ -1315,6 +1318,8 @@ export const mappingLineTypeLabels: Record<string, string> = {
   revenue_equipment: "إيرادات أجهزة",
   revenue_general: "إيرادات عامة",
   cogs: "تكلفة بضاعة مباعة",
+  cogs_drugs: "تكلفة أدوية مباعة",
+  cogs_supplies: "تكلفة مستلزمات مباعة",
   inventory: "المخزون",
   cash: "الصندوق / النقدية",
   receivables: "ذمم مدينة",
@@ -1322,6 +1327,8 @@ export const mappingLineTypeLabels: Record<string, string> = {
   payables_drugs: "موردين أدوية",
   payables_consumables: "موردين مستلزمات",
   vat_input: "ضريبة قيمة مضافة - مدخلات",
+  vat_output: "ضريبة قيمة مضافة - مخرجات",
+  discount_allowed: "خصم مسموح به",
   discount_earned: "خصم مكتسب",
   returns: "مردودات",
   expense_general: "مصروفات عامة",

@@ -90,6 +90,8 @@ export default function CashierCollection() {
   const { toast } = useToast();
   const [cashierName, setCashierName] = useState("");
   const [openingCash, setOpeningCash] = useState("0");
+  const [shiftGlAccountId, setShiftGlAccountId] = useState("");
+  const [glAccountSearch, setGlAccountSearch] = useState("");
   const [selectedPharmacyId, setSelectedPharmacyId] = useState("");
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closingCash, setClosingCash] = useState("0");
@@ -106,6 +108,17 @@ export default function CashierCollection() {
   const { data: pharmaciesList } = useQuery<Pharmacy[]>({
     queryKey: ["/api/pharmacies"],
   });
+
+  const { data: glAccountsList } = useQuery<{ id: string; code: string; nameAr: string }[]>({
+    queryKey: ["/api/accounts"],
+  });
+
+  const filteredGlAccounts = useMemo(() => {
+    if (!glAccountsList) return [];
+    if (!glAccountSearch.trim()) return glAccountsList.slice(0, 50);
+    const q = glAccountSearch.toLowerCase();
+    return glAccountsList.filter(a => a.code.toLowerCase().includes(q) || a.nameAr.toLowerCase().includes(q)).slice(0, 50);
+  }, [glAccountsList, glAccountSearch]);
 
   const activePharmacyId = selectedPharmacyId || (pharmaciesList && pharmaciesList.length > 0 ? pharmaciesList[0].id : "");
 
@@ -221,6 +234,7 @@ export default function CashierCollection() {
         cashierName: cashierName.trim(),
         openingCash,
         pharmacyId: activePharmacyId,
+        glAccountId: shiftGlAccountId || undefined,
       });
       return res.json();
     },
@@ -617,6 +631,31 @@ export default function CashierCollection() {
                     data-testid="input-opening-cash"
                   />
                   <p className="text-xs text-muted-foreground text-right">المبلغ النقدي الفعلي المتواجد في درج الكاشير عند بداية الوردية</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium block text-right">حساب الخزنة (GL)</label>
+                  <Select value={shiftGlAccountId} onValueChange={setShiftGlAccountId}>
+                    <SelectTrigger className="text-right" data-testid="select-gl-account-trigger">
+                      <SelectValue placeholder="اختر حساب الخزنة..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <div className="p-2">
+                        <Input
+                          placeholder="بحث بالكود أو الاسم..."
+                          value={glAccountSearch}
+                          onChange={(e) => setGlAccountSearch(e.target.value)}
+                          className="text-right"
+                          data-testid="input-gl-account-search"
+                        />
+                      </div>
+                      {filteredGlAccounts.map(a => (
+                        <SelectItem key={a.id} value={a.id} data-testid={`select-gl-account-option-${a.id}`}>
+                          {a.code} - {a.nameAr}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground text-right">حساب خزنة الكاشير لتسجيل القيود المحاسبية</p>
                 </div>
                 <Button
                   onClick={() => openShiftMutation.mutate()}

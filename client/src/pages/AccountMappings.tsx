@@ -25,7 +25,7 @@ import {
 const transactionTypes = Object.keys(transactionTypeLabels);
 
 const suggestedLineTypes: Record<string, string[]> = {
-  sales_invoice: ["cash", "revenue_drugs", "cogs", "inventory", "returns"],
+  sales_invoice: ["cash", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "inventory", "discount_allowed", "vat_output", "returns"],
   patient_invoice: ["cash", "receivables", "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment", "cogs", "inventory"],
   receiving: ["inventory", "payables"],
   purchase_invoice: ["inventory", "vat_input", "discount_earned", "payables_drugs", "payables_consumables"],

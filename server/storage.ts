@@ -366,7 +366,7 @@ export interface IStorage {
   updatePharmacy(id: string, data: Partial<InsertPharmacy>): Promise<Pharmacy>;
 
   // Cashier
-  openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string): Promise<any>;
+  openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string, glAccountId?: string | null): Promise<any>;
   getActiveShift(cashierId: string, pharmacyId: string): Promise<any>;
   closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
   getPendingSalesInvoices(pharmacyId: string, search?: string): Promise<any[]>;
@@ -4281,7 +4281,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader> {
-    return await db.transaction(async (tx) => {
+    let cogsDrugs = 0;
+    let cogsSupplies = 0;
+    let revenueDrugs = 0;
+    let revenueSupplies = 0;
+
+    const finalResult = await db.transaction(async (tx) => {
       const [invoice] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
       if (invoice.status !== "draft") throw new Error("الفاتورة ليست مسودة");
@@ -4315,10 +4320,13 @@ export class DatabaseStorage implements IStorage {
           .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth));
 
         let remaining = qtyNeeded;
+        let lineCost = 0;
         for (const lot of lots) {
           if (remaining <= 0) break;
           const available = parseFloat(lot.qtyInMinor);
           const deduct = Math.min(available, remaining);
+          const lotCost = deduct * parseFloat(lot.purchasePrice);
+          lineCost += lotCost;
 
           await tx.update(inventoryLots).set({
             qtyInMinor: String(available - deduct),
@@ -4330,7 +4338,7 @@ export class DatabaseStorage implements IStorage {
             warehouseId: invoice.warehouseId,
             txType: "out",
             qtyChangeInMinor: String(-deduct),
-            unitCost: line.salePrice,
+            unitCost: lot.purchasePrice,
             referenceType: "sales_invoice",
             referenceId: invoice.id,
           });
@@ -4340,6 +4348,18 @@ export class DatabaseStorage implements IStorage {
 
         if (remaining > 0) {
           throw new Error(`رصيد غير كاف للصنف "${item.nameAr}" - المطلوب: ${qtyNeeded}, النقص: ${remaining.toFixed(2)}`);
+        }
+
+        const lineRevenue = parseFloat(line.lineTotal);
+        if (item.category === "drug") {
+          cogsDrugs += lineCost;
+          revenueDrugs += lineRevenue;
+        } else if (item.category === "supply") {
+          cogsSupplies += lineCost;
+          revenueSupplies += lineRevenue;
+        } else {
+          cogsDrugs += lineCost;
+          revenueDrugs += lineRevenue;
         }
 
         await tx.insert(salesTransactions).values({
@@ -4362,34 +4382,231 @@ export class DatabaseStorage implements IStorage {
       return updated;
     });
 
-    const result = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
-    const finalInvoice = result[0];
-    if (finalInvoice) {
-      const invoiceLines = await db.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
-      const totalRevenue = invoiceLines.reduce((sum, l) => sum + parseFloat(l.lineTotal || "0"), 0);
-      const totalCost = invoiceLines.reduce((sum, l) => sum + parseFloat((l as any).costAmount || "0") * parseFloat(l.qtyInMinor || "0"), 0);
-      
-      const journalLines: { lineType: string; amount: string }[] = [];
-      if (totalRevenue > 0) {
-        journalLines.push({ lineType: "cash", amount: String(totalRevenue) });
-        journalLines.push({ lineType: "revenue_drugs", amount: String(totalRevenue) });
-      }
-      if (totalCost > 0) {
-        journalLines.push({ lineType: "cogs", amount: String(totalCost) });
-        journalLines.push({ lineType: "inventory", amount: String(totalCost) });
-      }
-      
-      this.generateJournalEntry({
-        sourceType: "sales_invoice",
-        sourceDocumentId: id,
-        reference: `SI-${finalInvoice.invoiceNumber}`,
-        description: `قيد فاتورة مبيعات رقم ${finalInvoice.invoiceNumber}`,
-        entryDate: finalInvoice.invoiceDate,
-        lines: journalLines,
-      }).catch(err => console.error("Auto journal for sales invoice failed:", err));
+    if (finalResult) {
+      this.generateSalesInvoiceJournal(id, finalResult, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies)
+        .catch(err => console.error("Auto journal for sales invoice failed:", err));
     }
 
-    return (await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id)))[0];
+    return finalResult;
+  }
+
+  private async generateSalesInvoiceJournal(
+    invoiceId: string, invoice: any, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
+  ): Promise<JournalEntry | null> {
+    const existingEntries = await db.select().from(journalEntries)
+      .where(and(
+        eq(journalEntries.sourceType, "sales_invoice"),
+        eq(journalEntries.sourceDocumentId, invoiceId)
+      ));
+    if (existingEntries.length > 0) return existingEntries[0];
+
+    const mappings = await this.getMappingsForTransaction("sales_invoice");
+    const mappingMap = new Map<string, AccountMapping>();
+    for (const m of mappings) {
+      mappingMap.set(m.lineType, m);
+    }
+
+    const subtotal = parseFloat(invoice.subtotal || "0");
+    const discountValue = parseFloat(invoice.discountValue || "0");
+    const netTotal = parseFloat(invoice.netTotal || "0");
+
+    let cashAccountId: string | null = null;
+    if (invoice.pharmacyId) {
+      const [activeShift] = await db.select().from(cashierShifts)
+        .where(and(
+          eq(cashierShifts.pharmacyId, invoice.pharmacyId),
+          eq(cashierShifts.status, "open")
+        ))
+        .limit(1);
+      if (activeShift?.glAccountId) {
+        cashAccountId = activeShift.glAccountId;
+      }
+    }
+    if (!cashAccountId) {
+      const cashMapping = mappingMap.get("cash");
+      if (cashMapping?.debitAccountId) {
+        cashAccountId = cashMapping.debitAccountId;
+      }
+    }
+
+    let inventoryAccountId: string | null = null;
+    if (invoice.warehouseId) {
+      const [wh] = await db.select().from(warehouses)
+        .where(eq(warehouses.id, invoice.warehouseId));
+      if (wh?.glAccountId) {
+        inventoryAccountId = wh.glAccountId;
+      }
+    }
+    if (!inventoryAccountId) {
+      const invMapping = mappingMap.get("inventory");
+      if (invMapping?.creditAccountId) {
+        inventoryAccountId = invMapping.creditAccountId;
+      }
+    }
+
+    const journalLineData: InsertJournalLine[] = [];
+    let lineNum = 1;
+
+    if (cashAccountId && netTotal > 0) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: cashAccountId,
+        debit: String(netTotal.toFixed(2)),
+        credit: "0",
+        description: "نقدية مبيعات",
+      });
+    }
+
+    const discountMapping = mappingMap.get("discount_allowed");
+    if (discountMapping?.debitAccountId && discountValue > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: discountMapping.debitAccountId,
+        debit: String(discountValue.toFixed(2)),
+        credit: "0",
+        description: "خصم مسموح به",
+      });
+    }
+
+    const cogsDrugsMapping = mappingMap.get("cogs_drugs");
+    if (cogsDrugsMapping?.debitAccountId && cogsDrugs > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: cogsDrugsMapping.debitAccountId,
+        debit: String(cogsDrugs.toFixed(2)),
+        credit: "0",
+        description: "تكلفة أدوية مباعة",
+      });
+    }
+
+    const cogsSuppliesMapping = mappingMap.get("cogs_supplies");
+    if (cogsSuppliesMapping?.debitAccountId && cogsSupplies > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: cogsSuppliesMapping.debitAccountId,
+        debit: String(cogsSupplies.toFixed(2)),
+        credit: "0",
+        description: "تكلفة مستلزمات مباعة",
+      });
+    }
+
+    const revenueDrugsMapping = mappingMap.get("revenue_drugs");
+    const revenueSuppliesMapping = mappingMap.get("revenue_consumables");
+    const revenueGeneralMapping = mappingMap.get("revenue_general");
+
+    if (revenueDrugsMapping?.creditAccountId && revenueDrugs > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: revenueDrugsMapping.creditAccountId,
+        debit: "0",
+        credit: String(revenueDrugs.toFixed(2)),
+        description: "إيراد مبيعات أدوية",
+      });
+    } else if (revenueGeneralMapping?.creditAccountId && revenueDrugs > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: revenueGeneralMapping.creditAccountId,
+        debit: "0",
+        credit: String(revenueDrugs.toFixed(2)),
+        description: "إيراد مبيعات أدوية",
+      });
+    }
+
+    if (revenueSuppliesMapping?.creditAccountId && revenueSupplies > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: revenueSuppliesMapping.creditAccountId,
+        debit: "0",
+        credit: String(revenueSupplies.toFixed(2)),
+        description: "إيراد مبيعات مستلزمات",
+      });
+    } else if (revenueGeneralMapping?.creditAccountId && revenueSupplies > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: revenueGeneralMapping.creditAccountId,
+        debit: "0",
+        credit: String(revenueSupplies.toFixed(2)),
+        description: "إيراد مبيعات مستلزمات",
+      });
+    }
+
+    const vatMapping = mappingMap.get("vat_output");
+    const vatAmount = parseFloat(invoice.vatAmount || invoice.totalVat || "0");
+    if (vatMapping?.creditAccountId && vatAmount > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: vatMapping.creditAccountId,
+        debit: "0",
+        credit: String(vatAmount.toFixed(2)),
+        description: "ضريبة قيمة مضافة مخرجات",
+      });
+    }
+
+    const totalCogs = cogsDrugs + cogsSupplies;
+    if (inventoryAccountId && totalCogs > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: inventoryAccountId,
+        debit: "0",
+        credit: String(totalCogs.toFixed(2)),
+        description: "مخزون مباع",
+      });
+    }
+
+    if (journalLineData.length === 0) return null;
+
+    const totalDebits = journalLineData.reduce((s, l) => s + parseFloat(l.debit || "0"), 0);
+    const totalCredits = journalLineData.reduce((s, l) => s + parseFloat(l.credit || "0"), 0);
+    const diff = Math.abs(totalDebits - totalCredits);
+
+    if (diff > 0.01) {
+      console.error(`Sales invoice journal unbalanced: debits=${totalDebits}, credits=${totalCredits}, diff=${diff}`);
+      return null;
+    }
+
+    return db.transaction(async (tx) => {
+      const [period] = await tx.select().from(fiscalPeriods)
+        .where(and(
+          lte(fiscalPeriods.startDate, invoice.invoiceDate),
+          gte(fiscalPeriods.endDate, invoice.invoiceDate),
+          eq(fiscalPeriods.isClosed, false)
+        ))
+        .limit(1);
+
+      const entryNumber = await this.getNextEntryNumber();
+
+      const [entry] = await tx.insert(journalEntries).values({
+        entryNumber,
+        entryDate: invoice.invoiceDate,
+        reference: `SI-${invoice.invoiceNumber}`,
+        description: `قيد فاتورة مبيعات رقم ${invoice.invoiceNumber}`,
+        status: "draft",
+        periodId: period?.id || null,
+        sourceType: "sales_invoice",
+        sourceDocumentId: invoiceId,
+        totalDebit: String(totalDebits.toFixed(2)),
+        totalCredit: String(totalCredits.toFixed(2)),
+      }).returning();
+
+      const linesWithEntryId = journalLineData.map((l, idx) => ({
+        ...l,
+        journalEntryId: entry.id,
+        lineNumber: idx + 1,
+      }));
+
+      await tx.insert(journalLines).values(linesWithEntryId);
+      return entry;
+    });
   }
 
   async deleteSalesInvoice(id: string): Promise<boolean> {
@@ -4946,7 +5163,7 @@ export class DatabaseStorage implements IStorage {
     return pharmacy;
   }
 
-  async openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string): Promise<CashierShift> {
+  async openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string, glAccountId?: string | null): Promise<CashierShift> {
     const [existingOpen] = await db.select().from(cashierShifts)
       .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.pharmacyId, pharmacyId), eq(cashierShifts.status, "open")));
     if (existingOpen) throw new Error("يوجد وردية مفتوحة بالفعل لهذا الكاشير في هذه الصيدلية");
@@ -4956,6 +5173,7 @@ export class DatabaseStorage implements IStorage {
       cashierName,
       pharmacyId,
       openingCash,
+      glAccountId: glAccountId || null,
       status: "open",
     }).returning();
 
