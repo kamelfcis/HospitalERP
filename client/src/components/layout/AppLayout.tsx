@@ -40,6 +40,7 @@ import {
   UserRound,
   Banknote,
   Users,
+  Lock,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -175,6 +176,11 @@ const systemNavItems = [
     title: "ربط الحسابات",
     href: "/account-mappings",
     icon: Settings,
+  },
+  {
+    title: "كلمات سر الخزن",
+    href: "/drawer-passwords",
+    icon: Lock,
   },
   {
     title: "سجل التدقيق",

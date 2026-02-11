@@ -128,6 +128,7 @@ import {
   doctors,
   admissions,
   accountMappings,
+  drawerPasswords,
   type Patient,
   type InsertPatient,
   type Doctor,
@@ -364,6 +365,12 @@ export interface IStorage {
   getPharmacy(id: string): Promise<Pharmacy | undefined>;
   createPharmacy(data: InsertPharmacy): Promise<Pharmacy>;
   updatePharmacy(id: string, data: Partial<InsertPharmacy>): Promise<Pharmacy>;
+
+  // Drawer Passwords
+  setDrawerPassword(glAccountId: string, passwordHash: string): Promise<void>;
+  getDrawerPassword(glAccountId: string): Promise<string | null>;
+  removeDrawerPassword(glAccountId: string): Promise<boolean>;
+  getDrawersWithPasswordStatus(): Promise<{ glAccountId: string; hasPassword: boolean; code: string; name: string }[]>;
 
   // Cashier
   openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string, glAccountId?: string | null): Promise<any>;
@@ -5319,6 +5326,46 @@ export class DatabaseStorage implements IStorage {
   async updatePharmacy(id: string, data: Partial<InsertPharmacy>): Promise<Pharmacy> {
     const [pharmacy] = await db.update(pharmacies).set(data).where(eq(pharmacies.id, id)).returning();
     return pharmacy;
+  }
+
+  // ==================== Drawer Passwords ====================
+
+  async setDrawerPassword(glAccountId: string, passwordHash: string): Promise<void> {
+    const [existing] = await db.select().from(drawerPasswords).where(eq(drawerPasswords.glAccountId, glAccountId));
+    if (existing) {
+      await db.update(drawerPasswords).set({ passwordHash, updatedAt: new Date() }).where(eq(drawerPasswords.glAccountId, glAccountId));
+    } else {
+      await db.insert(drawerPasswords).values({ glAccountId, passwordHash });
+    }
+  }
+
+  async getDrawerPassword(glAccountId: string): Promise<string | null> {
+    const [row] = await db.select().from(drawerPasswords).where(eq(drawerPasswords.glAccountId, glAccountId));
+    return row?.passwordHash || null;
+  }
+
+  async removeDrawerPassword(glAccountId: string): Promise<boolean> {
+    const result = await db.delete(drawerPasswords).where(eq(drawerPasswords.glAccountId, glAccountId));
+    return (result.rowCount || 0) > 0;
+  }
+
+  async getDrawersWithPasswordStatus(): Promise<{ glAccountId: string; hasPassword: boolean; code: string; name: string }[]> {
+    const cashAccounts = await db.select().from(accounts).where(
+      or(
+        sql`${accounts.code} LIKE '1211%'`,
+        sql`${accounts.code} LIKE '1212%'`
+      )
+    ).orderBy(asc(accounts.code));
+
+    const passwords = await db.select({ glAccountId: drawerPasswords.glAccountId }).from(drawerPasswords);
+    const passwordSet = new Set(passwords.map(p => p.glAccountId));
+
+    return cashAccounts.map(a => ({
+      glAccountId: a.id,
+      hasPassword: passwordSet.has(a.id),
+      code: a.code,
+      name: a.name,
+    }));
   }
 
   async openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string, glAccountId?: string | null): Promise<CashierShift> {

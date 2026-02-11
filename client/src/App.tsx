@@ -33,6 +33,7 @@ import Doctors from "@/pages/Doctors";
 import PatientInvoice from "@/pages/PatientInvoice";
 import CashierCollection from "@/pages/CashierCollection";
 import AccountMappings from "@/pages/AccountMappings";
+import DrawerPasswords from "@/pages/DrawerPasswords";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -69,6 +70,7 @@ function Router() {
         <Route path="/audit-log" component={AuditLog} />
         <Route path="/cashier-collection" component={CashierCollection} />
         <Route path="/account-mappings" component={AccountMappings} />
+        <Route path="/drawer-passwords" component={DrawerPasswords} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

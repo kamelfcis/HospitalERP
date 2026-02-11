@@ -92,6 +92,7 @@ export default function CashierCollection() {
   const [openingCash, setOpeningCash] = useState("0");
   const [shiftGlAccountId, setShiftGlAccountId] = useState("");
   const [glAccountSearch, setGlAccountSearch] = useState("");
+  const [drawerPassword, setDrawerPassword] = useState("");
   const [selectedPharmacyId, setSelectedPharmacyId] = useState("");
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closingCash, setClosingCash] = useState("0");
@@ -113,12 +114,29 @@ export default function CashierCollection() {
     queryKey: ["/api/accounts"],
   });
 
-  const filteredGlAccounts = useMemo(() => {
+  const { data: drawerPasswordsData } = useQuery<{ glAccountId: string; hasPassword: boolean; code: string; name: string }[]>({
+    queryKey: ["/api/drawer-passwords"],
+  });
+
+  const selectedDrawerHasPassword = useMemo(() => {
+    if (!shiftGlAccountId || !drawerPasswordsData) return false;
+    const drawer = drawerPasswordsData.find(d => d.glAccountId === shiftGlAccountId);
+    return drawer?.hasPassword || false;
+  }, [shiftGlAccountId, drawerPasswordsData]);
+
+  const cashAccounts = useMemo(() => {
     if (!glAccountsList) return [];
-    if (!glAccountSearch.trim()) return glAccountsList.slice(0, 50);
+    return glAccountsList.filter(a => 
+      a.code.startsWith("1211") || a.code.startsWith("1212")
+    );
+  }, [glAccountsList]);
+
+  const filteredGlAccounts = useMemo(() => {
+    if (!cashAccounts.length) return [];
+    if (!glAccountSearch.trim()) return cashAccounts;
     const q = glAccountSearch.toLowerCase();
-    return glAccountsList.filter(a => a.code.toLowerCase().includes(q) || a.nameAr.toLowerCase().includes(q)).slice(0, 50);
-  }, [glAccountsList, glAccountSearch]);
+    return cashAccounts.filter(a => a.code.toLowerCase().includes(q) || a.nameAr.toLowerCase().includes(q));
+  }, [cashAccounts, glAccountSearch]);
 
   const activePharmacyId = selectedPharmacyId || (pharmaciesList && pharmaciesList.length > 0 ? pharmaciesList[0].id : "");
 
@@ -235,10 +253,12 @@ export default function CashierCollection() {
         openingCash,
         pharmacyId: activePharmacyId,
         glAccountId: shiftGlAccountId || undefined,
+        drawerPassword: drawerPassword || undefined,
       });
       return res.json();
     },
     onSuccess: () => {
+      setDrawerPassword("");
       toast({ title: "تم فتح الوردية بنجاح" });
       queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift/active", CASHIER_ID, activePharmacyId] });
     },
@@ -634,7 +654,7 @@ export default function CashierCollection() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium block text-right">حساب الخزنة (GL)</label>
-                  <Select value={shiftGlAccountId} onValueChange={setShiftGlAccountId}>
+                  <Select value={shiftGlAccountId} onValueChange={(v) => { setShiftGlAccountId(v); setDrawerPassword(""); }}>
                     <SelectTrigger className="text-right" data-testid="select-gl-account-trigger">
                       <SelectValue placeholder="اختر حساب الخزنة..." />
                     </SelectTrigger>
@@ -657,9 +677,23 @@ export default function CashierCollection() {
                   </Select>
                   <p className="text-xs text-muted-foreground text-right">حساب خزنة الكاشير لتسجيل القيود المحاسبية (إجباري)</p>
                 </div>
+                {selectedDrawerHasPassword && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium block text-right">كلمة سر الخزنة</label>
+                    <Input
+                      type="password"
+                      placeholder="أدخل كلمة سر الخزنة..."
+                      value={drawerPassword}
+                      onChange={(e) => setDrawerPassword(e.target.value)}
+                      className="text-right"
+                      data-testid="input-drawer-password"
+                    />
+                    <p className="text-xs text-muted-foreground text-right">هذه الخزنة محمية بكلمة سر</p>
+                  </div>
+                )}
                 <Button
                   onClick={() => openShiftMutation.mutate()}
-                  disabled={!cashierName.trim() || !activePharmacyId || !shiftGlAccountId || openShiftMutation.isPending}
+                  disabled={!cashierName.trim() || !activePharmacyId || !shiftGlAccountId || (selectedDrawerHasPassword && !drawerPassword) || openShiftMutation.isPending}
                   className="w-full"
                   data-testid="button-open-shift"
                 >

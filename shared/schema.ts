@@ -1334,6 +1334,20 @@ export const mappingLineTypeLabels: Record<string, string> = {
   expense_general: "مصروفات عامة",
 };
 
+// كلمات سر الخزن
+export const drawerPasswords = pgTable("drawer_passwords", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  glAccountId: varchar("gl_account_id").notNull().references(() => accounts.id),
+  passwordHash: text("password_hash").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  glAccountUniq: uniqueIndex("idx_drawer_passwords_gl_account").on(table.glAccountId),
+}));
+
+export const insertDrawerPasswordSchema = createInsertSchema(drawerPasswords).omit({ id: true, updatedAt: true });
+export type InsertDrawerPassword = z.infer<typeof insertDrawerPasswordSchema>;
+export type DrawerPassword = typeof drawerPasswords.$inferSelect;
+
 export const sourceTypeLabels: Record<string, string> = {
   sales_invoice: "فاتورة مبيعات",
   patient_invoice: "فاتورة مريض",

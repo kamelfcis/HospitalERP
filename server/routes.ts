@@ -2,6 +2,7 @@ import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
+import bcrypt from "bcryptjs";
 
 const sseClients = new Map<string, Set<Response>>();
 
@@ -3228,14 +3229,72 @@ export async function registerRoutes(
     });
   });
 
+  // ==================== Drawer Passwords API ====================
+
+  app.get("/api/drawer-passwords", async (_req, res) => {
+    try {
+      const drawers = await storage.getDrawersWithPasswordStatus();
+      res.json(drawers);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/drawer-passwords/set", async (req, res) => {
+    try {
+      const { glAccountId, password } = req.body;
+      if (!glAccountId) return res.status(400).json({ message: "يجب تحديد حساب الخزنة" });
+      if (!password || password.length < 4) return res.status(400).json({ message: "كلمة السر يجب أن تكون 4 أحرف على الأقل" });
+      const hash = await bcrypt.hash(password, 10);
+      await storage.setDrawerPassword(glAccountId, hash);
+      res.json({ success: true, message: "تم تعيين كلمة السر بنجاح" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/drawer-passwords/validate", async (req, res) => {
+    try {
+      const { glAccountId, password } = req.body;
+      if (!glAccountId) return res.status(400).json({ message: "يجب تحديد حساب الخزنة" });
+      const hash = await storage.getDrawerPassword(glAccountId);
+      if (!hash) {
+        return res.json({ valid: true, hasPassword: false });
+      }
+      const valid = await bcrypt.compare(password || "", hash);
+      if (!valid) return res.status(401).json({ message: "كلمة السر غير صحيحة" });
+      res.json({ valid: true, hasPassword: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/drawer-passwords/:glAccountId", async (req, res) => {
+    try {
+      const removed = await storage.removeDrawerPassword(req.params.glAccountId);
+      if (!removed) return res.status(404).json({ message: "لا توجد كلمة سر لهذه الخزنة" });
+      res.json({ success: true, message: "تم إزالة كلمة السر" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ==================== Cashier API ====================
 
   app.post("/api/cashier/shift/open", async (req, res) => {
     try {
-      const { cashierId, cashierName, openingCash, pharmacyId, glAccountId } = req.body;
+      const { cashierId, cashierName, openingCash, pharmacyId, glAccountId, drawerPassword } = req.body;
       if (!cashierId || !cashierName) return res.status(400).json({ message: "بيانات الكاشير مطلوبة" });
       if (!pharmacyId) return res.status(400).json({ message: "يجب اختيار الصيدلية" });
       if (!glAccountId) return res.status(400).json({ message: "يجب اختيار حساب الخزنة" });
+
+      const passwordHash = await storage.getDrawerPassword(glAccountId);
+      if (passwordHash) {
+        if (!drawerPassword) return res.status(401).json({ message: "كلمة سر الخزنة مطلوبة" });
+        const valid = await bcrypt.compare(drawerPassword, passwordHash);
+        if (!valid) return res.status(401).json({ message: "كلمة سر الخزنة غير صحيحة" });
+      }
+
       const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", pharmacyId, glAccountId);
       res.json(shift);
     } catch (error: any) {
