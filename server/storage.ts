@@ -126,10 +126,13 @@ import {
   type InsertPharmacy,
   patients,
   doctors,
+  admissions,
   type Patient,
   type InsertPatient,
   type Doctor,
   type InsertDoctor,
+  type Admission,
+  type InsertAdmission,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -388,6 +391,15 @@ export interface IStorage {
   createDoctor(data: InsertDoctor): Promise<Doctor>;
   updateDoctor(id: string, data: Partial<InsertDoctor>): Promise<Doctor>;
   deleteDoctor(id: string): Promise<boolean>;
+
+  // Admissions
+  getAdmissions(filters?: { status?: string; search?: string }): Promise<Admission[]>;
+  getAdmission(id: string): Promise<Admission | undefined>;
+  createAdmission(data: InsertAdmission): Promise<Admission>;
+  updateAdmission(id: string, data: Partial<InsertAdmission>): Promise<Admission>;
+  dischargeAdmission(id: string): Promise<Admission>;
+  getAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader[]>;
+  consolidateAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -5011,6 +5023,156 @@ export class DatabaseStorage implements IStorage {
   async deleteDoctor(id: string): Promise<boolean> {
     await db.update(doctors).set({ isActive: false }).where(eq(doctors.id, id));
     return true;
+  }
+
+  // ==================== Admissions ====================
+
+  async getAdmissions(filters?: { status?: string; search?: string }): Promise<Admission[]> {
+    const conditions: any[] = [];
+    if (filters?.status) {
+      conditions.push(eq(admissions.status, filters.status as any));
+    }
+    if (filters?.search) {
+      const s = `%${filters.search}%`;
+      conditions.push(or(
+        ilike(admissions.patientName, s),
+        ilike(admissions.admissionNumber, s),
+        ilike(admissions.patientPhone || "", s),
+      ));
+    }
+    return await db.select().from(admissions)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(admissions.createdAt));
+  }
+
+  async getAdmission(id: string): Promise<Admission | undefined> {
+    const [a] = await db.select().from(admissions).where(eq(admissions.id, id));
+    return a;
+  }
+
+  async createAdmission(data: InsertAdmission): Promise<Admission> {
+    const maxNumResult = await db.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(admission_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM admissions`);
+    const nextNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
+
+    const [a] = await db.insert(admissions).values({
+      ...data,
+      admissionNumber: data.admissionNumber || String(nextNum),
+    }).returning();
+    return a;
+  }
+
+  async updateAdmission(id: string, data: Partial<InsertAdmission>): Promise<Admission> {
+    const [a] = await db.update(admissions).set({
+      ...data,
+      updatedAt: new Date(),
+    }).where(eq(admissions.id, id)).returning();
+    return a;
+  }
+
+  async dischargeAdmission(id: string): Promise<Admission> {
+    const [a] = await db.update(admissions).set({
+      status: "discharged",
+      dischargeDate: new Date().toISOString().split("T")[0],
+      updatedAt: new Date(),
+    }).where(eq(admissions.id, id)).returning();
+    return a;
+  }
+
+  async getAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader[]> {
+    return await db.select().from(patientInvoiceHeaders)
+      .where(eq(patientInvoiceHeaders.admissionId, admissionId))
+      .orderBy(asc(patientInvoiceHeaders.createdAt));
+  }
+
+  async consolidateAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader> {
+    return await db.transaction(async (tx) => {
+      const [admission] = await tx.select().from(admissions).where(eq(admissions.id, admissionId));
+      if (!admission) throw new Error("الإقامة غير موجودة");
+
+      const invoices = await tx.select().from(patientInvoiceHeaders)
+        .where(and(
+          eq(patientInvoiceHeaders.admissionId, admissionId),
+          eq(patientInvoiceHeaders.isConsolidated, false),
+        ))
+        .orderBy(asc(patientInvoiceHeaders.createdAt));
+
+      if (invoices.length === 0) throw new Error("لا توجد فواتير لتجميعها");
+
+      const existingConsolidated = await tx.select().from(patientInvoiceHeaders)
+        .where(and(
+          eq(patientInvoiceHeaders.admissionId, admissionId),
+          eq(patientInvoiceHeaders.isConsolidated, true),
+        ));
+
+      if (existingConsolidated.length > 0) {
+        for (const ec of existingConsolidated) {
+          await tx.delete(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, ec.id));
+          await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, ec.id));
+        }
+      }
+
+      await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
+      const maxNumResult = await tx.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM patient_invoice_headers`);
+      const nextNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
+
+      const totalAmount = invoices.reduce((s, inv) => s + parseFloat(inv.totalAmount), 0);
+      const discountAmount = invoices.reduce((s, inv) => s + parseFloat(inv.discountAmount), 0);
+      const netAmount = invoices.reduce((s, inv) => s + parseFloat(inv.netAmount), 0);
+      const paidAmount = invoices.reduce((s, inv) => s + parseFloat(inv.paidAmount), 0);
+
+      const [consolidated] = await tx.insert(patientInvoiceHeaders).values({
+        invoiceNumber: String(nextNum),
+        invoiceDate: new Date().toISOString().split("T")[0],
+        patientName: admission.patientName,
+        patientPhone: admission.patientPhone,
+        patientType: invoices[0].patientType,
+        admissionId: admissionId,
+        isConsolidated: true,
+        sourceInvoiceIds: JSON.stringify(invoices.map(i => i.id)),
+        doctorName: admission.doctorName,
+        notes: `فاتورة مجمعة - إقامة رقم ${admission.admissionNumber}`,
+        status: "draft",
+        totalAmount: String(+totalAmount.toFixed(2)),
+        discountAmount: String(+discountAmount.toFixed(2)),
+        netAmount: String(+netAmount.toFixed(2)),
+        paidAmount: String(+paidAmount.toFixed(2)),
+      }).returning();
+
+      let sortOrder = 0;
+      for (const inv of invoices) {
+        const lines = await tx.select().from(patientInvoiceLines)
+          .where(eq(patientInvoiceLines.headerId, inv.id))
+          .orderBy(asc(patientInvoiceLines.sortOrder));
+
+        if (lines.length > 0) {
+          const newLines = lines.map(l => ({
+            headerId: consolidated.id,
+            lineType: l.lineType,
+            serviceId: l.serviceId,
+            itemId: l.itemId,
+            description: l.description,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+            discountPercent: l.discountPercent,
+            discountAmount: l.discountAmount,
+            totalPrice: l.totalPrice,
+            unitLevel: l.unitLevel,
+            lotId: l.lotId,
+            expiryMonth: l.expiryMonth,
+            expiryYear: l.expiryYear,
+            priceSource: l.priceSource,
+            doctorName: l.doctorName,
+            nurseName: l.nurseName,
+            notes: l.notes ? `[${inv.invoiceNumber}] ${l.notes}` : `[فاتورة ${inv.invoiceNumber}]`,
+            sortOrder: sortOrder++,
+          }));
+          await tx.insert(patientInvoiceLines).values(newLines);
+        }
+      }
+
+      const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, consolidated.id));
+      return finalHeader;
+    });
   }
 }
 

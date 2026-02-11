@@ -13,7 +13,7 @@ import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loa
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatCurrency, formatDateShort } from "@/lib/formatters";
-import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item, Warehouse, Patient, Doctor } from "@shared/schema";
+import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item, Warehouse, Patient, Doctor, Admission } from "@shared/schema";
 import { patientInvoiceStatusLabels, patientTypeLabels, lineTypeLabels, paymentMethodLabels } from "@shared/schema";
 
 function useDebounce(value: string, delay: number) {
@@ -227,6 +227,7 @@ export default function PatientInvoice() {
   const [contractName, setContractName] = useState("");
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState("draft");
+  const [admissionId, setAdmissionId] = useState("");
 
   const [warehouseId, setWarehouseId] = useState("");
   const [fefoLoading, setFefoLoading] = useState(false);
@@ -302,6 +303,14 @@ export default function PatientInvoice() {
 
   const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
   const { data: warehouses } = useQuery<any[]>({ queryKey: ["/api/warehouses"] });
+  const { data: activeAdmissions } = useQuery<Admission[]>({
+    queryKey: ["/api/admissions", "active"],
+    queryFn: async () => {
+      const res = await fetch("/api/admissions?status=active", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch admissions");
+      return res.json();
+    },
+  });
 
   useEffect(() => {
     if (nextNumberData?.nextNumber && !invoiceId && !invoiceNumber) {
@@ -537,6 +546,7 @@ export default function PatientInvoice() {
         doctorName: doctorName || null,
         contractName: patientType === "contract" ? contractName : null,
         notes: notes || null,
+        admissionId: admissionId || null,
         status: "draft",
         totalAmount: String(totals.totalAmount),
         discountAmount: String(totals.discountAmount),
@@ -662,6 +672,7 @@ export default function PatientInvoice() {
     setPatientType("cash");
     setContractName("");
     setNotes("");
+    setAdmissionId("");
     setStatus("draft");
     setLines([]);
     setPayments([]);
@@ -711,6 +722,7 @@ export default function PatientInvoice() {
         patientType,
         contractName: contractName || null,
         notes,
+        admissionId: admissionId || null,
       });
       const data = await res.json();
       const newInvoices: PatientInvoiceHeader[] = data.invoices;
@@ -755,6 +767,7 @@ export default function PatientInvoice() {
       setPatientType(data.patientType || "cash");
       setContractName(data.contractName || "");
       setNotes(data.notes || "");
+      setAdmissionId(data.admissionId || "");
       setStatus(data.status);
 
       const loadedLines: LineLocal[] = (data.lines || []).map((l: any) => ({
@@ -2025,6 +2038,31 @@ export default function PatientInvoice() {
                     <SelectContent>
                       {(departments || []).map((dept) => (
                         <SelectItem key={dept.id} value={dept.id}>{dept.nameAr}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-row-reverse items-center gap-1">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">الإقامة:</Label>
+                  <Select value={admissionId || "none"} onValueChange={(val) => {
+                    setAdmissionId(val === "none" ? "" : val);
+                    if (val && val !== "none") {
+                      const adm = (activeAdmissions || []).find(a => a.id === val);
+                      if (adm) {
+                        if (!patientName) setPatientName(adm.patientName);
+                        if (!patientPhone && adm.patientPhone) setPatientPhone(adm.patientPhone);
+                      }
+                    }
+                  }} disabled={!isDraft}>
+                    <SelectTrigger className="h-7 text-xs w-36" data-testid="select-admission">
+                      <SelectValue placeholder="بدون إقامة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">بدون إقامة</SelectItem>
+                      {(activeAdmissions || []).map((adm) => (
+                        <SelectItem key={adm.id} value={adm.id}>
+                          {adm.admissionNumber} - {adm.patientName}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

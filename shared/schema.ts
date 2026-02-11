@@ -39,6 +39,7 @@ export const patientInvoiceStatusEnum = pgEnum("patient_invoice_status", ["draft
 export const patientTypeEnum = pgEnum("patient_type", ["cash", "contract"]);
 export const patientInvoiceLineTypeEnum = pgEnum("patient_invoice_line_type", ["service", "drug", "consumable", "equipment"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank_transfer", "insurance"]);
+export const admissionStatusEnum = pgEnum("admission_status", ["active", "discharged", "cancelled"]);
 
 // المستخدمين
 export const users = pgTable("users", {
@@ -682,6 +683,9 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   patientType: patientTypeEnum("patient_type").notNull().default("cash"),
   departmentId: varchar("department_id").references(() => departments.id),
   warehouseId: varchar("warehouse_id").references(() => warehouses.id),
+  admissionId: varchar("admission_id"),
+  isConsolidated: boolean("is_consolidated").notNull().default(false),
+  sourceInvoiceIds: text("source_invoice_ids"),
   doctorName: text("doctor_name"),
   contractName: text("contract_name"),
   notes: text("notes"),
@@ -699,6 +703,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   patientIdx: index("idx_pat_inv_patient").on(table.patientName),
   doctorIdx: index("idx_pat_inv_doctor").on(table.doctorName),
   statusIdx: index("idx_pat_inv_status").on(table.status),
+  admissionIdx: index("idx_pat_inv_admission").on(table.admissionId),
 }));
 
 // فواتير المرضى - بنود الفاتورة
@@ -1236,3 +1241,28 @@ export const cashierShiftStatusLabels: Record<string, string> = {
   open: "مفتوحة",
   closed: "مغلقة",
 };
+
+// إقامات المرضى
+export const admissions = pgTable("admissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  admissionNumber: varchar("admission_number", { length: 30 }).notNull().unique(),
+  patientId: varchar("patient_id").references(() => patients.id),
+  patientName: text("patient_name").notNull(),
+  patientPhone: text("patient_phone"),
+  admissionDate: date("admission_date").notNull(),
+  dischargeDate: date("discharge_date"),
+  status: admissionStatusEnum("status").notNull().default("active"),
+  doctorName: text("doctor_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  admNumIdx: index("idx_adm_number").on(table.admissionNumber),
+  patientIdx: index("idx_adm_patient").on(table.patientName),
+  statusIdx: index("idx_adm_status").on(table.status),
+  dateIdx: index("idx_adm_date").on(table.admissionDate),
+}));
+
+export const insertAdmissionSchema = createInsertSchema(admissions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAdmission = z.infer<typeof insertAdmissionSchema>;
+export type Admission = typeof admissions.$inferSelect;

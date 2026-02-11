@@ -38,6 +38,7 @@ import {
   insertPatientInvoiceHeaderSchema,
   insertPatientInvoiceLineSchema,
   insertPatientInvoicePaymentSchema,
+  insertAdmissionSchema,
   accounts,
   accountTypeLabels,
   salesInvoiceHeaders,
@@ -3044,6 +3045,100 @@ export async function registerRoutes(
     try {
       await storage.deleteDoctor(req.params.id);
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== Admissions API ====================
+
+  app.get("/api/admissions", async (req, res) => {
+    try {
+      const filters: any = {};
+      if (req.query.status) filters.status = req.query.status as string;
+      if (req.query.search) filters.search = req.query.search as string;
+      const list = await storage.getAdmissions(filters);
+      res.json(list);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admissions/:id", async (req, res) => {
+    try {
+      const a = await storage.getAdmission(req.params.id);
+      if (!a) return res.status(404).json({ message: "الإقامة غير موجودة" });
+      res.json(a);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admissions", async (req, res) => {
+    try {
+      const parsed = insertAdmissionSchema.parse(req.body);
+      const a = await storage.createAdmission(parsed);
+      res.status(201).json(a);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/admissions/:id", async (req, res) => {
+    try {
+      const parsed = insertAdmissionSchema.partial().parse(req.body);
+      const a = await storage.updateAdmission(req.params.id, parsed);
+      res.json(a);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admissions/:id/discharge", async (req, res) => {
+    try {
+      const a = await storage.dischargeAdmission(req.params.id);
+      res.json(a);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admissions/:id/invoices", async (req, res) => {
+    try {
+      const invoices = await storage.getAdmissionInvoices(req.params.id);
+      res.json(invoices);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admissions/:id/consolidate", async (req, res) => {
+    try {
+      const consolidated = await storage.consolidateAdmissionInvoices(req.params.id);
+      res.json(consolidated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admissions/:id/report", async (req, res) => {
+    try {
+      const admission = await storage.getAdmission(req.params.id);
+      if (!admission) return res.status(404).json({ message: "الإقامة غير موجودة" });
+
+      const invoices = await storage.getAdmissionInvoices(req.params.id);
+      const invoiceDetails = [];
+      for (const inv of invoices) {
+        if (inv.isConsolidated) continue;
+        const detail = await storage.getPatientInvoice(inv.id);
+        const dept = inv.departmentId ? await storage.getDepartment(inv.departmentId) : null;
+        invoiceDetails.push({
+          ...(detail || inv),
+          departmentName: dept?.nameAr || "بدون قسم",
+        });
+      }
+
+      res.json({ admission, invoices: invoiceDetails });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
