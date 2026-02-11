@@ -2800,6 +2800,15 @@ export class DatabaseStorage implements IStorage {
         if (item.hasExpiry && (!line.expiryMonth || !line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية (شهر/سنة)`);
         if (!item.hasExpiry && (line.expiryMonth || line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);
         
+        let costPerMinor = parseFloat(line.purchasePrice);
+        const unitLevel = line.unitLevel || 'minor';
+        if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
+          costPerMinor = costPerMinor / parseFloat(item.majorToMinor);
+        } else if (unitLevel === 'medium' && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
+          costPerMinor = costPerMinor / parseFloat(item.mediumToMinor);
+        }
+        const costPerMinorStr = costPerMinor.toFixed(4);
+        
         const lotConditions = [
           eq(inventoryLots.itemId, line.itemId),
           eq(inventoryLots.warehouseId, header.warehouse_id),
@@ -2821,7 +2830,7 @@ export class DatabaseStorage implements IStorage {
           const newQty = parseFloat(lot.qtyInMinor) + qtyMinor;
           await tx.update(inventoryLots).set({ 
             qtyInMinor: newQty.toFixed(4),
-            purchasePrice: line.purchasePrice,
+            purchasePrice: costPerMinorStr,
             salePrice: lotSalePrice,
             updatedAt: new Date(),
           }).where(eq(inventoryLots.id, lot.id));
@@ -2834,7 +2843,7 @@ export class DatabaseStorage implements IStorage {
             expiryMonth: line.expiryMonth || null,
             expiryYear: line.expiryYear || null,
             receivedDate: header.receive_date,
-            purchasePrice: line.purchasePrice,
+            purchasePrice: costPerMinorStr,
             salePrice: lotSalePrice,
             qtyInMinor: qtyMinor.toFixed(4),
           }).returning();
@@ -2846,7 +2855,7 @@ export class DatabaseStorage implements IStorage {
           warehouseId: header.warehouse_id,
           txType: 'in',
           qtyChangeInMinor: qtyMinor.toFixed(4),
-          unitCost: line.purchasePrice,
+          unitCost: costPerMinorStr,
           referenceType: 'receiving',
           referenceId: header.id,
         });
@@ -3546,6 +3555,15 @@ export class DatabaseStorage implements IStorage {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
 
+        let costPerMinor = parseFloat(line.purchasePrice as string);
+        const unitLevel = (line as any).unitLevel || 'minor';
+        if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
+          costPerMinor = costPerMinor / parseFloat(item.majorToMinor);
+        } else if (unitLevel === 'medium' && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
+          costPerMinor = costPerMinor / parseFloat(item.mediumToMinor);
+        }
+        const costPerMinorStr = costPerMinor.toFixed(4);
+
         const lotConditions = [
           eq(inventoryLots.itemId, line.itemId),
           eq(inventoryLots.warehouseId, correction.warehouse_id),
@@ -3567,7 +3585,7 @@ export class DatabaseStorage implements IStorage {
           const newQty = parseFloat(lot.qtyInMinor as string) + qtyMinor;
           await tx.update(inventoryLots).set({ 
             qtyInMinor: newQty.toFixed(4),
-            purchasePrice: line.purchasePrice,
+            purchasePrice: costPerMinorStr,
             salePrice: corrLotSalePrice,
             updatedAt: new Date(),
           }).where(eq(inventoryLots.id, lot.id));
@@ -3580,7 +3598,7 @@ export class DatabaseStorage implements IStorage {
             expiryMonth: line.expiryMonth || null,
             expiryYear: line.expiryYear || null,
             receivedDate: correction.receive_date,
-            purchasePrice: line.purchasePrice,
+            purchasePrice: costPerMinorStr,
             salePrice: corrLotSalePrice,
             qtyInMinor: qtyMinor.toFixed(4),
           }).returning();
@@ -3592,7 +3610,7 @@ export class DatabaseStorage implements IStorage {
           warehouseId: correction.warehouse_id,
           txType: 'in',
           qtyChangeInMinor: qtyMinor.toFixed(4),
-          unitCost: line.purchasePrice,
+          unitCost: costPerMinorStr,
           referenceType: 'receiving_correction',
           referenceId: correctionId,
         });
