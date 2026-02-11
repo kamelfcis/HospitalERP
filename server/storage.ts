@@ -4410,20 +4410,11 @@ export class DatabaseStorage implements IStorage {
     const discountValue = parseFloat(invoice.discountValue || "0");
     const netTotal = parseFloat(invoice.netTotal || "0");
 
-    let cashAccountId: string | null = null;
-    if (invoice.pharmacyId) {
-      const [activeShift] = await db.select().from(cashierShifts)
-        .where(and(
-          eq(cashierShifts.pharmacyId, invoice.pharmacyId),
-          eq(cashierShifts.status, "open")
-        ))
-        .limit(1);
-      if (activeShift?.glAccountId) {
-        cashAccountId = activeShift.glAccountId;
-      }
-    }
-    if (!cashAccountId) {
-      console.error("Sales invoice journal: no cashier GL account found for pharmacy", invoice.pharmacyId);
+    const receivablesMapping = mappingMap.get("receivables");
+    let debitAccountId: string | null = receivablesMapping?.debitAccountId || null;
+
+    if (!debitAccountId) {
+      console.error("Sales invoice journal: no receivables account mapping found - configure 'receivables' line type in account mappings for sales_invoice");
       return null;
     }
 
@@ -4445,14 +4436,14 @@ export class DatabaseStorage implements IStorage {
     const journalLineData: InsertJournalLine[] = [];
     let lineNum = 1;
 
-    if (cashAccountId && netTotal > 0) {
+    if (debitAccountId && netTotal > 0) {
       journalLineData.push({
         journalEntryId: "",
         lineNumber: lineNum++,
-        accountId: cashAccountId,
+        accountId: debitAccountId,
         debit: String(netTotal.toFixed(2)),
         credit: "0",
-        description: "نقدية مبيعات",
+        description: "مدينون - في انتظار التحصيل",
       });
     }
 
@@ -4605,6 +4596,74 @@ export class DatabaseStorage implements IStorage {
       await tx.insert(journalLines).values(linesWithEntryId);
       return entry;
     });
+  }
+
+  private async completeSalesJournalsWithCash(
+    invoiceIds: string[], cashGlAccountId: string | null, _pharmacyId: string
+  ): Promise<void> {
+    let cashAccountId = cashGlAccountId;
+    if (!cashAccountId) {
+      const cashMappings = await this.getMappingsForTransaction("cashier_collection");
+      const cashMapping = cashMappings.find(m => m.lineType === "cash");
+      if (cashMapping?.debitAccountId) {
+        cashAccountId = cashMapping.debitAccountId;
+      }
+    }
+    if (!cashAccountId) {
+      console.error("completeSalesJournalsWithCash: no cash GL account found");
+      return;
+    }
+
+    for (const invoiceId of invoiceIds) {
+      const [invoice] = await db.select({
+        warehouseId: salesInvoiceHeaders.warehouseId,
+        isReturn: salesInvoiceHeaders.isReturn,
+      }).from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
+
+      const invoiceReceivableIds = new Set<string>();
+      const mappings = await this.getMappingsForTransaction("sales_invoice", invoice?.warehouseId || undefined);
+      for (const m of mappings) {
+        if (m.lineType === "receivables" && m.debitAccountId) {
+          invoiceReceivableIds.add(m.debitAccountId);
+        }
+      }
+
+      if (invoiceReceivableIds.size === 0) continue;
+
+      const [existingEntry] = await db.select().from(journalEntries)
+        .where(and(
+          eq(journalEntries.sourceType, "sales_invoice"),
+          eq(journalEntries.sourceDocumentId, invoiceId)
+        ));
+
+      if (!existingEntry) continue;
+      if (existingEntry.status === "posted") continue;
+
+      const existingLines = await db.select().from(journalLines)
+        .where(eq(journalLines.journalEntryId, existingEntry.id))
+        .orderBy(asc(journalLines.lineNumber));
+
+      const receivablesLine = existingLines.find(l =>
+        invoiceReceivableIds.has(l.accountId) &&
+        (parseFloat(l.debit || "0") > 0 || parseFloat(l.credit || "0") > 0)
+      );
+
+      if (receivablesLine) {
+        const isReturn = invoice?.isReturn || false;
+        const hasDebit = parseFloat(receivablesLine.debit || "0") > 0;
+        const desc = isReturn ? "نقدية مرتجع - تم الصرف" : "نقدية مبيعات - تم التحصيل";
+        const entryDesc = isReturn ? "(تم صرف المرتجع)" : "(تم التحصيل)";
+
+        await db.update(journalLines).set({
+          accountId: cashAccountId,
+          description: desc,
+        }).where(eq(journalLines.id, receivablesLine.id));
+
+        await db.update(journalEntries).set({
+          description: `${existingEntry.description} ${entryDesc}`,
+        }).where(eq(journalEntries.id, existingEntry.id));
+      }
+    }
   }
 
   async deleteSalesInvoice(id: string): Promise<boolean> {
@@ -5407,17 +5466,9 @@ export class DatabaseStorage implements IStorage {
 
       const result = { receipts, totalCollected: totalCollected.toFixed(2), count: receipts.length };
 
-      this.generateJournalEntry({
-        sourceType: "cashier_collection",
-        sourceDocumentId: shiftId,
-        reference: `CSH-${receipts.map(r => r.invoiceNumber).join(",")}`,
-        description: `تحصيل كاشير - ${receipts.length} فاتورة - المبلغ: ${totalCollected.toFixed(2)}`,
-        entryDate: new Date().toISOString().split("T")[0],
-        lines: [
-          { lineType: "cash", amount: totalCollected.toFixed(2) },
-          { lineType: "receivables", amount: totalCollected.toFixed(2) },
-        ],
-      }).catch(err => console.error("Auto journal for cashier collection failed:", err));
+      this.completeSalesJournalsWithCash(
+        invoiceIds, shift.glAccountId || null, shift.pharmacyId || ""
+      ).catch(err => console.error("Auto journal completion for cashier collection failed:", err));
 
       return result;
     });
@@ -5477,17 +5528,9 @@ export class DatabaseStorage implements IStorage {
 
       const result = { receipts, totalRefunded: totalRefunded.toFixed(2), count: receipts.length };
 
-      this.generateJournalEntry({
-        sourceType: "cashier_refund",
-        sourceDocumentId: shiftId,
-        reference: `RFD-${receipts.map(r => r.invoiceNumber).join(",")}`,
-        description: `مرتجع كاشير - ${receipts.length} فاتورة - المبلغ: ${totalRefunded.toFixed(2)}`,
-        entryDate: new Date().toISOString().split("T")[0],
-        lines: [
-          { lineType: "returns", amount: totalRefunded.toFixed(2) },
-          { lineType: "cash", amount: totalRefunded.toFixed(2) },
-        ],
-      }).catch(err => console.error("Auto journal for cashier refund failed:", err));
+      this.completeSalesJournalsWithCash(
+        invoiceIds, shift.glAccountId || null, shift.pharmacyId || ""
+      ).catch(err => console.error("Auto journal completion for cashier refund failed:", err));
 
       return result;
     });
