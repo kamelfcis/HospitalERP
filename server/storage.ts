@@ -4243,6 +4243,58 @@ export class DatabaseStorage implements IStorage {
 
       const numPatients = patients.length;
 
+      const itemIds = [...new Set(sourceLines.filter(l => l.itemId).map(l => l.itemId!))];
+      const itemMap: Record<string, any> = {};
+      if (itemIds.length > 0) {
+        const fetchedItems = await tx.select().from(items).where(
+          sql`${items.id} IN (${sql.join(itemIds.map(id => sql`${id}`), sql`, `)})`
+        );
+        for (const it of fetchedItems) {
+          itemMap[it.id] = it;
+        }
+      }
+
+      const convertedLines = sourceLines.map((line) => {
+        const origQty = parseFloat(line.quantity);
+        const origUnitPrice = parseFloat(line.unitPrice);
+        const origLevel = line.unitLevel || "minor";
+        const item = line.itemId ? itemMap[line.itemId] : null;
+
+        if (!item || origLevel === "minor") {
+          return { ...line, distQty: origQty, distUnitPrice: origUnitPrice, distUnitLevel: origLevel };
+        }
+
+        const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
+        const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
+        let majorToMinor = parseFloat(String(item.majorToMinor)) || 0;
+        if (majorToMinor <= 0 && majorToMedium > 0 && mediumToMinor > 0) {
+          majorToMinor = majorToMedium * mediumToMinor;
+        }
+
+        let smallestLevel = origLevel;
+        let convFactor = 1;
+
+        if (origLevel === "major") {
+          if (item.minorUnitName && majorToMinor > 1) {
+            smallestLevel = "minor";
+            convFactor = majorToMinor;
+          } else if (item.mediumUnitName && majorToMedium > 1) {
+            smallestLevel = "medium";
+            convFactor = majorToMedium;
+          }
+        } else if (origLevel === "medium") {
+          if (item.minorUnitName && mediumToMinor > 1) {
+            smallestLevel = "minor";
+            convFactor = mediumToMinor;
+          }
+        }
+
+        const distQty = +(origQty * convFactor).toFixed(4);
+        const distUnitPrice = +(origUnitPrice / convFactor).toFixed(4);
+
+        return { ...line, distQty, distUnitPrice, distUnitLevel: smallestLevel };
+      });
+
       await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
       const maxNumResult = await tx.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM patient_invoice_headers`);
       const baseNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
@@ -4274,53 +4326,54 @@ export class DatabaseStorage implements IStorage {
 
         const newLines: any[] = [];
 
-        for (let li = 0; li < sourceLines.length; li++) {
-          const line = sourceLines[li];
-          const totalQty = parseFloat(line.quantity);
+        for (let li = 0; li < convertedLines.length; li++) {
+          const cl = convertedLines[li];
+          const totalQty = cl.distQty;
 
           if (!allocatedSoFar[li]) allocatedSoFar[li] = 0;
           let share: number;
           if (pi === numPatients - 1) {
             share = +(totalQty - allocatedSoFar[li]).toFixed(4);
           } else {
-            share = +(Math.floor((totalQty / numPatients) * 10000) / 10000).toFixed(4);
             const intQty = Math.round(totalQty);
-            if (Math.abs(totalQty - intQty) < 0.0001) {
+            if (Math.abs(totalQty - intQty) < 0.0001 && intQty > 0) {
               const baseShare = Math.floor(intQty / numPatients);
               const remainder = intQty - baseShare * numPatients;
               share = pi < remainder ? baseShare + 1 : baseShare;
+            } else {
+              share = +(Math.round((totalQty / numPatients) * 10000) / 10000);
             }
           }
           allocatedSoFar[li] = +(allocatedSoFar[li] + share).toFixed(4);
 
           if (share <= 0) continue;
 
-          const unitPrice = parseFloat(line.unitPrice);
-          const origDiscPct = parseFloat(line.discountPercent || "0");
+          const unitPrice = cl.distUnitPrice;
+          const origDiscPct = parseFloat(cl.discountPercent || "0");
           const lineGross = +(share * unitPrice).toFixed(2);
           const lineDiscAmt = +(lineGross * origDiscPct / 100).toFixed(2);
           const lineTotal = +(lineGross - lineDiscAmt).toFixed(2);
 
           newLines.push({
             headerId: newHeader.id,
-            lineType: line.lineType,
-            serviceId: line.serviceId,
-            itemId: line.itemId,
-            description: line.description,
+            lineType: cl.lineType,
+            serviceId: cl.serviceId,
+            itemId: cl.itemId,
+            description: cl.description,
             quantity: String(share),
-            unitPrice: line.unitPrice,
-            discountPercent: line.discountPercent,
+            unitPrice: String(unitPrice),
+            discountPercent: String(origDiscPct),
             discountAmount: String(lineDiscAmt),
             totalPrice: String(lineTotal),
-            unitLevel: line.unitLevel,
-            lotId: line.lotId,
-            expiryMonth: line.expiryMonth,
-            expiryYear: line.expiryYear,
-            priceSource: line.priceSource,
-            doctorName: line.doctorName,
-            nurseName: line.nurseName,
-            notes: line.notes,
-            sortOrder: line.sortOrder,
+            unitLevel: cl.distUnitLevel,
+            lotId: cl.lotId,
+            expiryMonth: cl.expiryMonth,
+            expiryYear: cl.expiryYear,
+            priceSource: cl.priceSource,
+            doctorName: cl.doctorName,
+            nurseName: cl.nurseName,
+            notes: cl.notes,
+            sortOrder: cl.sortOrder,
           });
         }
 
@@ -4365,6 +4418,58 @@ export class DatabaseStorage implements IStorage {
     return await db.transaction(async (tx) => {
       const numPatients = patients.length;
 
+      const itemIds = [...new Set(sourceLines.filter((l: any) => l.itemId).map((l: any) => l.itemId))];
+      const itemMap: Record<string, any> = {};
+      if (itemIds.length > 0) {
+        const fetchedItems = await tx.select().from(items).where(
+          sql`${items.id} IN (${sql.join(itemIds.map(id => sql`${id}`), sql`, `)})`
+        );
+        for (const it of fetchedItems) {
+          itemMap[it.id] = it;
+        }
+      }
+
+      const convertedLines = sourceLines.map((line: any) => {
+        const origQty = parseFloat(line.quantity);
+        const origUnitPrice = parseFloat(line.unitPrice);
+        const origLevel = line.unitLevel || "minor";
+        const item = line.itemId ? itemMap[line.itemId] : null;
+
+        if (!item || origLevel === "minor") {
+          return { ...line, distQty: origQty, distUnitPrice: origUnitPrice, distUnitLevel: origLevel };
+        }
+
+        const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
+        const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
+        let majorToMinor = parseFloat(String(item.majorToMinor)) || 0;
+        if (majorToMinor <= 0 && majorToMedium > 0 && mediumToMinor > 0) {
+          majorToMinor = majorToMedium * mediumToMinor;
+        }
+
+        let smallestLevel = origLevel;
+        let convFactor = 1;
+
+        if (origLevel === "major") {
+          if (item.minorUnitName && majorToMinor > 1) {
+            smallestLevel = "minor";
+            convFactor = majorToMinor;
+          } else if (item.mediumUnitName && majorToMedium > 1) {
+            smallestLevel = "medium";
+            convFactor = majorToMedium;
+          }
+        } else if (origLevel === "medium") {
+          if (item.minorUnitName && mediumToMinor > 1) {
+            smallestLevel = "minor";
+            convFactor = mediumToMinor;
+          }
+        }
+
+        const distQty = +(origQty * convFactor).toFixed(4);
+        const distUnitPrice = +(origUnitPrice / convFactor).toFixed(4);
+
+        return { ...line, distQty, distUnitPrice, distUnitLevel: smallestLevel };
+      });
+
       await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
       const maxNumResult = await tx.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM patient_invoice_headers`);
       const baseNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
@@ -4396,53 +4501,54 @@ export class DatabaseStorage implements IStorage {
 
         const newLines: any[] = [];
 
-        for (let li = 0; li < sourceLines.length; li++) {
-          const line = sourceLines[li];
-          const totalQty = parseFloat(line.quantity);
+        for (let li = 0; li < convertedLines.length; li++) {
+          const cl = convertedLines[li];
+          const totalQty = cl.distQty;
 
           if (!allocatedSoFar[li]) allocatedSoFar[li] = 0;
           let share: number;
           if (pi === numPatients - 1) {
             share = +(totalQty - allocatedSoFar[li]).toFixed(4);
           } else {
-            share = +(Math.floor((totalQty / numPatients) * 10000) / 10000).toFixed(4);
             const intQty = Math.round(totalQty);
-            if (Math.abs(totalQty - intQty) < 0.0001) {
+            if (Math.abs(totalQty - intQty) < 0.0001 && intQty > 0) {
               const baseShare = Math.floor(intQty / numPatients);
               const remainder = intQty - baseShare * numPatients;
               share = pi < remainder ? baseShare + 1 : baseShare;
+            } else {
+              share = +(Math.round((totalQty / numPatients) * 10000) / 10000);
             }
           }
           allocatedSoFar[li] = +(allocatedSoFar[li] + share).toFixed(4);
 
           if (share <= 0) continue;
 
-          const unitPrice = parseFloat(line.unitPrice);
-          const origDiscPct = parseFloat(line.discountPercent || "0");
+          const unitPrice = cl.distUnitPrice;
+          const origDiscPct = parseFloat(cl.discountPercent || "0");
           const lineGross = +(share * unitPrice).toFixed(2);
           const lineDiscAmt = +(lineGross * origDiscPct / 100).toFixed(2);
           const lineTotal = +(lineGross - lineDiscAmt).toFixed(2);
 
           newLines.push({
             headerId: newHeader.id,
-            lineType: line.lineType,
-            serviceId: line.serviceId || null,
-            itemId: line.itemId || null,
-            description: line.description,
+            lineType: cl.lineType,
+            serviceId: cl.serviceId || null,
+            itemId: cl.itemId || null,
+            description: cl.description,
             quantity: String(share),
             unitPrice: String(unitPrice),
             discountPercent: String(origDiscPct),
             discountAmount: String(lineDiscAmt),
             totalPrice: String(lineTotal),
-            unitLevel: line.unitLevel || "minor",
-            lotId: line.lotId || null,
-            expiryMonth: line.expiryMonth || null,
-            expiryYear: line.expiryYear || null,
-            priceSource: line.priceSource || null,
-            doctorName: line.doctorName || null,
-            nurseName: line.nurseName || null,
-            notes: line.notes || null,
-            sortOrder: line.sortOrder || 0,
+            unitLevel: cl.distUnitLevel,
+            lotId: cl.lotId || null,
+            expiryMonth: cl.expiryMonth || null,
+            expiryYear: cl.expiryYear || null,
+            priceSource: cl.priceSource || null,
+            doctorName: cl.doctorName || null,
+            nurseName: cl.nurseName || null,
+            notes: cl.notes || null,
+            sortOrder: cl.sortOrder || 0,
           });
         }
 

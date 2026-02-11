@@ -2565,17 +2565,52 @@ export default function PatientInvoice() {
               <p className="text-xs font-medium text-muted-foreground mb-2 text-right">معاينة التوزيع:</p>
               <div className="space-y-1 max-h-32 overflow-y-auto">
                 {lines.filter(l => l.lineType === "drug" || l.lineType === "consumable").map((l) => {
-                  const totalQty = l.quantity;
-                  const baseShare = Math.floor(totalQty / distCount);
-                  const remainder = totalQty - baseShare * distCount;
-                  const unitName = l.unitLevel === "major" ? (l.item?.majorUnitName || "وحدة")
-                    : l.unitLevel === "medium" ? (l.item?.mediumUnitName || "وحدة")
-                    : (l.item?.minorUnitName || l.item?.mediumUnitName || "وحدة");
+                  const origQty = l.quantity;
+                  const origLevel = l.unitLevel || "minor";
+                  const item = l.item;
+                  let convQty = origQty;
+                  let convLevel = origLevel;
+
+                  if (item && origLevel !== "minor") {
+                    const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
+                    const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
+                    let majorToMinor = parseFloat(String(item.majorToMinor)) || 0;
+                    if (majorToMinor <= 0 && majorToMedium > 0 && mediumToMinor > 0) {
+                      majorToMinor = majorToMedium * mediumToMinor;
+                    }
+                    if (origLevel === "major") {
+                      if (item.minorUnitName && majorToMinor > 1) { convQty = origQty * majorToMinor; convLevel = "minor"; }
+                      else if (item.mediumUnitName && majorToMedium > 1) { convQty = origQty * majorToMedium; convLevel = "medium"; }
+                    } else if (origLevel === "medium") {
+                      if (item.minorUnitName && mediumToMinor > 1) { convQty = origQty * mediumToMinor; convLevel = "minor"; }
+                    }
+                  }
+
+                  const convQtyRounded = +convQty.toFixed(4);
+                  const intQty = Math.round(convQtyRounded);
+                  const isInt = Math.abs(convQtyRounded - intQty) < 0.0001 && intQty > 0;
+                  let baseShare: number;
+                  let remainder = 0;
+                  if (isInt) {
+                    baseShare = Math.floor(intQty / distCount);
+                    remainder = intQty - baseShare * distCount;
+                  } else {
+                    baseShare = +(Math.round((convQtyRounded / distCount) * 10000) / 10000);
+                  }
+                  const convUnitName = convLevel === "major" ? (item?.majorUnitName || "وحدة")
+                    : convLevel === "medium" ? (item?.mediumUnitName || "وحدة")
+                    : (item?.minorUnitName || item?.mediumUnitName || "وحدة");
+                  const origUnitName = origLevel === "major" ? (item?.majorUnitName || "وحدة")
+                    : origLevel === "medium" ? (item?.mediumUnitName || "وحدة")
+                    : (item?.minorUnitName || item?.mediumUnitName || "وحدة");
+                  const showConversion = convLevel !== origLevel;
+                  const displayConvQty = isInt ? intQty : convQtyRounded;
                   return (
                     <div key={l.tempId} className="flex flex-row-reverse items-center justify-between text-xs gap-2">
                       <span className="truncate flex-1 text-right">{l.description}</span>
                       <span className="text-muted-foreground whitespace-nowrap">
-                        {totalQty} {unitName} = {baseShare}{remainder > 0 ? `~${baseShare + 1}` : ""} لكل حالة
+                        {showConversion ? `${origQty} ${origUnitName} → ${displayConvQty} ${convUnitName}` : `${origQty} ${origUnitName}`}
+                        {" = "}{baseShare}{remainder > 0 ? `~${baseShare + 1}` : ""} {convUnitName} لكل حالة
                       </span>
                     </div>
                   );
