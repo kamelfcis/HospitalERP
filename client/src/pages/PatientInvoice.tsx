@@ -2033,7 +2033,7 @@ export default function PatientInvoice() {
                           حذف
                         </Button>
                       )}
-                      {invoiceId && lines.length > 0 && (
+                      {lines.length > 0 && (
                         <Button
                           size="sm"
                           variant="outline"
