@@ -4299,6 +4299,12 @@ export class DatabaseStorage implements IStorage {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) throw new Error(`الصنف غير موجود: ${line.itemId}`);
 
+        if (item.category === "service") {
+          const lineRevenue = parseFloat(line.lineTotal);
+          revenueDrugs += lineRevenue;
+          continue;
+        }
+
         if (item.hasExpiry && !line.expiryMonth) {
           throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية`);
         }
