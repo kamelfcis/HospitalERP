@@ -1854,16 +1854,9 @@ export class DatabaseStorage implements IStorage {
         .returning();
 
       if (totalCost > 0) {
-        this.generateJournalEntry({
-          sourceType: "warehouse_transfer",
-          sourceDocumentId: transferId,
-          reference: `TRF-${transfer.transferNumber}`,
-          description: `قيد تحويل مخزني رقم ${transfer.transferNumber}`,
-          entryDate: transfer.transferDate,
-          lines: [
-            { lineType: "inventory", amount: totalCost.toFixed(2) },
-          ],
-        }).catch(err => console.error("Auto journal for warehouse transfer failed:", err));
+        this.generateWarehouseTransferJournal(
+          transferId, transfer, totalCost
+        ).catch(err => console.error("Auto journal for warehouse transfer failed:", err));
       }
 
       return updated;
@@ -3322,6 +3315,87 @@ export class DatabaseStorage implements IStorage {
         periodId: period?.id || null,
         sourceType: "purchase_invoice",
         sourceDocumentId: invoiceId,
+        totalDebit: String(totalDebits.toFixed(2)),
+        totalCredit: String(totalCredits.toFixed(2)),
+      }).returning();
+
+      const linesWithEntryId = journalLineData.map((l, idx) => ({
+        ...l,
+        journalEntryId: entry.id,
+        lineNumber: idx + 1,
+      }));
+
+      await tx.insert(journalLines).values(linesWithEntryId);
+      return entry;
+    });
+  }
+
+  private async generateWarehouseTransferJournal(
+    transferId: string, transfer: any, totalCost: number
+  ): Promise<JournalEntry | null> {
+    const existingEntries = await db.select().from(journalEntries)
+      .where(and(
+        eq(journalEntries.sourceType, "warehouse_transfer"),
+        eq(journalEntries.sourceDocumentId, transferId)
+      ));
+    if (existingEntries.length > 0) return existingEntries[0];
+
+    const [sourceWh] = await db.select().from(warehouses)
+      .where(eq(warehouses.id, transfer.sourceWarehouseId));
+    const [destWh] = await db.select().from(warehouses)
+      .where(eq(warehouses.id, transfer.destinationWarehouseId));
+
+    if (!sourceWh?.glAccountId || !destWh?.glAccountId) {
+      console.error("Warehouse transfer journal skipped: warehouses missing GL accounts");
+      return null;
+    }
+
+    if (sourceWh.glAccountId === destWh.glAccountId) {
+      console.log("Warehouse transfer journal skipped: same GL account for both warehouses");
+      return null;
+    }
+
+    const journalLineData: InsertJournalLine[] = [
+      {
+        journalEntryId: "",
+        lineNumber: 1,
+        accountId: destWh.glAccountId,
+        debit: String(totalCost.toFixed(2)),
+        credit: "0",
+        description: `تحويل إلى ${destWh.nameAr}`,
+      },
+      {
+        journalEntryId: "",
+        lineNumber: 2,
+        accountId: sourceWh.glAccountId,
+        debit: "0",
+        credit: String(totalCost.toFixed(2)),
+        description: `تحويل من ${sourceWh.nameAr}`,
+      },
+    ];
+
+    return db.transaction(async (tx) => {
+      const [period] = await tx.select().from(fiscalPeriods)
+        .where(and(
+          lte(fiscalPeriods.startDate, transfer.transferDate),
+          gte(fiscalPeriods.endDate, transfer.transferDate),
+          eq(fiscalPeriods.isClosed, false)
+        ))
+        .limit(1);
+
+      const entryNumber = await this.getNextEntryNumber();
+
+      const [entry] = await tx.insert(journalEntries).values({
+        entryNumber,
+        entryDate: transfer.transferDate,
+        reference: `TRF-${transfer.transferNumber}`,
+        description: `قيد تحويل مخزني رقم ${transfer.transferNumber} من ${sourceWh.nameAr} إلى ${destWh.nameAr}`,
+        status: "draft",
+        periodId: period?.id || null,
+        sourceType: "warehouse_transfer",
+        sourceDocumentId: transferId,
+        totalDebit: String(totalCost.toFixed(2)),
+        totalCredit: String(totalCost.toFixed(2)),
       }).returning();
 
       const linesWithEntryId = journalLineData.map((l, idx) => ({
@@ -5585,6 +5659,9 @@ export class DatabaseStorage implements IStorage {
         periodId = period?.id;
       }
 
+      const totalDebit = journalLineData.reduce((s, l) => s + parseFloat(l.debit || "0"), 0);
+      const totalCredit = journalLineData.reduce((s, l) => s + parseFloat(l.credit || "0"), 0);
+
       const [entry] = await tx.insert(journalEntries).values({
         entryNumber,
         entryDate: params.entryDate,
@@ -5594,6 +5671,8 @@ export class DatabaseStorage implements IStorage {
         periodId: periodId || null,
         sourceType: params.sourceType,
         sourceDocumentId: params.sourceDocumentId,
+        totalDebit: String(totalDebit.toFixed(2)),
+        totalCredit: String(totalCredit.toFixed(2)),
       }).returning();
 
       const linesWithEntryId = journalLineData.map((l, idx) => ({

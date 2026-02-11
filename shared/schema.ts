@@ -313,6 +313,7 @@ export const warehouses = pgTable("warehouses", {
   nameAr: text("name_ar").notNull(),
   departmentId: varchar("department_id").references(() => departments.id),
   pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
+  glAccountId: varchar("gl_account_id").references(() => accounts.id),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

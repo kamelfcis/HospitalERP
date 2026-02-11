@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,9 +21,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Search, Edit2, Trash2, Loader2, Warehouse as WarehouseIcon, Building2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Loader2, Warehouse as WarehouseIcon, Building2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Warehouse, Department } from "@shared/schema";
+import type { Warehouse, Department, Account } from "@shared/schema";
 
 interface Pharmacy {
   id: string;
@@ -43,14 +43,19 @@ export default function Warehouses() {
     nameAr: string;
     departmentId: string | null;
     pharmacyId: string | null;
+    glAccountId: string | null;
     isActive: boolean;
   }>({
     warehouseCode: "",
     nameAr: "",
     departmentId: null,
     pharmacyId: null,
+    glAccountId: null,
     isActive: true,
   });
+  const [accountSearch, setAccountSearch] = useState("");
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const accountSearchRef = useRef<HTMLInputElement>(null);
 
   const { data: warehouses, isLoading } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
@@ -63,6 +68,22 @@ export default function Warehouses() {
   const { data: pharmacies } = useQuery<Pharmacy[]>({
     queryKey: ["/api/pharmacies"],
   });
+
+  const { data: allAccounts } = useQuery<Account[]>({
+    queryKey: ["/api/accounts"],
+  });
+
+  const filteredAccounts = (allAccounts || []).filter((a) => {
+    if (!accountSearch.trim()) return true;
+    const q = accountSearch.trim().toLowerCase();
+    return a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q);
+  }).slice(0, 20);
+
+  const getAccountLabel = (accountId: string | null) => {
+    if (!accountId) return null;
+    const acc = (allAccounts || []).find((a) => a.id === accountId);
+    return acc ? `${acc.name} - ${acc.code}` : null;
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -113,8 +134,15 @@ export default function Warehouses() {
         nameAr: warehouse.nameAr,
         departmentId: warehouse.departmentId,
         pharmacyId: warehouse.pharmacyId || null,
+        glAccountId: warehouse.glAccountId || null,
         isActive: warehouse.isActive,
       });
+      if (warehouse.glAccountId) {
+        const acc = (allAccounts || []).find((a) => a.id === warehouse.glAccountId);
+        setAccountSearch(acc ? `${acc.name} - ${acc.code}` : "");
+      } else {
+        setAccountSearch("");
+      }
     } else {
       setEditingWarehouse(null);
       setFormData({
@@ -122,9 +150,12 @@ export default function Warehouses() {
         nameAr: "",
         departmentId: null,
         pharmacyId: null,
+        glAccountId: null,
         isActive: true,
       });
+      setAccountSearch("");
     }
+    setAccountDropdownOpen(false);
     setIsDialogOpen(true);
   };
 
@@ -136,8 +167,10 @@ export default function Warehouses() {
       nameAr: "",
       departmentId: null,
       pharmacyId: null,
+      glAccountId: null,
       isActive: true,
     });
+    setAccountSearch("");
   };
 
   const handleSubmit = () => {
@@ -370,6 +403,71 @@ export default function Warehouses() {
                     ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">حساب المخزون (دليل الحسابات)</Label>
+              <div className="relative">
+                {formData.glAccountId ? (
+                  <div className="flex items-center gap-1 border rounded-md px-2 h-7 text-xs bg-muted/30">
+                    <span className="flex-1 truncate" data-testid="text-warehouse-gl-account">
+                      {getAccountLabel(formData.glAccountId)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, glAccountId: null });
+                        setAccountSearch("");
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                      data-testid="button-clear-gl-account"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="relative">
+                      <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                      <input
+                        ref={accountSearchRef}
+                        value={accountSearch}
+                        onChange={(e) => {
+                          setAccountSearch(e.target.value);
+                          setAccountDropdownOpen(true);
+                        }}
+                        onFocus={() => setAccountDropdownOpen(true)}
+                        placeholder="ابحث بالكود أو الاسم..."
+                        className="peachtree-input w-full text-xs pr-7"
+                        data-testid="input-warehouse-gl-account-search"
+                      />
+                    </div>
+                    {accountDropdownOpen && accountSearch.trim() && (
+                      <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-md max-h-40 overflow-y-auto">
+                        {filteredAccounts.length === 0 ? (
+                          <div className="p-2 text-xs text-muted-foreground text-center">لا توجد نتائج</div>
+                        ) : (
+                          filteredAccounts.map((acc) => (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              className="w-full text-right px-2 py-1.5 text-xs hover-elevate cursor-pointer flex items-center gap-2"
+                              onClick={() => {
+                                setFormData({ ...formData, glAccountId: acc.id });
+                                setAccountSearch(`${acc.name} - ${acc.code}`);
+                                setAccountDropdownOpen(false);
+                              }}
+                              data-testid={`option-gl-account-${acc.id}`}
+                            >
+                              <span className="font-mono text-muted-foreground">{acc.code}</span>
+                              <span>{acc.name}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
