@@ -25,6 +25,9 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Services & Price Lists**: CRUD for services, price lists with inline editing, bulk price adjustment, and integration of service consumables into sales invoices.
 - **Multi-Pharmacy Support**: Multiple pharmacies (e.g., Main Pharmacy, Emergency Pharmacy), each with dedicated cashiers. Pharmacy-level isolation ensures invoices don't mix between pharmacies. Warehouses map to pharmacies, and invoices auto-inherit pharmacyId from their warehouse.
 - **Real-Time SSE**: Server-Sent Events at `/api/cashier/sse/:pharmacyId` broadcast `invoice_finalized` events when pharmacists finalize invoices, enabling instant invoice visibility for cashiers (supports 20+ concurrent users with keep-alive and cleanup).
+- **Cashier & Cash Drawer Security**: Password-protected cash drawers with bcrypt hashing, admin UI for drawer password management at `/drawer-passwords`. Cashier shift opening validates drawer password and requires GL account selection (filtered to cash/drawer accounts starting with 1211x/1212x). Shifts without GL account cannot collect/refund to prevent incomplete journal entries.
+- **Two-Stage Journal Entries for Sales**: Pharmacist finalization creates a draft journal entry with receivables account. Cashier collection completes the entry by replacing receivables with the actual cash/drawer GL account.
+- **Balanced Financial Reports**: Balance sheet calculates net income (revenues - expenses including opening balances) and displays it in equity section as "صافي ربح/خسارة الفترة" to ensure Assets = Liabilities + Equity.
 - **Audit & Validation**: Full audit trail, advanced search, strict line-level validation (frontend and backend), and HTTP 409 conflict responses for immutability violations.
 - **User Experience**: Collapsible sidebar, professional A4 print styles, focus management for barcode scanning and inline editing, and visual auto-save indicators.
 
