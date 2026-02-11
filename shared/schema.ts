@@ -1183,6 +1183,40 @@ export const paymentMethodLabels: Record<string, string> = {
   insurance: "تأمين",
 };
 
+// سجل المرضى
+export const patients = pgTable("patients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fullName: text("full_name").notNull(),
+  phone: varchar("phone", { length: 11 }),
+  nationalId: varchar("national_id", { length: 14 }),
+  age: integer("age"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  nameIdx: index("idx_patients_name").on(table.fullName),
+  phoneIdx: index("idx_patients_phone").on(table.phone),
+  nationalIdIdx: index("idx_patients_national_id").on(table.nationalId),
+}));
+
+export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true });
+export type InsertPatient = z.infer<typeof insertPatientSchema>;
+export type Patient = typeof patients.$inferSelect;
+
+// سجل الأطباء
+export const doctors = pgTable("doctors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  specialty: text("specialty"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  nameIdx: index("idx_doctors_name").on(table.name),
+}));
+
+export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true, createdAt: true });
+export type InsertDoctor = z.infer<typeof insertDoctorSchema>;
+export type Doctor = typeof doctors.$inferSelect;
+
 export type InsertPharmacy = z.infer<typeof insertPharmacySchema>;
 export type Pharmacy = typeof pharmacies.$inferSelect;
 
