@@ -159,6 +159,7 @@ export default function JournalEntries() {
     purchase_invoice: "/purchase-invoices",
     cashier_collection: "/cashier",
     cashier_refund: "/cashier",
+    warehouse_transfer: "/warehouse-transfer",
   };
 
   const getSourceBadge = (entry: JournalEntry) => {

@@ -1303,6 +1303,7 @@ export const transactionTypeLabels: Record<string, string> = {
   purchase_invoice: "فاتورة مشتريات",
   cashier_collection: "تحصيل كاشير",
   cashier_refund: "مرتجع كاشير",
+  warehouse_transfer: "تحويلات مخزنية",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
@@ -1327,5 +1328,6 @@ export const sourceTypeLabels: Record<string, string> = {
   purchase_invoice: "فاتورة مشتريات",
   cashier_collection: "تحصيل كاشير",
   cashier_refund: "مرتجع كاشير",
+  warehouse_transfer: "تحويلات مخزنية",
   manual: "يدوي",
 };

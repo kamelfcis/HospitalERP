@@ -31,6 +31,7 @@ const suggestedLineTypes: Record<string, string[]> = {
   purchase_invoice: ["payables", "expense_general", "inventory"],
   cashier_collection: ["cash", "receivables", "revenue_drugs", "revenue_general"],
   cashier_refund: ["cash", "returns", "revenue_drugs", "inventory"],
+  warehouse_transfer: ["inventory"],
 };
 
 const allLineTypeOptions = Object.entries(mappingLineTypeLabels);

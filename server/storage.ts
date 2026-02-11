@@ -1837,10 +1837,34 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
+      const allAllocations = await tx.select().from(transferLineAllocations)
+        .innerJoin(transferLines, eq(transferLineAllocations.lineId, transferLines.id))
+        .where(eq(transferLines.transferId, transferId));
+      
+      let totalCost = 0;
+      for (const row of allAllocations) {
+        const qty = parseFloat(row.transfer_line_allocations.qtyOutInMinor);
+        const cost = parseFloat(row.transfer_line_allocations.purchasePrice);
+        totalCost += qty * cost;
+      }
+
       const [updated] = await tx.update(storeTransfers)
         .set({ status: "executed" as const, executedAt: new Date() })
         .where(eq(storeTransfers.id, transferId))
         .returning();
+
+      if (totalCost > 0) {
+        this.generateJournalEntry({
+          sourceType: "warehouse_transfer",
+          sourceDocumentId: transferId,
+          reference: `TRF-${transfer.transferNumber}`,
+          description: `قيد تحويل مخزني رقم ${transfer.transferNumber}`,
+          entryDate: transfer.transferDate,
+          lines: [
+            { lineType: "inventory", amount: totalCost.toFixed(2) },
+          ],
+        }).catch(err => console.error("Auto journal for warehouse transfer failed:", err));
+      }
 
       return updated;
     });
