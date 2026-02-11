@@ -424,6 +424,16 @@ export interface IStorage {
   batchPostJournalEntries(ids: string[], userId: string): Promise<number>;
 }
 
+function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
+  if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
+    return enteredPrice / parseFloat(item.majorToMinor);
+  }
+  if (unitLevel === 'medium' && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
+    return enteredPrice / parseFloat(item.mediumToMinor);
+  }
+  return enteredPrice;
+}
+
 export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
@@ -2800,13 +2810,7 @@ export class DatabaseStorage implements IStorage {
         if (item.hasExpiry && (!line.expiryMonth || !line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية (شهر/سنة)`);
         if (!item.hasExpiry && (line.expiryMonth || line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);
         
-        let costPerMinor = parseFloat(line.purchasePrice);
-        const unitLevel = line.unitLevel || 'minor';
-        if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
-          costPerMinor = costPerMinor / parseFloat(item.majorToMinor);
-        } else if (unitLevel === 'medium' && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
-          costPerMinor = costPerMinor / parseFloat(item.mediumToMinor);
-        }
+        const costPerMinor = convertPriceToMinorUnit(parseFloat(line.purchasePrice), line.unitLevel || 'minor', item);
         const costPerMinorStr = costPerMinor.toFixed(4);
         
         const lotConditions = [
@@ -3555,13 +3559,7 @@ export class DatabaseStorage implements IStorage {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
 
-        let costPerMinor = parseFloat(line.purchasePrice as string);
-        const unitLevel = (line as any).unitLevel || 'minor';
-        if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
-          costPerMinor = costPerMinor / parseFloat(item.majorToMinor);
-        } else if (unitLevel === 'medium' && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
-          costPerMinor = costPerMinor / parseFloat(item.mediumToMinor);
-        }
+        const costPerMinor = convertPriceToMinorUnit(parseFloat(line.purchasePrice as string), (line as any).unitLevel || 'minor', item);
         const costPerMinorStr = costPerMinor.toFixed(4);
 
         const lotConditions = [

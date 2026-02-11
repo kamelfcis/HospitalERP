@@ -1528,6 +1528,17 @@ export async function registerRoutes(
       if (parseFloat(validated.qtyInMinor || "0") <= 0) {
         return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
       }
+      const unitLevel = req.body.unitLevel || "minor";
+      if (validated.purchasePrice && unitLevel !== "minor") {
+        const price = parseFloat(validated.purchasePrice);
+        let divisor = 1;
+        if (unitLevel === "major" && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
+          divisor = parseFloat(item.majorToMinor);
+        } else if (unitLevel === "medium" && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
+          divisor = parseFloat(item.mediumToMinor);
+        }
+        validated.purchasePrice = (price / divisor).toFixed(4);
+      }
       const lot = await storage.createLot(validated);
       res.status(201).json(lot);
     } catch (error: any) {
