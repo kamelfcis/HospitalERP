@@ -4411,11 +4411,29 @@ export class DatabaseStorage implements IStorage {
         revenueDrugs += lineRevenue;
         continue;
       }
+      
+      const movements = await db.select().from(inventoryLotMovements)
+        .where(and(
+          eq(inventoryLotMovements.referenceType, "sales_invoice"),
+          eq(inventoryLotMovements.referenceId, invoiceId)
+        ));
+      
+      let lineCost = 0;
+      for (const mov of movements) {
+        const [lot] = await db.select().from(inventoryLots).where(eq(inventoryLots.id, mov.lotId));
+        if (lot && lot.itemId === line.itemId) {
+          lineCost += Math.abs(parseFloat(mov.qtyChangeInMinor)) * parseFloat(mov.unitCost);
+        }
+      }
+      
       if (item.category === "drug") {
+        cogsDrugs += lineCost;
         revenueDrugs += lineRevenue;
       } else if (item.category === "supply") {
+        cogsSupplies += lineCost;
         revenueSupplies += lineRevenue;
       } else {
+        cogsDrugs += lineCost;
         revenueDrugs += lineRevenue;
       }
     }
@@ -4493,47 +4511,52 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
-    const cogsDrugsMapping = mappingMap.get("cogs_drugs");
-    if (cogsDrugsMapping?.debitAccountId && cogsDrugs > 0.001) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: lineNum++,
-        accountId: cogsDrugsMapping.debitAccountId,
-        debit: String(cogsDrugs.toFixed(2)),
-        credit: "0",
-        description: "تكلفة أدوية مباعة",
-      });
-    }
+    const totalCogs = cogsDrugs + cogsSupplies;
+    const hasInventoryAccount = !!inventoryAccountId;
 
-    const cogsSuppliesMapping = mappingMap.get("cogs_supplies");
-    const cogsGeneralMapping = mappingMap.get("cogs");
-    if (cogsSuppliesMapping?.debitAccountId && cogsSupplies > 0.001) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: lineNum++,
-        accountId: cogsSuppliesMapping.debitAccountId,
-        debit: String(cogsSupplies.toFixed(2)),
-        credit: "0",
-        description: "تكلفة مستلزمات مباعة",
-      });
-    } else if (cogsGeneralMapping?.debitAccountId && cogsSupplies > 0.001) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: lineNum++,
-        accountId: cogsGeneralMapping.debitAccountId,
-        debit: String(cogsSupplies.toFixed(2)),
-        credit: "0",
-        description: "تكلفة مستلزمات مباعة",
-      });
-    } else if (cogsDrugsMapping?.debitAccountId && cogsSupplies > 0.001) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: lineNum++,
-        accountId: cogsDrugsMapping.debitAccountId,
-        debit: String(cogsSupplies.toFixed(2)),
-        credit: "0",
-        description: "تكلفة مستلزمات مباعة",
-      });
+    if (hasInventoryAccount) {
+      const cogsDrugsMapping = mappingMap.get("cogs_drugs");
+      if (cogsDrugsMapping?.debitAccountId && cogsDrugs > 0.001) {
+        journalLineData.push({
+          journalEntryId: "",
+          lineNumber: lineNum++,
+          accountId: cogsDrugsMapping.debitAccountId,
+          debit: String(cogsDrugs.toFixed(2)),
+          credit: "0",
+          description: "تكلفة أدوية مباعة",
+        });
+      }
+
+      const cogsSuppliesMapping = mappingMap.get("cogs_supplies");
+      const cogsGeneralMapping = mappingMap.get("cogs");
+      if (cogsSuppliesMapping?.debitAccountId && cogsSupplies > 0.001) {
+        journalLineData.push({
+          journalEntryId: "",
+          lineNumber: lineNum++,
+          accountId: cogsSuppliesMapping.debitAccountId,
+          debit: String(cogsSupplies.toFixed(2)),
+          credit: "0",
+          description: "تكلفة مستلزمات مباعة",
+        });
+      } else if (cogsGeneralMapping?.debitAccountId && cogsSupplies > 0.001) {
+        journalLineData.push({
+          journalEntryId: "",
+          lineNumber: lineNum++,
+          accountId: cogsGeneralMapping.debitAccountId,
+          debit: String(cogsSupplies.toFixed(2)),
+          credit: "0",
+          description: "تكلفة مستلزمات مباعة",
+        });
+      } else if (cogsDrugsMapping?.debitAccountId && cogsSupplies > 0.001) {
+        journalLineData.push({
+          journalEntryId: "",
+          lineNumber: lineNum++,
+          accountId: cogsDrugsMapping.debitAccountId,
+          debit: String(cogsSupplies.toFixed(2)),
+          credit: "0",
+          description: "تكلفة مستلزمات مباعة",
+        });
+      }
     }
 
     const revenueDrugsMapping = mappingMap.get("revenue_drugs");
@@ -4602,12 +4625,11 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
-    const totalCogs = cogsDrugs + cogsSupplies;
-    if (inventoryAccountId && totalCogs > 0.001) {
+    if (hasInventoryAccount && totalCogs > 0.001) {
       journalLineData.push({
         journalEntryId: "",
         lineNumber: lineNum++,
-        accountId: inventoryAccountId,
+        accountId: inventoryAccountId!,
         debit: "0",
         credit: String(totalCogs.toFixed(2)),
         description: "مخزون مباع",
