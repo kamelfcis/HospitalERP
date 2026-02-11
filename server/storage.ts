@@ -127,12 +127,15 @@ import {
   patients,
   doctors,
   admissions,
+  accountMappings,
   type Patient,
   type InsertPatient,
   type Doctor,
   type InsertDoctor,
   type Admission,
   type InsertAdmission,
+  type AccountMapping,
+  type InsertAccountMapping,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -400,6 +403,25 @@ export interface IStorage {
   dischargeAdmission(id: string): Promise<Admission>;
   getAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader[]>;
   consolidateAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader>;
+
+  // Account Mappings
+  getAccountMappings(transactionType?: string): Promise<AccountMapping[]>;
+  getAccountMapping(id: string): Promise<AccountMapping | undefined>;
+  upsertAccountMapping(data: InsertAccountMapping): Promise<AccountMapping>;
+  deleteAccountMapping(id: string): Promise<boolean>;
+  getMappingsForTransaction(transactionType: string): Promise<AccountMapping[]>;
+
+  // Auto Journal Entry
+  generateJournalEntry(params: {
+    sourceType: string;
+    sourceDocumentId: string;
+    reference: string;
+    description: string;
+    entryDate: string;
+    lines: { lineType: string; amount: string }[];
+    periodId?: string;
+  }): Promise<JournalEntry | null>;
+  batchPostJournalEntries(ids: string[], userId: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2825,6 +2847,30 @@ export class DatabaseStorage implements IStorage {
       
       return posted;
     });
+
+    const recvResult = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
+    const recvHeader = recvResult[0] as any;
+    if (recvHeader) {
+      const recvLines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
+      const activeRecvLines = recvLines.filter(l => !l.isRejected);
+      const totalCost = activeRecvLines.reduce((sum, l) => sum + parseFloat(l.lineTotal || "0"), 0);
+      
+      if (totalCost > 0) {
+        this.generateJournalEntry({
+          sourceType: "receiving",
+          sourceDocumentId: id,
+          reference: `RCV-${recvHeader.receivingNumber}`,
+          description: `قيد استلام مورد رقم ${recvHeader.receivingNumber}`,
+          entryDate: recvHeader.receiveDate,
+          lines: [
+            { lineType: "inventory", amount: String(totalCost) },
+            { lineType: "payables", amount: String(totalCost) },
+          ],
+        }).catch(err => console.error("Auto journal for receiving failed:", err));
+      }
+    }
+
+    return (await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id)))[0];
   }
 
   async deleteReceiving(id: string): Promise<boolean> {
@@ -3118,7 +3164,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async approvePurchaseInvoice(id: string): Promise<any> {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
       if (invoice.status !== "draft") throw new Error("الفاتورة معتمدة مسبقاً");
@@ -3132,6 +3178,27 @@ export class DatabaseStorage implements IStorage {
       const [updated] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
       return updated;
     });
+
+    if (result) {
+      const piLines = await db.select().from(purchaseInvoiceLines).where(eq(purchaseInvoiceLines.invoiceId, id));
+      const totalCost = piLines.reduce((sum, l) => sum + parseFloat((l as any).lineTotal || (l as any).totalPrice || "0"), 0);
+      
+      if (totalCost > 0) {
+        this.generateJournalEntry({
+          sourceType: "purchase_invoice",
+          sourceDocumentId: id,
+          reference: `PUR-${(result as any).invoiceNumber}`,
+          description: `قيد فاتورة مشتريات رقم ${(result as any).invoiceNumber}`,
+          entryDate: (result as any).invoiceDate,
+          lines: [
+            { lineType: "payables", amount: String(totalCost) },
+            { lineType: "expense_general", amount: String(totalCost) },
+          ],
+        }).catch(err => console.error("Auto journal for purchase invoice failed:", err));
+      }
+    }
+
+    return result;
   }
 
   async createReceivingCorrection(originalId: string): Promise<ReceivingHeader> {
@@ -4086,6 +4153,35 @@ export class DatabaseStorage implements IStorage {
       const [updated] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
       return updated;
     });
+
+    const result = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+    const finalInvoice = result[0];
+    if (finalInvoice) {
+      const invoiceLines = await db.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
+      const totalRevenue = invoiceLines.reduce((sum, l) => sum + parseFloat(l.lineTotal || "0"), 0);
+      const totalCost = invoiceLines.reduce((sum, l) => sum + parseFloat((l as any).costAmount || "0") * parseFloat(l.qtyInMinor || "0"), 0);
+      
+      const journalLines: { lineType: string; amount: string }[] = [];
+      if (totalRevenue > 0) {
+        journalLines.push({ lineType: "cash", amount: String(totalRevenue) });
+        journalLines.push({ lineType: "revenue_drugs", amount: String(totalRevenue) });
+      }
+      if (totalCost > 0) {
+        journalLines.push({ lineType: "cogs", amount: String(totalCost) });
+        journalLines.push({ lineType: "inventory", amount: String(totalCost) });
+      }
+      
+      this.generateJournalEntry({
+        sourceType: "sales_invoice",
+        sourceDocumentId: id,
+        reference: `SI-${finalInvoice.invoiceNumber}`,
+        description: `قيد فاتورة مبيعات رقم ${finalInvoice.invoiceNumber}`,
+        entryDate: finalInvoice.invoiceDate,
+        lines: journalLines,
+      }).catch(err => console.error("Auto journal for sales invoice failed:", err));
+    }
+
+    return (await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id)))[0];
   }
 
   async deleteSalesInvoice(id: string): Promise<boolean> {
@@ -4233,6 +4329,39 @@ export class DatabaseStorage implements IStorage {
       finalizedAt: new Date(),
       updatedAt: new Date(),
     }).where(eq(patientInvoiceHeaders.id, id)).returning();
+
+    const invoiceLines = await db.select().from(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, id));
+    const lineTypeMap: Record<string, string> = {
+      service: "revenue_services",
+      drug: "revenue_drugs",
+      consumable: "revenue_consumables",
+      equipment: "revenue_equipment",
+    };
+    const totals: Record<string, number> = {};
+    for (const line of invoiceLines) {
+      const mappingType = lineTypeMap[line.lineType] || "revenue_general";
+      totals[mappingType] = (totals[mappingType] || 0) + parseFloat(line.totalPrice || "0");
+    }
+
+    const journalLines: { lineType: string; amount: string }[] = [];
+    const totalNet = parseFloat(updated.netAmount || "0");
+    if (totalNet > 0) {
+      const paymentType = updated.patientType === "cash" ? "cash" : "receivables";
+      journalLines.push({ lineType: paymentType, amount: String(totalNet) });
+    }
+    for (const [lt, amt] of Object.entries(totals)) {
+      if (amt > 0) journalLines.push({ lineType: lt, amount: String(amt) });
+    }
+
+    this.generateJournalEntry({
+      sourceType: "patient_invoice",
+      sourceDocumentId: id,
+      reference: `PI-${updated.invoiceNumber}`,
+      description: `قيد فاتورة مريض رقم ${updated.invoiceNumber} - ${updated.patientName}`,
+      entryDate: updated.invoiceDate,
+      lines: journalLines,
+    }).catch(err => console.error("Auto journal for patient invoice failed:", err));
+
     return updated;
   }
 
@@ -5173,6 +5302,160 @@ export class DatabaseStorage implements IStorage {
       const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, consolidated.id));
       return finalHeader;
     });
+  }
+
+  // Account Mappings
+  async getAccountMappings(transactionType?: string): Promise<AccountMapping[]> {
+    if (transactionType) {
+      return db.select().from(accountMappings)
+        .where(eq(accountMappings.transactionType, transactionType))
+        .orderBy(asc(accountMappings.lineType));
+    }
+    return db.select().from(accountMappings).orderBy(asc(accountMappings.transactionType), asc(accountMappings.lineType));
+  }
+
+  async getAccountMapping(id: string): Promise<AccountMapping | undefined> {
+    const [mapping] = await db.select().from(accountMappings).where(eq(accountMappings.id, id));
+    return mapping;
+  }
+
+  async upsertAccountMapping(data: InsertAccountMapping): Promise<AccountMapping> {
+    const existing = await db.select().from(accountMappings)
+      .where(and(
+        eq(accountMappings.transactionType, data.transactionType),
+        eq(accountMappings.lineType, data.lineType)
+      ));
+    
+    if (existing.length > 0) {
+      const [updated] = await db.update(accountMappings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(accountMappings.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    
+    const [created] = await db.insert(accountMappings).values(data).returning();
+    return created;
+  }
+
+  async deleteAccountMapping(id: string): Promise<boolean> {
+    const result = await db.delete(accountMappings).where(eq(accountMappings.id, id));
+    return (result as any).rowCount > 0;
+  }
+
+  async getMappingsForTransaction(transactionType: string): Promise<AccountMapping[]> {
+    return db.select().from(accountMappings)
+      .where(and(
+        eq(accountMappings.transactionType, transactionType),
+        eq(accountMappings.isActive, true)
+      ))
+      .orderBy(asc(accountMappings.lineType));
+  }
+
+  async generateJournalEntry(params: {
+    sourceType: string;
+    sourceDocumentId: string;
+    reference: string;
+    description: string;
+    entryDate: string;
+    lines: { lineType: string; amount: string }[];
+    periodId?: string;
+  }): Promise<JournalEntry | null> {
+    const existingEntries = await db.select().from(journalEntries)
+      .where(and(
+        eq(journalEntries.sourceType, params.sourceType),
+        eq(journalEntries.sourceDocumentId, params.sourceDocumentId)
+      ));
+    
+    if (existingEntries.length > 0) {
+      return existingEntries[0];
+    }
+
+    const mappings = await this.getMappingsForTransaction(params.sourceType);
+    if (mappings.length === 0) return null;
+
+    const mappingMap = new Map<string, AccountMapping>();
+    for (const m of mappings) {
+      mappingMap.set(m.lineType, m);
+    }
+
+    const journalLineData: InsertJournalLine[] = [];
+    const entryNumber = await this.getNextEntryNumber();
+
+    for (const line of params.lines) {
+      const mapping = mappingMap.get(line.lineType);
+      if (!mapping || !mapping.debitAccountId || !mapping.creditAccountId) continue;
+      
+      const amount = parseFloat(line.amount);
+      if (amount <= 0) continue;
+
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: mapping.debitAccountId,
+        debit: String(amount),
+        credit: "0",
+        description: mapping.description || params.description,
+      });
+
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: mapping.creditAccountId,
+        debit: "0",
+        credit: String(amount),
+        description: mapping.description || params.description,
+      });
+    }
+
+    if (journalLineData.length === 0) return null;
+
+    return db.transaction(async (tx) => {
+      let periodId = params.periodId;
+      if (!periodId) {
+        const [period] = await tx.select().from(fiscalPeriods)
+          .where(and(
+            lte(fiscalPeriods.startDate, params.entryDate),
+            gte(fiscalPeriods.endDate, params.entryDate),
+            eq(fiscalPeriods.isClosed, false)
+          ))
+          .limit(1);
+        periodId = period?.id;
+      }
+
+      const [entry] = await tx.insert(journalEntries).values({
+        entryNumber,
+        entryDate: params.entryDate,
+        reference: params.reference,
+        description: params.description,
+        status: "draft",
+        periodId: periodId || null,
+        sourceType: params.sourceType,
+        sourceDocumentId: params.sourceDocumentId,
+      }).returning();
+
+      const linesWithEntryId = journalLineData.map((l, idx) => ({
+        ...l,
+        journalEntryId: entry.id,
+        lineNumber: idx + 1,
+      }));
+
+      await tx.insert(journalLines).values(linesWithEntryId);
+      return entry;
+    });
+  }
+
+  async batchPostJournalEntries(ids: string[], userId: string): Promise<number> {
+    let posted = 0;
+    for (const id of ids) {
+      try {
+        const result = await this.postJournalEntry(id, userId);
+        if (result) posted++;
+      } catch (e) {
+        // Skip entries that can't be posted (already posted, reversed, etc.)
+      }
+    }
+    return posted;
   }
 }
 

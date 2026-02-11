@@ -3,8 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -32,17 +32,23 @@ import {
   RotateCcw,
   Filter,
   Calendar,
+  FileText,
+  Loader2,
+  CheckSquare,
 } from "lucide-react";
 import { formatCurrency, formatDateShort, journalStatusLabels } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { sourceTypeLabels } from "@shared/schema";
 import type { JournalEntry } from "@shared/schema";
 
 export default function JournalEntries() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: entries, isLoading } = useQuery<JournalEntry[]>({
     queryKey: ["/api/journal-entries"],
@@ -76,7 +82,21 @@ export default function JournalEntries() {
     },
   });
 
-  // Filter entries
+  const batchPostMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      return apiRequest("POST", "/api/journal-entries/batch-post", { ids, userId: "system" });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      toast({ title: `تم ترحيل ${data.posted} قيد من ${data.total}` });
+      setSelectedIds(new Set());
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ في الترحيل الجماعي", description: error.message, variant: "destructive" });
+    },
+  });
+
   const filteredEntries = entries?.filter((entry) => {
     const matchesSearch =
       searchQuery === "" ||
@@ -85,29 +105,79 @@ export default function JournalEntries() {
       (entry.reference && entry.reference.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesStatus = statusFilter === "all" || entry.status === statusFilter;
+    
+    const matchesSource = sourceFilter === "all" ||
+      (sourceFilter === "manual" && !entry.sourceType) ||
+      entry.sourceType === sourceFilter;
 
     let matchesDate = true;
-    if (dateFrom) {
-      matchesDate = matchesDate && entry.entryDate >= dateFrom;
-    }
-    if (dateTo) {
-      matchesDate = matchesDate && entry.entryDate <= dateTo;
-    }
+    if (dateFrom) matchesDate = matchesDate && entry.entryDate >= dateFrom;
+    if (dateTo) matchesDate = matchesDate && entry.entryDate <= dateTo;
 
-    return matchesSearch && matchesStatus && matchesDate;
+    return matchesSearch && matchesStatus && matchesSource && matchesDate;
   }) || [];
+
+  const draftEntries = filteredEntries.filter(e => e.status === "draft");
+  const selectedDraftIds = Array.from(selectedIds).filter(id => draftEntries.some(e => e.id === id));
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedDraftIds.length === draftEntries.length && draftEntries.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(draftEntries.map(e => e.id)));
+    }
+  };
+
+  const handleBatchPost = () => {
+    if (selectedDraftIds.length === 0) return;
+    if (confirm(`هل تريد ترحيل ${selectedDraftIds.length} قيد؟ لن يمكن تعديلها بعد الترحيل.`)) {
+      batchPostMutation.mutate(selectedDraftIds);
+    }
+  };
 
   const getStatusBadgeClass = (status: string) => {
     switch (status) {
-      case "draft":
-        return "bg-amber-100 text-amber-800 border-amber-200";
-      case "posted":
-        return "bg-emerald-100 text-emerald-800 border-emerald-200";
-      case "reversed":
-        return "bg-red-100 text-red-800 border-red-200";
-      default:
-        return "";
+      case "draft": return "bg-amber-100 text-amber-800 border-amber-200";
+      case "posted": return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      case "reversed": return "bg-red-100 text-red-800 border-red-200";
+      default: return "";
     }
+  };
+
+  const sourceRouteMap: Record<string, string> = {
+    sales_invoice: "/sales-invoices",
+    patient_invoice: "/patient-invoices",
+    receiving: "/supplier-receiving",
+    purchase_invoice: "/purchase-invoices",
+  };
+
+  const getSourceBadge = (entry: JournalEntry) => {
+    const sourceType = entry.sourceType;
+    if (!sourceType) return null;
+    const label = sourceTypeLabels[sourceType] || sourceType;
+    const route = sourceRouteMap[sourceType];
+    if (route) {
+      return (
+        <Link href={route}>
+          <Badge variant="outline" className="text-[9px] px-1 py-0 mr-1 cursor-pointer hover:bg-primary/10" data-testid={`badge-source-${entry.id}`}>
+            {label}
+          </Badge>
+        </Link>
+      );
+    }
+    return (
+      <Badge variant="outline" className="text-[9px] px-1 py-0 mr-1">
+        {label}
+      </Badge>
+    );
   };
 
   if (isLoading) {
@@ -122,7 +192,6 @@ export default function JournalEntries() {
 
   return (
     <div className="p-3 space-y-3">
-      {/* Page Header - Peachtree Toolbar Style */}
       <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2 rounded">
         <div>
           <h1 className="text-sm font-bold text-foreground">القيود اليومية</h1>
@@ -130,15 +199,29 @@ export default function JournalEntries() {
             إدارة القيود المحاسبية ({entries?.length || 0} قيد)
           </p>
         </div>
-        <Link href="/journal-entries/new">
-          <Button size="sm" data-testid="button-add-journal-entry" className="text-xs h-7">
-            <Plus className="h-3 w-3 ml-1" />
-            قيد جديد
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          {selectedDraftIds.length > 0 && (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={handleBatchPost}
+              disabled={batchPostMutation.isPending}
+              data-testid="button-batch-post"
+              className="text-xs h-7"
+            >
+              {batchPostMutation.isPending ? <Loader2 className="h-3 w-3 ml-1 animate-spin" /> : <CheckSquare className="h-3 w-3 ml-1" />}
+              ترحيل {selectedDraftIds.length} قيد
+            </Button>
+          )}
+          <Link href="/journal-entries/new">
+            <Button size="sm" data-testid="button-add-journal-entry" className="text-xs h-7">
+              <Plus className="h-3 w-3 ml-1" />
+              قيد جديد
+            </Button>
+          </Link>
+        </div>
       </div>
 
-      {/* Filters - Compact Peachtree Style */}
       <div className="peachtree-toolbar flex items-center gap-2 flex-wrap rounded">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
@@ -160,6 +243,20 @@ export default function JournalEntries() {
             <SelectItem value="draft" className="text-xs">مسودة</SelectItem>
             <SelectItem value="posted" className="text-xs">مُرحّل</SelectItem>
             <SelectItem value="reversed" className="text-xs">ملغي</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={sourceFilter} onValueChange={setSourceFilter}>
+          <SelectTrigger className="peachtree-select w-[140px] text-xs" data-testid="select-source-filter">
+            <FileText className="h-3 w-3 ml-1" />
+            <SelectValue placeholder="المصدر" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-xs">جميع المصادر</SelectItem>
+            <SelectItem value="manual" className="text-xs">يدوي</SelectItem>
+            <SelectItem value="sales_invoice" className="text-xs">فاتورة مبيعات</SelectItem>
+            <SelectItem value="patient_invoice" className="text-xs">فاتورة مريض</SelectItem>
+            <SelectItem value="receiving" className="text-xs">استلام مورد</SelectItem>
+            <SelectItem value="purchase_invoice" className="text-xs">فاتورة مشتريات</SelectItem>
           </SelectContent>
         </Select>
         <div className="flex items-center gap-1">
@@ -184,12 +281,18 @@ export default function JournalEntries() {
         </div>
       </div>
 
-      {/* Entries Table - Peachtree Grid Style */}
       <div className="peachtree-grid rounded">
         <ScrollArea className="h-[calc(100vh-280px)]">
           <Table>
             <TableHeader className="peachtree-grid-header">
               <TableRow>
+                <TableHead className="w-[40px] text-xs">
+                  <Checkbox
+                    checked={draftEntries.length > 0 && selectedDraftIds.length === draftEntries.length}
+                    onCheckedChange={toggleSelectAll}
+                    data-testid="checkbox-select-all"
+                  />
+                </TableHead>
                 <TableHead className="w-[70px] text-xs">رقم القيد</TableHead>
                 <TableHead className="w-[90px] text-xs">التاريخ</TableHead>
                 <TableHead className="text-xs">البيان</TableHead>
@@ -203,19 +306,31 @@ export default function JournalEntries() {
             <TableBody>
               {filteredEntries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-4 text-xs text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-4 text-xs text-muted-foreground">
                     لا توجد قيود
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredEntries.map((entry) => (
                   <TableRow key={entry.id} className="peachtree-grid-row" data-testid={`row-entry-${entry.id}`}>
+                    <TableCell>
+                      {entry.status === "draft" && (
+                        <Checkbox
+                          checked={selectedIds.has(entry.id)}
+                          onCheckedChange={() => toggleSelect(entry.id)}
+                          data-testid={`checkbox-entry-${entry.id}`}
+                        />
+                      )}
+                    </TableCell>
                     <TableCell className="font-mono text-xs font-bold text-primary">
                       {entry.entryNumber}
                     </TableCell>
                     <TableCell className="text-xs">{formatDateShort(entry.entryDate)}</TableCell>
-                    <TableCell className="text-xs font-medium max-w-[250px] truncate">
-                      {entry.description}
+                    <TableCell className="text-xs font-medium max-w-[250px]">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {getSourceBadge(entry)}
+                        <span className="truncate">{entry.description}</span>
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {entry.reference || "-"}
@@ -300,7 +415,6 @@ export default function JournalEntries() {
         </ScrollArea>
       </div>
 
-      {/* Summary - Peachtree Totals Style */}
       {filteredEntries.length > 0 && (
         <div className="peachtree-totals rounded p-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -319,6 +433,12 @@ export default function JournalEntries() {
                 <span className="text-xs text-muted-foreground">مُرحّل:</span>
                 <Badge className="status-posted text-[10px] px-1.5 py-0">
                   {filteredEntries.filter((e) => e.status === "posted").length}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">تلقائي:</span>
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  {filteredEntries.filter((e) => e.sourceType).length}
                 </Badge>
               </div>
             </div>

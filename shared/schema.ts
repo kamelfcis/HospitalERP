@@ -40,6 +40,12 @@ export const patientTypeEnum = pgEnum("patient_type", ["cash", "contract"]);
 export const patientInvoiceLineTypeEnum = pgEnum("patient_invoice_line_type", ["service", "drug", "consumable", "equipment"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank_transfer", "insurance"]);
 export const admissionStatusEnum = pgEnum("admission_status", ["active", "discharged", "cancelled"]);
+export const transactionTypeEnum = pgEnum("transaction_type", ["sales_invoice", "patient_invoice", "receiving", "purchase_invoice"]);
+export const mappingLineTypeEnum = pgEnum("mapping_line_type", [
+  "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment",
+  "cogs", "inventory", "cash", "receivables", "payables", "returns",
+  "revenue_general", "expense_general"
+]);
 
 // المستخدمين
 export const users = pgTable("users", {
@@ -114,12 +120,15 @@ export const journalEntries = pgTable("journal_entries", {
   reversedAt: timestamp("reversed_at"),
   reversalEntryId: varchar("reversal_entry_id").references((): any => journalEntries.id, { onDelete: "set null" }),
   templateId: varchar("template_id").references(() => journalTemplates.id, { onDelete: "set null" }),
+  sourceType: text("source_type"),
+  sourceDocumentId: varchar("source_document_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   dateIdx: index("idx_journal_entries_date").on(table.entryDate),
   statusIdx: index("idx_journal_entries_status").on(table.status),
   periodIdx: index("idx_journal_entries_period").on(table.periodId),
+  sourceIdx: index("idx_journal_entries_source").on(table.sourceType, table.sourceDocumentId),
 }));
 
 // سطور القيود
@@ -1266,3 +1275,53 @@ export const admissions = pgTable("admissions", {
 export const insertAdmissionSchema = createInsertSchema(admissions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertAdmission = z.infer<typeof insertAdmissionSchema>;
 export type Admission = typeof admissions.$inferSelect;
+
+// إعدادات ربط الحسابات بالعمليات
+export const accountMappings = pgTable("account_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionType: text("transaction_type").notNull(),
+  lineType: text("line_type").notNull(),
+  debitAccountId: varchar("debit_account_id").references(() => accounts.id),
+  creditAccountId: varchar("credit_account_id").references(() => accounts.id),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  txTypeIdx: index("idx_acct_map_tx_type").on(table.transactionType),
+  uniqueMapping: uniqueIndex("idx_acct_map_unique").on(table.transactionType, table.lineType),
+}));
+
+export const insertAccountMappingSchema = createInsertSchema(accountMappings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAccountMapping = z.infer<typeof insertAccountMappingSchema>;
+export type AccountMapping = typeof accountMappings.$inferSelect;
+
+export const transactionTypeLabels: Record<string, string> = {
+  sales_invoice: "فاتورة مبيعات",
+  patient_invoice: "فاتورة مريض",
+  receiving: "استلام مورد",
+  purchase_invoice: "فاتورة مشتريات",
+};
+
+export const mappingLineTypeLabels: Record<string, string> = {
+  revenue_services: "إيرادات خدمات",
+  revenue_drugs: "إيرادات أدوية",
+  revenue_consumables: "إيرادات مستهلكات",
+  revenue_equipment: "إيرادات أجهزة",
+  revenue_general: "إيرادات عامة",
+  cogs: "تكلفة بضاعة مباعة",
+  inventory: "المخزون",
+  cash: "الصندوق / النقدية",
+  receivables: "ذمم مدينة",
+  payables: "ذمم دائنة (موردين)",
+  returns: "مردودات",
+  expense_general: "مصروفات عامة",
+};
+
+export const sourceTypeLabels: Record<string, string> = {
+  sales_invoice: "فاتورة مبيعات",
+  patient_invoice: "فاتورة مريض",
+  receiving: "استلام مورد",
+  purchase_invoice: "فاتورة مشتريات",
+  manual: "يدوي",
+};

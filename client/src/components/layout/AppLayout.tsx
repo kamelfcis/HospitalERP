@@ -172,6 +172,11 @@ const reportNavItems = [
 
 const systemNavItems = [
   {
+    title: "ربط الحسابات",
+    href: "/account-mappings",
+    icon: Settings,
+  },
+  {
     title: "سجل التدقيق",
     href: "/audit-log",
     icon: History,

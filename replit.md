@@ -15,6 +15,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 
 ### Key Features
 - **Financial Management**: Chart of Accounts, Cost Centers (with Excel import), comprehensive Journal Entry system (create, post, reverse, templates), Fiscal Period controls, and IFRS-compliant financial reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger).
+- **Automatic Journal Entries**: Configurable account mappings per transaction type (sales invoice, patient invoice, receiving, purchase invoice). When documents are finalized/posted/approved, draft journal entries are auto-generated using the configured mappings. Two-stage posting workflow: draft (مسودة) for review → posted (مُرحّل) to affect ledger balances. Batch posting available for multiple entries. Source type filter and source document linking in journal entries list. Settings UI at `/account-mappings` for configuring debit/credit accounts per line type (revenue, COGS, inventory, cash, receivables, payables, etc.).
 - **Inventory & Sales**:
     - **Receiving**: Supplier Receiving with quantity-only workflow, editable selling price, bonus quantity tracking, sale price/near-expiry warnings, and receiving-to-invoice conversion. Includes an auto-save mechanism.
     - **Sales Invoicing**: Barcode scanning, item search, editable lines with FEFO allocation, bidirectional discount editing, customer types (Cash/Credit/Contract), and atomic stock deduction. Auto-save is implemented.

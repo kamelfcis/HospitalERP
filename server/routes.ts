@@ -3320,5 +3320,81 @@ export async function registerRoutes(
     }
   });
 
+  // Account Mappings API
+  app.get("/api/account-mappings", async (req, res) => {
+    try {
+      const { transactionType } = req.query;
+      const mappings = await storage.getAccountMappings(transactionType as string | undefined);
+      res.json(mappings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/account-mappings/:id", async (req, res) => {
+    try {
+      const mapping = await storage.getAccountMapping(req.params.id);
+      if (!mapping) return res.status(404).json({ message: "الإعداد غير موجود" });
+      res.json(mapping);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/account-mappings", async (req, res) => {
+    try {
+      const { transactionType, lineType, debitAccountId, creditAccountId, description, isActive } = req.body;
+      if (!transactionType || !lineType) {
+        return res.status(400).json({ message: "نوع العملية ونوع السطر مطلوبان" });
+      }
+      const mapping = await storage.upsertAccountMapping({
+        transactionType, lineType, debitAccountId, creditAccountId, description, isActive
+      });
+      res.json(mapping);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/account-mappings/:id", async (req, res) => {
+    try {
+      await storage.deleteAccountMapping(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/account-mappings/bulk", async (req, res) => {
+    try {
+      const { mappings } = req.body;
+      if (!Array.isArray(mappings)) {
+        return res.status(400).json({ message: "يجب إرسال مصفوفة من الإعدادات" });
+      }
+      const results = [];
+      for (const m of mappings) {
+        const result = await storage.upsertAccountMapping(m);
+        results.push(result);
+      }
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Batch post journal entries
+  app.post("/api/journal-entries/batch-post", async (req, res) => {
+    try {
+      const { ids, userId } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "يجب تحديد قيود للترحيل" });
+      }
+      const posted = await storage.batchPostJournalEntries(ids, userId || "system");
+      res.json({ posted, total: ids.length });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   return httpServer;
 }
