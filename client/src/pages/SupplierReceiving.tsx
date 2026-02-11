@@ -140,6 +140,7 @@ export default function SupplierReceiving() {
   const [quickSupplierCode, setQuickSupplierCode] = useState("");
   const [quickSupplierNameAr, setQuickSupplierNameAr] = useState("");
   const [quickSupplierPhone, setQuickSupplierPhone] = useState("");
+  const [quickSupplierType, setQuickSupplierType] = useState("drugs");
   const [formConvertedToInvoiceId, setFormConvertedToInvoiceId] = useState<string | null>(null);
 
   const [statsItemId, setStatsItemId] = useState<string | null>(null);
@@ -800,7 +801,7 @@ export default function SupplierReceiving() {
   }, []);
 
   const quickSupplierMutation = useMutation({
-    mutationFn: async (data: { code: string; nameAr: string; phone?: string }) => {
+    mutationFn: async (data: { code: string; nameAr: string; phone?: string; supplierType?: string }) => {
       const res = await apiRequest("POST", "/api/suppliers", data);
       return res.json();
     },
@@ -828,6 +829,7 @@ export default function SupplierReceiving() {
       code: quickSupplierCode.trim(),
       nameAr: quickSupplierNameAr.trim(),
       phone: quickSupplierPhone.trim() || undefined,
+      supplierType: quickSupplierType,
     });
   };
 
@@ -1957,6 +1959,18 @@ export default function SupplierReceiving() {
                 dir="ltr"
                 data-testid="input-quick-supplier-phone"
               />
+            </div>
+            <div>
+              <Label className="text-[10px]">نوع المورد *</Label>
+              <select
+                value={quickSupplierType}
+                onChange={(e) => setQuickSupplierType(e.target.value)}
+                className="w-full h-7 text-[11px] px-1 border rounded-md bg-background"
+                data-testid="select-quick-supplier-type"
+              >
+                <option value="drugs">أدوية</option>
+                <option value="consumables">مستلزمات</option>
+              </select>
             </div>
           </div>
           <DialogFooter className="flex gap-2">

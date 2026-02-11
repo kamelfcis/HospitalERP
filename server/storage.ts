@@ -3204,25 +3204,135 @@ export class DatabaseStorage implements IStorage {
     });
 
     if (result) {
-      const piLines = await db.select().from(purchaseInvoiceLines).where(eq(purchaseInvoiceLines.invoiceId, id));
-      const totalCost = piLines.reduce((sum, l) => sum + parseFloat((l as any).lineTotal || (l as any).totalPrice || "0"), 0);
-      
-      if (totalCost > 0) {
-        this.generateJournalEntry({
-          sourceType: "purchase_invoice",
-          sourceDocumentId: id,
-          reference: `PUR-${(result as any).invoiceNumber}`,
-          description: `قيد فاتورة مشتريات رقم ${(result as any).invoiceNumber}`,
-          entryDate: (result as any).invoiceDate,
-          lines: [
-            { lineType: "payables", amount: String(totalCost) },
-            { lineType: "expense_general", amount: String(totalCost) },
-          ],
-        }).catch(err => console.error("Auto journal for purchase invoice failed:", err));
-      }
+      this.generatePurchaseInvoiceJournal(id, result).catch(err => 
+        console.error("Auto journal for purchase invoice failed:", err)
+      );
     }
 
     return result;
+  }
+
+  private async generatePurchaseInvoiceJournal(invoiceId: string, invoice: any): Promise<JournalEntry | null> {
+    const existingEntries = await db.select().from(journalEntries)
+      .where(and(
+        eq(journalEntries.sourceType, "purchase_invoice"),
+        eq(journalEntries.sourceDocumentId, invoiceId)
+      ));
+    if (existingEntries.length > 0) return existingEntries[0];
+
+    const totalBeforeVat = parseFloat(invoice.totalBeforeVat || "0");
+    const totalVat = parseFloat(invoice.totalVat || "0");
+    const totalAfterVat = parseFloat(invoice.totalAfterVat || "0");
+    const netPayable = parseFloat(invoice.netPayable || "0");
+    const headerDiscount = totalAfterVat - netPayable;
+
+    if (totalBeforeVat <= 0 && netPayable <= 0) return null;
+
+    const mappings = await this.getMappingsForTransaction("purchase_invoice");
+    if (mappings.length === 0) return null;
+
+    const mappingMap = new Map<string, AccountMapping>();
+    for (const m of mappings) {
+      mappingMap.set(m.lineType, m);
+    }
+
+    const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, invoice.supplierId));
+    const supplierType = supplier?.supplierType || "drugs";
+    const payablesLineType = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
+
+    const journalLineData: InsertJournalLine[] = [];
+    const desc = `قيد فاتورة مشتريات رقم ${invoice.invoiceNumber}`;
+
+    const inventoryMapping = mappingMap.get("inventory");
+    if (inventoryMapping?.debitAccountId && totalBeforeVat > 0) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: inventoryMapping.debitAccountId,
+        debit: String(totalBeforeVat.toFixed(2)),
+        credit: "0",
+        description: "مخزون - فاتورة مشتريات",
+      });
+    }
+
+    const vatMapping = mappingMap.get("vat_input");
+    if (vatMapping?.debitAccountId && totalVat > 0) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: vatMapping.debitAccountId,
+        debit: String(totalVat.toFixed(2)),
+        credit: "0",
+        description: "ضريبة قيمة مضافة - مدخلات",
+      });
+    }
+
+    const discountMapping = mappingMap.get("discount_earned");
+    if (discountMapping?.creditAccountId && headerDiscount > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: discountMapping.creditAccountId,
+        debit: "0",
+        credit: String(headerDiscount.toFixed(2)),
+        description: "خصم مكتسب",
+      });
+    }
+
+    const payablesMapping = mappingMap.get(payablesLineType) || mappingMap.get("payables");
+    if (payablesMapping?.creditAccountId && netPayable > 0) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: payablesMapping.creditAccountId,
+        debit: "0",
+        credit: String(netPayable.toFixed(2)),
+        description: supplierType === "consumables" ? "موردين مستلزمات" : "موردين أدوية",
+      });
+    }
+
+    if (journalLineData.length === 0) return null;
+
+    const totalDebits = journalLineData.reduce((s, l) => s + parseFloat(l.debit || "0"), 0);
+    const totalCredits = journalLineData.reduce((s, l) => s + parseFloat(l.credit || "0"), 0);
+    const diff = Math.abs(totalDebits - totalCredits);
+
+    if (diff > 0.01) {
+      console.error(`Purchase invoice journal unbalanced: debits=${totalDebits}, credits=${totalCredits}, diff=${diff}`);
+      return null;
+    }
+
+    return db.transaction(async (tx) => {
+      const [period] = await tx.select().from(fiscalPeriods)
+        .where(and(
+          lte(fiscalPeriods.startDate, invoice.invoiceDate),
+          gte(fiscalPeriods.endDate, invoice.invoiceDate),
+          eq(fiscalPeriods.isClosed, false)
+        ))
+        .limit(1);
+
+      const entryNumber = await this.getNextEntryNumber();
+
+      const [entry] = await tx.insert(journalEntries).values({
+        entryNumber,
+        entryDate: invoice.invoiceDate,
+        reference: `PUR-${invoice.invoiceNumber}`,
+        description: desc,
+        status: "draft",
+        periodId: period?.id || null,
+        sourceType: "purchase_invoice",
+        sourceDocumentId: invoiceId,
+      }).returning();
+
+      const linesWithEntryId = journalLineData.map((l, idx) => ({
+        ...l,
+        journalEntryId: entry.id,
+        lineNumber: idx + 1,
+      }));
+
+      await tx.insert(journalLines).values(linesWithEntryId);
+      return entry;
+    });
   }
 
   async createReceivingCorrection(originalId: string): Promise<ReceivingHeader> {

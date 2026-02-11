@@ -438,6 +438,7 @@ export const suppliers = pgTable("suppliers", {
   phone: text("phone"),
   taxId: varchar("tax_id", { length: 30 }),
   address: text("address"),
+  supplierType: text("supplier_type").notNull().default("drugs"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
@@ -1317,6 +1318,10 @@ export const mappingLineTypeLabels: Record<string, string> = {
   cash: "الصندوق / النقدية",
   receivables: "ذمم مدينة",
   payables: "ذمم دائنة (موردين)",
+  payables_drugs: "موردين أدوية",
+  payables_consumables: "موردين مستلزمات",
+  vat_input: "ضريبة قيمة مضافة - مدخلات",
+  discount_earned: "خصم مكتسب",
   returns: "مردودات",
   expense_general: "مصروفات عامة",
 };
