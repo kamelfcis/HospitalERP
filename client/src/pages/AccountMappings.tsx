@@ -331,7 +331,7 @@ export default function AccountMappings() {
               {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
           ) : (
-            <ScrollArea className="max-h-[calc(100vh-200px)]">
+            <div>
               <div className="space-y-1">
                 <div className="grid grid-cols-[1fr_2fr_2fr_auto] gap-3 px-2 py-2 bg-muted/50 rounded-md text-sm font-medium text-muted-foreground">
                   <div>نوع البند</div>
@@ -400,7 +400,7 @@ export default function AccountMappings() {
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           )}
         </CardContent>
       </Card>
