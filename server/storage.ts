@@ -959,20 +959,49 @@ export class DatabaseStorage implements IStorage {
       };
     }));
 
+    const revenueAccounts = allAccounts.filter(a => a.accountType === 'revenue');
+    const expenseAccounts = allAccounts.filter(a => a.accountType === 'expense');
+
+    let totalRevenue = 0;
+    for (const acc of revenueAccounts) {
+      const openBal = parseFloat(acc.openingBalance || "0");
+      const txBal = parseFloat(await getAccountBalance(acc.id, false));
+      totalRevenue += openBal + txBal;
+    }
+    let totalExpenses = 0;
+    for (const acc of expenseAccounts) {
+      const openBal = parseFloat(acc.openingBalance || "0");
+      const txBal = parseFloat(await getAccountBalance(acc.id, true));
+      totalExpenses += openBal + txBal;
+    }
+    const netIncome = totalRevenue - totalExpenses;
+
     const totalAssets = assets.reduce((sum, a) => sum + parseFloat(a.balance), 0);
     const totalLiabilities = liabilities.reduce((sum, l) => sum + parseFloat(l.balance), 0);
-    const totalEquity = equity.reduce((sum, e) => sum + parseFloat(e.balance), 0);
+    const totalEquityFromAccounts = equity.reduce((sum, e) => sum + parseFloat(e.balance), 0);
+    const totalEquityWithIncome = totalEquityFromAccounts + netIncome;
+
+    const equityItems = equity.filter(e => parseFloat(e.balance) !== 0);
+    if (Math.abs(netIncome) >= 0.01) {
+      equityItems.push({
+        accountId: "net-income",
+        accountCode: "",
+        accountName: "صافي ربح/خسارة الفترة",
+        balance: netIncome.toFixed(2),
+      });
+    }
 
     return {
       assets: assets.filter(a => parseFloat(a.balance) !== 0),
       liabilities: liabilities.filter(l => parseFloat(l.balance) !== 0),
-      equity: equity.filter(e => parseFloat(e.balance) !== 0),
+      equity: equityItems,
       totalAssets: totalAssets.toFixed(2),
       totalLiabilities: totalLiabilities.toFixed(2),
-      totalEquity: totalEquity.toFixed(2),
-      totalLiabilitiesAndEquity: (totalLiabilities + totalEquity).toFixed(2),
+      totalEquity: totalEquityWithIncome.toFixed(2),
+      totalLiabilitiesAndEquity: (totalLiabilities + totalEquityWithIncome).toFixed(2),
+      netIncome: netIncome.toFixed(2),
       asOfDate,
-      isBalanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
+      isBalanced: Math.abs(totalAssets - (totalLiabilities + totalEquityWithIncome)) < 0.01,
     };
   }
 
