@@ -4396,9 +4396,37 @@ export class DatabaseStorage implements IStorage {
     return finalResult;
   }
 
+  async regenerateJournalForInvoice(invoiceId: string): Promise<JournalEntry | null> {
+    const [invoice] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
+    if (!invoice || invoice.status !== "finalized") return null;
+    
+    const lines = await db.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, invoiceId));
+    let cogsDrugs = 0, cogsSupplies = 0, revenueDrugs = 0, revenueSupplies = 0;
+    
+    for (const line of lines) {
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      if (!item) continue;
+      const lineRevenue = parseFloat(line.lineTotal);
+      if (item.category === "service") {
+        revenueDrugs += lineRevenue;
+        continue;
+      }
+      if (item.category === "drug") {
+        revenueDrugs += lineRevenue;
+      } else if (item.category === "supply") {
+        revenueSupplies += lineRevenue;
+      } else {
+        revenueDrugs += lineRevenue;
+      }
+    }
+    
+    return this.generateSalesInvoiceJournal(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
+  }
+
   private async generateSalesInvoiceJournal(
     invoiceId: string, invoice: any, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
   ): Promise<JournalEntry | null> {
+    console.log(`[Journal] Starting generateSalesInvoiceJournal for invoice ${invoiceId}, cogsDrugs=${cogsDrugs}, cogsSupplies=${cogsSupplies}, revenueDrugs=${revenueDrugs}, revenueSupplies=${revenueSupplies}`);
     const existingEntries = await db.select().from(journalEntries)
       .where(and(
         eq(journalEntries.sourceType, "sales_invoice"),
@@ -4478,11 +4506,30 @@ export class DatabaseStorage implements IStorage {
     }
 
     const cogsSuppliesMapping = mappingMap.get("cogs_supplies");
+    const cogsGeneralMapping = mappingMap.get("cogs");
     if (cogsSuppliesMapping?.debitAccountId && cogsSupplies > 0.001) {
       journalLineData.push({
         journalEntryId: "",
         lineNumber: lineNum++,
         accountId: cogsSuppliesMapping.debitAccountId,
+        debit: String(cogsSupplies.toFixed(2)),
+        credit: "0",
+        description: "تكلفة مستلزمات مباعة",
+      });
+    } else if (cogsGeneralMapping?.debitAccountId && cogsSupplies > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: cogsGeneralMapping.debitAccountId,
+        debit: String(cogsSupplies.toFixed(2)),
+        credit: "0",
+        description: "تكلفة مستلزمات مباعة",
+      });
+    } else if (cogsDrugsMapping?.debitAccountId && cogsSupplies > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: cogsDrugsMapping.debitAccountId,
         debit: String(cogsSupplies.toFixed(2)),
         credit: "0",
         description: "تكلفة مستلزمات مباعة",
@@ -4531,6 +4578,15 @@ export class DatabaseStorage implements IStorage {
         credit: String(revenueSupplies.toFixed(2)),
         description: "إيراد مبيعات مستلزمات",
       });
+    } else if (revenueDrugsMapping?.creditAccountId && revenueSupplies > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: lineNum++,
+        accountId: revenueDrugsMapping.creditAccountId,
+        debit: "0",
+        credit: String(revenueSupplies.toFixed(2)),
+        description: "إيراد مبيعات مستلزمات",
+      });
     }
 
     const vatMapping = mappingMap.get("vat_output");
@@ -4565,9 +4621,10 @@ export class DatabaseStorage implements IStorage {
     const diff = Math.abs(totalDebits - totalCredits);
 
     if (diff > 0.01) {
-      console.error(`Sales invoice journal unbalanced: debits=${totalDebits}, credits=${totalCredits}, diff=${diff}`);
+      console.error(`[Journal] Sales invoice journal unbalanced: debits=${totalDebits}, credits=${totalCredits}, diff=${diff}, lines=${JSON.stringify(journalLineData)}`);
       return null;
     }
+    console.log(`[Journal] Journal balanced: debits=${totalDebits}, credits=${totalCredits}, lines=${journalLineData.length}`);
 
     return db.transaction(async (tx) => {
       const [period] = await tx.select().from(fiscalPeriods)

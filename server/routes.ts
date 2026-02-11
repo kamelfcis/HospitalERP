@@ -2621,6 +2621,16 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/sales-invoices/:id/regenerate-journal", async (req, res) => {
+    try {
+      const result = await storage.regenerateJournalForInvoice(req.params.id);
+      if (!result) return res.status(400).json({ message: "لا يمكن إنشاء القيد - تحقق من ربط الحسابات" });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/sales-invoices/:id/finalize", async (req, res) => {
     try {
       const invoice = await storage.finalizeSalesInvoice(req.params.id);
