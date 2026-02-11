@@ -13,7 +13,7 @@ import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loa
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatCurrency, formatDateShort } from "@/lib/formatters";
-import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item, Warehouse } from "@shared/schema";
+import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item, Warehouse, Patient, Doctor } from "@shared/schema";
 import { patientInvoiceStatusLabels, patientTypeLabels, lineTypeLabels, paymentMethodLabels } from "@shared/schema";
 
 function useDebounce(value: string, delay: number) {
@@ -240,12 +240,33 @@ export default function PatientInvoice() {
   const [distCount, setDistCount] = useState(2);
   const [distPatients, setDistPatients] = useState<{ name: string; phone: string }[]>([{ name: "", phone: "" }, { name: "", phone: "" }]);
   const [distLoading, setDistLoading] = useState(false);
+  const [distSearchIdx, setDistSearchIdx] = useState<number | null>(null);
+  const [distSearchText, setDistSearchText] = useState("");
+  const [distSearchResults, setDistSearchResults] = useState<Patient[]>([]);
+  const [distSearching, setDistSearching] = useState(false);
+  const debouncedDistSearch = useDebounce(distSearchText, 200);
 
   const [lines, setLines] = useState<LineLocal[]>([]);
   const linesRef = useRef(lines);
   useEffect(() => { linesRef.current = lines; }, [lines]);
   const pendingQtyRef = useRef<Map<string, string>>(new Map());
   const [payments, setPayments] = useState<PaymentLocal[]>([]);
+
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientResults, setPatientResults] = useState<Patient[]>([]);
+  const [searchingPatients, setSearchingPatients] = useState(false);
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
+  const debouncedPatientSearch = useDebounce(patientSearch, 200);
+  const patientSearchRef = useRef<HTMLInputElement>(null);
+  const patientDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [doctorSearch, setDoctorSearch] = useState("");
+  const [doctorResults, setDoctorResults] = useState<Doctor[]>([]);
+  const [searchingDoctors, setSearchingDoctors] = useState(false);
+  const [showDoctorDropdown, setShowDoctorDropdown] = useState(false);
+  const debouncedDoctorSearch = useDebounce(doctorSearch, 200);
+  const doctorSearchRef = useRef<HTMLInputElement>(null);
+  const doctorDropdownRef = useRef<HTMLDivElement>(null);
 
   const [serviceSearch, setServiceSearch] = useState("");
   const [serviceResults, setServiceResults] = useState<Service[]>([]);
@@ -374,6 +395,100 @@ export default function PatientInvoice() {
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [serviceResults.length]);
+
+  useEffect(() => {
+    if (!debouncedDistSearch || debouncedDistSearch.length < 1 || distSearchIdx === null) {
+      setDistSearchResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    setDistSearching(true);
+    fetch(`/api/patients?search=${encodeURIComponent(debouncedDistSearch)}`, {
+      signal: controller.signal,
+      credentials: "include",
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setDistSearchResults(Array.isArray(data) ? data : []);
+        setDistSearching(false);
+      })
+      .catch(() => setDistSearching(false));
+    return () => controller.abort();
+  }, [debouncedDistSearch, distSearchIdx]);
+
+  useEffect(() => {
+    if (!debouncedPatientSearch || debouncedPatientSearch.length < 1) {
+      setPatientResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    setSearchingPatients(true);
+    fetch(`/api/patients?search=${encodeURIComponent(debouncedPatientSearch)}`, {
+      signal: controller.signal,
+      credentials: "include",
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setPatientResults(Array.isArray(data) ? data : []);
+        setSearchingPatients(false);
+      })
+      .catch(() => setSearchingPatients(false));
+    return () => controller.abort();
+  }, [debouncedPatientSearch]);
+
+  useEffect(() => {
+    if (!debouncedDoctorSearch || debouncedDoctorSearch.length < 1) {
+      setDoctorResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    setSearchingDoctors(true);
+    fetch(`/api/doctors?search=${encodeURIComponent(debouncedDoctorSearch)}`, {
+      signal: controller.signal,
+      credentials: "include",
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setDoctorResults(Array.isArray(data) ? data : []);
+        setSearchingDoctors(false);
+      })
+      .catch(() => setSearchingDoctors(false));
+    return () => controller.abort();
+  }, [debouncedDoctorSearch]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        patientDropdownRef.current &&
+        !patientDropdownRef.current.contains(e.target as Node) &&
+        patientSearchRef.current &&
+        !patientSearchRef.current.contains(e.target as Node)
+      ) {
+        setShowPatientDropdown(false);
+      }
+    }
+    if (showPatientDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showPatientDropdown]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        doctorDropdownRef.current &&
+        !doctorDropdownRef.current.contains(e.target as Node) &&
+        doctorSearchRef.current &&
+        !doctorSearchRef.current.contains(e.target as Node)
+      ) {
+        setShowDoctorDropdown(false);
+      }
+    }
+    if (showDoctorDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showDoctorDropdown]);
 
   const regQp = useMemo(() => {
     const qp = new URLSearchParams();
@@ -1832,15 +1947,60 @@ export default function PatientInvoice() {
                     data-testid="input-invoice-date"
                   />
                 </div>
-                <div className="flex flex-row-reverse items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1 relative">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
                   <Input
+                    ref={patientSearchRef}
                     value={patientName}
-                    onChange={(e) => setPatientName(e.target.value)}
+                    onChange={(e) => {
+                      setPatientName(e.target.value);
+                      setPatientSearch(e.target.value);
+                      setShowPatientDropdown(true);
+                    }}
+                    onFocus={() => {
+                      if (patientName.length >= 1) {
+                        setPatientSearch(patientName);
+                        setShowPatientDropdown(true);
+                      }
+                    }}
                     disabled={!isDraft}
                     className="h-7 text-xs w-40"
+                    placeholder="ابحث عن مريض..."
                     data-testid="input-patient-name"
                   />
+                  {showPatientDropdown && (patientResults.length > 0 || searchingPatients) && (
+                    <div
+                      ref={patientDropdownRef}
+                      className="absolute top-full right-0 mt-1 w-72 bg-popover border rounded-md shadow-lg z-50 max-h-48 overflow-y-auto"
+                      data-testid="dropdown-patient-search"
+                    >
+                      {searchingPatients && (
+                        <div className="flex items-center justify-center gap-2 p-2 text-xs text-muted-foreground">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>جاري البحث...</span>
+                        </div>
+                      )}
+                      {patientResults.map((p) => (
+                        <div
+                          key={p.id}
+                          className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex flex-row-reverse items-center justify-between gap-2 border-b last:border-b-0"
+                          onClick={() => {
+                            setPatientName(p.fullName);
+                            setPatientPhone(p.phone || "");
+                            setShowPatientDropdown(false);
+                            setPatientSearch("");
+                            setPatientResults([]);
+                          }}
+                          data-testid={`option-patient-${p.id}`}
+                        >
+                          <span className="font-medium truncate">{p.fullName}</span>
+                          <span className="text-muted-foreground whitespace-nowrap">
+                            {p.phone || ""}{p.age ? ` | ${p.age} سنة` : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">هاتف:</Label>
@@ -1878,15 +2038,57 @@ export default function PatientInvoice() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex flex-row-reverse items-center gap-1">
+                <div className="flex flex-row-reverse items-center gap-1 relative">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
                   <Input
+                    ref={doctorSearchRef}
                     value={doctorName}
-                    onChange={(e) => setDoctorName(e.target.value)}
+                    onChange={(e) => {
+                      setDoctorName(e.target.value);
+                      setDoctorSearch(e.target.value);
+                      setShowDoctorDropdown(true);
+                    }}
+                    onFocus={() => {
+                      if (doctorName.length >= 1) {
+                        setDoctorSearch(doctorName);
+                        setShowDoctorDropdown(true);
+                      }
+                    }}
                     disabled={!isDraft}
                     className="h-7 text-xs w-32"
+                    placeholder="ابحث عن طبيب..."
                     data-testid="input-doctor-name"
                   />
+                  {showDoctorDropdown && (doctorResults.length > 0 || searchingDoctors) && (
+                    <div
+                      ref={doctorDropdownRef}
+                      className="absolute top-full right-0 mt-1 w-60 bg-popover border rounded-md shadow-lg z-50 max-h-48 overflow-y-auto"
+                      data-testid="dropdown-doctor-search"
+                    >
+                      {searchingDoctors && (
+                        <div className="flex items-center justify-center gap-2 p-2 text-xs text-muted-foreground">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>جاري البحث...</span>
+                        </div>
+                      )}
+                      {doctorResults.map((d) => (
+                        <div
+                          key={d.id}
+                          className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex flex-row-reverse items-center justify-between gap-2 border-b last:border-b-0"
+                          onClick={() => {
+                            setDoctorName(d.name);
+                            setShowDoctorDropdown(false);
+                            setDoctorSearch("");
+                            setDoctorResults([]);
+                          }}
+                          data-testid={`option-doctor-${d.id}`}
+                        >
+                          <span className="font-medium truncate">{d.name}</span>
+                          {d.specialty && <span className="text-muted-foreground whitespace-nowrap">{d.specialty}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-row-reverse items-center gap-1">
                   <Label className="text-xs text-muted-foreground whitespace-nowrap">النوع:</Label>
@@ -2277,18 +2479,65 @@ export default function PatientInvoice() {
                   {distPatients.slice(0, distCount).map((p, idx) => (
                     <tr key={idx} className="border-b last:border-b-0">
                       <td className="py-1.5 px-3 text-muted-foreground text-center">{idx + 1}</td>
-                      <td className="py-1.5 px-3">
+                      <td className="py-1.5 px-3 relative">
                         <Input
                           value={p.name}
                           onChange={(e) => {
                             const updated = [...distPatients];
                             updated[idx] = { ...updated[idx], name: e.target.value };
                             setDistPatients(updated);
+                            setDistSearchIdx(idx);
+                            setDistSearchText(e.target.value);
                           }}
-                          placeholder={`اسم المريض ${idx + 1}`}
+                          onFocus={() => {
+                            if (p.name.length >= 1) {
+                              setDistSearchIdx(idx);
+                              setDistSearchText(p.name);
+                            }
+                          }}
+                          onBlur={() => {
+                            setTimeout(() => {
+                              if (distSearchIdx === idx) {
+                                setDistSearchIdx(null);
+                                setDistSearchResults([]);
+                              }
+                            }, 200);
+                          }}
+                          placeholder={`ابحث عن مريض ${idx + 1}...`}
                           className="h-8 text-sm"
                           data-testid={`input-dist-name-${idx}`}
                         />
+                        {distSearchIdx === idx && (distSearchResults.length > 0 || distSearching) && (
+                          <div className="absolute top-full right-0 left-0 mt-1 bg-popover border rounded-md shadow-lg z-50 max-h-40 overflow-y-auto" data-testid={`dropdown-dist-patient-${idx}`}>
+                            {distSearching && (
+                              <div className="flex items-center justify-center gap-2 p-2 text-xs text-muted-foreground">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>جاري البحث...</span>
+                              </div>
+                            )}
+                            {distSearchResults.map((pt) => (
+                              <div
+                                key={pt.id}
+                                className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex flex-row-reverse items-center justify-between gap-2 border-b last:border-b-0"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  const updated = [...distPatients];
+                                  updated[idx] = { name: pt.fullName, phone: pt.phone || "" };
+                                  setDistPatients(updated);
+                                  setDistSearchIdx(null);
+                                  setDistSearchResults([]);
+                                  setDistSearchText("");
+                                }}
+                                data-testid={`option-dist-patient-${idx}-${pt.id}`}
+                              >
+                                <span className="font-medium truncate">{pt.fullName}</span>
+                                <span className="text-muted-foreground whitespace-nowrap">
+                                  {pt.phone || ""}{pt.age ? ` | ${pt.age} سنة` : ""}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="py-1.5 px-3">
                         <Input

@@ -124,6 +124,12 @@ import {
   type CashierRefundReceipt,
   type Pharmacy,
   type InsertPharmacy,
+  patients,
+  doctors,
+  type Patient,
+  type InsertPatient,
+  type Doctor,
+  type InsertDoctor,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -366,6 +372,22 @@ export interface IStorage {
   getNextCashierReceiptNumber(): Promise<number>;
   getNextCashierRefundReceiptNumber(): Promise<number>;
   getPendingInvoiceCountForPharmacy(pharmacyId: string): Promise<number>;
+
+  // Patients
+  getPatients(): Promise<Patient[]>;
+  searchPatients(search: string): Promise<Patient[]>;
+  getPatient(id: string): Promise<Patient | undefined>;
+  createPatient(data: InsertPatient): Promise<Patient>;
+  updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient>;
+  deletePatient(id: string): Promise<boolean>;
+
+  // Doctors
+  getDoctors(): Promise<Doctor[]>;
+  searchDoctors(search: string): Promise<Doctor[]>;
+  getDoctor(id: string): Promise<Doctor | undefined>;
+  createDoctor(data: InsertDoctor): Promise<Doctor>;
+  updateDoctor(id: string, data: Partial<InsertDoctor>): Promise<Doctor>;
+  deleteDoctor(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4792,6 +4814,91 @@ export class DatabaseStorage implements IStorage {
       refundCount: refundResult?.count || 0,
       netCash,
     };
+  }
+
+  // ==================== Patients ====================
+
+  async getPatients(): Promise<Patient[]> {
+    return db.select().from(patients).where(eq(patients.isActive, true)).orderBy(asc(patients.fullName));
+  }
+
+  async searchPatients(search: string): Promise<Patient[]> {
+    if (!search.trim()) return this.getPatients();
+    const tokens = search.trim().split(/\s+/).filter(Boolean);
+    const conditions = tokens.map(token => {
+      const pattern = token.includes('%') ? token : `%${token}%`;
+      return or(
+        ilike(patients.fullName, pattern),
+        ilike(patients.phone, pattern),
+        ilike(patients.nationalId, pattern),
+      );
+    });
+    return db.select().from(patients)
+      .where(and(eq(patients.isActive, true), ...conditions.filter(Boolean) as any))
+      .orderBy(asc(patients.fullName))
+      .limit(50);
+  }
+
+  async getPatient(id: string): Promise<Patient | undefined> {
+    const [p] = await db.select().from(patients).where(eq(patients.id, id));
+    return p;
+  }
+
+  async createPatient(data: InsertPatient): Promise<Patient> {
+    const [p] = await db.insert(patients).values(data).returning();
+    return p;
+  }
+
+  async updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient> {
+    const [p] = await db.update(patients).set(data).where(eq(patients.id, id)).returning();
+    return p;
+  }
+
+  async deletePatient(id: string): Promise<boolean> {
+    await db.update(patients).set({ isActive: false }).where(eq(patients.id, id));
+    return true;
+  }
+
+  // ==================== Doctors ====================
+
+  async getDoctors(): Promise<Doctor[]> {
+    return db.select().from(doctors).where(eq(doctors.isActive, true)).orderBy(asc(doctors.name));
+  }
+
+  async searchDoctors(search: string): Promise<Doctor[]> {
+    if (!search.trim()) return this.getDoctors();
+    const tokens = search.trim().split(/\s+/).filter(Boolean);
+    const conditions = tokens.map(token => {
+      const pattern = token.includes('%') ? token : `%${token}%`;
+      return or(
+        ilike(doctors.name, pattern),
+        ilike(doctors.specialty, pattern),
+      );
+    });
+    return db.select().from(doctors)
+      .where(and(eq(doctors.isActive, true), ...conditions.filter(Boolean) as any))
+      .orderBy(asc(doctors.name))
+      .limit(50);
+  }
+
+  async getDoctor(id: string): Promise<Doctor | undefined> {
+    const [d] = await db.select().from(doctors).where(eq(doctors.id, id));
+    return d;
+  }
+
+  async createDoctor(data: InsertDoctor): Promise<Doctor> {
+    const [d] = await db.insert(doctors).values(data).returning();
+    return d;
+  }
+
+  async updateDoctor(id: string, data: Partial<InsertDoctor>): Promise<Doctor> {
+    const [d] = await db.update(doctors).set(data).where(eq(doctors.id, id)).returning();
+    return d;
+  }
+
+  async deleteDoctor(id: string): Promise<boolean> {
+    await db.update(doctors).set({ isActive: false }).where(eq(doctors.id, id));
+    return true;
   }
 }
 

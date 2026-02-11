@@ -28,6 +28,8 @@ import ServicesPricing from "@/pages/ServicesPricing";
 import SalesInvoices from "@/pages/SalesInvoices";
 import Warehouses from "@/pages/Warehouses";
 import Departments from "@/pages/Departments";
+import Patients from "@/pages/Patients";
+import Doctors from "@/pages/Doctors";
 import PatientInvoice from "@/pages/PatientInvoice";
 import CashierCollection from "@/pages/CashierCollection";
 import NotFound from "@/pages/not-found";
@@ -60,6 +62,8 @@ function Router() {
         <Route path="/services-pricing" component={ServicesPricing} />
         <Route path="/warehouses" component={Warehouses} />
         <Route path="/departments" component={Departments} />
+        <Route path="/patients" component={Patients} />
+        <Route path="/doctors" component={Doctors} />
         <Route path="/patient-invoices" component={PatientInvoice} />
         <Route path="/audit-log" component={AuditLog} />
         <Route path="/cashier-collection" component={CashierCollection} />

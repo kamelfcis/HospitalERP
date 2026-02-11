@@ -2951,6 +2951,104 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Patients API ====================
+
+  app.get("/api/patients", async (req, res) => {
+    try {
+      const search = req.query.search as string;
+      const list = search ? await storage.searchPatients(search) : await storage.getPatients();
+      res.json(list);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/patients/:id", async (req, res) => {
+    try {
+      const p = await storage.getPatient(req.params.id);
+      if (!p) return res.status(404).json({ message: "مريض غير موجود" });
+      res.json(p);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/patients", async (req, res) => {
+    try {
+      const p = await storage.createPatient(req.body);
+      res.status(201).json(p);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/patients/:id", async (req, res) => {
+    try {
+      const p = await storage.updatePatient(req.params.id, req.body);
+      res.json(p);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/patients/:id", async (req, res) => {
+    try {
+      await storage.deletePatient(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== Doctors API ====================
+
+  app.get("/api/doctors", async (req, res) => {
+    try {
+      const search = req.query.search as string;
+      const list = search ? await storage.searchDoctors(search) : await storage.getDoctors();
+      res.json(list);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/doctors/:id", async (req, res) => {
+    try {
+      const d = await storage.getDoctor(req.params.id);
+      if (!d) return res.status(404).json({ message: "طبيب غير موجود" });
+      res.json(d);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/doctors", async (req, res) => {
+    try {
+      const d = await storage.createDoctor(req.body);
+      res.status(201).json(d);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/doctors/:id", async (req, res) => {
+    try {
+      const d = await storage.updateDoctor(req.params.id, req.body);
+      res.json(d);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/doctors/:id", async (req, res) => {
+    try {
+      await storage.deleteDoctor(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ==================== Pharmacy API ====================
 
   app.get("/api/pharmacies", async (_req, res) => {

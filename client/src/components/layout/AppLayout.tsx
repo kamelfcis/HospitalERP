@@ -39,6 +39,7 @@ import {
   Warehouse,
   UserRound,
   Banknote,
+  Users,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -128,6 +129,16 @@ const mainNavItems = [
     title: "الأقسام",
     href: "/departments",
     icon: Building2,
+  },
+  {
+    title: "سجل المرضى",
+    href: "/patients",
+    icon: Users,
+  },
+  {
+    title: "سجل الأطباء",
+    href: "/doctors",
+    icon: Stethoscope,
   },
 ];
 
