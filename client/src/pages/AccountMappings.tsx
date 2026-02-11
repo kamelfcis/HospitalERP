@@ -361,9 +361,9 @@ export default function AccountMappings() {
                               <SelectItem
                                 key={k}
                                 value={k}
-                                disabled={usedLineTypes.has(k) && k !== row.lineType}
                               >
                                 {label}
+                                {usedLineTypes.has(k) && k !== row.lineType ? " (مستخدم)" : ""}
                               </SelectItem>
                             ))}
                           </SelectContent>
