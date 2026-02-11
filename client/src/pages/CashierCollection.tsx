@@ -110,10 +110,6 @@ export default function CashierCollection() {
     queryKey: ["/api/pharmacies"],
   });
 
-  const { data: glAccountsList } = useQuery<{ id: string; code: string; nameAr: string }[]>({
-    queryKey: ["/api/accounts"],
-  });
-
   const { data: drawerPasswordsData } = useQuery<{ glAccountId: string; hasPassword: boolean; code: string; name: string }[]>({
     queryKey: ["/api/drawer-passwords"],
   });
@@ -125,17 +121,17 @@ export default function CashierCollection() {
   }, [shiftGlAccountId, drawerPasswordsData]);
 
   const cashAccounts = useMemo(() => {
-    if (!glAccountsList) return [];
-    return glAccountsList.filter(a => 
-      a.code.startsWith("1211") || a.code.startsWith("1212")
+    if (!drawerPasswordsData) return [];
+    return drawerPasswordsData.filter(d =>
+      d.code !== "1211" && d.code !== "1212"
     );
-  }, [glAccountsList]);
+  }, [drawerPasswordsData]);
 
   const filteredGlAccounts = useMemo(() => {
     if (!cashAccounts.length) return [];
     if (!glAccountSearch.trim()) return cashAccounts;
     const q = glAccountSearch.toLowerCase();
-    return cashAccounts.filter(a => a.code.toLowerCase().includes(q) || a.nameAr.toLowerCase().includes(q));
+    return cashAccounts.filter(a => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
   }, [cashAccounts, glAccountSearch]);
 
   const activePharmacyId = selectedPharmacyId || (pharmaciesList && pharmaciesList.length > 0 ? pharmaciesList[0].id : "");
@@ -669,8 +665,8 @@ export default function CashierCollection() {
                         />
                       </div>
                       {filteredGlAccounts.map(a => (
-                        <SelectItem key={a.id} value={a.id} data-testid={`select-gl-account-option-${a.id}`}>
-                          {a.code} - {a.nameAr}
+                        <SelectItem key={a.glAccountId} value={a.glAccountId} data-testid={`select-gl-account-option-${a.glAccountId}`}>
+                          {a.code} - {a.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
