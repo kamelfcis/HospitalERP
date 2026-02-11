@@ -84,7 +84,8 @@ export default function JournalEntries() {
 
   const batchPostMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      return apiRequest("POST", "/api/journal-entries/batch-post", { ids, userId: "system" });
+      const res = await apiRequest("POST", "/api/journal-entries/batch-post", { ids, userId: "system" });
+      return await res.json();
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/journal-entries"] });
