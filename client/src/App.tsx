@@ -31,7 +31,6 @@ import Departments from "@/pages/Departments";
 import Patients from "@/pages/Patients";
 import Doctors from "@/pages/Doctors";
 import PatientInvoice from "@/pages/PatientInvoice";
-import Admissions from "@/pages/Admissions";
 import CashierCollection from "@/pages/CashierCollection";
 import NotFound from "@/pages/not-found";
 
@@ -66,7 +65,6 @@ function Router() {
         <Route path="/patients" component={Patients} />
         <Route path="/doctors" component={Doctors} />
         <Route path="/patient-invoices" component={PatientInvoice} />
-        <Route path="/admissions" component={Admissions} />
         <Route path="/audit-log" component={AuditLog} />
         <Route path="/cashier-collection" component={CashierCollection} />
         <Route component={NotFound} />

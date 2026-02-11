@@ -40,7 +40,6 @@ import {
   UserRound,
   Banknote,
   Users,
-  BedDouble,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -110,11 +109,6 @@ const mainNavItems = [
     title: "فاتورة مريض",
     href: "/patient-invoices",
     icon: UserRound,
-  },
-  {
-    title: "إقامات المرضى",
-    href: "/admissions",
-    icon: BedDouble,
   },
   {
     title: "شاشة تحصيل الكاشير",
