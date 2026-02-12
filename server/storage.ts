@@ -2833,6 +2833,9 @@ export class DatabaseStorage implements IStorage {
       if (!header.supplier_invoice_no?.trim()) throw new Error('رقم فاتورة المورد مطلوب');
       if (!header.warehouse_id) throw new Error('المستودع مطلوب');
       
+      const [supplier] = await tx.select().from(suppliers).where(eq(suppliers.id, header.supplier_id));
+      const supplierName = supplier?.nameAr || supplier?.nameEn || null;
+
       const lines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
       const activeLines = lines.filter(l => !l.isRejected);
       if (activeLines.length === 0) throw new Error('لا توجد أصناف للترحيل');
@@ -2899,6 +2902,19 @@ export class DatabaseStorage implements IStorage {
           unitCost: costPerMinorStr,
           referenceType: 'receiving',
           referenceId: header.id,
+        });
+
+        const purchaseQty = parseFloat(line.qtyInMinor);
+        const purchaseTotal = (purchaseQty * costPerMinor).toFixed(2);
+        await tx.insert(purchaseTransactions).values({
+          itemId: line.itemId,
+          txDate: header.receive_date,
+          supplierName,
+          qty: line.qtyInMinor,
+          unitLevel: line.unitLevel || 'minor',
+          purchasePrice: line.purchasePrice,
+          salePriceSnapshot: line.salePrice || null,
+          total: purchaseTotal,
         });
         
         const updateFields: any = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
@@ -3546,6 +3562,11 @@ export class DatabaseStorage implements IStorage {
       const originalId = correction.correction_of_id;
       if (!originalId) throw new Error('لا يوجد مستند أصلي للتصحيح');
 
+      const [corrSupplier] = correction.supplier_id
+        ? await tx.select().from(suppliers).where(eq(suppliers.id, correction.supplier_id))
+        : [null];
+      const corrSupplierName = corrSupplier?.nameAr || corrSupplier?.nameEn || null;
+
       const origLockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
       const original = origLockResult.rows?.[0] as any;
       if (!original) throw new Error('المستند الأصلي غير موجود');
@@ -3648,6 +3669,19 @@ export class DatabaseStorage implements IStorage {
           unitCost: costPerMinorStr,
           referenceType: 'receiving_correction',
           referenceId: correctionId,
+        });
+
+        const corrPurchaseQty = parseFloat(line.qtyInMinor as string);
+        const corrPurchaseTotal = (corrPurchaseQty * costPerMinor).toFixed(2);
+        await tx.insert(purchaseTransactions).values({
+          itemId: line.itemId,
+          txDate: correction.receive_date,
+          supplierName: corrSupplierName,
+          qty: line.qtyInMinor as string,
+          unitLevel: (line as any).unitLevel || 'minor',
+          purchasePrice: line.purchasePrice as string,
+          salePriceSnapshot: line.salePrice || null,
+          total: corrPurchaseTotal,
         });
 
         const updateFields: any = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
