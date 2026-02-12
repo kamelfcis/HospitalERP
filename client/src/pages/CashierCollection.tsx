@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, DollarSign, LogIn, LogOut, Search, Receipt, Undo2, Wallet, Building2 } from "lucide-react";
+import { Loader2, DollarSign, LogIn, LogOut, Search, Receipt, Undo2, Wallet, Building2, Warehouse } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatDateShort } from "@/lib/formatters";
@@ -38,6 +38,7 @@ interface PendingInvoice {
   status: string;
   createdAt: string;
   warehouseName: string | null;
+  warehousePharmacyId: string | null;
 }
 
 interface InvoiceLine {
@@ -456,10 +457,12 @@ export default function CashierCollection() {
                   </TableCell>
                 </TableRow>
               ) : (
-                invoices.map((inv) => (
+                invoices.map((inv) => {
+                  const isExternalWarehouse = !inv.warehousePharmacyId || inv.warehousePharmacyId !== shiftPharmacyId;
+                  return (
                   <TableRow
                     key={inv.id}
-                    className={`h-7 ${selected.has(inv.id) ? "bg-muted" : ""}`}
+                    className={`h-7 ${selected.has(inv.id) ? "bg-muted" : isExternalWarehouse ? "bg-amber-50 dark:bg-amber-950/30" : ""}`}
                     data-testid={`row-${testPrefix}-${inv.id}`}
                   >
                     <TableCell className="py-1 px-2">
@@ -469,7 +472,17 @@ export default function CashierCollection() {
                         data-testid={`checkbox-${testPrefix}-${inv.id}`}
                       />
                     </TableCell>
-                    <TableCell className="text-right font-medium py-1 px-2">{inv.invoiceNumber}</TableCell>
+                    <TableCell className="text-right font-medium py-1 px-2">
+                      <span className="flex items-center gap-1 justify-end flex-wrap">
+                        {inv.invoiceNumber}
+                        {isExternalWarehouse && inv.warehouseName && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-amber-400 text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 no-default-hover-elevate no-default-active-elevate" data-testid={`badge-warehouse-${inv.id}`}>
+                            <Warehouse className="h-2.5 w-2.5 ml-0.5" />
+                            {inv.warehouseName}
+                          </Badge>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-right py-1 px-2">{formatNumber(inv.subtotal)}</TableCell>
                     <TableCell className="text-right font-medium py-1 px-2">{formatNumber(inv.netTotal)}</TableCell>
                     <TableCell className="text-right py-1 px-2">{inv.createdBy || "-"}</TableCell>
@@ -480,8 +493,8 @@ export default function CashierCollection() {
                       </Badge>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
+                  );
+                }))}
             </TableBody>
           </Table>
         </div>

@@ -5502,6 +5502,7 @@ export class DatabaseStorage implements IStorage {
       status: salesInvoiceHeaders.status,
       createdAt: salesInvoiceHeaders.createdAt,
       warehouseName: warehouses.nameAr,
+      warehousePharmacyId: warehouses.pharmacyId,
     })
     .from(salesInvoiceHeaders)
     .leftJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
@@ -5543,6 +5544,7 @@ export class DatabaseStorage implements IStorage {
       status: salesInvoiceHeaders.status,
       createdAt: salesInvoiceHeaders.createdAt,
       warehouseName: warehouses.nameAr,
+      warehousePharmacyId: warehouses.pharmacyId,
     })
     .from(salesInvoiceHeaders)
     .leftJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
