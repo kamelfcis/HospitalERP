@@ -202,6 +202,16 @@ export default function CashierCollection() {
       queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-returns", shiftPharmacyId] });
     });
 
+    es.addEventListener("invoice_collected", () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-sales", shiftPharmacyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift", shiftId, "totals"] });
+    });
+
+    es.addEventListener("invoice_refunded", () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/pending-returns", shiftPharmacyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift", shiftId, "totals"] });
+    });
+
     es.onerror = () => {
       es.close();
       setTimeout(() => {
@@ -216,7 +226,7 @@ export default function CashierCollection() {
       es.close();
       sseRef.current = null;
     };
-  }, [hasActiveShift, shiftPharmacyId]);
+  }, [hasActiveShift, shiftPharmacyId, shiftId]);
 
   const singleSalesId = salesSelected.size === 1 ? Array.from(salesSelected)[0] : null;
   const singleReturnsId = returnsSelected.size === 1 ? Array.from(returnsSelected)[0] : null;

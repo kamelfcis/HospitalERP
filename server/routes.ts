@@ -3376,6 +3376,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "بيانات التحصيل غير مكتملة" });
       }
       const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy);
+      const shift = await storage.getShiftById(shiftId);
+      if (shift?.pharmacyId) {
+        broadcastToPharmacy(shift.pharmacyId, "invoice_collected", { invoiceIds });
+      }
       res.json(result);
     } catch (error: any) {
       if (error.message?.includes("محصّلة") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
@@ -3392,6 +3396,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "بيانات الصرف غير مكتملة" });
       }
       const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy);
+      const shift = await storage.getShiftById(shiftId);
+      if (shift?.pharmacyId) {
+        broadcastToPharmacy(shift.pharmacyId, "invoice_refunded", { invoiceIds });
+      }
       res.json(result);
     } catch (error: any) {
       if (error.message?.includes("مصروف") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {

@@ -375,6 +375,7 @@ export interface IStorage {
   // Cashier
   openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string, glAccountId?: string | null): Promise<any>;
   getActiveShift(cashierId: string, pharmacyId: string): Promise<any>;
+  getShiftById(shiftId: string): Promise<any>;
   closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
   getPendingSalesInvoices(pharmacyId: string, search?: string): Promise<any[]>;
   getPendingReturnInvoices(pharmacyId: string, search?: string): Promise<any[]>;
@@ -5438,6 +5439,11 @@ export class DatabaseStorage implements IStorage {
         eq(salesInvoiceHeaders.status, "finalized"),
       ));
     return result?.count || 0;
+  }
+
+  async getShiftById(shiftId: string): Promise<CashierShift | null> {
+    const [shift] = await db.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
+    return shift || null;
   }
 
   async closeCashierShift(shiftId: string, closingCash: string): Promise<CashierShift> {
