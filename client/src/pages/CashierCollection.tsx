@@ -419,7 +419,7 @@ export default function CashierCollection() {
           ))}
         </div>
       ) : (
-        <div className="border rounded-md">
+        <div className="border rounded-md overflow-auto">
           <Table dir="rtl" className="text-xs">
             <TableHeader>
               <TableRow className="h-8">
@@ -507,7 +507,7 @@ export default function CashierCollection() {
               <div>{details.createdBy || "-"}</div>
             </div>
             {details.lines && details.lines.length > 0 && (
-              <div className="border rounded-md">
+              <div className="border rounded-md overflow-auto">
                 <Table dir="rtl" className="text-[11px]">
                   <TableHeader>
                     <TableRow className="h-7">
@@ -556,7 +556,7 @@ export default function CashierCollection() {
   );
 
   return (
-    <div className="p-3 space-y-3" dir="rtl" data-testid="page-cashier-collection">
+    <div className="p-3 space-y-3 overflow-x-hidden" dir="rtl" data-testid="page-cashier-collection">
       <h1 className="text-lg font-bold text-right">شاشة تحصيل الكاشير</h1>
 
       <Card>
@@ -741,8 +741,8 @@ export default function CashierCollection() {
           </TabsList>
 
           <TabsContent value="sales">
-            <div className="flex flex-row-reverse gap-3">
-              <div className="w-[60%] min-w-0">
+            <div className="flex flex-row-reverse gap-3 overflow-hidden">
+              <div className="w-[60%] min-w-0 overflow-hidden">
                 {renderInvoiceTable(
                   pendingSales || [],
                   salesLoading,
@@ -778,8 +778,8 @@ export default function CashierCollection() {
           </TabsContent>
 
           <TabsContent value="returns">
-            <div className="flex flex-row-reverse gap-3">
-              <div className="w-[60%] min-w-0">
+            <div className="flex flex-row-reverse gap-3 overflow-hidden">
+              <div className="w-[60%] min-w-0 overflow-hidden">
                 {renderInvoiceTable(
                   pendingReturns || [],
                   returnsLoading,
