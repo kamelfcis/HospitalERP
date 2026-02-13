@@ -3,20 +3,20 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    if (res.status === 403) {
-      let msg = "الفترة المالية مقفولة، برجاء فتح الفترة أو تغيير التاريخ";
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed.message) msg = parsed.message;
-      } catch {}
-      throw new Error(msg);
-    }
-    let errorMsg = `${res.status}: ${text}`;
+    let serverMsg = "";
     try {
       const parsed = JSON.parse(text);
-      if (parsed.message) errorMsg = parsed.message;
+      if (parsed.message) serverMsg = parsed.message;
     } catch {}
-    throw new Error(errorMsg);
+
+    if (res.status === 403) {
+      const isFiscalPeriod = serverMsg.includes("الفترة المحاسبية") || serverMsg.includes("الفترة المالية");
+      const msg = isFiscalPeriod
+        ? (serverMsg || "الفترة المالية مقفولة، برجاء فتح الفترة أو تغيير التاريخ")
+        : (serverMsg || "غير مصرح");
+      throw new Error(msg);
+    }
+    throw new Error(serverMsg || `${res.status}: ${res.statusText}`);
   }
 }
 
