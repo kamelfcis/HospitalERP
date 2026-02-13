@@ -496,9 +496,9 @@ export async function registerRoutes(
 
       const formattedLines = lines.map(line => ({
         ...line,
-        debit: String(line.debit),
-        credit: String(line.credit),
-        journalEntryId: "", // Will be set by storage
+        debit: parseFloat(String(line.debit) || "0").toFixed(2),
+        credit: parseFloat(String(line.credit) || "0").toFixed(2),
+        journalEntryId: "",
       }));
 
       const entry = await storage.createJournalEntry(
@@ -573,8 +573,8 @@ export async function registerRoutes(
         
         formattedLines = lines.map(line => ({
           ...line,
-          debit: String(line.debit),
-          credit: String(line.credit),
+          debit: parseFloat(String(line.debit) || "0").toFixed(2),
+          credit: parseFloat(String(line.credit) || "0").toFixed(2),
           journalEntryId: req.params.id,
         }));
       }
@@ -1898,7 +1898,10 @@ export async function registerRoutes(
       res.json(transfer);
     } catch (error: any) {
       if (error.message.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
-      if (error.message.includes("غير كافية") || error.message.includes("مختلفين") || error.message.includes("مسودة") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("مطلوب")) {
+      if (error.message.includes("غير مسودة") || error.message.includes("مُرحّل بالفعل")) {
+        return res.status(409).json({ message: error.message, code: "ALREADY_POSTED" });
+      }
+      if (error.message.includes("غير كافية") || error.message.includes("مختلفين") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("مطلوب")) {
         return res.status(400).json({ message: error.message });
       }
       res.status(500).json({ message: error.message });

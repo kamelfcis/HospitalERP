@@ -1,0 +1,53 @@
+Before we consider the system changes complete, perform a FINAL VERIFICATION PASS and explicitly confirm the following items with code-level checks and test validation:
+
+1) Fiscal Period Enforcement – Date Accuracy
+   - Confirm which exact date field is used for fiscal period validation in each operation:
+     • Receiving → receiveDate
+     • Store Transfer → transferDate
+     • Sales Invoice → invoiceDate
+     • Patient Invoice → invoiceDate
+     • Cashier Collect/Refund → paymentDate (NOT always “today” unless that is the only allowed behavior)
+   - Ensure backdated transactions into closed periods are blocked.
+   - Add explicit tests for each document type attempting posting into a closed period.
+
+2) Cancelled Documents Behavior
+   - Confirm that cancelled documents:
+     • Cannot be edited
+     • Cannot be finalized/posted
+     • Cannot be collected/refunded
+   - Ensure cancelled documents are excluded from:
+     • Default financial reports
+     • Default operational listings
+     unless explicitly requested (e.g., includeCancelled=true).
+   - Confirm cancellation does not silently affect stock or journal entries unless explicitly designed to do so.
+
+3) formattedNumber Consistency
+   - Confirm formattedNumber (with prefixes like SI-, PI-, RCV-, TRF-, etc.) is:
+     • Returned in all list and detail GET APIs
+     • Used in printing
+     • Used in reports
+   - Ensure search works correctly whether using raw number or formatted number.
+
+4) Concurrency & Idempotency
+   - Confirm all posting/finalization routes:
+     • Use transactions
+     • Use FOR UPDATE locking where applicable
+     • Return 409 Conflict when a concurrent or duplicate operation occurs.
+   - Add concurrency tests simulating two simultaneous post/finalize requests.
+
+5) Immutability Enforcement
+   - Confirm all update/delete routes reject non-draft statuses.
+   - Confirm no hard delete remains for financial documents.
+   - Ensure only master data (if applicable) can be hard-deleted.
+
+6) Financial Rounding Consistency
+   - Confirm roundMoney is consistently applied to:
+     • Invoice totals
+     • Journal debit/credit values
+     • Collection amounts
+   - Ensure rounding method is consistent system-wide and documented.
+
+Deliver:
+- A checklist confirming each item above.
+- Any gaps found and the exact fix applied.
+- All related tests passing.

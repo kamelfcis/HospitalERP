@@ -1601,6 +1601,7 @@ export class DatabaseStorage implements IStorage {
   // Store Transfers
   async getTransfers(): Promise<StoreTransferWithDetails[]> {
     const transfers = await db.select().from(storeTransfers)
+      .where(sql`${storeTransfers.status} != 'cancelled'`)
       .orderBy(desc(storeTransfers.createdAt))
       .limit(100);
 
@@ -2397,9 +2398,11 @@ export class DatabaseStorage implements IStorage {
     }
     if (status) {
       conditions.push(eq(storeTransfers.status, status as any));
+    } else {
+      conditions.push(sql`${storeTransfers.status} != 'cancelled'`);
     }
     if (search && search.trim()) {
-      const searchTerm = search.trim();
+      const searchTerm = search.trim().replace(/^TRF-/i, '');
       const numericSearch = parseInt(searchTerm, 10);
       if (!isNaN(numericSearch)) {
         conditions.push(eq(storeTransfers.transferNumber, numericSearch));
@@ -2723,7 +2726,11 @@ export class DatabaseStorage implements IStorage {
     const conditions: any[] = [];
     if (supplierId) conditions.push(eq(receivingHeaders.supplierId, supplierId));
     if (warehouseId) conditions.push(eq(receivingHeaders.warehouseId, warehouseId));
-    if (status) conditions.push(eq(receivingHeaders.status, status as any));
+    if (status) {
+      conditions.push(eq(receivingHeaders.status, status as any));
+    } else {
+      conditions.push(sql`${receivingHeaders.status} != 'cancelled'`);
+    }
     if (statusFilter && statusFilter !== 'ALL') {
       if (statusFilter === 'DRAFT') {
         conditions.push(eq(receivingHeaders.status, 'draft' as any));
@@ -2739,9 +2746,10 @@ export class DatabaseStorage implements IStorage {
     if (fromDate) conditions.push(gte(receivingHeaders.receiveDate, fromDate));
     if (toDate) conditions.push(lte(receivingHeaders.receiveDate, toDate));
     if (search) {
+      const searchStripped = search.replace(/^RCV-/i, '').trim();
       conditions.push(or(
         ilike(receivingHeaders.supplierInvoiceNo, `%${search}%`),
-        sql`${receivingHeaders.receivingNumber}::text ILIKE ${`%${search}%`}`,
+        sql`${receivingHeaders.receivingNumber}::text ILIKE ${`%${searchStripped}%`}`,
         sql`EXISTS (SELECT 1 FROM suppliers WHERE suppliers.id = ${receivingHeaders.supplierId} AND (suppliers.name_ar ILIKE ${`%${search}%`} OR suppliers.name_en ILIKE ${`%${search}%`}))`
       ));
     }
@@ -3157,7 +3165,11 @@ export class DatabaseStorage implements IStorage {
   async getPurchaseInvoices(filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}> {
     const conditions: any[] = [];
     if (filters.supplierId) conditions.push(eq(purchaseInvoiceHeaders.supplierId, filters.supplierId));
-    if (filters.status && filters.status !== "all") conditions.push(eq(purchaseInvoiceHeaders.status, filters.status as any));
+    if (filters.status && filters.status !== "all") {
+      conditions.push(eq(purchaseInvoiceHeaders.status, filters.status as any));
+    } else if (!filters.status || filters.status === "all") {
+      conditions.push(sql`${purchaseInvoiceHeaders.status} != 'cancelled'`);
+    }
     if (filters.dateFrom) conditions.push(sql`${purchaseInvoiceHeaders.invoiceDate} >= ${filters.dateFrom}`);
     if (filters.dateTo) conditions.push(sql`${purchaseInvoiceHeaders.invoiceDate} <= ${filters.dateTo}`);
 
@@ -3290,9 +3302,12 @@ export class DatabaseStorage implements IStorage {
 
   async approvePurchaseInvoice(id: string): Promise<any> {
     const result = await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM purchase_invoice_headers WHERE id = ${id} FOR UPDATE`);
+      const locked = lockResult.rows?.[0] as any;
+      if (!locked) throw new Error("الفاتورة غير موجودة");
+      if (locked.status !== "draft") throw new Error("الفاتورة معتمدة مسبقاً");
       const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
-      if (invoice.status !== "draft") throw new Error("الفاتورة معتمدة مسبقاً");
 
       await tx.update(purchaseInvoiceHeaders).set({
         status: "approved_costed",
@@ -4100,14 +4115,19 @@ export class DatabaseStorage implements IStorage {
 
   async getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}> {
     const conditions: any[] = [];
-    if (filters.status && filters.status !== "all") conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
+    if (filters.status && filters.status !== "all") {
+      conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
+    } else if (!filters.status || filters.status === "all") {
+      conditions.push(sql`${salesInvoiceHeaders.status} != 'cancelled'`);
+    }
     if (filters.dateFrom) conditions.push(sql`${salesInvoiceHeaders.invoiceDate} >= ${filters.dateFrom}`);
     if (filters.dateTo) conditions.push(sql`${salesInvoiceHeaders.invoiceDate} <= ${filters.dateTo}`);
     if (filters.customerType && filters.customerType !== "all") conditions.push(eq(salesInvoiceHeaders.customerType, filters.customerType as any));
     if (filters.search) {
+      const searchTerm = filters.search.replace(/^SI-/i, '').trim();
       conditions.push(or(
         ilike(salesInvoiceHeaders.customerName, `%${filters.search}%`),
-        sql`${salesInvoiceHeaders.invoiceNumber}::text LIKE ${`%${filters.search}%`}`
+        sql`${salesInvoiceHeaders.invoiceNumber}::text LIKE ${`%${searchTerm}%`}`
       ));
     }
 
@@ -4904,7 +4924,11 @@ export class DatabaseStorage implements IStorage {
 
   async getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}> {
     const conditions: any[] = [];
-    if (filters.status) conditions.push(eq(patientInvoiceHeaders.status, filters.status as any));
+    if (filters.status && filters.status !== "all") {
+      conditions.push(eq(patientInvoiceHeaders.status, filters.status as any));
+    } else if (!filters.status || filters.status === "all") {
+      conditions.push(sql`${patientInvoiceHeaders.status} != 'cancelled'`);
+    }
     if (filters.dateFrom) conditions.push(gte(patientInvoiceHeaders.invoiceDate, filters.dateFrom));
     if (filters.dateTo) conditions.push(lte(patientInvoiceHeaders.invoiceDate, filters.dateTo));
     if (filters.patientName) conditions.push(ilike(patientInvoiceHeaders.patientName, `%${filters.patientName}%`));
@@ -5055,10 +5079,10 @@ export class DatabaseStorage implements IStorage {
       const totalNet = parseFloat(updated.netAmount || "0");
       if (totalNet > 0) {
         const paymentType = updated.patientType === "cash" ? "cash" : "receivables";
-        journalLines.push({ lineType: paymentType, amount: String(totalNet) });
+        journalLines.push({ lineType: paymentType, amount: roundMoney(totalNet) });
       }
       for (const [lt, amt] of Object.entries(totals)) {
-        if (amt > 0) journalLines.push({ lineType: lt, amount: String(amt) });
+        if (amt > 0) journalLines.push({ lineType: lt, amount: roundMoney(amt) });
       }
 
       this.generateJournalEntry({
