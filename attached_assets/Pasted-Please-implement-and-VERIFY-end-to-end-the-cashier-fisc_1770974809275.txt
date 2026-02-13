@@ -1,0 +1,43 @@
+Please implement and VERIFY (end-to-end) the cashier fiscal period fix automatically.
+
+Goal:
+Cashier collect/refund must validate fiscal periods using paymentDate (collection/refund transaction date), NOT invoiceDate.
+This must work for BOTH pharmacy (sales invoices, including credit/receivables) and patient invoices.
+
+Requirements:
+1) Backend routes
+   - Update /api/cashier/collect and /api/cashier/refund:
+     • Accept optional paymentDate in request body (ISO date string).
+     • If paymentDate is missing, default to today's date (server-side).
+     • Use paymentDate for fiscal period closed/open validation.
+     • Do NOT loop over each invoiceDate for validation.
+   - Ensure the same logic applies to:
+     • Pharmacy sales invoice collection
+     • Patient invoice collection (if there is a separate route, update it too)
+     • Refund operations
+
+2) Data / persistence
+   - If there is a cashier receipt/transaction record, store paymentDate on it.
+   - If not present, add the needed field and migrate safely.
+
+3) UI
+   - Keep current behavior working (no UI change required to pass).
+   - Optionally add a “Payment Date” field (default today) if feasible without breaking flows.
+
+4) Tests (must be added and must pass)
+   Add automated tests that do ALL of the following:
+   - Create an invoice with invoiceDate inside a CLOSED period.
+   - Attempt to collect with paymentDate in an OPEN period -> MUST succeed (200).
+   - Attempt to collect with paymentDate in a CLOSED period -> MUST fail (409 or a clear fiscal-period-closed error).
+   - Repeat the same for refund.
+   - Ensure both pharmacy sales invoices and patient invoices are covered (if patient has a separate flow/route).
+
+5) Verification & evidence
+   - Run the full test suite and confirm all tests pass.
+   - In your final summary, list:
+     • Files changed
+     • Routes updated
+     • New tests added
+     • How to manually verify in the UI (steps)
+
+Do the work now, run tests, and only then report completion.

@@ -3460,7 +3460,7 @@ export async function registerRoutes(
       const txnDate = paymentDate || new Date().toISOString().split("T")[0];
       await storage.assertPeriodOpen(txnDate);
 
-      const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy);
+      const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy, txnDate);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "collect", newValues: JSON.stringify({ invoiceIds, collectedBy }) });
       const shift = await storage.getShiftById(shiftId);
       if (shift?.pharmacyId) {
@@ -3485,7 +3485,7 @@ export async function registerRoutes(
       const txnDate = paymentDate || new Date().toISOString().split("T")[0];
       await storage.assertPeriodOpen(txnDate);
 
-      const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy);
+      const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy, txnDate);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "refund", newValues: JSON.stringify({ invoiceIds, refundedBy }) });
       const shift = await storage.getShiftById(shiftId);
       if (shift?.pharmacyId) {

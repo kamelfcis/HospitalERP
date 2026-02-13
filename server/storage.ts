@@ -382,8 +382,8 @@ export interface IStorage {
   getPendingSalesInvoices(pharmacyId: string, search?: string): Promise<any[]>;
   getPendingReturnInvoices(pharmacyId: string, search?: string): Promise<any[]>;
   getSalesInvoiceDetails(invoiceId: string): Promise<any>;
-  collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string): Promise<any>;
-  refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string): Promise<any>;
+  collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string, paymentDate?: string): Promise<any>;
+  refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string, paymentDate?: string): Promise<any>;
   getShiftTotals(shiftId: string): Promise<any>;
   getNextCashierReceiptNumber(): Promise<number>;
   getNextCashierRefundReceiptNumber(): Promise<number>;
@@ -5713,7 +5713,7 @@ export class DatabaseStorage implements IStorage {
     return (result?.maxNum || 0) + 1;
   }
 
-  async collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string): Promise<any> {
+  async collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string, paymentDate?: string): Promise<any> {
     return await db.transaction(async (tx) => {
       const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
       if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
@@ -5746,6 +5746,7 @@ export class DatabaseStorage implements IStorage {
           shiftId,
           invoiceId,
           amount,
+          paymentDate: paymentDate || new Date().toISOString().split("T")[0],
           collectedBy,
         }).returning();
 
@@ -5776,7 +5777,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string): Promise<any> {
+  async refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string, paymentDate?: string): Promise<any> {
     return await db.transaction(async (tx) => {
       const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
       if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
@@ -5809,6 +5810,7 @@ export class DatabaseStorage implements IStorage {
           shiftId,
           invoiceId,
           amount,
+          paymentDate: paymentDate || new Date().toISOString().split("T")[0],
           refundedBy,
         }).returning();
 

@@ -789,6 +789,7 @@ export const cashierReceipts = pgTable("cashier_receipts", {
   shiftId: varchar("shift_id").notNull().references(() => cashierShifts.id),
   invoiceId: varchar("invoice_id").notNull().references(() => salesInvoiceHeaders.id),
   amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  paymentDate: varchar("payment_date", { length: 10 }),
   collectedBy: text("collected_by").notNull(),
   collectedAt: timestamp("collected_at").notNull().defaultNow(),
 }, (table) => ({
@@ -804,6 +805,7 @@ export const cashierRefundReceipts = pgTable("cashier_refund_receipts", {
   shiftId: varchar("shift_id").notNull().references(() => cashierShifts.id),
   invoiceId: varchar("invoice_id").notNull().references(() => salesInvoiceHeaders.id),
   amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  paymentDate: varchar("payment_date", { length: 10 }),
   refundedBy: text("refunded_by").notNull(),
   refundedAt: timestamp("refunded_at").notNull().defaultNow(),
 }, (table) => ({
