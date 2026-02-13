@@ -155,7 +155,7 @@ export default function UsersManagement() {
 
   return (
     <div className="p-6 space-y-4" dir="rtl">
-      <div className="flex flex-row-reverse items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-bold" data-testid="text-page-title">إدارة المستخدمين</h1>
         {hasPermission("users.create") && (
           <Button onClick={openNew} data-testid="button-add-user">
@@ -174,10 +174,10 @@ export default function UsersManagement() {
           {users.map((user) => (
             <Card key={user.id} data-testid={`card-user-${user.id}`}>
               <CardContent className="p-4">
-                <div className="flex flex-row-reverse items-center justify-between flex-wrap gap-3">
-                  <div className="flex flex-row-reverse items-center gap-3">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
                     <UserCircle className="h-8 w-8 text-muted-foreground" />
-                    <div className="text-right">
+                    <div>
                       <p className="font-medium" data-testid={`text-user-fullname-${user.id}`}>{user.fullName}</p>
                       <p className="text-sm text-muted-foreground" data-testid={`text-user-username-${user.id}`}>@{user.username}</p>
                     </div>
@@ -418,7 +418,7 @@ function PermissionsDialog({ userId, open, onOpenChange }: { userId: string | nu
           </p>
         </DialogHeader>
         <ScrollArea className="max-h-[60vh]">
-          <div className="space-y-4 pl-2">
+          <div className="space-y-4 pe-2">
             {PERMISSION_GROUPS.map((group) => (
               <div key={group.label}>
                 <p className="font-medium text-sm mb-1">{group.label}</p>
