@@ -129,6 +129,9 @@ const userWarehousesAssignmentSchema = z.object({
 
 async function validateReceivingLines(lines: any[]): Promise<{ lineIndex: number; field: string; messageAr: string }[]> {
   const errors: { lineIndex: number; field: string; messageAr: string }[] = [];
+  const itemIds = Array.from(new Set(lines.filter(l => !l.isRejected && l.itemId).map(l => l.itemId)));
+  const itemsMap = await storage.getItemsByIds(itemIds);
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.isRejected) continue;
@@ -138,7 +141,7 @@ async function validateReceivingLines(lines: any[]): Promise<{ lineIndex: number
       errors.push({ lineIndex: i, field: "salePrice", messageAr: "سعر البيع مطلوب ويجب أن يكون أكبر من صفر" });
     }
 
-    const item = await storage.getItem(line.itemId);
+    const item = itemsMap.get(line.itemId);
     if (item) {
       if (item.hasExpiry) {
         const month = line.expiryMonth != null ? parseInt(String(line.expiryMonth)) : null;

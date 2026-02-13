@@ -203,6 +203,7 @@ export interface IStorage {
   // Items
   getItems(params: { page?: number; limit?: number; search?: string; category?: string; isToxic?: boolean; formTypeId?: string; isActive?: boolean; minPrice?: number; maxPrice?: number }): Promise<{ items: Item[]; total: number }>;
   getItem(id: string): Promise<ItemWithFormType | undefined>;
+  getItemsByIds(ids: string[]): Promise<Map<string, Item>>;
   createItem(item: InsertItem): Promise<Item>;
   updateItem(id: string, item: Partial<InsertItem>): Promise<Item | undefined>;
   deleteItem(id: string): Promise<boolean>;
@@ -1214,6 +1215,16 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { ...item, formType };
+  }
+
+  async getItemsByIds(ids: string[]): Promise<Map<string, Item>> {
+    const map = new Map<string, Item>();
+    if (ids.length === 0) return map;
+    const results = await db.select().from(items).where(sql`${items.id} IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`);
+    for (const item of results) {
+      map.set(item.id, item);
+    }
+    return map;
   }
 
   async createItem(item: InsertItem): Promise<Item> {

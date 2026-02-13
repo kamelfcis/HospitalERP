@@ -281,7 +281,7 @@ export default function PatientInvoice() {
   const [itemSearch, setItemSearch] = useState("");
   const [itemResults, setItemResults] = useState<Item[]>([]);
   const [searchingItems, setSearchingItems] = useState(false);
-  const debouncedItemSearch = useDebounce(itemSearch, 150);
+  const debouncedItemSearch = useDebounce(itemSearch, 300);
   const itemSearchRef = useRef<HTMLInputElement>(null);
   const itemDropdownRef = useRef<HTMLDivElement>(null);
   const serviceSearchRef = useRef<HTMLInputElement>(null);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -476,7 +476,7 @@ export default function SupplierReceiving() {
     setAutoSaveStatus("idle");
   };
 
-  const grandTotal = formLines.reduce((sum, l) => sum + l.lineTotal, 0);
+  const grandTotal = useMemo(() => formLines.reduce((sum, l) => sum + l.lineTotal, 0), [formLines]);
 
   const canSaveDraft =
     !!supplierId &&
