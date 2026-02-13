@@ -1,11 +1,13 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import Login from "@/pages/Login";
+import { Loader2, ShieldAlert } from "lucide-react";
 
-// Pages
 import Dashboard from "@/pages/Dashboard";
 import ChartOfAccounts from "@/pages/ChartOfAccounts";
 import JournalEntries from "@/pages/JournalEntries";
@@ -34,47 +36,88 @@ import PatientInvoice from "@/pages/PatientInvoice";
 import CashierCollection from "@/pages/CashierCollection";
 import AccountMappings from "@/pages/AccountMappings";
 import DrawerPasswords from "@/pages/DrawerPasswords";
+import UsersManagement from "@/pages/UsersManagement";
 import NotFound from "@/pages/not-found";
+
+function RequirePermission({ permission, children }: { permission: string; children: React.ReactNode }) {
+  const { hasPermission } = useAuth();
+  if (!hasPermission(permission)) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center" dir="rtl" data-testid="access-denied">
+        <ShieldAlert className="h-12 w-12 text-muted-foreground mb-4" />
+        <h2 className="text-lg font-semibold mb-1">غير مصرح</h2>
+        <p className="text-muted-foreground text-sm">لا تملك صلاحية للوصول إلى هذه الصفحة</p>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
+function G({ p, children }: { p: string; children: React.ReactNode }) {
+  return <RequirePermission permission={p}>{children}</RequirePermission>;
+}
 
 function Router() {
   return (
     <AppLayout>
       <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/chart-of-accounts" component={ChartOfAccounts} />
-        <Route path="/journal-entries" component={JournalEntries} />
-        <Route path="/journal-entries/new" component={JournalEntryForm} />
-        <Route path="/journal-entries/:id/edit" component={JournalEntryForm} />
-        <Route path="/journal-entries/:id" component={JournalEntryForm} />
-        <Route path="/cost-centers" component={CostCenters} />
-        <Route path="/fiscal-periods" component={FiscalPeriods} />
-        <Route path="/templates" component={Templates} />
-        <Route path="/reports/trial-balance" component={TrialBalance} />
-        <Route path="/reports/income-statement" component={IncomeStatement} />
-        <Route path="/reports/balance-sheet" component={BalanceSheet} />
-        <Route path="/reports/cost-centers" component={CostCenterReports} />
-        <Route path="/reports/account-ledger" component={AccountLedger} />
-        <Route path="/items" component={ItemsList} />
-        <Route path="/items/new" component={ItemCard} />
-        <Route path="/items/:id" component={ItemCard} />
-        <Route path="/store-transfers" component={StoreTransfers} />
-        <Route path="/supplier-receiving" component={SupplierReceiving} />
-        <Route path="/purchase-invoices" component={PurchaseInvoice} />
-        <Route path="/sales-invoices" component={SalesInvoices} />
-        <Route path="/services-pricing" component={ServicesPricing} />
-        <Route path="/warehouses" component={Warehouses} />
-        <Route path="/departments" component={Departments} />
-        <Route path="/patients" component={Patients} />
-        <Route path="/doctors" component={Doctors} />
-        <Route path="/patient-invoices" component={PatientInvoice} />
-        <Route path="/audit-log" component={AuditLog} />
-        <Route path="/cashier-collection" component={CashierCollection} />
-        <Route path="/account-mappings" component={AccountMappings} />
-        <Route path="/drawer-passwords" component={DrawerPasswords} />
+        <Route path="/">{() => <G p="dashboard.view"><Dashboard /></G>}</Route>
+        <Route path="/chart-of-accounts">{() => <G p="accounts.view"><ChartOfAccounts /></G>}</Route>
+        <Route path="/journal-entries">{() => <G p="journal.view"><JournalEntries /></G>}</Route>
+        <Route path="/journal-entries/new">{() => <G p="journal.create"><JournalEntryForm /></G>}</Route>
+        <Route path="/journal-entries/:id/edit">{(params) => <G p="journal.edit"><JournalEntryForm /></G>}</Route>
+        <Route path="/journal-entries/:id">{(params) => <G p="journal.view"><JournalEntryForm /></G>}</Route>
+        <Route path="/cost-centers">{() => <G p="cost_centers.view"><CostCenters /></G>}</Route>
+        <Route path="/fiscal-periods">{() => <G p="fiscal_periods.view"><FiscalPeriods /></G>}</Route>
+        <Route path="/templates">{() => <G p="templates.view"><Templates /></G>}</Route>
+        <Route path="/reports/trial-balance">{() => <G p="reports.trial_balance"><TrialBalance /></G>}</Route>
+        <Route path="/reports/income-statement">{() => <G p="reports.income_statement"><IncomeStatement /></G>}</Route>
+        <Route path="/reports/balance-sheet">{() => <G p="reports.balance_sheet"><BalanceSheet /></G>}</Route>
+        <Route path="/reports/cost-centers">{() => <G p="reports.cost_centers"><CostCenterReports /></G>}</Route>
+        <Route path="/reports/account-ledger">{() => <G p="reports.account_ledger"><AccountLedger /></G>}</Route>
+        <Route path="/items">{() => <G p="items.view"><ItemsList /></G>}</Route>
+        <Route path="/items/new">{() => <G p="items.create"><ItemCard /></G>}</Route>
+        <Route path="/items/:id">{(params) => <G p="items.view"><ItemCard /></G>}</Route>
+        <Route path="/store-transfers">{() => <G p="transfers.view"><StoreTransfers /></G>}</Route>
+        <Route path="/supplier-receiving">{() => <G p="receiving.view"><SupplierReceiving /></G>}</Route>
+        <Route path="/purchase-invoices">{() => <G p="purchase_invoices.view"><PurchaseInvoice /></G>}</Route>
+        <Route path="/sales-invoices">{() => <G p="sales.view"><SalesInvoices /></G>}</Route>
+        <Route path="/services-pricing">{() => <G p="services.view"><ServicesPricing /></G>}</Route>
+        <Route path="/warehouses">{() => <G p="warehouses.view"><Warehouses /></G>}</Route>
+        <Route path="/departments">{() => <G p="departments.view"><Departments /></G>}</Route>
+        <Route path="/patients">{() => <G p="patients.view"><Patients /></G>}</Route>
+        <Route path="/doctors">{() => <G p="doctors.view"><Doctors /></G>}</Route>
+        <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><PatientInvoice /></G>}</Route>
+        <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
+        <Route path="/cashier-collection">{() => <G p="cashier.view"><CashierCollection /></G>}</Route>
+        <Route path="/account-mappings">{() => <G p="settings.account_mappings"><AccountMappings /></G>}</Route>
+        <Route path="/drawer-passwords">{() => <G p="settings.drawer_passwords"><DrawerPasswords /></G>}</Route>
+        <Route path="/users">{() => <G p="users.view"><UsersManagement /></G>}</Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
   );
+}
+
+function AuthenticatedApp() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background" dir="rtl">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground text-sm">جارٍ التحميل...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  return <Router />;
 }
 
 function App() {
@@ -82,7 +125,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
-        <Router />
+        <AuthProvider>
+          <AuthenticatedApp />
+        </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

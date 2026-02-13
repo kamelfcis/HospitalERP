@@ -1,8 +1,9 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import bcrypt from "bcryptjs";
+import { DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
 
 const sseClients = new Map<string, Set<Response>>();
 
@@ -198,6 +199,235 @@ export async function registerRoutes(
       console.error("Failed to seed pharmacies:", e);
     }
   })();
+
+  // Auth middleware helper
+  function requireAuth(req: Request, res: Response, next: NextFunction) {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "يجب تسجيل الدخول" });
+    }
+    next();
+  }
+
+  async function requirePermission(req: Request, res: Response, next: NextFunction, permission: string) {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "يجب تسجيل الدخول" });
+    }
+    const perms = await storage.getUserEffectivePermissions(req.session.userId);
+    if (!perms.includes(permission)) {
+      return res.status(403).json({ message: "لا تملك صلاحية لهذا الإجراء" });
+    }
+    next();
+  }
+
+  function checkPermission(permission: string) {
+    return async (req: Request, res: Response, next: NextFunction) => {
+      await requirePermission(req, res, next, permission);
+    };
+  }
+
+  // Seed default role permissions if empty
+  (async () => {
+    try {
+      const existingPerms = await storage.getRolePermissions("admin");
+      if (existingPerms.length === 0) {
+        for (const [role, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+          await storage.setRolePermissions(role, perms);
+        }
+        console.log("Seeded default role permissions");
+      }
+    } catch (e) {
+      console.error("Failed to seed role permissions:", e);
+    }
+  })();
+
+  // Seed default admin user if no users exist
+  (async () => {
+    try {
+      const allUsers = await storage.getUsers();
+      if (allUsers.length === 0) {
+        const hashedPassword = await bcrypt.hash("admin123", 10);
+        await storage.createUser({
+          username: "admin",
+          password: hashedPassword,
+          fullName: "مدير النظام",
+          role: "admin",
+          isActive: true,
+        });
+        console.log("Seeded default admin user (admin/admin123)");
+      }
+    } catch (e) {
+      console.error("Failed to seed admin user:", e);
+    }
+  })();
+
+  // ---- Auth Routes ----
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ message: "يرجى إدخال اسم المستخدم وكلمة المرور" });
+      }
+
+      const user = await storage.getUserByUsername(username);
+      if (!user || !user.isActive) {
+        return res.status(401).json({ message: "اسم المستخدم أو كلمة المرور غير صحيحة" });
+      }
+
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) {
+        return res.status(401).json({ message: "اسم المستخدم أو كلمة المرور غير صحيحة" });
+      }
+
+      req.session.userId = user.id;
+      req.session.role = user.role;
+
+      const permissions = await storage.getUserEffectivePermissions(user.id);
+      const { password: _, ...safeUser } = user;
+      res.json({ user: safeUser, permissions });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "فشل تسجيل الخروج" });
+      }
+      res.json({ message: "تم تسجيل الخروج" });
+    });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "غير مسجل" });
+    }
+    try {
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !user.isActive) {
+        req.session.destroy(() => {});
+        return res.status(401).json({ message: "غير مسجل" });
+      }
+      const permissions = await storage.getUserEffectivePermissions(user.id);
+      const { password: _, ...safeUser } = user;
+      res.json({ user: safeUser, permissions });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ---- User Management Routes ----
+  app.get("/api/users", requireAuth, checkPermission("users.view"), async (req, res) => {
+    try {
+      const allUsers = await storage.getUsers();
+      const safeUsers = allUsers.map(({ password: _, ...u }) => u);
+      res.json(safeUsers);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/users", requireAuth, checkPermission("users.create"), async (req, res) => {
+    try {
+      const { username, password, fullName, role, departmentId, pharmacyId, isActive } = req.body;
+      if (!username || !password || !fullName || !role) {
+        return res.status(400).json({ message: "يرجى إدخال جميع الحقول المطلوبة" });
+      }
+
+      const existing = await storage.getUserByUsername(username);
+      if (existing) {
+        return res.status(409).json({ message: "اسم المستخدم مستخدم بالفعل" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
+        username,
+        password: hashedPassword,
+        fullName,
+        role,
+        departmentId: departmentId || null,
+        pharmacyId: pharmacyId || null,
+        isActive: isActive !== false,
+      });
+      const { password: _, ...safeUser } = user;
+      res.status(201).json(safeUser);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/users/:id", requireAuth, checkPermission("users.edit"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { username, password, fullName, role, departmentId, pharmacyId, isActive } = req.body;
+
+      const updateData: any = {};
+      if (username !== undefined) updateData.username = username;
+      if (fullName !== undefined) updateData.fullName = fullName;
+      if (role !== undefined) updateData.role = role;
+      if (departmentId !== undefined) updateData.departmentId = departmentId;
+      if (pharmacyId !== undefined) updateData.pharmacyId = pharmacyId;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (password) {
+        updateData.password = await bcrypt.hash(password, 10);
+      }
+
+      const user = await storage.updateUser(id, updateData);
+      if (!user) {
+        return res.status(404).json({ message: "المستخدم غير موجود" });
+      }
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/users/:id", requireAuth, checkPermission("users.delete"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (id === req.session.userId) {
+        return res.status(400).json({ message: "لا يمكنك حذف حسابك الشخصي" });
+      }
+      const result = await storage.deleteUser(id);
+      if (!result) {
+        return res.status(404).json({ message: "المستخدم غير موجود" });
+      }
+      res.json({ message: "تم حذف المستخدم" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // User permissions
+  app.get("/api/users/:id/permissions", requireAuth, checkPermission("users.view"), async (req, res) => {
+    try {
+      const userPerms = await storage.getUserPermissions(req.params.id);
+      res.json(userPerms);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/users/:id/permissions", requireAuth, checkPermission("users.edit"), async (req, res) => {
+    try {
+      const { permissions } = req.body;
+      await storage.setUserPermissions(req.params.id, permissions || []);
+      res.json({ message: "تم تحديث الصلاحيات" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Role permissions
+  app.get("/api/role-permissions/:role", requireAuth, checkPermission("users.view"), async (req, res) => {
+    try {
+      const perms = await storage.getRolePermissions(req.params.role);
+      res.json(perms.map(p => p.permission));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
 
   // Dashboard
   app.get("/api/dashboard/stats", async (req, res) => {

@@ -20,13 +20,6 @@ import {
   FileText,
   Building2,
   Calendar,
-  FileSpreadsheet,
-  BarChart3,
-  TrendingUp,
-  Scale,
-  PieChart,
-  History,
-  Settings,
   ClipboardList,
   PanelRightClose,
   PanelRightOpen,
@@ -41,152 +34,67 @@ import {
   Banknote,
   Users,
   Lock,
+  Scale,
+  TrendingUp,
+  BarChart3,
+  PieChart,
+  History,
+  Settings,
+  LogOut,
+  Shield,
+  type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/use-auth";
+import { ROLE_LABELS } from "@shared/permissions";
 
 interface AppLayoutProps {
   children: React.ReactNode;
 }
 
-const mainNavItems = [
-  {
-    title: "لوحة التحكم",
-    href: "/",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "دليل الحسابات",
-    href: "/chart-of-accounts",
-    icon: BookOpen,
-  },
-  {
-    title: "القيود اليومية",
-    href: "/journal-entries",
-    icon: FileText,
-  },
-  {
-    title: "مراكز التكلفة",
-    href: "/cost-centers",
-    icon: Building2,
-  },
-  {
-    title: "الفترات المحاسبية",
-    href: "/fiscal-periods",
-    icon: Calendar,
-  },
-  {
-    title: "نماذج القيود",
-    href: "/templates",
-    icon: ClipboardList,
-  },
-  {
-    title: "الأصناف",
-    href: "/items",
-    icon: Package,
-  },
-  {
-    title: "استلام من مورد",
-    href: "/supplier-receiving",
-    icon: Truck,
-  },
-  {
-    title: "فواتير الشراء",
-    href: "/purchase-invoices",
-    icon: Receipt,
-  },
-  {
-    title: "تحويل مخزني",
-    href: "/store-transfers",
-    icon: ArrowLeftRight,
-  },
-  {
-    title: "فواتير البيع",
-    href: "/sales-invoices",
-    icon: ShoppingCart,
-  },
-  {
-    title: "فاتورة مريض",
-    href: "/patient-invoices",
-    icon: UserRound,
-  },
-  {
-    title: "شاشة تحصيل الكاشير",
-    href: "/cashier-collection",
-    icon: Banknote,
-  },
-  {
-    title: "الخدمات والأسعار",
-    href: "/services-pricing",
-    icon: Stethoscope,
-  },
-  {
-    title: "المخازن",
-    href: "/warehouses",
-    icon: Warehouse,
-  },
-  {
-    title: "الأقسام",
-    href: "/departments",
-    icon: Building2,
-  },
-  {
-    title: "سجل المرضى",
-    href: "/patients",
-    icon: Users,
-  },
-  {
-    title: "سجل الأطباء",
-    href: "/doctors",
-    icon: Stethoscope,
-  },
+interface NavItem {
+  title: string;
+  href: string;
+  icon: LucideIcon;
+  permission?: string;
+}
+
+const mainNavItems: NavItem[] = [
+  { title: "لوحة التحكم", href: "/", icon: LayoutDashboard, permission: "dashboard.view" },
+  { title: "دليل الحسابات", href: "/chart-of-accounts", icon: BookOpen, permission: "accounts.view" },
+  { title: "القيود اليومية", href: "/journal-entries", icon: FileText, permission: "journal.view" },
+  { title: "مراكز التكلفة", href: "/cost-centers", icon: Building2, permission: "cost_centers.view" },
+  { title: "الفترات المحاسبية", href: "/fiscal-periods", icon: Calendar, permission: "fiscal_periods.view" },
+  { title: "نماذج القيود", href: "/templates", icon: ClipboardList, permission: "templates.view" },
+  { title: "الأصناف", href: "/items", icon: Package, permission: "items.view" },
+  { title: "استلام من مورد", href: "/supplier-receiving", icon: Truck, permission: "receiving.view" },
+  { title: "فواتير الشراء", href: "/purchase-invoices", icon: Receipt, permission: "purchase_invoices.view" },
+  { title: "تحويل مخزني", href: "/store-transfers", icon: ArrowLeftRight, permission: "transfers.view" },
+  { title: "فواتير البيع", href: "/sales-invoices", icon: ShoppingCart, permission: "sales.view" },
+  { title: "فاتورة مريض", href: "/patient-invoices", icon: UserRound, permission: "patient_invoices.view" },
+  { title: "شاشة تحصيل الكاشير", href: "/cashier-collection", icon: Banknote, permission: "cashier.view" },
+  { title: "الخدمات والأسعار", href: "/services-pricing", icon: Stethoscope, permission: "services.view" },
+  { title: "المخازن", href: "/warehouses", icon: Warehouse, permission: "warehouses.view" },
+  { title: "الأقسام", href: "/departments", icon: Building2, permission: "departments.view" },
+  { title: "سجل المرضى", href: "/patients", icon: Users, permission: "patients.view" },
+  { title: "سجل الأطباء", href: "/doctors", icon: Stethoscope, permission: "doctors.view" },
 ];
 
-const reportNavItems = [
-  {
-    title: "ميزان المراجعة",
-    href: "/reports/trial-balance",
-    icon: Scale,
-  },
-  {
-    title: "قائمة الدخل",
-    href: "/reports/income-statement",
-    icon: TrendingUp,
-  },
-  {
-    title: "الميزانية العمومية",
-    href: "/reports/balance-sheet",
-    icon: BarChart3,
-  },
-  {
-    title: "تقارير مراكز التكلفة",
-    href: "/reports/cost-centers",
-    icon: PieChart,
-  },
-  {
-    title: "كشف حساب",
-    href: "/reports/account-ledger",
-    icon: FileText,
-  },
+const reportNavItems: NavItem[] = [
+  { title: "ميزان المراجعة", href: "/reports/trial-balance", icon: Scale, permission: "reports.trial_balance" },
+  { title: "قائمة الدخل", href: "/reports/income-statement", icon: TrendingUp, permission: "reports.income_statement" },
+  { title: "الميزانية العمومية", href: "/reports/balance-sheet", icon: BarChart3, permission: "reports.balance_sheet" },
+  { title: "تقارير مراكز التكلفة", href: "/reports/cost-centers", icon: PieChart, permission: "reports.cost_centers" },
+  { title: "كشف حساب", href: "/reports/account-ledger", icon: FileText, permission: "reports.account_ledger" },
 ];
 
-const systemNavItems = [
-  {
-    title: "ربط الحسابات",
-    href: "/account-mappings",
-    icon: Settings,
-  },
-  {
-    title: "كلمات سر الخزن",
-    href: "/drawer-passwords",
-    icon: Lock,
-  },
-  {
-    title: "سجل التدقيق",
-    href: "/audit-log",
-    icon: History,
-  },
+const systemNavItems: NavItem[] = [
+  { title: "ربط الحسابات", href: "/account-mappings", icon: Settings, permission: "settings.account_mappings" },
+  { title: "كلمات سر الخزن", href: "/drawer-passwords", icon: Lock, permission: "settings.drawer_passwords" },
+  { title: "سجل التدقيق", href: "/audit-log", icon: History, permission: "audit_log.view" },
+  { title: "إدارة المستخدمين", href: "/users", icon: Shield, permission: "users.view" },
 ];
 
 function SidebarToggleButton() {
@@ -217,8 +125,43 @@ function SidebarToggleButton() {
   );
 }
 
-export function AppLayout({ children }: AppLayoutProps) {
+function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
   const [location] = useLocation();
+  const { hasPermission } = useAuth();
+
+  const visibleItems = items.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  );
+
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {visibleItems.map((item) => (
+            <SidebarMenuItem key={item.href}>
+              <SidebarMenuButton
+                asChild
+                isActive={location === item.href || (item.href !== "/" && location.startsWith(item.href))}
+                tooltip={item.title}
+              >
+                <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`} className="flex flex-row-reverse items-center gap-2">
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
+export function AppLayout({ children }: AppLayoutProps) {
+  const { user, logout } = useAuth();
 
   const style = {
     "--sidebar-width": "16rem",
@@ -243,78 +186,41 @@ export function AppLayout({ children }: AppLayoutProps) {
           
           <SidebarContent>
             <ScrollArea className="flex-1">
-              <SidebarGroup>
-                <SidebarGroupLabel>القائمة الرئيسية</SidebarGroupLabel>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {mainNavItems.map((item) => (
-                      <SidebarMenuItem key={item.href}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={location === item.href || (item.href !== "/" && location.startsWith(item.href))}
-                          tooltip={item.title}
-                        >
-                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`} className="flex flex-row-reverse items-center gap-2">
-                            <item.icon className="h-4 w-4" />
-                            <span>{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
-
-              <SidebarGroup>
-                <SidebarGroupLabel>التقارير المالية</SidebarGroupLabel>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {reportNavItems.map((item) => (
-                      <SidebarMenuItem key={item.href}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={location === item.href}
-                          tooltip={item.title}
-                        >
-                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`} className="flex flex-row-reverse items-center gap-2">
-                            <item.icon className="h-4 w-4" />
-                            <span>{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
-
-              <SidebarGroup>
-                <SidebarGroupLabel>النظام</SidebarGroupLabel>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {systemNavItems.map((item) => (
-                      <SidebarMenuItem key={item.href}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={location === item.href}
-                          tooltip={item.title}
-                        >
-                          <Link href={item.href} data-testid={`nav-link-${item.href.replace(/\//g, '-').replace(/^-/, '')}`} className="flex flex-row-reverse items-center gap-2">
-                            <item.icon className="h-4 w-4" />
-                            <span>{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
+              <NavGroup label="القائمة الرئيسية" items={mainNavItems} />
+              <NavGroup label="التقارير المالية" items={reportNavItems} />
+              <NavGroup label="النظام" items={systemNavItems} />
             </ScrollArea>
           </SidebarContent>
 
           <SidebarFooter className="border-t border-border/50 p-3">
-            <div className="flex flex-row-reverse items-center gap-2 text-xs text-muted-foreground group-data-[collapsible=icon]:justify-center">
-              <Settings className="h-4 w-4" />
-              <span className="group-data-[collapsible=icon]:hidden">الإصدار 1.0</span>
+            <div className="group-data-[collapsible=icon]:hidden space-y-2">
+              <div className="flex flex-row-reverse items-center gap-2 text-sm">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <div className="text-right">
+                  <p className="font-medium text-foreground text-xs" data-testid="text-current-user">{user?.fullName}</p>
+                  <p className="text-xs text-muted-foreground">{ROLE_LABELS[user?.role || ""] || user?.role}</p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2"
+                onClick={logout}
+                data-testid="button-logout"
+              >
+                <LogOut className="h-4 w-4" />
+                تسجيل الخروج
+              </Button>
+            </div>
+            <div className="group-data-[collapsible=icon]:block hidden">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={logout} data-testid="button-logout-icon">
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left">تسجيل الخروج</TooltipContent>
+              </Tooltip>
             </div>
           </SidebarFooter>
         </Sidebar>

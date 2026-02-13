@@ -40,6 +40,19 @@ export const patientTypeEnum = pgEnum("patient_type", ["cash", "contract"]);
 export const patientInvoiceLineTypeEnum = pgEnum("patient_invoice_line_type", ["service", "drug", "consumable", "equipment"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank_transfer", "insurance"]);
 export const admissionStatusEnum = pgEnum("admission_status", ["active", "discharged", "cancelled"]);
+export const userRoleEnum = pgEnum("user_role", [
+  "owner",              // أونر
+  "admin",              // أدمن
+  "accounts_manager",   // مدير حسابات
+  "purchase_manager",   // مدير مشتريات
+  "data_entry",         // مدخل بيانات
+  "pharmacist",         // صيدلي
+  "pharmacy_assistant", // مساعد صيدلي
+  "warehouse_assistant",// مساعد مخزن
+  "cashier",            // كاشير
+  "department_admin",   // إداري قسم
+  "reception",          // استقبال
+]);
 export const transactionTypeEnum = pgEnum("transaction_type", ["sales_invoice", "patient_invoice", "receiving", "purchase_invoice", "cashier_collection", "cashier_refund"]);
 export const mappingLineTypeEnum = pgEnum("mapping_line_type", [
   "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment",
@@ -55,10 +68,33 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   fullName: text("full_name").notNull(),
-  role: text("role").notNull().default("user"), // admin, accountant, viewer
+  role: userRoleEnum("role").notNull().default("admin"),
+  departmentId: varchar("department_id"),
+  pharmacyId: varchar("pharmacy_id"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// صلاحيات الأدوار الافتراضية
+export const rolePermissions = pgTable("role_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  role: userRoleEnum("role").notNull(),
+  permission: text("permission").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  rolePermIdx: uniqueIndex("idx_role_perm_unique").on(table.role, table.permission),
+}));
+
+// صلاحيات مخصصة للمستخدم (إضافة أو سحب)
+export const userPermissions = pgTable("user_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  permission: text("permission").notNull(),
+  granted: boolean("granted").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userPermIdx: uniqueIndex("idx_user_perm_unique").on(table.userId, table.permission),
+}));
 
 // الفترات المحاسبية
 export const fiscalPeriods = pgTable("fiscal_periods", {
@@ -840,6 +876,8 @@ export const cashierAuditLog = pgTable("cashier_audit_log", {
 
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ id: true, createdAt: true });
+export const insertUserPermissionSchema = createInsertSchema(userPermissions).omit({ id: true, createdAt: true });
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
 export const insertCostCenterSchema = createInsertSchema(costCenters).omit({ id: true, createdAt: true });
 export const insertAccountSchema = createInsertSchema(accounts).omit({ id: true, createdAt: true });
@@ -896,6 +934,12 @@ export const insertCashierAuditLogSchema = createInsertSchema(cashierAuditLog).o
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+
+export type InsertUserPermission = z.infer<typeof insertUserPermissionSchema>;
+export type UserPermission = typeof userPermissions.$inferSelect;
 
 export type InsertFiscalPeriod = z.infer<typeof insertFiscalPeriodSchema>;
 export type FiscalPeriod = typeof fiscalPeriods.$inferSelect;

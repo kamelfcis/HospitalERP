@@ -137,13 +137,25 @@ import {
   type InsertAdmission,
   type AccountMapping,
   type InsertAccountMapping,
+  rolePermissions,
+  userPermissions,
+  type RolePermission,
+  type UserPermission,
 } from "@shared/schema";
 
 export interface IStorage {
-  // Users
+  // Users & RBAC
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
+  getUsers(): Promise<User[]>;
+  getUserEffectivePermissions(userId: string): Promise<string[]>;
+  getRolePermissions(role: string): Promise<RolePermission[]>;
+  setRolePermissions(role: string, permissions: string[]): Promise<void>;
+  getUserPermissions(userId: string): Promise<UserPermission[]>;
+  setUserPermissions(userId: string, permissions: { permission: string; granted: boolean }[]): Promise<void>;
   
   // Accounts
   getAccounts(): Promise<Account[]>;
@@ -467,6 +479,66 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined> {
+    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    return user;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const [user] = await db.update(users).set({ isActive: false }).where(eq(users.id, id)).returning();
+    return !!user;
+  }
+
+  async getUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  async getUserEffectivePermissions(userId: string): Promise<string[]> {
+    const user = await this.getUser(userId);
+    if (!user) return [];
+
+    const rolPerms = await db.select().from(rolePermissions).where(eq(rolePermissions.role, user.role));
+    const rolePermSet = new Set(rolPerms.map(rp => rp.permission));
+
+    const userPerms = await db.select().from(userPermissions).where(eq(userPermissions.userId, userId));
+
+    for (const up of userPerms) {
+      if (up.granted) {
+        rolePermSet.add(up.permission);
+      } else {
+        rolePermSet.delete(up.permission);
+      }
+    }
+
+    return Array.from(rolePermSet);
+  }
+
+  async getRolePermissions(role: string): Promise<RolePermission[]> {
+    return db.select().from(rolePermissions).where(eq(rolePermissions.role, role));
+  }
+
+  async setRolePermissions(role: string, permissions: string[]): Promise<void> {
+    await db.delete(rolePermissions).where(eq(rolePermissions.role, role));
+    if (permissions.length > 0) {
+      await db.insert(rolePermissions).values(
+        permissions.map(permission => ({ role: role as any, permission }))
+      );
+    }
+  }
+
+  async getUserPermissions(userId: string): Promise<UserPermission[]> {
+    return db.select().from(userPermissions).where(eq(userPermissions.userId, userId));
+  }
+
+  async setUserPermissions(userId: string, perms: { permission: string; granted: boolean }[]): Promise<void> {
+    await db.delete(userPermissions).where(eq(userPermissions.userId, userId));
+    if (perms.length > 0) {
+      await db.insert(userPermissions).values(
+        perms.map(p => ({ userId, permission: p.permission, granted: p.granted }))
+      );
+    }
   }
 
   // Accounts
