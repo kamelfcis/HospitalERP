@@ -1,0 +1,47 @@
+I want a full Production Readiness & Operations Hardening pass for our hospital/pharmacy ERP.
+Please implement AND verify the following, with tests where possible, and provide a final checklist + files changed + manual test steps.
+
+A) Backup & Restore (P0)
+1) Add an automated daily DB backup procedure (documented script/command).
+2) Add a tested restore procedure (step-by-step) and verify by restoring into a fresh DB.
+3) Provide a simple “Backup status” check (last backup timestamp) if feasible.
+
+B) Printing Safety (P0)
+4) For cashier receipts and refund receipts:
+   - Add printedAt, printCount, lastPrintedBy, and optional reprintReason.
+   - Prevent accidental double printing (e.g., if printedAt exists, block printing unless user confirms reprint and provides a reason).
+5) Ensure printing status is visible in UI (Printed / Not printed).
+
+C) Inventory Strictness (P0)
+6) Enforce batch/expiry rules:
+   - If item ExpiryIndicator=0 -> system must NOT create or require batch/expiry anywhere.
+   - If item requires expiry/batch -> block receiving/selling without them.
+7) FEFO enforcement:
+   - Block selling expired batches.
+   - Prefer earliest-expiry batches when auto-selecting.
+8) Unit conversion consistency:
+   - Centralize unit conversions (box/strip/pill) and validate conversions in receiving/selling/transfers.
+
+D) Cancelled Documents Reporting (P1)
+9) Ensure cancelled docs are excluded by default from ALL lists and reports.
+10) Add includeCancelled=true option for reports and lists (where relevant) and ensure totals exclude cancelled unless explicitly included.
+
+E) Monitoring & Slow Query Visibility (P1)
+11) Add slow request logging (route + duration) and slow SQL logging (queries > 500ms).
+12) Provide a basic admin endpoint/report to view top slow endpoints and recent slow queries.
+
+F) Unified Arabic Error Messages (P1)
+13) Centralize user-facing Arabic error messages for top cases:
+   - Period closed (403)
+   - Already posted/collected (409)
+   - Insufficient stock
+   - Missing batch/expiry
+   - Missing selling price
+   - Invalid unit conversion
+14) Ensure UI shows clean Arabic messages (never raw JSON).
+
+Deliverables:
+- List of files changed
+- Summary of each feature implemented
+- Automated tests added (where possible) and test results
+- Manual verification steps for each section A-F
