@@ -574,13 +574,16 @@ export async function registerRoutes(
 
   app.post("/api/journal-entries/:id/post", async (req, res) => {
     try {
-      // Check entry exists and is draft
       const existingEntry = await storage.getJournalEntry(req.params.id);
       if (!existingEntry) {
         return res.status(404).json({ message: "القيد غير موجود" });
       }
+      if (existingEntry.status !== 'draft') {
+        return res.status(409).json({ message: "القيد مُرحّل بالفعل", code: "ALREADY_POSTED" });
+      }
 
-      // Check if the entry's period is closed
+      await storage.assertPeriodOpen(existingEntry.entryDate);
+
       if (existingEntry.periodId) {
         const period = await storage.getFiscalPeriod(existingEntry.periodId);
         if (period?.isClosed) {
@@ -592,20 +595,30 @@ export async function registerRoutes(
       if (!entry) {
         return res.status(400).json({ message: "لا يمكن ترحيل القيد" });
       }
+      await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(entry);
     } catch (error: any) {
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
   });
 
   app.post("/api/journal-entries/:id/reverse", async (req, res) => {
     try {
+      const existingEntry = await storage.getJournalEntry(req.params.id);
+      if (!existingEntry) return res.status(404).json({ message: "القيد غير موجود" });
+      if (existingEntry.status !== 'posted') return res.status(409).json({ message: "لا يمكن عكس قيد غير مُرحّل" });
+
+      await storage.assertPeriodOpen(existingEntry.entryDate);
+
       const entry = await storage.reverseJournalEntry(req.params.id, null);
       if (!entry) {
         return res.status(400).json({ message: "لا يمكن إلغاء القيد" });
       }
+      await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id, action: "reverse", oldValues: JSON.stringify({ status: "posted" }), newValues: JSON.stringify({ status: "reversed" }) });
       res.json(entry);
     } catch (error: any) {
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
   });
@@ -1854,9 +1867,17 @@ export async function registerRoutes(
 
   app.post("/api/transfers/:id/post", async (req, res) => {
     try {
+      const existing = await storage.getTransfer(req.params.id);
+      if (!existing) return res.status(404).json({ message: "التحويل غير موجود" });
+      if (existing.status !== "draft") return res.status(409).json({ message: "التحويل مُرحّل بالفعل", code: "ALREADY_POSTED" });
+
+      await storage.assertPeriodOpen(existing.transferDate);
+
       const transfer = await storage.postTransfer(req.params.id);
+      await storage.createAuditLog({ tableName: "store_transfers", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(transfer);
     } catch (error: any) {
+      if (error.message.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       if (error.message.includes("غير كافية") || error.message.includes("مختلفين") || error.message.includes("مسودة") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("مطلوب")) {
         return res.status(400).json({ message: error.message });
       }
@@ -2095,6 +2116,12 @@ export async function registerRoutes(
     try {
       const receiving = await storage.getReceiving(req.params.id);
       if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
+      if (receiving.status === 'posted' || receiving.status === 'posted_qty_only') {
+        return res.status(409).json({ message: "المستند مُرحّل بالفعل", code: "ALREADY_POSTED" });
+      }
+
+      await storage.assertPeriodOpen(receiving.receiveDate);
+
       if (receiving.lines && receiving.lines.length > 0) {
         const lineErrors = await validateReceivingLines(receiving.lines);
         if (lineErrors.length > 0) {
@@ -2110,8 +2137,10 @@ export async function registerRoutes(
       } else {
         result = await storage.postReceiving(req.params.id);
       }
+      await storage.createAuditLog({ tableName: "receiving_headers", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(result);
     } catch (error: any) {
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       if (error.message.includes("مطلوب") || error.message.includes("لا توجد") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("سالباً")) {
         return res.status(400).json({ message: error.message });
       }
@@ -2269,6 +2298,10 @@ export async function registerRoutes(
     try {
       const invoice = await storage.getPurchaseInvoice(req.params.id);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (invoice.status !== "draft") return res.status(409).json({ message: "الفاتورة معتمدة بالفعل", code: "ALREADY_APPROVED" });
+
+      await storage.assertPeriodOpen(invoice.invoiceDate);
+
       if (invoice.lines && Array.isArray(invoice.lines)) {
         const discountErrors = validateInvoiceLineDiscounts(invoice.lines);
         if (discountErrors.length > 0) {
@@ -2276,8 +2309,10 @@ export async function registerRoutes(
         }
       }
       const result = await storage.approvePurchaseInvoice(req.params.id);
+      await storage.createAuditLog({ tableName: "purchase_invoice_headers", recordId: req.params.id, action: "approve", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "approved" }) });
       res.json(result);
     } catch (error: any) {
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       if (error.message.includes("معتمدة")) {
         return res.status(409).json({ message: error.message, code: "ALREADY_APPROVED" });
       }
@@ -2648,7 +2683,14 @@ export async function registerRoutes(
 
   app.post("/api/sales-invoices/:id/finalize", async (req, res) => {
     try {
+      const existing = await storage.getSalesInvoice(req.params.id);
+      if (!existing) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (existing.status !== "draft") return res.status(409).json({ message: "الفاتورة ليست مسودة", code: "ALREADY_FINALIZED" });
+
+      await storage.assertPeriodOpen(existing.invoiceDate);
+
       const invoice = await storage.finalizeSalesInvoice(req.params.id);
+      await storage.createAuditLog({ tableName: "sales_invoice_headers", recordId: req.params.id, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });
       if (invoice.pharmacyId) {
         broadcastToPharmacy(invoice.pharmacyId, "invoice_finalized", {
           id: invoice.id,
@@ -2660,6 +2702,7 @@ export async function registerRoutes(
       }
       res.json(invoice);
     } catch (error: any) {
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       if (error.message.includes("ليست مسودة") || error.message.includes("نهائية")) {
         return res.status(409).json({ message: error.message });
       }
@@ -2914,9 +2957,17 @@ export async function registerRoutes(
 
   app.post("/api/patient-invoices/:id/finalize", async (req, res) => {
     try {
+      const existing = await storage.getPatientInvoice(req.params.id);
+      if (!existing) return res.status(404).json({ message: "فاتورة المريض غير موجودة" });
+      if (existing.status !== "draft") return res.status(409).json({ message: "الفاتورة ليست مسودة", code: "ALREADY_FINALIZED" });
+
+      await storage.assertPeriodOpen(existing.invoiceDate);
+
       const result = await storage.finalizePatientInvoice(req.params.id);
+      await storage.createAuditLog({ tableName: "patient_invoice_headers", recordId: req.params.id, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });
       res.json(result);
     } catch (error: any) {
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       if (error.message?.includes("مسودة")) return res.status(409).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
@@ -3378,13 +3429,18 @@ export async function registerRoutes(
       if (!shiftId || !invoiceIds?.length || !collectedBy) {
         return res.status(400).json({ message: "بيانات التحصيل غير مكتملة" });
       }
+      const today = new Date().toISOString().split('T')[0];
+      await storage.assertPeriodOpen(today);
+
       const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy);
+      await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "collect", newValues: JSON.stringify({ invoiceIds, collectedBy }) });
       const shift = await storage.getShiftById(shiftId);
       if (shift?.pharmacyId) {
         broadcastToPharmacy(shift.pharmacyId, "invoice_collected", { invoiceIds });
       }
       res.json(result);
     } catch (error: any) {
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       if (error.message?.includes("محصّلة") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
         return res.status(409).json({ message: error.message });
       }
@@ -3398,13 +3454,18 @@ export async function registerRoutes(
       if (!shiftId || !invoiceIds?.length || !refundedBy) {
         return res.status(400).json({ message: "بيانات الصرف غير مكتملة" });
       }
+      const today = new Date().toISOString().split('T')[0];
+      await storage.assertPeriodOpen(today);
+
       const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy);
+      await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "refund", newValues: JSON.stringify({ invoiceIds, refundedBy }) });
       const shift = await storage.getShiftById(shiftId);
       if (shift?.pharmacyId) {
         broadcastToPharmacy(shift.pharmacyId, "invoice_refunded", { invoiceIds });
       }
       res.json(result);
     } catch (error: any) {
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
       if (error.message?.includes("مصروف") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
         return res.status(409).json({ message: error.message });
       }

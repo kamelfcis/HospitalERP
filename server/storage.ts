@@ -163,6 +163,7 @@ export interface IStorage {
   getFiscalPeriods(): Promise<FiscalPeriod[]>;
   getFiscalPeriod(id: string): Promise<FiscalPeriod | undefined>;
   getCurrentPeriod(): Promise<FiscalPeriod | undefined>;
+  assertPeriodOpen(dateStr: string): Promise<void>;
   createFiscalPeriod(period: InsertFiscalPeriod): Promise<FiscalPeriod>;
   closeFiscalPeriod(id: string, userId: string): Promise<FiscalPeriod | undefined>;
   reopenFiscalPeriod(id: string): Promise<FiscalPeriod | undefined>;
@@ -443,6 +444,14 @@ function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: 
   return enteredPrice;
 }
 
+function roundMoney(value: number): string {
+  return (Math.round(value * 100) / 100).toFixed(2);
+}
+
+function roundQty(value: number): string {
+  return (Math.round(value * 10000) / 10000).toFixed(4);
+}
+
 export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
@@ -538,6 +547,18 @@ export class DatabaseStorage implements IStorage {
         eq(fiscalPeriods.isClosed, false)
       ));
     return period;
+  }
+
+  async assertPeriodOpen(dateStr: string): Promise<void> {
+    const [period] = await db.select().from(fiscalPeriods)
+      .where(and(
+        lte(fiscalPeriods.startDate, dateStr),
+        gte(fiscalPeriods.endDate, dateStr),
+        eq(fiscalPeriods.isClosed, true)
+      ));
+    if (period) {
+      throw new Error(`لا يمكن تنفيذ العملية: الفترة المحاسبية "${period.name}" مغلقة`);
+    }
   }
 
   async createFiscalPeriod(period: InsertFiscalPeriod): Promise<FiscalPeriod> {
@@ -638,33 +659,39 @@ export class DatabaseStorage implements IStorage {
   }
 
   async postJournalEntry(id: string, userId?: string | null): Promise<JournalEntry | undefined> {
-    const [existing] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
-    if (!existing || existing.status !== 'draft') {
-      return undefined;
-    }
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM journal_entries WHERE id = ${id} FOR UPDATE`);
+      const existing = lockResult.rows?.[0] as any;
+      if (!existing || existing.status !== 'draft') {
+        return undefined;
+      }
 
-    const [updated] = await db.update(journalEntries)
-      .set({ status: 'posted', postedBy: userId || null, postedAt: new Date() })
-      .where(eq(journalEntries.id, id))
-      .returning();
+      const [updated] = await tx.update(journalEntries)
+        .set({ status: 'posted', postedBy: userId || null, postedAt: new Date() })
+        .where(and(eq(journalEntries.id, id), eq(journalEntries.status, 'draft')))
+        .returning();
 
-    return updated;
+      return updated;
+    });
   }
 
   async reverseJournalEntry(id: string, userId?: string | null): Promise<JournalEntry | undefined> {
-    const entry = await this.getJournalEntry(id);
-    if (!entry || entry.status !== 'posted') {
+    return await db.transaction(async (tx) => {
+    const lockResult = await tx.execute(sql`SELECT * FROM journal_entries WHERE id = ${id} FOR UPDATE`);
+    const locked = lockResult.rows?.[0] as any;
+    if (!locked || locked.status !== 'posted') {
       return undefined;
     }
 
-    // Mark original as reversed
-    await db.update(journalEntries)
-      .set({ status: 'reversed', reversedBy: userId || null, reversedAt: new Date() })
-      .where(eq(journalEntries.id, id));
+    const entry = await this.getJournalEntry(id);
+    if (!entry) return undefined;
 
-    // Create reversal entry
+    await tx.update(journalEntries)
+      .set({ status: 'reversed', reversedBy: userId || null, reversedAt: new Date() })
+      .where(and(eq(journalEntries.id, id), eq(journalEntries.status, 'posted')));
+
     const entryNumber = await this.getNextEntryNumber();
-    const [reversalEntry] = await db.insert(journalEntries).values({
+    const [reversalEntry] = await tx.insert(journalEntries).values({
       entryNumber,
       entryDate: new Date().toISOString().split('T')[0],
       description: `قيد عكسي - ${entry.description}`,
@@ -679,9 +706,8 @@ export class DatabaseStorage implements IStorage {
       reversalEntryId: id,
     }).returning();
 
-    // Create reversed lines (swap debit and credit)
     for (const line of entry.lines) {
-      await db.insert(journalLines).values({
+      await tx.insert(journalLines).values({
         journalEntryId: reversalEntry.id,
         lineNumber: line.lineNumber,
         accountId: line.accountId,
@@ -692,13 +718,13 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
-    // Update original with reversal reference
-    const [updated] = await db.update(journalEntries)
+    const [updated] = await tx.update(journalEntries)
       .set({ reversalEntryId: reversalEntry.id })
       .where(eq(journalEntries.id, id))
       .returning();
 
     return updated;
+    });
   }
 
   async deleteJournalEntry(id: string): Promise<boolean> {
@@ -1669,15 +1695,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async postTransfer(transferId: string): Promise<StoreTransfer> {
-    const transfer = await this.getTransfer(transferId);
+    return await db.transaction(async (tx) => {
+    const [transfer] = await tx.select().from(storeTransfers).where(eq(storeTransfers.id, transferId)).for("update");
     if (!transfer) throw new Error("التحويل غير موجود");
     if (transfer.status !== "draft") throw new Error("لا يمكن ترحيل تحويل غير مسودة");
     if (transfer.sourceWarehouseId === transfer.destinationWarehouseId) throw new Error("مخزن المصدر والوجهة يجب أن يكونا مختلفين");
 
-    const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, transferId));
+    const lines = await tx.select().from(transferLines).where(eq(transferLines.transferId, transferId));
     if (lines.length === 0) throw new Error("لا توجد سطور في التحويل");
-
-    return await db.transaction(async (tx) => {
       for (const line of lines) {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) throw new Error(`الصنف غير موجود: ${line.itemId}`);
@@ -2825,7 +2850,7 @@ export class DatabaseStorage implements IStorage {
       
       await tx.update(receivingHeaders).set({
         totalQty: totalQty.toFixed(4),
-        totalCost: totalCost.toFixed(2),
+        totalCost: roundMoney(totalCost),
       }).where(eq(receivingHeaders.id, header_result.id));
       
       [header_result] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, header_result.id));
@@ -3548,7 +3573,7 @@ export class DatabaseStorage implements IStorage {
 
       await tx.update(receivingHeaders).set({
         totalQty: totalQty.toFixed(4),
-        totalCost: totalCost.toFixed(2),
+        totalCost: roundMoney(totalCost),
       }).where(eq(receivingHeaders.id, newHeader.id));
 
       await tx.update(receivingHeaders).set({
@@ -4240,11 +4265,11 @@ export class DatabaseStorage implements IStorage {
         customerName: header.customerName || null,
         contractCompany: header.contractCompany || null,
         status: "draft",
-        subtotal: String(subtotal.toFixed(2)),
+        subtotal: roundMoney(subtotal),
         discountType,
         discountPercent: String(discountPercent),
         discountValue: String(actualDiscount.toFixed(2)),
-        netTotal: String(netTotal.toFixed(2)),
+        netTotal: roundMoney(netTotal),
         notes: header.notes || null,
       }).returning();
 
@@ -4259,7 +4284,7 @@ export class DatabaseStorage implements IStorage {
           qty: String(qty),
           qtyInMinor: String(qtyInMinor),
           salePrice: String(salePrice),
-          lineTotal: String(lineTotal.toFixed(2)),
+          lineTotal: roundMoney(lineTotal),
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
           lotId: line.lotId || null,
@@ -4331,7 +4356,7 @@ export class DatabaseStorage implements IStorage {
           qty: String(qty),
           qtyInMinor: String(qtyInMinor),
           salePrice: String(salePrice),
-          lineTotal: String(lineTotal.toFixed(2)),
+          lineTotal: roundMoney(lineTotal),
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
           lotId: line.lotId || null,
@@ -4363,11 +4388,11 @@ export class DatabaseStorage implements IStorage {
         customerType: header.customerType || invoice.customerType,
         customerName: header.customerName !== undefined ? header.customerName : invoice.customerName,
         contractCompany: header.contractCompany !== undefined ? header.contractCompany : invoice.contractCompany,
-        subtotal: String(subtotal.toFixed(2)),
+        subtotal: roundMoney(subtotal),
         discountType,
         discountPercent: String(discountPercent),
         discountValue: String(actualDiscount.toFixed(2)),
-        netTotal: String(netTotal.toFixed(2)),
+        netTotal: roundMoney(netTotal),
         notes: header.notes !== undefined ? header.notes : invoice.notes,
         updatedAt: new Date(),
       }).where(eq(salesInvoiceHeaders.id, id));
@@ -4384,9 +4409,12 @@ export class DatabaseStorage implements IStorage {
     let revenueSupplies = 0;
 
     const finalResult = await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM sales_invoice_headers WHERE id = ${id} FOR UPDATE`);
+      const locked = lockResult.rows?.[0] as any;
+      if (!locked) throw new Error("الفاتورة غير موجودة");
+      if (locked.status !== "draft") throw new Error("الفاتورة ليست مسودة");
       const [invoice] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
-      if (invoice.status !== "draft") throw new Error("الفاتورة ليست مسودة");
 
       const lines = await tx.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
       if (lines.length === 0) throw new Error("لا يمكن اعتماد فاتورة بدون أصناف");
@@ -4984,49 +5012,54 @@ export class DatabaseStorage implements IStorage {
   }
 
   async finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader> {
-    const [existing] = await db.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
-    if (!existing) throw new Error("فاتورة المريض غير موجودة");
-    if (existing.status !== "draft") throw new Error("الفاتورة ليست مسودة");
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
+      const locked = lockResult.rows?.[0] as any;
+      if (!locked) throw new Error("فاتورة المريض غير موجودة");
+      if (locked.status !== "draft") throw new Error("الفاتورة ليست مسودة");
 
-    const [updated] = await db.update(patientInvoiceHeaders).set({
-      status: "finalized",
-      finalizedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(patientInvoiceHeaders.id, id)).returning();
+      const [updated] = await tx.update(patientInvoiceHeaders).set({
+        status: "finalized",
+        finalizedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(and(eq(patientInvoiceHeaders.id, id), eq(patientInvoiceHeaders.status, 'draft'))).returning();
 
-    const invoiceLines = await db.select().from(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, id));
-    const lineTypeMap: Record<string, string> = {
-      service: "revenue_services",
-      drug: "revenue_drugs",
-      consumable: "revenue_consumables",
-      equipment: "revenue_equipment",
-    };
-    const totals: Record<string, number> = {};
-    for (const line of invoiceLines) {
-      const mappingType = lineTypeMap[line.lineType] || "revenue_general";
-      totals[mappingType] = (totals[mappingType] || 0) + parseFloat(line.totalPrice || "0");
-    }
+      if (!updated) throw new Error("الفاتورة ليست مسودة");
 
-    const journalLines: { lineType: string; amount: string }[] = [];
-    const totalNet = parseFloat(updated.netAmount || "0");
-    if (totalNet > 0) {
-      const paymentType = updated.patientType === "cash" ? "cash" : "receivables";
-      journalLines.push({ lineType: paymentType, amount: String(totalNet) });
-    }
-    for (const [lt, amt] of Object.entries(totals)) {
-      if (amt > 0) journalLines.push({ lineType: lt, amount: String(amt) });
-    }
+      const invoiceLines = await tx.select().from(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, id));
+      const lineTypeMap: Record<string, string> = {
+        service: "revenue_services",
+        drug: "revenue_drugs",
+        consumable: "revenue_consumables",
+        equipment: "revenue_equipment",
+      };
+      const totals: Record<string, number> = {};
+      for (const line of invoiceLines) {
+        const mappingType = lineTypeMap[line.lineType] || "revenue_general";
+        totals[mappingType] = (totals[mappingType] || 0) + parseFloat(line.totalPrice || "0");
+      }
 
-    this.generateJournalEntry({
-      sourceType: "patient_invoice",
-      sourceDocumentId: id,
-      reference: `PI-${updated.invoiceNumber}`,
-      description: `قيد فاتورة مريض رقم ${updated.invoiceNumber} - ${updated.patientName}`,
-      entryDate: updated.invoiceDate,
-      lines: journalLines,
-    }).catch(err => console.error("Auto journal for patient invoice failed:", err));
+      const journalLines: { lineType: string; amount: string }[] = [];
+      const totalNet = parseFloat(updated.netAmount || "0");
+      if (totalNet > 0) {
+        const paymentType = updated.patientType === "cash" ? "cash" : "receivables";
+        journalLines.push({ lineType: paymentType, amount: String(totalNet) });
+      }
+      for (const [lt, amt] of Object.entries(totals)) {
+        if (amt > 0) journalLines.push({ lineType: lt, amount: String(amt) });
+      }
 
-    return updated;
+      this.generateJournalEntry({
+        sourceType: "patient_invoice",
+        sourceDocumentId: id,
+        reference: `PI-${updated.invoiceNumber}`,
+        description: `قيد فاتورة مريض رقم ${updated.invoiceNumber} - ${updated.patientName}`,
+        entryDate: updated.invoiceDate,
+        lines: journalLines,
+      }).catch(err => console.error("Auto journal for patient invoice failed:", err));
+
+      return updated;
+    });
   }
 
   async deletePatientInvoice(id: string): Promise<boolean> {
@@ -6199,10 +6232,15 @@ export class DatabaseStorage implements IStorage {
     let posted = 0;
     for (const id of ids) {
       try {
+        const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+        if (!entry || entry.status !== 'draft') continue;
+        await this.assertPeriodOpen(entry.entryDate);
         const result = await this.postJournalEntry(id, userId);
-        if (result) posted++;
+        if (result) {
+          await this.createAuditLog({ tableName: "journal_entries", recordId: id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
+          posted++;
+        }
       } catch (e) {
-        // Skip entries that can't be posted (already posted, reversed, etc.)
       }
     }
     return posted;
