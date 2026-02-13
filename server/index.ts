@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
+import { slowRequestLogger, registerMonitoringRoutes } from "./monitoring";
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,6 +23,7 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+app.use(slowRequestLogger(1000));
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -58,6 +60,7 @@ app.use((req, res, next) => {
   }
 
   await registerRoutes(httpServer, app);
+  registerMonitoringRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

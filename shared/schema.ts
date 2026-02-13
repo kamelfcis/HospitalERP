@@ -792,6 +792,10 @@ export const cashierReceipts = pgTable("cashier_receipts", {
   paymentDate: varchar("payment_date", { length: 10 }),
   collectedBy: text("collected_by").notNull(),
   collectedAt: timestamp("collected_at").notNull().defaultNow(),
+  printedAt: timestamp("printed_at"),
+  printCount: integer("print_count").notNull().default(0),
+  lastPrintedBy: text("last_printed_by"),
+  reprintReason: text("reprint_reason"),
 }, (table) => ({
   shiftIdx: index("idx_cashier_receipts_shift").on(table.shiftId),
   invoiceUniq: uniqueIndex("idx_cashier_receipts_invoice_unique").on(table.invoiceId),
@@ -808,6 +812,10 @@ export const cashierRefundReceipts = pgTable("cashier_refund_receipts", {
   paymentDate: varchar("payment_date", { length: 10 }),
   refundedBy: text("refunded_by").notNull(),
   refundedAt: timestamp("refunded_at").notNull().defaultNow(),
+  printedAt: timestamp("printed_at"),
+  printCount: integer("print_count").notNull().default(0),
+  lastPrintedBy: text("last_printed_by"),
+  reprintReason: text("reprint_reason"),
 }, (table) => ({
   shiftIdx: index("idx_cashier_refunds_shift").on(table.shiftId),
   invoiceUniq: uniqueIndex("idx_cashier_refunds_invoice_unique").on(table.invoiceId),

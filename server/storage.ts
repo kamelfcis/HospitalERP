@@ -276,6 +276,7 @@ export interface IStorage {
     search?: string;
     page: number;
     pageSize: number;
+    includeCancelled?: boolean;
   }): Promise<{data: StoreTransferWithDetails[]; total: number}>;
   getTransfer(id: string): Promise<StoreTransferWithDetails | undefined>;
   createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer>;
@@ -310,7 +311,7 @@ export interface IStorage {
   updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
 
   // Receiving
-  getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }>;
+  getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number; includeCancelled?: boolean }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }>;
   getReceiving(id: string): Promise<ReceivingHeaderWithDetails | undefined>;
   getNextReceivingNumber(): Promise<number>;
   checkSupplierInvoiceUnique(supplierId: string, supplierInvoiceNo: string, excludeId?: string): Promise<boolean>;
@@ -322,7 +323,7 @@ export interface IStorage {
 
   convertReceivingToInvoice(receivingId: string): Promise<any>;
   getNextPurchaseInvoiceNumber(): Promise<number>;
-  getPurchaseInvoices(filters: any): Promise<{data: any[]; total: number}>;
+  getPurchaseInvoices(filters: any & { includeCancelled?: boolean }): Promise<{data: any[]; total: number}>;
   getPurchaseInvoice(id: string): Promise<any>;
   savePurchaseInvoice(invoiceId: string, lines: any[], headerUpdates?: any): Promise<any>;
   approvePurchaseInvoice(id: string): Promise<any>;
@@ -334,7 +335,7 @@ export interface IStorage {
 
   // Sales Invoices
   getNextSalesInvoiceNumber(): Promise<number>;
-  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}>;
+  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}>;
   getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined>;
   createSalesInvoice(header: any, lines: any[]): Promise<SalesInvoiceHeader>;
   updateSalesInvoice(id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader>;
@@ -343,7 +344,7 @@ export interface IStorage {
 
   // Patient Invoices
   getNextPatientInvoiceNumber(): Promise<number>;
-  getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}>;
+  getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}>;
   getPatientInvoice(id: string): Promise<PatientInvoiceWithDetails | undefined>;
   createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
   updatePatientInvoice(id: string, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
@@ -388,6 +389,10 @@ export interface IStorage {
   getNextCashierReceiptNumber(): Promise<number>;
   getNextCashierRefundReceiptNumber(): Promise<number>;
   getPendingInvoiceCountForPharmacy(pharmacyId: string): Promise<number>;
+  markReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<any>;
+  markRefundReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<any>;
+  getCashierReceipt(receiptId: string): Promise<any>;
+  getCashierRefundReceipt(receiptId: string): Promise<any>;
 
   // Patients
   getPatients(): Promise<Patient[]>;
@@ -2378,8 +2383,9 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     page: number;
     pageSize: number;
+    includeCancelled?: boolean;
   }): Promise<{data: StoreTransferWithDetails[]; total: number}> {
-    const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize } = params;
+    const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize, includeCancelled } = params;
     const offset = (page - 1) * pageSize;
 
     const conditions: any[] = [];
@@ -2398,7 +2404,7 @@ export class DatabaseStorage implements IStorage {
     }
     if (status) {
       conditions.push(eq(storeTransfers.status, status as any));
-    } else {
+    } else if (!includeCancelled) {
       conditions.push(sql`${storeTransfers.status} != 'cancelled'`);
     }
     if (search && search.trim()) {
@@ -2720,15 +2726,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ===== RECEIVING =====
-  async getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }> {
-    const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page = 1, pageSize = 50 } = params;
+  async getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number; includeCancelled?: boolean }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }> {
+    const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page = 1, pageSize = 50, includeCancelled } = params;
     const offset = (page - 1) * pageSize;
     const conditions: any[] = [];
     if (supplierId) conditions.push(eq(receivingHeaders.supplierId, supplierId));
     if (warehouseId) conditions.push(eq(receivingHeaders.warehouseId, warehouseId));
     if (status) {
       conditions.push(eq(receivingHeaders.status, status as any));
-    } else {
+    } else if (!includeCancelled) {
       conditions.push(sql`${receivingHeaders.status} != 'cancelled'`);
     }
     if (statusFilter && statusFilter !== 'ALL') {
@@ -3162,12 +3168,12 @@ export class DatabaseStorage implements IStorage {
     return (result?.max || 0) + 1;
   }
 
-  async getPurchaseInvoices(filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}> {
+  async getPurchaseInvoices(filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}> {
     const conditions: any[] = [];
     if (filters.supplierId) conditions.push(eq(purchaseInvoiceHeaders.supplierId, filters.supplierId));
     if (filters.status && filters.status !== "all") {
       conditions.push(eq(purchaseInvoiceHeaders.status, filters.status as any));
-    } else if (!filters.status || filters.status === "all") {
+    } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
       conditions.push(sql`${purchaseInvoiceHeaders.status} != 'cancelled'`);
     }
     if (filters.dateFrom) conditions.push(sql`${purchaseInvoiceHeaders.invoiceDate} >= ${filters.dateFrom}`);
@@ -4113,11 +4119,11 @@ export class DatabaseStorage implements IStorage {
     return (result?.max || 0) + 1;
   }
 
-  async getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}> {
+  async getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}> {
     const conditions: any[] = [];
     if (filters.status && filters.status !== "all") {
       conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
-    } else if (!filters.status || filters.status === "all") {
+    } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
       conditions.push(sql`${salesInvoiceHeaders.status} != 'cancelled'`);
     }
     if (filters.dateFrom) conditions.push(sql`${salesInvoiceHeaders.invoiceDate} >= ${filters.dateFrom}`);
@@ -4463,6 +4469,16 @@ export class DatabaseStorage implements IStorage {
           throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية`);
         }
 
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+
+        if (item.hasExpiry && line.expiryMonth && line.expiryYear) {
+          if (line.expiryYear < currentYear || (line.expiryYear === currentYear && line.expiryMonth < currentMonth)) {
+            throw new Error(`الصنف "${item.nameAr}" - لا يمكن بيع دفعة منتهية الصلاحية (${line.expiryMonth}/${line.expiryYear})`);
+          }
+        }
+
         const lotConditions: any[] = [
           eq(inventoryLots.itemId, line.itemId),
           eq(inventoryLots.warehouseId, invoice.warehouseId),
@@ -4473,6 +4489,8 @@ export class DatabaseStorage implements IStorage {
         if (line.expiryMonth && line.expiryYear) {
           lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
           lotConditions.push(eq(inventoryLots.expiryYear, line.expiryYear));
+        } else if (item.hasExpiry) {
+          lotConditions.push(sql`(${inventoryLots.expiryYear} > ${currentYear} OR (${inventoryLots.expiryYear} = ${currentYear} AND ${inventoryLots.expiryMonth} >= ${currentMonth}))`);
         }
 
         const lots = await tx.select().from(inventoryLots)
@@ -4922,11 +4940,11 @@ export class DatabaseStorage implements IStorage {
     return (parseInt(result[0]?.max || "0") || 0) + 1;
   }
 
-  async getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number }): Promise<{data: any[]; total: number}> {
+  async getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}> {
     const conditions: any[] = [];
     if (filters.status && filters.status !== "all") {
       conditions.push(eq(patientInvoiceHeaders.status, filters.status as any));
-    } else if (!filters.status || filters.status === "all") {
+    } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
       conditions.push(sql`${patientInvoiceHeaders.status} != 'cancelled'`);
     }
     if (filters.dateFrom) conditions.push(gte(patientInvoiceHeaders.invoiceDate, filters.dateFrom));
@@ -5867,6 +5885,48 @@ export class DatabaseStorage implements IStorage {
       refundCount: refundResult?.count || 0,
       netCash,
     };
+  }
+
+  // ==================== Print Tracking ====================
+
+  async getCashierReceipt(receiptId: string): Promise<any> {
+    const [receipt] = await db.select().from(cashierReceipts).where(eq(cashierReceipts.id, receiptId));
+    return receipt || null;
+  }
+
+  async getCashierRefundReceipt(receiptId: string): Promise<any> {
+    const [receipt] = await db.select().from(cashierRefundReceipts).where(eq(cashierRefundReceipts.id, receiptId));
+    return receipt || null;
+  }
+
+  async markReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<any> {
+    const [receipt] = await db.select().from(cashierReceipts).where(eq(cashierReceipts.id, receiptId));
+    if (!receipt) throw new Error("الإيصال غير موجود");
+    if (receipt.printCount > 0 && !reprintReason) {
+      throw new Error("الإيصال مطبوع مسبقاً – يجب تقديم سبب لإعادة الطباعة");
+    }
+    const [updated] = await db.update(cashierReceipts).set({
+      printedAt: new Date(),
+      printCount: (receipt.printCount || 0) + 1,
+      lastPrintedBy: printedBy,
+      reprintReason: reprintReason || null,
+    }).where(eq(cashierReceipts.id, receiptId)).returning();
+    return updated;
+  }
+
+  async markRefundReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<any> {
+    const [receipt] = await db.select().from(cashierRefundReceipts).where(eq(cashierRefundReceipts.id, receiptId));
+    if (!receipt) throw new Error("إيصال المرتجع غير موجود");
+    if (receipt.printCount > 0 && !reprintReason) {
+      throw new Error("إيصال المرتجع مطبوع مسبقاً – يجب تقديم سبب لإعادة الطباعة");
+    }
+    const [updated] = await db.update(cashierRefundReceipts).set({
+      printedAt: new Date(),
+      printCount: (receipt.printCount || 0) + 1,
+      lastPrintedBy: printedBy,
+      reprintReason: reprintReason || null,
+    }).where(eq(cashierRefundReceipts.id, receiptId)).returning();
+    return updated;
   }
 
   // ==================== Patients ====================

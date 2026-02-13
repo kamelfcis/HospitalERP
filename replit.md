@@ -37,7 +37,12 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Validation**: Zod with drizzle-zod.
 - **Concurrency Safety**: `FOR UPDATE` row locks for critical inventory operations.
 - **Idempotency**: Conversion processes are idempotent.
-- **Error Handling**: Specific HTTP status codes (400 for validation, 409 for conflicts) are consistently used.
+- **Error Handling**: Specific HTTP status codes (400 for validation, 403 for closed fiscal period/RBAC, 409 for conflicts). Centralized Arabic error messages in `server/errors.ts` with `ErrorMessages` constants and `apiError()` helper. Frontend `queryClient.ts` extracts backend JSON messages for clean Arabic toasts.
+- **Printing Safety**: Cashier receipts and refund receipts have print tracking fields (`printedAt`, `printCount`, `lastPrintedBy`, `reprintReason`). Double-print prevention: reprint requires a reason. API: `POST /api/cashier/receipts/:id/print`, `POST /api/cashier/refund-receipts/:id/print`, `GET /api/cashier/receipts/:id`, `GET /api/cashier/refund-receipts/:id`.
+- **Cancelled Documents Reporting**: All list endpoints exclude cancelled documents by default. Add `?includeCancelled=true` query param to include them. Applies to transfers, receivings, purchase invoices, sales invoices, patient invoices.
+- **Inventory Strictness**: Expired batch blocking on sales finalization (blocks selling lots whose expiry month/year is past). FEFO ordering (earliest expiry first). Batch/expiry validation based on item `hasExpiry` flag. Centralized helpers in `server/inventory-helpers.ts` for `isLotExpired()`, `validateBatchExpiry()`, `convertQtyToMinor()`, `convertPriceToMinor()`, `validateUnitConversion()`.
+- **Monitoring**: Slow request middleware (>1s threshold) and slow query logger (>500ms). Admin endpoints at `/api/ops/health`, `/api/ops/slow-requests`, `/api/ops/slow-queries`, `/api/ops/backup-status`, `POST /api/ops/clear-logs`. In-memory ring buffer (100 entries).
+- **Backup & Restore**: Automated backup script at `scripts/backup.sh` (pg_dump + gzip, 7-day retention). Restore script at `scripts/restore.sh`. Status file at `backups/.backup_status.json`.
 - **Auto-Save**: Document entry forms feature auto-save every 15 seconds, using temporary IDs and `navigator.sendBeacon` for final saves.
 - **Reusable Components**: Custom `ExpiryInput` for MM/YYYY date handling.
 

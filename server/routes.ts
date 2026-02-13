@@ -1779,9 +1779,9 @@ export async function registerRoutes(
   // ===== STORE TRANSFERS =====
   app.get("/api/transfers", async (req, res) => {
     try {
-      const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize } = req.query;
+      const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize, includeCancelled } = req.query;
 
-      if (page || pageSize || fromDate || toDate || sourceWarehouseId || destWarehouseId || status || search) {
+      if (page || pageSize || fromDate || toDate || sourceWarehouseId || destWarehouseId || status || search || includeCancelled) {
         const result = await storage.getTransfersFiltered({
           fromDate: fromDate as string | undefined,
           toDate: toDate as string | undefined,
@@ -1791,6 +1791,7 @@ export async function registerRoutes(
           search: search as string | undefined,
           page: parseInt(page as string) || 1,
           pageSize: parseInt(pageSize as string) || 50,
+          includeCancelled: includeCancelled === 'true',
         });
         return res.json({ ...result, data: addFormattedNumbers(result.data || [], "transfer", "transferNumber") });
       }
@@ -1990,7 +1991,7 @@ export async function registerRoutes(
   // ===== SUPPLIER RECEIVING =====
   app.get("/api/receivings", async (req, res) => {
     try {
-      const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page, pageSize } = req.query;
+      const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getReceivings({
         supplierId: supplierId as string | undefined,
         warehouseId: warehouseId as string | undefined,
@@ -2001,6 +2002,7 @@ export async function registerRoutes(
         search: search as string | undefined,
         page: parseInt(page as string) || 1,
         pageSize: parseInt(pageSize as string) || 50,
+        includeCancelled: includeCancelled === 'true',
       });
       res.json({ ...result, data: addFormattedNumbers(result.data || [], "receiving", "receivingNumber") });
     } catch (error: any) {
@@ -2214,7 +2216,7 @@ export async function registerRoutes(
   // ===== PURCHASE INVOICES =====
   app.get("/api/purchase-invoices", async (req, res) => {
     try {
-      const { supplierId, status, dateFrom, dateTo, page, pageSize } = req.query;
+      const { supplierId, status, dateFrom, dateTo, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getPurchaseInvoices({
         supplierId: supplierId as string,
         status: status as string,
@@ -2222,6 +2224,7 @@ export async function registerRoutes(
         dateTo: dateTo as string,
         page: page ? parseInt(page as string) : 1,
         pageSize: pageSize ? parseInt(pageSize as string) : 20,
+        includeCancelled: includeCancelled === 'true',
       });
       res.json({ ...result, data: addFormattedNumbers(result.data || [], "purchase_invoice", "invoiceNumber") });
     } catch (error: any) {
@@ -2607,7 +2610,7 @@ export async function registerRoutes(
   
   app.get("/api/sales-invoices", async (req, res) => {
     try {
-      const { status, dateFrom, dateTo, customerType, search, page, pageSize } = req.query;
+      const { status, dateFrom, dateTo, customerType, search, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getSalesInvoices({
         status: status as string,
         dateFrom: dateFrom as string,
@@ -2616,6 +2619,7 @@ export async function registerRoutes(
         search: search as string,
         page: parseInt(page as string) || 1,
         pageSize: parseInt(pageSize as string) || 20,
+        includeCancelled: includeCancelled === 'true',
       });
       res.json({ ...result, data: addFormattedNumbers(result.data || [], "sales_invoice", "invoiceNumber") });
     } catch (error: any) {
@@ -2924,6 +2928,7 @@ export async function registerRoutes(
         doctorName: req.query.doctorName as string,
         page: req.query.page ? parseInt(req.query.page as string) : 1,
         pageSize: req.query.pageSize ? parseInt(req.query.pageSize as string) : 20,
+        includeCancelled: req.query.includeCancelled === 'true',
       };
       const result = await storage.getPatientInvoices(filters);
       res.json({ ...result, data: addFormattedNumbers(result.data || [], "patient_invoice", "invoiceNumber") });
@@ -3497,6 +3502,53 @@ export async function registerRoutes(
       if (error.message?.includes("مصروف") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
         return res.status(409).json({ message: error.message });
       }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Print tracking for cashier receipts
+  app.post("/api/cashier/receipts/:id/print", async (req, res) => {
+    try {
+      const { printedBy, reprintReason } = req.body;
+      if (!printedBy) return res.status(400).json({ message: "اسم الطابع مطلوب" });
+      const receipt = await storage.markReceiptPrinted(req.params.id, printedBy, reprintReason);
+      res.json(receipt);
+    } catch (error: any) {
+      if (error.message?.includes("مطبوع مسبقاً")) return res.status(409).json({ message: error.message });
+      if (error.message?.includes("غير موجود")) return res.status(404).json({ message: error.message });
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/cashier/refund-receipts/:id/print", async (req, res) => {
+    try {
+      const { printedBy, reprintReason } = req.body;
+      if (!printedBy) return res.status(400).json({ message: "اسم الطابع مطلوب" });
+      const receipt = await storage.markRefundReceiptPrinted(req.params.id, printedBy, reprintReason);
+      res.json(receipt);
+    } catch (error: any) {
+      if (error.message?.includes("مطبوع مسبقاً")) return res.status(409).json({ message: error.message });
+      if (error.message?.includes("غير موجود")) return res.status(404).json({ message: error.message });
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/receipts/:id", async (req, res) => {
+    try {
+      const receipt = await storage.getCashierReceipt(req.params.id);
+      if (!receipt) return res.status(404).json({ message: "الإيصال غير موجود" });
+      res.json(receipt);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/refund-receipts/:id", async (req, res) => {
+    try {
+      const receipt = await storage.getCashierRefundReceipt(req.params.id);
+      if (!receipt) return res.status(404).json({ message: "إيصال المرتجع غير موجود" });
+      res.json(receipt);
+    } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
   });
