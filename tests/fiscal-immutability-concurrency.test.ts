@@ -228,6 +228,75 @@ describe("Fiscal Period Enforcement", () => {
 
     await api("POST", `/api/cashier/shift/${shiftId}/close`);
   });
+
+  it("should reject cashier refund when paymentDate is in closed period", async () => {
+    if (!closedPeriodId || !warehouseId || !itemId) return;
+
+    const pharmacies = await api("GET", "/api/pharmacies");
+    if (!pharmacies.data?.length) return;
+    const pharmacyId = pharmacies.data[0].id;
+
+    const accounts = await api("GET", "/api/accounts");
+    if (!accounts.data?.length) return;
+    const glAccountId = accounts.data[0].id;
+
+    const shiftRes = await api("POST", "/api/cashier/shift/open", {
+      cashierId: `test-cashier-refund-fp-${Date.now()}`,
+      cashierName: "كاشير اختبار مرتجع",
+      openingCash: "0",
+      pharmacyId,
+      glAccountId,
+    });
+    if (shiftRes.status !== 200) return;
+    const shiftId = shiftRes.data.id;
+
+    const refundRes = await api("POST", "/api/cashier/refund", {
+      shiftId,
+      invoiceIds: ["fake-invoice-id"],
+      refundedBy: "كاشير اختبار",
+      paymentDate: closedPeriodDate,
+    });
+    expect(refundRes.status).toBe(400);
+    expect(refundRes.data?.message).toContain("الفترة المحاسبية");
+
+    await api("POST", `/api/cashier/shift/${shiftId}/close`);
+  });
+
+  it("should allow cashier refund past fiscal check when paymentDate is in open period", async () => {
+    if (!closedPeriodId || !warehouseId || !itemId) return;
+    const today = new Date().toISOString().split("T")[0];
+
+    const pharmacies = await api("GET", "/api/pharmacies");
+    if (!pharmacies.data?.length) return;
+    const pharmacyId = pharmacies.data[0].id;
+
+    const accounts = await api("GET", "/api/accounts");
+    if (!accounts.data?.length) return;
+    const glAccountId = accounts.data[0].id;
+
+    const shiftRes = await api("POST", "/api/cashier/shift/open", {
+      cashierId: `test-cashier-refund-fp2-${Date.now()}`,
+      cashierName: "كاشير اختبار مرتجع 2",
+      openingCash: "0",
+      pharmacyId,
+      glAccountId,
+    });
+    if (shiftRes.status !== 200) return;
+    const shiftId = shiftRes.data.id;
+
+    const refundRes = await api("POST", "/api/cashier/refund", {
+      shiftId,
+      invoiceIds: ["fake-invoice-id"],
+      refundedBy: "كاشير اختبار",
+      paymentDate: today,
+    });
+    expect(refundRes.status).not.toBe(400);
+    if (refundRes.data?.message) {
+      expect(refundRes.data.message).not.toContain("الفترة المحاسبية");
+    }
+
+    await api("POST", `/api/cashier/shift/${shiftId}/close`);
+  });
 });
 
 // ======= 2) CANCELLED DOCUMENTS BEHAVIOR =======
