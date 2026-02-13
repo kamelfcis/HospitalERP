@@ -618,7 +618,7 @@ export async function registerRoutes(
       await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(entry);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
   });
@@ -638,7 +638,7 @@ export async function registerRoutes(
       await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id, action: "reverse", oldValues: JSON.stringify({ status: "posted" }), newValues: JSON.stringify({ status: "reversed" }) });
       res.json(entry);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
   });
@@ -1897,7 +1897,7 @@ export async function registerRoutes(
       await storage.createAuditLog({ tableName: "store_transfers", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(transfer);
     } catch (error: any) {
-      if (error.message.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       if (error.message.includes("غير مسودة") || error.message.includes("مُرحّل بالفعل")) {
         return res.status(409).json({ message: error.message, code: "ALREADY_POSTED" });
       }
@@ -2164,7 +2164,7 @@ export async function registerRoutes(
       await storage.createAuditLog({ tableName: "receiving_headers", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(result);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       if (error.message.includes("مطلوب") || error.message.includes("لا توجد") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("سالباً")) {
         return res.status(400).json({ message: error.message });
       }
@@ -2338,7 +2338,7 @@ export async function registerRoutes(
       await storage.createAuditLog({ tableName: "purchase_invoice_headers", recordId: req.params.id, action: "approve", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "approved" }) });
       res.json(result);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       if (error.message.includes("معتمدة")) {
         return res.status(409).json({ message: error.message, code: "ALREADY_APPROVED" });
       }
@@ -2728,7 +2728,7 @@ export async function registerRoutes(
       }
       res.json(invoice);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       if (error.message.includes("ليست مسودة") || error.message.includes("نهائية")) {
         return res.status(409).json({ message: error.message });
       }
@@ -2994,7 +2994,7 @@ export async function registerRoutes(
       await storage.createAuditLog({ tableName: "patient_invoice_headers", recordId: req.params.id, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });
       res.json(result);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       if (error.message?.includes("مسودة")) return res.status(409).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
@@ -3468,7 +3468,7 @@ export async function registerRoutes(
       }
       res.json(result);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       if (error.message?.includes("محصّلة") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
         return res.status(409).json({ message: error.message });
       }
@@ -3493,7 +3493,7 @@ export async function registerRoutes(
       }
       res.json(result);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(400).json({ message: error.message });
+      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
       if (error.message?.includes("مصروف") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
         return res.status(409).json({ message: error.message });
       }

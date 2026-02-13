@@ -73,7 +73,7 @@ describe("Fiscal Period Enforcement", () => {
     });
     expect(createRes.status).toBe(201);
     const postRes = await api("POST", `/api/journal-entries/${createRes.data?.id}/post`);
-    expect(postRes.status).toBe(400);
+    expect(postRes.status).toBe(403);
     expect(postRes.data?.message).toContain("الفترة المحاسبية");
   });
 
@@ -85,7 +85,7 @@ describe("Fiscal Period Enforcement", () => {
     });
     if (createRes.status !== 201) return;
     const postRes = await api("POST", `/api/receivings/${createRes.data.id}/post`);
-    expect(postRes.status).toBe(400);
+    expect(postRes.status).toBe(403);
     expect(postRes.data?.message).toContain("الفترة المحاسبية");
   });
 
@@ -99,7 +99,7 @@ describe("Fiscal Period Enforcement", () => {
     });
     if (createRes.status !== 201) return;
     const postRes = await api("POST", `/api/transfers/${createRes.data.id}/post`);
-    expect(postRes.status).toBe(400);
+    expect(postRes.status).toBe(403);
     expect(postRes.data?.message).toContain("الفترة المحاسبية");
   });
 
@@ -111,7 +111,7 @@ describe("Fiscal Period Enforcement", () => {
     });
     if (createRes.status !== 201) return;
     const finalizeRes = await api("POST", `/api/sales-invoices/${createRes.data.id}/finalize`);
-    expect(finalizeRes.status).toBe(400);
+    expect(finalizeRes.status).toBe(403);
     expect(finalizeRes.data?.message).toContain("الفترة المحاسبية");
   });
 
@@ -123,7 +123,7 @@ describe("Fiscal Period Enforcement", () => {
     });
     if (createRes.status !== 201) return;
     const finalizeRes = await api("POST", `/api/patient-invoices/${createRes.data.id}/finalize`);
-    expect(finalizeRes.status).toBe(400);
+    expect(finalizeRes.status).toBe(403);
     expect(finalizeRes.data?.message).toContain("الفترة المحاسبية");
   });
 
@@ -138,7 +138,7 @@ describe("Fiscal Period Enforcement", () => {
     if (convRes.status !== 201 && convRes.status !== 200) return;
     if (!convRes.data?.id) return;
     const approveRes = await api("POST", `/api/purchase-invoices/${convRes.data.id}/approve`);
-    expect(approveRes.status).toBe(400);
+    expect(approveRes.status).toBe(403);
     expect(approveRes.data?.message).toContain("الفترة المحاسبية");
   });
 
@@ -223,7 +223,7 @@ describe("Fiscal Period Enforcement", () => {
       collectedBy: "كاشير اختبار",
       paymentDate: closedPeriodDate,
     });
-    expect(collectRes.status).toBe(400);
+    expect(collectRes.status).toBe(403);
     expect(collectRes.data?.message).toContain("الفترة المحاسبية");
 
     await api("POST", `/api/cashier/shift/${shiftId}/close`);
@@ -256,7 +256,7 @@ describe("Fiscal Period Enforcement", () => {
       refundedBy: "كاشير اختبار",
       paymentDate: closedPeriodDate,
     });
-    expect(refundRes.status).toBe(400);
+    expect(refundRes.status).toBe(403);
     expect(refundRes.data?.message).toContain("الفترة المحاسبية");
 
     await api("POST", `/api/cashier/shift/${shiftId}/close`);
@@ -290,7 +290,7 @@ describe("Fiscal Period Enforcement", () => {
       refundedBy: "كاشير اختبار",
       paymentDate: today,
     });
-    expect(refundRes.status).not.toBe(400);
+    expect(refundRes.status).not.toBe(403);
     if (refundRes.data?.message) {
       expect(refundRes.data.message).not.toContain("الفترة المحاسبية");
     }
