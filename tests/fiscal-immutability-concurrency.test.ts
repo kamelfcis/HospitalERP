@@ -141,6 +141,93 @@ describe("Fiscal Period Enforcement", () => {
     expect(approveRes.status).toBe(400);
     expect(approveRes.data?.message).toContain("الفترة المحاسبية");
   });
+
+  it("should allow cashier collect when invoiceDate is in closed period but paymentDate is in open period", async () => {
+    if (!closedPeriodId || !warehouseId || !itemId) return;
+    const today = new Date().toISOString().split("T")[0];
+
+    const createRes = await api("POST", "/api/sales-invoices", {
+      header: { warehouseId, invoiceDate: today, customerType: "cash" },
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "10", lineTotal: "10" }],
+    });
+    if (createRes.status !== 201) return;
+    const invoiceId = createRes.data.id;
+
+    const finalizeRes = await api("POST", `/api/sales-invoices/${invoiceId}/finalize`);
+    if (finalizeRes.status !== 200) return;
+
+    const pharmacies = await api("GET", "/api/pharmacies");
+    if (!pharmacies.data?.length) return;
+    const pharmacyId = pharmacies.data[0].id;
+
+    const accounts = await api("GET", "/api/accounts");
+    if (!accounts.data?.length) return;
+    const glAccountId = accounts.data[0].id;
+
+    const shiftRes = await api("POST", "/api/cashier/shift/open", {
+      cashierId: `test-cashier-fp-${Date.now()}`,
+      cashierName: "كاشير اختبار فترة",
+      openingCash: "0",
+      pharmacyId,
+      glAccountId,
+    });
+    if (shiftRes.status !== 200) return;
+    const shiftId = shiftRes.data.id;
+
+    const collectRes = await api("POST", "/api/cashier/collect", {
+      shiftId,
+      invoiceIds: [invoiceId],
+      collectedBy: "كاشير اختبار",
+      paymentDate: today,
+    });
+    expect(collectRes.status).toBe(200);
+
+    await api("POST", `/api/cashier/shift/${shiftId}/close`);
+  });
+
+  it("should reject cashier collect when paymentDate is in closed period", async () => {
+    if (!closedPeriodId || !warehouseId || !itemId) return;
+    const today = new Date().toISOString().split("T")[0];
+
+    const createRes = await api("POST", "/api/sales-invoices", {
+      header: { warehouseId, invoiceDate: today, customerType: "cash" },
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "10", lineTotal: "10" }],
+    });
+    if (createRes.status !== 201) return;
+    const invoiceId = createRes.data.id;
+
+    const finalizeRes = await api("POST", `/api/sales-invoices/${invoiceId}/finalize`);
+    if (finalizeRes.status !== 200) return;
+
+    const pharmacies = await api("GET", "/api/pharmacies");
+    if (!pharmacies.data?.length) return;
+    const pharmacyId = pharmacies.data[0].id;
+
+    const accounts = await api("GET", "/api/accounts");
+    if (!accounts.data?.length) return;
+    const glAccountId = accounts.data[0].id;
+
+    const shiftRes = await api("POST", "/api/cashier/shift/open", {
+      cashierId: `test-cashier-fp2-${Date.now()}`,
+      cashierName: "كاشير اختبار فترة 2",
+      openingCash: "0",
+      pharmacyId,
+      glAccountId,
+    });
+    if (shiftRes.status !== 200) return;
+    const shiftId = shiftRes.data.id;
+
+    const collectRes = await api("POST", "/api/cashier/collect", {
+      shiftId,
+      invoiceIds: [invoiceId],
+      collectedBy: "كاشير اختبار",
+      paymentDate: closedPeriodDate,
+    });
+    expect(collectRes.status).toBe(400);
+    expect(collectRes.data?.message).toContain("الفترة المحاسبية");
+
+    await api("POST", `/api/cashier/shift/${shiftId}/close`);
+  });
 });
 
 // ======= 2) CANCELLED DOCUMENTS BEHAVIOR =======

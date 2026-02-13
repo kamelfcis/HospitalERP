@@ -3453,14 +3453,12 @@ export async function registerRoutes(
 
   app.post("/api/cashier/collect", async (req, res) => {
     try {
-      const { shiftId, invoiceIds, collectedBy } = req.body;
+      const { shiftId, invoiceIds, collectedBy, paymentDate } = req.body;
       if (!shiftId || !invoiceIds?.length || !collectedBy) {
         return res.status(400).json({ message: "بيانات التحصيل غير مكتملة" });
       }
-      for (const invoiceId of invoiceIds) {
-        const inv = await storage.getSalesInvoice(invoiceId);
-        if (inv) await storage.assertPeriodOpen(inv.invoiceDate);
-      }
+      const txnDate = paymentDate || new Date().toISOString().split("T")[0];
+      await storage.assertPeriodOpen(txnDate);
 
       const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "collect", newValues: JSON.stringify({ invoiceIds, collectedBy }) });
@@ -3480,14 +3478,12 @@ export async function registerRoutes(
 
   app.post("/api/cashier/refund", async (req, res) => {
     try {
-      const { shiftId, invoiceIds, refundedBy } = req.body;
+      const { shiftId, invoiceIds, refundedBy, paymentDate } = req.body;
       if (!shiftId || !invoiceIds?.length || !refundedBy) {
         return res.status(400).json({ message: "بيانات الصرف غير مكتملة" });
       }
-      for (const invoiceId of invoiceIds) {
-        const inv = await storage.getSalesInvoice(invoiceId);
-        if (inv) await storage.assertPeriodOpen(inv.invoiceDate);
-      }
+      const txnDate = paymentDate || new Date().toISOString().split("T")[0];
+      await storage.assertPeriodOpen(txnDate);
 
       const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "refund", newValues: JSON.stringify({ invoiceIds, refundedBy }) });
