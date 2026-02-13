@@ -449,13 +449,8 @@ function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: 
   return enteredPrice;
 }
 
-function roundMoney(value: number): string {
-  return (Math.round(value * 100) / 100).toFixed(2);
-}
-
-function roundQty(value: number): string {
-  return (Math.round(value * 10000) / 10000).toFixed(4);
-}
+import { roundMoney, roundQty } from "./finance-helpers";
+export { roundMoney, roundQty };
 
 export class DatabaseStorage implements IStorage {
   // Users

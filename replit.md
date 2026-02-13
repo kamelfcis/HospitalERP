@@ -41,10 +41,19 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Printing Safety**: Cashier receipts and refund receipts have print tracking fields (`printedAt`, `printCount`, `lastPrintedBy`, `reprintReason`). Double-print prevention: reprint requires a reason. API: `POST /api/cashier/receipts/:id/print`, `POST /api/cashier/refund-receipts/:id/print`, `GET /api/cashier/receipts/:id`, `GET /api/cashier/refund-receipts/:id`.
 - **Cancelled Documents Reporting**: All list endpoints exclude cancelled documents by default. Add `?includeCancelled=true` query param to include them. Applies to transfers, receivings, purchase invoices, sales invoices, patient invoices.
 - **Inventory Strictness**: Expired batch blocking on sales finalization (blocks selling lots whose expiry month/year is past). FEFO ordering (earliest expiry first). Batch/expiry validation based on item `hasExpiry` flag. Centralized helpers in `server/inventory-helpers.ts` for `isLotExpired()`, `validateBatchExpiry()`, `convertQtyToMinor()`, `convertPriceToMinor()`, `validateUnitConversion()`.
-- **Monitoring**: Slow request middleware (>1s threshold) and slow query logger (>500ms). Admin endpoints at `/api/ops/health`, `/api/ops/slow-requests`, `/api/ops/slow-queries`, `/api/ops/backup-status`, `POST /api/ops/clear-logs`. In-memory ring buffer (100 entries).
+- **Monitoring**: Slow request middleware (>1s threshold) and slow query logger (>500ms wired into DB pool layer). Admin endpoints at `/api/ops/health`, `/api/ops/slow-requests`, `/api/ops/slow-queries`, `/api/ops/backup-status`, `POST /api/ops/clear-logs`. In-memory ring buffer (100 entries).
 - **Backup & Restore**: Automated backup script at `scripts/backup.sh` (pg_dump + gzip, 7-day retention). Restore script at `scripts/restore.sh`. Status file at `backups/.backup_status.json`.
 - **Auto-Save**: Document entry forms feature auto-save every 15 seconds, using temporary IDs and `navigator.sendBeacon` for final saves.
 - **Reusable Components**: Custom `ExpiryInput` for MM/YYYY date handling.
+
+### Enforceable Architecture & Scaffolding
+- **Route Helpers** (`server/route-helpers.ts`): `asyncHandler()` wrapper auto-converts thrown errors to proper HTTP codes (403 fiscal, 409 conflict, 400 validation, 404 not found). `validateBody()` for Zod schema validation. `requireParam()`, `getQueryFlag()`, `assertOpenFiscalPeriod()`, `auditLog()` helpers.
+- **Finance Helpers** (`server/finance-helpers.ts`): Centralized `roundMoney()`, `roundQty()`, `parseMoney()`, `sumMoney()`, `moneyEquals()`. Re-exported from `server/storage.ts` for backward compatibility.
+- **Frontend Mutation Hook** (`client/src/hooks/use-api-mutation.ts`): `useApiMutation()` wraps TanStack mutations with automatic error toasts, success toasts, double-submit prevention, and cache invalidation.
+- **ESLint Enforcement** (`eslint.config.js`): Lint rules block direct `fetch()` in client code (must use `apiRequest`), block `db.*` imports in routes (must use storage), flag unsafe float math. Run: `npx eslint -c eslint.config.js client/src/ server/routes.ts`.
+- **Test Templates** (`tests/templates/`): Copy-paste templates for fiscal period 403 and conflict 409 tests. Shared helpers in `tests/helpers.ts` for test data creation.
+- **Scaffold Generator** (`scripts/scaffold-feature.ts`): Run `npx tsx scripts/scaffold-feature.ts <feature-name>` to generate route, storage, page, and test skeletons. Output in `scaffolds/<feature-name>/`.
+- **Feature Checklist** (`docs/feature-checklist.md`): Comprehensive checklist for every new financial/inventory feature covering schema, storage, routes, frontend, tests, and lint.
 
 ## External Dependencies
 

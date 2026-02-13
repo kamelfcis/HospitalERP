@@ -1,0 +1,48 @@
+We need to “lock in” all the production hardening work so it automatically applies to ANY future screens/features.
+Implement an enforceable architecture and scaffolding so developers cannot bypass the rules.
+
+Backend (mandatory patterns)
+1) Create a shared route wrapper/helper layer (e.g., server/route-helpers.ts) that every route must use:
+   - Standard JSON error responses via apiError() with consistent codes:
+     400 validation, 403 fiscal period closed/forbidden, 409 conflict/immutability.
+   - A standard handler wrapper that catches errors and converts them to apiError().
+2) Enforce “no DB calls in routes”:
+   - Routes must call storage/service methods only.
+   - Storage/service methods must own transactions, FOR UPDATE locks, idempotency guards.
+3) Create mandatory validators:
+   - assertOpenFiscalPeriod(date) helper used in all posting/collect/refund/approve/finalize operations.
+   - roundMoney/roundQty applied centrally in critical write paths.
+   - inventory-helpers (expiry/batch/unit conversion) used by all stock movements.
+4) Audit logging:
+   - Provide a single auditLog() helper and ensure all sensitive operations use it.
+5) Add a “New Feature checklist” doc in repo (docs/feature-checklist.md) listing required steps for any new financial/inventory route.
+
+Frontend (mandatory patterns)
+6) Enforce API client usage:
+   - All requests must go through apiRequest() + throwIfResNotOk().
+   - Add lint rule / code check to prevent direct fetch usage.
+7) Provide a standard mutation wrapper/hook (useApiMutation) that:
+   - shows toast using e.message
+   - prevents double submit
+   - invalidates queries correctly
+
+Enforcement (hard gates)
+8) Add ESLint rules / checks to prevent:
+   - fetch() direct usage in client (must use apiRequest)
+   - db.* usage inside routes (must go via storage/service)
+   - unsafe float money math (prefer roundMoney helper)
+9) Add test scaffolding:
+   - Provide a template test for fiscal period (403) and conflict (409) that new features can copy.
+   - Ensure tests run in CI; no merge if tests fail.
+
+Scaffolding
+10) Add a “feature scaffold” generator (simple script or documented copy/paste template) that creates:
+    - route skeleton using wrappers
+    - storage method skeleton with transaction + FOR UPDATE
+    - frontend page skeleton using apiRequest/useApiMutation
+    - starter tests
+
+Deliver:
+- Files added/changed
+- How to create a new screen/feature using the scaffold
+- Proof that lint/test gates block bypass patterns
