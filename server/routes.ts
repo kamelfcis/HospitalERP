@@ -56,6 +56,26 @@ import multer from "multer";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+const DOC_PREFIXES: Record<string, string> = {
+  journal_entry: "JE",
+  transfer: "TRF",
+  receiving: "RCV",
+  purchase_invoice: "PUR",
+  sales_invoice: "SI",
+  patient_invoice: "PI",
+};
+
+function addFormattedNumber(doc: any, type: string, numberField: string = "entryNumber"): any {
+  if (!doc) return doc;
+  const prefix = DOC_PREFIXES[type] || "";
+  const num = doc[numberField];
+  return { ...doc, formattedNumber: num != null ? `${prefix}-${num}` : null };
+}
+
+function addFormattedNumbers(docs: any[], type: string, numberField: string = "entryNumber"): any[] {
+  return docs.map(doc => addFormattedNumber(doc, type, numberField));
+}
+
 const accountTypeMapArabicToEnglish: Record<string, string> = {
   "أصول": "asset",
   "خصوم": "liability",
@@ -423,7 +443,7 @@ export async function registerRoutes(
   app.get("/api/journal-entries", async (req, res) => {
     try {
       const entries = await storage.getJournalEntries();
-      res.json(entries);
+      res.json(addFormattedNumbers(entries, "journal_entry"));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -435,7 +455,7 @@ export async function registerRoutes(
       if (!entry) {
         return res.status(404).json({ message: "القيد غير موجود" });
       }
-      res.json(entry);
+      res.json(addFormattedNumber(entry, "journal_entry"));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -512,7 +532,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "القيد غير موجود" });
       }
       if (existingEntry.status !== 'draft') {
-        return res.status(400).json({ message: "لا يمكن تعديل قيد مُرحّل" });
+        return res.status(409).json({ message: "لا يمكن تعديل قيد مُرحّل", code: "NOT_DRAFT" });
       }
 
       // If changing period, check if target period is closed
@@ -593,7 +613,7 @@ export async function registerRoutes(
 
       const entry = await storage.postJournalEntry(req.params.id, null);
       if (!entry) {
-        return res.status(400).json({ message: "لا يمكن ترحيل القيد" });
+        return res.status(409).json({ message: "القيد مُرحّل بالفعل", code: "ALREADY_POSTED" });
       }
       await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(entry);
@@ -1772,11 +1792,11 @@ export async function registerRoutes(
           page: parseInt(page as string) || 1,
           pageSize: parseInt(pageSize as string) || 50,
         });
-        return res.json(result);
+        return res.json({ ...result, data: addFormattedNumbers(result.data || [], "transfer", "transferNumber") });
       }
 
       const transfers = await storage.getTransfers();
-      res.json(transfers);
+      res.json(addFormattedNumbers(transfers, "transfer", "transferNumber"));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -1788,7 +1808,7 @@ export async function registerRoutes(
       if (!transfer) {
         return res.status(404).json({ message: "التحويل غير موجود" });
       }
-      res.json(transfer);
+      res.json(addFormattedNumber(transfer, "transfer", "transferNumber"));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -1887,7 +1907,8 @@ export async function registerRoutes(
 
   app.delete("/api/transfers/:id", async (req, res) => {
     try {
-      const deleted = await storage.deleteTransfer(req.params.id);
+      const reason = req.body?.reason as string | undefined;
+      const deleted = await storage.deleteTransfer(req.params.id, reason);
       if (!deleted) {
         return res.status(404).json({ message: "التحويل غير موجود" });
       }
@@ -1978,7 +1999,7 @@ export async function registerRoutes(
         page: parseInt(page as string) || 1,
         pageSize: parseInt(pageSize as string) || 50,
       });
-      res.json(result);
+      res.json({ ...result, data: addFormattedNumbers(result.data || [], "receiving", "receivingNumber") });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -2003,7 +2024,7 @@ export async function registerRoutes(
     try {
       const receiving = await storage.getReceiving(req.params.id);
       if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
-      res.json(receiving);
+      res.json(addFormattedNumber(receiving, "receiving", "receivingNumber"));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -2162,7 +2183,8 @@ export async function registerRoutes(
 
   app.delete("/api/receivings/:id", async (req, res) => {
     try {
-      const deleted = await storage.deleteReceiving(req.params.id);
+      const reason = req.body?.reason as string | undefined;
+      const deleted = await storage.deleteReceiving(req.params.id, reason);
       if (!deleted) return res.status(404).json({ message: "المستند غير موجود" });
       res.json({ success: true });
     } catch (error: any) {
@@ -2198,7 +2220,7 @@ export async function registerRoutes(
         page: page ? parseInt(page as string) : 1,
         pageSize: pageSize ? parseInt(pageSize as string) : 20,
       });
-      res.json(result);
+      res.json({ ...result, data: addFormattedNumbers(result.data || [], "purchase_invoice", "invoiceNumber") });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -2208,7 +2230,7 @@ export async function registerRoutes(
     try {
       const invoice = await storage.getPurchaseInvoice(req.params.id);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
-      res.json(invoice);
+      res.json(addFormattedNumber(invoice, "purchase_invoice", "invoiceNumber"));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -2283,7 +2305,8 @@ export async function registerRoutes(
 
   app.delete("/api/purchase-invoices/:id", async (req, res) => {
     try {
-      const deleted = await storage.deletePurchaseInvoice(req.params.id);
+      const reason = req.body?.reason as string | undefined;
+      const deleted = await storage.deletePurchaseInvoice(req.params.id, reason);
       if (!deleted) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       res.json({ success: true });
     } catch (error: any) {
@@ -2591,7 +2614,7 @@ export async function registerRoutes(
         page: parseInt(page as string) || 1,
         pageSize: parseInt(pageSize as string) || 20,
       });
-      res.json(result);
+      res.json({ ...result, data: addFormattedNumbers(result.data || [], "sales_invoice", "invoiceNumber") });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -2601,7 +2624,7 @@ export async function registerRoutes(
     try {
       const invoice = await storage.getSalesInvoice(req.params.id);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
-      res.json(invoice);
+      res.json(addFormattedNumber(invoice, "sales_invoice", "invoiceNumber"));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -2715,7 +2738,8 @@ export async function registerRoutes(
 
   app.delete("/api/sales-invoices/:id", async (req, res) => {
     try {
-      await storage.deleteSalesInvoice(req.params.id);
+      const reason = req.body?.reason as string | undefined;
+      await storage.deleteSalesInvoice(req.params.id, reason);
       res.json({ success: true });
     } catch (error: any) {
       if (error.message.includes("نهائية")) {
@@ -2899,7 +2923,7 @@ export async function registerRoutes(
         pageSize: req.query.pageSize ? parseInt(req.query.pageSize as string) : 20,
       };
       const result = await storage.getPatientInvoices(filters);
-      res.json(result);
+      res.json({ ...result, data: addFormattedNumbers(result.data || [], "patient_invoice", "invoiceNumber") });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -2909,7 +2933,7 @@ export async function registerRoutes(
     try {
       const invoice = await storage.getPatientInvoice(req.params.id);
       if (!invoice) return res.status(404).json({ message: "فاتورة المريض غير موجودة" });
-      res.json(invoice);
+      res.json(addFormattedNumber(invoice, "patient_invoice", "invoiceNumber"));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -3020,7 +3044,8 @@ export async function registerRoutes(
 
   app.delete("/api/patient-invoices/:id", async (req, res) => {
     try {
-      await storage.deletePatientInvoice(req.params.id);
+      const reason = req.body?.reason as string | undefined;
+      await storage.deletePatientInvoice(req.params.id, reason);
       res.json({ success: true });
     } catch (error: any) {
       if (error.message?.includes("نهائية")) return res.status(409).json({ message: error.message });
@@ -3429,8 +3454,10 @@ export async function registerRoutes(
       if (!shiftId || !invoiceIds?.length || !collectedBy) {
         return res.status(400).json({ message: "بيانات التحصيل غير مكتملة" });
       }
-      const today = new Date().toISOString().split('T')[0];
-      await storage.assertPeriodOpen(today);
+      for (const invoiceId of invoiceIds) {
+        const inv = await storage.getSalesInvoice(invoiceId);
+        if (inv) await storage.assertPeriodOpen(inv.invoiceDate);
+      }
 
       const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "collect", newValues: JSON.stringify({ invoiceIds, collectedBy }) });
@@ -3454,8 +3481,10 @@ export async function registerRoutes(
       if (!shiftId || !invoiceIds?.length || !refundedBy) {
         return res.status(400).json({ message: "بيانات الصرف غير مكتملة" });
       }
-      const today = new Date().toISOString().split('T')[0];
-      await storage.assertPeriodOpen(today);
+      for (const invoiceId of invoiceIds) {
+        const inv = await storage.getSalesInvoice(invoiceId);
+        if (inv) await storage.assertPeriodOpen(inv.invoiceDate);
+      }
 
       const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "refund", newValues: JSON.stringify({ invoiceIds, refundedBy }) });

@@ -31,7 +31,7 @@ export const unitLevelEnum = pgEnum("unit_level", [
 ]);
 
 export const lotTxTypeEnum = pgEnum("lot_tx_type", ["in", "out", "adj"]);
-export const transferStatusEnum = pgEnum("transfer_status", ["draft", "executed"]);
+export const transferStatusEnum = pgEnum("transfer_status", ["draft", "executed", "cancelled"]);
 export const salesInvoiceStatusEnum = pgEnum("sales_invoice_status", ["draft", "finalized", "collected", "cancelled"]);
 export const cashierShiftStatusEnum = pgEnum("cashier_shift_status", ["open", "closed"]);
 export const customerTypeEnum = pgEnum("customer_type", ["cash", "credit", "contract"]);
@@ -430,8 +430,8 @@ export const itemBarcodes = pgTable("item_barcodes", {
   itemIdx: index("idx_barcodes_item").on(table.itemId),
 }));
 
-export const receivingStatusEnum = pgEnum("receiving_status", ["draft", "posted", "posted_qty_only"]);
-export const purchaseInvoiceStatusEnum = pgEnum("purchase_invoice_status", ["draft", "approved_costed"]);
+export const receivingStatusEnum = pgEnum("receiving_status", ["draft", "posted", "posted_qty_only", "cancelled"]);
+export const purchaseInvoiceStatusEnum = pgEnum("purchase_invoice_status", ["draft", "approved_costed", "cancelled"]);
 
 export const suppliers = pgTable("suppliers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

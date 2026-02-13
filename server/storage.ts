@@ -281,7 +281,7 @@ export interface IStorage {
   createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer>;
   updateDraftTransfer(transferId: string, header: any, lines: any[]): Promise<StoreTransfer>;
   postTransfer(transferId: string): Promise<StoreTransfer>;
-  deleteTransfer(id: string): Promise<boolean>;
+  deleteTransfer(id: string, reason?: string): Promise<boolean>;
   getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
   getItemAvailability(itemId: string, warehouseId: string): Promise<string>;
   searchItemsForTransfer(query: string, warehouseId: string, limit?: number): Promise<any[]>;
@@ -316,7 +316,7 @@ export interface IStorage {
   checkSupplierInvoiceUnique(supplierId: string, supplierInvoiceNo: string, excludeId?: string): Promise<boolean>;
   saveDraftReceiving(header: InsertReceivingHeader, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; purchasePrice: string; lineTotal: string; batchNumber?: string; expiryDate?: string; expiryMonth?: number; expiryYear?: number; salePrice?: string; salePriceHint?: string; notes?: string; isRejected?: boolean; rejectionReason?: string; bonusQty?: string; bonusQtyInMinor?: string }[], existingId?: string): Promise<ReceivingHeader>;
   postReceiving(id: string): Promise<ReceivingHeader>;
-  deleteReceiving(id: string): Promise<boolean>;
+  deleteReceiving(id: string, reason?: string): Promise<boolean>;
   getItemHints(itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }>;
   getItemWarehouseStats(itemId: string): Promise<{ warehouseId: string; warehouseName: string; warehouseCode: string; qtyMinor: string; expiryBreakdown: { expiryMonth: number | null; expiryYear: number | null; qty: string }[] }[]>;
 
@@ -326,7 +326,7 @@ export interface IStorage {
   getPurchaseInvoice(id: string): Promise<any>;
   savePurchaseInvoice(invoiceId: string, lines: any[], headerUpdates?: any): Promise<any>;
   approvePurchaseInvoice(id: string): Promise<any>;
-  deletePurchaseInvoice(id: string): Promise<boolean>;
+  deletePurchaseInvoice(id: string, reason?: string): Promise<boolean>;
 
   // Service Consumables
   getServiceConsumables(serviceId: string): Promise<ServiceConsumableWithItem[]>;
@@ -339,7 +339,7 @@ export interface IStorage {
   createSalesInvoice(header: any, lines: any[]): Promise<SalesInvoiceHeader>;
   updateSalesInvoice(id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader>;
   finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader>;
-  deleteSalesInvoice(id: string): Promise<boolean>;
+  deleteSalesInvoice(id: string, reason?: string): Promise<boolean>;
 
   // Patient Invoices
   getNextPatientInvoiceNumber(): Promise<number>;
@@ -348,7 +348,7 @@ export interface IStorage {
   createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
   updatePatientInvoice(id: string, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
   finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader>;
-  deletePatientInvoice(id: string): Promise<boolean>;
+  deletePatientInvoice(id: string, reason?: string): Promise<boolean>;
   distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]>;
   distributePatientInvoiceDirect(data: {
     patients: { name: string; phone?: string }[];
@@ -1946,11 +1946,14 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async deleteTransfer(id: string): Promise<boolean> {
+  async deleteTransfer(id: string, reason?: string): Promise<boolean> {
     const [t] = await db.select().from(storeTransfers).where(eq(storeTransfers.id, id));
     if (!t) return false;
-    if (t.status !== "draft") throw new Error("لا يمكن حذف تحويل مُرحّل");
-    await db.delete(storeTransfers).where(eq(storeTransfers.id, id));
+    if (t.status !== "draft") throw new Error("لا يمكن إلغاء تحويل مُرحّل");
+    await db.update(storeTransfers).set({
+      status: "cancelled" as any,
+      notes: reason ? `[ملغي] ${reason}` : (t.notes ? `[ملغي] ${t.notes}` : "[ملغي]"),
+    }).where(eq(storeTransfers.id, id));
     return true;
   }
 
@@ -2992,11 +2995,14 @@ export class DatabaseStorage implements IStorage {
     return (await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id)))[0];
   }
 
-  async deleteReceiving(id: string): Promise<boolean> {
+  async deleteReceiving(id: string, reason?: string): Promise<boolean> {
     const [header] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
     if (!header) return false;
-    if (header.status === 'posted' || header.status === 'posted_qty_only') throw new Error('لا يمكن حذف مستند مُرحّل');
-    await db.delete(receivingHeaders).where(eq(receivingHeaders.id, id));
+    if (header.status === 'posted' || header.status === 'posted_qty_only') throw new Error('لا يمكن إلغاء مستند مُرحّل');
+    await db.update(receivingHeaders).set({
+      status: "cancelled" as any,
+      notes: reason ? `[ملغي] ${reason}` : (header.notes ? `[ملغي] ${header.notes}` : "[ملغي]"),
+    }).where(eq(receivingHeaders.id, id));
     return true;
   }
 
@@ -3734,11 +3740,14 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async deletePurchaseInvoice(id: string): Promise<boolean> {
+  async deletePurchaseInvoice(id: string, reason?: string): Promise<boolean> {
     const [invoice] = await db.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
     if (!invoice) return false;
-    if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة معتمدة ومُسعّرة");
-    await db.delete(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+    if (invoice.status !== "draft") throw new Error("لا يمكن إلغاء فاتورة معتمدة ومُسعّرة");
+    await db.update(purchaseInvoiceHeaders).set({
+      status: "cancelled" as any,
+      notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
+    }).where(eq(purchaseInvoiceHeaders.id, id));
     return true;
   }
 
@@ -4876,11 +4885,14 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async deleteSalesInvoice(id: string): Promise<boolean> {
+  async deleteSalesInvoice(id: string, reason?: string): Promise<boolean> {
     const [invoice] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
     if (!invoice) throw new Error("الفاتورة غير موجودة");
-    if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة نهائية");
-    await db.delete(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
+    if (invoice.status !== "draft") throw new Error("لا يمكن إلغاء فاتورة نهائية");
+    await db.update(salesInvoiceHeaders).set({
+      status: "cancelled" as any,
+      notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
+    }).where(eq(salesInvoiceHeaders.id, id));
     return true;
   }
 
@@ -5062,11 +5074,14 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async deletePatientInvoice(id: string): Promise<boolean> {
+  async deletePatientInvoice(id: string, reason?: string): Promise<boolean> {
     const [invoice] = await db.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
     if (!invoice) throw new Error("فاتورة المريض غير موجودة");
-    if (invoice.status !== "draft") throw new Error("لا يمكن حذف فاتورة نهائية");
-    await db.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
+    if (invoice.status !== "draft") throw new Error("لا يمكن إلغاء فاتورة نهائية");
+    await db.update(patientInvoiceHeaders).set({
+      status: "cancelled" as any,
+      notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
+    }).where(eq(patientInvoiceHeaders.id, id));
     return true;
   }
 
