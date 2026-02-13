@@ -2904,13 +2904,13 @@ export class DatabaseStorage implements IStorage {
           referenceId: header.id,
         });
 
-        const purchaseQty = parseFloat(line.qtyInMinor);
-        const purchaseTotal = (purchaseQty * costPerMinor).toFixed(2);
+        const purchaseQty = parseFloat(line.qtyEntered || line.qtyInMinor);
+        const purchaseTotal = (parseFloat(line.qtyInMinor) * costPerMinor).toFixed(2);
         await tx.insert(purchaseTransactions).values({
           itemId: line.itemId,
           txDate: header.receive_date,
           supplierName,
-          qty: line.qtyInMinor,
+          qty: line.qtyEntered || line.qtyInMinor,
           unitLevel: line.unitLevel || 'minor',
           purchasePrice: line.purchasePrice,
           salePriceSnapshot: line.salePrice || null,
@@ -3671,13 +3671,12 @@ export class DatabaseStorage implements IStorage {
           referenceId: correctionId,
         });
 
-        const corrPurchaseQty = parseFloat(line.qtyInMinor as string);
-        const corrPurchaseTotal = (corrPurchaseQty * costPerMinor).toFixed(2);
+        const corrPurchaseTotal = (parseFloat(line.qtyInMinor as string) * costPerMinor).toFixed(2);
         await tx.insert(purchaseTransactions).values({
           itemId: line.itemId,
           txDate: correction.receive_date,
           supplierName: corrSupplierName,
-          qty: line.qtyInMinor as string,
+          qty: (line as any).qtyEntered || line.qtyInMinor as string,
           unitLevel: (line as any).unitLevel || 'minor',
           purchasePrice: line.purchasePrice as string,
           salePriceSnapshot: line.salePrice || null,

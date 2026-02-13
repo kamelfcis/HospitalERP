@@ -1006,19 +1006,19 @@ export default function ItemCard() {
                   <table className="w-full text-[10px]">
                     <thead>
                       <tr className="border-b bg-muted/30">
-                        <th className="py-1 px-1 text-right font-medium">التاريخ</th>
                         <th className="py-1 px-1 text-right font-medium">المورد</th>
                         <th className="py-1 px-1 text-left font-medium">ك</th>
-                        <th className="py-1 px-1 text-left font-medium">السعر</th>
+                        <th className="py-1 px-1 text-left font-medium">شراء</th>
+                        <th className="py-1 px-1 text-left font-medium">بيع</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lastPurchases.map((p, i) => (
                         <tr key={p.id} className={i < lastPurchases.length - 1 ? "border-b border-dashed" : ""}>
-                          <td className="py-1 px-1">{formatDateShort(p.txDate)}</td>
                           <td className="py-1 px-1 truncate max-w-[80px]" title={p.supplierName || "-"}>{p.supplierName || "-"}</td>
                           <td className="py-1 px-1 text-left font-mono">{p.qty}</td>
                           <td className="py-1 px-1 text-left font-mono">{formatCurrency(p.purchasePrice)}</td>
+                          <td className="py-1 px-1 text-left font-mono">{p.salePriceSnapshot ? formatCurrency(p.salePriceSnapshot) : "-"}</td>
                         </tr>
                       ))}
                     </tbody>
