@@ -154,9 +154,9 @@ export default function UsersManagement() {
   };
 
   return (
-    <div className="p-6 space-y-4" dir="rtl">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-xl font-bold" data-testid="text-page-title">إدارة المستخدمين</h1>
+    <div className="p-4 space-y-2" dir="rtl">
+      <div className="flex items-center justify-between flex-wrap gap-1">
+        <h1 className="text-lg font-bold" data-testid="text-page-title">إدارة المستخدمين</h1>
         {hasPermission("users.create") && (
           <Button onClick={openNew} data-testid="button-add-user">
             <Plus className="h-4 w-4 ml-2" />
@@ -170,17 +170,15 @@ export default function UsersManagement() {
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-1">
           {users.map((user) => (
             <Card key={user.id} data-testid={`card-user-${user.id}`}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div className="flex items-center gap-3">
-                    <UserCircle className="h-8 w-8 text-muted-foreground" />
-                    <div>
-                      <p className="font-medium" data-testid={`text-user-fullname-${user.id}`}>{user.fullName}</p>
-                      <p className="text-sm text-muted-foreground" data-testid={`text-user-username-${user.id}`}>@{user.username}</p>
-                    </div>
+              <CardContent className="px-3 py-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <UserCircle className="h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium text-sm" data-testid={`text-user-fullname-${user.id}`}>{user.fullName}</span>
+                    <span className="text-xs text-muted-foreground" data-testid={`text-user-username-${user.id}`}>@{user.username}</span>
                     <Badge variant={user.isActive ? "default" : "secondary"} data-testid={`badge-user-status-${user.id}`}>
                       {user.isActive ? "نشط" : "معطل"}
                     </Badge>
