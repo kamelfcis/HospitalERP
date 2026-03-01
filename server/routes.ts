@@ -3230,6 +3230,15 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ message: "فاتورة المريض غير موجودة" });
       if (existing.status !== "draft") return res.status(409).json({ message: "الفاتورة ليست مسودة", code: "ALREADY_FINALIZED" });
 
+      const paidAmount = parseFloat(String(existing.paidAmount || "0"));
+      const netAmount = parseFloat(String(existing.netAmount || "0"));
+      if (netAmount > 0 && paidAmount < netAmount) {
+        return res.status(400).json({
+          message: `لا يمكن اعتماد الفاتورة قبل السداد الكامل. المدفوع: ${paidAmount.toLocaleString("ar-EG")} ج.م من أصل ${netAmount.toLocaleString("ar-EG")} ج.م`,
+          code: "UNPAID",
+        });
+      }
+
       await storage.assertPeriodOpen(existing.invoiceDate);
 
       // Finalize inside transaction — commits before this line returns
@@ -3672,7 +3681,52 @@ export async function registerRoutes(
 
   app.post("/api/beds/:id/discharge", async (req, res) => {
     try {
-      const result = await storage.dischargeFromBed(req.params.id);
+      const { force } = req.body || {};
+      const bedId = req.params.id;
+
+      if (force) {
+        const FORCE_ROLES = ["owner", "admin", "accounts_manager"];
+        const sessionRole = (req.session as any)?.role;
+        if (!sessionRole || !FORCE_ROLES.includes(sessionRole)) {
+          return res.status(403).json({
+            message: "ليس لديك صلاحية تجاوز شرط الخروج",
+            code: "FORBIDDEN",
+          });
+        }
+      }
+
+      const bedRes = await db.execute(sql`
+        SELECT b.current_admission_id FROM beds b WHERE b.id = ${bedId}
+      `);
+      const bedRow = bedRes.rows[0] as any;
+      if (!bedRow) return res.status(404).json({ message: "السرير غير موجود" });
+      if (!bedRow.current_admission_id) return res.status(409).json({ message: "لا يوجد مريض في هذا السرير" });
+
+      const invRes = await db.execute(sql`
+        SELECT id, status, net_amount, paid_amount
+        FROM patient_invoice_headers
+        WHERE admission_id = ${bedRow.current_admission_id}
+        ORDER BY created_at DESC LIMIT 1
+      `);
+      const inv = invRes.rows[0] as any;
+
+      if (!inv) {
+        if (!force) {
+          return res.status(400).json({
+            message: "المريض لم يصدر له فاتورة بعد",
+            code: "NO_INVOICE",
+          });
+        }
+      } else if (inv.status !== "finalized") {
+        if (!force) {
+          return res.status(400).json({
+            message: "لا يمكن تسجيل خروج المريض — الفاتورة لم تُعتمد بعد",
+            code: "INVOICE_NOT_FINALIZED",
+          });
+        }
+      }
+
+      const result = await storage.dischargeFromBed(bedId);
       res.json(result);
     } catch (error: any) {
       const code = error.message?.includes("غير موجود") ? 404 : 409;
