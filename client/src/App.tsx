@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import Login from "@/pages/Login";
 import { Loader2, ShieldAlert } from "lucide-react";
@@ -89,7 +90,7 @@ function Router() {
         <Route path="/departments">{() => <G p="departments.view"><Departments /></G>}</Route>
         <Route path="/patients">{() => <G p="patients.view"><Patients /></G>}</Route>
         <Route path="/doctors">{() => <G p="doctors.view"><Doctors /></G>}</Route>
-        <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><PatientInvoice /></G>}</Route>
+        <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><ErrorBoundary fallbackLabel="خطأ في صفحة فاتورة المريض"><PatientInvoice /></ErrorBoundary></G>}</Route>
         <Route path="/bed-board">{() => <G p="patient_invoices.view"><BedBoard /></G>}</Route>
         <Route path="/doctor-settlements">{() => <G p="patient_invoices.view"><DoctorSettlements /></G>}</Route>
         <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
