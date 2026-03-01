@@ -22,6 +22,8 @@ export interface LineLocal {
   expiryMonth: number | null;
   expiryYear: number | null;
   priceSource: string;
+  sourceType: string | null;
+  sourceId: string | null;
 }
 
 export interface PaymentLocal {

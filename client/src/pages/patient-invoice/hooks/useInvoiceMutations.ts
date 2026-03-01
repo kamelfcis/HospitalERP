@@ -93,6 +93,8 @@ export function useInvoiceMutations({
         expiryMonth: l.expiryMonth || null,
         expiryYear: l.expiryYear || null,
         priceSource: l.priceSource || null,
+        sourceType: l.sourceType || null,
+        sourceId: l.sourceId || null,
       }));
       const payData = payments.map((p) => ({
         paymentDate: p.paymentDate,

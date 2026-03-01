@@ -1,0 +1,326 @@
+Role: You are a senior full-stack engineer acting as a strict QA tester + financial-controls reviewer.
+Goal: Build and VERIFY an end-to-end inpatient billing cycle that must pass strict acceptance checks across Frontend + Backend + Database + Accounting logic.
+Hard rules:
+
+Don’t break existing logic. No broad refactors.
+
+All money totals are computed server-side and must match UI.
+
+Every multi-step action is transactional + idempotent.
+
+Provide DB proof queries for every phase.
+
+Implement or validate strict guards against duplicate stay posting.
+
+0) Preconditions & Safety
+
+Work on a new branch.
+
+Add structured logs per step.
+
+Use transactions for: admission, posting stay, adding lines, payments, transfer to doctor, discharge, doctor payment, and stay edit/adjustment.
+
+Rounding rule: HALF_UP everywhere (server is source of truth).
+
+Idempotency: running same step twice must not duplicate.
+
+1) Setup: Rooms/Beds as Services + Default Price List
+
+Create configuration for room types:
+
+درجة أولى, جناح, عنبر
+For each:
+
+Stay daily service (e.g., “إقامة يومية – جناح”)
+
+Default daily price
+Create rooms + beds:
+
+2 rooms per type, 2 beds per room
+Create/ensure default inpatient price list and add stay services with prices.
+
+Verify (DB + API):
+
+Services exist
+
+Price list lines exist
+
+Bed links to room → roomType → stayService
+
+2) Admission → Open Invoice → Auto Post Stay Day 1
+
+From Beds screen:
+
+Admit patient “Test Patient A” to bed “جناح – SUI-01-B1”
+System must create:
+
+Reception/Admission
+
+Bed occupancy (occupied)
+
+Patient invoice header (active/open)
+Then invoice must contain Stay Day 1 line:
+
+Correct stay service for the room type
+
+Qty = 1
+
+Price from price list
+
+Store coverage metadata (date or dayIndex) so duplicates are impossible
+
+Verify:
+
+UI shows stay day 1
+
+DB shows exactly 1 stay line for day 1 (no duplicates)
+
+Server totals recomputed correctly
+
+3) Day 1: Add Drugs + Other Services + Consumables + Deposit Payment
+
+Add:
+
+Drug A qty 2
+
+Drug B qty 1
+Add other services (non-stay) 1–2 lines
+Add consumables 1–2 lines
+Take a deposit payment (e.g., 30% of net)
+
+Treasury fallback rule:
+If no cashbox/treasury found:
+
+Auto create “خزنة العمليات”
+
+Ensure it exists in Chart of Accounts as Cash on Hand (Asset)
+
+Post payment into it
+
+Verify:
+
+Payment posted, invoice remaining reduced
+
+Accounting/ledger entries exist
+
+Save + reload → data persists
+
+4) Day 2: Add More Items + Auto Post Stay Day 2
+
+Simulate day change deterministically (test clock or controlled server setting).
+Add:
+
+Drug C qty 1
+
+Consumable C qty 3
+Trigger stay posting for day 2:
+
+Must add Stay Day 2 exactly once
+
+Must not duplicate day 1 or add multiple day 2 lines
+
+Verify:
+
+UI shows stay day 2
+
+DB: one stay record for day 2 only
+
+Idempotency: re-trigger posting does not create extra lines
+
+5) NEW SCENARIO: Edit Stay from 2.0 Days → 1.5 Days (Critical)
+
+After the patient has 2 stay days posted:
+
+5.1 Attempt Stay Edit (UI + API)
+
+From the invoice (or stay calc screen / reception stay screen):
+
+Change total stay quantity to 1.5 day (يوم ونص)
+Expected behavior must be clearly defined and enforced:
+
+Rule options (pick one and enforce strictly):
+A) If your system allows fractional stay:
+
+Adjust stay lines so final billed stay = 1.5 day
+
+Total invoice recalculates
+
+Accounting impacts are correct
+
+Audit log records who/when/why
+
+B) If your system forbids fractional stay:
+
+The system must reject with clear message
+
+No DB changes
+
+Provide exact reason (policy/rule)
+
+You MUST implement the correct behavior consistently across UI/Server/DB.
+
+5.2 How to Adjust (if allowed)
+
+If allowed (Option A), implement adjustment safely:
+
+Do NOT “edit random totals only”.
+
+Use an explicit “stay adjustment” mechanism:
+
+Either update Day 2 stay line qty from 1.0 → 0.5
+
+OR void/recreate with proper references
+
+Must maintain idempotency and an audit trail.
+
+Prevent negative totals.
+
+Ensure discount/tax rules still consistent.
+
+5.3 Strict Validations (must be checked)
+
+After edit, total stay quantity = 1.5
+
+Stay amount equals (1.5 × daily price) with correct rounding
+
+Invoice totals (gross/discount/net/paid/remaining) recomputed server-side
+
+If deposit already taken, remaining updates correctly (can become overpaid or still due):
+
+If overpaid occurs → must decide rule:
+
+Either keep credit balance (patient credit) OR prompt refund entry
+
+Must be consistent and logged
+
+5.4 Proof Required
+
+Provide DB proof queries showing:
+
+Before edit: stay lines (day1 qty 1, day2 qty 1)
+
+After edit: stay lines reflect final 1.5 (e.g., day2 qty 0.5)
+
+Audit log entry exists for stay edit
+
+Totals updated in invoice header
+
+No orphan/duplicate stay lines
+
+6) Transfer Remaining Balance to Doctor → Invoice becomes 0
+
+Create/select doctor “Dr Test”.
+Action: “تحويل المديونية إلى حساب الطبيب”
+
+Remaining becomes 0
+
+Doctor ledger updated by exact remaining value
+
+Verify:
+
+Invoice remaining = 0
+
+Doctor balance increased correctly
+
+Transaction atomic
+
+7) Discharge from Beds Screen → Bed Freed + No More Stay Posting
+
+Discharge patient from bed screen:
+
+Bed becomes available
+
+Admission closed
+
+Stay posting stops after discharge (cannot add future stays)
+
+Verify:
+
+Occupancy cleared
+
+No new stay lines can be created post-discharge
+
+8) Pay Doctor Debt (Final)
+
+Pay doctor outstanding amount from cashbox/treasury:
+
+If treasury missing, same fallback: create “خزنة العمليات” + COA
+Verify:
+
+Doctor balance becomes 0
+
+Cashbox decreases
+
+Ledger entries recorded
+
+Idempotent
+
+9) Strict Acceptance Checklist (Must PASS ALL)
+
+Return final report:
+
+PASS/FAIL per phase (1→8)
+
+UI confirmations (screenshots or described UI state)
+
+DB proof queries output summaries (IDs + counts)
+
+Idempotency proof: run critical actions twice, no duplicates
+
+Server totals proof: server computed totals match UI
+
+Stay edit proof: 2.0 → 1.5 reflected correctly OR rejected cleanly with no writes
+
+No regressions: existing invoice flows still work
+
+10) Required DB Proof Queries (minimum)
+
+Provide SQL queries (or the equivalent ORM queries) that show:
+
+Rooms/Beds/RoomTypes created
+
+Price list entries
+
+Invoice header totals
+
+Invoice lines (with stay day1/day2 + after edit)
+
+Payments + treasury/COA creation
+
+Doctor ledger + settlement
+
+Bed occupancy before/after discharge
+
+Audit log rows for: admit, payment, stay post, stay edit, transfer, discharge, doctor payment
+
+Output format (strict)
+
+At the end, output ONLY:
+
+Phase results (PASS/FAIL + short reason)
+
+Key IDs (patient, reception, invoice, bed, doctor, cashbox)
+
+DB query outputs (or summarized counts with sample rows)
+
+List of modified files
+
+🔥 Test Data (use exactly)
+
+Patient: Test Patient A
+
+Bed: جناح – SUI-01-B1
+
+Doctor: Dr Test
+
+Day1: Drug A(2), Drug B(1), Service X(1), Consumable X(2), Deposit=30%
+
+Day2: Drug C(1), Consumable C(3)
+
+Then edit stay total: 2.0 → 1.5 day
+
+Transfer remaining to doctor → invoice remaining 0
+
+Discharge → bed free
+
+Pay doctor debt → doctor balance 0

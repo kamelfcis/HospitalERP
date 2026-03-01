@@ -569,6 +569,8 @@ export default function PatientInvoice() {
         nurseName: l.nurseName,
         notes: l.notes,
         sortOrder: l.sortOrder,
+        sourceType: l.sourceType,
+        sourceId: l.sourceId,
       }));
 
       const res = await apiRequest("POST", `/api/patient-invoices/distribute-direct`, {
@@ -653,6 +655,8 @@ export default function PatientInvoice() {
         expiryMonth: l.line?.expiryMonth || l.expiryMonth || null,
         expiryYear: l.line?.expiryYear || l.expiryYear || null,
         priceSource: l.line?.priceSource || l.priceSource || "",
+        sourceType: l.sourceType || null,
+        sourceId: l.sourceId || null,
       }));
       setLines(loadedLines);
 
@@ -697,6 +701,8 @@ export default function PatientInvoice() {
       expiryMonth: null,
       expiryYear: null,
       priceSource: "service",
+      sourceType: null,
+      sourceId: null,
     };
     setLines((prev) => [...prev, newLine]);
     setServiceSearch("");
@@ -746,6 +752,8 @@ export default function PatientInvoice() {
       expiryMonth: null,
       expiryYear: null,
       priceSource: "item",
+      sourceType: null,
+      sourceId: null,
     };
 
     setLines((prev) => [...prev, placeholderLine]);
@@ -845,6 +853,8 @@ export default function PatientInvoice() {
                   expiryMonth: alloc.expiryMonth || null,
                   expiryYear: alloc.expiryYear || null,
                   priceSource,
+                  sourceType: null,
+                  sourceId: null,
                 } as LineLocal;
               });
 
@@ -1021,6 +1031,8 @@ export default function PatientInvoice() {
                 expiryMonth: alloc.expiryMonth || null,
                 expiryYear: alloc.expiryYear || null,
                 priceSource: line.priceSource,
+                sourceType: null,
+                sourceId: null,
               } as LineLocal;
             });
 
@@ -1150,6 +1162,8 @@ export default function PatientInvoice() {
             expiryMonth: alloc.expiryMonth || null,
             expiryYear: alloc.expiryYear || null,
             priceSource: isDeptPrice ? "department" : (parseFloat(alloc.lotSalePrice || "0") > 0 ? "lot" : "item"),
+            sourceType: null,
+            sourceId: null,
           } as LineLocal;
         });
 

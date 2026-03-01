@@ -5344,6 +5344,9 @@ export class DatabaseStorage implements IStorage {
 
       const newVersion = (existing.version || 1) + 1;
 
+      const oldLines = await tx.select().from(patientInvoiceLines)
+        .where(eq(patientInvoiceLines.headerId, id));
+
       await tx.delete(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, id));
       if (lines.length > 0) {
         await tx.insert(patientInvoiceLines).values(
@@ -5365,6 +5368,34 @@ export class DatabaseStorage implements IStorage {
         version: newVersion,
         updatedAt: new Date(),
       }).where(eq(patientInvoiceHeaders.id, id));
+
+      const oldStayLines = oldLines.filter((l: any) => l.sourceType === "STAY_ENGINE");
+      const newStayLines = lines.filter((l: any) => l.sourceType === "STAY_ENGINE");
+      for (const ns of newStayLines) {
+        const match = oldStayLines.find((os: any) => os.sourceId === ns.sourceId);
+        if (match && (String(match.quantity) !== String(ns.quantity) || String(match.unitPrice) !== String(ns.unitPrice) || String(match.totalPrice) !== String(ns.totalPrice))) {
+          await tx.insert(auditLog).values({
+            tableName: "patient_invoice_lines",
+            recordId: id,
+            action: "stay_edit",
+            oldValues: JSON.stringify({ sourceId: match.sourceId, quantity: match.quantity, unitPrice: match.unitPrice, totalPrice: match.totalPrice }),
+            newValues: JSON.stringify({ sourceId: ns.sourceId, quantity: ns.quantity, unitPrice: ns.unitPrice, totalPrice: ns.totalPrice }),
+          });
+          console.log(`[STAY_EDIT] Invoice ${id}: stay line ${ns.sourceId} qty ${match.quantity} → ${ns.quantity}`);
+        }
+      }
+      for (const os of oldStayLines) {
+        if (!newStayLines.find((ns: any) => ns.sourceId === os.sourceId)) {
+          await tx.insert(auditLog).values({
+            tableName: "patient_invoice_lines",
+            recordId: id,
+            action: "stay_void",
+            oldValues: JSON.stringify({ sourceId: os.sourceId, quantity: os.quantity, totalPrice: os.totalPrice }),
+            newValues: JSON.stringify({ removed: true }),
+          });
+          console.log(`[STAY_EDIT] Invoice ${id}: stay line ${os.sourceId} REMOVED`);
+        }
+      }
 
       const [result] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
       return result;
