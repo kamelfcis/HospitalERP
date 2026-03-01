@@ -5245,7 +5245,9 @@ export class DatabaseStorage implements IStorage {
 
   async distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]> {
     return await db.transaction(async (tx) => {
-      const [source] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, sourceId));
+      // Lock source FOR UPDATE to prevent concurrent distribution
+      const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${sourceId} FOR UPDATE`);
+      const source = lockResult.rows?.[0] as any;
       if (!source) throw new Error("فاتورة المصدر غير موجودة");
       if (source.status !== "draft") throw new Error("لا يمكن توزيع فاتورة نهائية");
 
@@ -5333,6 +5335,7 @@ export class DatabaseStorage implements IStorage {
           discountAmount: "0",
           netAmount: "0",
           paidAmount: "0",
+          version: 1,
         }).returning();
 
         const newLines: any[] = [];
@@ -5386,18 +5389,19 @@ export class DatabaseStorage implements IStorage {
             nurseName: cl.nurseName,
             notes: cl.notes,
             sortOrder: cl.sortOrder,
+            sourceType: "dist_from_invoice",
+            sourceId: `${sourceId}:p${pi}:l${li}`,
           });
         }
 
         if (newLines.length > 0) {
           await tx.insert(patientInvoiceLines).values(newLines);
-          const totalAmount = newLines.reduce((s: number, l: any) => s + parseFloat(l.quantity) * parseFloat(l.unitPrice), 0);
-          const totalDiscount = newLines.reduce((s: number, l: any) => s + parseFloat(l.discountAmount), 0);
-          const netAmount = totalAmount - totalDiscount;
+          // Recompute totals server-side with roundMoney
+          const totals = this.computeInvoiceTotals(newLines, []);
           await tx.update(patientInvoiceHeaders).set({
-            totalAmount: String(+totalAmount.toFixed(2)),
-            discountAmount: String(+totalDiscount.toFixed(2)),
-            netAmount: String(+netAmount.toFixed(2)),
+            totalAmount: totals.totalAmount,
+            discountAmount: totals.discountAmount,
+            netAmount: totals.netAmount,
           }).where(eq(patientInvoiceHeaders.id, newHeader.id));
 
           const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));
@@ -5407,7 +5411,12 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, sourceId));
+      // Soft-cancel source instead of hard delete — enables retry detection
+      await tx.update(patientInvoiceHeaders).set({
+        status: "cancelled",
+        notes: `[توزيع على ${numPatients} مرضى]`,
+        version: (parseInt(String(source.version)) || 1) + 1,
+      }).where(eq(patientInvoiceHeaders.id, sourceId));
 
       return createdInvoices;
     });
@@ -5509,6 +5518,7 @@ export class DatabaseStorage implements IStorage {
           discountAmount: "0",
           netAmount: "0",
           paidAmount: "0",
+          version: 1,
         }).returning();
 
         const newLines: any[] = [];
@@ -5562,18 +5572,19 @@ export class DatabaseStorage implements IStorage {
             nurseName: cl.nurseName || null,
             notes: cl.notes || null,
             sortOrder: cl.sortOrder || 0,
+            sourceType: "dist_direct",
+            sourceId: `${invoiceDate}:p${pi}:l${li}`,
           });
         }
 
         if (newLines.length > 0) {
           await tx.insert(patientInvoiceLines).values(newLines);
-          const totalAmount = newLines.reduce((s: number, l: any) => s + parseFloat(l.quantity) * parseFloat(l.unitPrice), 0);
-          const totalDiscount = newLines.reduce((s: number, l: any) => s + parseFloat(l.discountAmount), 0);
-          const netAmount = totalAmount - totalDiscount;
+          // Recompute totals server-side with roundMoney
+          const totals = this.computeInvoiceTotals(newLines, []);
           await tx.update(patientInvoiceHeaders).set({
-            totalAmount: String(+totalAmount.toFixed(2)),
-            discountAmount: String(+totalDiscount.toFixed(2)),
-            netAmount: String(+netAmount.toFixed(2)),
+            totalAmount: totals.totalAmount,
+            discountAmount: totals.discountAmount,
+            netAmount: totals.netAmount,
           }).where(eq(patientInvoiceHeaders.id, newHeader.id));
 
           const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, newHeader.id));

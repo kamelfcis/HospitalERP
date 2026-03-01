@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import bcrypt from "bcryptjs";
 import { DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
+import { auditLog } from "./route-helpers";
 
 const sseClients = new Map<string, Set<Response>>();
 
@@ -3279,6 +3280,12 @@ export async function registerRoutes(
         }
       }
       const result = await storage.distributePatientInvoice(req.params.id, patients);
+      // Audit AFTER commit
+      const userId = (req.session as any)?.userId;
+      Promise.resolve().then(() => {
+        const ids = result.map((inv: any) => inv.id).join(",");
+        auditLog({ tableName: "patient_invoice_headers", recordId: req.params.id, action: "distribute", userId, newValues: { createdInvoiceIds: ids, patientCount: patients.length } }).catch(() => {});
+      });
       res.json({ invoices: result });
     } catch (error: any) {
       if (error.message?.includes("نهائية") || error.message?.includes("غير موجودة") || error.message?.includes("لا تحتوي")) {
@@ -3305,6 +3312,12 @@ export async function registerRoutes(
       const result = await storage.distributePatientInvoiceDirect({
         patients, lines, invoiceDate: invoiceDate || new Date().toISOString().split("T")[0],
         departmentId, warehouseId, doctorName, patientType, contractName, notes,
+      });
+      // Audit AFTER commit
+      const userId = (req.session as any)?.userId;
+      Promise.resolve().then(() => {
+        const ids = result.map((inv: any) => inv.id).join(",");
+        auditLog({ tableName: "patient_invoice_headers", recordId: ids, action: "distribute_direct", userId, newValues: { createdInvoiceIds: ids, patientCount: patients.length } }).catch(() => {});
       });
       res.json({ invoices: result });
     } catch (error: any) {
