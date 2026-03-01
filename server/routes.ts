@@ -3528,6 +3528,72 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Stay Engine ====================
+
+  app.get("/api/admissions/:id/segments", async (req, res) => {
+    try {
+      const segments = await storage.getStaySegments(req.params.id);
+      res.json(segments);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admissions/:id/segments", async (req, res) => {
+    try {
+      const { serviceId, invoiceId, notes } = req.body;
+      if (!invoiceId) return res.status(400).json({ message: "invoiceId مطلوب" });
+      const seg = await storage.openStaySegment({
+        admissionId: req.params.id,
+        serviceId: serviceId || undefined,
+        invoiceId,
+        notes: notes || undefined,
+      });
+      res.status(201).json(seg);
+    } catch (error: any) {
+      const code = error.message?.includes("نشط") ? 409 : 400;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admissions/:id/segments/:segmentId/close", async (req, res) => {
+    try {
+      const seg = await storage.closeStaySegment(req.params.segmentId);
+      res.json(seg);
+    } catch (error: any) {
+      const code = error.message?.includes("مغلق") ? 409 : 400;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admissions/:id/transfer", async (req, res) => {
+    try {
+      const { oldSegmentId, newServiceId, newInvoiceId, notes } = req.body;
+      if (!oldSegmentId) return res.status(400).json({ message: "oldSegmentId مطلوب" });
+      if (!newInvoiceId) return res.status(400).json({ message: "newInvoiceId مطلوب" });
+      const seg = await storage.transferStaySegment({
+        admissionId: req.params.id,
+        oldSegmentId,
+        newServiceId: newServiceId || undefined,
+        newInvoiceId,
+        notes: notes || undefined,
+      });
+      res.status(201).json(seg);
+    } catch (error: any) {
+      const code = error.message?.includes("غير موجود") || error.message?.includes("غير نشط") ? 404 : 400;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/stay/accrue", async (req, res) => {
+    try {
+      const result = await storage.accrueStayLines();
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ==================== Pharmacy API ====================
 
   app.get("/api/pharmacies", async (_req, res) => {

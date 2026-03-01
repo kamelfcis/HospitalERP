@@ -1432,6 +1432,24 @@ export const stockMovementAllocations = pgTable("stock_movement_allocations", {
 export type StockMovementHeader = typeof stockMovementHeaders.$inferSelect;
 export type StockMovementAllocation = typeof stockMovementAllocations.$inferSelect;
 
+export const staySegments = pgTable("stay_segments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  admissionId: varchar("admission_id").notNull().references(() => admissions.id, { onDelete: "cascade" }),
+  serviceId: varchar("service_id").references(() => services.id),
+  invoiceId: varchar("invoice_id").notNull().references(() => patientInvoiceHeaders.id),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  status: varchar("status", { length: 10 }).notNull().default("ACTIVE"),
+  ratePerDay: decimal("rate_per_day", { precision: 18, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  admissionIdx: index("idx_stay_seg_admission").on(table.admissionId),
+  statusIdx: index("idx_stay_seg_status").on(table.status),
+}));
+
+export type StaySegment = typeof staySegments.$inferSelect;
+
 // كلمات سر الخزن
 export const drawerPasswords = pgTable("drawer_passwords", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

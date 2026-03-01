@@ -145,6 +145,8 @@ import {
   stockMovementAllocations,
   type StockMovementHeader,
   type StockMovementAllocation,
+  staySegments,
+  type StaySegment,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -435,6 +437,12 @@ export interface IStorage {
   dischargeAdmission(id: string): Promise<Admission>;
   getAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader[]>;
   consolidateAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader>;
+  // Stay Engine
+  getStaySegments(admissionId: string): Promise<StaySegment[]>;
+  openStaySegment(params: { admissionId: string; serviceId?: string; invoiceId: string; notes?: string }): Promise<StaySegment>;
+  closeStaySegment(segmentId: string): Promise<StaySegment>;
+  transferStaySegment(params: { admissionId: string; oldSegmentId: string; newServiceId?: string; newInvoiceId: string; notes?: string }): Promise<StaySegment>;
+  accrueStayLines(): Promise<{ segmentsProcessed: number; linesUpserted: number }>;
 
   // Account Mappings
   getAccountMappings(transactionType?: string): Promise<AccountMapping[]>;
@@ -6533,6 +6541,219 @@ export class DatabaseStorage implements IStorage {
       const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, consolidated.id));
       return finalHeader;
     });
+  }
+
+  // ==================== Stay Engine ====================
+
+  async getStaySegments(admissionId: string): Promise<StaySegment[]> {
+    const result = await db.execute(
+      sql`SELECT * FROM stay_segments WHERE admission_id = ${admissionId} ORDER BY started_at ASC`
+    );
+    return result.rows as any[];
+  }
+
+  async openStaySegment(params: {
+    admissionId: string;
+    serviceId?: string;
+    invoiceId: string;
+    notes?: string;
+  }): Promise<StaySegment> {
+    return await db.transaction(async (tx) => {
+      // Lock admission FOR UPDATE
+      const admResult = await tx.execute(sql`SELECT * FROM admissions WHERE id = ${params.admissionId} FOR UPDATE`);
+      const admission = admResult.rows?.[0] as any;
+      if (!admission) throw new Error("الإقامة غير موجودة");
+      if (admission.status !== "active") throw new Error("الإقامة غير نشطة");
+
+      // Enforce 1 ACTIVE per admission (also backed by partial unique index)
+      const activeCheck = await tx.execute(
+        sql`SELECT id FROM stay_segments WHERE admission_id = ${params.admissionId} AND status = 'ACTIVE' FOR UPDATE`
+      );
+      if ((activeCheck.rows?.length || 0) > 0) {
+        throw new Error("يوجد قطاع إقامة نشط بالفعل – استخدم تحويل الإقامة لتغيير الخدمة");
+      }
+
+      // Resolve rate from service
+      let ratePerDay = "0";
+      if (params.serviceId) {
+        const svcResult = await tx.execute(
+          sql`SELECT base_price FROM services WHERE id = ${params.serviceId} AND is_active = true LIMIT 1`
+        );
+        ratePerDay = String((svcResult.rows[0] as any)?.base_price ?? "0");
+      }
+
+      const [seg] = await tx.insert(staySegments).values({
+        admissionId: params.admissionId,
+        serviceId: params.serviceId || null,
+        invoiceId: params.invoiceId,
+        startedAt: new Date(),
+        status: "ACTIVE",
+        ratePerDay,
+        notes: params.notes || null,
+      }).returning();
+      return seg;
+    });
+  }
+
+  async closeStaySegment(segmentId: string): Promise<StaySegment> {
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(
+        sql`SELECT * FROM stay_segments WHERE id = ${segmentId} FOR UPDATE`
+      );
+      const seg = lockResult.rows?.[0] as any;
+      if (!seg) throw new Error("القطاع غير موجود");
+      if (seg.status === "CLOSED") throw new Error("القطاع مغلق بالفعل");
+
+      const [updated] = await tx.update(staySegments).set({
+        status: "CLOSED",
+        endedAt: new Date(),
+      }).where(eq(staySegments.id, segmentId)).returning();
+      return updated;
+    });
+  }
+
+  async transferStaySegment(params: {
+    admissionId: string;
+    oldSegmentId: string;
+    newServiceId?: string;
+    newInvoiceId: string;
+    notes?: string;
+  }): Promise<StaySegment> {
+    return await db.transaction(async (tx) => {
+      // Lock admission + old segment atomically — prevents duplicate open
+      const admResult = await tx.execute(
+        sql`SELECT * FROM admissions WHERE id = ${params.admissionId} FOR UPDATE`
+      );
+      const admission = admResult.rows?.[0] as any;
+      if (!admission) throw new Error("الإقامة غير موجودة");
+      if (admission.status !== "active") throw new Error("الإقامة غير نشطة");
+
+      const segResult = await tx.execute(
+        sql`SELECT * FROM stay_segments WHERE id = ${params.oldSegmentId} AND admission_id = ${params.admissionId} FOR UPDATE`
+      );
+      const oldSeg = segResult.rows?.[0] as any;
+      if (!oldSeg) throw new Error("القطاع المصدر غير موجود");
+      if (oldSeg.status !== "ACTIVE") throw new Error("القطاع المصدر ليس نشطاً");
+
+      // Close old segment
+      await tx.update(staySegments).set({
+        status: "CLOSED",
+        endedAt: new Date(),
+      }).where(eq(staySegments.id, params.oldSegmentId));
+
+      // Resolve rate for new segment
+      let ratePerDay = "0";
+      if (params.newServiceId) {
+        const svcResult = await tx.execute(
+          sql`SELECT base_price FROM services WHERE id = ${params.newServiceId} AND is_active = true LIMIT 1`
+        );
+        ratePerDay = String((svcResult.rows[0] as any)?.base_price ?? "0");
+      }
+
+      // Open new segment — partial unique index now unblocked since old is CLOSED
+      const [newSeg] = await tx.insert(staySegments).values({
+        admissionId: params.admissionId,
+        serviceId: params.newServiceId || null,
+        invoiceId: params.newInvoiceId,
+        startedAt: new Date(),
+        status: "ACTIVE",
+        ratePerDay,
+        notes: params.notes || null,
+      }).returning();
+
+      return newSeg;
+    });
+  }
+
+  async accrueStayLines(): Promise<{ segmentsProcessed: number; linesUpserted: number }> {
+    // Fetch all ACTIVE segments with service name for description
+    const activeResult = await db.execute(sql`
+      SELECT s.id, s.admission_id, s.invoice_id, s.service_id, s.started_at,
+             s.rate_per_day, COALESCE(srv.name_ar, 'إقامة') AS service_name_ar
+      FROM stay_segments s
+      LEFT JOIN services srv ON s.service_id = srv.id
+      WHERE s.status = 'ACTIVE'
+    `);
+    const segments = activeResult.rows as any[];
+    let totalLinesUpserted = 0;
+
+    for (const seg of segments) {
+      try {
+        await db.transaction(async (tx) => {
+          // Lock invoice FOR UPDATE to prevent concurrent total recompute
+          await tx.execute(
+            sql`SELECT id FROM patient_invoice_headers WHERE id = ${seg.invoice_id} FOR UPDATE`
+          );
+
+          // Compute daily buckets: from segment start date to today (inclusive)
+          const startDate = new Date(seg.started_at);
+          startDate.setHours(0, 0, 0, 0);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          const buckets: string[] = [];
+          const cur = new Date(startDate);
+          while (cur <= today) {
+            buckets.push(cur.toISOString().split("T")[0]);
+            cur.setDate(cur.getDate() + 1);
+          }
+
+          const rateStr = String(parseFloat(seg.rate_per_day) || 0);
+          let linesInserted = 0;
+
+          for (const bucketKey of buckets) {
+            const sourceId = `${seg.invoice_id}:${seg.id}:${bucketKey}`;
+            const description = `${seg.service_name_ar} – ${bucketKey}`;
+
+            // Idempotent UPSERT — ON CONFLICT with the partial unique index
+            const upsertResult = await tx.execute(sql`
+              INSERT INTO patient_invoice_lines
+                (header_id, line_type, service_id, description,
+                 quantity, unit_price, discount_percent, discount_amount,
+                 total_price, unit_level, sort_order, source_type, source_id)
+              VALUES
+                (${seg.invoice_id}, 'service', ${seg.service_id}, ${description},
+                 '1', ${rateStr}, '0', '0',
+                 ${rateStr}, 'minor', 0, 'STAY_ENGINE', ${sourceId})
+              ON CONFLICT (source_type, source_id)
+                WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL
+              DO NOTHING
+            `);
+            if ((upsertResult.rowCount || 0) > 0) linesInserted++;
+          }
+
+          if (linesInserted > 0) {
+            // Recompute invoice totals server-side
+            const dbLines = await tx.select().from(patientInvoiceLines)
+              .where(and(eq(patientInvoiceLines.headerId, seg.invoice_id), eq(patientInvoiceLines.isVoid, false)));
+            const dbPayments = await tx.select().from(patientInvoicePayments)
+              .where(eq(patientInvoicePayments.headerId, seg.invoice_id));
+            const totals = this.computeInvoiceTotals(dbLines, dbPayments);
+
+            await tx.update(patientInvoiceHeaders).set({
+              ...totals,
+              updatedAt: new Date(),
+            }).where(eq(patientInvoiceHeaders.id, seg.invoice_id));
+
+            // Audit after commit
+            await tx.insert(auditLog).values({
+              tableName: "patient_invoice_headers",
+              recordId: seg.invoice_id,
+              action: "stay_accrual",
+              newValues: JSON.stringify({ segmentId: seg.id, linesInserted, buckets: buckets.length }),
+            });
+
+            console.log(`[STAY_ENGINE] Accrued ${linesInserted} line(s) for segment ${seg.id} → invoice ${seg.invoice_id}`);
+          }
+
+          totalLinesUpserted += linesInserted;
+        });
+      } catch (err: any) {
+        console.error(`[STAY_ENGINE] Segment ${seg.id} accrual failed:`, err.message);
+      }
+    }
+
+    return { segmentsProcessed: segments.length, linesUpserted: totalLinesUpserted };
   }
 
   // Account Mappings

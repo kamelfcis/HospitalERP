@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { seedDatabase } from "./seed";
 import { slowRequestLogger, registerMonitoringRoutes } from "./monitoring";
 import { loadSettings } from "./settings-cache";
+import { storage } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -137,4 +138,20 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  // Stay Engine: accrue daily lines every 30 minutes
+  const STAY_TICK_MS = 30 * 60 * 1000;
+  const runStayTick = async () => {
+    try {
+      const result = await storage.accrueStayLines();
+      if (result.segmentsProcessed > 0 || result.linesUpserted > 0) {
+        log(`[STAY_ENGINE] tick: ${result.segmentsProcessed} segments, ${result.linesUpserted} lines upserted`);
+      }
+    } catch (err: any) {
+      console.error("[STAY_ENGINE] tick error:", err.message);
+    }
+  };
+  // Run once on startup, then every 30 minutes
+  setTimeout(runStayTick, 5000);
+  setInterval(runStayTick, STAY_TICK_MS);
 })();
