@@ -1467,6 +1467,7 @@ export const rooms = pgTable("rooms", {
   floorId: varchar("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
   nameAr: text("name_ar").notNull(),
   roomNumber: varchar("room_number", { length: 20 }),
+  serviceId: varchar("service_id").references(() => services.id, { onDelete: "set null" }),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

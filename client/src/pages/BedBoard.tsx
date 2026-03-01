@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   BedDouble, RefreshCw, MoreVertical, UserPlus, FileText,
-  ArrowRightLeft, LogOut, Sparkles, Wrench,
+  ArrowRightLeft, LogOut, Sparkles, Wrench, Pencil, Tag,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -33,12 +33,18 @@ interface BedData {
   patientName?: string;
   admissionNumber?: string;
   roomId: string;
+  roomServiceId?: string | null;
+  roomServiceNameAr?: string | null;
+  roomServicePrice?: string | null;
 }
 
 interface RoomData {
   id: string;
   nameAr: string;
   roomNumber?: string;
+  serviceId?: string | null;
+  serviceNameAr?: string | null;
+  servicePrice?: string | null;
   beds: BedData[];
 }
 
@@ -68,49 +74,26 @@ const STATUS_CONFIG: Record<BedStatus, { label: string; card: string; badge: str
   MAINTENANCE:    { label: "صيانة",         card: "bg-red-50 border-red-300 dark:bg-red-950 dark:border-red-700",           badge: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
 };
 
-// ─── Bed Card ────────────────────────────────────────────────────────────────
+// ─── Bed Card ─────────────────────────────────────────────────────────────────
 function BedCard({
-  bed,
-  onAction,
+  bed, onAction,
 }: {
   bed: BedData;
   onAction: (action: string, bed: BedData) => void;
 }) {
-  const cfg = STATUS_CONFIG[bed.status] ?? STATUS_CONFIG.EMPTY;
-
+  const cfg = STATUS_CONFIG[bed.status];
   return (
-    <div
-      data-testid={`bed-card-${bed.id}`}
-      className={`relative border-2 rounded-xl p-3 min-w-[130px] ${cfg.card} transition-shadow hover:shadow-md`}
-    >
-      <div className="flex items-start justify-between gap-1">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 mb-1">
-            <BedDouble className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="font-bold text-sm" data-testid={`bed-number-${bed.id}`}>{bed.bedNumber}</span>
-          </div>
-          <span className={`inline-block text-xs px-1.5 py-0.5 rounded-full font-medium ${cfg.badge}`}>
-            {cfg.label}
-          </span>
-          {bed.status === "OCCUPIED" && bed.patientName && (
-            <p className="text-xs mt-1.5 font-medium text-foreground truncate" title={bed.patientName}
-               data-testid={`bed-patient-${bed.id}`}>
-              {bed.patientName}
-            </p>
-          )}
-          {bed.status === "OCCUPIED" && bed.admissionNumber && (
-            <p className="text-xs text-muted-foreground">{bed.admissionNumber}</p>
-          )}
+    <div className={`relative border-2 rounded-xl p-3 w-44 ${cfg.card}`} data-testid={`bed-card-${bed.id}`}>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="font-semibold text-sm">سرير {bed.bedNumber}</p>
+          <Badge variant="outline" className={`text-xs mt-0.5 ${cfg.badge}`}>{cfg.label}</Badge>
         </div>
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost" size="icon"
-              className="h-6 w-6 shrink-0 -mt-0.5 -ml-0.5"
-              data-testid={`bed-menu-${bed.id}`}
-            >
-              <MoreVertical className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-7 w-7 -mt-1 -ml-1"
+              data-testid={`bed-menu-${bed.id}`}>
+              <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
@@ -127,7 +110,7 @@ function BedCard({
             {bed.status === "OCCUPIED" && (<>
               <DropdownMenuItem
                 data-testid={`bed-action-invoice-${bed.id}`}
-                onClick={() => onAction("open-invoice", bed)}
+                onClick={() => onAction("invoice", bed)}
                 className="gap-2"
               >
                 <FileText className="h-4 w-4" />
@@ -184,15 +167,19 @@ function BedCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {bed.patientName && (
+        <p className="text-xs mt-2 font-medium truncate">{bed.patientName}</p>
+      )}
+      {bed.admissionNumber && (
+        <p className="text-xs text-muted-foreground">{bed.admissionNumber}</p>
+      )}
     </div>
   );
 }
 
-// ─── Reception Sheet ─────────────────────────────────────────────────────────
+// ─── Reception Sheet ──────────────────────────────────────────────────────────
 function ReceptionSheet({
-  open,
-  bed,
-  onClose,
+  open, bed, onClose,
 }: {
   open: boolean;
   bed: BedData | null;
@@ -204,7 +191,6 @@ function ReceptionSheet({
   const [patientPhone, setPatientPhone] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [departmentId, setDepartmentId] = useState("");
-  const [serviceId, setServiceId] = useState("");
   const [doctorName, setDoctorName] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -219,24 +205,18 @@ function ReceptionSheet({
     queryFn: () => apiRequest("GET", "/api/departments").then(r => r.json()),
   });
 
-  const { data: services = [] } = useQuery<Service[]>({
-    queryKey: ["/api/services"],
-    queryFn: () => apiRequest("GET", "/api/services").then(r => r.json()).then(d => d?.data ?? d ?? []),
-  });
-
   const admitMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/beds/${bed!.id}/admit`, {
         patientName: selectedPatient?.fullName || patientName,
         patientPhone: selectedPatient?.phone || patientPhone || undefined,
         departmentId: departmentId || undefined,
-        serviceId: serviceId || undefined,
         doctorName: doctorName || undefined,
         notes: notes || undefined,
       }).then(r => r.json()),
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
-      toast({ title: "تم الاستقبال", description: `تم إنشاء الإقامة رقم ${data.admissionId?.slice(0, 8)}...` });
+      toast({ title: "تم الاستقبال", description: "تمت إضافة بند الإقامة فوراً للفاتورة" });
       handleClose();
     },
     onError: (err: any) => {
@@ -246,12 +226,13 @@ function ReceptionSheet({
 
   const handleClose = useCallback(() => {
     setPatientSearch(""); setPatientName(""); setPatientPhone("");
-    setSelectedPatient(null); setDepartmentId(""); setServiceId("");
+    setSelectedPatient(null); setDepartmentId("");
     setDoctorName(""); setNotes("");
     onClose();
   }, [onClose]);
 
   const effectiveName = selectedPatient?.fullName || patientName;
+  const hasRoomService = !!(bed?.roomServiceId);
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && handleClose()}>
@@ -264,6 +245,31 @@ function ReceptionSheet({
         </SheetHeader>
 
         <div className="space-y-5">
+          {/* Room grade info */}
+          {hasRoomService ? (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-primary/8 border border-primary/20">
+              <Tag className="h-4 w-4 text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground">درجة الغرفة</p>
+                <p className="text-sm font-semibold">
+                  {bed?.roomServiceNameAr}
+                  {bed?.roomServicePrice && (
+                    <span className="text-muted-foreground font-normal mr-2">
+                      {parseFloat(bed.roomServicePrice).toLocaleString("ar-EG")} ج.م/يوم
+                    </span>
+                  )}
+                </p>
+              </div>
+              <Badge variant="outline" className="text-xs text-green-700 border-green-300 bg-green-50 shrink-0">
+                يضاف لحظياً
+              </Badge>
+            </div>
+          ) : (
+            <div className="px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
+              هذه الغرفة لا تحتوي على درجة إقامة محددة — لن يُضاف بند إقامة تلقائياً
+            </div>
+          )}
+
           {/* Patient search */}
           <div className="space-y-2">
             <Label>بحث عن مريض (اختياري)</Label>
@@ -301,7 +307,6 @@ function ReceptionSheet({
             )}
           </div>
 
-          {/* Manual patient name if no patient selected */}
           {!selectedPatient && (
             <div className="space-y-2">
               <Label htmlFor="patientName">اسم المريض <span className="text-destructive">*</span></Label>
@@ -335,22 +340,6 @@ function ReceptionSheet({
               <SelectContent>
                 {departments.map(d => (
                   <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>خدمة الإقامة (نوع السرير)</Label>
-            <Select value={serviceId} onValueChange={setServiceId}>
-              <SelectTrigger data-testid="select-service">
-                <SelectValue placeholder="اختر خدمة الإقامة (اختياري)" />
-              </SelectTrigger>
-              <SelectContent>
-                {services.map(s => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.nameAr} — {parseFloat(s.basePrice).toLocaleString("ar-EG")} ج.م/يوم
-                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -397,11 +386,89 @@ function ReceptionSheet({
   );
 }
 
+// ─── Room Grade Dialog ────────────────────────────────────────────────────────
+function RoomGradeDialog({
+  open, room, onClose,
+}: {
+  open: boolean;
+  room: RoomData | null;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [selectedServiceId, setSelectedServiceId] = useState<string>(room?.serviceId || "");
+
+  const { data: services = [] } = useQuery<Service[]>({
+    queryKey: ["/api/services"],
+    queryFn: () => apiRequest("GET", "/api/services").then(r => r.json()).then(d => d?.data ?? d ?? []),
+    enabled: open,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("PATCH", `/api/rooms/${room!.id}`, {
+        serviceId: selectedServiceId || null,
+      }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
+      toast({ title: "تم الحفظ", description: "تم تحديد درجة الغرفة بنجاح" });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ variant: "destructive", title: "خطأ", description: err.message });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-sm" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>درجة الغرفة</DialogTitle>
+          <DialogDescription>
+            {room ? `${room.nameAr}${room.roomNumber ? ` (${room.roomNumber})` : ""}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2">
+          <Label>خدمة الإقامة (سعر اليوم)</Label>
+          <Select
+            value={selectedServiceId || "__none__"}
+            onValueChange={v => setSelectedServiceId(v === "__none__" ? "" : v)}
+          >
+            <SelectTrigger data-testid="select-room-service">
+              <SelectValue placeholder="بدون درجة محددة" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">— بدون درجة محددة —</SelectItem>
+              {services.map(s => (
+                <SelectItem key={s.id} value={s.id} data-testid={`room-service-option-${s.id}`}>
+                  {s.nameAr} — {parseFloat(s.basePrice).toLocaleString("ar-EG")} ج.م/يوم
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            الخدمة المختارة ستُضاف تلقائياً لفاتورة أي مريض يُستقبل في هذه الغرفة
+          </p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} data-testid="button-room-grade-cancel">إلغاء</Button>
+          <Button
+            data-testid="button-room-grade-save"
+            disabled={saveMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+          >
+            {saveMutation.isPending ? "جارٍ الحفظ..." : "حفظ"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Transfer Dialog ──────────────────────────────────────────────────────────
 function TransferDialog({
-  open,
-  sourceBed,
-  onClose,
+  open, sourceBed, onClose,
 }: {
   open: boolean;
   sourceBed: BedData | null;
@@ -461,9 +528,7 @@ function TransferDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => { setTargetBedId(""); onClose(); }}
-            data-testid="button-transfer-cancel">
-            إلغاء
-          </Button>
+            data-testid="button-transfer-cancel">إلغاء</Button>
           <Button
             data-testid="button-transfer-confirm"
             disabled={!targetBedId || transferMutation.isPending}
@@ -477,11 +542,9 @@ function TransferDialog({
   );
 }
 
-// ─── Discharge confirm dialog ────────────────────────────────────────────────
+// ─── Discharge confirm dialog ─────────────────────────────────────────────────
 function DischargeDialog({
-  open,
-  bed,
-  onClose,
+  open, bed, onClose,
 }: {
   open: boolean;
   bed: BedData | null;
@@ -529,7 +592,7 @@ function DischargeDialog({
   );
 }
 
-// ─── Main BedBoard page ──────────────────────────────────────────────────────
+// ─── Main BedBoard page ───────────────────────────────────────────────────────
 export default function BedBoard() {
   const { toast } = useToast();
 
@@ -542,6 +605,7 @@ export default function BedBoard() {
   const [admitBed, setAdmitBed] = useState<BedData | null>(null);
   const [transferBed, setTransferBed] = useState<BedData | null>(null);
   const [dischargeBed, setDischargeBed] = useState<BedData | null>(null);
+  const [editRoom, setEditRoom] = useState<RoomData | null>(null);
 
   const statusMutation = useMutation({
     mutationFn: ({ bedId, status }: { bedId: string; status: string }) =>
@@ -558,35 +622,19 @@ export default function BedBoard() {
 
   const handleAction = useCallback((action: string, bed: BedData) => {
     switch (action) {
-      case "admit":
-        setAdmitBed(bed);
-        break;
-      case "open-invoice":
-        if (bed.currentAdmissionId) {
-          window.open(`/patient-invoices?admissionId=${bed.currentAdmissionId}`, "_blank");
-        }
-        break;
-      case "transfer":
-        setTransferBed(bed);
-        break;
-      case "discharge":
-        setDischargeBed(bed);
-        break;
-      case "clean":
-        statusMutation.mutate({ bedId: bed.id, status: "EMPTY" });
-        break;
-      case "maintenance":
-        statusMutation.mutate({ bedId: bed.id, status: "MAINTENANCE" });
-        break;
+      case "admit":    setAdmitBed(bed); break;
+      case "transfer": setTransferBed(bed); break;
+      case "discharge": setDischargeBed(bed); break;
+      case "clean":    statusMutation.mutate({ bedId: bed.id, status: "EMPTY" }); break;
+      case "maintenance": statusMutation.mutate({ bedId: bed.id, status: "MAINTENANCE" }); break;
     }
   }, [statusMutation]);
 
-  // Stats
   const allBeds = board.flatMap(f => f.rooms.flatMap(r => r.beds));
-  const stats: Record<BedStatus, number> = {
-    EMPTY: 0, OCCUPIED: 0, NEEDS_CLEANING: 0, MAINTENANCE: 0,
-  };
-  for (const b of allBeds) stats[b.status] = (stats[b.status] ?? 0) + 1;
+  const stats = allBeds.reduce<Record<string, number>>((acc, b) => {
+    acc[b.status] = (acc[b.status] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div className="p-4 space-y-6" dir="rtl">
@@ -600,7 +648,6 @@ export default function BedBoard() {
           <p className="text-sm text-muted-foreground mt-0.5">{allBeds.length} سرير إجمالاً</p>
         </div>
 
-        {/* Legend + stats */}
         <div className="flex items-center gap-3 flex-wrap">
           {(Object.entries(STATUS_CONFIG) as [BedStatus, typeof STATUS_CONFIG[BedStatus]][]).map(([st, cfg]) => (
             <Badge key={st} variant="outline" className={`gap-1 ${cfg.badge}`}>
@@ -623,15 +670,51 @@ export default function BedBoard() {
       {board.map(floor => (
         <div key={floor.id} data-testid={`floor-section-${floor.id}`}>
           <h2 className="text-lg font-semibold mb-3 pb-1 border-b">{floor.nameAr}</h2>
-          <div className="space-y-4">
+          <div className="space-y-5">
             {floor.rooms.map(room => (
               <div key={room.id} data-testid={`room-section-${room.id}`}>
-                <p className="text-sm font-medium text-muted-foreground mb-2">
-                  {room.nameAr}{room.roomNumber ? ` (${room.roomNumber})` : ""}
-                </p>
+                {/* Room header with grade badge */}
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    {room.nameAr}{room.roomNumber ? ` (${room.roomNumber})` : ""}
+                  </p>
+                  {room.serviceNameAr ? (
+                    <Badge
+                      variant="outline"
+                      className="text-xs gap-1 cursor-pointer hover:bg-muted/60 transition-colors border-primary/30 text-primary"
+                      onClick={() => setEditRoom(room)}
+                      data-testid={`room-grade-badge-${room.id}`}
+                    >
+                      <Tag className="h-3 w-3" />
+                      {room.serviceNameAr}
+                      {room.servicePrice && ` — ${parseFloat(room.servicePrice).toLocaleString("ar-EG")} ج.م`}
+                      <Pencil className="h-3 w-3 opacity-60" />
+                    </Badge>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-muted-foreground gap-1"
+                      onClick={() => setEditRoom(room)}
+                      data-testid={`room-set-grade-${room.id}`}
+                    >
+                      <Tag className="h-3 w-3" />
+                      تحديد درجة الغرفة
+                    </Button>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-3">
                   {room.beds.map(bed => (
-                    <BedCard key={bed.id} bed={bed} onAction={handleAction} />
+                    <BedCard
+                      key={bed.id}
+                      bed={{
+                        ...bed,
+                        roomServiceId: room.serviceId,
+                        roomServiceNameAr: room.serviceNameAr,
+                        roomServicePrice: room.servicePrice,
+                      }}
+                      onAction={handleAction}
+                    />
                   ))}
                   {room.beds.length === 0 && (
                     <p className="text-xs text-muted-foreground py-2">لا يوجد أسرّة في هذه الغرفة</p>
@@ -665,6 +748,11 @@ export default function BedBoard() {
         open={!!dischargeBed}
         bed={dischargeBed}
         onClose={() => setDischargeBed(null)}
+      />
+      <RoomGradeDialog
+        open={!!editRoom}
+        room={editRoom}
+        onClose={() => setEditRoom(null)}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
+import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "./route-helpers";
@@ -4129,6 +4130,41 @@ export async function registerRoutes(
       }
       const posted = await storage.batchPostJournalEntries(ids, userId || "system");
       res.json({ posted, total: ids.length });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== Room Management ====================
+
+  app.get("/api/rooms", async (_req, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT r.id, r.name_ar, r.room_number, r.service_id, r.floor_id,
+               s.name_ar AS service_name_ar, s.base_price AS service_price,
+               f.name_ar AS floor_name_ar
+        FROM rooms r
+        JOIN floors f ON f.id = r.floor_id
+        LEFT JOIN services s ON s.id = r.service_id
+        ORDER BY f.sort_order, r.sort_order
+      `);
+      res.json(result.rows.map((r: any) => ({
+        id: r.id, nameAr: r.name_ar, roomNumber: r.room_number,
+        serviceId: r.service_id || null, floorId: r.floor_id, floorNameAr: r.floor_name_ar,
+        serviceNameAr: r.service_name_ar || null, servicePrice: r.service_price || null,
+      })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/rooms/:id", async (req, res) => {
+    try {
+      const { serviceId } = req.body;
+      await db.execute(sql`
+        UPDATE rooms SET service_id = ${serviceId || null} WHERE id = ${req.params.id}
+      `);
+      res.json({ ok: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

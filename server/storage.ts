@@ -6815,11 +6815,14 @@ export class DatabaseStorage implements IStorage {
       SELECT
         f.id   AS floor_id,   f.name_ar AS floor_name_ar, f.sort_order AS floor_sort,
         r.id   AS room_id,    r.name_ar AS room_name_ar,  r.room_number, r.sort_order AS room_sort,
+        r.service_id AS room_service_id,
+        svc.name_ar AS room_service_name_ar, svc.base_price AS room_service_price,
         b.id   AS bed_id,     b.bed_number, b.status,
         b.current_admission_id,
         a.patient_name, a.admission_number
       FROM floors f
       JOIN rooms r  ON r.floor_id = f.id
+      LEFT JOIN services svc ON svc.id = r.service_id
       JOIN beds  b  ON b.room_id  = r.id
       LEFT JOIN admissions a ON a.id = b.current_admission_id
       ORDER BY f.sort_order, r.sort_order, b.bed_number
@@ -6837,6 +6840,9 @@ export class DatabaseStorage implements IStorage {
       if (!floor.rooms.has(row.room_id)) {
         floor.rooms.set(row.room_id, {
           id: row.room_id, nameAr: row.room_name_ar, roomNumber: row.room_number,
+          serviceId: row.room_service_id || null,
+          serviceNameAr: row.room_service_name_ar || null,
+          servicePrice: row.room_service_price || null,
           sortOrder: row.room_sort, beds: [],
         });
       }
@@ -6940,22 +6946,57 @@ export class DatabaseStorage implements IStorage {
         version: 1,
       }).returning();
 
-      // 7. Open stay segment if service provided
+      // 7. Resolve accommodation service: explicit param > room's service
+      const roomRes = await tx.execute(
+        sql`SELECT r.service_id, COALESCE(s.base_price, '0') AS base_price, COALESCE(s.name_ar, 'إقامة') AS service_name_ar
+            FROM beds b JOIN rooms r ON r.id = b.room_id
+            LEFT JOIN services s ON s.id = r.service_id
+            WHERE b.id = ${params.bedId} LIMIT 1`
+      );
+      const roomRow = roomRes.rows[0] as any;
+      const effectiveServiceId: string | null = params.serviceId || roomRow?.service_id || null;
+      const ratePerDay = params.serviceId
+        ? String(((await tx.execute(sql`SELECT base_price FROM services WHERE id = ${params.serviceId} LIMIT 1`)).rows[0] as any)?.base_price ?? "0")
+        : String(roomRow?.base_price ?? "0");
+      const serviceNameAr: string = String(roomRow?.service_name_ar ?? "إقامة");
+
+      // Open stay segment if we have a service
       let segmentId: string | undefined;
-      if (params.serviceId) {
-        const svcRes = await tx.execute(
-          sql`SELECT base_price FROM services WHERE id = ${params.serviceId} AND is_active = true LIMIT 1`
-        );
-        const ratePerDay = String((svcRes.rows[0] as any)?.base_price ?? "0");
+      if (effectiveServiceId) {
         const [seg] = await tx.insert(staySegments).values({
           admissionId: admission.id,
-          serviceId: params.serviceId,
+          serviceId: effectiveServiceId,
           invoiceId: invoice.id,
           startedAt: new Date(),
           status: "ACTIVE",
           ratePerDay,
         }).returning();
         segmentId = seg.id;
+
+        // Immediately insert first stay line (يوم 1) so it appears at once — idempotent
+        const admittedAt = new Date();
+        const dateStr = admittedAt.toISOString().split("T")[0];
+        const sourceId = `${invoice.id}:${seg.id}:${dateStr}`;
+        await tx.execute(sql`
+          INSERT INTO patient_invoice_lines
+            (header_id, line_type, service_id, description,
+             quantity, unit_price, discount_percent, discount_amount,
+             total_price, unit_level, sort_order, source_type, source_id)
+          VALUES
+            (${invoice.id}, 'service', ${effectiveServiceId}, ${serviceNameAr + " – يوم 1"},
+             '1', ${ratePerDay}, '0', '0',
+             ${ratePerDay}, 'minor', 0, 'STAY_ENGINE', ${sourceId})
+          ON CONFLICT (source_type, source_id)
+            WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL
+          DO NOTHING
+        `);
+
+        // Recompute invoice totals after first line
+        const allLines = await tx.select().from(patientInvoiceLines)
+          .where(and(eq(patientInvoiceLines.headerId, invoice.id), eq(patientInvoiceLines.isVoid, false)));
+        const totals = this.computeInvoiceTotals(allLines, []);
+        await tx.update(patientInvoiceHeaders).set({ ...totals, updatedAt: new Date() })
+          .where(eq(patientInvoiceHeaders.id, invoice.id));
       }
 
       // 8. Mark bed OCCUPIED
