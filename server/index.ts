@@ -6,6 +6,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
 import { slowRequestLogger, registerMonitoringRoutes } from "./monitoring";
+import { loadSettings } from "./settings-cache";
 
 const app = express();
 const httpServer = createServer(app);
@@ -86,6 +87,13 @@ app.use((req, res, next) => {
     } catch (error) {
       console.log("Seed database notice:", error);
     }
+  }
+
+  try {
+    await loadSettings();
+    console.log("System settings loaded into cache");
+  } catch (e) {
+    console.log("System settings table not yet available, will retry after schema sync");
   }
 
   await registerRoutes(httpServer, app);

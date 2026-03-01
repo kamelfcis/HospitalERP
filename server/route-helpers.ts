@@ -24,7 +24,8 @@ export function asyncHandler(fn: AsyncRouteHandler): RequestHandler {
         message.includes("مُرحّل بالفعل") ||
         message.includes("محصّلة بالفعل") ||
         message.includes("مصروف بالفعل") ||
-        message.includes("غير مسودة")
+        message.includes("غير مسودة") ||
+        message.includes("تم تعديل الفاتورة من مستخدم آخر")
       ) {
         return apiError(res, 409, message, "CONFLICT");
       }

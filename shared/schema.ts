@@ -744,6 +744,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   netAmount: decimal("net_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   paidAmount: decimal("paid_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   finalizedAt: timestamp("finalized_at"),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -777,10 +778,17 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   nurseName: text("nurse_name"),
   notes: text("notes"),
   sortOrder: integer("sort_order").notNull().default(0),
+  sourceType: text("source_type"),
+  sourceId: varchar("source_id"),
+  isVoid: boolean("is_void").notNull().default(false),
+  voidedAt: timestamp("voided_at"),
+  voidedBy: varchar("voided_by").references(() => users.id),
+  voidReason: text("void_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx: index("idx_pat_line_header").on(table.headerId),
   typeIdx: index("idx_pat_line_type").on(table.lineType),
+  sourceIdx: index("idx_pat_line_source").on(table.sourceType, table.sourceId),
 }));
 
 // فواتير المرضى - سداد الدفعات
@@ -921,8 +929,8 @@ export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit
 export const insertPriceAdjustmentLogSchema = createInsertSchema(priceAdjustmentsLog).omit({ id: true, createdAt: true });
 export const insertServiceConsumableSchema = createInsertSchema(serviceConsumables).omit({ id: true });
 
-export const insertPatientInvoiceHeaderSchema = createInsertSchema(patientInvoiceHeaders).omit({ id: true, createdAt: true, updatedAt: true, finalizedAt: true });
-export const insertPatientInvoiceLineSchema = createInsertSchema(patientInvoiceLines).omit({ id: true, createdAt: true });
+export const insertPatientInvoiceHeaderSchema = createInsertSchema(patientInvoiceHeaders).omit({ id: true, createdAt: true, updatedAt: true, finalizedAt: true, version: true });
+export const insertPatientInvoiceLineSchema = createInsertSchema(patientInvoiceLines).omit({ id: true, createdAt: true, isVoid: true, voidedAt: true, voidedBy: true, voidReason: true });
 export const insertPatientInvoicePaymentSchema = createInsertSchema(patientInvoicePayments).omit({ id: true, createdAt: true });
 
 export const insertPharmacySchema = createInsertSchema(pharmacies).omit({ id: true, createdAt: true });
@@ -1412,3 +1420,14 @@ export const sourceTypeLabels: Record<string, string> = {
   warehouse_transfer: "تحويلات مخزنية",
   manual: "يدوي",
 };
+
+// إعدادات النظام
+export const systemSettings = pgTable("system_settings", {
+  key: varchar("key", { length: 100 }).primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSystemSettingSchema = createInsertSchema(systemSettings);
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;

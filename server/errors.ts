@@ -14,6 +14,7 @@ export const ErrorMessages = {
   SHIFT_NOT_OPEN: "الوردية غير مفتوحة",
   UNAUTHORIZED: "غير مصرح",
   EXPIRED_BATCH: "لا يمكن بيع دفعة منتهية الصلاحية",
+  VERSION_CONFLICT: "تم تعديل الفاتورة من مستخدم آخر – يرجى إعادة تحميل الصفحة",
 } as const;
 
 export function apiError(

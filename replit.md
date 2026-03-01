@@ -36,8 +36,10 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **API**: RESTful JSON API (`/api/*`).
 - **ORM**: Drizzle ORM with PostgreSQL dialect, Drizzle Kit for schema management.
 - **Validation**: Zod with drizzle-zod.
-- **Concurrency Safety**: `FOR UPDATE` row locks for critical inventory operations.
-- **Idempotency**: Conversion processes are idempotent.
+- **Concurrency Safety**: `FOR UPDATE` row locks for critical inventory and invoice operations. Patient invoice mutations use optimistic concurrency via `version` column (SELECT FOR UPDATE → validate version → increment → reject stale). 409 VERSION_CONFLICT on mismatch.
+- **Idempotency**: Conversion processes are idempotent. Patient invoice lines have `sourceType`/`sourceId` with unique partial index (`WHERE is_void=false`) for idempotent line insertion.
+- **Server-Side Totals**: Invoice totals (`totalAmount`, `discountAmount`, `netAmount`, `paidAmount`) are always recomputed server-side inside the transaction using `computeInvoiceTotals()` with HALF_UP decimal rounding via `roundMoney()`. Frontend displays server totals only.
+- **System Settings Cache**: `server/settings-cache.ts` loads `system_settings` table into memory on startup. Access via `getSetting(key)`, refresh via `refreshSettings()`. No DB read per request.
 - **Error Handling**: Specific HTTP status codes (400 for validation, 403 for closed fiscal period/RBAC, 409 for conflicts). Centralized Arabic error messages in `server/errors.ts` with `ErrorMessages` constants and `apiError()` helper. Frontend `queryClient.ts` extracts backend JSON messages for clean Arabic toasts.
 - **Printing Safety**: Cashier receipts and refund receipts have print tracking fields (`printedAt`, `printCount`, `lastPrintedBy`, `reprintReason`). Double-print prevention: reprint requires a reason. API: `POST /api/cashier/receipts/:id/print`, `POST /api/cashier/refund-receipts/:id/print`, `GET /api/cashier/receipts/:id`, `GET /api/cashier/refund-receipts/:id`.
 - **Cancelled Documents Reporting**: All list endpoints exclude cancelled documents by default. Add `?includeCancelled=true` query param to include them. Applies to transfers, receivings, purchase invoices, sales invoices, patient invoices.

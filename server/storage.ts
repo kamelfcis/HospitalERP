@@ -359,7 +359,7 @@ export interface IStorage {
   getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}>;
   getPatientInvoice(id: string): Promise<PatientInvoiceWithDetails | undefined>;
   createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
-  updatePatientInvoice(id: string, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
+  updatePatientInvoice(id: string, header: any, lines: any[], payments: any[], expectedVersion?: number): Promise<PatientInvoiceHeader>;
   finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader>;
   deletePatientInvoice(id: string, reason?: string): Promise<boolean>;
   distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]>;
@@ -461,10 +461,32 @@ function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: 
   return enteredPrice;
 }
 
-import { roundMoney, roundQty } from "./finance-helpers";
+import { roundMoney, roundQty, parseMoney } from "./finance-helpers";
 export { roundMoney, roundQty };
 
 export class DatabaseStorage implements IStorage {
+
+  private computeInvoiceTotals(lines: any[], payments: any[]): { totalAmount: string; discountAmount: string; netAmount: string; paidAmount: string } {
+    let totalAmount = 0;
+    let discountAmount = 0;
+    for (const line of lines) {
+      const qty = parseMoney(line.quantity);
+      const unitPrice = parseMoney(line.unitPrice);
+      const lineTotal = qty * unitPrice;
+      const lineDiscount = parseMoney(line.discountAmount);
+      totalAmount += lineTotal;
+      discountAmount += lineDiscount;
+    }
+    const netAmount = totalAmount - discountAmount;
+    const paidAmount = payments.reduce((sum: number, p: any) => sum + parseMoney(p.amount), 0);
+    return {
+      totalAmount: roundMoney(totalAmount),
+      discountAmount: roundMoney(discountAmount),
+      netAmount: roundMoney(netAmount),
+      paidAmount: roundMoney(paidAmount),
+    };
+  }
+
   // Users
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
@@ -5080,7 +5102,7 @@ export class DatabaseStorage implements IStorage {
 
   async createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader> {
     return await db.transaction(async (tx) => {
-      const [created] = await tx.insert(patientInvoiceHeaders).values(header).returning();
+      const [created] = await tx.insert(patientInvoiceHeaders).values({ ...header, version: 1 }).returning();
 
       if (lines.length > 0) {
         await tx.insert(patientInvoiceLines).values(
@@ -5094,21 +5116,26 @@ export class DatabaseStorage implements IStorage {
         );
       }
 
-      const totalPaid = payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || "0"), 0);
-      await tx.update(patientInvoiceHeaders).set({ paidAmount: String(totalPaid) }).where(eq(patientInvoiceHeaders.id, created.id));
+      const totals = this.computeInvoiceTotals(lines, payments);
+      await tx.update(patientInvoiceHeaders).set(totals).where(eq(patientInvoiceHeaders.id, created.id));
 
       const [result] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, created.id));
       return result;
     });
   }
 
-  async updatePatientInvoice(id: string, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader> {
+  async updatePatientInvoice(id: string, header: any, lines: any[], payments: any[], expectedVersion?: number): Promise<PatientInvoiceHeader> {
     return await db.transaction(async (tx) => {
-      const [existing] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
+      const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
+      const existing = lockResult.rows?.[0] as any;
       if (!existing) throw new Error("فاتورة المريض غير موجودة");
       if (existing.status !== "draft") throw new Error("لا يمكن تعديل فاتورة نهائية");
 
-      await tx.update(patientInvoiceHeaders).set({ ...header, updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, id));
+      if (expectedVersion != null && existing.version !== expectedVersion) {
+        throw new Error("تم تعديل الفاتورة من مستخدم آخر – يرجى إعادة تحميل الصفحة");
+      }
+
+      const newVersion = (existing.version || 1) + 1;
 
       await tx.delete(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, id));
       if (lines.length > 0) {
@@ -5124,8 +5151,13 @@ export class DatabaseStorage implements IStorage {
         );
       }
 
-      const totalPaid = payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || "0"), 0);
-      await tx.update(patientInvoiceHeaders).set({ paidAmount: String(totalPaid) }).where(eq(patientInvoiceHeaders.id, id));
+      const totals = this.computeInvoiceTotals(lines, payments);
+      await tx.update(patientInvoiceHeaders).set({
+        ...header,
+        ...totals,
+        version: newVersion,
+        updatedAt: new Date(),
+      }).where(eq(patientInvoiceHeaders.id, id));
 
       const [result] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
       return result;
@@ -5184,14 +5216,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deletePatientInvoice(id: string, reason?: string): Promise<boolean> {
-    const [invoice] = await db.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
-    if (!invoice) throw new Error("فاتورة المريض غير موجودة");
-    if (invoice.status !== "draft") throw new Error("لا يمكن إلغاء فاتورة نهائية");
-    await db.update(patientInvoiceHeaders).set({
-      status: "cancelled" as any,
-      notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
-    }).where(eq(patientInvoiceHeaders.id, id));
-    return true;
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
+      const invoice = lockResult.rows?.[0] as any;
+      if (!invoice) throw new Error("فاتورة المريض غير موجودة");
+      if (invoice.status !== "draft") throw new Error("لا يمكن إلغاء فاتورة نهائية");
+      await tx.update(patientInvoiceHeaders).set({
+        status: "cancelled" as any,
+        version: (invoice.version || 1) + 1,
+        notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
+      }).where(eq(patientInvoiceHeaders.id, id));
+      return true;
+    });
   }
 
   async distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]> {

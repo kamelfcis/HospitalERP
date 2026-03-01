@@ -3200,19 +3200,19 @@ export async function registerRoutes(
 
   app.put("/api/patient-invoices/:id", async (req, res) => {
     try {
-      const { header, lines, payments } = req.body;
+      const { header, lines, payments, expectedVersion } = req.body;
 
       const headerParsed = insertPatientInvoiceHeaderSchema.partial().parse(header);
       const linesParsed = (lines || []).map((l: any) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: any) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
 
-      const result = await storage.updatePatientInvoice(req.params.id, headerParsed, linesParsed, paymentsParsed);
+      const result = await storage.updatePatientInvoice(req.params.id, headerParsed, linesParsed, paymentsParsed, expectedVersion != null ? Number(expectedVersion) : undefined);
       res.json(result);
     } catch (error: any) {
       if (error.name === "ZodError") {
         return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
       }
-      if (error.message?.includes("نهائية")) return res.status(409).json({ message: error.message });
+      if (error.message?.includes("نهائية") || error.message?.includes("تم تعديل الفاتورة")) return res.status(409).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
   });
