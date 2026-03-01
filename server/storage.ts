@@ -155,6 +155,10 @@ import {
   type Bed,
   doctorTransfers,
   type DoctorTransfer,
+  doctorSettlements,
+  doctorSettlementAllocations,
+  type DoctorSettlement,
+  type DoctorSettlementAllocation,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -462,6 +466,11 @@ export interface IStorage {
   // Doctor Payable Transfers
   getDoctorTransfers(invoiceId: string): Promise<DoctorTransfer[]>;
   transferToDoctorPayable(params: { invoiceId: string; doctorName: string; amount: string; clientRequestId: string; notes?: string }): Promise<DoctorTransfer>;
+
+  // Doctor Settlements
+  getDoctorSettlements(params?: { doctorName?: string }): Promise<(DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]>;
+  getDoctorOutstandingTransfers(doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string })[]>;
+  createDoctorSettlement(params: { doctorName: string; paymentDate: string; amount: string; paymentMethod: string; settlementUuid: string; notes?: string; allocations?: { transferId: string; amount: string }[] }): Promise<DoctorSettlement & { allocations: DoctorSettlementAllocation[] }>;
 
   // Account Mappings
   getAccountMappings(transactionType?: string): Promise<AccountMapping[]>;
@@ -7142,6 +7151,162 @@ export class DatabaseStorage implements IStorage {
 
       return transfer;
     });
+  }
+
+  // Doctor Settlements
+  async getDoctorSettlements(params?: { doctorName?: string }): Promise<(DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]> {
+    const rows = params?.doctorName
+      ? await db.select().from(doctorSettlements)
+          .where(eq(doctorSettlements.doctorName, params.doctorName))
+          .orderBy(desc(doctorSettlements.createdAt))
+      : await db.select().from(doctorSettlements).orderBy(desc(doctorSettlements.createdAt));
+
+    const results: (DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[] = [];
+    for (const row of rows) {
+      const allocs = await db.select().from(doctorSettlementAllocations)
+        .where(eq(doctorSettlementAllocations.settlementId, row.id))
+        .orderBy(asc(doctorSettlementAllocations.createdAt));
+      results.push({ ...row, allocations: allocs });
+    }
+    return results;
+  }
+
+  async getDoctorOutstandingTransfers(doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string })[]> {
+    const res = await db.execute(sql`
+      SELECT
+        dt.*,
+        COALESCE(SUM(dsa.amount), 0)::text AS settled,
+        (dt.amount - COALESCE(SUM(dsa.amount), 0))::text AS remaining
+      FROM doctor_transfers dt
+      LEFT JOIN doctor_settlement_allocations dsa ON dsa.transfer_id = dt.id
+      WHERE dt.doctor_name = ${doctorName}
+      GROUP BY dt.id
+      HAVING (dt.amount - COALESCE(SUM(dsa.amount), 0)) > 0.001
+      ORDER BY dt.transferred_at ASC
+    `);
+    return res.rows as any[];
+  }
+
+  async createDoctorSettlement(params: {
+    doctorName: string;
+    paymentDate: string;
+    amount: string;
+    paymentMethod: string;
+    settlementUuid: string;
+    notes?: string;
+    allocations?: { transferId: string; amount: string }[];
+  }): Promise<DoctorSettlement & { allocations: DoctorSettlementAllocation[] }> {
+
+    let settlementId: string | null = null;
+    let glSourceId: string | null = null;
+
+    await db.transaction(async (tx) => {
+      // Idempotency check
+      const existingRes = await tx.execute(sql`SELECT id FROM doctor_settlements WHERE settlement_uuid = ${params.settlementUuid}`);
+      if ((existingRes.rows as any[]).length > 0) {
+        settlementId = (existingRes.rows[0] as any).id;
+        return;
+      }
+
+      const paymentTotal = parseMoney(params.amount);
+      if (paymentTotal <= 0) throw Object.assign(new Error("المبلغ يجب أن يكون أكبر من الصفر"), { statusCode: 400 });
+
+      // Resolve allocations: user-provided OR FIFO
+      let resolvedAllocations: { transferId: string; amount: number }[];
+
+      if (params.allocations && params.allocations.length > 0) {
+        resolvedAllocations = params.allocations.map(a => ({ transferId: a.transferId, amount: parseMoney(a.amount) }));
+      } else {
+        // FIFO from outstanding transfers
+        const outstanding = await tx.execute(sql`
+          SELECT dt.id, dt.amount - COALESCE(SUM(dsa.amount), 0) AS remaining
+          FROM doctor_transfers dt
+          LEFT JOIN doctor_settlement_allocations dsa ON dsa.transfer_id = dt.id
+          WHERE dt.doctor_name = ${params.doctorName}
+          GROUP BY dt.id, dt.amount
+          HAVING dt.amount - COALESCE(SUM(dsa.amount), 0) > 0.001
+          ORDER BY dt.transferred_at ASC
+        `);
+        resolvedAllocations = [];
+        let leftover = paymentTotal;
+        for (const row of outstanding.rows as any[]) {
+          if (leftover <= 0.001) break;
+          const rem = parseMoney(String(row.remaining));
+          const alloc = Math.min(rem, leftover);
+          resolvedAllocations.push({ transferId: row.id, amount: alloc });
+          leftover = roundMoney(leftover - alloc);
+        }
+        if (leftover > 0.001) throw Object.assign(new Error(`مبلغ التسوية (${paymentTotal.toFixed(2)}) يتجاوز المستحقات المتبقية`), { statusCode: 400 });
+      }
+
+      // Enforce sum == payment amount exactly (last absorbs delta)
+      const sumAlloc = resolvedAllocations.reduce((s, a) => s + a.amount, 0);
+      const delta = roundMoney(paymentTotal - sumAlloc);
+      if (Math.abs(delta) > 0.1) throw Object.assign(new Error("مجموع التخصيصات لا يساوي مبلغ التسوية"), { statusCode: 400 });
+      if (resolvedAllocations.length > 0 && Math.abs(delta) > 0) {
+        resolvedAllocations[resolvedAllocations.length - 1].amount = roundMoney(resolvedAllocations[resolvedAllocations.length - 1].amount + delta);
+      }
+
+      // Insert settlement
+      const [settlement] = await tx.insert(doctorSettlements).values({
+        doctorName: params.doctorName,
+        paymentDate: params.paymentDate,
+        amount: params.amount,
+        paymentMethod: params.paymentMethod,
+        settlementUuid: params.settlementUuid,
+        notes: params.notes ?? null,
+      }).returning();
+
+      settlementId = settlement.id;
+      glSourceId = settlement.id;
+
+      // Insert allocations
+      for (const alloc of resolvedAllocations) {
+        await tx.insert(doctorSettlementAllocations).values({
+          settlementId: settlement.id,
+          transferId: alloc.transferId,
+          amount: roundMoney(alloc.amount).toFixed(2),
+        });
+      }
+
+      // Audit
+      await tx.insert(auditLog).values({
+        tableName: "doctor_settlements",
+        recordId: settlement.id,
+        action: "create",
+        newValues: JSON.stringify({ doctorName: params.doctorName, amount: params.amount, paymentMethod: params.paymentMethod, allocationCount: resolvedAllocations.length }),
+      });
+    });
+
+    // GL posting AFTER commit (idempotent via generateJournalEntry)
+    if (glSourceId) {
+      try {
+        await this.generateJournalEntry({
+          sourceType: "doctor_payable_settlement",
+          sourceDocumentId: glSourceId,
+          reference: `SETTLE-${glSourceId.slice(0, 8).toUpperCase()}`,
+          description: `تسوية مستحقات الطبيب: ${params.doctorName}`,
+          entryDate: params.paymentDate,
+          lines: [{ lineType: "doctor_payable_settlement", amount: params.amount }],
+        });
+        if (glSourceId) {
+          await db.update(doctorSettlements)
+            .set({ glPosted: true })
+            .where(eq(doctorSettlements.id, glSourceId));
+        }
+      } catch (e) {
+        console.log(`[DOCTOR_SETTLEMENT] GL skipped for ${glSourceId}: ${(e as Error).message}`);
+      }
+    }
+
+    console.log(`[DOCTOR_SETTLEMENT] settlement=${settlementId} doctor=${params.doctorName} amount=${params.amount}`);
+
+    // Return full record
+    const [final] = await db.select().from(doctorSettlements).where(eq(doctorSettlements.id, settlementId!));
+    const allocs = await db.select().from(doctorSettlementAllocations)
+      .where(eq(doctorSettlementAllocations.settlementId, settlementId!))
+      .orderBy(asc(doctorSettlementAllocations.createdAt));
+    return { ...final, allocations: allocs };
   }
 
   // Account Mappings

@@ -1373,6 +1373,7 @@ export const transactionTypeLabels: Record<string, string> = {
   cashier_collection: "تحصيل كاشير",
   cashier_refund: "مرتجع كاشير",
   warehouse_transfer: "تحويلات مخزنية",
+  doctor_payable_settlement: "تسوية مستحقات الطبيب",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
@@ -1505,6 +1506,31 @@ export const doctorTransfers = pgTable("doctor_transfers", {
 }));
 
 export type DoctorTransfer = typeof doctorTransfers.$inferSelect;
+
+// ==================== Doctor Settlements ====================
+
+export const doctorSettlements = pgTable("doctor_settlements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  doctorName: text("doctor_name").notNull(),
+  paymentDate: text("payment_date").notNull(),
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  paymentMethod: text("payment_method").notNull().default("cash"),
+  settlementUuid: varchar("settlement_uuid", { length: 100 }).notNull().unique(),
+  glPosted: boolean("gl_posted").notNull().default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const doctorSettlementAllocations = pgTable("doctor_settlement_allocations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  settlementId: varchar("settlement_id").notNull().references(() => doctorSettlements.id),
+  transferId: varchar("transfer_id").notNull().references(() => doctorTransfers.id),
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type DoctorSettlement = typeof doctorSettlements.$inferSelect;
+export type DoctorSettlementAllocation = typeof doctorSettlementAllocations.$inferSelect;
 
 // كلمات سر الخزن
 export const drawerPasswords = pgTable("drawer_passwords", {

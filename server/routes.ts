@@ -3391,6 +3391,55 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Doctor Settlements ====================
+
+  app.get("/api/doctor-settlements", requireAuth, async (req, res) => {
+    try {
+      const { doctorName } = req.query;
+      const data = await storage.getDoctorSettlements(doctorName ? { doctorName: String(doctorName) } : undefined);
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/doctor-settlements/outstanding", requireAuth, async (req, res) => {
+    try {
+      const { doctorName } = req.query;
+      if (!doctorName) return res.status(400).json({ message: "doctorName مطلوب" });
+      const data = await storage.getDoctorOutstandingTransfers(String(doctorName));
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/doctor-settlements", requireAuth, async (req, res) => {
+    const user = (req.session as any)?.user;
+    if (!user || !["owner", "admin", "accounts_manager"].includes(user.role)) {
+      return res.status(403).json({ message: "غير مصرح - هذه العملية للمدير المالي أو المسؤول فقط" });
+    }
+    try {
+      const { doctorName, paymentDate, amount, paymentMethod, settlementUuid, notes, allocations } = req.body;
+      if (!doctorName || !paymentDate || !amount || !settlementUuid) {
+        return res.status(400).json({ message: "doctorName وpaymentDate وamount وsettlementUuid مطلوبة" });
+      }
+      const settlement = await storage.createDoctorSettlement({
+        doctorName,
+        paymentDate,
+        amount: String(amount),
+        paymentMethod: paymentMethod || "cash",
+        settlementUuid,
+        notes,
+        allocations,
+      });
+      res.status(201).json(settlement);
+    } catch (error: any) {
+      const code = error.statusCode ?? 500;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
   app.post("/api/patients", async (req, res) => {
     try {
       const p = await storage.createPatient(req.body);
