@@ -1489,6 +1489,23 @@ export type Floor = typeof floors.$inferSelect;
 export type Room = typeof rooms.$inferSelect;
 export type Bed = typeof beds.$inferSelect;
 
+// ==================== Doctor Payable Transfers ====================
+
+export const doctorTransfers = pgTable("doctor_transfers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => patientInvoiceHeaders.id),
+  doctorName: text("doctor_name").notNull(),
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  clientRequestId: varchar("client_request_id", { length: 100 }).notNull().unique(),
+  transferredAt: timestamp("transferred_at").notNull().defaultNow(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  invoiceIdx: index("idx_dt_invoice_fk").on(table.invoiceId),
+}));
+
+export type DoctorTransfer = typeof doctorTransfers.$inferSelect;
+
 // كلمات سر الخزن
 export const drawerPasswords = pgTable("drawer_passwords", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

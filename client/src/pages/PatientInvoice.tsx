@@ -13,11 +13,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loader2, Eye, X, FileText, BarChart3, Users, BedDouble, Layers, LogOut, Printer } from "lucide-react";
+import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loader2, Eye, X, FileText, BarChart3, Users, BedDouble, Layers, LogOut, Printer, Stethoscope, ArrowLeftRight } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber, formatCurrency, formatDateShort } from "@/lib/formatters";
-import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item, Warehouse, Patient, Doctor, Admission } from "@shared/schema";
+import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item, Warehouse, Patient, Doctor, Admission, DoctorTransfer } from "@shared/schema";
 import { patientInvoiceStatusLabels, patientTypeLabels, lineTypeLabels, paymentMethodLabels } from "@shared/schema";
 
 function useDebounce(value: string, delay: number) {
@@ -289,6 +290,13 @@ export default function PatientInvoice() {
   const addingItemRef = useRef<Set<string>>(new Set());
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const [dtOpen, setDtOpen] = useState(false);
+  const [dtDoctorName, setDtDoctorName] = useState("");
+  const [dtAmount, setDtAmount] = useState("");
+  const [dtNotes, setDtNotes] = useState("");
+  const [dtConfirmOpen, setDtConfirmOpen] = useState(false);
+  const [dtClientRequestId, setDtClientRequestId] = useState("");
 
   const [admSelectedAdmission, setAdmSelectedAdmission] = useState<Admission | null>(null);
   const [admIsCreateOpen, setAdmIsCreateOpen] = useState(false);
@@ -733,6 +741,49 @@ export default function PatientInvoice() {
       remaining: +remaining.toFixed(2),
     };
   }, [lines, payments]);
+
+  const { data: dtTransfers = [], refetch: refetchTransfers } = useQuery<DoctorTransfer[]>({
+    queryKey: ["/api/patient-invoices", invoiceId, "transfers"],
+    enabled: !!invoiceId && status === "finalized",
+    queryFn: () => fetch(`/api/patient-invoices/${invoiceId}/transfers`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const dtAlreadyTransferred = dtTransfers.reduce((s, t) => s + parseFloat(t.amount), 0);
+  const dtRemaining = Math.max(0, totals.netAmount - dtAlreadyTransferred);
+
+  const dtMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/patient-invoices/${invoiceId}/transfer-to-doctor`, {
+        doctorName: dtDoctorName.trim(),
+        amount: parseFloat(dtAmount),
+        clientRequestId: dtClientRequestId,
+        notes: dtNotes.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "تم التحويل", description: "تم تحويل المستحقات للطبيب بنجاح" });
+      setDtConfirmOpen(false);
+      setDtOpen(false);
+      setDtDoctorName("");
+      setDtAmount("");
+      setDtNotes("");
+      setDtClientRequestId("");
+      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", invoiceId, "transfers"] });
+    },
+    onError: (error: any) => {
+      toast({ variant: "destructive", title: "خطأ في التحويل", description: error.message });
+    },
+  });
+
+  function openDtConfirm() {
+    if (!dtDoctorName.trim()) { toast({ variant: "destructive", title: "اسم الطبيب مطلوب" }); return; }
+    const amt = parseFloat(dtAmount);
+    if (!dtAmount || isNaN(amt) || amt <= 0) { toast({ variant: "destructive", title: "أدخل مبلغاً صحيحاً" }); return; }
+    if (amt > dtRemaining + 0.001) { toast({ variant: "destructive", title: `المبلغ يتجاوز المتبقي (${dtRemaining.toFixed(2)})` }); return; }
+    const newId = genId();
+    setDtClientRequestId(newId);
+    setDtConfirmOpen(true);
+  }
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -2499,6 +2550,101 @@ export default function PatientInvoice() {
                 </div>
               </div>
             </div>
+
+            {status === "finalized" && invoiceId && (
+              <div className="border rounded-md p-2 space-y-2" data-testid="section-doctor-transfer">
+                <div className="flex flex-row-reverse items-center gap-2">
+                  <Stethoscope className="h-4 w-4 text-blue-600" />
+                  <h3 className="text-sm font-semibold">تحويل مستحقات الطبيب</h3>
+                  <div className="flex-1" />
+                  {dtTransfers.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      محوّل: {formatCurrency(dtAlreadyTransferred)} | متبقي: {formatCurrency(dtRemaining)}
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                    onClick={() => { setDtOpen(o => !o); if (!dtOpen) setDtAmount(dtRemaining.toFixed(2)); }}
+                    data-testid="button-dt-open"
+                  >
+                    <ArrowLeftRight className="h-3 w-3 ml-1" />
+                    {dtOpen ? "إلغاء" : "تحويل للطبيب"}
+                  </Button>
+                </div>
+
+                {dtTransfers.length > 0 && (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-right">الطبيب</TableHead>
+                        <TableHead className="text-right">المبلغ</TableHead>
+                        <TableHead className="text-right">التاريخ</TableHead>
+                        <TableHead className="text-right">ملاحظات</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {dtTransfers.map(t => (
+                        <TableRow key={t.id} data-testid={`row-dt-${t.id}`}>
+                          <TableCell className="text-xs">{t.doctorName}</TableCell>
+                          <TableCell className="text-xs font-medium">{formatCurrency(parseFloat(t.amount))}</TableCell>
+                          <TableCell className="text-xs">{formatDateShort(t.transferredAt as any)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{t.notes || "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+
+                {dtOpen && (
+                  <div className="flex flex-row-reverse items-end gap-2 flex-wrap border-t pt-2">
+                    <div className="flex flex-row-reverse items-center gap-1">
+                      <Label className="text-xs whitespace-nowrap">الطبيب *</Label>
+                      <Input
+                        value={dtDoctorName}
+                        onChange={e => setDtDoctorName(e.target.value)}
+                        placeholder="اسم الطبيب"
+                        className="h-7 text-xs w-40"
+                        data-testid="input-dt-doctor"
+                      />
+                    </div>
+                    <div className="flex flex-row-reverse items-center gap-1">
+                      <Label className="text-xs whitespace-nowrap">المبلغ *</Label>
+                      <Input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={dtAmount}
+                        onChange={e => setDtAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="h-7 text-xs w-28"
+                        data-testid="input-dt-amount"
+                      />
+                    </div>
+                    <div className="flex flex-row-reverse items-center gap-1">
+                      <Label className="text-xs whitespace-nowrap">ملاحظات</Label>
+                      <Input
+                        value={dtNotes}
+                        onChange={e => setDtNotes(e.target.value)}
+                        placeholder="اختياري"
+                        className="h-7 text-xs w-40"
+                        data-testid="input-dt-notes"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      className="bg-blue-600 text-white hover:bg-blue-700"
+                      onClick={openDtConfirm}
+                      data-testid="button-dt-confirm-open"
+                    >
+                      <ArrowLeftRight className="h-3 w-3 ml-1" />
+                      تأكيد التحويل
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -3029,6 +3175,50 @@ export default function PatientInvoice() {
           </Dialog>
         </TabsContent>
       </Tabs>
+
+      <Sheet open={dtConfirmOpen} onOpenChange={setDtConfirmOpen}>
+        <SheetContent side="bottom" dir="rtl" className="rounded-t-xl">
+          <SheetHeader>
+            <SheetTitle className="flex flex-row-reverse items-center gap-2">
+              <ArrowLeftRight className="h-4 w-4 text-blue-600" />
+              تأكيد تحويل مستحقات الطبيب
+            </SheetTitle>
+          </SheetHeader>
+          <div className="py-4 space-y-3 text-right">
+            <div className="flex flex-row-reverse gap-2 text-sm">
+              <span className="text-muted-foreground">الطبيب:</span>
+              <strong>{dtDoctorName}</strong>
+            </div>
+            <div className="flex flex-row-reverse gap-2 text-sm">
+              <span className="text-muted-foreground">المبلغ:</span>
+              <strong className="text-blue-700 text-base">{formatCurrency(parseFloat(dtAmount || "0"))}</strong>
+            </div>
+            {dtNotes && (
+              <div className="flex flex-row-reverse gap-2 text-sm">
+                <span className="text-muted-foreground">ملاحظات:</span>
+                <span>{dtNotes}</span>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground border rounded p-2 bg-muted">
+              سيتم تسجيل هذا التحويل كمستحق مالي (مستحقات للطبيب على المستشفى). لا يمكن التراجع عنه بعد التأكيد.
+            </p>
+          </div>
+          <SheetFooter className="flex-row-reverse gap-2 pb-2">
+            <Button
+              onClick={() => dtMutation.mutate()}
+              disabled={dtMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              data-testid="button-dt-submit"
+            >
+              {dtMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
+              تأكيد التحويل
+            </Button>
+            <Button variant="outline" onClick={() => setDtConfirmOpen(false)} data-testid="button-dt-cancel">
+              إلغاء
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={!!confirmDeleteId} onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}>
         <DialogContent>

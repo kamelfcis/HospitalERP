@@ -153,6 +153,8 @@ import {
   type Floor,
   type Room,
   type Bed,
+  doctorTransfers,
+  type DoctorTransfer,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -456,6 +458,10 @@ export interface IStorage {
   transferPatientBed(params: { sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string }): Promise<{ sourceBed: Bed; targetBed: Bed }>;
   dischargeFromBed(bedId: string): Promise<{ bed: Bed }>;
   setBedStatus(bedId: string, status: string): Promise<Bed>;
+
+  // Doctor Payable Transfers
+  getDoctorTransfers(invoiceId: string): Promise<DoctorTransfer[]>;
+  transferToDoctorPayable(params: { invoiceId: string; doctorName: string; amount: string; clientRequestId: string; notes?: string }): Promise<DoctorTransfer>;
 
   // Account Mappings
   getAccountMappings(transactionType?: string): Promise<AccountMapping[]>;
@@ -7087,6 +7093,54 @@ export class DatabaseStorage implements IStorage {
       });
 
       return updated;
+    });
+  }
+
+  // Doctor Payable Transfers
+  async getDoctorTransfers(invoiceId: string): Promise<DoctorTransfer[]> {
+    return db.select().from(doctorTransfers)
+      .where(eq(doctorTransfers.invoiceId, invoiceId))
+      .orderBy(asc(doctorTransfers.createdAt));
+  }
+
+  async transferToDoctorPayable(params: { invoiceId: string; doctorName: string; amount: string; clientRequestId: string; notes?: string }): Promise<DoctorTransfer> {
+    return await db.transaction(async (tx) => {
+      const invRes = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${params.invoiceId} FOR UPDATE`);
+      const inv = invRes.rows[0] as any;
+      if (!inv) throw Object.assign(new Error("الفاتورة غير موجودة"), { statusCode: 404 });
+      if (inv.status !== "finalized") throw Object.assign(new Error("يمكن التحويل فقط للفواتير المعتمدة"), { statusCode: 400 });
+
+      const already = await tx.execute(sql`SELECT COALESCE(SUM(amount), 0) AS total FROM doctor_transfers WHERE invoice_id = ${params.invoiceId}`);
+      const alreadyAmount = parseFloat((already.rows[0] as any)?.total ?? "0");
+      const netAmount = parseFloat(inv.net_amount ?? "0");
+      const requested = parseFloat(params.amount);
+      const remaining = netAmount - alreadyAmount;
+
+      if (requested <= 0) throw Object.assign(new Error("يجب أن يكون المبلغ أكبر من الصفر"), { statusCode: 400 });
+      if (requested > remaining + 0.001) throw Object.assign(new Error(`المبلغ يتجاوز المتبقي القابل للتحويل (${remaining.toFixed(2)})`), { statusCode: 400 });
+
+      const existing = await tx.execute(sql`SELECT id FROM doctor_transfers WHERE client_request_id = ${params.clientRequestId}`);
+      if ((existing.rows as any[]).length > 0) {
+        const [row] = await tx.select().from(doctorTransfers).where(eq(doctorTransfers.clientRequestId, params.clientRequestId));
+        return row;
+      }
+
+      const [transfer] = await tx.insert(doctorTransfers).values({
+        invoiceId: params.invoiceId,
+        doctorName: params.doctorName,
+        amount: params.amount,
+        clientRequestId: params.clientRequestId,
+        notes: params.notes ?? null,
+      }).returning();
+
+      await tx.insert(auditLog).values({
+        tableName: "doctor_transfers",
+        recordId: transfer.id,
+        action: "create",
+        newValues: JSON.stringify({ invoiceId: params.invoiceId, doctorName: params.doctorName, amount: params.amount }),
+      });
+
+      return transfer;
     });
   }
 

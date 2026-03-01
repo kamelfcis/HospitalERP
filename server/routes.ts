@@ -3358,6 +3358,39 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/patient-invoices/:id/transfers", requireAuth, async (req, res) => {
+    try {
+      const transfers = await storage.getDoctorTransfers(req.params.id);
+      res.json(transfers);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/patient-invoices/:id/transfer-to-doctor", requireAuth, async (req, res) => {
+    const user = (req.session as any)?.user;
+    if (!user || !["owner", "admin", "accounts_manager"].includes(user.role)) {
+      return res.status(403).json({ message: "غير مصرح - هذه العملية للمدير المالي أو المسؤول فقط" });
+    }
+    try {
+      const { doctorName, amount, clientRequestId, notes } = req.body;
+      if (!doctorName || !amount || !clientRequestId) {
+        return res.status(400).json({ message: "doctorName وamount وclientRequestId مطلوبة" });
+      }
+      const transfer = await storage.transferToDoctorPayable({
+        invoiceId: req.params.id,
+        doctorName,
+        amount: String(amount),
+        clientRequestId,
+        notes,
+      });
+      res.status(201).json(transfer);
+    } catch (error: any) {
+      const code = error.statusCode ?? 500;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
   app.post("/api/patients", async (req, res) => {
     try {
       const p = await storage.createPatient(req.body);
