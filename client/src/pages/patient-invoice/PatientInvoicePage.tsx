@@ -40,6 +40,11 @@ import type { LineLocal, PaymentLocal } from "./types";
 import { InvoiceTab } from "./tabs/InvoiceTab";
 import { RegistryTab } from "./tabs/RegistryTab";
 import { AdmissionsTab } from "./tabs/AdmissionsTab";
+import { useInvoiceBootstrap } from "./hooks/useInvoiceBootstrap";
+import { useAdmissions } from "./hooks/useAdmissions";
+import { useAdmissionsMutations } from "./hooks/useAdmissionsMutations";
+import { useRegistry } from "./hooks/useRegistry";
+import { useInvoiceMutations } from "./hooks/useInvoiceMutations";
 
 function recalcLine(line: LineLocal): LineLocal {
   const gross = line.quantity * line.unitPrice;
@@ -174,175 +179,42 @@ export default function PatientInvoice() {
   const [dtConfirmOpen, setDtConfirmOpen] = useState(false);
   const [dtClientRequestId, setDtClientRequestId] = useState("");
 
-  const [admSelectedAdmission, setAdmSelectedAdmission] = useState<Admission | null>(null);
-  const [admIsCreateOpen, setAdmIsCreateOpen] = useState(false);
-  const [admSearchQuery, setAdmSearchQuery] = useState("");
-  const [admStatusFilter, setAdmStatusFilter] = useState("all");
-  const debouncedAdmSearch = useDebounce(admSearchQuery, 300);
-  const [admPatientSearch, setAdmPatientSearch] = useState("");
-  const [admPatientResults, setAdmPatientResults] = useState<Patient[]>([]);
-  const [admSearchingPatients, setAdmSearchingPatients] = useState(false);
-  const [admShowPatientDropdown, setAdmShowPatientDropdown] = useState(false);
-  const debouncedAdmPatientSearch = useDebounce(admPatientSearch, 200);
-  const admPatientSearchRef = useRef<HTMLInputElement>(null);
-  const admPatientDropdownRef = useRef<HTMLDivElement>(null);
-  const [admFormData, setAdmFormData] = useState({
-    patientName: "", patientPhone: "", patientId: "",
-    admissionDate: new Date().toISOString().split("T")[0],
-    doctorName: "", notes: "", admissionNumber: "",
-  });
-  const [admPrintDeptId, setAdmPrintDeptId] = useState("all");
-  const admPrintRef = useRef<HTMLDivElement>(null);
 
-  const [regPage, setRegPage] = useState(1);
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const [regDateFrom, setRegDateFrom] = useState(todayStr);
-  const [regDateTo, setRegDateTo] = useState(todayStr);
-  const [regPatientName, setRegPatientName] = useState("");
-  const [regDoctorName, setRegDoctorName] = useState("");
-  const [regStatus, setRegStatus] = useState("all");
-  const regPageSize = 20;
+  const { nextNumber, departments, warehouses, activeAdmissions } = useInvoiceBootstrap();
+
+  const {
+    admSelectedAdmission, setAdmSelectedAdmission,
+    admIsCreateOpen, setAdmIsCreateOpen,
+    admSearchQuery, setAdmSearchQuery,
+    admStatusFilter, setAdmStatusFilter,
+    admPatientSearch, setAdmPatientSearch,
+    admPatientResults, admSearchingPatients,
+    admShowPatientDropdown, setAdmShowPatientDropdown,
+    admPatientSearchRef, admPatientDropdownRef,
+    admFormData, setAdmFormData,
+    admPrintDeptId, setAdmPrintDeptId, admPrintRef,
+    admAllAdmissions, admListLoading,
+    admDetail, admInvoices, admInvoicesLoading,
+    admReportData, admReportLoading,
+    admInvoicesByDepartment, admFilteredPrintInvoices, admTotalAllInvoices,
+    admStatusLabels, admGetStatusBadgeClass,
+    admHandleCloseCreate, admHandleSelectPatient,
+  } = useAdmissions(mainTab);
+
+  const { admCreateMutation, admDischargeMutation, admConsolidateMutation } = useAdmissionsMutations({
+    onCreateSuccess: admHandleCloseCreate,
+    admSelectedAdmission,
+    setAdmSelectedAdmission,
+  });
+
+  const {
+    regPage, setRegPage, regDateFrom, setRegDateFrom,
+    regDateTo, setRegDateTo, regPatientName, setRegPatientName,
+    regDoctorName, setRegDoctorName, regStatus, setRegStatus,
+    regPageSize, regTotalPages, regLoading, registryData,
+  } = useRegistry(mainTab);
 
   const isDraft = status === "draft";
-
-  const { data: nextNumberData } = useQuery<{ nextNumber: string }>({
-    queryKey: ["/api/patient-invoices/next-number"],
-  });
-
-  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
-  const { data: warehouses } = useQuery<any[]>({ queryKey: ["/api/warehouses"] });
-  const { data: activeAdmissions } = useQuery<Admission[]>({
-    queryKey: ["/api/admissions", "active"],
-    queryFn: async () => {
-      const res = await fetch("/api/admissions?status=active", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch admissions");
-      return res.json();
-    },
-  });
-
-  const admQueryParams = useMemo(() => {
-    const params = new URLSearchParams();
-    if (admStatusFilter !== "all") params.set("status", admStatusFilter);
-    if (debouncedAdmSearch.trim()) params.set("search", debouncedAdmSearch.trim());
-    return params.toString();
-  }, [admStatusFilter, debouncedAdmSearch]);
-
-  const { data: admAllAdmissions, isLoading: admListLoading } = useQuery<Admission[]>({
-    queryKey: ["/api/admissions", admQueryParams],
-    queryFn: async () => {
-      const qs = admQueryParams ? `?${admQueryParams}` : "";
-      const res = await fetch(`/api/admissions${qs}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch admissions");
-      return res.json();
-    },
-    enabled: mainTab === "admission",
-  });
-
-  const { data: admDetail } = useQuery<Admission>({
-    queryKey: ["/api/admissions", admSelectedAdmission?.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/admissions/${admSelectedAdmission!.id}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
-    enabled: !!admSelectedAdmission,
-  });
-
-  const { data: admInvoices, isLoading: admInvoicesLoading } = useQuery<any[]>({
-    queryKey: ["/api/admissions", admSelectedAdmission?.id, "invoices"],
-    queryFn: async () => {
-      const res = await fetch(`/api/admissions/${admSelectedAdmission!.id}/invoices`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
-    enabled: !!admSelectedAdmission,
-  });
-
-  const { data: admReportData, isLoading: admReportLoading } = useQuery<any>({
-    queryKey: ["/api/admissions", admSelectedAdmission?.id, "report"],
-    queryFn: async () => {
-      const res = await fetch(`/api/admissions/${admSelectedAdmission!.id}/report`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
-    enabled: !!admSelectedAdmission,
-  });
-
-  const admCreateMutation = useMutation({
-    mutationFn: async (data: any) => apiRequest("POST", "/api/admissions", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admissions"] });
-      toast({ title: "تم إنشاء الإقامة بنجاح" });
-      admHandleCloseCreate();
-    },
-    onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const admDischargeMutation = useMutation({
-    mutationFn: async (id: string) => apiRequest("POST", `/api/admissions/${id}/discharge`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admissions"] });
-      toast({ title: "تم خروج المريض بنجاح" });
-      if (admSelectedAdmission) setAdmSelectedAdmission({ ...admSelectedAdmission, status: "discharged" });
-    },
-    onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const admConsolidateMutation = useMutation({
-    mutationFn: async (id: string) => apiRequest("POST", `/api/admissions/${id}/consolidate`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admissions"] });
-      toast({ title: "تم تجميع الفواتير بنجاح" });
-    },
-    onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
-    },
-  });
-
-  useEffect(() => {
-    if (!debouncedAdmPatientSearch || debouncedAdmPatientSearch.length < 1) {
-      setAdmPatientResults([]);
-      return;
-    }
-    const controller = new AbortController();
-    setAdmSearchingPatients(true);
-    fetch(`/api/patients?search=${encodeURIComponent(debouncedAdmPatientSearch)}`, {
-      signal: controller.signal, credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((data) => { setAdmPatientResults(Array.isArray(data) ? data : []); setAdmSearchingPatients(false); })
-      .catch(() => setAdmSearchingPatients(false));
-    return () => controller.abort();
-  }, [debouncedAdmPatientSearch]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        admPatientDropdownRef.current && !admPatientDropdownRef.current.contains(e.target as Node) &&
-        admPatientSearchRef.current && !admPatientSearchRef.current.contains(e.target as Node)
-      ) setAdmShowPatientDropdown(false);
-    }
-    if (admShowPatientDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [admShowPatientDropdown]);
-
-  const admHandleCloseCreate = () => {
-    setAdmIsCreateOpen(false);
-    setAdmFormData({ patientName: "", patientPhone: "", patientId: "", admissionDate: new Date().toISOString().split("T")[0], doctorName: "", notes: "", admissionNumber: "" });
-    setAdmPatientSearch(""); setAdmPatientResults([]); setAdmShowPatientDropdown(false);
-  };
-
-  const admHandleSelectPatient = (patient: Patient) => {
-    setAdmFormData({ ...admFormData, patientName: patient.fullName, patientPhone: patient.phone || "", patientId: patient.id });
-    setAdmPatientSearch(patient.fullName);
-    setAdmShowPatientDropdown(false); setAdmPatientResults([]);
-  };
 
   const admHandleCreateSubmit = () => {
     if (!admFormData.patientName.trim()) { toast({ title: "خطأ", description: "اسم المريض مطلوب", variant: "destructive" }); return; }
@@ -360,48 +232,11 @@ export default function PatientInvoice() {
     admCreateMutation.mutate(body);
   };
 
-  const admInvoicesByDepartment = useMemo(() => {
-    if (!admReportData?.invoices) return {};
-    const grouped: Record<string, any[]> = {};
-    for (const inv of admReportData.invoices) {
-      const deptName = inv.departmentName || "بدون قسم";
-      if (!grouped[deptName]) grouped[deptName] = [];
-      grouped[deptName].push(inv);
-    }
-    return grouped;
-  }, [admReportData]);
-
-  const admFilteredPrintInvoices = useMemo(() => {
-    if (admPrintDeptId === "all") return admInvoicesByDepartment;
-    const filtered: Record<string, any[]> = {};
-    for (const [dept, invs] of Object.entries(admInvoicesByDepartment)) {
-      const matchingInvs = (invs as any[]).filter((inv: any) => {
-        if (admPrintDeptId === "none") return !inv.departmentId;
-        return inv.departmentId === admPrintDeptId;
-      });
-      if (matchingInvs.length > 0) filtered[dept] = matchingInvs;
-    }
-    return filtered;
-  }, [admInvoicesByDepartment, admPrintDeptId]);
-
-  const admTotalAllInvoices = useMemo(() => {
-    if (!admReportData?.invoices) return 0;
-    return admReportData.invoices.reduce((sum: number, inv: any) => sum + parseFloat(inv.netAmount || inv.totalAmount || "0"), 0);
-  }, [admReportData]);
-
-  const admStatusLabels: Record<string, string> = { active: "نشطة", discharged: "خرج", cancelled: "ملغاة" };
-  const admGetStatusBadgeClass = (s: string) => {
-    if (s === "active") return "bg-green-600 text-white no-default-hover-elevate no-default-active-elevate";
-    if (s === "discharged") return "bg-blue-600 text-white no-default-hover-elevate no-default-active-elevate";
-    if (s === "cancelled") return "bg-red-600 text-white no-default-hover-elevate no-default-active-elevate";
-    return "";
-  };
-
   useEffect(() => {
-    if (nextNumberData?.nextNumber && !invoiceId && !invoiceNumber) {
-      setInvoiceNumber(nextNumberData.nextNumber);
+    if (nextNumber && !invoiceId && !invoiceNumber) {
+      setInvoiceNumber(nextNumber);
     }
-  }, [nextNumberData, invoiceId, invoiceNumber]);
+  }, [nextNumber, invoiceId, invoiceNumber]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -584,24 +419,6 @@ export default function PatientInvoice() {
     }
   }, [showDoctorDropdown]);
 
-  const regQp = useMemo(() => {
-    const qp = new URLSearchParams();
-    if (regStatus !== "all") qp.set("status", regStatus);
-    if (regDateFrom) qp.set("dateFrom", regDateFrom);
-    if (regDateTo) qp.set("dateTo", regDateTo);
-    if (regPatientName) qp.set("patientName", regPatientName);
-    if (regDoctorName) qp.set("doctorName", regDoctorName);
-    qp.set("page", String(regPage));
-    qp.set("pageSize", String(regPageSize));
-    return qp.toString();
-  }, [regStatus, regDateFrom, regDateTo, regPatientName, regDoctorName, regPage]);
-
-  const { data: registryData, isLoading: regLoading } = useQuery<{ data: any[]; total: number }>({
-    queryKey: [`/api/patient-invoices?${regQp}`],
-    enabled: mainTab === "registry",
-  });
-
-  const regTotalPages = Math.ceil((registryData?.total || 0) / regPageSize);
 
   const totals = useMemo(() => {
     const totalAmount = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
@@ -661,111 +478,44 @@ export default function PatientInvoice() {
     setDtConfirmOpen(true);
   }
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const header = {
-        invoiceNumber,
-        invoiceDate,
-        patientName,
-        patientPhone: patientPhone || null,
-        patientType,
-        departmentId: departmentId || null,
-        warehouseId: warehouseId || null,
-        doctorName: doctorName || null,
-        contractName: patientType === "contract" ? contractName : null,
-        notes: notes || null,
-        admissionId: admissionId || null,
-        status: "draft",
-        totalAmount: String(totals.totalAmount),
-        discountAmount: String(totals.discountAmount),
-        netAmount: String(totals.netAmount),
-        paidAmount: String(totals.paidAmount),
-      };
-      const lineData = lines.map((l, i) => ({
-        lineType: l.lineType,
-        serviceId: l.serviceId || null,
-        itemId: l.itemId || null,
-        description: l.description,
-        quantity: String(l.quantity),
-        unitPrice: String(l.unitPrice),
-        discountPercent: String(l.discountPercent),
-        discountAmount: String(l.discountAmount),
-        totalPrice: String(l.totalPrice),
-        unitLevel: l.unitLevel || "minor",
-        doctorName: l.doctorName || null,
-        nurseName: l.nurseName || null,
-        notes: l.notes || null,
-        sortOrder: i,
-        lotId: l.lotId || null,
-        expiryMonth: l.expiryMonth || null,
-        expiryYear: l.expiryYear || null,
-        priceSource: l.priceSource || null,
-      }));
-      const payData = payments.map((p) => ({
-        paymentDate: p.paymentDate,
-        amount: String(p.amount),
-        paymentMethod: p.paymentMethod,
-        referenceNumber: p.referenceNumber || null,
-        notes: p.notes || null,
-      }));
+  const resetForm = useCallback(() => {
+    setInvoiceId(null);
+    setInvoiceNumber(nextNumber || "");
+    setInvoiceDate(new Date().toISOString().split("T")[0]);
+    setPatientName("");
+    setPatientPhone("");
+    setDepartmentId("");
+    setWarehouseId("");
+    setDoctorName("");
+    setPatientType("cash");
+    setContractName("");
+    setNotes("");
+    setAdmissionId("");
+    setStatus("draft");
+    setLines([]);
+    setPayments([]);
+    setSubTab("services");
+  }, [nextNumber]);
 
-      if (invoiceId) {
-        const res = await apiRequest("PUT", `/api/patient-invoices/${invoiceId}`, { header, lines: lineData, payments: payData });
-        return res.json();
-      } else {
-        const res = await apiRequest("POST", "/api/patient-invoices", { header, lines: lineData, payments: payData });
-        return res.json();
-      }
-    },
-    onSuccess: (data) => {
-      setInvoiceId(data.id);
-      setStatus(data.status);
-      toast({ title: "تم الحفظ", description: "تم حفظ فاتورة المريض بنجاح" });
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices/next-number"] });
-    },
-    onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const finalizeMutation = useMutation({
-    mutationFn: async () => {
-      if (!invoiceId) throw new Error("يجب حفظ الفاتورة أولاً");
-      const missingDoctor = lines.filter(l => l.lineType === "service" && l.requiresDoctor && !l.doctorName.trim());
-      const missingNurse = lines.filter(l => l.lineType === "service" && l.requiresNurse && !l.nurseName.trim());
-      if (missingDoctor.length > 0) {
-        throw new Error(`يجب إدخال اسم الطبيب للخدمات: ${missingDoctor.map(l => l.description).join("، ")}`);
-      }
-      if (missingNurse.length > 0) {
-        throw new Error(`يجب إدخال اسم الممرض للخدمات: ${missingNurse.map(l => l.description).join("، ")}`);
-      }
-      const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/finalize`);
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setStatus(data.status || "finalized");
-      toast({ title: "تم الاعتماد", description: "تم اعتماد فاتورة المريض بنجاح" });
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
-    },
-    onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/patient-invoices/${id}`);
-    },
-    onSuccess: () => {
-      toast({ title: "تم الحذف", description: "تم حذف فاتورة المريض" });
-      resetForm();
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices/next-number"] });
-    },
-    onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
-    },
+  const { saveMutation, finalizeMutation, deleteMutation } = useInvoiceMutations({
+    invoiceId,
+    invoiceNumber,
+    invoiceDate,
+    patientName,
+    patientPhone,
+    patientType,
+    departmentId,
+    warehouseId,
+    doctorName,
+    contractName,
+    notes,
+    admissionId,
+    totals,
+    lines,
+    payments,
+    setInvoiceId,
+    setStatus,
+    resetForm,
   });
 
   const openDistributeDialog = useCallback(() => {
@@ -787,25 +537,6 @@ export default function PatientInvoice() {
       return updated.slice(0, count);
     });
   }, []);
-
-  const resetForm = useCallback(() => {
-    setInvoiceId(null);
-    setInvoiceNumber(nextNumberData?.nextNumber || "");
-    setInvoiceDate(new Date().toISOString().split("T")[0]);
-    setPatientName("");
-    setPatientPhone("");
-    setDepartmentId("");
-    setWarehouseId("");
-    setDoctorName("");
-    setPatientType("cash");
-    setContractName("");
-    setNotes("");
-    setAdmissionId("");
-    setStatus("draft");
-    setLines([]);
-    setPayments([]);
-    setSubTab("services");
-  }, [nextNumberData]);
 
   const handleDistribute = useCallback(async () => {
     const emptyNames = distPatients.slice(0, distCount).filter(p => !p.name.trim());
