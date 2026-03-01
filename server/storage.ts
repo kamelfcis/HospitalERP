@@ -360,7 +360,8 @@ export interface IStorage {
   getPatientInvoice(id: string): Promise<PatientInvoiceWithDetails | undefined>;
   createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
   updatePatientInvoice(id: string, header: any, lines: any[], payments: any[], expectedVersion?: number): Promise<PatientInvoiceHeader>;
-  finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader>;
+  finalizePatientInvoice(id: string, expectedVersion?: number): Promise<PatientInvoiceHeader>;
+  buildPatientInvoiceGLLines(header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string }[];
   deletePatientInvoice(id: string, reason?: string): Promise<boolean>;
   distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]>;
   distributePatientInvoiceDirect(data: {
@@ -5164,55 +5165,67 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async finalizePatientInvoice(id: string): Promise<PatientInvoiceHeader> {
-    return await db.transaction(async (tx) => {
+  async finalizePatientInvoice(id: string, expectedVersion?: number): Promise<PatientInvoiceHeader> {
+    const result = await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
       const locked = lockResult.rows?.[0] as any;
       if (!locked) throw new Error("فاتورة المريض غير موجودة");
       if (locked.status !== "draft") throw new Error("الفاتورة ليست مسودة");
 
+      if (expectedVersion != null && locked.version !== expectedVersion) {
+        throw new Error("تم تعديل الفاتورة من مستخدم آخر – يرجى إعادة تحميل الصفحة");
+      }
+
+      const dbLines = await tx.select().from(patientInvoiceLines)
+        .where(and(eq(patientInvoiceLines.headerId, id), eq(patientInvoiceLines.isVoid, false)));
+      const dbPayments = await tx.select().from(patientInvoicePayments)
+        .where(eq(patientInvoicePayments.headerId, id));
+
+      const recomputedTotals = this.computeInvoiceTotals(dbLines, dbPayments);
+      const newVersion = (locked.version || 1) + 1;
+
       const [updated] = await tx.update(patientInvoiceHeaders).set({
+        ...recomputedTotals,
         status: "finalized",
         finalizedAt: new Date(),
         updatedAt: new Date(),
-      }).where(and(eq(patientInvoiceHeaders.id, id), eq(patientInvoiceHeaders.status, 'draft'))).returning();
+        version: newVersion,
+      }).where(and(
+        eq(patientInvoiceHeaders.id, id),
+        eq(patientInvoiceHeaders.status, 'draft')
+      )).returning();
 
       if (!updated) throw new Error("الفاتورة ليست مسودة");
-
-      const invoiceLines = await tx.select().from(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, id));
-      const lineTypeMap: Record<string, string> = {
-        service: "revenue_services",
-        drug: "revenue_drugs",
-        consumable: "revenue_consumables",
-        equipment: "revenue_equipment",
-      };
-      const totals: Record<string, number> = {};
-      for (const line of invoiceLines) {
-        const mappingType = lineTypeMap[line.lineType] || "revenue_general";
-        totals[mappingType] = (totals[mappingType] || 0) + parseFloat(line.totalPrice || "0");
-      }
-
-      const journalLines: { lineType: string; amount: string }[] = [];
-      const totalNet = parseFloat(updated.netAmount || "0");
-      if (totalNet > 0) {
-        const paymentType = updated.patientType === "cash" ? "cash" : "receivables";
-        journalLines.push({ lineType: paymentType, amount: roundMoney(totalNet) });
-      }
-      for (const [lt, amt] of Object.entries(totals)) {
-        if (amt > 0) journalLines.push({ lineType: lt, amount: roundMoney(amt) });
-      }
-
-      this.generateJournalEntry({
-        sourceType: "patient_invoice",
-        sourceDocumentId: id,
-        reference: `PI-${updated.invoiceNumber}`,
-        description: `قيد فاتورة مريض رقم ${updated.invoiceNumber} - ${updated.patientName}`,
-        entryDate: updated.invoiceDate,
-        lines: journalLines,
-      }).catch(err => console.error("Auto journal for patient invoice failed:", err));
-
       return updated;
     });
+
+    return result;
+  }
+
+  buildPatientInvoiceGLLines(header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string }[] {
+    const lineTypeMap: Record<string, string> = {
+      service: "revenue_services",
+      drug: "revenue_drugs",
+      consumable: "revenue_consumables",
+      equipment: "revenue_equipment",
+    };
+    const totals: Record<string, number> = {};
+    for (const line of lines) {
+      if (line.isVoid) continue;
+      const mappingType = lineTypeMap[line.lineType] || "revenue_general";
+      totals[mappingType] = (totals[mappingType] || 0) + parseMoney(line.totalPrice);
+    }
+
+    const journalLines: { lineType: string; amount: string }[] = [];
+    const totalNet = parseMoney(header.netAmount);
+    if (totalNet > 0) {
+      const paymentType = header.patientType === "cash" ? "cash" : "receivables";
+      journalLines.push({ lineType: paymentType, amount: roundMoney(totalNet) });
+    }
+    for (const [lt, amt] of Object.entries(totals)) {
+      if (amt > 0) journalLines.push({ lineType: lt, amount: roundMoney(amt) });
+    }
+    return journalLines;
   }
 
   async deletePatientInvoice(id: string, reason?: string): Promise<boolean> {
@@ -6343,56 +6356,76 @@ export class DatabaseStorage implements IStorage {
     lines: { lineType: string; amount: string }[];
     periodId?: string;
   }): Promise<JournalEntry | null> {
-    const existingEntries = await db.select().from(journalEntries)
-      .where(and(
-        eq(journalEntries.sourceType, params.sourceType),
-        eq(journalEntries.sourceDocumentId, params.sourceDocumentId)
-      ));
-    
-    if (existingEntries.length > 0) {
-      return existingEntries[0];
-    }
+    return await db.transaction(async (tx) => {
+      // Advisory lock keyed on source to prevent concurrent duplicate creation
+      const lockKey = Math.abs(params.sourceDocumentId.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0));
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
 
-    const mappings = await this.getMappingsForTransaction(params.sourceType);
-    if (mappings.length === 0) return null;
+      // Idempotency: return existing posting if already created
+      const existing = await tx.select().from(journalEntries)
+        .where(and(
+          eq(journalEntries.sourceType, params.sourceType),
+          eq(journalEntries.sourceDocumentId, params.sourceDocumentId)
+        ))
+        .limit(1);
 
-    const mappingMap = new Map<string, AccountMapping>();
-    for (const m of mappings) {
-      mappingMap.set(m.lineType, m);
-    }
+      if (existing.length > 0) {
+        console.log(`[GL] Idempotent: journal entry already exists for ${params.sourceType}/${params.sourceDocumentId}`);
+        return existing[0];
+      }
 
-    const journalLineData: InsertJournalLine[] = [];
-    const entryNumber = await this.getNextEntryNumber();
+      // Resolve account mappings — do NOT hardcode account IDs
+      const mappings = await this.getMappingsForTransaction(params.sourceType);
+      if (mappings.length === 0) {
+        console.log(`[GL] SKIPPED: No account mappings configured for transaction type "${params.sourceType}". Configure mappings at /account-mappings to enable automatic GL posting.`);
+        return null;
+      }
 
-    for (const line of params.lines) {
-      const mapping = mappingMap.get(line.lineType);
-      if (!mapping || !mapping.debitAccountId || !mapping.creditAccountId) continue;
-      
-      const amount = parseFloat(line.amount);
-      if (amount <= 0) continue;
+      const mappingMap = new Map<string, AccountMapping>();
+      for (const m of mappings) {
+        mappingMap.set(m.lineType, m);
+      }
 
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: 0,
-        accountId: mapping.debitAccountId,
-        debit: String(amount),
-        credit: "0",
-        description: mapping.description || params.description,
-      });
+      const journalLineData: InsertJournalLine[] = [];
+      const unmappedTypes: string[] = [];
 
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: 0,
-        accountId: mapping.creditAccountId,
-        debit: "0",
-        credit: String(amount),
-        description: mapping.description || params.description,
-      });
-    }
+      for (const line of params.lines) {
+        const mapping = mappingMap.get(line.lineType);
+        if (!mapping || !mapping.debitAccountId || !mapping.creditAccountId) {
+          unmappedTypes.push(line.lineType);
+          continue;
+        }
+        const amount = parseMoney(line.amount);
+        if (amount <= 0) continue;
 
-    if (journalLineData.length === 0) return null;
+        journalLineData.push({
+          journalEntryId: "",
+          lineNumber: 0,
+          accountId: mapping.debitAccountId,
+          debit: roundMoney(amount),
+          credit: "0.00",
+          description: mapping.description || params.description,
+        });
+        journalLineData.push({
+          journalEntryId: "",
+          lineNumber: 0,
+          accountId: mapping.creditAccountId,
+          debit: "0.00",
+          credit: roundMoney(amount),
+          description: mapping.description || params.description,
+        });
+      }
 
-    return db.transaction(async (tx) => {
+      if (unmappedTypes.length > 0) {
+        console.log(`[GL] WARNING: Unmapped line types for ${params.sourceType}: ${unmappedTypes.join(', ')}. These lines will be skipped. Configure at /account-mappings.`);
+      }
+
+      if (journalLineData.length === 0) {
+        console.log(`[GL] SKIPPED: All lines unmapped for ${params.sourceType}/${params.sourceDocumentId}. No journal entry created.`);
+        return null;
+      }
+
+      // Resolve fiscal period
       let periodId = params.periodId;
       if (!periodId) {
         const [period] = await tx.select().from(fiscalPeriods)
@@ -6405,8 +6438,10 @@ export class DatabaseStorage implements IStorage {
         periodId = period?.id;
       }
 
-      const totalDebit = journalLineData.reduce((s, l) => s + parseFloat(l.debit || "0"), 0);
-      const totalCredit = journalLineData.reduce((s, l) => s + parseFloat(l.credit || "0"), 0);
+      const totalDebit = journalLineData.reduce((s, l) => s + parseMoney(l.debit), 0);
+      const totalCredit = journalLineData.reduce((s, l) => s + parseMoney(l.credit), 0);
+
+      const entryNumber = await this.getNextEntryNumber();
 
       const [entry] = await tx.insert(journalEntries).values({
         entryNumber,
@@ -6417,8 +6452,8 @@ export class DatabaseStorage implements IStorage {
         periodId: periodId || null,
         sourceType: params.sourceType,
         sourceDocumentId: params.sourceDocumentId,
-        totalDebit: String(totalDebit.toFixed(2)),
-        totalCredit: String(totalCredit.toFixed(2)),
+        totalDebit: roundMoney(totalDebit),
+        totalCredit: roundMoney(totalCredit),
       }).returning();
 
       const linesWithEntryId = journalLineData.map((l, idx) => ({
@@ -6428,6 +6463,7 @@ export class DatabaseStorage implements IStorage {
       }));
 
       await tx.insert(journalLines).values(linesWithEntryId);
+      console.log(`[GL] Created journal entry ${entry.entryNumber} for ${params.sourceType}/${params.sourceDocumentId}`);
       return entry;
     });
   }

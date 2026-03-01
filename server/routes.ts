@@ -3219,18 +3219,50 @@ export async function registerRoutes(
 
   app.post("/api/patient-invoices/:id/finalize", async (req, res) => {
     try {
-      const existing = await storage.getPatientInvoice(req.params.id);
+      const { expectedVersion } = req.body || {};
+      const invoiceId = req.params.id;
+
+      const existing = await storage.getPatientInvoice(invoiceId);
       if (!existing) return res.status(404).json({ message: "فاتورة المريض غير موجودة" });
       if (existing.status !== "draft") return res.status(409).json({ message: "الفاتورة ليست مسودة", code: "ALREADY_FINALIZED" });
 
       await storage.assertPeriodOpen(existing.invoiceDate);
 
-      const result = await storage.finalizePatientInvoice(req.params.id);
-      await storage.createAuditLog({ tableName: "patient_invoice_headers", recordId: req.params.id, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });
+      // Finalize inside transaction — commits before this line returns
+      const result = await storage.finalizePatientInvoice(
+        invoiceId,
+        expectedVersion != null ? Number(expectedVersion) : undefined
+      );
+
+      // All side-effects AFTER commit ─────────────────────────────────────────
+      // 1. Audit log
+      storage.createAuditLog({
+        tableName: "patient_invoice_headers",
+        recordId: invoiceId,
+        action: "finalize",
+        oldValues: JSON.stringify({ status: "draft", version: existing.version }),
+        newValues: JSON.stringify({ status: "finalized", version: result.version }),
+      }).catch(err => console.error("[Audit] patient invoice finalize:", err));
+
+      // 2. GL hook — idempotent, never throws into response
+      const invoiceLines = await storage.getPatientInvoice(invoiceId);
+      if (invoiceLines) {
+        const glLines = storage.buildPatientInvoiceGLLines(result, invoiceLines.lines || []);
+        storage.generateJournalEntry({
+          sourceType: "patient_invoice",
+          sourceDocumentId: invoiceId,
+          reference: `PI-${result.invoiceNumber}`,
+          description: `قيد فاتورة مريض رقم ${result.invoiceNumber} - ${result.patientName}`,
+          entryDate: result.invoiceDate,
+          lines: glLines,
+        }).catch(err => console.error("[GL] patient invoice finalize:", err));
+      }
+      // ────────────────────────────────────────────────────────────────────────
+
       res.json(result);
     } catch (error: any) {
       if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
-      if (error.message?.includes("مسودة")) return res.status(409).json({ message: error.message });
+      if (error.message?.includes("مسودة") || error.message?.includes("تم تعديل الفاتورة")) return res.status(409).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
   });

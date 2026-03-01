@@ -167,6 +167,8 @@ export const journalEntries = pgTable("journal_entries", {
   statusIdx: index("idx_journal_entries_status").on(table.status),
   periodIdx: index("idx_journal_entries_period").on(table.periodId),
   sourceIdx: index("idx_journal_entries_source").on(table.sourceType, table.sourceDocumentId),
+  // Note: unique partial index enforced at DB level:
+  // UNIQUE(source_type, source_document_id) WHERE source_type IS NOT NULL AND source_document_id IS NOT NULL
 }));
 
 // سطور القيود
