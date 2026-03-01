@@ -40,6 +40,7 @@ import DrawerPasswords from "@/pages/DrawerPasswords";
 import UsersManagement from "@/pages/UsersManagement";
 import BedBoard from "@/pages/BedBoard";
 import DoctorSettlements from "@/pages/DoctorSettlements";
+import SystemSettings from "@/pages/SystemSettings";
 import NotFound from "@/pages/not-found";
 
 function RequirePermission({ permission, children }: { permission: string; children: React.ReactNode }) {
@@ -95,6 +96,7 @@ function Router() {
         <Route path="/doctor-settlements">{() => <G p="patient_invoices.view"><DoctorSettlements /></G>}</Route>
         <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
         <Route path="/cashier-collection">{() => <G p="cashier.view"><CashierCollection /></G>}</Route>
+        <Route path="/system-settings">{() => <G p="settings.account_mappings"><SystemSettings /></G>}</Route>
         <Route path="/account-mappings">{() => <G p="settings.account_mappings"><AccountMappings /></G>}</Route>
         <Route path="/drawer-passwords">{() => <G p="settings.drawer_passwords"><DrawerPasswords /></G>}</Route>
         <Route path="/users">{() => <G p="users.view"><UsersManagement /></G>}</Route>

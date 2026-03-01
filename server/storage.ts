@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { getSetting } from "./settings-cache";
 import { eq, desc, and, gte, lte, sql, or, like, ilike, asc, isNull, isNotNull } from "drizzle-orm";
 import {
   users,
@@ -6713,25 +6714,48 @@ export class DatabaseStorage implements IStorage {
             sql`SELECT id FROM patient_invoice_headers WHERE id = ${seg.invoice_id} FOR UPDATE`
           );
 
-          // Compute daily buckets: from segment start date to today (inclusive)
-          const startDate = new Date(seg.started_at);
-          startDate.setHours(0, 0, 0, 0);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
+          // Compute daily buckets based on billing mode
+          const billingMode = getSetting("stay_billing_mode", "hours_24");
+          const startedAt = new Date(seg.started_at);
+          const now = new Date();
 
-          const buckets: string[] = [];
-          const cur = new Date(startDate);
-          while (cur <= today) {
-            buckets.push(cur.toISOString().split("T")[0]);
-            cur.setDate(cur.getDate() + 1);
+          type BucketEntry = { key: string; desc: string };
+          const bucketEntries: BucketEntry[] = [];
+
+          if (billingMode === "hotel_noon") {
+            // Hotel noon: day boundaries at 12:00 UTC
+            // Period 1: from startedAt to first noon checkpoint (charge immediately)
+            const firstNoon = new Date(startedAt);
+            firstNoon.setUTCHours(12, 0, 0, 0);
+            if (startedAt.getTime() >= firstNoon.getTime()) {
+              firstNoon.setUTCDate(firstNoon.getUTCDate() + 1);
+            }
+            const startDateStr = startedAt.toISOString().split("T")[0];
+            bucketEntries.push({ key: `noon:${startDateStr}`, desc: `${seg.service_name_ar} – ${startDateStr}` });
+
+            // Each noon checkpoint that has passed opens a new period
+            const cur = new Date(firstNoon);
+            while (cur.getTime() <= now.getTime()) {
+              const dateStr = cur.toISOString().split("T")[0];
+              bucketEntries.push({ key: `noon:${dateStr}`, desc: `${seg.service_name_ar} – ${dateStr}` });
+              cur.setUTCDate(cur.getUTCDate() + 1);
+            }
+          } else {
+            // hours_24 (default): count 24-hour periods from admission time
+            const elapsedMs = now.getTime() - startedAt.getTime();
+            const periodsCompleted = Math.max(0, Math.floor(elapsedMs / (24 * 60 * 60 * 1000)));
+            for (let n = 0; n <= periodsCompleted; n++) {
+              const periodStart = new Date(startedAt.getTime() + n * 24 * 60 * 60 * 1000);
+              const dateStr = periodStart.toISOString().split("T")[0];
+              bucketEntries.push({ key: dateStr, desc: `${seg.service_name_ar} – يوم ${n + 1}` });
+            }
           }
 
           const rateStr = String(parseFloat(seg.rate_per_day) || 0);
           let linesInserted = 0;
 
-          for (const bucketKey of buckets) {
+          for (const { key: bucketKey, desc: description } of bucketEntries) {
             const sourceId = `${seg.invoice_id}:${seg.id}:${bucketKey}`;
-            const description = `${seg.service_name_ar} – ${bucketKey}`;
 
             // Idempotent UPSERT — ON CONFLICT with the partial unique index
             const upsertResult = await tx.execute(sql`
@@ -6768,7 +6792,7 @@ export class DatabaseStorage implements IStorage {
               tableName: "patient_invoice_headers",
               recordId: seg.invoice_id,
               action: "stay_accrual",
-              newValues: JSON.stringify({ segmentId: seg.id, linesInserted, buckets: buckets.length }),
+              newValues: JSON.stringify({ segmentId: seg.id, linesInserted, buckets: bucketEntries.length }),
             });
 
             console.log(`[STAY_ENGINE] Accrued ${linesInserted} line(s) for segment ${seg.id} → invoice ${seg.invoice_id}`);

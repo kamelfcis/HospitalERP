@@ -5,6 +5,8 @@ import { db } from "./db";
 import bcrypt from "bcryptjs";
 import { DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "./route-helpers";
+import { setSetting, getSetting, refreshSettings } from "./settings-cache";
+import { systemSettings } from "@shared/schema";
 
 const sseClients = new Map<string, Set<Response>>();
 
@@ -4127,6 +4129,33 @@ export async function registerRoutes(
       }
       const posted = await storage.batchPostJournalEntries(ids, userId || "system");
       res.json({ posted, total: ids.length });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== System Settings ====================
+
+  app.get("/api/settings", async (_req, res) => {
+    try {
+      const rows = await db.select().from(systemSettings);
+      const result: Record<string, string> = {};
+      for (const row of rows) result[row.key] = row.value;
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/settings/:key", async (req, res) => {
+    try {
+      const { key } = req.params;
+      const { value } = req.body;
+      if (typeof value !== "string") return res.status(400).json({ message: "قيمة غير صالحة" });
+      const ALLOWED_KEYS = ["stay_billing_mode"];
+      if (!ALLOWED_KEYS.includes(key)) return res.status(400).json({ message: "مفتاح إعداد غير مسموح" });
+      await setSetting(key, value);
+      res.json({ key, value });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

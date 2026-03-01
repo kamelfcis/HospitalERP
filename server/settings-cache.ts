@@ -14,6 +14,14 @@ export function getSetting(key: string, defaultValue: string = ""): string {
   return cache.get(key) ?? defaultValue;
 }
 
+export async function setSetting(key: string, value: string): Promise<void> {
+  await db
+    .insert(systemSettings)
+    .values({ key, value, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: systemSettings.key, set: { value, updatedAt: new Date() } });
+  cache.set(key, value);
+}
+
 export async function refreshSettings(): Promise<void> {
   await loadSettings();
 }
