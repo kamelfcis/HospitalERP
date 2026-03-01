@@ -1398,6 +1398,40 @@ export const mappingLineTypeLabels: Record<string, string> = {
   expense_general: "مصروفات عامة",
 };
 
+export const stockMovementHeaders = pgTable("stock_movement_headers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  operationType: varchar("operation_type", { length: 50 }).notNull(),
+  referenceType: varchar("reference_type", { length: 50 }).notNull(),
+  referenceId: varchar("reference_id").notNull(),
+  warehouseId: varchar("warehouse_id").references(() => warehouses.id),
+  totalCost: decimal("total_cost", { precision: 18, scale: 2 }).notNull().default("0"),
+  status: varchar("status", { length: 20 }).notNull().default("posted"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdBy: varchar("created_by"),
+}, (table) => ({
+  refIdx: index("idx_smh_ref").on(table.referenceType, table.referenceId),
+  uniqueRef: uniqueIndex("idx_smh_ref_unique").on(table.referenceType, table.referenceId),
+}));
+
+export const stockMovementAllocations = pgTable("stock_movement_allocations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  movementHeaderId: varchar("movement_header_id").notNull().references(() => stockMovementHeaders.id, { onDelete: "cascade" }),
+  lotId: varchar("lot_id").notNull().references(() => inventoryLots.id),
+  allocKey: varchar("alloc_key", { length: 255 }).notNull(),
+  qtyAllocatedMinor: decimal("qty_allocated_minor", { precision: 18, scale: 4 }).notNull(),
+  unitCost: decimal("unit_cost", { precision: 18, scale: 4 }).notNull(),
+  costAllocated: decimal("cost_allocated", { precision: 18, scale: 2 }).notNull(),
+  sourceType: varchar("source_type", { length: 50 }).notNull().default("STOCK_MOVEMENT_ALLOC"),
+  sourceId: varchar("source_id", { length: 500 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  movementIdx: index("idx_sma_movement").on(table.movementHeaderId),
+  sourceUniqueIdx: uniqueIndex("idx_sma_source_unique").on(table.sourceId),
+}));
+
+export type StockMovementHeader = typeof stockMovementHeaders.$inferSelect;
+export type StockMovementAllocation = typeof stockMovementAllocations.$inferSelect;
+
 // كلمات سر الخزن
 export const drawerPasswords = pgTable("drawer_passwords", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

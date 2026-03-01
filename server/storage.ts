@@ -141,6 +141,10 @@ import {
   userPermissions,
   type RolePermission,
   type UserPermission,
+  stockMovementHeaders,
+  stockMovementAllocations,
+  type StockMovementHeader,
+  type StockMovementAllocation,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -4527,6 +4531,186 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  private async allocateStockInTx(
+    tx: any,
+    params: {
+      operationType: string;
+      referenceType: string;
+      referenceId: string;
+      warehouseId: string;
+      lines: Array<{
+        lineIdx: number;
+        itemId: string;
+        qtyMinor: number;
+        hasExpiry: boolean;
+        expiryMonth?: number | null;
+        expiryYear?: number | null;
+      }>;
+      createdBy?: string;
+    }
+  ): Promise<{ movementHeaderId: string; lineResults: Array<{ lineIdx: number; itemId: string; totalCost: number }> }> {
+    const { operationType, referenceType, referenceId, warehouseId, lines, createdBy } = params;
+
+    // Idempotency: if a movement header already exists for this reference, return it
+    const existingResult = await tx.execute(
+      sql`SELECT id FROM stock_movement_headers WHERE reference_type = ${referenceType} AND reference_id = ${referenceId} LIMIT 1`
+    );
+    if (existingResult.rows?.length > 0) {
+      const movementHeaderId = (existingResult.rows[0] as any).id as string;
+      const allocRows = await tx.execute(
+        sql`SELECT alloc_key, cost_allocated FROM stock_movement_allocations WHERE movement_header_id = ${movementHeaderId}`
+      );
+      const lineResults: Array<{ lineIdx: number; itemId: string; totalCost: number }> = lines.map(l => ({
+        lineIdx: l.lineIdx,
+        itemId: l.itemId,
+        totalCost: allocRows.rows
+          .filter((r: any) => r.alloc_key.startsWith(`line:${l.lineIdx}:`))
+          .reduce((s: number, r: any) => s + parseFloat(r.cost_allocated), 0),
+      }));
+      return { movementHeaderId, lineResults };
+    }
+
+    // Insert movement header
+    const [movHeader] = await tx.insert(stockMovementHeaders).values({
+      operationType,
+      referenceType,
+      referenceId,
+      warehouseId,
+      totalCost: "0",
+      status: "posted",
+      createdBy: createdBy || null,
+    }).returning();
+    const movementHeaderId = movHeader.id;
+
+    const lineResults: Array<{ lineIdx: number; itemId: string; totalCost: number }> = [];
+    let movementTotalCost = 0;
+
+    for (const line of lines) {
+      const { lineIdx, itemId, qtyMinor, hasExpiry, expiryMonth, expiryYear } = line;
+      if (qtyMinor <= 0) {
+        lineResults.push({ lineIdx, itemId, totalCost: 0 });
+        continue;
+      }
+
+      // Build FOR UPDATE lot query — FEFO if has expiry, FIFO (receivedDate ASC) otherwise
+      const specificExpiry = hasExpiry && expiryMonth && expiryYear;
+      const lotsResult = await tx.execute(
+        specificExpiry
+          ? sql`SELECT id, qty_in_minor, purchase_price, expiry_month, expiry_year, received_date
+                FROM inventory_lots
+                WHERE item_id = ${itemId}
+                  AND warehouse_id = ${warehouseId}
+                  AND is_active = true
+                  AND qty_in_minor::numeric > 0
+                  AND expiry_month = ${expiryMonth}
+                  AND expiry_year = ${expiryYear}
+                ORDER BY expiry_year ASC, expiry_month ASC, received_date ASC
+                FOR UPDATE`
+          : hasExpiry
+          ? sql`SELECT id, qty_in_minor, purchase_price, expiry_month, expiry_year, received_date
+                FROM inventory_lots
+                WHERE item_id = ${itemId}
+                  AND warehouse_id = ${warehouseId}
+                  AND is_active = true
+                  AND qty_in_minor::numeric > 0
+                ORDER BY expiry_year ASC NULLS LAST, expiry_month ASC NULLS LAST, received_date ASC
+                FOR UPDATE`
+          : sql`SELECT id, qty_in_minor, purchase_price, expiry_month, expiry_year, received_date
+                FROM inventory_lots
+                WHERE item_id = ${itemId}
+                  AND warehouse_id = ${warehouseId}
+                  AND is_active = true
+                  AND qty_in_minor::numeric > 0
+                ORDER BY received_date ASC, created_at ASC
+                FOR UPDATE`
+      );
+      const lots = lotsResult.rows as any[];
+
+      let remaining = qtyMinor;
+      let lotSeq = 0;
+      const rawAllocs: Array<{ lotId: string; allocKey: string; qty: number; unitCost: number; rawCost: number }> = [];
+
+      for (const lot of lots) {
+        if (remaining <= 0.00005) break;
+        const available = parseFloat(lot.qty_in_minor);
+        const deduct = Math.min(available, remaining);
+        const unitCostNum = parseFloat(lot.purchase_price);
+
+        rawAllocs.push({
+          lotId: lot.id,
+          allocKey: `line:${lineIdx}:lot:${lot.id}:seq:${lotSeq}`,
+          qty: deduct,
+          unitCost: unitCostNum,
+          rawCost: deduct * unitCostNum,
+        });
+
+        // Deduct from lot (raw SQL avoids floating-point string conversion issues)
+        await tx.execute(
+          sql`UPDATE inventory_lots SET qty_in_minor = (qty_in_minor::numeric - ${deduct})::text, updated_at = NOW() WHERE id = ${lot.id}`
+        );
+
+        // Record lot movement
+        await tx.insert(inventoryLotMovements).values({
+          lotId: lot.id,
+          warehouseId,
+          txType: "out",
+          qtyChangeInMinor: String(-deduct),
+          unitCost: String(unitCostNum),
+          referenceType,
+          referenceId,
+        });
+
+        remaining -= deduct;
+        lotSeq++;
+      }
+
+      // Prevent negative stock
+      if (remaining > 0.00005) {
+        const itemRow = await tx.execute(sql`SELECT name_ar FROM items WHERE id = ${itemId} LIMIT 1`);
+        const nameAr = (itemRow.rows[0] as any)?.name_ar || itemId;
+        throw new Error(`رصيد غير كاف للصنف "${nameAr}" - النقص: ${remaining.toFixed(4)}`);
+      }
+
+      // HALF_UP cost allocation — last absorbs delta so sum == totalCostRounded exactly
+      const totalRawCost = rawAllocs.reduce((s, a) => s + a.rawCost, 0);
+      const totalCostRounded = parseFloat(roundMoney(totalRawCost));
+      let allocatedSoFar = 0;
+
+      for (let i = 0; i < rawAllocs.length; i++) {
+        const a = rawAllocs[i];
+        const isLast = i === rawAllocs.length - 1;
+        const costAllocated = isLast
+          ? parseFloat((totalCostRounded - allocatedSoFar).toFixed(2))
+          : parseFloat(roundMoney(a.rawCost));
+
+        const sourceId = `${movementHeaderId}:${referenceId}:${a.allocKey}`;
+
+        await tx.insert(stockMovementAllocations).values({
+          movementHeaderId,
+          lotId: a.lotId,
+          allocKey: a.allocKey,
+          qtyAllocatedMinor: String(a.qty),
+          unitCost: String(a.unitCost),
+          costAllocated: String(costAllocated),
+          sourceType: "STOCK_MOVEMENT_ALLOC",
+          sourceId,
+        });
+
+        allocatedSoFar += costAllocated;
+      }
+
+      lineResults.push({ lineIdx, itemId, totalCost: totalCostRounded });
+      movementTotalCost += totalCostRounded;
+    }
+
+    // Stamp total cost on movement header
+    await tx.update(stockMovementHeaders).set({
+      totalCost: roundMoney(movementTotalCost),
+    }).where(eq(stockMovementHeaders.id, movementHeaderId));
+
+    return { movementHeaderId, lineResults };
+  }
+
   async finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader> {
     let cogsDrugs = 0;
     let cogsSupplies = 0;
@@ -4544,89 +4728,74 @@ export class DatabaseStorage implements IStorage {
       const lines = await tx.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
       if (lines.length === 0) throw new Error("لا يمكن اعتماد فاتورة بدون أصناف");
 
-      for (const line of lines) {
-        const qtyNeeded = parseFloat(line.qtyInMinor);
-        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
-        if (!item) throw new Error(`الصنف غير موجود: ${line.itemId}`);
+      // Phase 1: collect item data + validate expiry; split service vs inventory lines
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+
+      const itemMap: Record<string, any> = {};
+      const stockLines: Array<{
+        lineIdx: number; itemId: string; qtyMinor: number;
+        hasExpiry: boolean; expiryMonth?: number | null; expiryYear?: number | null;
+      }> = [];
+
+      for (let li = 0; li < lines.length; li++) {
+        const line = lines[li];
+        let item = itemMap[line.itemId];
+        if (!item) {
+          const [fetched] = await tx.select().from(items).where(eq(items.id, line.itemId));
+          if (!fetched) throw new Error(`الصنف غير موجود: ${line.itemId}`);
+          item = fetched;
+          itemMap[line.itemId] = item;
+        }
 
         if (item.category === "service") {
-          const lineRevenue = parseFloat(line.lineTotal);
-          revenueDrugs += lineRevenue;
+          revenueDrugs += parseFloat(line.lineTotal);
           continue;
         }
 
         if (item.hasExpiry && !line.expiryMonth) {
           throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية`);
         }
-
-        const now = new Date();
-        const currentMonth = now.getMonth() + 1;
-        const currentYear = now.getFullYear();
-
         if (item.hasExpiry && line.expiryMonth && line.expiryYear) {
           if (line.expiryYear < currentYear || (line.expiryYear === currentYear && line.expiryMonth < currentMonth)) {
             throw new Error(`الصنف "${item.nameAr}" - لا يمكن بيع دفعة منتهية الصلاحية (${line.expiryMonth}/${line.expiryYear})`);
           }
         }
 
-        const lotConditions: any[] = [
-          eq(inventoryLots.itemId, line.itemId),
-          eq(inventoryLots.warehouseId, invoice.warehouseId),
-          eq(inventoryLots.isActive, true),
-          sql`${inventoryLots.qtyInMinor}::numeric > 0`,
-        ];
-        
-        if (line.expiryMonth && line.expiryYear) {
-          lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
-          lotConditions.push(eq(inventoryLots.expiryYear, line.expiryYear));
-        } else if (item.hasExpiry) {
-          lotConditions.push(sql`(${inventoryLots.expiryYear} > ${currentYear} OR (${inventoryLots.expiryYear} = ${currentYear} AND ${inventoryLots.expiryMonth} >= ${currentMonth}))`);
-        }
+        stockLines.push({
+          lineIdx: li,
+          itemId: line.itemId,
+          qtyMinor: parseFloat(line.qtyInMinor),
+          hasExpiry: !!item.hasExpiry,
+          expiryMonth: line.expiryMonth,
+          expiryYear: line.expiryYear,
+        });
+      }
 
-        const lots = await tx.select().from(inventoryLots)
-          .where(and(...lotConditions))
-          .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth));
+      // Phase 2: allocate stock with engine (FOR UPDATE locks, FEFO/FIFO, idempotent allocs)
+      const { lineResults } = await this.allocateStockInTx(tx, {
+        operationType: "sales_finalize",
+        referenceType: "sales_invoice",
+        referenceId: id,
+        warehouseId: invoice.warehouseId,
+        lines: stockLines,
+      });
 
-        let remaining = qtyNeeded;
-        let lineCost = 0;
-        for (const lot of lots) {
-          if (remaining <= 0) break;
-          const available = parseFloat(lot.qtyInMinor);
-          const deduct = Math.min(available, remaining);
-          const lotCost = deduct * parseFloat(lot.purchasePrice);
-          lineCost += lotCost;
-
-          await tx.update(inventoryLots).set({
-            qtyInMinor: String(available - deduct),
-            updatedAt: new Date(),
-          }).where(eq(inventoryLots.id, lot.id));
-
-          await tx.insert(inventoryLotMovements).values({
-            lotId: lot.id,
-            warehouseId: invoice.warehouseId,
-            txType: "out",
-            qtyChangeInMinor: String(-deduct),
-            unitCost: lot.purchasePrice,
-            referenceType: "sales_invoice",
-            referenceId: invoice.id,
-          });
-
-          remaining -= deduct;
-        }
-
-        if (remaining > 0) {
-          throw new Error(`رصيد غير كاف للصنف "${item.nameAr}" - المطلوب: ${qtyNeeded}, النقص: ${remaining.toFixed(2)}`);
-        }
-
+      // Phase 3: accumulate COGS by category + insert sales transactions
+      for (const lr of lineResults) {
+        const item = itemMap[lr.itemId];
+        const line = lines[lr.lineIdx];
         const lineRevenue = parseFloat(line.lineTotal);
+
         if (item.category === "drug") {
-          cogsDrugs += lineCost;
+          cogsDrugs += lr.totalCost;
           revenueDrugs += lineRevenue;
         } else if (item.category === "supply") {
-          cogsSupplies += lineCost;
+          cogsSupplies += lr.totalCost;
           revenueSupplies += lineRevenue;
         } else {
-          cogsDrugs += lineCost;
+          cogsDrugs += lr.totalCost;
           revenueDrugs += lineRevenue;
         }
 
@@ -5180,6 +5349,81 @@ export class DatabaseStorage implements IStorage {
         .where(and(eq(patientInvoiceLines.headerId, id), eq(patientInvoiceLines.isVoid, false)));
       const dbPayments = await tx.select().from(patientInvoicePayments)
         .where(eq(patientInvoicePayments.headerId, id));
+
+      // Stock deduction for drug/consumable lines (only when warehouseId is set)
+      const warehouseId = locked.warehouse_id as string | null;
+      if (warehouseId) {
+        const inventoryLineTypes = new Set(["drug", "consumable"]);
+        const invLines = dbLines.filter(l => inventoryLineTypes.has(l.lineType) && l.itemId);
+
+        if (invLines.length > 0) {
+          // Fetch item data for unit conversion
+          const invItemIds = Array.from(new Set(invLines.map(l => l.itemId!)));
+          const invItemRows = await tx.execute(
+            sql`SELECT id, name_ar, has_expiry, major_to_medium, major_to_minor, medium_to_minor FROM items WHERE id IN (${sql.join(invItemIds.map(i => sql`${i}`), sql`, `)})`
+          );
+          const invItemMap: Record<string, any> = {};
+          for (const row of invItemRows.rows as any[]) invItemMap[row.id] = row;
+
+          const now = new Date();
+          const currentMonth = now.getMonth() + 1;
+          const currentYear = now.getFullYear();
+
+          const stockLines: Array<{
+            lineIdx: number; itemId: string; qtyMinor: number;
+            hasExpiry: boolean; expiryMonth?: number | null; expiryYear?: number | null;
+          }> = [];
+
+          for (let li = 0; li < invLines.length; li++) {
+            const line = invLines[li];
+            const item = invItemMap[line.itemId!];
+            if (!item) continue;
+
+            // Expired lot guard
+            if (item.has_expiry && line.expiryMonth && line.expiryYear) {
+              if (line.expiryYear < currentYear || (line.expiryYear === currentYear && line.expiryMonth < currentMonth)) {
+                throw new Error(`الصنف "${item.name_ar}" - لا يمكن صرف دفعة منتهية الصلاحية (${line.expiryMonth}/${line.expiryYear})`);
+              }
+            }
+
+            // Convert quantity to minor units
+            const qty = parseFloat(line.quantity);
+            const unitLevel = line.unitLevel || "minor";
+            let qtyMinor = qty;
+            if (unitLevel === "major") {
+              let majorToMinor = parseFloat(String(item.major_to_minor)) || 0;
+              if (majorToMinor <= 0) {
+                const majorToMedium = parseFloat(String(item.major_to_medium)) || 1;
+                const mediumToMinor = parseFloat(String(item.medium_to_minor)) || 1;
+                majorToMinor = majorToMedium * mediumToMinor;
+              }
+              qtyMinor = qty * (majorToMinor || 1);
+            } else if (unitLevel === "medium") {
+              const mediumToMinor = parseFloat(String(item.medium_to_minor)) || 1;
+              qtyMinor = qty * mediumToMinor;
+            }
+
+            stockLines.push({
+              lineIdx: li,
+              itemId: line.itemId!,
+              qtyMinor,
+              hasExpiry: !!item.has_expiry,
+              expiryMonth: line.expiryMonth,
+              expiryYear: line.expiryYear,
+            });
+          }
+
+          if (stockLines.length > 0) {
+            await this.allocateStockInTx(tx, {
+              operationType: "patient_finalize",
+              referenceType: "patient_invoice",
+              referenceId: id,
+              warehouseId,
+              lines: stockLines,
+            });
+          }
+        }
+      }
 
       const recomputedTotals = this.computeInvoiceTotals(dbLines, dbPayments);
       const newVersion = (locked.version || 1) + 1;
