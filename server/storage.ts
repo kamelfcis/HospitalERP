@@ -4682,7 +4682,7 @@ export class DatabaseStorage implements IStorage {
 
         // Deduct from lot (raw SQL avoids floating-point string conversion issues)
         await tx.execute(
-          sql`UPDATE inventory_lots SET qty_in_minor = (qty_in_minor::numeric - ${deduct})::text, updated_at = NOW() WHERE id = ${lot.id}`
+          sql`UPDATE inventory_lots SET qty_in_minor = qty_in_minor::numeric - ${deduct}, updated_at = NOW() WHERE id = ${lot.id}`
         );
 
         // Record lot movement
