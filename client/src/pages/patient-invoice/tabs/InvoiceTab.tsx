@@ -1,18 +1,17 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Save, CheckCircle, Trash2, Plus, Loader2, Users, Stethoscope, ArrowLeftRight } from "lucide-react";
-import { formatNumber, formatCurrency, formatDateShort } from "@/lib/formatters";
-import { patientInvoiceStatusLabels, patientTypeLabels } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Loader2, ArrowLeftRight, Stethoscope } from "lucide-react";
+import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import type { Department, Service, Item, Admission, Doctor, DoctorTransfer } from "@shared/schema";
 import type { LineLocal, PaymentLocal } from "../types";
-import { LineGrid } from "./LineGrid";
+import { LineGrid } from "../components/LineGrid";
+import { InvoiceHeaderBar } from "../components/InvoiceHeaderBar";
+import { TotalsSummaryCard } from "../components/TotalsSummaryCard";
 import { PaymentsTab } from "./PaymentsTab";
 import { ConsolidatedTab } from "./ConsolidatedTab";
 
@@ -177,254 +176,73 @@ export function InvoiceTab({
   dtDoctorName, setDtDoctorName, dtNotes, setDtNotes, openDtConfirm,
   getStatusBadgeClass, getServiceRowClass,
 }: InvoiceTabProps) {
+  const lineGridSharedProps = {
+    isDraft,
+    itemSearch, setItemSearch, setItemResults, itemResults, searchingItems, fefoLoading,
+    serviceSearch, setServiceSearch, setServiceResults, serviceResults, searchingServices,
+    itemSearchRef, itemDropdownRef, serviceSearchRef, serviceDropdownRef,
+    pendingQtyRef,
+    addServiceLine, addItemLine, updateLine, removeLine,
+    handleQtyConfirm, handleUnitLevelChange, openStatsPopup,
+    getServiceRowClass,
+  };
+
   return (
     <div className="space-y-2">
-      <div className="border rounded-md p-2 space-y-2">
-        <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
-          {invoiceId && (
-            <Badge className={getStatusBadgeClass(status)} data-testid="badge-invoice-status">
-              {patientInvoiceStatusLabels[status] || status}
-            </Badge>
-          )}
-          <div className="flex flex-row-reverse items-center gap-1">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">رقم:</Label>
-            <Input
-              value={invoiceNumber}
-              onChange={(e) => setInvoiceNumber(e.target.value)}
-              disabled={!isDraft}
-              className="h-7 text-xs w-24"
-              data-testid="input-invoice-number"
-            />
-          </div>
-          <div className="flex flex-row-reverse items-center gap-1">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">تاريخ:</Label>
-            <Input
-              type="date"
-              value={invoiceDate}
-              onChange={(e) => setInvoiceDate(e.target.value)}
-              disabled={!isDraft}
-              className="h-7 text-xs w-36"
-              data-testid="input-invoice-date"
-            />
-          </div>
-          <div className="flex flex-row-reverse items-center gap-1 relative">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
-            <Input
-              ref={patientSearchRef}
-              value={patientName}
-              onChange={(e) => {
-                setPatientName(e.target.value);
-                setPatientSearch(e.target.value);
-                setShowPatientDropdown(true);
-              }}
-              onFocus={() => {
-                if (patientName.length >= 1) {
-                  setPatientSearch(patientName);
-                  setShowPatientDropdown(true);
-                }
-              }}
-              disabled={!isDraft}
-              className="h-7 text-xs w-40"
-              placeholder="ابحث عن مريض..."
-              data-testid="input-patient-name"
-            />
-            {showPatientDropdown && (patientResults.length > 0 || searchingPatients) && (
-              <div
-                ref={patientDropdownRef}
-                className="absolute top-full right-0 mt-1 w-72 bg-popover border rounded-md shadow-lg z-50 max-h-48 overflow-y-auto"
-                data-testid="dropdown-patient-search"
-              >
-                {searchingPatients && (
-                  <div className="flex items-center justify-center gap-2 p-2 text-xs text-muted-foreground">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>جاري البحث...</span>
-                  </div>
-                )}
-                {patientResults.map((p) => (
-                  <div
-                    key={p.id}
-                    className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex flex-row-reverse items-center justify-between gap-2 border-b last:border-b-0"
-                    onClick={() => {
-                      setPatientName(p.fullName);
-                      setPatientPhone(p.phone || "");
-                      setShowPatientDropdown(false);
-                      setPatientSearch("");
-                    }}
-                    data-testid={`option-patient-${p.id}`}
-                  >
-                    <span className="font-medium truncate">{p.fullName}</span>
-                    <span className="text-muted-foreground whitespace-nowrap">
-                      {p.phone || ""}{p.age ? ` | ${p.age} سنة` : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="flex flex-row-reverse items-center gap-1">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">هاتف:</Label>
-            <Input
-              value={patientPhone}
-              onChange={(e) => setPatientPhone(e.target.value)}
-              disabled={!isDraft}
-              className="h-7 text-xs w-28"
-              data-testid="input-patient-phone"
-            />
-          </div>
-          <div className="flex flex-row-reverse items-center gap-1">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
-            <Select value={departmentId} onValueChange={setDepartmentId} disabled={!isDraft}>
-              <SelectTrigger className="h-7 text-xs w-32" data-testid="select-department">
-                <SelectValue placeholder="اختر" />
-              </SelectTrigger>
-              <SelectContent>
-                {(departments || []).map((dept) => (
-                  <SelectItem key={dept.id} value={dept.id}>{dept.nameAr}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-row-reverse items-center gap-1">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">الإقامة:</Label>
-            <Select value={admissionId || "none"} onValueChange={(val) => {
-              setAdmissionId(val === "none" ? "" : val);
-              if (val && val !== "none") {
-                const adm = (activeAdmissions || []).find(a => a.id === val);
-                if (adm) {
-                  if (!patientName) setPatientName(adm.patientName);
-                  if (!patientPhone && adm.patientPhone) setPatientPhone(adm.patientPhone);
-                }
-              }
-            }} disabled={!isDraft}>
-              <SelectTrigger className="h-7 text-xs w-36" data-testid="select-admission">
-                <SelectValue placeholder="بدون إقامة" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">بدون إقامة</SelectItem>
-                {(activeAdmissions || []).map((adm) => (
-                  <SelectItem key={adm.id} value={adm.id}>
-                    {adm.admissionNumber} - {adm.patientName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-row-reverse items-center gap-1">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">المخزن:</Label>
-            <Select value={warehouseId} onValueChange={setWarehouseId} disabled={!isDraft}>
-              <SelectTrigger className="h-7 text-xs w-36" data-testid="select-warehouse">
-                <SelectValue placeholder="اختر مخزن" />
-              </SelectTrigger>
-              <SelectContent>
-                {(warehouses || []).filter((w: any) => w.isActive).map((w: any) => (
-                  <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-row-reverse items-center gap-1 relative">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
-            <Input
-              ref={doctorSearchRef}
-              value={doctorName}
-              onChange={(e) => {
-                setDoctorName(e.target.value);
-                setDoctorSearch(e.target.value);
-                setShowDoctorDropdown(true);
-              }}
-              onFocus={() => {
-                if (doctorName.length >= 1) {
-                  setDoctorSearch(doctorName);
-                  setShowDoctorDropdown(true);
-                }
-              }}
-              disabled={!isDraft}
-              className="h-7 text-xs w-32"
-              placeholder="ابحث عن طبيب..."
-              data-testid="input-doctor-name"
-            />
-            {showDoctorDropdown && (doctorResults.length > 0 || searchingDoctors) && (
-              <div
-                ref={doctorDropdownRef}
-                className="absolute top-full right-0 mt-1 w-60 bg-popover border rounded-md shadow-lg z-50 max-h-48 overflow-y-auto"
-                data-testid="dropdown-doctor-search"
-              >
-                {searchingDoctors && (
-                  <div className="flex items-center justify-center gap-2 p-2 text-xs text-muted-foreground">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>جاري البحث...</span>
-                  </div>
-                )}
-                {doctorResults.map((d) => (
-                  <div
-                    key={d.id}
-                    className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex flex-row-reverse items-center justify-between gap-2 border-b last:border-b-0"
-                    onClick={() => {
-                      setDoctorName(d.name);
-                      setShowDoctorDropdown(false);
-                      setDoctorSearch("");
-                    }}
-                    data-testid={`option-doctor-${d.id}`}
-                  >
-                    <span className="font-medium truncate">{d.name}</span>
-                    {d.specialty && <span className="text-muted-foreground whitespace-nowrap">{d.specialty}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="flex flex-row-reverse items-center gap-1">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">النوع:</Label>
-            <label className="flex flex-row-reverse items-center gap-1 cursor-pointer text-xs">
-              <input
-                type="radio"
-                name="patientType"
-                value="cash"
-                checked={patientType === "cash"}
-                onChange={() => setPatientType("cash")}
-                disabled={!isDraft}
-                data-testid="radio-patient-type-cash"
-              />
-              {patientTypeLabels.cash}
-            </label>
-            <label className="flex flex-row-reverse items-center gap-1 cursor-pointer text-xs">
-              <input
-                type="radio"
-                name="patientType"
-                value="contract"
-                checked={patientType === "contract"}
-                onChange={() => setPatientType("contract")}
-                disabled={!isDraft}
-                data-testid="radio-patient-type-contract"
-              />
-              {patientTypeLabels.contract}
-            </label>
-          </div>
-          {patientType === "contract" && (
-            <div className="flex flex-row-reverse items-center gap-1">
-              <Label className="text-xs text-muted-foreground whitespace-nowrap">جهة:</Label>
-              <Input
-                value={contractName}
-                onChange={(e) => setContractName(e.target.value)}
-                disabled={!isDraft}
-                className="h-7 text-xs w-32"
-                data-testid="input-contract-name"
-              />
-            </div>
-          )}
-        </div>
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">ملاحظات:</Label>
-          <Input
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            disabled={!isDraft}
-            className="h-7 text-xs flex-1"
-            placeholder="ملاحظات..."
-            data-testid="input-notes"
-          />
-        </div>
-      </div>
+      <InvoiceHeaderBar
+        invoiceId={invoiceId}
+        invoiceNumber={invoiceNumber}
+        setInvoiceNumber={setInvoiceNumber}
+        invoiceDate={invoiceDate}
+        setInvoiceDate={setInvoiceDate}
+        status={status}
+        isDraft={isDraft}
+        patientName={patientName}
+        setPatientName={setPatientName}
+        patientPhone={patientPhone}
+        setPatientPhone={setPatientPhone}
+        patientSearch={patientSearch}
+        setPatientSearch={setPatientSearch}
+        patientResults={patientResults}
+        searchingPatients={searchingPatients}
+        showPatientDropdown={showPatientDropdown}
+        setShowPatientDropdown={setShowPatientDropdown}
+        patientSearchRef={patientSearchRef}
+        patientDropdownRef={patientDropdownRef}
+        doctorName={doctorName}
+        setDoctorName={setDoctorName}
+        doctorSearch={doctorSearch}
+        setDoctorSearch={setDoctorSearch}
+        doctorResults={doctorResults}
+        searchingDoctors={searchingDoctors}
+        showDoctorDropdown={showDoctorDropdown}
+        setShowDoctorDropdown={setShowDoctorDropdown}
+        doctorSearchRef={doctorSearchRef}
+        doctorDropdownRef={doctorDropdownRef}
+        departmentId={departmentId}
+        setDepartmentId={setDepartmentId}
+        departments={departments}
+        warehouseId={warehouseId}
+        setWarehouseId={setWarehouseId}
+        warehouses={warehouses}
+        admissionId={admissionId}
+        setAdmissionId={setAdmissionId}
+        activeAdmissions={activeAdmissions}
+        patientType={patientType}
+        setPatientType={setPatientType}
+        contractName={contractName}
+        setContractName={setContractName}
+        notes={notes}
+        setNotes={setNotes}
+        lines={lines}
+        resetForm={resetForm}
+        saveMutation={saveMutation}
+        finalizeMutation={finalizeMutation}
+        deleteMutation={deleteMutation}
+        setConfirmDeleteId={setConfirmDeleteId}
+        openDistributeDialog={openDistributeDialog}
+        getStatusBadgeClass={getStatusBadgeClass}
+      />
 
       <div className="border rounded-md p-2">
         <Tabs value={subTab} onValueChange={setSubTab}>
@@ -438,128 +256,16 @@ export function InvoiceTab({
           </TabsList>
 
           <TabsContent value="services" className="mt-2">
-            <LineGrid
-              type="service"
-              typeLines={filteredLines("service")}
-              isDraft={isDraft}
-              itemSearch={itemSearch}
-              setItemSearch={setItemSearch}
-              setItemResults={setItemResults}
-              itemResults={itemResults}
-              searchingItems={searchingItems}
-              fefoLoading={fefoLoading}
-              serviceSearch={serviceSearch}
-              setServiceSearch={setServiceSearch}
-              setServiceResults={setServiceResults}
-              serviceResults={serviceResults}
-              searchingServices={searchingServices}
-              itemSearchRef={itemSearchRef}
-              itemDropdownRef={itemDropdownRef}
-              serviceSearchRef={serviceSearchRef}
-              serviceDropdownRef={serviceDropdownRef}
-              pendingQtyRef={pendingQtyRef}
-              addServiceLine={addServiceLine}
-              addItemLine={addItemLine}
-              updateLine={updateLine}
-              removeLine={removeLine}
-              handleQtyConfirm={handleQtyConfirm}
-              handleUnitLevelChange={handleUnitLevelChange}
-              openStatsPopup={openStatsPopup}
-              getServiceRowClass={getServiceRowClass}
-            />
+            <LineGrid type="service" typeLines={filteredLines("service")} {...lineGridSharedProps} />
           </TabsContent>
           <TabsContent value="drugs" className="mt-2">
-            <LineGrid
-              type="drug"
-              typeLines={filteredLines("drug")}
-              isDraft={isDraft}
-              itemSearch={itemSearch}
-              setItemSearch={setItemSearch}
-              setItemResults={setItemResults}
-              itemResults={itemResults}
-              searchingItems={searchingItems}
-              fefoLoading={fefoLoading}
-              serviceSearch={serviceSearch}
-              setServiceSearch={setServiceSearch}
-              setServiceResults={setServiceResults}
-              serviceResults={serviceResults}
-              searchingServices={searchingServices}
-              itemSearchRef={itemSearchRef}
-              itemDropdownRef={itemDropdownRef}
-              serviceSearchRef={serviceSearchRef}
-              serviceDropdownRef={serviceDropdownRef}
-              pendingQtyRef={pendingQtyRef}
-              addServiceLine={addServiceLine}
-              addItemLine={addItemLine}
-              updateLine={updateLine}
-              removeLine={removeLine}
-              handleQtyConfirm={handleQtyConfirm}
-              handleUnitLevelChange={handleUnitLevelChange}
-              openStatsPopup={openStatsPopup}
-              getServiceRowClass={getServiceRowClass}
-            />
+            <LineGrid type="drug" typeLines={filteredLines("drug")} {...lineGridSharedProps} />
           </TabsContent>
           <TabsContent value="consumables" className="mt-2">
-            <LineGrid
-              type="consumable"
-              typeLines={filteredLines("consumable")}
-              isDraft={isDraft}
-              itemSearch={itemSearch}
-              setItemSearch={setItemSearch}
-              setItemResults={setItemResults}
-              itemResults={itemResults}
-              searchingItems={searchingItems}
-              fefoLoading={fefoLoading}
-              serviceSearch={serviceSearch}
-              setServiceSearch={setServiceSearch}
-              setServiceResults={setServiceResults}
-              serviceResults={serviceResults}
-              searchingServices={searchingServices}
-              itemSearchRef={itemSearchRef}
-              itemDropdownRef={itemDropdownRef}
-              serviceSearchRef={serviceSearchRef}
-              serviceDropdownRef={serviceDropdownRef}
-              pendingQtyRef={pendingQtyRef}
-              addServiceLine={addServiceLine}
-              addItemLine={addItemLine}
-              updateLine={updateLine}
-              removeLine={removeLine}
-              handleQtyConfirm={handleQtyConfirm}
-              handleUnitLevelChange={handleUnitLevelChange}
-              openStatsPopup={openStatsPopup}
-              getServiceRowClass={getServiceRowClass}
-            />
+            <LineGrid type="consumable" typeLines={filteredLines("consumable")} {...lineGridSharedProps} />
           </TabsContent>
           <TabsContent value="equipment" className="mt-2">
-            <LineGrid
-              type="equipment"
-              typeLines={filteredLines("equipment")}
-              isDraft={isDraft}
-              itemSearch={itemSearch}
-              setItemSearch={setItemSearch}
-              setItemResults={setItemResults}
-              itemResults={itemResults}
-              searchingItems={searchingItems}
-              fefoLoading={fefoLoading}
-              serviceSearch={serviceSearch}
-              setServiceSearch={setServiceSearch}
-              setServiceResults={setServiceResults}
-              serviceResults={serviceResults}
-              searchingServices={searchingServices}
-              itemSearchRef={itemSearchRef}
-              itemDropdownRef={itemDropdownRef}
-              serviceSearchRef={serviceSearchRef}
-              serviceDropdownRef={serviceDropdownRef}
-              pendingQtyRef={pendingQtyRef}
-              addServiceLine={addServiceLine}
-              addItemLine={addItemLine}
-              updateLine={updateLine}
-              removeLine={removeLine}
-              handleQtyConfirm={handleQtyConfirm}
-              handleUnitLevelChange={handleUnitLevelChange}
-              openStatsPopup={openStatsPopup}
-              getServiceRowClass={getServiceRowClass}
-            />
+            <LineGrid type="equipment" typeLines={filteredLines("equipment")} {...lineGridSharedProps} />
           </TabsContent>
           <TabsContent value="payments" className="mt-2">
             <PaymentsTab
@@ -582,93 +288,7 @@ export function InvoiceTab({
       </div>
 
       <div className="border rounded-md p-2">
-        <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-row-reverse flex-wrap items-center gap-3 text-sm">
-            <div className="flex flex-row-reverse items-center gap-1">
-              <span className="text-muted-foreground text-xs">الإجمالي:</span>
-              <span className="font-bold text-xs" data-testid="text-footer-total">{formatCurrency(totals.totalAmount)}</span>
-            </div>
-            <div className="flex flex-row-reverse items-center gap-1">
-              <span className="text-muted-foreground text-xs">الخصم:</span>
-              <span className="font-bold text-xs" data-testid="text-footer-discount">{formatCurrency(totals.discountAmount)}</span>
-            </div>
-            <div className="flex flex-row-reverse items-center gap-1">
-              <span className="text-muted-foreground text-xs">الصافي:</span>
-              <span className="font-bold text-xs" data-testid="text-footer-net">{formatCurrency(totals.netAmount)}</span>
-            </div>
-            <div className="flex flex-row-reverse items-center gap-1">
-              <span className="text-muted-foreground text-xs">المدفوع:</span>
-              <span className="font-bold text-xs" data-testid="text-footer-paid">{formatCurrency(totals.paidAmount)}</span>
-            </div>
-            <div className="flex flex-row-reverse items-center gap-1">
-              <span className="text-muted-foreground text-xs">المتبقي:</span>
-              <span className={`font-bold text-xs ${totals.remaining > 0 ? "text-destructive" : ""}`} data-testid="text-footer-remaining">
-                {formatCurrency(totals.remaining)}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={resetForm}
-              data-testid="button-new"
-            >
-              <Plus className="h-3 w-3 ml-1" />
-              جديد
-            </Button>
-            {isDraft && (
-              <>
-                <Button
-                  size="sm"
-                  onClick={() => saveMutation.mutate()}
-                  disabled={saveMutation.isPending || !patientName || !invoiceNumber}
-                  data-testid="button-save"
-                >
-                  {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
-                  حفظ
-                </Button>
-                {invoiceId && (
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={() => finalizeMutation.mutate()}
-                    disabled={finalizeMutation.isPending}
-                    className="bg-green-600 text-white border-green-700"
-                    data-testid="button-finalize"
-                  >
-                    {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
-                    اعتماد
-                  </Button>
-                )}
-                {invoiceId && (
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setConfirmDeleteId(invoiceId)}
-                    disabled={deleteMutation.isPending}
-                    data-testid="button-delete"
-                  >
-                    <Trash2 className="h-3 w-3 ml-1" />
-                    حذف
-                  </Button>
-                )}
-                {lines.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={openDistributeDialog}
-                    data-testid="button-distribute"
-                    className="border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400"
-                  >
-                    <Users className="h-3 w-3 ml-1" />
-                    توزيع على حالات
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+        <TotalsSummaryCard totals={totals} />
       </div>
 
       {status === "finalized" && invoiceId && (
