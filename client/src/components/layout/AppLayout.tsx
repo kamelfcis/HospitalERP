@@ -42,6 +42,7 @@ import {
   Settings,
   LogOut,
   Shield,
+  BedDouble,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -74,6 +75,7 @@ const mainNavItems: NavItem[] = [
   { title: "تحويل مخزني", href: "/store-transfers", icon: ArrowLeftRight, permission: "transfers.view" },
   { title: "فواتير البيع", href: "/sales-invoices", icon: ShoppingCart, permission: "sales.view" },
   { title: "فاتورة مريض", href: "/patient-invoices", icon: UserRound, permission: "patient_invoices.view" },
+  { title: "لوحة الأسرّة", href: "/bed-board", icon: BedDouble, permission: "patient_invoices.view" },
   { title: "شاشة تحصيل الكاشير", href: "/cashier-collection", icon: Banknote, permission: "cashier.view" },
   { title: "الخدمات والأسعار", href: "/services-pricing", icon: Stethoscope, permission: "services.view" },
   { title: "المخازن", href: "/warehouses", icon: Warehouse, permission: "warehouses.view" },

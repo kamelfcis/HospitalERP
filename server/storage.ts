@@ -147,6 +147,12 @@ import {
   type StockMovementAllocation,
   staySegments,
   type StaySegment,
+  floors,
+  rooms,
+  beds,
+  type Floor,
+  type Room,
+  type Bed,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -443,6 +449,13 @@ export interface IStorage {
   closeStaySegment(segmentId: string): Promise<StaySegment>;
   transferStaySegment(params: { admissionId: string; oldSegmentId: string; newServiceId?: string; newInvoiceId: string; notes?: string }): Promise<StaySegment>;
   accrueStayLines(): Promise<{ segmentsProcessed: number; linesUpserted: number }>;
+  // Bed Board
+  getBedBoard(): Promise<Array<Floor & { rooms: Array<Room & { beds: Array<Bed & { patientName?: string; admissionNumber?: string }> }> }>>;
+  getAvailableBeds(): Promise<Array<Bed & { roomNameAr: string; floorNameAr: string }>>;
+  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
+  transferPatientBed(params: { sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string }): Promise<{ sourceBed: Bed; targetBed: Bed }>;
+  dischargeFromBed(bedId: string): Promise<{ bed: Bed }>;
+  setBedStatus(bedId: string, status: string): Promise<Bed>;
 
   // Account Mappings
   getAccountMappings(transactionType?: string): Promise<AccountMapping[]>;
@@ -6754,6 +6767,327 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { segmentsProcessed: segments.length, linesUpserted: totalLinesUpserted };
+  }
+
+  // ==================== Bed Board ====================
+
+  async getBedBoard() {
+    const result = await db.execute(sql`
+      SELECT
+        f.id   AS floor_id,   f.name_ar AS floor_name_ar, f.sort_order AS floor_sort,
+        r.id   AS room_id,    r.name_ar AS room_name_ar,  r.room_number, r.sort_order AS room_sort,
+        b.id   AS bed_id,     b.bed_number, b.status,
+        b.current_admission_id,
+        a.patient_name, a.admission_number
+      FROM floors f
+      JOIN rooms r  ON r.floor_id = f.id
+      JOIN beds  b  ON b.room_id  = r.id
+      LEFT JOIN admissions a ON a.id = b.current_admission_id
+      ORDER BY f.sort_order, r.sort_order, b.bed_number
+    `);
+
+    const floorsMap = new Map<string, any>();
+    for (const row of result.rows as any[]) {
+      if (!floorsMap.has(row.floor_id)) {
+        floorsMap.set(row.floor_id, {
+          id: row.floor_id, nameAr: row.floor_name_ar, sortOrder: row.floor_sort,
+          rooms: new Map<string, any>(),
+        });
+      }
+      const floor = floorsMap.get(row.floor_id);
+      if (!floor.rooms.has(row.room_id)) {
+        floor.rooms.set(row.room_id, {
+          id: row.room_id, nameAr: row.room_name_ar, roomNumber: row.room_number,
+          sortOrder: row.room_sort, beds: [],
+        });
+      }
+      floor.rooms.get(row.room_id).beds.push({
+        id: row.bed_id, bedNumber: row.bed_number, status: row.status,
+        currentAdmissionId: row.current_admission_id,
+        patientName: row.patient_name || undefined,
+        admissionNumber: row.admission_number || undefined,
+        roomId: row.room_id,
+        createdAt: null, updatedAt: null,
+      });
+    }
+
+    return Array.from(floorsMap.values()).map(f => ({
+      ...f,
+      rooms: Array.from(f.rooms.values()),
+    }));
+  }
+
+  async getAvailableBeds() {
+    const result = await db.execute(sql`
+      SELECT b.id, b.bed_number, b.status, b.room_id, b.current_admission_id,
+             b.created_at, b.updated_at,
+             r.name_ar AS room_name_ar, f.name_ar AS floor_name_ar
+      FROM beds b
+      JOIN rooms r  ON r.id = b.room_id
+      JOIN floors f ON f.id = r.floor_id
+      WHERE b.status = 'EMPTY'
+      ORDER BY f.sort_order, r.sort_order, b.bed_number
+    `);
+    return result.rows.map((row: any) => ({
+      id: row.id, bedNumber: row.bed_number, status: row.status,
+      roomId: row.room_id, currentAdmissionId: row.current_admission_id,
+      createdAt: row.created_at, updatedAt: row.updated_at,
+      roomNameAr: row.room_name_ar, floorNameAr: row.floor_name_ar,
+    }));
+  }
+
+  async admitPatientToBed(params: {
+    bedId: string; patientName: string; patientPhone?: string;
+    departmentId?: string; serviceId?: string; doctorName?: string; notes?: string;
+  }) {
+    const result = await db.transaction(async (tx) => {
+      // 1. Lock bed FOR UPDATE — guards against race conditions
+      const bedRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.bedId} FOR UPDATE`);
+      const bed = bedRes.rows[0] as any;
+      if (!bed) throw new Error("السرير غير موجود");
+      if (bed.status !== "EMPTY") throw new Error("السرير غير فارغ — يرجى اختيار سرير آخر");
+
+      // 2. Generate admission number (safe within tx — UNIQUE constraint is final guard)
+      const cntRes = await tx.execute(sql`SELECT COUNT(*) AS cnt FROM admissions`);
+      const seq = parseInt((cntRes.rows[0] as any)?.cnt || "0") + 1;
+      const admissionNumber = `ADM-${String(seq).padStart(6, "0")}`;
+
+      // 3. Create admission
+      const [admission] = await tx.insert(admissions).values({
+        admissionNumber,
+        patientName: params.patientName,
+        patientPhone: params.patientPhone || "",
+        admissionDate: new Date().toISOString().split("T")[0] as unknown as Date,
+        doctorName: params.doctorName || null,
+        notes: params.notes || null,
+        status: "active" as any,
+      }).returning();
+
+      // 4. Find warehouse (prefer department-mapped, fallback to first)
+      let warehouseId: string | null = null;
+      if (params.departmentId) {
+        const whRes = await tx.execute(
+          sql`SELECT id FROM warehouses WHERE department_id = ${params.departmentId} LIMIT 1`
+        );
+        warehouseId = (whRes.rows[0] as any)?.id || null;
+      }
+      if (!warehouseId) {
+        const whRes = await tx.execute(sql`SELECT id FROM warehouses ORDER BY created_at LIMIT 1`);
+        warehouseId = (whRes.rows[0] as any)?.id || null;
+      }
+      if (!warehouseId) throw new Error("لا يوجد مخزن متاح — يرجى إنشاء مخزن أولاً");
+
+      // 5. Generate invoice number
+      const invCntRes = await tx.execute(sql`SELECT COUNT(*) AS cnt FROM patient_invoice_headers`);
+      const invSeq = parseInt((invCntRes.rows[0] as any)?.cnt || "0") + 1;
+      const invoiceNumber = `PI-${String(invSeq).padStart(6, "0")}`;
+
+      // 6. Create draft patient invoice linked to admission
+      const [invoice] = await tx.insert(patientInvoiceHeaders).values({
+        invoiceNumber,
+        patientName: params.patientName,
+        patientPhone: params.patientPhone || "",
+        admissionId: admission.id,
+        warehouseId,
+        departmentId: params.departmentId || null,
+        doctorName: params.doctorName || null,
+        patientType: "cash" as any,
+        status: "draft" as any,
+        invoiceDate: new Date().toISOString().split("T")[0] as unknown as Date,
+        totalAmount: "0",
+        discountAmount: "0",
+        netAmount: "0",
+        paidAmount: "0",
+        version: 1,
+      }).returning();
+
+      // 7. Open stay segment if service provided
+      let segmentId: string | undefined;
+      if (params.serviceId) {
+        const svcRes = await tx.execute(
+          sql`SELECT base_price FROM services WHERE id = ${params.serviceId} AND is_active = true LIMIT 1`
+        );
+        const ratePerDay = String((svcRes.rows[0] as any)?.base_price ?? "0");
+        const [seg] = await tx.insert(staySegments).values({
+          admissionId: admission.id,
+          serviceId: params.serviceId,
+          invoiceId: invoice.id,
+          startedAt: new Date(),
+          status: "ACTIVE",
+          ratePerDay,
+        }).returning();
+        segmentId = seg.id;
+      }
+
+      // 8. Mark bed OCCUPIED
+      const [updatedBed] = await tx.update(beds).set({
+        status: "OCCUPIED",
+        currentAdmissionId: admission.id,
+        updatedAt: new Date(),
+      }).where(eq(beds.id, params.bedId)).returning();
+
+      // 9. Audit (inside tx — commits with business data)
+      await tx.insert(auditLog).values({
+        tableName: "beds",
+        recordId: params.bedId,
+        action: "admit",
+        newValues: JSON.stringify({ admissionId: admission.id, invoiceId: invoice.id, segmentId }),
+      });
+
+      return { bed: updatedBed, admissionId: admission.id, invoiceId: invoice.id, segmentId };
+    });
+
+    // Emit after commit
+    console.log(`[BED_BOARD] Admitted ${params.patientName} → bed ${params.bedId} admission ${result.admissionId}`);
+    return result;
+  }
+
+  async transferPatientBed(params: {
+    sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string;
+  }) {
+    const result = await db.transaction(async (tx) => {
+      // Lock beds in deterministic order to prevent deadlock
+      const [id1, id2] = [params.sourceBedId, params.targetBedId].sort();
+      await tx.execute(sql`SELECT id FROM beds WHERE id IN (${id1}, ${id2}) FOR UPDATE`);
+
+      const srcRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.sourceBedId}`);
+      const src = srcRes.rows[0] as any;
+      if (!src) throw new Error("سرير المصدر غير موجود");
+      if (src.status !== "OCCUPIED") throw new Error("لا يوجد مريض في سرير المصدر");
+
+      const tgtRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.targetBedId}`);
+      const tgt = tgtRes.rows[0] as any;
+      if (!tgt) throw new Error("السرير الهدف غير موجود");
+      if (tgt.status !== "EMPTY") throw new Error("السرير الهدف غير فارغ");
+
+      const admissionId = src.current_admission_id;
+
+      // Transfer active stay segment if one exists
+      const activeSegRes = await tx.execute(
+        sql`SELECT id, invoice_id FROM stay_segments WHERE admission_id = ${admissionId} AND status = 'ACTIVE' LIMIT 1`
+      );
+      const activeSeg = activeSegRes.rows[0] as any;
+
+      if (activeSeg) {
+        const targetInvoiceId = params.newInvoiceId || activeSeg.invoice_id;
+        // Close old segment
+        await tx.update(staySegments).set({ status: "CLOSED", endedAt: new Date() })
+          .where(eq(staySegments.id, activeSeg.id));
+        // Open new segment
+        let ratePerDay = "0";
+        if (params.newServiceId) {
+          const svcRes = await tx.execute(
+            sql`SELECT base_price FROM services WHERE id = ${params.newServiceId} AND is_active = true LIMIT 1`
+          );
+          ratePerDay = String((svcRes.rows[0] as any)?.base_price ?? "0");
+        }
+        await tx.insert(staySegments).values({
+          admissionId,
+          serviceId: params.newServiceId || null,
+          invoiceId: targetInvoiceId,
+          startedAt: new Date(),
+          status: "ACTIVE",
+          ratePerDay,
+        });
+      }
+
+      // Source bed → NEEDS_CLEANING
+      const [updatedSrc] = await tx.update(beds).set({
+        status: "NEEDS_CLEANING",
+        currentAdmissionId: null,
+        updatedAt: new Date(),
+      }).where(eq(beds.id, params.sourceBedId)).returning();
+
+      // Target bed → OCCUPIED
+      const [updatedTgt] = await tx.update(beds).set({
+        status: "OCCUPIED",
+        currentAdmissionId: admissionId,
+        updatedAt: new Date(),
+      }).where(eq(beds.id, params.targetBedId)).returning();
+
+      await tx.insert(auditLog).values({
+        tableName: "beds",
+        recordId: params.sourceBedId,
+        action: "transfer",
+        newValues: JSON.stringify({ admissionId, targetBedId: params.targetBedId }),
+      });
+
+      return { sourceBed: updatedSrc, targetBed: updatedTgt };
+    });
+
+    console.log(`[BED_BOARD] Transfer: ${params.sourceBedId} → ${params.targetBedId}`);
+    return result;
+  }
+
+  async dischargeFromBed(bedId: string) {
+    const result = await db.transaction(async (tx) => {
+      const bedRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${bedId} FOR UPDATE`);
+      const bed = bedRes.rows[0] as any;
+      if (!bed) throw new Error("السرير غير موجود");
+      if (bed.status !== "OCCUPIED") throw new Error("لا يوجد مريض في هذا السرير");
+
+      const admissionId = bed.current_admission_id;
+
+      // Close any active stay segment
+      const segRes = await tx.execute(
+        sql`SELECT id FROM stay_segments WHERE admission_id = ${admissionId} AND status = 'ACTIVE' FOR UPDATE`
+      );
+      for (const seg of segRes.rows as any[]) {
+        await tx.update(staySegments).set({ status: "CLOSED", endedAt: new Date() })
+          .where(eq(staySegments.id, seg.id));
+      }
+
+      // Discharge admission
+      await tx.update(admissions).set({
+        status: "discharged" as any,
+        dischargeDate: new Date().toISOString().split("T")[0] as unknown as Date,
+        updatedAt: new Date(),
+      }).where(eq(admissions.id, admissionId));
+
+      // Bed → NEEDS_CLEANING
+      const [updatedBed] = await tx.update(beds).set({
+        status: "NEEDS_CLEANING",
+        currentAdmissionId: null,
+        updatedAt: new Date(),
+      }).where(eq(beds.id, bedId)).returning();
+
+      await tx.insert(auditLog).values({
+        tableName: "beds",
+        recordId: bedId,
+        action: "discharge",
+        newValues: JSON.stringify({ admissionId }),
+      });
+
+      return { bed: updatedBed };
+    });
+
+    console.log(`[BED_BOARD] Discharged from bed ${bedId}`);
+    return result;
+  }
+
+  async setBedStatus(bedId: string, status: string) {
+    return await db.transaction(async (tx) => {
+      const bedRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${bedId} FOR UPDATE`);
+      const bed = bedRes.rows[0] as any;
+      if (!bed) throw new Error("السرير غير موجود");
+      if (bed.status === "OCCUPIED" && status !== "OCCUPIED") {
+        throw new Error("لا يمكن تغيير حالة سرير مشغول");
+      }
+
+      const [updated] = await tx.update(beds).set({
+        status,
+        updatedAt: new Date(),
+      }).where(eq(beds.id, bedId)).returning();
+
+      await tx.insert(auditLog).values({
+        tableName: "beds",
+        recordId: bedId,
+        action: "status_change",
+        newValues: JSON.stringify({ from: bed.status, to: status }),
+      });
+
+      return updated;
+    });
   }
 
   // Account Mappings

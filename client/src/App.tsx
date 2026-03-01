@@ -37,6 +37,7 @@ import CashierCollection from "@/pages/CashierCollection";
 import AccountMappings from "@/pages/AccountMappings";
 import DrawerPasswords from "@/pages/DrawerPasswords";
 import UsersManagement from "@/pages/UsersManagement";
+import BedBoard from "@/pages/BedBoard";
 import NotFound from "@/pages/not-found";
 
 function RequirePermission({ permission, children }: { permission: string; children: React.ReactNode }) {
@@ -88,6 +89,7 @@ function Router() {
         <Route path="/patients">{() => <G p="patients.view"><Patients /></G>}</Route>
         <Route path="/doctors">{() => <G p="doctors.view"><Doctors /></G>}</Route>
         <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><PatientInvoice /></G>}</Route>
+        <Route path="/bed-board">{() => <G p="patient_invoices.view"><BedBoard /></G>}</Route>
         <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
         <Route path="/cashier-collection">{() => <G p="cashier.view"><CashierCollection /></G>}</Route>
         <Route path="/account-mappings">{() => <G p="settings.account_mappings"><AccountMappings /></G>}</Route>

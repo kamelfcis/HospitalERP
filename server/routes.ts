@@ -3528,6 +3528,86 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Bed Board ====================
+
+  app.get("/api/bed-board", async (_req, res) => {
+    try {
+      const data = await storage.getBedBoard();
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/beds/available", async (_req, res) => {
+    try {
+      const data = await storage.getAvailableBeds();
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/beds/:id/admit", async (req, res) => {
+    try {
+      const { patientName, patientPhone, departmentId, serviceId, doctorName, notes } = req.body;
+      if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
+      const result = await storage.admitPatientToBed({
+        bedId: req.params.id,
+        patientName: patientName.trim(),
+        patientPhone: patientPhone || undefined,
+        departmentId: departmentId || undefined,
+        serviceId: serviceId || undefined,
+        doctorName: doctorName || undefined,
+        notes: notes || undefined,
+      });
+      res.status(201).json(result);
+    } catch (error: any) {
+      const code = error.message?.includes("غير فارغ") ? 409 : 400;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/beds/:id/transfer", async (req, res) => {
+    try {
+      const { targetBedId, newServiceId, newInvoiceId } = req.body;
+      if (!targetBedId) return res.status(400).json({ message: "targetBedId مطلوب" });
+      const result = await storage.transferPatientBed({
+        sourceBedId: req.params.id,
+        targetBedId,
+        newServiceId: newServiceId || undefined,
+        newInvoiceId: newInvoiceId || undefined,
+      });
+      res.json(result);
+    } catch (error: any) {
+      const code = error.message?.includes("غير موجود") ? 404 : 409;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/beds/:id/discharge", async (req, res) => {
+    try {
+      const result = await storage.dischargeFromBed(req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      const code = error.message?.includes("غير موجود") ? 404 : 409;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/beds/:id/status", async (req, res) => {
+    try {
+      const { status } = req.body;
+      const ALLOWED = ["EMPTY", "NEEDS_CLEANING", "MAINTENANCE"];
+      if (!ALLOWED.includes(status)) return res.status(400).json({ message: "حالة غير صالحة" });
+      const bed = await storage.setBedStatus(req.params.id, status);
+      res.json(bed);
+    } catch (error: any) {
+      const code = error.message?.includes("مشغول") ? 409 : 400;
+      res.status(code).json({ message: error.message });
+    }
+  });
+
   // ==================== Stay Engine ====================
 
   app.get("/api/admissions/:id/segments", async (req, res) => {

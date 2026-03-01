@@ -1450,6 +1450,45 @@ export const staySegments = pgTable("stay_segments", {
 
 export type StaySegment = typeof staySegments.$inferSelect;
 
+// ==================== Bed Board ====================
+
+export const floors = pgTable("floors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  nameAr: text("name_ar").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  sortIdx: index("idx_floors_sort").on(table.sortOrder),
+}));
+
+export const rooms = pgTable("rooms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  floorId: varchar("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+  nameAr: text("name_ar").notNull(),
+  roomNumber: varchar("room_number", { length: 20 }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  floorIdx: index("idx_rooms_floor").on(table.floorId),
+}));
+
+export const beds = pgTable("beds", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  roomId: varchar("room_id").notNull().references(() => rooms.id, { onDelete: "cascade" }),
+  bedNumber: varchar("bed_number", { length: 20 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("EMPTY"),
+  currentAdmissionId: varchar("current_admission_id").references(() => admissions.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  roomIdx: index("idx_beds_room").on(table.roomId),
+  statusIdx: index("idx_beds_status").on(table.status),
+}));
+
+export type Floor = typeof floors.$inferSelect;
+export type Room = typeof rooms.$inferSelect;
+export type Bed = typeof beds.$inferSelect;
+
 // كلمات سر الخزن
 export const drawerPasswords = pgTable("drawer_passwords", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
