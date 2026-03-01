@@ -37,6 +37,9 @@ import {
   getUnitName,
 } from "./utils/units";
 import type { LineLocal, PaymentLocal } from "./types";
+import { InvoiceTab } from "./tabs/InvoiceTab";
+import { RegistryTab } from "./tabs/RegistryTab";
+import { AdmissionsTab } from "./tabs/AdmissionsTab";
 
 function recalcLine(line: LineLocal): LineLocal {
   const gross = line.quantity * line.unitPrice;
@@ -1434,616 +1437,6 @@ export default function PatientInvoice() {
     }
   }, [warehouseId, invoiceDate, departmentId, toast, updateLine]);
 
-  function renderLineGrid(type: string) {
-    const typeLines = filteredLines(type);
-    return (
-      <div className="space-y-3">
-        {type !== "service" ? (
-          <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                ref={itemSearchRef}
-                placeholder="بحث عن صنف... (استخدم % للبحث المتقدم)"
-                value={itemSearch}
-                onChange={(e) => setItemSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setItemSearch("");
-                    setItemResults([]);
-                  }
-                }}
-                className="pr-8"
-                disabled={!isDraft}
-                data-testid={`input-item-search-${type}`}
-              />
-            </div>
-            {searchingItems && <Loader2 className="h-4 w-4 animate-spin" />}
-            {fefoLoading && <Badge variant="secondary" className="text-xs">جاري توزيع الصلاحية...</Badge>}
-          </div>
-        ) : (
-          <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                ref={serviceSearchRef}
-                placeholder="بحث عن خدمة..."
-                value={serviceSearch}
-                onChange={(e) => setServiceSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setServiceSearch("");
-                    setServiceResults([]);
-                  }
-                }}
-                className="pr-8"
-                disabled={!isDraft}
-                data-testid="input-service-search"
-              />
-            </div>
-            {searchingServices && <Loader2 className="h-4 w-4 animate-spin" />}
-          </div>
-        )}
-
-        {type === "service" && serviceResults.length > 0 && (
-          <div className="relative" style={{ zIndex: 50 }}>
-            <div ref={serviceDropdownRef} className="absolute top-0 right-0 left-0 border rounded-md max-h-48 overflow-y-auto bg-popover shadow-lg">
-              {serviceResults.map((svc: any) => (
-                <div
-                  key={svc.id}
-                  className="flex flex-row-reverse items-center justify-between gap-2 p-2 hover-elevate cursor-pointer border-b last:border-b-0"
-                  onClick={() => addServiceLine(svc)}
-                  data-testid={`result-service-${svc.id}`}
-                >
-                  <span className="text-sm">{svc.nameAr || svc.code}</span>
-                  <span className="text-xs text-muted-foreground">{formatNumber(svc.basePrice)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {type !== "service" && itemResults.length > 0 && (
-          <div className="relative" style={{ zIndex: 50 }}>
-            <div ref={itemDropdownRef} className="absolute top-0 right-0 left-0 border rounded-md max-h-48 overflow-y-auto bg-popover shadow-lg">
-              {itemResults.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="flex flex-row-reverse items-center justify-between gap-2 p-2 hover-elevate cursor-pointer border-b last:border-b-0"
-                  onClick={() => addItemLine(item, type as "drug" | "consumable" | "equipment")}
-                  data-testid={`result-item-${type}-${item.id}`}
-                >
-                  <div className="flex flex-row-reverse items-center gap-2">
-                    <span className="text-sm">{item.nameAr || item.itemCode}</span>
-                    {item.itemCode && <span className="text-[10px] text-muted-foreground">({item.itemCode})</span>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground">{item.majorUnitName || item.mediumUnitName || item.minorUnitName || "وحدة"}</span>
-                    <span className="text-xs text-muted-foreground">{formatNumber(item.salePriceCurrent || item.purchasePriceLast || 0)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="overflow-x-auto border rounded-md">
-          <table className="peachtree-grid w-full text-sm">
-            <thead>
-              <tr className="peachtree-grid-header">
-                <th className="text-center" style={{ width: 40 }}>#</th>
-                <th>الوصف</th>
-                {type === "service" && <th className="text-center" style={{ width: 120 }}>الطبيب</th>}
-                {type === "service" && <th className="text-center" style={{ width: 120 }}>الممرض</th>}
-                {type !== "service" && <th className="text-center" style={{ width: 80 }}>الوحدة</th>}
-                <th className="text-center" style={{ width: 80 }}>الكمية</th>
-                <th className="text-center" style={{ width: 100 }}>سعر الوحدة</th>
-                <th className="text-center" style={{ width: 80 }}>خصم %</th>
-                <th className="text-center" style={{ width: 100 }}>قيمة الخصم</th>
-                <th className="text-center" style={{ width: 110 }}>الإجمالي</th>
-                {isDraft && <th className="text-center" style={{ width: 50 }}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {typeLines.map((line, i) => (
-                <tr
-                  key={line.tempId}
-                  className={`peachtree-grid-row ${type === "service" ? getServiceRowClass(line.serviceType) : ""}`}
-                  data-testid={`row-line-${type}-${i}`}
-                >
-                  <td className="text-center">{i + 1}</td>
-                  <td>
-                    {isDraft ? (
-                      <div className="space-y-0.5">
-                        <div className="flex flex-row-reverse items-center gap-1">
-                          <Input
-                            value={line.description}
-                            onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
-                            className="h-7 text-xs flex-1"
-                            data-testid={`input-desc-${type}-${i}`}
-                          />
-                          {(type === "drug" || type === "consumable") && line.itemId && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 shrink-0"
-                              onClick={() => openStatsPopup(line.itemId!, line.description)}
-                              data-testid={`button-stock-stats-${type}-${i}`}
-                            >
-                              <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                            </Button>
-                          )}
-                        </div>
-                        {(type === "drug" || type === "consumable") && line.expiryMonth && line.expiryYear && (
-                          <div className="flex flex-row-reverse items-center gap-1">
-                            <Badge variant="secondary" className="text-[10px]">
-                              {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
-                            </Badge>
-                            {line.priceSource === "department" && (
-                              <Badge variant="secondary" className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">سعر القسم</Badge>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="flex flex-row-reverse items-center gap-1">
-                          <span>{line.description}</span>
-                          {(type === "drug" || type === "consumable") && line.itemId && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 shrink-0"
-                              onClick={() => openStatsPopup(line.itemId!, line.description)}
-                              data-testid={`button-stock-stats-${type}-${i}`}
-                            >
-                              <BarChart3 className="h-3 w-3 text-muted-foreground" />
-                            </Button>
-                          )}
-                        </div>
-                        {(type === "drug" || type === "consumable") && line.expiryMonth && line.expiryYear && (
-                          <div className="flex flex-row-reverse items-center gap-1 mt-0.5">
-                            <Badge variant="secondary" className="text-[10px]">
-                              {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
-                            </Badge>
-                            {line.priceSource === "department" && (
-                              <Badge variant="secondary" className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">سعر القسم</Badge>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  {type === "service" && (
-                    <td className={`text-center ${line.requiresDoctor ? "bg-blue-50 dark:bg-blue-950/40" : ""}`}>
-                      {line.requiresDoctor ? (
-                        isDraft ? (
-                          <Input
-                            value={line.doctorName}
-                            onChange={(e) => updateLine(line.tempId, "doctorName", e.target.value)}
-                            placeholder="اسم الطبيب *"
-                            className={`h-7 text-xs ${!line.doctorName ? "border-blue-400 dark:border-blue-600" : ""}`}
-                            data-testid={`input-doctor-${i}`}
-                          />
-                        ) : (
-                          <span className="text-xs">{line.doctorName || "-"}</span>
-                        )
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </td>
-                  )}
-                  {type === "service" && (
-                    <td className={`text-center ${line.requiresNurse ? "bg-purple-50 dark:bg-purple-950/40" : ""}`}>
-                      {line.requiresNurse ? (
-                        isDraft ? (
-                          <Input
-                            value={line.nurseName}
-                            onChange={(e) => updateLine(line.tempId, "nurseName", e.target.value)}
-                            placeholder="اسم الممرض *"
-                            className={`h-7 text-xs ${!line.nurseName ? "border-purple-400 dark:border-purple-600" : ""}`}
-                            data-testid={`input-nurse-${i}`}
-                          />
-                        ) : (
-                          <span className="text-xs">{line.nurseName || "-"}</span>
-                        )
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </td>
-                  )}
-                  {type !== "service" && (
-                    <td className="text-center">
-                      {isDraft && line.itemId && line.item ? (
-                        <select
-                          value={line.unitLevel}
-                          onChange={(e) => handleUnitLevelChange(line.tempId, e.target.value as "major" | "medium" | "minor")}
-                          className="h-7 text-xs text-center bg-transparent border rounded px-1 w-full"
-                          data-testid={`select-unit-${type}-${i}`}
-                        >
-                          {itemHasMajorUnit(line.item) && (
-                            <option value="major">{line.item?.majorUnitName || "كبرى"}</option>
-                          )}
-                          {itemHasMediumUnit(line.item) && (
-                            <option value="medium">{line.item?.mediumUnitName || "متوسطة"}</option>
-                          )}
-                          {(line.item?.minorUnitName || (!itemHasMajorUnit(line.item) && !itemHasMediumUnit(line.item))) && (
-                            <option value="minor">{line.item?.minorUnitName || "وحدة"}</option>
-                          )}
-                        </select>
-                      ) : (
-                        <span className="text-xs">{line.item ? getUnitName(line.item, line.unitLevel) : "-"}</span>
-                      )}
-                    </td>
-                  )}
-                  <td className="text-center">
-                    {isDraft ? (
-                      (type === "drug" || type === "consumable") && line.lotId ? (
-                        <Input
-                          type="number"
-                          defaultValue={line.quantity}
-                          min={0}
-                          step="any"
-                          onChange={(e) => {
-                            pendingQtyRef.current.set(line.tempId, e.target.value);
-                          }}
-                          onBlur={() => handleQtyConfirm(line.tempId)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              handleQtyConfirm(line.tempId);
-                            }
-                          }}
-                          className="h-7 text-xs text-center"
-                          data-testid={`input-qty-${type}-${i}`}
-                        />
-                      ) : (
-                        <Input
-                          type="number"
-                          value={line.quantity}
-                          min={0}
-                          step="any"
-                          onChange={(e) => updateLine(line.tempId, "quantity", parseFloat(e.target.value) || 0)}
-                          className="h-7 text-xs text-center"
-                          data-testid={`input-qty-${type}-${i}`}
-                        />
-                      )
-                    ) : (
-                      formatNumber(line.quantity)
-                    )}
-                  </td>
-                  <td className="text-center">
-                    {isDraft ? (
-                      <Input
-                        type="number"
-                        value={line.unitPrice}
-                        min={0}
-                        onChange={(e) => updateLine(line.tempId, "unitPrice", parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-center"
-                        data-testid={`input-price-${type}-${i}`}
-                      />
-                    ) : (
-                      formatNumber(line.unitPrice)
-                    )}
-                  </td>
-                  <td className="text-center">
-                    {isDraft ? (
-                      <Input
-                        type="number"
-                        value={line.discountPercent}
-                        min={0}
-                        max={100}
-                        onChange={(e) => updateLine(line.tempId, "discountPercent", parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-center"
-                        data-testid={`input-disc-pct-${type}-${i}`}
-                      />
-                    ) : (
-                      formatNumber(line.discountPercent)
-                    )}
-                  </td>
-                  <td className="text-center">
-                    {isDraft ? (
-                      <Input
-                        type="number"
-                        value={line.discountAmount}
-                        min={0}
-                        onChange={(e) => updateLine(line.tempId, "discountAmount", parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-center"
-                        data-testid={`input-disc-amt-${type}-${i}`}
-                      />
-                    ) : (
-                      formatNumber(line.discountAmount)
-                    )}
-                  </td>
-                  <td className="text-center font-bold">{formatNumber(line.totalPrice)}</td>
-                  {isDraft && (
-                    <td className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeLine(line.tempId)}
-                        data-testid={`button-remove-line-${type}-${i}`}
-                      >
-                        <X className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {typeLines.length === 0 && (
-                <tr>
-                  <td colSpan={type === "service" ? (isDraft ? 10 : 9) : (isDraft ? 8 : 7)} className="text-center text-muted-foreground py-4">
-                    لا توجد بنود
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
-  function renderPaymentsTab() {
-    return (
-      <div className="space-y-3">
-        {isDraft && (
-          <Button variant="outline" size="sm" onClick={addPayment} data-testid="button-add-payment">
-            <Plus className="h-3 w-3 ml-1" />
-            اضافة دفعة
-          </Button>
-        )}
-        <div className="overflow-x-auto border rounded-md">
-          <table className="peachtree-grid w-full text-sm">
-            <thead>
-              <tr className="peachtree-grid-header">
-                <th className="text-center" style={{ width: 40 }}>#</th>
-                <th className="text-center" style={{ width: 130 }}>التاريخ</th>
-                <th className="text-center" style={{ width: 120 }}>المبلغ</th>
-                <th className="text-center" style={{ width: 140 }}>طريقة الدفع</th>
-                <th>المرجع</th>
-                <th>ملاحظات</th>
-                {isDraft && <th className="text-center" style={{ width: 50 }}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {payments.map((p, i) => (
-                <tr key={p.tempId} className="peachtree-grid-row" data-testid={`row-payment-${i}`}>
-                  <td className="text-center">{i + 1}</td>
-                  <td className="text-center">
-                    {isDraft ? (
-                      <Input
-                        type="date"
-                        value={p.paymentDate}
-                        onChange={(e) => updatePayment(p.tempId, "paymentDate", e.target.value)}
-                        className="h-7 text-xs"
-                        data-testid={`input-pay-date-${i}`}
-                      />
-                    ) : (
-                      formatDateShort(p.paymentDate)
-                    )}
-                  </td>
-                  <td className="text-center">
-                    {isDraft ? (
-                      <Input
-                        type="number"
-                        value={p.amount}
-                        min={0}
-                        onChange={(e) => updatePayment(p.tempId, "amount", parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-center"
-                        data-testid={`input-pay-amount-${i}`}
-                      />
-                    ) : (
-                      formatNumber(p.amount)
-                    )}
-                  </td>
-                  <td className="text-center">
-                    {isDraft ? (
-                      <Select
-                        value={p.paymentMethod}
-                        onValueChange={(v) => updatePayment(p.tempId, "paymentMethod", v)}
-                      >
-                        <SelectTrigger className="h-7 text-xs" data-testid={`select-pay-method-${i}`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(paymentMethodLabels).map(([val, label]) => (
-                            <SelectItem key={val} value={val}>{label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      paymentMethodLabels[p.paymentMethod] || p.paymentMethod
-                    )}
-                  </td>
-                  <td>
-                    {isDraft ? (
-                      <Input
-                        value={p.referenceNumber}
-                        onChange={(e) => updatePayment(p.tempId, "referenceNumber", e.target.value)}
-                        className="h-7 text-xs"
-                        data-testid={`input-pay-ref-${i}`}
-                      />
-                    ) : (
-                      p.referenceNumber
-                    )}
-                  </td>
-                  <td>
-                    {isDraft ? (
-                      <Input
-                        value={p.notes}
-                        onChange={(e) => updatePayment(p.tempId, "notes", e.target.value)}
-                        className="h-7 text-xs"
-                        data-testid={`input-pay-notes-${i}`}
-                      />
-                    ) : (
-                      p.notes
-                    )}
-                  </td>
-                  {isDraft && (
-                    <td className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removePayment(p.tempId)}
-                        data-testid={`button-remove-payment-${i}`}
-                      >
-                        <X className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {payments.length === 0 && (
-                <tr>
-                  <td colSpan={isDraft ? 7 : 6} className="text-center text-muted-foreground py-4">
-                    لا توجد دفعات
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
-  function renderConsolidatedTab() {
-    const grouped: Record<string, LineLocal[]> = {};
-    lines.forEach((l) => {
-      if (!grouped[l.lineType]) grouped[l.lineType] = [];
-      grouped[l.lineType].push(l);
-    });
-    const typeOrder = ["service", "drug", "consumable", "equipment"];
-    let counter = 0;
-
-    return (
-      <div className="space-y-4">
-        <div className="overflow-x-auto border rounded-md">
-          <table className="peachtree-grid w-full text-sm">
-            <thead>
-              <tr className="peachtree-grid-header">
-                <th className="text-center" style={{ width: 40 }}>#</th>
-                <th>النوع</th>
-                <th>الوصف</th>
-                <th className="text-center" style={{ width: 80 }}>الكمية</th>
-                <th className="text-center" style={{ width: 100 }}>سعر الوحدة</th>
-                <th className="text-center" style={{ width: 80 }}>خصم %</th>
-                <th className="text-center" style={{ width: 100 }}>قيمة الخصم</th>
-                <th className="text-center" style={{ width: 110 }}>الإجمالي</th>
-              </tr>
-            </thead>
-            <tbody>
-              {typeOrder.map((type) => {
-                const group = grouped[type];
-                if (!group || group.length === 0) return null;
-                return group.map((line, i) => {
-                  counter++;
-                  return (
-                    <tr
-                      key={line.tempId}
-                      className={`peachtree-grid-row ${line.lineType === "service" ? getServiceRowClass(line.serviceType) : ""}`}
-                      data-testid={`row-consolidated-${counter}`}
-                    >
-                      <td className="text-center">{counter}</td>
-                      <td>
-                        <Badge variant="secondary" className="text-xs">
-                          {lineTypeLabels[line.lineType] || line.lineType}
-                        </Badge>
-                      </td>
-                      <td>
-                        <span>{line.description}</span>
-                        {(line.lineType === "drug" || line.lineType === "consumable") && line.expiryMonth && line.expiryYear && (
-                          <span className="mr-2">
-                            <Badge variant="secondary" className="text-[10px]">
-                              {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
-                            </Badge>
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-center">{formatNumber(line.quantity)}</td>
-                      <td className="text-center">{formatNumber(line.unitPrice)}</td>
-                      <td className="text-center">{formatNumber(line.discountPercent)}</td>
-                      <td className="text-center">{formatNumber(line.discountAmount)}</td>
-                      <td className="text-center font-bold">{formatNumber(line.totalPrice)}</td>
-                    </tr>
-                  );
-                });
-              })}
-              {lines.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="text-center text-muted-foreground py-4">
-                    لا توجد بنود
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-              <div className="flex flex-col items-center">
-                <span className="text-muted-foreground">الإجمالي</span>
-                <span className="font-bold" data-testid="text-consolidated-total">{formatCurrency(totals.totalAmount)}</span>
-              </div>
-              <div className="flex flex-col items-center">
-                <span className="text-muted-foreground">الخصم</span>
-                <span className="font-bold" data-testid="text-consolidated-discount">{formatCurrency(totals.discountAmount)}</span>
-              </div>
-              <div className="flex flex-col items-center">
-                <span className="text-muted-foreground">الصافي</span>
-                <span className="font-bold" data-testid="text-consolidated-net">{formatCurrency(totals.netAmount)}</span>
-              </div>
-              <div className="flex flex-col items-center">
-                <span className="text-muted-foreground">المدفوع</span>
-                <span className="font-bold" data-testid="text-consolidated-paid">{formatCurrency(totals.paidAmount)}</span>
-              </div>
-              <div className="flex flex-col items-center">
-                <span className="text-muted-foreground">المتبقي</span>
-                <span className="font-bold" data-testid="text-consolidated-remaining">{formatCurrency(totals.remaining)}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {payments.length > 0 && (
-          <Card>
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-sm">سجل الدفعات</CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              <div className="overflow-x-auto border rounded-md">
-                <table className="peachtree-grid w-full text-sm">
-                  <thead>
-                    <tr className="peachtree-grid-header">
-                      <th className="text-center">#</th>
-                      <th className="text-center">التاريخ</th>
-                      <th className="text-center">المبلغ</th>
-                      <th className="text-center">طريقة الدفع</th>
-                      <th>المرجع</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((p, i) => (
-                      <tr key={p.tempId} className="peachtree-grid-row">
-                        <td className="text-center">{i + 1}</td>
-                        <td className="text-center">{formatDateShort(p.paymentDate)}</td>
-                        <td className="text-center font-bold">{formatNumber(p.amount)}</td>
-                        <td className="text-center">{paymentMethodLabels[p.paymentMethod]}</td>
-                        <td>{p.referenceNumber}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="patient-invoice-page p-2 space-y-2" dir="rtl" lang="ar" data-testid="page-patient-invoice">
@@ -2064,988 +1457,172 @@ export default function PatientInvoice() {
         </TabsList>
 
         <TabsContent value="invoice" className="mt-2">
-          <div className="space-y-2">
-            <div className="border rounded-md p-2 space-y-2">
-              <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
-                {invoiceId && (
-                  <Badge className={getStatusBadgeClass(status)} data-testid="badge-invoice-status">
-                    {patientInvoiceStatusLabels[status] || status}
-                  </Badge>
-                )}
-                <div className="flex flex-row-reverse items-center gap-1">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">رقم:</Label>
-                  <Input
-                    value={invoiceNumber}
-                    onChange={(e) => setInvoiceNumber(e.target.value)}
-                    disabled={!isDraft}
-                    className="h-7 text-xs w-24"
-                    data-testid="input-invoice-number"
-                  />
-                </div>
-                <div className="flex flex-row-reverse items-center gap-1">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">تاريخ:</Label>
-                  <Input
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                    disabled={!isDraft}
-                    className="h-7 text-xs w-36"
-                    data-testid="input-invoice-date"
-                  />
-                </div>
-                <div className="flex flex-row-reverse items-center gap-1 relative">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
-                  <Input
-                    ref={patientSearchRef}
-                    value={patientName}
-                    onChange={(e) => {
-                      setPatientName(e.target.value);
-                      setPatientSearch(e.target.value);
-                      setShowPatientDropdown(true);
-                    }}
-                    onFocus={() => {
-                      if (patientName.length >= 1) {
-                        setPatientSearch(patientName);
-                        setShowPatientDropdown(true);
-                      }
-                    }}
-                    disabled={!isDraft}
-                    className="h-7 text-xs w-40"
-                    placeholder="ابحث عن مريض..."
-                    data-testid="input-patient-name"
-                  />
-                  {showPatientDropdown && (patientResults.length > 0 || searchingPatients) && (
-                    <div
-                      ref={patientDropdownRef}
-                      className="absolute top-full right-0 mt-1 w-72 bg-popover border rounded-md shadow-lg z-50 max-h-48 overflow-y-auto"
-                      data-testid="dropdown-patient-search"
-                    >
-                      {searchingPatients && (
-                        <div className="flex items-center justify-center gap-2 p-2 text-xs text-muted-foreground">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>جاري البحث...</span>
-                        </div>
-                      )}
-                      {patientResults.map((p) => (
-                        <div
-                          key={p.id}
-                          className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex flex-row-reverse items-center justify-between gap-2 border-b last:border-b-0"
-                          onClick={() => {
-                            setPatientName(p.fullName);
-                            setPatientPhone(p.phone || "");
-                            setShowPatientDropdown(false);
-                            setPatientSearch("");
-                            setPatientResults([]);
-                          }}
-                          data-testid={`option-patient-${p.id}`}
-                        >
-                          <span className="font-medium truncate">{p.fullName}</span>
-                          <span className="text-muted-foreground whitespace-nowrap">
-                            {p.phone || ""}{p.age ? ` | ${p.age} سنة` : ""}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-row-reverse items-center gap-1">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">هاتف:</Label>
-                  <Input
-                    value={patientPhone}
-                    onChange={(e) => setPatientPhone(e.target.value)}
-                    disabled={!isDraft}
-                    className="h-7 text-xs w-28"
-                    data-testid="input-patient-phone"
-                  />
-                </div>
-                <div className="flex flex-row-reverse items-center gap-1">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
-                  <Select value={departmentId} onValueChange={setDepartmentId} disabled={!isDraft}>
-                    <SelectTrigger className="h-7 text-xs w-32" data-testid="select-department">
-                      <SelectValue placeholder="اختر" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(departments || []).map((dept) => (
-                        <SelectItem key={dept.id} value={dept.id}>{dept.nameAr}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-row-reverse items-center gap-1">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">الإقامة:</Label>
-                  <Select value={admissionId || "none"} onValueChange={(val) => {
-                    setAdmissionId(val === "none" ? "" : val);
-                    if (val && val !== "none") {
-                      const adm = (activeAdmissions || []).find(a => a.id === val);
-                      if (adm) {
-                        if (!patientName) setPatientName(adm.patientName);
-                        if (!patientPhone && adm.patientPhone) setPatientPhone(adm.patientPhone);
-                      }
-                    }
-                  }} disabled={!isDraft}>
-                    <SelectTrigger className="h-7 text-xs w-36" data-testid="select-admission">
-                      <SelectValue placeholder="بدون إقامة" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">بدون إقامة</SelectItem>
-                      {(activeAdmissions || []).map((adm) => (
-                        <SelectItem key={adm.id} value={adm.id}>
-                          {adm.admissionNumber} - {adm.patientName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-row-reverse items-center gap-1">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">المخزن:</Label>
-                  <Select value={warehouseId} onValueChange={setWarehouseId} disabled={!isDraft}>
-                    <SelectTrigger className="h-7 text-xs w-36" data-testid="select-warehouse">
-                      <SelectValue placeholder="اختر مخزن" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(warehouses || []).filter((w: any) => w.isActive).map((w: any) => (
-                        <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-row-reverse items-center gap-1 relative">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
-                  <Input
-                    ref={doctorSearchRef}
-                    value={doctorName}
-                    onChange={(e) => {
-                      setDoctorName(e.target.value);
-                      setDoctorSearch(e.target.value);
-                      setShowDoctorDropdown(true);
-                    }}
-                    onFocus={() => {
-                      if (doctorName.length >= 1) {
-                        setDoctorSearch(doctorName);
-                        setShowDoctorDropdown(true);
-                      }
-                    }}
-                    disabled={!isDraft}
-                    className="h-7 text-xs w-32"
-                    placeholder="ابحث عن طبيب..."
-                    data-testid="input-doctor-name"
-                  />
-                  {showDoctorDropdown && (doctorResults.length > 0 || searchingDoctors) && (
-                    <div
-                      ref={doctorDropdownRef}
-                      className="absolute top-full right-0 mt-1 w-60 bg-popover border rounded-md shadow-lg z-50 max-h-48 overflow-y-auto"
-                      data-testid="dropdown-doctor-search"
-                    >
-                      {searchingDoctors && (
-                        <div className="flex items-center justify-center gap-2 p-2 text-xs text-muted-foreground">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>جاري البحث...</span>
-                        </div>
-                      )}
-                      {doctorResults.map((d) => (
-                        <div
-                          key={d.id}
-                          className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex flex-row-reverse items-center justify-between gap-2 border-b last:border-b-0"
-                          onClick={() => {
-                            setDoctorName(d.name);
-                            setShowDoctorDropdown(false);
-                            setDoctorSearch("");
-                            setDoctorResults([]);
-                          }}
-                          data-testid={`option-doctor-${d.id}`}
-                        >
-                          <span className="font-medium truncate">{d.name}</span>
-                          {d.specialty && <span className="text-muted-foreground whitespace-nowrap">{d.specialty}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-row-reverse items-center gap-1">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">النوع:</Label>
-                  <label className="flex flex-row-reverse items-center gap-1 cursor-pointer text-xs">
-                    <input
-                      type="radio"
-                      name="patientType"
-                      value="cash"
-                      checked={patientType === "cash"}
-                      onChange={() => setPatientType("cash")}
-                      disabled={!isDraft}
-                      data-testid="radio-patient-type-cash"
-                    />
-                    {patientTypeLabels.cash}
-                  </label>
-                  <label className="flex flex-row-reverse items-center gap-1 cursor-pointer text-xs">
-                    <input
-                      type="radio"
-                      name="patientType"
-                      value="contract"
-                      checked={patientType === "contract"}
-                      onChange={() => setPatientType("contract")}
-                      disabled={!isDraft}
-                      data-testid="radio-patient-type-contract"
-                    />
-                    {patientTypeLabels.contract}
-                  </label>
-                </div>
-                {patientType === "contract" && (
-                  <div className="flex flex-row-reverse items-center gap-1">
-                    <Label className="text-xs text-muted-foreground whitespace-nowrap">جهة:</Label>
-                    <Input
-                      value={contractName}
-                      onChange={(e) => setContractName(e.target.value)}
-                      disabled={!isDraft}
-                      className="h-7 text-xs w-32"
-                      data-testid="input-contract-name"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">ملاحظات:</Label>
-                <Input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  disabled={!isDraft}
-                  className="h-7 text-xs flex-1"
-                  placeholder="ملاحظات..."
-                  data-testid="input-notes"
-                />
-              </div>
-            </div>
-
-            <div className="border rounded-md p-2">
-              <Tabs value={subTab} onValueChange={setSubTab}>
-                <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
-                  <TabsTrigger value="services" data-testid="tab-services">خدمات</TabsTrigger>
-                  <TabsTrigger value="drugs" data-testid="tab-drugs">أدوية</TabsTrigger>
-                  <TabsTrigger value="consumables" data-testid="tab-consumables">مستهلكات</TabsTrigger>
-                  <TabsTrigger value="equipment" data-testid="tab-equipment">أجهزة</TabsTrigger>
-                  <TabsTrigger value="payments" data-testid="tab-payments">سداد دفعات</TabsTrigger>
-                  <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="services" className="mt-2">{renderLineGrid("service")}</TabsContent>
-                <TabsContent value="drugs" className="mt-2">{renderLineGrid("drug")}</TabsContent>
-                <TabsContent value="consumables" className="mt-2">{renderLineGrid("consumable")}</TabsContent>
-                <TabsContent value="equipment" className="mt-2">{renderLineGrid("equipment")}</TabsContent>
-                <TabsContent value="payments" className="mt-2">{renderPaymentsTab()}</TabsContent>
-                <TabsContent value="consolidated" className="mt-2">{renderConsolidatedTab()}</TabsContent>
-              </Tabs>
-            </div>
-
-            <div className="border rounded-md p-2">
-              <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-row-reverse flex-wrap items-center gap-3 text-sm">
-                  <div className="flex flex-row-reverse items-center gap-1">
-                    <span className="text-muted-foreground text-xs">الإجمالي:</span>
-                    <span className="font-bold text-xs" data-testid="text-footer-total">{formatCurrency(totals.totalAmount)}</span>
-                  </div>
-                  <div className="flex flex-row-reverse items-center gap-1">
-                    <span className="text-muted-foreground text-xs">الخصم:</span>
-                    <span className="font-bold text-xs" data-testid="text-footer-discount">{formatCurrency(totals.discountAmount)}</span>
-                  </div>
-                  <div className="flex flex-row-reverse items-center gap-1">
-                    <span className="text-muted-foreground text-xs">الصافي:</span>
-                    <span className="font-bold text-xs" data-testid="text-footer-net">{formatCurrency(totals.netAmount)}</span>
-                  </div>
-                  <div className="flex flex-row-reverse items-center gap-1">
-                    <span className="text-muted-foreground text-xs">المدفوع:</span>
-                    <span className="font-bold text-xs" data-testid="text-footer-paid">{formatCurrency(totals.paidAmount)}</span>
-                  </div>
-                  <div className="flex flex-row-reverse items-center gap-1">
-                    <span className="text-muted-foreground text-xs">المتبقي:</span>
-                    <span className={`font-bold text-xs ${totals.remaining > 0 ? "text-destructive" : ""}`} data-testid="text-footer-remaining">
-                      {formatCurrency(totals.remaining)}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={resetForm}
-                    data-testid="button-new"
-                  >
-                    <Plus className="h-3 w-3 ml-1" />
-                    جديد
-                  </Button>
-                  {isDraft && (
-                    <>
-                      <Button
-                        size="sm"
-                        onClick={() => saveMutation.mutate()}
-                        disabled={saveMutation.isPending || !patientName || !invoiceNumber}
-                        data-testid="button-save"
-                      >
-                        {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
-                        حفظ
-                      </Button>
-                      {invoiceId && (
-                        <Button
-                          size="sm"
-                          variant="default"
-                          onClick={() => finalizeMutation.mutate()}
-                          disabled={finalizeMutation.isPending}
-                          className="bg-green-600 text-white border-green-700"
-                          data-testid="button-finalize"
-                        >
-                          {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
-                          اعتماد
-                        </Button>
-                      )}
-                      {invoiceId && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setConfirmDeleteId(invoiceId)}
-                          disabled={deleteMutation.isPending}
-                          data-testid="button-delete"
-                        >
-                          <Trash2 className="h-3 w-3 ml-1" />
-                          حذف
-                        </Button>
-                      )}
-                      {lines.length > 0 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={openDistributeDialog}
-                          data-testid="button-distribute"
-                          className="border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400"
-                        >
-                          <Users className="h-3 w-3 ml-1" />
-                          توزيع على حالات
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {status === "finalized" && invoiceId && (
-              <div className="border rounded-md p-2 space-y-2" data-testid="section-doctor-transfer">
-                <div className="flex flex-row-reverse items-center gap-2">
-                  <Stethoscope className="h-4 w-4 text-blue-600" />
-                  <h3 className="text-sm font-semibold">تحويل مستحقات الطبيب</h3>
-                  <div className="flex-1" />
-                  {dtTransfers.length > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      محوّل: {formatCurrency(dtAlreadyTransferred)} | متبقي: {formatCurrency(dtRemaining)}
-                    </span>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400"
-                    onClick={() => { setDtOpen(o => !o); if (!dtOpen) setDtAmount(dtRemaining.toFixed(2)); }}
-                    data-testid="button-dt-open"
-                  >
-                    <ArrowLeftRight className="h-3 w-3 ml-1" />
-                    {dtOpen ? "إلغاء" : "تحويل للطبيب"}
-                  </Button>
-                </div>
-
-                {dtTransfers.length > 0 && (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-right">الطبيب</TableHead>
-                        <TableHead className="text-right">المبلغ</TableHead>
-                        <TableHead className="text-right">التاريخ</TableHead>
-                        <TableHead className="text-right">ملاحظات</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {dtTransfers.map(t => (
-                        <TableRow key={t.id} data-testid={`row-dt-${t.id}`}>
-                          <TableCell className="text-xs">{t.doctorName}</TableCell>
-                          <TableCell className="text-xs font-medium">{formatCurrency(parseFloat(t.amount))}</TableCell>
-                          <TableCell className="text-xs">{formatDateShort(t.transferredAt as any)}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{t.notes || "—"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-
-                {dtOpen && (
-                  <div className="flex flex-row-reverse items-end gap-2 flex-wrap border-t pt-2">
-                    <div className="flex flex-row-reverse items-center gap-1">
-                      <Label className="text-xs whitespace-nowrap">الطبيب *</Label>
-                      <Input
-                        value={dtDoctorName}
-                        onChange={e => setDtDoctorName(e.target.value)}
-                        placeholder="اسم الطبيب"
-                        className="h-7 text-xs w-40"
-                        data-testid="input-dt-doctor"
-                      />
-                    </div>
-                    <div className="flex flex-row-reverse items-center gap-1">
-                      <Label className="text-xs whitespace-nowrap">المبلغ *</Label>
-                      <Input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={dtAmount}
-                        onChange={e => setDtAmount(e.target.value)}
-                        placeholder="0.00"
-                        className="h-7 text-xs w-28"
-                        data-testid="input-dt-amount"
-                      />
-                    </div>
-                    <div className="flex flex-row-reverse items-center gap-1">
-                      <Label className="text-xs whitespace-nowrap">ملاحظات</Label>
-                      <Input
-                        value={dtNotes}
-                        onChange={e => setDtNotes(e.target.value)}
-                        placeholder="اختياري"
-                        className="h-7 text-xs w-40"
-                        data-testid="input-dt-notes"
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      className="bg-blue-600 text-white hover:bg-blue-700"
-                      onClick={openDtConfirm}
-                      data-testid="button-dt-confirm-open"
-                    >
-                      <ArrowLeftRight className="h-3 w-3 ml-1" />
-                      تأكيد التحويل
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <InvoiceTab
+            invoiceId={invoiceId}
+            invoiceNumber={invoiceNumber}
+            setInvoiceNumber={setInvoiceNumber}
+            invoiceDate={invoiceDate}
+            setInvoiceDate={setInvoiceDate}
+            status={status}
+            isDraft={isDraft}
+            patientName={patientName}
+            setPatientName={setPatientName}
+            patientPhone={patientPhone}
+            setPatientPhone={setPatientPhone}
+            patientSearch={patientSearch}
+            setPatientSearch={setPatientSearch}
+            patientResults={patientResults}
+            searchingPatients={searchingPatients}
+            showPatientDropdown={showPatientDropdown}
+            setShowPatientDropdown={setShowPatientDropdown}
+            patientSearchRef={patientSearchRef}
+            patientDropdownRef={patientDropdownRef}
+            doctorName={doctorName}
+            setDoctorName={setDoctorName}
+            doctorSearch={doctorSearch}
+            setDoctorSearch={setDoctorSearch}
+            doctorResults={doctorResults}
+            searchingDoctors={searchingDoctors}
+            showDoctorDropdown={showDoctorDropdown}
+            setShowDoctorDropdown={setShowDoctorDropdown}
+            doctorSearchRef={doctorSearchRef}
+            doctorDropdownRef={doctorDropdownRef}
+            departmentId={departmentId}
+            setDepartmentId={setDepartmentId}
+            departments={departments}
+            warehouseId={warehouseId}
+            setWarehouseId={setWarehouseId}
+            warehouses={warehouses}
+            admissionId={admissionId}
+            setAdmissionId={setAdmissionId}
+            activeAdmissions={activeAdmissions}
+            patientType={patientType}
+            setPatientType={setPatientType}
+            contractName={contractName}
+            setContractName={setContractName}
+            notes={notes}
+            setNotes={setNotes}
+            subTab={subTab}
+            setSubTab={setSubTab}
+            lines={lines}
+            filteredLines={filteredLines}
+            itemSearch={itemSearch}
+            setItemSearch={setItemSearch}
+            setItemResults={setItemResults}
+            itemResults={itemResults}
+            searchingItems={searchingItems}
+            fefoLoading={fefoLoading}
+            serviceSearch={serviceSearch}
+            setServiceSearch={setServiceSearch}
+            setServiceResults={setServiceResults}
+            serviceResults={serviceResults}
+            searchingServices={searchingServices}
+            itemSearchRef={itemSearchRef}
+            itemDropdownRef={itemDropdownRef}
+            serviceSearchRef={serviceSearchRef}
+            serviceDropdownRef={serviceDropdownRef}
+            pendingQtyRef={pendingQtyRef}
+            addServiceLine={addServiceLine}
+            addItemLine={addItemLine}
+            updateLine={updateLine}
+            removeLine={removeLine}
+            handleQtyConfirm={handleQtyConfirm}
+            handleUnitLevelChange={handleUnitLevelChange}
+            openStatsPopup={openStatsPopup}
+            payments={payments}
+            addPayment={addPayment}
+            updatePayment={updatePayment}
+            removePayment={removePayment}
+            totals={totals}
+            resetForm={resetForm}
+            saveMutation={saveMutation}
+            finalizeMutation={finalizeMutation}
+            deleteMutation={deleteMutation}
+            setConfirmDeleteId={setConfirmDeleteId}
+            openDistributeDialog={openDistributeDialog}
+            dtTransfers={dtTransfers}
+            dtAlreadyTransferred={dtAlreadyTransferred}
+            dtRemaining={dtRemaining}
+            dtOpen={dtOpen}
+            setDtOpen={setDtOpen}
+            dtAmount={dtAmount}
+            setDtAmount={setDtAmount}
+            dtDoctorName={dtDoctorName}
+            setDtDoctorName={setDtDoctorName}
+            dtNotes={dtNotes}
+            setDtNotes={setDtNotes}
+            openDtConfirm={openDtConfirm}
+            getStatusBadgeClass={getStatusBadgeClass}
+            getServiceRowClass={getServiceRowClass}
+          />
         </TabsContent>
 
         <TabsContent value="registry" className="mt-2">
-          <div className="border rounded-md p-2 space-y-2">
-            <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">من:</Label>
-                <Input
-                  type="date"
-                  value={regDateFrom}
-                  onChange={(e) => { setRegDateFrom(e.target.value); setRegPage(1); }}
-                  className="h-7 text-xs w-36"
-                  data-testid="input-reg-date-from"
-                />
-              </div>
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">إلى:</Label>
-                <Input
-                  type="date"
-                  value={regDateTo}
-                  onChange={(e) => { setRegDateTo(e.target.value); setRegPage(1); }}
-                  className="h-7 text-xs w-36"
-                  data-testid="input-reg-date-to"
-                />
-              </div>
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
-                <Input
-                  value={regPatientName}
-                  onChange={(e) => { setRegPatientName(e.target.value); setRegPage(1); }}
-                  placeholder="بحث..."
-                  className="h-7 text-xs w-36"
-                  data-testid="input-reg-patient-name"
-                />
-              </div>
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
-                <Input
-                  value={regDoctorName}
-                  onChange={(e) => { setRegDoctorName(e.target.value); setRegPage(1); }}
-                  placeholder="بحث..."
-                  className="h-7 text-xs w-32"
-                  data-testid="input-reg-doctor-name"
-                />
-              </div>
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">الحالة:</Label>
-                <Select value={regStatus} onValueChange={(v) => { setRegStatus(v); setRegPage(1); }}>
-                  <SelectTrigger className="h-7 text-xs w-24" data-testid="select-reg-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">الكل</SelectItem>
-                    <SelectItem value="draft">مسودة</SelectItem>
-                    <SelectItem value="finalized">نهائي</SelectItem>
-                    <SelectItem value="cancelled">ملغي</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {regLoading ? (
-              <div className="space-y-2">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full" />
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-x-auto border rounded-md">
-                <table className="peachtree-grid w-full text-sm">
-                  <thead>
-                    <tr className="peachtree-grid-header">
-                      <th className="text-center" style={{ width: 40 }}>#</th>
-                      <th className="text-center">رقم الفاتورة</th>
-                      <th className="text-center">التاريخ</th>
-                      <th>اسم المريض</th>
-                      <th className="text-center">القسم</th>
-                      <th>الطبيب</th>
-                      <th className="text-center">الإجمالي</th>
-                      <th className="text-center">الحالة</th>
-                      <th className="text-center" style={{ width: 60 }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(registryData?.data || []).map((inv: any, i: number) => (
-                      <tr
-                        key={inv.id}
-                        className="peachtree-grid-row cursor-pointer"
-                        onClick={() => loadInvoice(inv.id)}
-                        data-testid={`row-registry-${inv.id}`}
-                      >
-                        <td className="text-center">{(regPage - 1) * regPageSize + i + 1}</td>
-                        <td className="text-center font-mono">{inv.invoiceNumber}</td>
-                        <td className="text-center">{formatDateShort(inv.invoiceDate)}</td>
-                        <td>{inv.patientName}</td>
-                        <td className="text-center">{inv.department?.nameAr || ""}</td>
-                        <td>{inv.doctorName || ""}</td>
-                        <td className="text-center">{formatNumber(inv.netAmount)}</td>
-                        <td className="text-center">
-                          <Badge
-                            className={getStatusBadgeClass(inv.status)}
-                            data-testid={`badge-reg-status-${inv.id}`}
-                          >
-                            {patientInvoiceStatusLabels[inv.status] || inv.status}
-                          </Badge>
-                        </td>
-                        <td className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              loadInvoice(inv.id);
-                            }}
-                            data-testid={`button-view-reg-${inv.id}`}
-                          >
-                            <Eye className="h-3 w-3" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                    {(registryData?.data || []).length === 0 && (
-                      <tr>
-                        <td colSpan={9} className="text-center text-muted-foreground py-4">
-                          لا توجد فواتير
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {regTotalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 py-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={regPage <= 1}
-                  onClick={() => setRegPage((p) => p - 1)}
-                  data-testid="button-reg-prev-page"
-                >
-                  <ChevronRight className="h-3 w-3" />
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  صفحة {regPage} من {regTotalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={regPage >= regTotalPages}
-                  onClick={() => setRegPage((p) => p + 1)}
-                  data-testid="button-reg-next-page"
-                >
-                  <ChevronLeft className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
-          </div>
+          <RegistryTab
+            regDateFrom={regDateFrom}
+            setRegDateFrom={setRegDateFrom}
+            regDateTo={regDateTo}
+            setRegDateTo={setRegDateTo}
+            regPatientName={regPatientName}
+            setRegPatientName={setRegPatientName}
+            regDoctorName={regDoctorName}
+            setRegDoctorName={setRegDoctorName}
+            regStatus={regStatus}
+            setRegStatus={setRegStatus}
+            regPage={regPage}
+            setRegPage={setRegPage}
+            regTotalPages={regTotalPages}
+            regLoading={regLoading}
+            registryData={registryData}
+            regPageSize={regPageSize}
+            loadInvoice={loadInvoice}
+            getStatusBadgeClass={getStatusBadgeClass}
+          />
         </TabsContent>
 
         <TabsContent value="admission" className="mt-2">
-          <style>{`
-            @media print {
-              body * { visibility: hidden !important; }
-              #adm-print-area, #adm-print-area * { visibility: visible !important; }
-              #adm-print-area {
-                position: absolute !important; left: 0 !important; top: 0 !important;
-                width: 210mm !important; padding: 10mm !important; font-size: 11pt !important; direction: rtl !important;
-              }
-              #adm-print-area table { width: 100% !important; border-collapse: collapse !important; }
-              #adm-print-area th, #adm-print-area td { border: 1px solid #333 !important; padding: 4px 8px !important; text-align: right !important; font-size: 10pt !important; }
-              #adm-print-area th { background: #eee !important; font-weight: bold !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-              .no-print { display: none !important; }
-            }
-          `}</style>
-
-          {admSelectedAdmission ? (() => {
-            const adm = admDetail || admSelectedAdmission;
-            return (
-              <div className="space-y-3">
-                <div className="no-print flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => setAdmSelectedAdmission(null)} data-testid="button-adm-back">
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                    <div>
-                      <h2 className="text-sm font-bold flex items-center gap-1">
-                        <BedDouble className="h-4 w-4" />
-                        تفاصيل الإقامة - {adm.admissionNumber}
-                      </h2>
-                      <p className="text-xs text-muted-foreground">{adm.patientName}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 flex-wrap">
-                    {adm.status === "active" && (
-                      <Button size="sm" variant="outline" onClick={() => { if (confirm("هل أنت متأكد من خروج المريض؟")) admDischargeMutation.mutate(adm.id); }} disabled={admDischargeMutation.isPending} data-testid="button-adm-discharge">
-                        <LogOut className="h-3 w-3 ml-1" />
-                        خروج المريض
-                      </Button>
-                    )}
-                    <Button size="sm" variant="outline" onClick={() => admConsolidateMutation.mutate(adm.id)} disabled={admConsolidateMutation.isPending} data-testid="button-adm-consolidate">
-                      <Layers className="h-3 w-3 ml-1" />
-                      تجميع الفواتير
-                    </Button>
-                  </div>
-                </div>
-
-                <Card className="no-print">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">بيانات الإقامة</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                      <div><span className="text-muted-foreground">رقم الإقامة:</span><p className="font-medium" data-testid="text-adm-number">{adm.admissionNumber}</p></div>
-                      <div><span className="text-muted-foreground">اسم المريض:</span><p className="font-medium" data-testid="text-adm-patient">{adm.patientName}</p></div>
-                      <div><span className="text-muted-foreground">التليفون:</span><p className="font-medium">{adm.patientPhone || "—"}</p></div>
-                      <div><span className="text-muted-foreground">الحالة:</span><Badge className={admGetStatusBadgeClass(adm.status)} data-testid="badge-adm-status">{admStatusLabels[adm.status] || adm.status}</Badge></div>
-                      <div><span className="text-muted-foreground">تاريخ الإقامة:</span><p className="font-medium">{formatDateShort(adm.admissionDate)}</p></div>
-                      <div><span className="text-muted-foreground">تاريخ الخروج:</span><p className="font-medium">{adm.dischargeDate ? formatDateShort(adm.dischargeDate) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">الطبيب:</span><p className="font-medium">{adm.doctorName || "—"}</p></div>
-                      <div><span className="text-muted-foreground">ملاحظات:</span><p className="font-medium">{adm.notes || "—"}</p></div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="no-print">
-                  <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 flex-wrap">
-                    <CardTitle className="text-sm">فواتير الإقامة</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {admInvoicesLoading ? (
-                      <div className="space-y-2"><Skeleton className="h-6 w-full" /><Skeleton className="h-6 w-full" /></div>
-                    ) : !admInvoices || admInvoices.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">لا توجد فواتير</p>
-                    ) : (
-                      <ScrollArea className="max-h-[300px]">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="text-right">رقم الفاتورة</TableHead>
-                              <TableHead className="text-right">القسم</TableHead>
-                              <TableHead className="text-right">التاريخ</TableHead>
-                              <TableHead className="text-right">الإجمالي</TableHead>
-                              <TableHead className="text-right">الحالة</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {admInvoices.map((inv: any) => (
-                              <TableRow key={inv.id} data-testid={`row-adm-invoice-${inv.id}`}>
-                                <TableCell className="text-xs">{inv.invoiceNumber}</TableCell>
-                                <TableCell className="text-xs">{inv.departmentName || "—"}</TableCell>
-                                <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
-                                <TableCell className="text-xs">{formatCurrency(inv.netAmount || inv.totalAmount)}</TableCell>
-                                <TableCell>
-                                  <Badge className={inv.status === "draft" ? "bg-yellow-500 text-white no-default-hover-elevate no-default-active-elevate" : inv.status === "finalized" ? "bg-green-600 text-white no-default-hover-elevate no-default-active-elevate" : "bg-red-600 text-white no-default-hover-elevate no-default-active-elevate"}>
-                                    {inv.status === "draft" ? "مسودة" : inv.status === "finalized" ? "نهائي" : "ملغي"}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </ScrollArea>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="no-print">
-                  <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 flex-wrap">
-                    <CardTitle className="text-sm flex items-center gap-1">
-                      <FileText className="h-4 w-4" />
-                      تقرير الإقامة
-                    </CardTitle>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Select value={admPrintDeptId} onValueChange={setAdmPrintDeptId}>
-                        <SelectTrigger className="w-[180px]" data-testid="select-adm-print-dept">
-                          <SelectValue placeholder="اختر القسم" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">جميع الأقسام</SelectItem>
-                          {departments?.map((dept) => (
-                            <SelectItem key={dept.id} value={dept.id}>{dept.nameAr}</SelectItem>
-                          ))}
-                          <SelectItem value="none">بدون قسم</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button size="sm" variant="outline" onClick={() => window.print()} data-testid="button-adm-print">
-                        <Printer className="h-3 w-3 ml-1" />
-                        {admPrintDeptId === "all" ? "طباعة الكل" : "طباعة قسم"}
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {admReportLoading ? (
-                      <div className="space-y-2"><Skeleton className="h-6 w-full" /><Skeleton className="h-6 w-full" /></div>
-                    ) : !admReportData?.invoices || admReportData.invoices.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">لا توجد فواتير للتقرير</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {Object.entries(admInvoicesByDepartment).map(([deptName, invs]) => (
-                          <div key={deptName} className="space-y-1">
-                            <h4 className="text-xs font-bold text-foreground">{deptName}</h4>
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead className="text-right">رقم الفاتورة</TableHead>
-                                  <TableHead className="text-right">التاريخ</TableHead>
-                                  <TableHead className="text-right">الإجمالي</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {(invs as any[]).map((inv: any) => (
-                                  <TableRow key={inv.id}>
-                                    <TableCell className="text-xs">{inv.invoiceNumber}</TableCell>
-                                    <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
-                                    <TableCell className="text-xs">{formatCurrency(inv.netAmount || inv.totalAmount)}</TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                            <p className="text-xs font-medium text-left">
-                              إجمالي القسم: {formatCurrency((invs as any[]).reduce((s: number, inv: any) => s + parseFloat(inv.netAmount || inv.totalAmount || "0"), 0))}
-                            </p>
-                          </div>
-                        ))}
-                        <div className="border-t pt-2">
-                          <p className="text-sm font-bold">الإجمالي الكلي: {formatCurrency(admTotalAllInvoices)}</p>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <div id="adm-print-area" ref={admPrintRef} style={{ display: "none" }} dir="rtl">
-                  <div style={{ visibility: "visible" }}>
-                    <h2 style={{ textAlign: "center", marginBottom: "10px" }}>تقرير إقامة مريض</h2>
-                    <table style={{ width: "100%", marginBottom: "15px" }}>
-                      <tbody>
-                        <tr>
-                          <td style={{ border: "none", padding: "2px 8px" }}><strong>رقم الإقامة:</strong> {adm.admissionNumber}</td>
-                          <td style={{ border: "none", padding: "2px 8px" }}><strong>اسم المريض:</strong> {adm.patientName}</td>
-                        </tr>
-                        <tr>
-                          <td style={{ border: "none", padding: "2px 8px" }}><strong>التليفون:</strong> {adm.patientPhone || "—"}</td>
-                          <td style={{ border: "none", padding: "2px 8px" }}><strong>الطبيب:</strong> {adm.doctorName || "—"}</td>
-                        </tr>
-                        <tr>
-                          <td style={{ border: "none", padding: "2px 8px" }}><strong>تاريخ الإقامة:</strong> {adm.admissionDate}</td>
-                          <td style={{ border: "none", padding: "2px 8px" }}><strong>تاريخ الخروج:</strong> {adm.dischargeDate || "—"}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                    {Object.entries(admFilteredPrintInvoices).map(([deptName, invs]) => (
-                      <div key={deptName} style={{ marginBottom: "15px" }}>
-                        <h3 style={{ borderBottom: "2px solid #333", paddingBottom: "3px" }}>{deptName}</h3>
-                        {(invs as any[]).map((inv: any) => (
-                          <div key={inv.id} style={{ marginBottom: "10px" }}>
-                            <p style={{ fontSize: "10pt", marginBottom: "4px" }}>
-                              <strong>فاتورة رقم:</strong> {inv.invoiceNumber} | <strong>التاريخ:</strong> {inv.invoiceDate}
-                            </p>
-                            {inv.lines && inv.lines.length > 0 && (
-                              <table>
-                                <thead><tr><th>البيان</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
-                                <tbody>
-                                  {inv.lines.map((line: any, idx: number) => (
-                                    <tr key={idx}><td>{line.description}</td><td>{line.quantity}</td><td>{line.unitPrice}</td><td>{line.totalPrice}</td></tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )}
-                            <p style={{ textAlign: "left", fontSize: "10pt", fontWeight: "bold" }}>إجمالي الفاتورة: {inv.netAmount || inv.totalAmount}</p>
-                          </div>
-                        ))}
-                        <p style={{ textAlign: "left", fontSize: "11pt", fontWeight: "bold", borderTop: "1px solid #999", paddingTop: "3px" }}>
-                          إجمالي {deptName}: {(invs as any[]).reduce((s: number, inv: any) => s + parseFloat(inv.netAmount || inv.totalAmount || "0"), 0).toFixed(2)}
-                        </p>
-                      </div>
-                    ))}
-                    <div style={{ borderTop: "3px double #333", paddingTop: "8px", marginTop: "10px" }}>
-                      <h3 style={{ textAlign: "left" }}>
-                        الإجمالي الكلي: {Object.values(admFilteredPrintInvoices).flat().reduce((s: number, inv: any) => s + parseFloat(inv.netAmount || inv.totalAmount || "0"), 0).toFixed(2)}
-                      </h3>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })() : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h2 className="text-sm font-bold flex items-center gap-1" data-testid="text-adm-title">
-                    <BedDouble className="h-4 w-4" />
-                    إقامات المرضى
-                  </h2>
-                  <p className="text-xs text-muted-foreground">إدارة إقامات المرضى ({admAllAdmissions?.length || 0})</p>
-                </div>
-                <Button size="sm" onClick={() => setAdmIsCreateOpen(true)} data-testid="button-adm-add">
-                  <Plus className="h-3 w-3 ml-1" />
-                  إقامة جديدة
-                </Button>
-              </div>
-
-              <div className="border rounded-md p-2 flex items-center gap-2 flex-wrap">
-                <Search className="h-3 w-3 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="بحث عن إقامة..."
-                  value={admSearchQuery}
-                  onChange={(e) => setAdmSearchQuery(e.target.value)}
-                  className="flex-1 max-w-xs h-7 text-xs"
-                  data-testid="input-adm-search"
-                />
-                <Select value={admStatusFilter} onValueChange={setAdmStatusFilter}>
-                  <SelectTrigger className="w-[140px] h-7 text-xs" data-testid="select-adm-status-filter">
-                    <SelectValue placeholder="الحالة" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">الكل</SelectItem>
-                    <SelectItem value="active">نشطة</SelectItem>
-                    <SelectItem value="discharged">خرج</SelectItem>
-                    <SelectItem value="cancelled">ملغاة</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="border rounded-md">
-                {admListLoading ? (
-                  <div className="p-3 space-y-2"><Skeleton className="h-6 w-full" /><Skeleton className="h-6 w-full" /><Skeleton className="h-6 w-full" /></div>
-                ) : (
-                  <ScrollArea className="h-[calc(100vh-320px)]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-right">رقم الإقامة</TableHead>
-                          <TableHead className="text-right">اسم المريض</TableHead>
-                          <TableHead className="text-right">التليفون</TableHead>
-                          <TableHead className="text-right">تاريخ الإقامة</TableHead>
-                          <TableHead className="text-right">الطبيب</TableHead>
-                          <TableHead className="text-center">الحالة</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {!admAllAdmissions || admAllAdmissions.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-xs">لا توجد إقامات</TableCell>
-                          </TableRow>
-                        ) : (
-                          admAllAdmissions.map((a) => (
-                            <TableRow key={a.id} className="cursor-pointer hover-elevate" onClick={() => setAdmSelectedAdmission(a)} data-testid={`row-adm-${a.id}`}>
-                              <TableCell className="text-xs font-medium">{a.admissionNumber}</TableCell>
-                              <TableCell className="text-xs">{a.patientName}</TableCell>
-                              <TableCell className="text-xs font-mono">{a.patientPhone || "—"}</TableCell>
-                              <TableCell className="text-xs">{formatDateShort(a.admissionDate)}</TableCell>
-                              <TableCell className="text-xs">{a.doctorName || "—"}</TableCell>
-                              <TableCell className="text-center">
-                                <Badge className={admGetStatusBadgeClass(a.status)}>{admStatusLabels[a.status] || a.status}</Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                )}
-              </div>
-            </div>
-          )}
-
-          <Dialog open={admIsCreateOpen} onOpenChange={setAdmIsCreateOpen}>
-            <DialogContent className="max-w-md p-4" dir="rtl">
-              <DialogHeader className="pb-2">
-                <DialogTitle className="text-sm font-bold">إقامة جديدة</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-3 py-2">
-                <div className="space-y-1 relative">
-                  <Label className="text-xs">اسم المريض *</Label>
-                  <Input
-                    ref={admPatientSearchRef}
-                    type="text"
-                    value={admPatientSearch}
-                    onChange={(e) => { setAdmPatientSearch(e.target.value); setAdmShowPatientDropdown(true); setAdmFormData({ ...admFormData, patientName: e.target.value, patientId: "" }); }}
-                    onFocus={() => { if (admPatientSearch.length > 0) setAdmShowPatientDropdown(true); }}
-                    placeholder="ابحث عن مريض..."
-                    className="h-7 text-xs"
-                    data-testid="input-adm-patient-search"
-                  />
-                  {admShowPatientDropdown && (admPatientResults.length > 0 || admSearchingPatients) && (
-                    <div ref={admPatientDropdownRef} className="absolute z-50 w-full bg-popover border rounded-md shadow-md mt-1 max-h-[200px] overflow-y-auto">
-                      {admSearchingPatients && (
-                        <div className="p-2 text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />جاري البحث...</div>
-                      )}
-                      {admPatientResults.map((patient) => (
-                        <div key={patient.id} className="p-2 text-xs cursor-pointer hover-elevate" onClick={() => admHandleSelectPatient(patient)} data-testid={`option-adm-patient-${patient.id}`}>
-                          <span className="font-medium">{patient.fullName}</span>
-                          {patient.phone && <span className="text-muted-foreground mr-2 font-mono">{patient.phone}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">رقم الإقامة *</Label>
-                  <Input type="text" value={admFormData.admissionNumber} onChange={(e) => setAdmFormData({ ...admFormData, admissionNumber: e.target.value })} placeholder="رقم الإقامة" className="h-7 text-xs" data-testid="input-adm-number" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">تاريخ الإقامة *</Label>
-                  <Input type="date" value={admFormData.admissionDate} onChange={(e) => setAdmFormData({ ...admFormData, admissionDate: e.target.value })} className="h-7 text-xs" data-testid="input-adm-date" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">الطبيب</Label>
-                  <Input type="text" value={admFormData.doctorName} onChange={(e) => setAdmFormData({ ...admFormData, doctorName: e.target.value })} placeholder="اسم الطبيب (اختياري)" className="h-7 text-xs" data-testid="input-adm-doctor" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">ملاحظات</Label>
-                  <Input type="text" value={admFormData.notes} onChange={(e) => setAdmFormData({ ...admFormData, notes: e.target.value })} placeholder="ملاحظات (اختياري)" className="h-7 text-xs" data-testid="input-adm-notes" />
-                </div>
-              </div>
-              <DialogFooter className="gap-1 pt-2">
-                <Button variant="outline" size="sm" onClick={admHandleCloseCreate} data-testid="button-adm-cancel">إلغاء</Button>
-                <Button size="sm" onClick={admHandleCreateSubmit} disabled={admCreateMutation.isPending} data-testid="button-adm-save">
-                  {admCreateMutation.isPending ? "جاري الحفظ..." : "إنشاء"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <AdmissionsTab
+            admSelectedAdmission={admSelectedAdmission}
+            setAdmSelectedAdmission={setAdmSelectedAdmission}
+            admDetail={admDetail}
+            admDischargeMutation={admDischargeMutation}
+            admConsolidateMutation={admConsolidateMutation}
+            admInvoicesLoading={admInvoicesLoading}
+            admInvoices={admInvoices}
+            admPrintDeptId={admPrintDeptId}
+            setAdmPrintDeptId={setAdmPrintDeptId}
+            departments={departments}
+            admReportLoading={admReportLoading}
+            admReportData={admReportData}
+            admInvoicesByDepartment={admInvoicesByDepartment}
+            admTotalAllInvoices={admTotalAllInvoices}
+            admFilteredPrintInvoices={admFilteredPrintInvoices}
+            admPrintRef={admPrintRef}
+            admAllAdmissions={admAllAdmissions}
+            admListLoading={admListLoading}
+            admSearchQuery={admSearchQuery}
+            setAdmSearchQuery={setAdmSearchQuery}
+            admStatusFilter={admStatusFilter}
+            setAdmStatusFilter={setAdmStatusFilter}
+            admIsCreateOpen={admIsCreateOpen}
+            setAdmIsCreateOpen={setAdmIsCreateOpen}
+            admFormData={admFormData}
+            setAdmFormData={setAdmFormData}
+            admPatientSearch={admPatientSearch}
+            setAdmPatientSearch={setAdmPatientSearch}
+            admPatientResults={admPatientResults}
+            admSearchingPatients={admSearchingPatients}
+            admShowPatientDropdown={admShowPatientDropdown}
+            setAdmShowPatientDropdown={setAdmShowPatientDropdown}
+            admPatientSearchRef={admPatientSearchRef}
+            admPatientDropdownRef={admPatientDropdownRef}
+            admHandleSelectPatient={admHandleSelectPatient}
+            admHandleCloseCreate={admHandleCloseCreate}
+            admHandleCreateSubmit={admHandleCreateSubmit}
+            admCreateMutation={admCreateMutation}
+            admGetStatusBadgeClass={admGetStatusBadgeClass}
+            admStatusLabels={admStatusLabels}
+          />
         </TabsContent>
       </Tabs>
 
