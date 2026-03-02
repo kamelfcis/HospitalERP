@@ -306,65 +306,67 @@ export default function SurgeryTypesPage() {
       <div className="rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-muted/50">
-              <TableHead>اسم العملية</TableHead>
-              <TableHead>التصنيف</TableHead>
-              <TableHead>سعر الغرفة</TableHead>
-              <TableHead>الحالة</TableHead>
-              <TableHead className="w-24"></TableHead>
+            <TableRow className="bg-muted/50 h-8">
+              <TableHead className="py-1 text-xs">اسم العملية</TableHead>
+              <TableHead className="py-1 text-xs">التصنيف</TableHead>
+              <TableHead className="py-1 text-xs">سعر الغرفة</TableHead>
+              <TableHead className="py-1 text-xs">الحالة</TableHead>
+              <TableHead className="py-1 w-16"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={5} className="text-center py-6 text-muted-foreground text-sm">
                   جارٍ التحميل...
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && displayed.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={5} className="text-center py-6 text-muted-foreground text-sm">
                   لا توجد عمليات مسجلة
                 </TableCell>
               </TableRow>
             )}
             {displayed.map(t => (
-              <TableRow key={t.id} data-testid={`row-surgery-${t.id}`}>
-                <TableCell className="font-medium">{t.nameAr}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={CATEGORY_COLOURS[t.category]}>
+              <TableRow key={t.id} data-testid={`row-surgery-${t.id}`} className="h-8">
+                <TableCell className="py-0.5 text-xs font-medium">{t.nameAr}</TableCell>
+                <TableCell className="py-0.5">
+                  <Badge variant="outline" className={`text-[10px] px-1 py-0 leading-4 ${CATEGORY_COLOURS[t.category]}`}>
                     {surgeryCategoryLabels[t.category as keyof typeof surgeryCategoryLabels] ?? t.category}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-muted-foreground text-sm">
+                <TableCell className="py-0.5 text-xs text-muted-foreground">
                   {parseFloat(priceMap[t.category] ?? "0").toLocaleString("ar-EG")} ج.م
                 </TableCell>
-                <TableCell>
+                <TableCell className="py-0.5">
                   <Switch
                     checked={t.isActive}
                     onCheckedChange={v => toggleActiveMutation.mutate({ id: t.id, isActive: v })}
                     data-testid={`switch-active-${t.id}`}
+                    className="scale-75 origin-right"
                   />
                 </TableCell>
-                <TableCell>
-                  <div className="flex gap-1 justify-end">
+                <TableCell className="py-0.5">
+                  <div className="flex gap-0.5 justify-end">
                     <Button
                       variant="ghost" size="icon"
+                      className="h-6 w-6"
                       data-testid={`button-edit-${t.id}`}
                       onClick={() => openEdit(t)}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-3 w-3" />
                     </Button>
                     <Button
                       variant="ghost" size="icon"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
                       data-testid={`button-delete-${t.id}`}
-                      className="text-destructive hover:text-destructive"
                       onClick={() => {
                         if (confirm(`حذف "${t.nameAr}"؟`)) deleteMutation.mutate(t.id);
                       }}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
                 </TableCell>
