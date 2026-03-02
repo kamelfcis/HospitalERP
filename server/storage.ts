@@ -6505,23 +6505,36 @@ export class DatabaseStorage implements IStorage {
         inv_agg.latest_invoice_status                   AS latest_invoice_status
       FROM admissions a
       LEFT JOIN (
+        /*
+         * نجمع فواتير المريض لكل إقامة بطريقتين:
+         *   1. مباشرة عبر admission_id (الحالة المثلى)
+         *   2. عبر اسم المريض لأحدث إقامة له عند غياب admission_id
+         *      (يحدث عند إنشاء الفاتورة يدوياً بدون ربطها بإقامة)
+         */
         SELECT
-          pi.admission_id,
-          SUM(pi.net_amount::numeric)                                             AS total_net_amount,
-          SUM(pi.paid_amount::numeric)                                            AS total_paid_amount,
-          COALESCE(SUM(dt_agg.dt_total), 0)                                      AS total_transferred,
-          (ARRAY_AGG(pi.invoice_number ORDER BY pi.created_at DESC))[1]          AS latest_invoice_number,
-          (ARRAY_AGG(pi.id          ORDER BY pi.created_at DESC))[1]             AS latest_invoice_id,
-          (ARRAY_AGG(pi.status      ORDER BY pi.created_at DESC))[1]             AS latest_invoice_status
+          COALESCE(pi.admission_id, a_fb.id)                                       AS eff_admission_id,
+          SUM(pi.net_amount::numeric)                                               AS total_net_amount,
+          SUM(pi.paid_amount::numeric)                                              AS total_paid_amount,
+          COALESCE(SUM(dt_agg.dt_total), 0)                                        AS total_transferred,
+          (ARRAY_AGG(pi.invoice_number ORDER BY pi.created_at DESC))[1]            AS latest_invoice_number,
+          (ARRAY_AGG(pi.id             ORDER BY pi.created_at DESC))[1]            AS latest_invoice_id,
+          (ARRAY_AGG(pi.status         ORDER BY pi.created_at DESC))[1]            AS latest_invoice_status
         FROM patient_invoice_headers pi
+        /* fallback: آخر إقامة بنفس اسم المريض عند غياب admission_id */
+        LEFT JOIN (
+          SELECT DISTINCT ON (patient_name) id, patient_name
+          FROM admissions
+          ORDER BY patient_name, created_at DESC
+        ) a_fb ON a_fb.patient_name = pi.patient_name AND pi.admission_id IS NULL
         LEFT JOIN (
           SELECT invoice_id, SUM(amount::numeric) AS dt_total
           FROM doctor_transfers
           GROUP BY invoice_id
         ) dt_agg ON dt_agg.invoice_id = pi.id
         WHERE pi.status != 'cancelled'
-        GROUP BY pi.admission_id
-      ) inv_agg ON inv_agg.admission_id = a.id
+          AND COALESCE(pi.admission_id, a_fb.id) IS NOT NULL
+        GROUP BY COALESCE(pi.admission_id, a_fb.id)
+      ) inv_agg ON inv_agg.eff_admission_id = a.id
       ${whereExpr}
       ORDER BY a.created_at DESC
     `);
