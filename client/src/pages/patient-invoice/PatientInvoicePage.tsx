@@ -188,6 +188,7 @@ export default function PatientInvoice() {
     admIsCreateOpen, setAdmIsCreateOpen,
     admSearchQuery, setAdmSearchQuery,
     admStatusFilter, setAdmStatusFilter,
+    admDeptFilter, setAdmDeptFilter,
     admDateFrom, setAdmDateFrom,
     admDateTo, setAdmDateTo,
     admPatientSearch, setAdmPatientSearch,
