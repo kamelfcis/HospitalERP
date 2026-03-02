@@ -84,8 +84,8 @@ export default function RoomManagement() {
   });
 
   const { data: servicesResponse } = useQuery<{ data: ServiceOption[] }>({
-    queryKey: ["/api/services", "active=true"],
-    queryFn: () => fetch("/api/services?active=true").then(r => r.json()),
+    queryKey: ["/api/services", "room-grade"],
+    queryFn: () => fetch("/api/services?active=true&search=%D9%82%D8%A7%D9%85&pageSize=200").then(r => r.json()),
   });
   const servicesData = servicesResponse?.data;
 
@@ -93,6 +93,7 @@ export default function RoomManagement() {
     queryClient.invalidateQueries({ queryKey: ["/api/floors"] });
     queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
     queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/services", "room-grade"] });
   };
 
   const createFloor = useMutation({
