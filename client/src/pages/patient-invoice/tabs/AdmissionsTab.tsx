@@ -5,24 +5,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { BedDouble, LogOut, Layers, FileText, Printer, Search, Loader2, Plus, ChevronRight } from "lucide-react";
-import { formatCurrency, formatDateShort } from "@/lib/formatters";
-import type { Admission, Department, Patient } from "@shared/schema";
-
-interface AdmFormData {
-  patientName: string;
-  patientPhone: string;
-  patientId: string;
-  admissionDate: string;
-  doctorName: string;
-  notes: string;
-  admissionNumber: string;
-}
+import { BedDouble, LogOut, Layers, FileText, Printer, Search, ChevronRight, CalendarDays } from "lucide-react";
+import { formatCurrency, formatDateShort, formatDateTime } from "@/lib/formatters";
+import type { Admission, Department } from "@shared/schema";
 
 interface AdmissionsTabProps {
   admSelectedAdmission: Admission | null;
@@ -41,25 +29,29 @@ interface AdmissionsTabProps {
   admTotalAllInvoices: number;
   admFilteredPrintInvoices: Record<string, any[]>;
   admPrintRef: React.RefObject<HTMLDivElement>;
-  admAllAdmissions: Admission[] | undefined;
+  admAllAdmissions: any[] | undefined;
   admListLoading: boolean;
   admSearchQuery: string;
   setAdmSearchQuery: (v: string) => void;
   admStatusFilter: string;
   setAdmStatusFilter: (v: string) => void;
+  admDateFrom: string;
+  setAdmDateFrom: (v: string) => void;
+  admDateTo: string;
+  setAdmDateTo: (v: string) => void;
   admIsCreateOpen: boolean;
   setAdmIsCreateOpen: (v: boolean) => void;
-  admFormData: AdmFormData;
-  setAdmFormData: (v: AdmFormData) => void;
+  admFormData: any;
+  setAdmFormData: (v: any) => void;
   admPatientSearch: string;
   setAdmPatientSearch: (v: string) => void;
-  admPatientResults: Patient[];
+  admPatientResults: any[];
   admSearchingPatients: boolean;
   admShowPatientDropdown: boolean;
   setAdmShowPatientDropdown: (v: boolean) => void;
   admPatientSearchRef: React.RefObject<HTMLInputElement>;
   admPatientDropdownRef: React.RefObject<HTMLDivElement>;
-  admHandleSelectPatient: (patient: Patient) => void;
+  admHandleSelectPatient: (patient: any) => void;
   admHandleCloseCreate: () => void;
   admHandleCreateSubmit: () => void;
   admCreateMutation: { isPending: boolean };
@@ -79,14 +71,8 @@ export function AdmissionsTab({
   admAllAdmissions, admListLoading,
   admSearchQuery, setAdmSearchQuery,
   admStatusFilter, setAdmStatusFilter,
-  admIsCreateOpen, setAdmIsCreateOpen,
-  admFormData, setAdmFormData,
-  admPatientSearch, setAdmPatientSearch,
-  admPatientResults, admSearchingPatients,
-  admShowPatientDropdown, setAdmShowPatientDropdown,
-  admPatientSearchRef, admPatientDropdownRef,
-  admHandleSelectPatient, admHandleCloseCreate, admHandleCreateSubmit,
-  admCreateMutation,
+  admDateFrom, setAdmDateFrom,
+  admDateTo, setAdmDateTo,
   admGetStatusBadgeClass, admStatusLabels,
 }: AdmissionsTabProps) {
   return (
@@ -318,33 +304,57 @@ export function AdmissionsTab({
           </div>
         );
       })() : (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 className="text-sm font-bold flex items-center gap-1" data-testid="text-adm-title">
-                <BedDouble className="h-4 w-4" />
-                إقامات المرضى
-              </h2>
-              <p className="text-xs text-muted-foreground">إدارة إقامات المرضى ({admAllAdmissions?.length || 0})</p>
-            </div>
-            <Button size="sm" onClick={() => setAdmIsCreateOpen(true)} data-testid="button-adm-add">
-              <Plus className="h-3 w-3 ml-1" />
-              إقامة جديدة
-            </Button>
+        /* ─── List View ─── */
+        <div className="space-y-2">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold flex items-center gap-1" data-testid="text-adm-title">
+              <BedDouble className="h-4 w-4" />
+              إقامات المرضى
+              <span className="text-muted-foreground font-normal text-xs mr-1">({admAllAdmissions?.length ?? 0})</span>
+            </h2>
           </div>
 
-          <div className="border rounded-md p-2 flex items-center gap-2 flex-wrap">
-            <Search className="h-3 w-3 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="بحث عن إقامة..."
-              value={admSearchQuery}
-              onChange={(e) => setAdmSearchQuery(e.target.value)}
-              className="flex-1 max-w-xs h-7 text-xs"
-              data-testid="input-adm-search"
-            />
+          {/* Filters row */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Date from */}
+            <div className="flex items-center gap-1">
+              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-xs text-muted-foreground shrink-0">من</span>
+              <Input
+                type="date"
+                value={admDateFrom}
+                onChange={e => setAdmDateFrom(e.target.value)}
+                className="h-7 text-xs w-[130px]"
+                data-testid="input-adm-date-from"
+              />
+            </div>
+            {/* Date to */}
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground shrink-0">إلى</span>
+              <Input
+                type="date"
+                value={admDateTo}
+                onChange={e => setAdmDateTo(e.target.value)}
+                className="h-7 text-xs w-[130px]"
+                data-testid="input-adm-date-to"
+              />
+            </div>
+            {/* Search */}
+            <div className="flex items-center gap-1 flex-1 min-w-[160px]">
+              <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <Input
+                type="text"
+                placeholder="اسم المريض أو الطبيب..."
+                value={admSearchQuery}
+                onChange={e => setAdmSearchQuery(e.target.value)}
+                className="h-7 text-xs flex-1"
+                data-testid="input-adm-search"
+              />
+            </div>
+            {/* Status filter */}
             <Select value={admStatusFilter} onValueChange={setAdmStatusFilter}>
-              <SelectTrigger className="w-[140px] h-7 text-xs" data-testid="select-adm-status-filter">
+              <SelectTrigger className="w-[110px] h-7 text-xs" data-testid="select-adm-status-filter">
                 <SelectValue placeholder="الحالة" />
               </SelectTrigger>
               <SelectContent>
@@ -356,37 +366,71 @@ export function AdmissionsTab({
             </Select>
           </div>
 
-          <div className="border rounded-md">
+          {/* Table */}
+          <div className="border rounded-md overflow-hidden">
             {admListLoading ? (
-              <div className="p-3 space-y-2"><Skeleton className="h-6 w-full" /><Skeleton className="h-6 w-full" /><Skeleton className="h-6 w-full" /></div>
+              <div className="p-3 space-y-1.5">
+                {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
+              </div>
             ) : (
-              <ScrollArea className="h-[calc(100vh-320px)]">
+              <ScrollArea className="h-[calc(100vh-300px)]">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-right">رقم الإقامة</TableHead>
-                      <TableHead className="text-right">اسم المريض</TableHead>
-                      <TableHead className="text-right">التليفون</TableHead>
-                      <TableHead className="text-right">تاريخ الإقامة</TableHead>
-                      <TableHead className="text-right">الطبيب</TableHead>
-                      <TableHead className="text-center">الحالة</TableHead>
+                    <TableRow className="bg-muted/50 h-8">
+                      <TableHead className="py-1 text-xs">رقم الإقامة</TableHead>
+                      <TableHead className="py-1 text-xs">اسم المريض</TableHead>
+                      <TableHead className="py-1 text-xs">الطبيب</TableHead>
+                      <TableHead className="py-1 text-xs">وقت الدخول</TableHead>
+                      <TableHead className="py-1 text-xs">رقم الفاتورة</TableHead>
+                      <TableHead className="py-1 text-xs text-left">قيمة الفاتورة</TableHead>
+                      <TableHead className="py-1 text-xs text-left">المدفوع</TableHead>
+                      <TableHead className="py-1 text-xs text-left">محول للطبيب</TableHead>
+                      <TableHead className="py-1 text-xs">تاريخ الخروج</TableHead>
+                      <TableHead className="py-1 text-xs text-center">الحالة</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {!admAllAdmissions || admAllAdmissions.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-xs">لا توجد إقامات</TableCell>
+                        <TableCell colSpan={10} className="text-center py-6 text-muted-foreground text-xs">
+                          لا توجد إقامات في هذا النطاق الزمني
+                        </TableCell>
                       </TableRow>
                     ) : (
-                      admAllAdmissions.map((a) => (
-                        <TableRow key={a.id} className="cursor-pointer hover-elevate" onClick={() => setAdmSelectedAdmission(a)} data-testid={`row-adm-${a.id}`}>
-                          <TableCell className="text-xs font-medium">{a.admissionNumber}</TableCell>
-                          <TableCell className="text-xs">{a.patientName}</TableCell>
-                          <TableCell className="text-xs font-mono">{a.patientPhone || "—"}</TableCell>
-                          <TableCell className="text-xs">{formatDateShort(a.admissionDate)}</TableCell>
-                          <TableCell className="text-xs">{a.doctorName || "—"}</TableCell>
-                          <TableCell className="text-center">
-                            <Badge className={admGetStatusBadgeClass(a.status)}>{admStatusLabels[a.status] || a.status}</Badge>
+                      admAllAdmissions.map((a: any) => (
+                        <TableRow
+                          key={a.id}
+                          className="cursor-pointer hover-elevate h-8"
+                          onClick={() => setAdmSelectedAdmission(a)}
+                          data-testid={`row-adm-${a.id}`}
+                        >
+                          <TableCell className="py-0.5 text-xs font-medium">{a.admissionNumber}</TableCell>
+                          <TableCell className="py-0.5 text-xs">{a.patientName}</TableCell>
+                          <TableCell className="py-0.5 text-xs">{a.doctorName || "—"}</TableCell>
+                          <TableCell className="py-0.5 text-xs font-mono whitespace-nowrap">{formatDateTime(a.createdAt)}</TableCell>
+                          <TableCell className="py-0.5 text-xs font-mono">{a.latestInvoiceNumber ?? "—"}</TableCell>
+                          <TableCell className="py-0.5 text-xs text-left font-mono">
+                            {parseFloat(a.totalNetAmount ?? "0") > 0
+                              ? formatCurrency(a.totalNetAmount)
+                              : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="py-0.5 text-xs text-left font-mono">
+                            {parseFloat(a.totalPaidAmount ?? "0") > 0
+                              ? <span className="text-green-700 dark:text-green-400">{formatCurrency(a.totalPaidAmount)}</span>
+                              : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="py-0.5 text-xs text-left font-mono">
+                            {parseFloat(a.totalTransferredAmount ?? "0") > 0
+                              ? <span className="text-blue-700 dark:text-blue-400">{formatCurrency(a.totalTransferredAmount)}</span>
+                              : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="py-0.5 text-xs whitespace-nowrap">
+                            {a.dischargeDate ? formatDateShort(a.dischargeDate) : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="py-0.5 text-center">
+                            <Badge className={`text-[10px] px-1.5 py-0 ${admGetStatusBadgeClass(a.status)}`}>
+                              {admStatusLabels[a.status] || a.status}
+                            </Badge>
                           </TableCell>
                         </TableRow>
                       ))
@@ -398,64 +442,6 @@ export function AdmissionsTab({
           </div>
         </div>
       )}
-
-      <Dialog open={admIsCreateOpen} onOpenChange={setAdmIsCreateOpen}>
-        <DialogContent className="max-w-md p-4" dir="rtl">
-          <DialogHeader className="pb-2">
-            <DialogTitle className="text-sm font-bold">إقامة جديدة</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3 py-2">
-            <div className="space-y-1 relative">
-              <Label className="text-xs">اسم المريض *</Label>
-              <Input
-                ref={admPatientSearchRef}
-                type="text"
-                value={admPatientSearch}
-                onChange={(e) => { setAdmPatientSearch(e.target.value); setAdmShowPatientDropdown(true); setAdmFormData({ ...admFormData, patientName: e.target.value, patientId: "" }); }}
-                onFocus={() => { if (admPatientSearch.length > 0) setAdmShowPatientDropdown(true); }}
-                placeholder="ابحث عن مريض..."
-                className="h-7 text-xs"
-                data-testid="input-adm-patient-search"
-              />
-              {admShowPatientDropdown && (admPatientResults.length > 0 || admSearchingPatients) && (
-                <div ref={admPatientDropdownRef} className="absolute z-50 w-full bg-popover border rounded-md shadow-md mt-1 max-h-[200px] overflow-y-auto">
-                  {admSearchingPatients && (
-                    <div className="p-2 text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />جاري البحث...</div>
-                  )}
-                  {admPatientResults.map((patient) => (
-                    <div key={patient.id} className="p-2 text-xs cursor-pointer hover-elevate" onClick={() => admHandleSelectPatient(patient)} data-testid={`option-adm-patient-${patient.id}`}>
-                      <span className="font-medium">{patient.fullName}</span>
-                      {patient.phone && <span className="text-muted-foreground mr-2 font-mono">{patient.phone}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">رقم الإقامة *</Label>
-              <Input type="text" value={admFormData.admissionNumber} onChange={(e) => setAdmFormData({ ...admFormData, admissionNumber: e.target.value })} placeholder="رقم الإقامة" className="h-7 text-xs" data-testid="input-adm-number" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">تاريخ الإقامة *</Label>
-              <Input type="date" value={admFormData.admissionDate} onChange={(e) => setAdmFormData({ ...admFormData, admissionDate: e.target.value })} className="h-7 text-xs" data-testid="input-adm-date" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">الطبيب</Label>
-              <Input type="text" value={admFormData.doctorName} onChange={(e) => setAdmFormData({ ...admFormData, doctorName: e.target.value })} placeholder="اسم الطبيب (اختياري)" className="h-7 text-xs" data-testid="input-adm-doctor" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">ملاحظات</Label>
-              <Input type="text" value={admFormData.notes} onChange={(e) => setAdmFormData({ ...admFormData, notes: e.target.value })} placeholder="ملاحظات (اختياري)" className="h-7 text-xs" data-testid="input-adm-notes" />
-            </div>
-          </div>
-          <DialogFooter className="gap-1 pt-2">
-            <Button variant="outline" size="sm" onClick={admHandleCloseCreate} data-testid="button-adm-cancel">إلغاء</Button>
-            <Button size="sm" onClick={admHandleCreateSubmit} disabled={admCreateMutation.isPending} data-testid="button-adm-save">
-              {admCreateMutation.isPending ? "جاري الحفظ..." : "إنشاء"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

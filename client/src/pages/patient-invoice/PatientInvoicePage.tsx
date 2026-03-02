@@ -188,6 +188,8 @@ export default function PatientInvoice() {
     admIsCreateOpen, setAdmIsCreateOpen,
     admSearchQuery, setAdmSearchQuery,
     admStatusFilter, setAdmStatusFilter,
+    admDateFrom, setAdmDateFrom,
+    admDateTo, setAdmDateTo,
     admPatientSearch, setAdmPatientSearch,
     admPatientResults, admSearchingPatients,
     admShowPatientDropdown, setAdmShowPatientDropdown,
@@ -1358,6 +1360,10 @@ export default function PatientInvoice() {
             setAdmSearchQuery={setAdmSearchQuery}
             admStatusFilter={admStatusFilter}
             setAdmStatusFilter={setAdmStatusFilter}
+            admDateFrom={admDateFrom}
+            setAdmDateFrom={setAdmDateFrom}
+            admDateTo={admDateTo}
+            setAdmDateTo={setAdmDateTo}
             admIsCreateOpen={admIsCreateOpen}
             setAdmIsCreateOpen={setAdmIsCreateOpen}
             admFormData={admFormData}

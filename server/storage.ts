@@ -6479,22 +6479,56 @@ export class DatabaseStorage implements IStorage {
 
   // ==================== Admissions ====================
 
-  async getAdmissions(filters?: { status?: string; search?: string }): Promise<Admission[]> {
-    const conditions: any[] = [];
-    if (filters?.status) {
-      conditions.push(eq(admissions.status, filters.status as any));
-    }
+  async getAdmissions(filters?: { status?: string; search?: string; dateFrom?: string; dateTo?: string }): Promise<any[]> {
+    // Build safe parameterized conditions
+    const conds: any[] = [];
+    if (filters?.status)   conds.push(sql`a.status = ${filters.status}`);
+    if (filters?.dateFrom) conds.push(sql`a.admission_date >= ${filters.dateFrom}`);
+    if (filters?.dateTo)   conds.push(sql`a.admission_date <= ${filters.dateTo}`);
     if (filters?.search) {
       const s = `%${filters.search}%`;
-      conditions.push(or(
-        ilike(admissions.patientName, s),
-        ilike(admissions.admissionNumber, s),
-        ilike(admissions.patientPhone || "", s),
-      ));
+      conds.push(sql`(a.patient_name ILIKE ${s} OR a.admission_number ILIKE ${s} OR a.patient_phone ILIKE ${s} OR a.doctor_name ILIKE ${s})`);
     }
-    return await db.select().from(admissions)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(admissions.createdAt));
+
+    const whereExpr = conds.length > 0
+      ? sql`WHERE ${sql.join(conds, sql` AND `)}`
+      : sql``;
+
+    const result = await db.execute(sql`
+      SELECT
+        a.*,
+        COALESCE(inv_agg.total_net_amount, 0)          AS total_net_amount,
+        COALESCE(inv_agg.total_paid_amount, 0)         AS total_paid_amount,
+        COALESCE(inv_agg.total_transferred, 0)         AS total_transferred_amount,
+        inv_agg.latest_invoice_number                   AS latest_invoice_number,
+        inv_agg.latest_invoice_id                       AS latest_invoice_id
+      FROM admissions a
+      LEFT JOIN (
+        SELECT
+          pi.admission_id,
+          SUM(pi.net_amount::numeric)                         AS total_net_amount,
+          SUM(pi.paid_amount::numeric)                        AS total_paid_amount,
+          COALESCE(SUM(dt_agg.dt_total), 0)                  AS total_transferred,
+          MAX(pi.invoice_number)                              AS latest_invoice_number,
+          (ARRAY_AGG(pi.id ORDER BY pi.created_at DESC))[1]  AS latest_invoice_id
+        FROM patient_invoice_headers pi
+        LEFT JOIN (
+          SELECT invoice_id, SUM(amount::numeric) AS dt_total
+          FROM doctor_transfers
+          GROUP BY invoice_id
+        ) dt_agg ON dt_agg.invoice_id = pi.id
+        WHERE pi.status != 'cancelled'
+        GROUP BY pi.admission_id
+      ) inv_agg ON inv_agg.admission_id = a.id
+      ${whereExpr}
+      ORDER BY a.created_at DESC
+    `);
+
+    // Convert snake_case keys to camelCase (raw SQL returns snake_case)
+    const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    return (result.rows as any[]).map(row =>
+      Object.fromEntries(Object.entries(row).map(([k, v]) => [toCamel(k), v]))
+    );
   }
 
   async getAdmission(id: string): Promise<Admission | undefined> {

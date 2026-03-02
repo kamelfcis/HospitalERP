@@ -3610,8 +3610,10 @@ export async function registerRoutes(
   app.get("/api/admissions", async (req, res) => {
     try {
       const filters: any = {};
-      if (req.query.status) filters.status = req.query.status as string;
-      if (req.query.search) filters.search = req.query.search as string;
+      if (req.query.status)   filters.status   = req.query.status as string;
+      if (req.query.search)   filters.search   = req.query.search as string;
+      if (req.query.dateFrom) filters.dateFrom = req.query.dateFrom as string;
+      if (req.query.dateTo)   filters.dateTo   = req.query.dateTo as string;
       const list = await storage.getAdmissions(filters);
       res.json(list);
     } catch (error: any) {

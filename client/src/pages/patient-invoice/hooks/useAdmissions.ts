@@ -3,11 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import type { Admission, Patient } from "@shared/schema";
 import { useDebounce } from "../utils/debounce";
 
+const todayStr = () => new Date().toISOString().split("T")[0];
+
 export function useAdmissions(mainTab: string) {
   const [admSelectedAdmission, setAdmSelectedAdmission] = useState<Admission | null>(null);
   const [admIsCreateOpen, setAdmIsCreateOpen] = useState(false);
   const [admSearchQuery, setAdmSearchQuery] = useState("");
   const [admStatusFilter, setAdmStatusFilter] = useState("all");
+  const [admDateFrom, setAdmDateFrom] = useState(todayStr());
+  const [admDateTo, setAdmDateTo] = useState(todayStr());
   const debouncedAdmSearch = useDebounce(admSearchQuery, 300);
 
   const [admPatientSearch, setAdmPatientSearch] = useState("");
@@ -30,8 +34,10 @@ export function useAdmissions(mainTab: string) {
     const params = new URLSearchParams();
     if (admStatusFilter !== "all") params.set("status", admStatusFilter);
     if (debouncedAdmSearch.trim()) params.set("search", debouncedAdmSearch.trim());
+    if (admDateFrom) params.set("dateFrom", admDateFrom);
+    if (admDateTo)   params.set("dateTo",   admDateTo);
     return params.toString();
-  }, [admStatusFilter, debouncedAdmSearch]);
+  }, [admStatusFilter, debouncedAdmSearch, admDateFrom, admDateTo]);
 
   const { data: admAllAdmissions, isLoading: admListLoading } = useQuery<Admission[]>({
     queryKey: ["/api/admissions", admQueryParams],
@@ -169,6 +175,8 @@ export function useAdmissions(mainTab: string) {
     admIsCreateOpen, setAdmIsCreateOpen,
     admSearchQuery, setAdmSearchQuery,
     admStatusFilter, setAdmStatusFilter,
+    admDateFrom, setAdmDateFrom,
+    admDateTo, setAdmDateTo,
     admPatientSearch, setAdmPatientSearch,
     admPatientResults,
     admSearchingPatients,
