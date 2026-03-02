@@ -1208,6 +1208,7 @@ export default function PatientInvoice() {
               invoiceId={invoiceId}
               admissionId={admissionId}
               isDraft={isDraft}
+              onInvoiceReload={() => loadInvoice(invoiceId)}
             />
           )}
           <InvoiceTab

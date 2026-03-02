@@ -18,6 +18,7 @@ interface SurgeryTypeBarProps {
   invoiceId: string;
   admissionId: string;
   isDraft: boolean;
+  onInvoiceReload?: () => void;
 }
 
 const CATEGORY_COLOURS: Record<string, string> = {
@@ -28,7 +29,7 @@ const CATEGORY_COLOURS: Record<string, string> = {
   simple:  "bg-green-100 text-green-800 border-green-200",
 };
 
-export function SurgeryTypeBar({ invoiceId, admissionId, isDraft }: SurgeryTypeBarProps) {
+export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReload }: SurgeryTypeBarProps) {
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [search, setSearch] = useState("");
@@ -63,13 +64,11 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft }: SurgeryTypeB
       apiRequest("PUT", `/api/patient-invoices/${invoiceId}/surgery-type`, { surgeryTypeId }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admissions", admissionId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/surgery-types"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", invoiceId] });
-      // Force reload invoice to show updated OR_ROOM line
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
       toast({ title: "تم تحديث نوع العملية" });
       setEditing(false);
       setSearch("");
+      // Reload the full invoice so OR_ROOM line updates in the grid immediately
+      onInvoiceReload?.();
     },
     onError: (e: any) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
