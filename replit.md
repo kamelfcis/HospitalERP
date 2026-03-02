@@ -47,6 +47,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Stay Edit Audit Trail**: `updatePatientInvoice` now captures audit entries for stay line edits (`stay_edit` action when quantity/price/total changes) and stay line removals (`stay_void` action). Old lines are fetched before delete-reinsert, compared by `sourceId`, and differences logged to `audit_log` table within the same transaction.
 - **Source Field Preservation**: `sourceType`/`sourceId` fields are included in all frontend line pipelines: `LineLocal` type, `loadInvoice`, save mutation, distribute-to-cases mapping, and all 5 `LineLocal` creation points (addServiceLine, addItemLine, 3 FEFO sites).
 - **Room Type Seed Data**: Three room grade services seeded — Suite (جناح, 1200 EGP), First Class (درجة أولى, 800 EGP), Ward (عنبر, 400 EGP) — with floors, rooms (2 per grade), beds (2 per room, 12 total), and price list entries.
+- **Room Management Page**: Full CRUD management page at `/room-management` for floors, rooms, and beds. Hierarchical accordion view (floors → rooms → beds) with inline room grade assignment via services dropdown. APIs: `GET/POST/PUT/DELETE /api/floors`, `POST/PUT/DELETE /api/rooms`, `POST/DELETE /api/beds`. Safety checks prevent deleting floors/rooms with occupied beds. Sidebar entry: "إدارة الأدوار والغرف" with DoorOpen icon.
 
 ## External Dependencies
 

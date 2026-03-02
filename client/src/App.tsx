@@ -39,6 +39,7 @@ import AccountMappings from "@/pages/AccountMappings";
 import DrawerPasswords from "@/pages/DrawerPasswords";
 import UsersManagement from "@/pages/UsersManagement";
 import BedBoard from "@/pages/BedBoard";
+import RoomManagement from "@/pages/RoomManagement";
 import DoctorSettlements from "@/pages/DoctorSettlements";
 import SystemSettings from "@/pages/SystemSettings";
 import NotFound from "@/pages/not-found";
@@ -93,6 +94,7 @@ function Router() {
         <Route path="/doctors">{() => <G p="doctors.view"><Doctors /></G>}</Route>
         <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><ErrorBoundary fallbackLabel="خطأ في صفحة فاتورة المريض"><PatientInvoice /></ErrorBoundary></G>}</Route>
         <Route path="/bed-board">{() => <G p="patient_invoices.view"><BedBoard /></G>}</Route>
+        <Route path="/room-management">{() => <G p="patient_invoices.view"><RoomManagement /></G>}</Route>
         <Route path="/doctor-settlements">{() => <G p="patient_invoices.view"><DoctorSettlements /></G>}</Route>
         <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
         <Route path="/cashier-collection">{() => <G p="cashier.view"><CashierCollection /></G>}</Route>

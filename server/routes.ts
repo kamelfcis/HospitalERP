@@ -52,7 +52,10 @@ import {
   warehouses,
   items,
   itemBarcodes,
-  inventoryLots
+  inventoryLots,
+  floors,
+  rooms,
+  beds,
 } from "@shared/schema";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
@@ -4218,6 +4221,148 @@ export async function registerRoutes(
       await db.execute(sql`
         UPDATE rooms SET service_id = ${serviceId || null} WHERE id = ${req.params.id}
       `);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== Floors CRUD ====================
+
+  app.get("/api/floors", async (_req, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT f.id, f.name_ar, f.sort_order,
+               COUNT(r.id)::int AS room_count,
+               (SELECT COUNT(*)::int FROM beds b JOIN rooms r2 ON r2.id = b.room_id WHERE r2.floor_id = f.id) AS bed_count
+        FROM floors f
+        LEFT JOIN rooms r ON r.floor_id = f.id
+        GROUP BY f.id
+        ORDER BY f.sort_order, f.name_ar
+      `);
+      res.json(result.rows.map((r: any) => ({
+        id: r.id, nameAr: r.name_ar, sortOrder: r.sort_order,
+        roomCount: r.room_count, bedCount: r.bed_count,
+      })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/floors", async (req, res) => {
+    try {
+      const { nameAr, sortOrder } = req.body;
+      if (!nameAr) return res.status(400).json({ message: "اسم الدور مطلوب" });
+      const result = await db.insert(floors).values({
+        nameAr, sortOrder: sortOrder ?? 0,
+      }).returning();
+      res.json(result[0]);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/floors/:id", async (req, res) => {
+    try {
+      const { nameAr, sortOrder } = req.body;
+      if (!nameAr) return res.status(400).json({ message: "اسم الدور مطلوب" });
+      const result = await db.update(floors).set({
+        nameAr, sortOrder: sortOrder ?? 0,
+      }).where(eq(floors.id, req.params.id)).returning();
+      if (result.length === 0) return res.status(404).json({ message: "الدور غير موجود" });
+      res.json(result[0]);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/floors/:id", async (req, res) => {
+    try {
+      const occupiedBeds = await db.execute(sql`
+        SELECT b.id FROM beds b
+        JOIN rooms r ON r.id = b.room_id
+        WHERE r.floor_id = ${req.params.id} AND b.status = 'OCCUPIED'
+        LIMIT 1
+      `);
+      if (occupiedBeds.rows.length > 0) {
+        return res.status(400).json({ message: "لا يمكن حذف الدور: يوجد أسرّة مشغولة" });
+      }
+      await db.delete(floors).where(eq(floors.id, req.params.id));
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== Rooms CRUD ====================
+
+  app.post("/api/rooms", async (req, res) => {
+    try {
+      const { floorId, nameAr, roomNumber, serviceId } = req.body;
+      if (!floorId || !nameAr) return res.status(400).json({ message: "الدور واسم الغرفة مطلوبان" });
+      const result = await db.insert(rooms).values({
+        floorId, nameAr, roomNumber: roomNumber || null, serviceId: serviceId || null,
+      }).returning();
+      res.json(result[0]);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/rooms/:id", async (req, res) => {
+    try {
+      const { nameAr, roomNumber, serviceId } = req.body;
+      if (!nameAr) return res.status(400).json({ message: "اسم الغرفة مطلوب" });
+      await db.execute(sql`
+        UPDATE rooms SET name_ar = ${nameAr}, room_number = ${roomNumber || null},
+        service_id = ${serviceId || null} WHERE id = ${req.params.id}
+      `);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/rooms/:id", async (req, res) => {
+    try {
+      const occupiedBeds = await db.execute(sql`
+        SELECT b.id FROM beds b
+        WHERE b.room_id = ${req.params.id} AND b.status = 'OCCUPIED'
+        LIMIT 1
+      `);
+      if (occupiedBeds.rows.length > 0) {
+        return res.status(400).json({ message: "لا يمكن حذف الغرفة: يوجد أسرّة مشغولة" });
+      }
+      await db.delete(rooms).where(eq(rooms.id, req.params.id));
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== Beds CRUD ====================
+
+  app.post("/api/beds", async (req, res) => {
+    try {
+      const { roomId, bedNumber } = req.body;
+      if (!roomId || !bedNumber) return res.status(400).json({ message: "الغرفة ورقم السرير مطلوبان" });
+      const result = await db.insert(beds).values({
+        roomId, bedNumber, status: "EMPTY",
+      }).returning();
+      res.json(result[0]);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/beds/:id", async (req, res) => {
+    try {
+      const bedRes = await db.execute(sql`SELECT status FROM beds WHERE id = ${req.params.id}`);
+      if (bedRes.rows.length === 0) return res.status(404).json({ message: "السرير غير موجود" });
+      if ((bedRes.rows[0] as any).status === "OCCUPIED") {
+        return res.status(400).json({ message: "لا يمكن حذف سرير مشغول" });
+      }
+      await db.delete(beds).where(eq(beds.id, req.params.id));
       res.json({ ok: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
