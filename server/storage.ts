@@ -459,7 +459,7 @@ export interface IStorage {
   // Bed Board
   getBedBoard(): Promise<Array<Floor & { rooms: Array<Room & { beds: Array<Bed & { patientName?: string; admissionNumber?: string }> }> }>>;
   getAvailableBeds(): Promise<Array<Bed & { roomNameAr: string; floorNameAr: string }>>;
-  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
+  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string; paymentType?: string; insuranceCompany?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
   transferPatientBed(params: { sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string }): Promise<{ sourceBed: Bed; targetBed: Bed }>;
   dischargeFromBed(bedId: string): Promise<{ bed: Bed }>;
   setBedStatus(bedId: string, status: string): Promise<Bed>;
@@ -6915,6 +6915,7 @@ export class DatabaseStorage implements IStorage {
   async admitPatientToBed(params: {
     bedId: string; patientName: string; patientPhone?: string;
     departmentId?: string; serviceId?: string; doctorName?: string; notes?: string;
+    paymentType?: string; insuranceCompany?: string;
   }) {
     const result = await db.transaction(async (tx) => {
       // 1. Lock bed FOR UPDATE — guards against race conditions
@@ -6937,7 +6938,9 @@ export class DatabaseStorage implements IStorage {
         doctorName: params.doctorName || null,
         notes: params.notes || null,
         status: "active" as any,
-      }).returning();
+        paymentType: (params.paymentType === "contract" ? "contract" : "CASH") as any,
+        insuranceCompany: params.insuranceCompany || null,
+      } as any).returning();
 
       // 4. Find warehouse (prefer department-mapped, fallback to first)
       let warehouseId: string | null = null;
@@ -6967,7 +6970,8 @@ export class DatabaseStorage implements IStorage {
         warehouseId,
         departmentId: params.departmentId || null,
         doctorName: params.doctorName || null,
-        patientType: "cash" as any,
+        patientType: (params.paymentType === "contract" ? "contract" : "cash") as any,
+        contractName: params.paymentType === "contract" ? (params.insuranceCompany || null) : null,
         status: "draft" as any,
         invoiceDate: new Date().toISOString().split("T")[0] as unknown as Date,
         totalAmount: "0",

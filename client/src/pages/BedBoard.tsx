@@ -178,6 +178,8 @@ function BedCard({
 }
 
 // ─── Reception Sheet ──────────────────────────────────────────────────────────
+type Doctor = { id: string; name: string; specialty?: string | null };
+
 function ReceptionSheet({
   open, bed, onClose,
 }: {
@@ -191,13 +193,23 @@ function ReceptionSheet({
   const [patientPhone, setPatientPhone] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [departmentId, setDepartmentId] = useState("");
-  const [doctorName, setDoctorName] = useState("");
+  const [doctorSearch, setDoctorSearch] = useState("");
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [showDoctorResults, setShowDoctorResults] = useState(false);
   const [notes, setNotes] = useState("");
+  const [paymentType, setPaymentType] = useState<"cash" | "contract">("cash");
+  const [insuranceCompany, setInsuranceCompany] = useState("");
 
   const { data: patients = [] } = useQuery<Patient[]>({
     queryKey: ["/api/patients", patientSearch],
     queryFn: () => apiRequest("GET", `/api/patients?search=${encodeURIComponent(patientSearch)}&limit=10`).then(r => r.json()),
     enabled: patientSearch.length >= 2,
+  });
+
+  const { data: doctors = [] } = useQuery<Doctor[]>({
+    queryKey: ["/api/doctors", doctorSearch],
+    queryFn: () => apiRequest("GET", `/api/doctors?search=${encodeURIComponent(doctorSearch)}`).then(r => r.json()),
+    enabled: doctorSearch.length >= 1,
   });
 
   const { data: departments = [] } = useQuery<Department[]>({
@@ -211,8 +223,10 @@ function ReceptionSheet({
         patientName: selectedPatient?.fullName || patientName,
         patientPhone: selectedPatient?.phone || patientPhone || undefined,
         departmentId: departmentId || undefined,
-        doctorName: doctorName || undefined,
+        doctorName: selectedDoctor?.name || undefined,
         notes: notes || undefined,
+        paymentType,
+        insuranceCompany: paymentType === "contract" ? (insuranceCompany || undefined) : undefined,
       }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
@@ -227,7 +241,8 @@ function ReceptionSheet({
   const handleClose = useCallback(() => {
     setPatientSearch(""); setPatientName(""); setPatientPhone("");
     setSelectedPatient(null); setDepartmentId("");
-    setDoctorName(""); setNotes("");
+    setDoctorSearch(""); setSelectedDoctor(null); setShowDoctorResults(false);
+    setNotes(""); setPaymentType("cash"); setInsuranceCompany("");
     onClose();
   }, [onClose]);
 
@@ -345,16 +360,108 @@ function ReceptionSheet({
             </Select>
           </div>
 
+          {/* Doctor searchable dropdown */}
           <div className="space-y-2">
-            <Label htmlFor="doctorName">اسم الطبيب</Label>
-            <Input
-              id="doctorName"
-              data-testid="input-doctor-name"
-              placeholder="د. ..."
-              value={doctorName}
-              onChange={e => setDoctorName(e.target.value)}
-            />
+            <Label>اسم الطبيب</Label>
+            {selectedDoctor ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                <span className="text-sm font-medium flex-1">د. {selectedDoctor.name}</span>
+                {selectedDoctor.specialty && (
+                  <span className="text-xs text-muted-foreground">{selectedDoctor.specialty}</span>
+                )}
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs"
+                  onClick={() => { setSelectedDoctor(null); setDoctorSearch(""); }}>
+                  تغيير
+                </Button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Input
+                  data-testid="input-doctor-search"
+                  placeholder="ابحث باسم الطبيب..."
+                  value={doctorSearch}
+                  onChange={e => { setDoctorSearch(e.target.value); setShowDoctorResults(true); }}
+                  onFocus={() => setShowDoctorResults(true)}
+                  onBlur={() => setTimeout(() => setShowDoctorResults(false), 200)}
+                />
+                {showDoctorResults && doctorSearch.length >= 1 && doctors.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 border rounded-lg bg-background shadow-md overflow-hidden">
+                    {doctors.map(d => (
+                      <button
+                        key={d.id}
+                        data-testid={`doctor-option-${d.id}`}
+                        type="button"
+                        className="w-full text-right px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          setSelectedDoctor(d);
+                          setDoctorSearch("");
+                          setShowDoctorResults(false);
+                        }}
+                      >
+                        <span className="font-medium">د. {d.name}</span>
+                        {d.specialty && <span className="text-muted-foreground text-xs mr-2">{d.specialty}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {showDoctorResults && doctorSearch.length >= 1 && doctors.length === 0 && (
+                  <div className="absolute z-50 w-full mt-1 border rounded-lg bg-background shadow-md px-3 py-2 text-sm text-muted-foreground">
+                    لا يوجد طبيب بهذا الاسم
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Payment type */}
+          <div className="space-y-2">
+            <Label>نوع الدفع</Label>
+            <div className="flex gap-2" data-testid="payment-type-toggle">
+              <button
+                type="button"
+                data-testid="payment-type-cash"
+                onClick={() => { setPaymentType("cash"); setInsuranceCompany(""); }}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                  paymentType === "cash"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-foreground border-border hover:bg-muted"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>
+                نقدي
+              </button>
+              <button
+                type="button"
+                data-testid="payment-type-insurance"
+                onClick={() => setPaymentType("contract")}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                  paymentType === "contract"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-foreground border-border hover:bg-muted"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                تأمين
+              </button>
+            </div>
+          </div>
+
+          {/* Insurance company — shown only when contract selected */}
+          {paymentType === "contract" && (
+            <div className="space-y-2">
+              <Label htmlFor="insuranceCompany">
+                شركة التأمين / الجهة المتعاقدة <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="insuranceCompany"
+                data-testid="input-insurance-company"
+                placeholder="اسم الشركة أو الجهة المتعاقدة"
+                value={insuranceCompany}
+                onChange={e => setInsuranceCompany(e.target.value)}
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="notes">ملاحظات</Label>
@@ -371,7 +478,11 @@ function ReceptionSheet({
             <Button
               data-testid="button-admit-submit"
               className="flex-1"
-              disabled={!effectiveName.trim() || admitMutation.isPending}
+              disabled={
+                !effectiveName.trim() ||
+                admitMutation.isPending ||
+                (paymentType === "contract" && !insuranceCompany.trim())
+              }
               onClick={() => admitMutation.mutate()}
             >
               {admitMutation.isPending ? "جارٍ الاستقبال..." : "استقبال المريض"}

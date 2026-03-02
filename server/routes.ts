@@ -3647,7 +3647,7 @@ export async function registerRoutes(
 
   app.post("/api/beds/:id/admit", async (req, res) => {
     try {
-      const { patientName, patientPhone, departmentId, serviceId, doctorName, notes } = req.body;
+      const { patientName, patientPhone, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       const result = await storage.admitPatientToBed({
         bedId: req.params.id,
@@ -3657,6 +3657,8 @@ export async function registerRoutes(
         serviceId: serviceId || undefined,
         doctorName: doctorName || undefined,
         notes: notes || undefined,
+        paymentType: paymentType || undefined,
+        insuranceCompany: insuranceCompany || undefined,
       });
       res.status(201).json(result);
     } catch (error: any) {
