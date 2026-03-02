@@ -6479,8 +6479,8 @@ export class DatabaseStorage implements IStorage {
 
   // ==================== Admissions ====================
 
-  async getAdmissions(filters?: { status?: string; search?: string; dateFrom?: string; dateTo?: string }): Promise<any[]> {
-    // Build safe parameterized conditions
+  async getAdmissions(filters?: { status?: string; search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<any[]> {
+    // Build safe parameterized conditions for the outer admissions query
     const conds: any[] = [];
     if (filters?.status)   conds.push(sql`a.status = ${filters.status}`);
     if (filters?.dateFrom) conds.push(sql`a.admission_date >= ${filters.dateFrom}`);
@@ -6488,6 +6488,10 @@ export class DatabaseStorage implements IStorage {
     if (filters?.search) {
       const s = `%${filters.search}%`;
       conds.push(sql`(a.patient_name ILIKE ${s} OR a.admission_number ILIKE ${s} OR a.patient_phone ILIKE ${s} OR a.doctor_name ILIKE ${s})`);
+    }
+    // فلتر القسم: تُعرض الإقامة فقط إذا كانت آخر فاتورة مرتبطة بها تنتمي للقسم المحدد
+    if (filters?.deptId) {
+      conds.push(sql`inv_agg.latest_invoice_dept_id = ${filters.deptId}`);
     }
 
     const whereExpr = conds.length > 0
@@ -6502,7 +6506,9 @@ export class DatabaseStorage implements IStorage {
         COALESCE(inv_agg.total_transferred, 0)         AS total_transferred_amount,
         inv_agg.latest_invoice_number                   AS latest_invoice_number,
         inv_agg.latest_invoice_id                       AS latest_invoice_id,
-        inv_agg.latest_invoice_status                   AS latest_invoice_status
+        inv_agg.latest_invoice_status                   AS latest_invoice_status,
+        inv_agg.latest_invoice_dept_id                  AS latest_invoice_dept_id,
+        inv_agg.latest_invoice_dept_name                AS latest_invoice_dept_name
       FROM admissions a
       LEFT JOIN (
         /*
@@ -6518,8 +6524,12 @@ export class DatabaseStorage implements IStorage {
           COALESCE(SUM(dt_agg.dt_total), 0)                                        AS total_transferred,
           (ARRAY_AGG(pi.invoice_number ORDER BY pi.created_at DESC))[1]            AS latest_invoice_number,
           (ARRAY_AGG(pi.id             ORDER BY pi.created_at DESC))[1]            AS latest_invoice_id,
-          (ARRAY_AGG(pi.status         ORDER BY pi.created_at DESC))[1]            AS latest_invoice_status
+          (ARRAY_AGG(pi.status         ORDER BY pi.created_at DESC))[1]            AS latest_invoice_status,
+          (ARRAY_AGG(pi.department_id  ORDER BY pi.created_at DESC))[1]            AS latest_invoice_dept_id,
+          (ARRAY_AGG(d.name_ar         ORDER BY pi.created_at DESC))[1]            AS latest_invoice_dept_name
         FROM patient_invoice_headers pi
+        /* اسم القسم من جدول departments */
+        LEFT JOIN departments d ON d.id = pi.department_id
         /* fallback: آخر إقامة بنفس اسم المريض عند غياب admission_id */
         LEFT JOIN (
           SELECT DISTINCT ON (patient_name) id, patient_name

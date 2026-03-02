@@ -3614,6 +3614,7 @@ export async function registerRoutes(
       if (req.query.search)   filters.search   = req.query.search as string;
       if (req.query.dateFrom) filters.dateFrom = req.query.dateFrom as string;
       if (req.query.dateTo)   filters.dateTo   = req.query.dateTo as string;
+      if (req.query.deptId)   filters.deptId   = req.query.deptId as string;
       const list = await storage.getAdmissions(filters);
       res.json(list);
     } catch (error: any) {

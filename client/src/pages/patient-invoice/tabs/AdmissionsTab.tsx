@@ -97,6 +97,8 @@ interface AdmissionsTabProps {
   setAdmSearchQuery: (v: string) => void;
   admStatusFilter:   string;
   setAdmStatusFilter: (v: string) => void;
+  admDeptFilter:     string;
+  setAdmDeptFilter:  (v: string) => void;
   admDateFrom:       string;
   setAdmDateFrom:    (v: string) => void;
   admDateTo:         string;
@@ -138,6 +140,7 @@ export function AdmissionsTab({
   admAllAdmissions, admListLoading,
   admSearchQuery, setAdmSearchQuery,
   admStatusFilter, setAdmStatusFilter,
+  admDeptFilter, setAdmDeptFilter,
   admDateFrom, setAdmDateFrom,
   admDateTo, setAdmDateTo,
   admGetStatusBadgeClass, admStatusLabels,
@@ -195,6 +198,9 @@ export function AdmissionsTab({
             onSearchChange={setAdmSearchQuery}
             statusFilter={admStatusFilter}
             onStatusChange={setAdmStatusFilter}
+            deptFilter={admDeptFilter}
+            onDeptChange={setAdmDeptFilter}
+            departments={departments}
             dateFrom={admDateFrom}
             onDateFromChange={setAdmDateFrom}
             dateTo={admDateTo}
@@ -215,6 +221,9 @@ interface AdmissionListProps {
   onSearchChange: (v: string) => void;
   statusFilter: string;
   onStatusChange: (v: string) => void;
+  deptFilter: string;
+  onDeptChange: (v: string) => void;
+  departments: Department[] | undefined;
   dateFrom: string;
   onDateFromChange: (v: string) => void;
   dateTo: string;
@@ -226,10 +235,21 @@ function AdmissionList({
   rows, loading,
   searchQuery, onSearchChange,
   statusFilter, onStatusChange,
+  deptFilter, onDeptChange, departments,
   dateFrom, onDateFromChange,
   dateTo, onDateToChange,
   onSelect,
 }: AdmissionListProps) {
+  // ── حساب الإجماليات للسطر السفلي ──
+  const totals = (rows ?? []).reduce(
+    (acc, a) => ({
+      net:          acc.net          + parseFloat(a.totalNetAmount         ?? "0"),
+      paid:         acc.paid         + parseFloat(a.totalPaidAmount        ?? "0"),
+      transferred:  acc.transferred  + parseFloat(a.totalTransferredAmount ?? "0"),
+    }),
+    { net: 0, paid: 0, transferred: 0 }
+  );
+
   return (
     <div className="space-y-2">
       {/* ── رأس الصفحة ── */}
@@ -269,7 +289,7 @@ function AdmissionList({
         </div>
 
         {/* بحث بالاسم أو الطبيب */}
-        <div className="flex items-center gap-1 flex-1 min-w-[160px]">
+        <div className="flex items-center gap-1 flex-1 min-w-[150px]">
           <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <Input
             type="text"
@@ -281,9 +301,22 @@ function AdmissionList({
           />
         </div>
 
+        {/* فلتر القسم */}
+        <Select value={deptFilter} onValueChange={onDeptChange}>
+          <SelectTrigger className="w-[130px] h-7 text-xs" data-testid="select-adm-dept-filter">
+            <SelectValue placeholder="القسم" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">كل الأقسام</SelectItem>
+            {(departments ?? []).map(d => (
+              <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         {/* فلتر حالة الإقامة */}
         <Select value={statusFilter} onValueChange={onStatusChange}>
-          <SelectTrigger className="w-[110px] h-7 text-xs" data-testid="select-adm-status-filter">
+          <SelectTrigger className="w-[100px] h-7 text-xs" data-testid="select-adm-status-filter">
             <SelectValue placeholder="الحالة" />
           </SelectTrigger>
           <SelectContent>
@@ -304,13 +337,14 @@ function AdmissionList({
             ))}
           </div>
         ) : (
-          <ScrollArea className="h-[calc(100vh-300px)]">
+          <ScrollArea className="h-[calc(100vh-310px)]">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 h-8">
                   <TableHead className="py-1 text-xs">رقم الإقامة</TableHead>
                   <TableHead className="py-1 text-xs">اسم المريض</TableHead>
                   <TableHead className="py-1 text-xs">الطبيب</TableHead>
+                  <TableHead className="py-1 text-xs">القسم</TableHead>
                   <TableHead className="py-1 text-xs">وقت الدخول</TableHead>
                   <TableHead className="py-1 text-xs">رقم الفاتورة</TableHead>
                   <TableHead className="py-1 text-xs text-center">حالة الفاتورة</TableHead>
@@ -318,13 +352,13 @@ function AdmissionList({
                   <TableHead className="py-1 text-xs text-left">المدفوع</TableHead>
                   <TableHead className="py-1 text-xs text-left">محول للطبيب</TableHead>
                   <TableHead className="py-1 text-xs">تاريخ الخروج</TableHead>
-                  <TableHead className="py-1 text-xs text-center">حالة الإقامة</TableHead>
+                  <TableHead className="py-1 text-xs text-center">الحالة</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {!rows || rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-6 text-muted-foreground text-xs">
+                    <TableCell colSpan={12} className="text-center py-6 text-muted-foreground text-xs">
                       لا توجد إقامات في هذا النطاق الزمني
                     </TableCell>
                   </TableRow>
@@ -334,6 +368,27 @@ function AdmissionList({
                   ))
                 )}
               </TableBody>
+
+              {/* ── سطر الإجماليات ── */}
+              {rows && rows.length > 0 && (
+                <tfoot>
+                  <TableRow className="bg-muted/70 font-bold border-t-2">
+                    <TableCell colSpan={7} className="py-1 text-xs text-right pr-2">
+                      الإجمالي ({rows.length} إقامة)
+                    </TableCell>
+                    <TableCell className="py-1 text-xs text-left font-mono font-bold" data-testid="text-adm-total-net">
+                      {formatCurrency(totals.net)}
+                    </TableCell>
+                    <TableCell className="py-1 text-xs text-left font-mono text-green-700 dark:text-green-400 font-bold" data-testid="text-adm-total-paid">
+                      {formatCurrency(totals.paid)}
+                    </TableCell>
+                    <TableCell className="py-1 text-xs text-left font-mono text-blue-700 dark:text-blue-400 font-bold" data-testid="text-adm-total-transferred">
+                      {formatCurrency(totals.transferred)}
+                    </TableCell>
+                    <TableCell colSpan={2} />
+                  </TableRow>
+                </tfoot>
+              )}
             </Table>
           </ScrollArea>
         )}
@@ -363,6 +418,13 @@ function AdmissionRow({ row: a, onSelect }: { row: any; onSelect: (a: any) => vo
 
       {/* الطبيب */}
       <TableCell className="py-0.5 text-xs">{a.doctorName || "—"}</TableCell>
+
+      {/* القسم (من آخر فاتورة) */}
+      <TableCell className="py-0.5 text-xs">
+        {a.latestInvoiceDeptName
+          ? <span className="text-muted-foreground">{a.latestInvoiceDeptName}</span>
+          : <span className="text-muted-foreground">—</span>}
+      </TableCell>
 
       {/* وقت الدخول (timestamp) */}
       <TableCell className="py-0.5 text-xs font-mono whitespace-nowrap">

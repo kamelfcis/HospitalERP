@@ -1360,6 +1360,8 @@ export default function PatientInvoice() {
             setAdmSearchQuery={setAdmSearchQuery}
             admStatusFilter={admStatusFilter}
             setAdmStatusFilter={setAdmStatusFilter}
+            admDeptFilter={admDeptFilter}
+            setAdmDeptFilter={setAdmDeptFilter}
             admDateFrom={admDateFrom}
             setAdmDateFrom={setAdmDateFrom}
             admDateTo={admDateTo}

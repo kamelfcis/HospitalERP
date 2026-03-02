@@ -10,6 +10,7 @@ export function useAdmissions(mainTab: string) {
   const [admIsCreateOpen, setAdmIsCreateOpen] = useState(false);
   const [admSearchQuery, setAdmSearchQuery] = useState("");
   const [admStatusFilter, setAdmStatusFilter] = useState("all");
+  const [admDeptFilter, setAdmDeptFilter] = useState("all");
   const [admDateFrom, setAdmDateFrom] = useState(todayStr());
   const [admDateTo, setAdmDateTo] = useState(todayStr());
   const debouncedAdmSearch = useDebounce(admSearchQuery, 300);
@@ -33,11 +34,12 @@ export function useAdmissions(mainTab: string) {
   const admQueryParams = useMemo(() => {
     const params = new URLSearchParams();
     if (admStatusFilter !== "all") params.set("status", admStatusFilter);
+    if (admDeptFilter   !== "all") params.set("deptId", admDeptFilter);
     if (debouncedAdmSearch.trim()) params.set("search", debouncedAdmSearch.trim());
     if (admDateFrom) params.set("dateFrom", admDateFrom);
     if (admDateTo)   params.set("dateTo",   admDateTo);
     return params.toString();
-  }, [admStatusFilter, debouncedAdmSearch, admDateFrom, admDateTo]);
+  }, [admStatusFilter, admDeptFilter, debouncedAdmSearch, admDateFrom, admDateTo]);
 
   const { data: admAllAdmissions, isLoading: admListLoading } = useQuery<Admission[]>({
     queryKey: ["/api/admissions", admQueryParams],
@@ -175,6 +177,7 @@ export function useAdmissions(mainTab: string) {
     admIsCreateOpen, setAdmIsCreateOpen,
     admSearchQuery, setAdmSearchQuery,
     admStatusFilter, setAdmStatusFilter,
+    admDeptFilter, setAdmDeptFilter,
     admDateFrom, setAdmDateFrom,
     admDateTo, setAdmDateTo,
     admPatientSearch, setAdmPatientSearch,
