@@ -6501,16 +6501,18 @@ export class DatabaseStorage implements IStorage {
         COALESCE(inv_agg.total_paid_amount, 0)         AS total_paid_amount,
         COALESCE(inv_agg.total_transferred, 0)         AS total_transferred_amount,
         inv_agg.latest_invoice_number                   AS latest_invoice_number,
-        inv_agg.latest_invoice_id                       AS latest_invoice_id
+        inv_agg.latest_invoice_id                       AS latest_invoice_id,
+        inv_agg.latest_invoice_status                   AS latest_invoice_status
       FROM admissions a
       LEFT JOIN (
         SELECT
           pi.admission_id,
-          SUM(pi.net_amount::numeric)                         AS total_net_amount,
-          SUM(pi.paid_amount::numeric)                        AS total_paid_amount,
-          COALESCE(SUM(dt_agg.dt_total), 0)                  AS total_transferred,
-          MAX(pi.invoice_number)                              AS latest_invoice_number,
-          (ARRAY_AGG(pi.id ORDER BY pi.created_at DESC))[1]  AS latest_invoice_id
+          SUM(pi.net_amount::numeric)                                             AS total_net_amount,
+          SUM(pi.paid_amount::numeric)                                            AS total_paid_amount,
+          COALESCE(SUM(dt_agg.dt_total), 0)                                      AS total_transferred,
+          (ARRAY_AGG(pi.invoice_number ORDER BY pi.created_at DESC))[1]          AS latest_invoice_number,
+          (ARRAY_AGG(pi.id          ORDER BY pi.created_at DESC))[1]             AS latest_invoice_id,
+          (ARRAY_AGG(pi.status      ORDER BY pi.created_at DESC))[1]             AS latest_invoice_status
         FROM patient_invoice_headers pi
         LEFT JOIN (
           SELECT invoice_id, SUM(amount::numeric) AS dt_total
