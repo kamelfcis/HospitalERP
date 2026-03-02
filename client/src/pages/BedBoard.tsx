@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   BedDouble, RefreshCw, MoreVertical, UserPlus, FileText,
-  ArrowRightLeft, LogOut, Sparkles, Wrench, Pencil, Tag,
+  ArrowRightLeft, LogOut, Sparkles, Wrench, Tag,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -64,7 +64,6 @@ interface AvailableBed {
 
 interface Patient { id: string; fullName: string; phone?: string; }
 interface Department { id: string; nameAr: string; }
-interface Service { id: string; nameAr: string; basePrice: string; }
 
 // ─── Status configuration ────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<BedStatus, { label: string; card: string; badge: string }> = {
@@ -83,17 +82,17 @@ function BedCard({
 }) {
   const cfg = STATUS_CONFIG[bed.status];
   return (
-    <div className={`relative border-2 rounded-xl p-3 w-44 ${cfg.card}`} data-testid={`bed-card-${bed.id}`}>
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="font-semibold text-sm">سرير {bed.bedNumber}</p>
-          <Badge variant="outline" className={`text-xs mt-0.5 ${cfg.badge}`}>{cfg.label}</Badge>
+    <div className={`relative border rounded-lg p-3 w-40 shadow-sm transition-shadow hover:shadow-md ${cfg.card}`} data-testid={`bed-card-${bed.id}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5">
+          <BedDouble className="h-4 w-4 opacity-60" />
+          <span className="font-bold text-sm">{bed.bedNumber}</span>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 -mt-1 -ml-1"
+            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full"
               data-testid={`bed-menu-${bed.id}`}>
-              <MoreVertical className="h-4 w-4" />
+              <MoreVertical className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
@@ -167,11 +166,12 @@ function BedCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${cfg.badge}`}>{cfg.label}</Badge>
       {bed.patientName && (
-        <p className="text-xs mt-2 font-medium truncate">{bed.patientName}</p>
+        <p className="text-xs mt-1.5 font-medium truncate" data-testid={`bed-patient-${bed.id}`}>{bed.patientName}</p>
       )}
       {bed.admissionNumber && (
-        <p className="text-xs text-muted-foreground">{bed.admissionNumber}</p>
+        <p className="text-[10px] text-muted-foreground mt-0.5" data-testid={`bed-admission-${bed.id}`}>{bed.admissionNumber}</p>
       )}
     </div>
   );
@@ -386,86 +386,6 @@ function ReceptionSheet({
   );
 }
 
-// ─── Room Grade Dialog ────────────────────────────────────────────────────────
-function RoomGradeDialog({
-  open, room, onClose,
-}: {
-  open: boolean;
-  room: RoomData | null;
-  onClose: () => void;
-}) {
-  const { toast } = useToast();
-  const [selectedServiceId, setSelectedServiceId] = useState<string>(room?.serviceId || "");
-
-  const { data: services = [] } = useQuery<Service[]>({
-    queryKey: ["/api/services"],
-    queryFn: () => apiRequest("GET", "/api/services").then(r => r.json()).then(d => d?.data ?? d ?? []),
-    enabled: open,
-  });
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      apiRequest("PATCH", `/api/rooms/${room!.id}`, {
-        serviceId: selectedServiceId || null,
-      }).then(r => r.json()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
-      toast({ title: "تم الحفظ", description: "تم تحديد درجة الغرفة بنجاح" });
-      onClose();
-    },
-    onError: (err: any) => {
-      toast({ variant: "destructive", title: "خطأ", description: err.message });
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm" dir="rtl">
-        <DialogHeader>
-          <DialogTitle>درجة الغرفة</DialogTitle>
-          <DialogDescription>
-            {room ? `${room.nameAr}${room.roomNumber ? ` (${room.roomNumber})` : ""}` : ""}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3 py-2">
-          <Label>خدمة الإقامة (سعر اليوم)</Label>
-          <Select
-            value={selectedServiceId || "__none__"}
-            onValueChange={v => setSelectedServiceId(v === "__none__" ? "" : v)}
-          >
-            <SelectTrigger data-testid="select-room-service">
-              <SelectValue placeholder="بدون درجة محددة" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— بدون درجة محددة —</SelectItem>
-              {services.map(s => (
-                <SelectItem key={s.id} value={s.id} data-testid={`room-service-option-${s.id}`}>
-                  {s.nameAr} — {parseFloat(s.basePrice).toLocaleString("ar-EG")} ج.م/يوم
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            الخدمة المختارة ستُضاف تلقائياً لفاتورة أي مريض يُستقبل في هذه الغرفة
-          </p>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} data-testid="button-room-grade-cancel">إلغاء</Button>
-          <Button
-            data-testid="button-room-grade-save"
-            disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
-          >
-            {saveMutation.isPending ? "جارٍ الحفظ..." : "حفظ"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Transfer Dialog ──────────────────────────────────────────────────────────
 function TransferDialog({
   open, sourceBed, onClose,
@@ -655,7 +575,6 @@ export default function BedBoard() {
   const [admitBed, setAdmitBed] = useState<BedData | null>(null);
   const [transferBed, setTransferBed] = useState<BedData | null>(null);
   const [dischargeBed, setDischargeBed] = useState<BedData | null>(null);
-  const [editRoom, setEditRoom] = useState<RoomData | null>(null);
 
   const statusMutation = useMutation({
     mutationFn: ({ bedId, status }: { bedId: string; status: string }) =>
@@ -722,35 +641,26 @@ export default function BedBoard() {
           <h2 className="text-lg font-semibold mb-3 pb-1 border-b">{floor.nameAr}</h2>
           <div className="space-y-5">
             {floor.rooms.map(room => (
-              <div key={room.id} data-testid={`room-section-${room.id}`}>
-                {/* Room header with grade badge */}
-                <div className="flex items-center gap-2 mb-2">
-                  <p className="text-sm font-medium text-muted-foreground">
+              <div key={room.id} className="rounded-lg border bg-card p-3" data-testid={`room-section-${room.id}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-sm font-semibold" data-testid={`text-room-name-${room.id}`}>
                     {room.nameAr}{room.roomNumber ? ` (${room.roomNumber})` : ""}
                   </p>
                   {room.serviceNameAr ? (
                     <Badge
                       variant="outline"
-                      className="text-xs gap-1 cursor-pointer hover:bg-muted/60 transition-colors border-primary/30 text-primary"
-                      onClick={() => setEditRoom(room)}
+                      className="text-xs gap-1 border-green-300 text-green-700 dark:text-green-400 dark:border-green-700"
                       data-testid={`room-grade-badge-${room.id}`}
                     >
                       <Tag className="h-3 w-3" />
                       {room.serviceNameAr}
                       {room.servicePrice && ` — ${parseFloat(room.servicePrice).toLocaleString("ar-EG")} ج.م`}
-                      <Pencil className="h-3 w-3 opacity-60" />
                     </Badge>
                   ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs text-muted-foreground gap-1"
-                      onClick={() => setEditRoom(room)}
-                      data-testid={`room-set-grade-${room.id}`}
-                    >
+                    <Badge variant="outline" className="text-xs gap-1 border-amber-300 text-amber-600 dark:text-amber-400 dark:border-amber-700" data-testid={`room-no-grade-${room.id}`}>
                       <Tag className="h-3 w-3" />
-                      تحديد درجة الغرفة
-                    </Button>
+                      بدون درجة
+                    </Badge>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -798,11 +708,6 @@ export default function BedBoard() {
         open={!!dischargeBed}
         bed={dischargeBed}
         onClose={() => setDischargeBed(null)}
-      />
-      <RoomGradeDialog
-        open={!!editRoom}
-        room={editRoom}
-        onClose={() => setEditRoom(null)}
       />
     </div>
   );
