@@ -21,6 +21,8 @@ import {
   BedDouble, RefreshCw, MoreVertical, UserPlus, FileText,
   ArrowRightLeft, LogOut, Sparkles, Wrench, Tag,
 } from "lucide-react";
+import type { SurgeryType } from "@shared/schema";
+import { surgeryCategoryLabels } from "@shared/schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type BedStatus = "EMPTY" | "OCCUPIED" | "NEEDS_CLEANING" | "MAINTENANCE";
@@ -196,6 +198,9 @@ function ReceptionSheet({
   const [doctorSearch, setDoctorSearch] = useState("");
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [showDoctorResults, setShowDoctorResults] = useState(false);
+  const [surgerySearch, setSurgerySearch] = useState("");
+  const [selectedSurgery, setSelectedSurgery] = useState<SurgeryType | null>(null);
+  const [showSurgeryResults, setShowSurgeryResults] = useState(false);
   const [notes, setNotes] = useState("");
   const [paymentType, setPaymentType] = useState<"cash" | "contract">("cash");
   const [insuranceCompany, setInsuranceCompany] = useState("");
@@ -217,6 +222,12 @@ function ReceptionSheet({
     queryFn: () => apiRequest("GET", "/api/departments").then(r => r.json()),
   });
 
+  const { data: surgeries = [] } = useQuery<SurgeryType[]>({
+    queryKey: ["/api/surgery-types", surgerySearch],
+    queryFn: () => apiRequest("GET", `/api/surgery-types?search=${encodeURIComponent(surgerySearch)}`).then(r => r.json()),
+    enabled: surgerySearch.length >= 1,
+  });
+
   const admitMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/beds/${bed!.id}/admit`, {
@@ -227,10 +238,14 @@ function ReceptionSheet({
         notes: notes || undefined,
         paymentType,
         insuranceCompany: paymentType === "contract" ? (insuranceCompany || undefined) : undefined,
+        surgeryTypeId: selectedSurgery?.id || undefined,
       }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
-      toast({ title: "تم الاستقبال", description: "تمت إضافة بند الإقامة فوراً للفاتورة" });
+      const desc = selectedSurgery
+        ? `تمت إضافة بند الإقامة وفتح غرفة العمليات فوراً`
+        : "تمت إضافة بند الإقامة فوراً للفاتورة";
+      toast({ title: "تم الاستقبال", description: desc });
       handleClose();
     },
     onError: (err: any) => {
@@ -242,6 +257,7 @@ function ReceptionSheet({
     setPatientSearch(""); setPatientName(""); setPatientPhone("");
     setSelectedPatient(null); setDepartmentId("");
     setDoctorSearch(""); setSelectedDoctor(null); setShowDoctorResults(false);
+    setSurgerySearch(""); setSelectedSurgery(null); setShowSurgeryResults(false);
     setNotes(""); setPaymentType("cash"); setInsuranceCompany("");
     onClose();
   }, [onClose]);
@@ -408,6 +424,58 @@ function ReceptionSheet({
                 {showDoctorResults && doctorSearch.length >= 1 && doctors.length === 0 && (
                   <div className="absolute z-50 w-full mt-1 border rounded-lg bg-background shadow-md px-3 py-2 text-sm text-muted-foreground">
                     لا يوجد طبيب بهذا الاسم
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Surgery type searchable dropdown */}
+          <div className="space-y-2">
+            <Label>نوع العملية (اختياري)</Label>
+            {selectedSurgery ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-950 rounded-lg border border-purple-200 dark:border-purple-800">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium block">{selectedSurgery.nameAr}</span>
+                  <span className="text-xs text-muted-foreground">{surgeryCategoryLabels[selectedSurgery.category as keyof typeof surgeryCategoryLabels]}</span>
+                </div>
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs shrink-0"
+                  onClick={() => { setSelectedSurgery(null); setSurgerySearch(""); }}>
+                  تغيير
+                </Button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Input
+                  data-testid="input-surgery-search"
+                  placeholder="ابحث باسم العملية..."
+                  value={surgerySearch}
+                  onChange={e => { setSurgerySearch(e.target.value); setShowSurgeryResults(true); }}
+                  onFocus={() => setShowSurgeryResults(true)}
+                  onBlur={() => setTimeout(() => setShowSurgeryResults(false), 200)}
+                />
+                {showSurgeryResults && surgerySearch.length >= 1 && surgeries.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 border rounded-lg bg-background shadow-md overflow-hidden">
+                    {surgeries.filter(s => s.isActive).map(s => (
+                      <button
+                        key={s.id}
+                        data-testid={`surgery-option-${s.id}`}
+                        type="button"
+                        className="w-full text-right px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0 flex items-center justify-between"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => { setSelectedSurgery(s); setSurgerySearch(""); setShowSurgeryResults(false); }}
+                      >
+                        <span className="font-medium">{s.nameAr}</span>
+                        <Badge variant="outline" className="text-xs mr-2">
+                          {surgeryCategoryLabels[s.category as keyof typeof surgeryCategoryLabels]}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {showSurgeryResults && surgerySearch.length >= 1 && surgeries.length === 0 && (
+                  <div className="absolute z-50 w-full mt-1 border rounded-lg bg-background shadow-md px-3 py-2 text-sm text-muted-foreground">
+                    لا توجد عملية بهذا الاسم
                   </div>
                 )}
               </div>

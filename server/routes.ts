@@ -3531,6 +3531,80 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Surgery Types API ====================
+
+  app.get("/api/surgery-types", async (req, res) => {
+    try {
+      const search = req.query.search as string | undefined;
+      res.json(await storage.getSurgeryTypes(search));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/surgery-types", requireAuth, async (req, res) => {
+    try {
+      const { nameAr, category, isActive } = req.body;
+      if (!nameAr?.trim()) return res.status(400).json({ message: "اسم العملية مطلوب" });
+      if (!["major","medium","minor","skilled","simple"].includes(category))
+        return res.status(400).json({ message: "تصنيف غير صالح" });
+      const row = await storage.createSurgeryType({ nameAr: nameAr.trim(), category, isActive: isActive !== false });
+      res.status(201).json(row);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.put("/api/surgery-types/:id", requireAuth, async (req, res) => {
+    try {
+      const { nameAr, category, isActive } = req.body;
+      if (category && !["major","medium","minor","skilled","simple"].includes(category))
+        return res.status(400).json({ message: "تصنيف غير صالح" });
+      const row = await storage.updateSurgeryType(req.params.id, {
+        ...(nameAr !== undefined && { nameAr: nameAr.trim() }),
+        ...(category !== undefined && { category }),
+        ...(isActive !== undefined && { isActive }),
+      });
+      res.json(row);
+    } catch (e: any) {
+      res.status(e.message.includes("غير موجود") ? 404 : 500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/surgery-types/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteSurgeryType(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(e.message.includes("مرتبط") ? 409 : 500).json({ message: e.message });
+    }
+  });
+
+  // Surgery category prices
+  app.get("/api/surgery-category-prices", async (req, res) => {
+    try { res.json(await storage.getSurgeryCategoryPrices()); }
+    catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.put("/api/surgery-category-prices/:category", requireAuth, async (req, res) => {
+    try {
+      const { price } = req.body;
+      if (price === undefined || isNaN(parseFloat(price)))
+        return res.status(400).json({ message: "السعر غير صالح" });
+      const row = await storage.upsertSurgeryCategoryPrice(req.params.category, String(parseFloat(price)));
+      res.json(row);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Update surgery type on a patient invoice (change → price updates automatically)
+  app.put("/api/patient-invoices/:id/surgery-type", requireAuth, async (req, res) => {
+    try {
+      const { surgeryTypeId } = req.body;
+      await storage.updateInvoiceSurgeryType(req.params.id, surgeryTypeId || null);
+      res.json({ success: true });
+    } catch (e: any) {
+      const code = e.message.includes("غير موجود") ? 404
+        : e.message.includes("نهائية") ? 409 : 500;
+      res.status(code).json({ message: e.message });
+    }
+  });
+
   // ==================== Admissions API ====================
 
   app.get("/api/admissions", async (req, res) => {
@@ -3647,7 +3721,7 @@ export async function registerRoutes(
 
   app.post("/api/beds/:id/admit", async (req, res) => {
     try {
-      const { patientName, patientPhone, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany } = req.body;
+      const { patientName, patientPhone, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       const result = await storage.admitPatientToBed({
         bedId: req.params.id,
@@ -3659,6 +3733,7 @@ export async function registerRoutes(
         notes: notes || undefined,
         paymentType: paymentType || undefined,
         insuranceCompany: insuranceCompany || undefined,
+        surgeryTypeId: surgeryTypeId || undefined,
       });
       res.status(201).json(result);
     } catch (error: any) {

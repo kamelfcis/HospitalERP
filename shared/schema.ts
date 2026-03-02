@@ -1321,19 +1321,57 @@ export const cashierShiftStatusLabels: Record<string, string> = {
 };
 
 // إقامات المرضى
-export const admissions = pgTable("admissions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  admissionNumber: varchar("admission_number", { length: 30 }).notNull().unique(),
-  patientId: varchar("patient_id").references(() => patients.id),
-  patientName: text("patient_name").notNull(),
-  patientPhone: text("patient_phone"),
-  admissionDate: date("admission_date").notNull(),
-  dischargeDate: date("discharge_date"),
-  status: admissionStatusEnum("status").notNull().default("active"),
-  doctorName: text("doctor_name"),
-  notes: text("notes"),
+// ─── أنواع العمليات ──────────────────────────────────────────────────────────
+
+/** تصنيفات العمليات الجراحية */
+export const SURGERY_CATEGORIES = ["major", "medium", "minor", "skilled", "simple"] as const;
+export type SurgeryCategory = (typeof SURGERY_CATEGORIES)[number];
+
+export const surgeryCategoryLabels: Record<SurgeryCategory, string> = {
+  major:   "كبرى",
+  medium:  "متوسطة",
+  minor:   "صغرى",
+  skilled: "ذات مهارة",
+  simple:  "بسيطة",
+};
+
+export const surgeryTypes = pgTable("surgery_types", {
+  id:        varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  nameAr:    text("name_ar").notNull(),
+  category:  varchar("category", { length: 20 }).notNull(),
+  isActive:  boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSurgeryTypeSchema = createInsertSchema(surgeryTypes).omit({ id: true, createdAt: true });
+export type InsertSurgeryType = z.infer<typeof insertSurgeryTypeSchema>;
+export type SurgeryType = typeof surgeryTypes.$inferSelect;
+
+export const surgeryCategoryPrices = pgTable("surgery_category_prices", {
+  category: varchar("category", { length: 20 }).primaryKey(),
+  price:    decimal("price", { precision: 12, scale: 2 }).notNull().default("0"),
+});
+
+export type SurgeryCategoryPrice = typeof surgeryCategoryPrices.$inferSelect;
+
+// ─── قبول المرضى ─────────────────────────────────────────────────────────────
+
+export const admissions = pgTable("admissions", {
+  id:             varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  admissionNumber: varchar("admission_number", { length: 30 }).notNull().unique(),
+  patientId:      varchar("patient_id").references(() => patients.id),
+  patientName:    text("patient_name").notNull(),
+  patientPhone:   text("patient_phone"),
+  admissionDate:  date("admission_date").notNull(),
+  dischargeDate:  date("discharge_date"),
+  status:         admissionStatusEnum("status").notNull().default("active"),
+  doctorName:     text("doctor_name"),
+  notes:          text("notes"),
+  paymentType:    varchar("payment_type", { length: 20 }).default("CASH"),
+  insuranceCompany: text("insurance_company"),
+  surgeryTypeId:  varchar("surgery_type_id").references(() => surgeryTypes.id),
+  createdAt:      timestamp("created_at").notNull().defaultNow(),
+  updatedAt:      timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   admNumIdx: index("idx_adm_number").on(table.admissionNumber),
   patientIdx: index("idx_adm_patient").on(table.patientName),

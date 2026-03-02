@@ -160,6 +160,11 @@ import {
   doctorSettlementAllocations,
   type DoctorSettlement,
   type DoctorSettlementAllocation,
+  surgeryTypes,
+  surgeryCategoryPrices,
+  type SurgeryType,
+  type SurgeryCategoryPrice,
+  type InsertSurgeryType,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -456,10 +461,18 @@ export interface IStorage {
   closeStaySegment(segmentId: string): Promise<StaySegment>;
   transferStaySegment(params: { admissionId: string; oldSegmentId: string; newServiceId?: string; newInvoiceId: string; notes?: string }): Promise<StaySegment>;
   accrueStayLines(): Promise<{ segmentsProcessed: number; linesUpserted: number }>;
+  // Surgery Types
+  getSurgeryTypes(search?: string): Promise<SurgeryType[]>;
+  createSurgeryType(data: InsertSurgeryType): Promise<SurgeryType>;
+  updateSurgeryType(id: string, data: Partial<InsertSurgeryType>): Promise<SurgeryType>;
+  deleteSurgeryType(id: string): Promise<void>;
+  getSurgeryCategoryPrices(): Promise<SurgeryCategoryPrice[]>;
+  upsertSurgeryCategoryPrice(category: string, price: string): Promise<SurgeryCategoryPrice>;
+  updateInvoiceSurgeryType(invoiceId: string, surgeryTypeId: string | null): Promise<void>;
   // Bed Board
   getBedBoard(): Promise<Array<Floor & { rooms: Array<Room & { beds: Array<Bed & { patientName?: string; admissionNumber?: string }> }> }>>;
   getAvailableBeds(): Promise<Array<Bed & { roomNameAr: string; floorNameAr: string }>>;
-  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string; paymentType?: string; insuranceCompany?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
+  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string; paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
   transferPatientBed(params: { sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string }): Promise<{ sourceBed: Bed; targetBed: Bed }>;
   dischargeFromBed(bedId: string): Promise<{ bed: Bed }>;
   setBedStatus(bedId: string, status: string): Promise<Bed>;
@@ -5835,26 +5848,35 @@ export class DatabaseStorage implements IStorage {
 
         const newLines: any[] = [];
 
+        // Lines that go to EVERY patient in full (not divided among patients)
+        const DIRECT_SOURCE_TYPES = new Set(["STAY_ENGINE", "OR_ROOM"]);
+
         for (let li = 0; li < convertedLines.length; li++) {
           const cl = convertedLines[li];
           const totalQty = cl.distQty;
 
-          if (!allocatedSoFar[li]) allocatedSoFar[li] = 0;
+          // Determine share: direct lines go fully to each patient; others are divided
           let share: number;
-          if (pi === numPatients - 1) {
-            share = +(totalQty - allocatedSoFar[li]).toFixed(4);
+          if (DIRECT_SOURCE_TYPES.has(cl.sourceType)) {
+            // Full amount for every patient — إقامة وفتح غرفة عمليات
+            share = totalQty;
           } else {
-            const intQty = Math.round(totalQty);
-            const isInt = Math.abs(totalQty - intQty) < 0.0001 && intQty > 0;
-            if (isInt && intQty >= numPatients) {
-              const baseShare = Math.floor(intQty / numPatients);
-              const remainder = intQty - baseShare * numPatients;
-              share = pi < remainder ? baseShare + 1 : baseShare;
+            if (!allocatedSoFar[li]) allocatedSoFar[li] = 0;
+            if (pi === numPatients - 1) {
+              share = +(totalQty - allocatedSoFar[li]).toFixed(4);
             } else {
-              share = +(Math.round((totalQty / numPatients) * 10000) / 10000);
+              const intQty = Math.round(totalQty);
+              const isInt = Math.abs(totalQty - intQty) < 0.0001 && intQty > 0;
+              if (isInt && intQty >= numPatients) {
+                const baseShare = Math.floor(intQty / numPatients);
+                const remainder = intQty - baseShare * numPatients;
+                share = pi < remainder ? baseShare + 1 : baseShare;
+              } else {
+                share = +(Math.round((totalQty / numPatients) * 10000) / 10000);
+              }
             }
+            allocatedSoFar[li] = +(allocatedSoFar[li] + share).toFixed(4);
           }
-          allocatedSoFar[li] = +(allocatedSoFar[li] + share).toFixed(4);
 
           if (share <= 0) continue;
 
@@ -5884,8 +5906,10 @@ export class DatabaseStorage implements IStorage {
             nurseName: cl.nurseName || null,
             notes: cl.notes || null,
             sortOrder: cl.sortOrder || 0,
-            sourceType: "dist_direct",
-            sourceId: `${invoiceDate}:p${pi}:l${li}`,
+            sourceType: DIRECT_SOURCE_TYPES.has(cl.sourceType) ? cl.sourceType : "dist_direct",
+            sourceId: DIRECT_SOURCE_TYPES.has(cl.sourceType)
+              ? `${cl.sourceId}:p${pi}`
+              : `${invoiceDate}:p${pi}:l${li}`,
           });
         }
 
@@ -6839,6 +6863,127 @@ export class DatabaseStorage implements IStorage {
     return { segmentsProcessed: segments.length, linesUpserted: totalLinesUpserted };
   }
 
+  // ==================== Surgery Types ====================
+
+  async getSurgeryTypes(search?: string): Promise<SurgeryType[]> {
+    if (search) {
+      return db.select().from(surgeryTypes)
+        .where(ilike(surgeryTypes.nameAr, `%${search}%`))
+        .orderBy(surgeryTypes.category, asc(surgeryTypes.nameAr));
+    }
+    return db.select().from(surgeryTypes).orderBy(surgeryTypes.category, asc(surgeryTypes.nameAr));
+  }
+
+  async createSurgeryType(data: InsertSurgeryType): Promise<SurgeryType> {
+    const [row] = await db.insert(surgeryTypes).values(data).returning();
+    return row;
+  }
+
+  async updateSurgeryType(id: string, data: Partial<InsertSurgeryType>): Promise<SurgeryType> {
+    const [row] = await db.update(surgeryTypes).set(data).where(eq(surgeryTypes.id, id)).returning();
+    if (!row) throw new Error("نوع العملية غير موجود");
+    return row;
+  }
+
+  async deleteSurgeryType(id: string): Promise<void> {
+    const linked = await db.execute(
+      sql`SELECT id FROM admissions WHERE surgery_type_id = ${id} LIMIT 1`
+    );
+    if (linked.rows.length > 0) throw new Error("لا يمكن حذف نوع العملية — مرتبط بقبول مريض");
+    await db.delete(surgeryTypes).where(eq(surgeryTypes.id, id));
+  }
+
+  async getSurgeryCategoryPrices(): Promise<SurgeryCategoryPrice[]> {
+    return db.select().from(surgeryCategoryPrices).orderBy(asc(surgeryCategoryPrices.category));
+  }
+
+  async upsertSurgeryCategoryPrice(category: string, price: string): Promise<SurgeryCategoryPrice> {
+    const [row] = await db.insert(surgeryCategoryPrices)
+      .values({ category, price })
+      .onConflictDoUpdate({ target: surgeryCategoryPrices.category, set: { price } })
+      .returning();
+    return row;
+  }
+
+  /**
+   * Change surgery type on a patient invoice:
+   * 1. Updates/removes the OR_ROOM line with the new category price
+   * 2. Recomputes invoice totals
+   */
+  async updateInvoiceSurgeryType(invoiceId: string, surgeryTypeId: string | null): Promise<void> {
+    await db.transaction(async (tx) => {
+      // Lock invoice
+      const hdrRes = await tx.execute(
+        sql`SELECT * FROM patient_invoice_headers WHERE id = ${invoiceId} FOR UPDATE`
+      );
+      const hdr = hdrRes.rows[0] as any;
+      if (!hdr) throw new Error("الفاتورة غير موجودة");
+      if (hdr.status === "finalized") throw new Error("لا يمكن تعديل فاتورة نهائية");
+
+      // Remove existing OR_ROOM line for this invoice
+      await tx.execute(
+        sql`DELETE FROM patient_invoice_lines WHERE header_id = ${invoiceId} AND source_type = 'OR_ROOM'`
+      );
+
+      if (surgeryTypeId) {
+        // Fetch surgery type and its category price
+        const stRes = await tx.execute(
+          sql`SELECT st.id, st.name_ar, st.category, scp.price
+              FROM surgery_types st
+              LEFT JOIN surgery_category_prices scp ON scp.category = st.category
+              WHERE st.id = ${surgeryTypeId} AND st.is_active = true
+              LIMIT 1`
+        );
+        const st = stRes.rows[0] as any;
+        if (!st) throw new Error("نوع العملية غير موجود أو غير نشط");
+
+        const price = parseFloat(st.price || "0");
+        const desc = `فتح غرفة عمليات — ${st.name_ar}`;
+
+        await tx.execute(
+          sql`INSERT INTO patient_invoice_lines
+              (header_id, line_type, description, quantity, unit_price, discount_percent, discount_amount, total_price, unit_level, sort_order, source_type, source_id)
+              VALUES
+              (${invoiceId}, 'service', ${desc}, '1', ${String(price)}, '0', '0', ${String(price)}, 'minor', 5, 'OR_ROOM', ${`or_room:${invoiceId}:${surgeryTypeId}`})`
+        );
+
+        // Update admission surgery_type_id
+        await tx.execute(
+          sql`UPDATE admissions SET surgery_type_id = ${surgeryTypeId} WHERE id = (
+            SELECT admission_id FROM patient_invoice_headers WHERE id = ${invoiceId} LIMIT 1
+          )`
+        );
+      } else {
+        // Clear surgery type from admission
+        await tx.execute(
+          sql`UPDATE admissions SET surgery_type_id = NULL WHERE id = (
+            SELECT admission_id FROM patient_invoice_headers WHERE id = ${invoiceId} LIMIT 1
+          )`
+        );
+      }
+
+      // Recompute totals
+      const linesRes = await tx.execute(
+        sql`SELECT unit_price, quantity, discount_percent FROM patient_invoice_lines WHERE header_id = ${invoiceId}`
+      );
+      let total = 0;
+      let disc = 0;
+      for (const l of linesRes.rows as any[]) {
+        const gross = parseFloat(l.unit_price) * parseFloat(l.quantity);
+        const d = gross * parseFloat(l.discount_percent || "0") / 100;
+        total += gross; disc += d;
+      }
+      const net = Math.round((total - disc) * 100) / 100;
+      await tx.execute(
+        sql`UPDATE patient_invoice_headers
+            SET total_amount = ${String(Math.round(total * 100) / 100)},
+                discount_amount = ${String(Math.round(disc * 100) / 100)},
+                net_amount = ${String(net)}
+            WHERE id = ${invoiceId}`
+      );
+    });
+  }
+
   // ==================== Bed Board ====================
 
   async getBedBoard() {
@@ -6915,7 +7060,7 @@ export class DatabaseStorage implements IStorage {
   async admitPatientToBed(params: {
     bedId: string; patientName: string; patientPhone?: string;
     departmentId?: string; serviceId?: string; doctorName?: string; notes?: string;
-    paymentType?: string; insuranceCompany?: string;
+    paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string;
   }) {
     const result = await db.transaction(async (tx) => {
       // 1. Lock bed FOR UPDATE — guards against race conditions
@@ -6940,6 +7085,7 @@ export class DatabaseStorage implements IStorage {
         status: "active" as any,
         paymentType: (params.paymentType === "contract" ? "contract" : "CASH") as any,
         insuranceCompany: params.insuranceCompany || null,
+        surgeryTypeId: params.surgeryTypeId || null,
       } as any).returning();
 
       // 4. Find warehouse (prefer department-mapped, fallback to first)
@@ -7026,15 +7172,49 @@ export class DatabaseStorage implements IStorage {
           DO NOTHING
         `);
 
-        // Recompute invoice totals after first line
-        const allLines = await tx.select().from(patientInvoiceLines)
+        // Recompute invoice totals after first line (will be updated again if OR_ROOM added)
+        const allLines1 = await tx.select().from(patientInvoiceLines)
           .where(and(eq(patientInvoiceLines.headerId, invoice.id), eq(patientInvoiceLines.isVoid, false)));
-        const totals = this.computeInvoiceTotals(allLines, []);
-        await tx.update(patientInvoiceHeaders).set({ ...totals, updatedAt: new Date() })
+        const totals1 = this.computeInvoiceTotals(allLines1, []);
+        await tx.update(patientInvoiceHeaders).set({ ...totals1, updatedAt: new Date() })
           .where(eq(patientInvoiceHeaders.id, invoice.id));
       }
 
-      // 8. Mark bed OCCUPIED
+      // 8. Insert OR_ROOM line if surgery type is specified
+      if (params.surgeryTypeId) {
+        const stRes = await tx.execute(
+          sql`SELECT st.name_ar, st.category, COALESCE(scp.price, 0) AS price
+              FROM surgery_types st
+              LEFT JOIN surgery_category_prices scp ON scp.category = st.category
+              WHERE st.id = ${params.surgeryTypeId} AND st.is_active = true
+              LIMIT 1`
+        );
+        const st = stRes.rows[0] as any;
+        if (st) {
+          const orPrice = String(parseFloat(st.price || "0"));
+          const orDesc = `فتح غرفة عمليات — ${st.name_ar}`;
+          const orSourceId = `or_room:${invoice.id}:${params.surgeryTypeId}`;
+          await tx.execute(sql`
+            INSERT INTO patient_invoice_lines
+              (header_id, line_type, description, quantity, unit_price, discount_percent, discount_amount,
+               total_price, unit_level, sort_order, source_type, source_id)
+            VALUES
+              (${invoice.id}, 'service', ${orDesc}, '1', ${orPrice}, '0', '0',
+               ${orPrice}, 'minor', 5, 'OR_ROOM', ${orSourceId})
+            ON CONFLICT (source_type, source_id)
+              WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL
+            DO NOTHING
+          `);
+          // Recompute totals after OR_ROOM line
+          const allLines2 = await tx.select().from(patientInvoiceLines)
+            .where(and(eq(patientInvoiceLines.headerId, invoice.id), eq(patientInvoiceLines.isVoid, false)));
+          const totals2 = this.computeInvoiceTotals(allLines2, []);
+          await tx.update(patientInvoiceHeaders).set({ ...totals2, updatedAt: new Date() })
+            .where(eq(patientInvoiceHeaders.id, invoice.id));
+        }
+      }
+
+      // 9. Mark bed OCCUPIED
       const [updatedBed] = await tx.update(beds).set({
         status: "OCCUPIED",
         currentAdmissionId: admission.id,

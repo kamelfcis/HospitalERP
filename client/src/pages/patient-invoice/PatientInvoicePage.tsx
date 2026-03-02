@@ -40,6 +40,7 @@ import type { LineLocal, PaymentLocal } from "./types";
 import { InvoiceTab } from "./tabs/InvoiceTab";
 import { RegistryTab } from "./tabs/RegistryTab";
 import { AdmissionsTab } from "./tabs/AdmissionsTab";
+import { SurgeryTypeBar } from "./components/SurgeryTypeBar";
 import { useInvoiceBootstrap } from "./hooks/useInvoiceBootstrap";
 import { useAdmissions } from "./hooks/useAdmissions";
 import { useAdmissionsMutations } from "./hooks/useAdmissionsMutations";
@@ -1202,6 +1203,13 @@ export default function PatientInvoice() {
         </TabsList>
 
         <TabsContent value="invoice" className="mt-2">
+          {invoiceId && admissionId && (
+            <SurgeryTypeBar
+              invoiceId={invoiceId}
+              admissionId={admissionId}
+              isDraft={isDraft}
+            />
+          )}
           <InvoiceTab
             invoiceId={invoiceId}
             invoiceNumber={invoiceNumber}
