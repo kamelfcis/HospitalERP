@@ -74,6 +74,7 @@ interface PatientStats {
   latestInvoiceId:     string | null;
   latestInvoiceNumber: string | null;
   latestInvoiceStatus: "draft" | "finalized" | "cancelled" | null;
+  latestDoctorName:    string | null;
 }
 
 /** نوع الطبيب المختار من القائمة */
@@ -160,7 +161,7 @@ function TotalsRow({ rows }: { rows: PatientStats[] }) {
 
   return (
     <tr className="bg-muted/50 font-bold text-xs border-t-2">
-      <td colSpan={4} className="text-right pr-2 py-1">
+      <td colSpan={5} className="text-right pr-2 py-1">
         الإجمالي ({rows.length} مريض)
       </td>
       <td className="text-center tabular-nums">{formatNumber(sum("servicesTotal"))}</td>
@@ -799,6 +800,7 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, 
           <tr>
             <th className="w-8  text-center">#</th>
             <th className="text-right">الاسم</th>
+            <th className="w-32 text-right">الطبيب</th>
             <th className="w-28 text-right">التليفون</th>
             <th className="w-12 text-center">السن</th>
             <th className="w-24 text-center">خدمات</th>
@@ -817,7 +819,7 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, 
         <tbody>
           {rows.length === 0 ? (
             <tr className="peachtree-grid-row">
-              <td colSpan={14} className="text-center py-6 text-muted-foreground">
+              <td colSpan={15} className="text-center py-6 text-muted-foreground">
                 لا يوجد مرضى
               </td>
             </tr>
@@ -904,6 +906,7 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit
     <tr className={rowClass} data-testid={`row-patient-${p.id}`}>
       <td className="text-center text-muted-foreground">{index}</td>
       <td className="font-medium"  data-testid={`text-name-${p.id}`}>{p.fullName}</td>
+      <td className="text-muted-foreground text-xs truncate max-w-[8rem]" data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
       <td className="font-mono"    data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
       <td className="text-center"  data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
       <AmountCell value={+p.servicesTotal} />
@@ -1000,8 +1003,8 @@ export default function Patients() {
 
   // ── حالة الفلاتر
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom,    setDateFrom]    = useState("");
-  const [dateTo,      setDateTo]      = useState("");
+  const [dateFrom,    setDateFrom]    = useState(todayISO);
+  const [dateTo,      setDateTo]      = useState(todayISO);
   const [deptId,      setDeptId]      = useState("");
 
   // ── حالة النافذة

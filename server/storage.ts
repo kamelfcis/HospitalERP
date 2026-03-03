@@ -6486,7 +6486,8 @@ export class DatabaseStorage implements IStorage {
         COALESCE(s.transferred_total, 0)   AS transferred_total,
         s.latest_invoice_id,
         s.latest_invoice_number,
-        s.latest_invoice_status
+        s.latest_invoice_status,
+        s.latest_doctor_name
       FROM patients p
       ${sql.raw(joinType)} (
         SELECT
@@ -6500,7 +6501,8 @@ export class DatabaseStorage implements IStorage {
           SUM(inv.transferred_total)   AS transferred_total,
           (ARRAY_AGG(inv.id             ORDER BY inv.created_at DESC))[1] AS latest_invoice_id,
           (ARRAY_AGG(inv.invoice_number ORDER BY inv.created_at DESC))[1] AS latest_invoice_number,
-          (ARRAY_AGG(inv.status         ORDER BY inv.created_at DESC))[1] AS latest_invoice_status
+          (ARRAY_AGG(inv.status         ORDER BY inv.created_at DESC))[1] AS latest_invoice_status,
+          (ARRAY_AGG(inv.doctor_name    ORDER BY inv.created_at DESC))[1] AS latest_doctor_name
         FROM (
           SELECT
             pih.id,
@@ -6509,6 +6511,7 @@ export class DatabaseStorage implements IStorage {
             pih.invoice_number,
             pih.status,
             pih.paid_amount,
+            pih.doctor_name,
             COALESCE((
               SELECT SUM(dt.amount)
               FROM doctor_transfers dt
@@ -6529,7 +6532,7 @@ export class DatabaseStorage implements IStorage {
             ON pil.header_id = pih.id AND pil.is_void = false
           WHERE ${sql.raw(invFilter)}
           GROUP BY pih.id, pih.patient_name, pih.created_at,
-                   pih.invoice_number, pih.status, pih.paid_amount
+                   pih.invoice_number, pih.status, pih.paid_amount, pih.doctor_name
         ) inv
         GROUP BY inv.patient_name
       ) s ON s.patient_name = p.full_name
