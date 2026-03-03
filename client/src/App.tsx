@@ -42,6 +42,7 @@ import UsersManagement from "@/pages/UsersManagement";
 import BedBoard from "@/pages/BedBoard";
 import RoomManagement from "@/pages/RoomManagement";
 import DoctorSettlements from "@/pages/DoctorSettlements";
+import DoctorStatement from "@/pages/DoctorStatement";
 import SystemSettings from "@/pages/SystemSettings";
 import SurgeryTypes from "@/pages/SurgeryTypes";
 import NotFound from "@/pages/not-found";
@@ -99,6 +100,7 @@ function Router() {
         <Route path="/room-management">{() => <G p="patient_invoices.view"><RoomManagement /></G>}</Route>
         <Route path="/surgery-types">{() => <G p="patient_invoices.view"><SurgeryTypes /></G>}</Route>
         <Route path="/doctor-settlements">{() => <G p="patient_invoices.view"><DoctorSettlements /></G>}</Route>
+        <Route path="/doctor-statement/:name">{() => <G p="doctors.view"><DoctorStatement /></G>}</Route>
         <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
         <Route path="/cashier-collection">{() => <G p="cashier.view"><CashierCollection /></G>}</Route>
         <Route path="/system-settings">{() => <G p="settings.account_mappings"><SystemSettings /></G>}</Route>

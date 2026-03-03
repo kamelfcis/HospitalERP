@@ -3504,6 +3504,24 @@ export async function registerRoutes(
 
   // ==================== Doctors API ====================
 
+  app.get("/api/doctors/balances", requireAuth, async (req, res) => {
+    try {
+      res.json(await storage.getDoctorBalances());
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/doctor-statement", requireAuth, async (req, res) => {
+    try {
+      const { doctorName, dateFrom, dateTo } = req.query as Record<string, string>;
+      if (!doctorName) return res.status(400).json({ message: "doctorName مطلوب" });
+      res.json(await storage.getDoctorStatement({ doctorName, dateFrom, dateTo }));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/doctors", async (req, res) => {
     try {
       const search = req.query.search as string;

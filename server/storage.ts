@@ -447,6 +447,8 @@ export interface IStorage {
   createDoctor(data: InsertDoctor): Promise<Doctor>;
   updateDoctor(id: string, data: Partial<InsertDoctor>): Promise<Doctor>;
   deleteDoctor(id: string): Promise<boolean>;
+  getDoctorBalances(): Promise<{ id: string; name: string; specialty: string | null; totalTransferred: string; totalSettled: string; remaining: string }[]>;
+  getDoctorStatement(params: { doctorName: string; dateFrom?: string; dateTo?: string }): Promise<any[]>;
 
   // Admissions
   getAdmissions(filters?: { status?: string; search?: string }): Promise<Admission[]>;
@@ -6627,6 +6629,62 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(doctors.isActive, true), ...conditions.filter(Boolean) as any))
       .orderBy(asc(doctors.name))
       .limit(50);
+  }
+
+  async getDoctorBalances(): Promise<{ id: string; name: string; specialty: string | null; totalTransferred: string; totalSettled: string; remaining: string }[]> {
+    const res = await db.execute(sql`
+      SELECT
+        d.id, d.name, d.specialty,
+        COALESCE(SUM(DISTINCT dt.amount), 0)::text                              AS total_transferred,
+        COALESCE((
+          SELECT SUM(dsa2.amount) FROM doctor_settlement_allocations dsa2
+          JOIN doctor_transfers dt2 ON dt2.id = dsa2.transfer_id
+          WHERE dt2.doctor_name = d.name
+        ), 0)::text                                                              AS total_settled,
+        (
+          COALESCE(SUM(dt.amount), 0) - COALESCE((
+            SELECT SUM(dsa2.amount) FROM doctor_settlement_allocations dsa2
+            JOIN doctor_transfers dt2 ON dt2.id = dsa2.transfer_id
+            WHERE dt2.doctor_name = d.name
+          ), 0)
+        )::text                                                                  AS remaining
+      FROM doctors d
+      LEFT JOIN doctor_transfers dt ON dt.doctor_name = d.name
+      WHERE d.is_active = true
+      GROUP BY d.id, d.name, d.specialty
+      ORDER BY d.name ASC
+    `);
+    return (res.rows as any[]).map(r => ({
+      id: r.id,
+      name: r.name,
+      specialty: r.specialty,
+      totalTransferred: r.total_transferred,
+      totalSettled: r.total_settled,
+      remaining: r.remaining,
+    }));
+  }
+
+  async getDoctorStatement(params: { doctorName: string; dateFrom?: string; dateTo?: string }): Promise<any[]> {
+    const { doctorName, dateFrom, dateTo } = params;
+    const dateFromFilter = dateFrom ? sql`AND dt.transferred_at::date >= ${dateFrom}::date` : sql``;
+    const dateToFilter   = dateTo   ? sql`AND dt.transferred_at::date <= ${dateTo}::date`   : sql``;
+    const res = await db.execute(sql`
+      SELECT
+        dt.id, dt.invoice_id, dt.doctor_name, dt.amount::text AS amount,
+        dt.transferred_at, dt.notes,
+        COALESCE(SUM(dsa.amount), 0)::text  AS settled,
+        (dt.amount - COALESCE(SUM(dsa.amount), 0))::text AS remaining,
+        pi.patient_name, pi.invoice_date, pi.net_amount::text AS invoice_total, pi.status AS invoice_status
+      FROM doctor_transfers dt
+      LEFT JOIN doctor_settlement_allocations dsa ON dsa.transfer_id = dt.id
+      LEFT JOIN patient_invoice_headers pi ON pi.id = dt.invoice_id
+      WHERE dt.doctor_name = ${doctorName}
+      ${dateFromFilter}
+      ${dateToFilter}
+      GROUP BY dt.id, pi.id, pi.patient_name, pi.invoice_date, pi.net_amount, pi.status
+      ORDER BY dt.transferred_at DESC
+    `);
+    return res.rows as any[];
   }
 
   async getDoctor(id: string): Promise<Doctor | undefined> {
