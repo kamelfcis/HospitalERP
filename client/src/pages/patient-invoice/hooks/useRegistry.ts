@@ -3,8 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 
 export function useRegistry(mainTab: string) {
   const todayStr = new Date().toISOString().slice(0, 10);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const [regPage, setRegPage] = useState(1);
-  const [regDateFrom, setRegDateFrom] = useState(todayStr);
+  const [regDateFrom, setRegDateFrom] = useState(thirtyDaysAgo);
   const [regDateTo, setRegDateTo] = useState(todayStr);
   const [regPatientName, setRegPatientName] = useState("");
   const [regDoctorName, setRegDoctorName] = useState("");
