@@ -72,28 +72,43 @@ interface PatientStats {
   latestInvoiceNumber: string | null;
 }
 
+/** نوع الطبيب المختار من القائمة */
+interface DoctorOption {
+  id:        string;
+  name:      string;
+  specialty?: string;
+}
+
 /** القيم الخاصة بقسم التسكين — يُمرَّر بين AdmissionSection و PatientFormDialog */
 interface AdmissionValues {
-  doctorSearch:    string;
-  selectedFloor:   string;
-  selectedRoom:    string;
-  selectedBed:     string;
-  surgerySearch:   string;
-  selectedSurgery: { id: string; nameAr: string } | null;
-  paymentType:     string;
-  insuranceCo:     string;
+  // الطبيب — بحث + اختيار من قائمة (مثل BedBoard)
+  doctorSearch:      string;
+  selectedDoctor:    DoctorOption | null;
+  showDoctorResults: boolean;
+  // الغرفة والسرير
+  selectedFloor:     string;
+  selectedRoom:      string;
+  selectedBed:       string;
+  // العملية
+  surgerySearch:     string;
+  selectedSurgery:   { id: string; nameAr: string } | null;
+  // الدفع
+  paymentType:       string;
+  insuranceCo:       string;
 }
 
 /** الـ setters الخاصة بـ AdmissionValues */
 interface AdmissionSetters {
-  setDoctorSearch:    (v: string) => void;
-  setSelectedFloor:   (v: string) => void;
-  setSelectedRoom:    (v: string) => void;
-  setSelectedBed:     (v: string) => void;
-  setSurgerySearch:   (v: string) => void;
-  setSelectedSurgery: (v: { id: string; nameAr: string } | null) => void;
-  setPaymentType:     (v: string) => void;
-  setInsuranceCo:     (v: string) => void;
+  setDoctorSearch:      (v: string) => void;
+  setSelectedDoctor:    (v: DoctorOption | null) => void;
+  setShowDoctorResults: (v: boolean) => void;
+  setSelectedFloor:     (v: string) => void;
+  setSelectedRoom:      (v: string) => void;
+  setSelectedBed:       (v: string) => void;
+  setSurgerySearch:     (v: string) => void;
+  setSelectedSurgery:   (v: { id: string; nameAr: string } | null) => void;
+  setPaymentType:       (v: string) => void;
+  setInsuranceCo:       (v: string) => void;
 }
 
 // ─── 4. Utility Hook ──────────────────────────────────────────────────────────
@@ -188,18 +203,13 @@ function AdmissionSection({ open, values, setters }: AdmissionSectionProps) {
     return [];
   }, [bedBoard, values.selectedRoom]);
 
-  // ── بحث الأطباء (debounced)
-  const debouncedDoctor = useDebounce(values.doctorSearch, 300);
-  const { data: doctors = [] } = useQuery<any[]>({
-    queryKey: ["/api/doctors", debouncedDoctor],
-    queryFn: async () => {
-      const q = debouncedDoctor.trim()
-        ? `?search=${encodeURIComponent(debouncedDoctor.trim())}`
-        : "";
-      const r = await fetch(`/api/doctors${q}`, { credentials: "include" });
-      return r.json();
-    },
-    enabled: open,
+  // ── بحث الأطباء — يُفعَّل فقط عند كتابة حرف واحد على الأقل (مثل BedBoard)
+  const { data: doctors = [] } = useQuery<DoctorOption[]>({
+    queryKey: ["/api/doctors", values.doctorSearch],
+    queryFn: () =>
+      fetch(`/api/doctors?search=${encodeURIComponent(values.doctorSearch)}`, { credentials: "include" })
+        .then(r => r.json()),
+    enabled: open && values.doctorSearch.length >= 1,
   });
 
   // ── بحث أنواع العمليات (debounced)
@@ -302,22 +312,63 @@ function AdmissionSection({ open, values, setters }: AdmissionSectionProps) {
             </div>
           </div>
 
-          {/* الطبيب المعالج — بحث حر مع datalist */}
+          {/* الطبيب المعالج — dropdown بحث مثل BedBoard */}
           <div className="space-y-1">
             <Label className="text-xs">الطبيب المعالج</Label>
-            <Input
-              value={values.doctorSearch}
-              onChange={e => setters.setDoctorSearch(e.target.value)}
-              placeholder="ابحث عن طبيب..."
-              className="h-7 text-xs"
-              list="doctors-datalist"
-              data-testid="input-doctor-search"
-            />
-            <datalist id="doctors-datalist">
-              {doctors.map((d: any) => (
-                <option key={d.id} value={d.nameAr} />
-              ))}
-            </datalist>
+            {values.selectedDoctor ? (
+              /* الطبيب مختار — اعرض اسمه مع زر تغيير */
+              <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded border border-blue-200 text-xs">
+                <span className="flex-1 font-medium">د. {values.selectedDoctor.name}</span>
+                {values.selectedDoctor.specialty && (
+                  <span className="text-muted-foreground">{values.selectedDoctor.specialty}</span>
+                )}
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground px-1"
+                  onClick={() => { setters.setSelectedDoctor(null); setters.setDoctorSearch(""); }}
+                >
+                  تغيير
+                </button>
+              </div>
+            ) : (
+              /* لم يُختر طبيب — حقل بحث مع نتائج */
+              <div className="relative">
+                <Input
+                  value={values.doctorSearch}
+                  onChange={e => { setters.setDoctorSearch(e.target.value); setters.setShowDoctorResults(true); }}
+                  onFocus={() => setters.setShowDoctorResults(true)}
+                  onBlur={() => setTimeout(() => setters.setShowDoctorResults(false), 200)}
+                  placeholder="ابحث باسم الطبيب..."
+                  className="h-7 text-xs"
+                  data-testid="input-doctor-search"
+                />
+                {values.showDoctorResults && values.doctorSearch.length >= 1 && (
+                  <div className="absolute z-50 w-full mt-0.5 border rounded bg-background shadow-md text-xs overflow-hidden">
+                    {doctors.length === 0 ? (
+                      <div className="px-2 py-1.5 text-muted-foreground">لا يوجد طبيب بهذا الاسم</div>
+                    ) : (
+                      doctors.map(d => (
+                        <button
+                          key={d.id}
+                          type="button"
+                          className="w-full text-right px-2 py-1.5 hover:bg-muted border-b last:border-b-0"
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => {
+                            setters.setSelectedDoctor(d);
+                            setters.setDoctorSearch("");
+                            setters.setShowDoctorResults(false);
+                          }}
+                          data-testid={`doctor-option-${d.id}`}
+                        >
+                          <span className="font-medium">د. {d.name}</span>
+                          {d.specialty && <span className="text-muted-foreground mr-2">{d.specialty}</span>}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* نوع العملية — بحث مع dropdown */}
@@ -429,22 +480,26 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
   const [age,        setAge]        = useState<string>("");
 
   // ── حقول التسكين (تُجمَّع في كائنين values/setters لتمريرها لـ AdmissionSection)
-  const [doctorSearch,    setDoctorSearch]    = useState("");
-  const [selectedFloor,   setSelectedFloor]   = useState("");
-  const [selectedRoom,    setSelectedRoom]    = useState("");
-  const [selectedBed,     setSelectedBed]     = useState("");
-  const [surgerySearch,   setSurgerySearch]   = useState("");
-  const [selectedSurgery, setSelectedSurgery] = useState<{ id: string; nameAr: string } | null>(null);
-  const [paymentType,     setPaymentType]     = useState("CASH");
-  const [insuranceCo,     setInsuranceCo]     = useState("");
+  const [doctorSearch,      setDoctorSearch]      = useState("");
+  const [selectedDoctor,    setSelectedDoctor]    = useState<DoctorOption | null>(null);
+  const [showDoctorResults, setShowDoctorResults] = useState(false);
+  const [selectedFloor,     setSelectedFloor]     = useState("");
+  const [selectedRoom,      setSelectedRoom]      = useState("");
+  const [selectedBed,       setSelectedBed]       = useState("");
+  const [surgerySearch,     setSurgerySearch]     = useState("");
+  const [selectedSurgery,   setSelectedSurgery]   = useState<{ id: string; nameAr: string } | null>(null);
+  const [paymentType,       setPaymentType]       = useState("CASH");
+  const [insuranceCo,       setInsuranceCo]       = useState("");
 
   const admissionValues: AdmissionValues = {
-    doctorSearch, selectedFloor, selectedRoom, selectedBed,
+    doctorSearch, selectedDoctor, showDoctorResults,
+    selectedFloor, selectedRoom, selectedBed,
     surgerySearch, selectedSurgery, paymentType, insuranceCo,
   };
 
   const admissionSetters: AdmissionSetters = {
-    setDoctorSearch, setSelectedFloor, setSelectedRoom, setSelectedBed,
+    setDoctorSearch, setSelectedDoctor, setShowDoctorResults,
+    setSelectedFloor, setSelectedRoom, setSelectedBed,
     setSurgerySearch, setSelectedSurgery, setPaymentType, setInsuranceCo,
   };
 
@@ -457,8 +512,9 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
       setAge(editingPatient.age != null ? String(editingPatient.age) : "");
     } else {
       setFullName(""); setPhone(""); setNationalId(""); setAge("");
-      setDoctorSearch(""); setSelectedFloor(""); setSelectedRoom("");
-      setSelectedBed(""); setSurgerySearch(""); setSelectedSurgery(null);
+      setDoctorSearch(""); setSelectedDoctor(null); setShowDoctorResults(false);
+      setSelectedFloor(""); setSelectedRoom(""); setSelectedBed("");
+      setSurgerySearch(""); setSelectedSurgery(null);
       setPaymentType("CASH"); setInsuranceCo("");
     }
   }, [editingPatient, open]);
@@ -542,7 +598,7 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
         body: {
           patientName:      fullName.trim(),
           patientPhone:     phone || undefined,
-          doctorName:       doctorSearch.trim() || undefined,
+          doctorName:       selectedDoctor?.name || undefined,
           surgeryTypeId:    selectedSurgery?.id || undefined,
           paymentType:      paymentType || undefined,
           insuranceCompany: paymentType === "INSURANCE" ? insuranceCo : undefined,
