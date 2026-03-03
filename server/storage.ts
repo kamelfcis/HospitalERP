@@ -434,6 +434,7 @@ export interface IStorage {
   // Patients
   getPatients(): Promise<Patient[]>;
   searchPatients(search: string): Promise<Patient[]>;
+  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string }): Promise<any[]>;
   getPatient(id: string): Promise<Patient | undefined>;
   createPatient(data: InsertPatient): Promise<Patient>;
   updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient>;
@@ -6413,6 +6414,62 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(patients.isActive, true), ...conditions.filter(Boolean) as any))
       .orderBy(asc(patients.fullName))
       .limit(50);
+  }
+
+  async getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string }): Promise<any[]> {
+    const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
+    const dateConds: string[] = ["pih.status != 'cancelled'"];
+    if (filters?.dateFrom) dateConds.push(`pih.invoice_date >= '${filters.dateFrom}'`);
+    if (filters?.dateTo) dateConds.push(`pih.invoice_date <= '${filters.dateTo}'`);
+    const dateFilter = dateConds.join(" AND ");
+
+    let searchFilter = "p.is_active = true";
+    if (filters?.search?.trim()) {
+      const tokens = filters.search.trim().split(/\s+/).filter(Boolean);
+      const searchConds = tokens.map(t => {
+        const pat = t.includes('%') ? t : `%${t}%`;
+        return `(p.full_name ILIKE '${pat.replace(/'/g, "''")}' OR p.phone ILIKE '${pat.replace(/'/g, "''")}')`;
+      });
+      searchFilter += ` AND (${searchConds.join(" AND ")})`;
+    }
+
+    const result = await db.execute(sql`
+      SELECT
+        p.id,
+        p.full_name,
+        p.phone,
+        p.national_id,
+        p.age,
+        p.created_at,
+        COALESCE(s.services_total, 0)  AS services_total,
+        COALESCE(s.drugs_total, 0)     AS drugs_total,
+        COALESCE(s.or_room_total, 0)   AS or_room_total,
+        COALESCE(s.stay_total, 0)      AS stay_total,
+        COALESCE(s.services_total, 0) + COALESCE(s.drugs_total, 0) +
+          COALESCE(s.or_room_total, 0) + COALESCE(s.stay_total, 0) AS grand_total
+      FROM patients p
+      LEFT JOIN (
+        SELECT
+          pih.patient_name,
+          SUM(CASE WHEN pil.source_type IS NULL AND pil.line_type = 'service'
+              THEN pil.total_price ELSE 0 END)                                  AS services_total,
+          SUM(CASE WHEN pil.line_type IN ('drug','consumable')
+              THEN pil.total_price ELSE 0 END)                                  AS drugs_total,
+          SUM(CASE WHEN pil.source_type = 'OR_ROOM'
+              THEN pil.total_price ELSE 0 END)                                  AS or_room_total,
+          SUM(CASE WHEN pil.source_type = 'STAY_ENGINE'
+              THEN pil.total_price ELSE 0 END)                                  AS stay_total
+        FROM patient_invoice_headers pih
+        JOIN patient_invoice_lines pil ON pil.header_id = pih.id AND pil.is_void = false
+        WHERE ${sql.raw(dateFilter)}
+        GROUP BY pih.patient_name
+      ) s ON s.patient_name = p.full_name
+      WHERE ${sql.raw(searchFilter)}
+      ORDER BY p.created_at DESC
+    `);
+    return (result.rows as any[]).map(row =>
+      Object.fromEntries(Object.entries(row).map(([k, v]) => [toCamel(k), v]))
+    );
   }
 
   async getPatient(id: string): Promise<Patient | undefined> {

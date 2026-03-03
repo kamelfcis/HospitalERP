@@ -3363,6 +3363,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/patients/stats", async (req, res) => {
+    try {
+      const { search, dateFrom, dateTo } = req.query as Record<string, string>;
+      const list = await storage.getPatientStats({ search, dateFrom, dateTo });
+      res.json(list);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/patients/:id", async (req, res) => {
     try {
       const p = await storage.getPatient(req.params.id);
