@@ -139,8 +139,9 @@ app.use((req, res, next) => {
     },
   );
 
-  // Stay Engine: accrue daily lines every 30 minutes
-  const STAY_TICK_MS = 30 * 60 * 1000;
+  // Stay Engine: accrue daily lines every 5 minutes
+  // كل 5 دقائق يضمن احتساب اليوم الجديد خلال 5 دقائق من انتهاء 24 ساعة الدخول
+  const STAY_TICK_MS = 5 * 60 * 1000;
   const runStayTick = async () => {
     try {
       const result = await storage.accrueStayLines();

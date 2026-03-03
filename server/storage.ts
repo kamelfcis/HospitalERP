@@ -7027,20 +7027,23 @@ export class DatabaseStorage implements IStorage {
               cur.setUTCDate(cur.getUTCDate() + 1);
             }
           } else {
-            // hours_24 / calendar_day (default):
-            // يوم 1 = يوم الدخول (تقويمياً)، يوم 2 = اليوم التالي منتصف الليل، إلخ.
-            // الحساب بالأيام التقويمية (UTC midnight) بدلاً من 24 ساعة متواصلة
-            // مما يتوافق مع التعامل المعيادي للمستشفيات: كل تاريخ ميلادي جديد = يوم إقامة جديد
-            const admDateStr  = startedAt.toISOString().split("T")[0]; // YYYY-MM-DD يوم الدخول
-            const todayStr    = now.toISOString().split("T")[0];        // YYYY-MM-DD اليوم الحالي
-            const admDateMs   = new Date(admDateStr + "T12:00:00Z").getTime();
-            const todayMs     = new Date(todayStr   + "T12:00:00Z").getTime();
-            const totalDays   = Math.floor((todayMs - admDateMs) / 86_400_000) + 1;
+            // hours_24 (default): فوترة بـ 24 ساعة من وقت الدخول بالضبط
+            // يوم 1 = فور الدخول، يوم 2 = بعد 24 ساعة من الدخول، إلخ.
+            // مثال: دخل 8:15 صباحاً → يوم 2 يُحسب 8:15 صباحاً اليوم التالي
+            //        (أو عند أول tick بعد مرور 24 ساعة — كل 5 دقائق)
+            //
+            // periodsCompleted = 0 → يوم 1 فقط (أقل من 24 ساعة)
+            // periodsCompleted = 1 → يوم 2 (بعد 24 ساعة)
+            // periodsCompleted = 2 → يوم 3 (بعد 48 ساعة)  إلخ.
+            //
+            // الـ source_id يستخدم تاريخ بداية كل فترة لضمان idempotency
+            const elapsedMs        = now.getTime() - startedAt.getTime();
+            const periodsCompleted = Math.max(0, Math.floor(elapsedMs / 86_400_000));
 
-            for (let d = 0; d < totalDays; d++) {
-              const dateStr = new Date(admDateMs + d * 86_400_000).toISOString().split("T")[0];
-              // source_id يبقى متوافقاً مع السطر الأول الذي يُدرج عند التسكين
-              bucketEntries.push({ key: dateStr, desc: `${seg.service_name_ar} – يوم ${d + 1}` });
+            for (let n = 0; n <= periodsCompleted; n++) {
+              const periodStart = new Date(startedAt.getTime() + n * 86_400_000);
+              const dateStr     = periodStart.toISOString().split("T")[0];
+              bucketEntries.push({ key: dateStr, desc: `${seg.service_name_ar} – يوم ${n + 1}` });
             }
           }
 
