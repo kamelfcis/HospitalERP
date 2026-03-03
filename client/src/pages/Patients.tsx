@@ -546,6 +546,7 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
     mutationFn: (data: Partial<InsertPatient>) => apiRequest("POST", "/api/patients", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patients/stats"] });
       toast({ title: "تم إضافة المريض بنجاح" });
       onClose();
     },
@@ -557,6 +558,7 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
       apiRequest("POST", `/api/beds/${bedId}/admit`, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patients/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
       toast({ title: "تم تسكين المريض بنجاح" });
       onClose();
