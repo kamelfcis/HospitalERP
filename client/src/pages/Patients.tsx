@@ -209,17 +209,22 @@ function AdmissionSection({ open, values, setters }: AdmissionSectionProps) {
     [bedBoard],
   );
 
-  const rooms = useMemo(() =>
-    floors.find(f => f.id === values.selectedFloor)?.rooms ?? [],
-    [floors, values.selectedFloor],
-  );
+  // ── فقط الغرف التي تحتوي على سرير فارغ واحد على الأقل (EMPTY)
+  const rooms = useMemo(() => {
+    const floor = floors.find(f => f.id === values.selectedFloor);
+    if (!floor) return [];
+    return (floor.rooms ?? []).filter((r: any) =>
+      (r.beds ?? []).some((b: any) => b.status === "EMPTY"),
+    );
+  }, [floors, values.selectedFloor]);
 
+  // ── الأسرة الفارغة فقط في الغرفة المختارة (EMPTY = يقبل تسكين)
   const beds = useMemo(() => {
     if (!values.selectedRoom) return [];
     for (const f of bedBoard) {
       for (const r of (f.rooms ?? [])) {
         if (r.id === values.selectedRoom) {
-          return (r.beds ?? []).filter((b: any) => b.status === "available");
+          return (r.beds ?? []).filter((b: any) => b.status === "EMPTY");
         }
       }
     }
@@ -1175,7 +1180,7 @@ export default function Patients() {
         <PatientGrid
           rows={rows}
           isLoading={isLoading}
-          hasDeptFilter={!!deptId}
+          hasDeptFilter={hasFilter}
           canViewInvoice={canViewInvoice}
           canEdit={canEdit}
           onEdit={handleEdit}
