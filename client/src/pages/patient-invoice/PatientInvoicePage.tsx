@@ -41,6 +41,7 @@ import { InvoiceTab } from "./tabs/InvoiceTab";
 import { RegistryTab } from "./tabs/RegistryTab";
 import { AdmissionsTab } from "./tabs/AdmissionsTab";
 import { SurgeryTypeBar } from "./components/SurgeryTypeBar";
+import { DistributeDialog } from "./components/DistributeDialog";
 import { useInvoiceBootstrap } from "./hooks/useInvoiceBootstrap";
 import { useAdmissions } from "./hooks/useAdmissions";
 import { useAdmissionsMutations } from "./hooks/useAdmissionsMutations";
@@ -125,14 +126,6 @@ export default function PatientInvoice() {
   const [statsLoading, setStatsLoading] = useState(false);
 
   const [distOpen, setDistOpen] = useState(false);
-  const [distCount, setDistCount] = useState(2);
-  const [distPatients, setDistPatients] = useState<{ name: string; phone: string }[]>([{ name: "", phone: "" }, { name: "", phone: "" }]);
-  const [distLoading, setDistLoading] = useState(false);
-  const [distSearchIdx, setDistSearchIdx] = useState<number | null>(null);
-  const [distSearchText, setDistSearchText] = useState("");
-  const [distSearchResults, setDistSearchResults] = useState<Patient[]>([]);
-  const [distSearching, setDistSearching] = useState(false);
-  const debouncedDistSearch = useDebounce(distSearchText, 200);
 
   const [lines, setLines] = useState<LineLocal[]>([]);
   const linesRef = useRef(lines);
@@ -330,26 +323,6 @@ export default function PatientInvoice() {
   }, [serviceResults.length]);
 
   useEffect(() => {
-    if (!debouncedDistSearch || debouncedDistSearch.length < 1 || distSearchIdx === null) {
-      setDistSearchResults([]);
-      return;
-    }
-    const controller = new AbortController();
-    setDistSearching(true);
-    fetch(`/api/patients?search=${encodeURIComponent(debouncedDistSearch)}`, {
-      signal: controller.signal,
-      credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        setDistSearchResults(Array.isArray(data) ? data : []);
-        setDistSearching(false);
-      })
-      .catch(() => setDistSearching(false));
-    return () => controller.abort();
-  }, [debouncedDistSearch, distSearchIdx]);
-
-  useEffect(() => {
     if (!debouncedPatientSearch || debouncedPatientSearch.length < 1) {
       setPatientResults([]);
       return;
@@ -527,94 +500,8 @@ export default function PatientInvoice() {
       toast({ title: "تنبيه", description: "لا توجد بنود للتوزيع", variant: "destructive" });
       return;
     }
-    setDistCount(2);
-    setDistPatients([{ name: "", phone: "" }, { name: "", phone: "" }]);
     setDistOpen(true);
   }, [lines, toast]);
-
-  const handleDistCountChange = useCallback((newCount: number) => {
-    const count = Math.max(2, Math.min(50, newCount));
-    setDistCount(count);
-    setDistPatients(prev => {
-      const updated = [...prev];
-      while (updated.length < count) updated.push({ name: "", phone: "" });
-      return updated.slice(0, count);
-    });
-  }, []);
-
-  const handleDistribute = useCallback(async () => {
-    const emptyNames = distPatients.slice(0, distCount).filter(p => !p.name.trim());
-    if (emptyNames.length > 0) {
-      toast({ title: "تنبيه", description: "يجب إدخال اسم كل مريض", variant: "destructive" });
-      return;
-    }
-    if (lines.length === 0) {
-      toast({ title: "تنبيه", description: "لا توجد بنود للتوزيع", variant: "destructive" });
-      return;
-    }
-    setDistLoading(true);
-    try {
-      const linesToSend = lines.map(l => ({
-        lineType: l.lineType,
-        serviceId: l.serviceId,
-        itemId: l.itemId,
-        description: l.description,
-        quantity: String(l.quantity),
-        unitPrice: String(l.unitPrice),
-        discountPercent: String(l.discountPercent),
-        discountAmount: String(l.discountAmount),
-        totalPrice: String(l.totalPrice),
-        unitLevel: l.unitLevel,
-        lotId: l.lotId,
-        expiryMonth: l.expiryMonth,
-        expiryYear: l.expiryYear,
-        priceSource: l.priceSource,
-        doctorName: l.doctorName,
-        nurseName: l.nurseName,
-        notes: l.notes,
-        sortOrder: l.sortOrder,
-        sourceType: l.sourceType,
-        sourceId: l.sourceId,
-      }));
-
-      const res = await apiRequest("POST", `/api/patient-invoices/distribute-direct`, {
-        patients: distPatients.slice(0, distCount).map(p => ({ name: p.name.trim(), phone: p.phone.trim() || undefined })),
-        lines: linesToSend,
-        invoiceDate,
-        departmentId: departmentId || null,
-        warehouseId: warehouseId || null,
-        doctorName: doctorName || null,
-        patientType,
-        contractName: contractName || null,
-        notes,
-        admissionId: admissionId || null,
-      });
-      const data = await res.json();
-      const newInvoices: PatientInvoiceHeader[] = data.invoices;
-
-      setDistOpen(false);
-      if (invoiceId) {
-        try { await apiRequest("DELETE", `/api/patient-invoices/${invoiceId}`); } catch {}
-      }
-      resetForm();
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices/next-number"] });
-
-      const skipped = distCount - newInvoices.length;
-      const desc = skipped > 0
-        ? `تم إنشاء ${newInvoices.length} فاتورة (${skipped} مريض لم يحصل على كمية كافية)`
-        : `تم إنشاء ${newInvoices.length} فاتورة بنجاح`;
-      toast({ title: "تم التوزيع", description: desc });
-
-      for (const inv of newInvoices) {
-        window.open(`/patient-invoices?loadId=${inv.id}`, "_blank");
-      }
-    } catch (error: any) {
-      toast({ title: "خطأ في التوزيع", description: error.message, variant: "destructive" });
-    } finally {
-      setDistLoading(false);
-    }
-  }, [lines, distPatients, distCount, toast, resetForm, invoiceId, invoiceDate, departmentId, warehouseId, doctorName, patientType, contractName, notes]);
 
   const loadInvoice = useCallback(async (id: string) => {
     try {
@@ -1460,198 +1347,23 @@ export default function PatientInvoice() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={distOpen} onOpenChange={(open) => { if (!open) setDistOpen(false); }}>
-        <DialogContent className="max-w-2xl" dir="rtl" data-testid="dialog-distribute">
-          <DialogHeader>
-            <DialogTitle className="text-right flex flex-row-reverse items-center gap-2">
-              <Users className="h-4 w-4" />
-              <span>توزيع على حالات عمليات</span>
-            </DialogTitle>
-            <DialogDescription className="text-right">
-              سيتم تقسيم الأدوية والمستهلكات بالتساوي على المرضى المحددين وحذف الفاتورة الأصلية
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex flex-row-reverse items-center gap-3">
-              <Label className="text-sm whitespace-nowrap">عدد الحالات:</Label>
-              <Input
-                type="number"
-                min={2}
-                max={50}
-                value={distCount}
-                onChange={(e) => handleDistCountChange(parseInt(e.target.value) || 2)}
-                className="w-24 text-center"
-                data-testid="input-dist-count"
-              />
-            </div>
-            <div className="border rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-muted/50 border-b">
-                    <th className="text-right py-2 px-3 font-medium text-muted-foreground w-12">#</th>
-                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">اسم المريض</th>
-                    <th className="text-right py-2 px-3 font-medium text-muted-foreground w-40">رقم التليفون</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {distPatients.slice(0, distCount).map((p, idx) => (
-                    <tr key={idx} className="border-b last:border-b-0">
-                      <td className="py-1.5 px-3 text-muted-foreground text-center">{idx + 1}</td>
-                      <td className="py-1.5 px-3 relative">
-                        <Input
-                          value={p.name}
-                          onChange={(e) => {
-                            const updated = [...distPatients];
-                            updated[idx] = { ...updated[idx], name: e.target.value };
-                            setDistPatients(updated);
-                            setDistSearchIdx(idx);
-                            setDistSearchText(e.target.value);
-                          }}
-                          onFocus={() => {
-                            if (p.name.length >= 1) {
-                              setDistSearchIdx(idx);
-                              setDistSearchText(p.name);
-                            }
-                          }}
-                          onBlur={() => {
-                            setTimeout(() => {
-                              if (distSearchIdx === idx) {
-                                setDistSearchIdx(null);
-                                setDistSearchResults([]);
-                              }
-                            }, 200);
-                          }}
-                          placeholder={`ابحث عن مريض ${idx + 1}...`}
-                          className="h-8 text-sm"
-                          data-testid={`input-dist-name-${idx}`}
-                        />
-                        {distSearchIdx === idx && (distSearchResults.length > 0 || distSearching) && (
-                          <div className="absolute top-full right-0 left-0 mt-1 bg-popover border rounded-md shadow-lg z-50 max-h-40 overflow-y-auto" data-testid={`dropdown-dist-patient-${idx}`}>
-                            {distSearching && (
-                              <div className="flex items-center justify-center gap-2 p-2 text-xs text-muted-foreground">
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                <span>جاري البحث...</span>
-                              </div>
-                            )}
-                            {distSearchResults.map((pt) => (
-                              <div
-                                key={pt.id}
-                                className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex flex-row-reverse items-center justify-between gap-2 border-b last:border-b-0"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  const updated = [...distPatients];
-                                  updated[idx] = { name: pt.fullName, phone: pt.phone || "" };
-                                  setDistPatients(updated);
-                                  setDistSearchIdx(null);
-                                  setDistSearchResults([]);
-                                  setDistSearchText("");
-                                }}
-                                data-testid={`option-dist-patient-${idx}-${pt.id}`}
-                              >
-                                <span className="font-medium truncate">{pt.fullName}</span>
-                                <span className="text-muted-foreground whitespace-nowrap">
-                                  {pt.phone || ""}{pt.age ? ` | ${pt.age} سنة` : ""}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-1.5 px-3">
-                        <Input
-                          value={p.phone}
-                          onChange={(e) => {
-                            const updated = [...distPatients];
-                            updated[idx] = { ...updated[idx], phone: e.target.value };
-                            setDistPatients(updated);
-                          }}
-                          placeholder="اختياري"
-                          className="h-8 text-sm"
-                          data-testid={`input-dist-phone-${idx}`}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="border rounded-md p-3 bg-muted/30">
-              <p className="text-xs font-medium text-muted-foreground mb-2 text-right">معاينة التوزيع:</p>
-              <div className="space-y-1 max-h-32 overflow-y-auto">
-                {lines.filter(l => l.lineType === "drug" || l.lineType === "consumable").map((l) => {
-                  const origQty = l.quantity;
-                  const origLevel = l.unitLevel || "minor";
-                  const item = l.item;
-                  let convQty = origQty;
-                  let convLevel = origLevel;
-
-                  if (item && origLevel !== "minor") {
-                    const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
-                    const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
-                    let majorToMinor = parseFloat(String(item.majorToMinor)) || 0;
-                    if (majorToMinor <= 0 && majorToMedium > 0 && mediumToMinor > 0) {
-                      majorToMinor = majorToMedium * mediumToMinor;
-                    }
-                    if (origLevel === "major") {
-                      if (item.minorUnitName && majorToMinor > 1) { convQty = origQty * majorToMinor; convLevel = "minor"; }
-                      else if (item.mediumUnitName && majorToMedium > 1) { convQty = origQty * majorToMedium; convLevel = "medium"; }
-                    } else if (origLevel === "medium") {
-                      if (item.minorUnitName && mediumToMinor > 1) { convQty = origQty * mediumToMinor; convLevel = "minor"; }
-                    }
-                  }
-
-                  const convQtyRounded = +convQty.toFixed(4);
-                  const intQty = Math.round(convQtyRounded);
-                  const isInt = Math.abs(convQtyRounded - intQty) < 0.0001 && intQty > 0;
-                  let baseShare: number;
-                  let remainder = 0;
-                  if (isInt && intQty >= distCount) {
-                    baseShare = Math.floor(intQty / distCount);
-                    remainder = intQty - baseShare * distCount;
-                  } else {
-                    baseShare = +(Math.round((convQtyRounded / distCount) * 10000) / 10000);
-                  }
-                  const convUnitName = convLevel === "major" ? (item?.majorUnitName || "وحدة")
-                    : convLevel === "medium" ? (item?.mediumUnitName || "وحدة")
-                    : (item?.minorUnitName || item?.mediumUnitName || "وحدة");
-                  const origUnitName = origLevel === "major" ? (item?.majorUnitName || "وحدة")
-                    : origLevel === "medium" ? (item?.mediumUnitName || "وحدة")
-                    : (item?.minorUnitName || item?.mediumUnitName || "وحدة");
-                  const showConversion = convLevel !== origLevel;
-                  const displayConvQty = isInt ? intQty : convQtyRounded;
-                  return (
-                    <div key={l.tempId} className="flex flex-row-reverse items-center justify-between text-xs gap-2">
-                      <span className="truncate flex-1 text-right">{l.description}</span>
-                      <span className="text-muted-foreground whitespace-nowrap">
-                        {showConversion ? `${origQty} ${origUnitName} → ${displayConvQty} ${convUnitName}` : `${origQty} ${origUnitName}`}
-                        {" = "}{baseShare}{remainder > 0 ? `~${baseShare + 1}` : ""} {convUnitName} لكل حالة
-                      </span>
-                    </div>
-                  );
-                })}
-                {lines.filter(l => l.lineType === "service").length > 0 && (
-                  <div className="text-xs text-muted-foreground text-right mt-1 border-t pt-1">
-                    الخدمات ({lines.filter(l => l.lineType === "service").length}) ستوزع أيضاً
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDistOpen(false)} data-testid="button-dist-cancel">
-              إلغاء
-            </Button>
-            <Button
-              onClick={handleDistribute}
-              disabled={distLoading}
-              data-testid="button-dist-confirm"
-            >
-              {distLoading ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Users className="h-4 w-4 ml-1" />}
-              تنفيذ التوزيع
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DistributeDialog
+        open={distOpen}
+        onClose={() => setDistOpen(false)}
+        lines={lines}
+        invoiceContext={{
+          invoiceDate,
+          departmentId,
+          warehouseId,
+          doctorName,
+          patientType,
+          contractName,
+          notes,
+          admissionId,
+          invoiceId,
+        }}
+        onSuccess={() => resetForm()}
+      />
 
       <Dialog open={!!statsItemId} onOpenChange={(open) => { if (!open) { setStatsItemId(null); setStatsData(null); } }}>
         <DialogContent className="max-w-lg" dir="rtl" data-testid="dialog-stock-stats">
