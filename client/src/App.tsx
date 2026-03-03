@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import DateChangeGuard from "@/components/DateChangeGuard";
 import Login from "@/pages/Login";
 import { Loader2, ShieldAlert } from "lucide-react";
 
@@ -128,7 +129,12 @@ function AuthenticatedApp() {
     return <Login />;
   }
 
-  return <Router />;
+  return (
+    <>
+      <DateChangeGuard />
+      <Router />
+    </>
+  );
 }
 
 function App() {
