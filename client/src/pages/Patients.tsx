@@ -64,6 +64,7 @@ interface PatientStats {
   createdAt: string;
   servicesTotal: number;
   drugsTotal: number;
+  consumablesTotal: number;
   orRoomTotal: number;
   stayTotal: number;
   grandTotal: number;
@@ -129,6 +130,7 @@ function TotalsRow({ rows }: { rows: PatientStats[] }) {
       </td>
       <td className="text-center tabular-nums">{formatNumber(sum("servicesTotal"))}</td>
       <td className="text-center tabular-nums">{formatNumber(sum("drugsTotal"))}</td>
+      <td className="text-center tabular-nums">{formatNumber(sum("consumablesTotal"))}</td>
       <td className="text-center tabular-nums">{formatNumber(sum("orRoomTotal"))}</td>
       <td className="text-center tabular-nums">{formatNumber(sum("stayTotal"))}</td>
       <td className="text-center tabular-nums">{formatNumber(sum("grandTotal"))}</td>
@@ -720,6 +722,7 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, onEdit, onDelete, onOpenI
             <th className="w-12 text-center">السن</th>
             <th className="w-24 text-center">خدمات</th>
             <th className="w-24 text-center">أدوية</th>
+            <th className="w-24 text-center">مستهلكات</th>
             <th className="w-24 text-center">عملية</th>
             <th className="w-24 text-center">إقامة</th>
             <th className="w-28 text-center font-bold">الإجمالي</th>
@@ -730,7 +733,7 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, onEdit, onDelete, onOpenI
         <tbody>
           {rows.length === 0 ? (
             <tr className="peachtree-grid-row">
-              <td colSpan={11} className="text-center py-6 text-muted-foreground">
+              <td colSpan={12} className="text-center py-6 text-muted-foreground">
                 لا يوجد مرضى
               </td>
             </tr>
@@ -754,7 +757,7 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, onEdit, onDelete, onOpenI
                 <>
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={12}
                       className="py-1 px-2 text-xs text-muted-foreground bg-muted/20 border-y"
                     >
                       المرضى التاليون لا توجد لهم فواتير في هذا القسم ({inactiveRows.length})
@@ -814,6 +817,7 @@ function PatientRow({ patient: p, index, dimmed, onEdit, onDelete, onOpenInvoice
       <td className="text-center"  data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
       <AmountCell value={+p.servicesTotal} />
       <AmountCell value={+p.drugsTotal} />
+      <AmountCell value={+p.consumablesTotal} />
       <AmountCell value={+p.orRoomTotal} />
       <AmountCell value={+p.stayTotal} />
       <td className="text-center font-bold tabular-nums" data-testid={`text-total-${p.id}`}>

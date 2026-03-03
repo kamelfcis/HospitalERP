@@ -6468,12 +6468,14 @@ export class DatabaseStorage implements IStorage {
         p.national_id,
         p.age,
         p.created_at,
-        COALESCE(s.services_total, 0)  AS services_total,
-        COALESCE(s.drugs_total, 0)     AS drugs_total,
-        COALESCE(s.or_room_total, 0)   AS or_room_total,
-        COALESCE(s.stay_total, 0)      AS stay_total,
+        COALESCE(s.services_total, 0)      AS services_total,
+        COALESCE(s.drugs_total, 0)         AS drugs_total,
+        COALESCE(s.consumables_total, 0)   AS consumables_total,
+        COALESCE(s.or_room_total, 0)       AS or_room_total,
+        COALESCE(s.stay_total, 0)          AS stay_total,
         COALESCE(s.services_total, 0) + COALESCE(s.drugs_total, 0) +
-          COALESCE(s.or_room_total, 0) + COALESCE(s.stay_total, 0) AS grand_total,
+          COALESCE(s.consumables_total, 0) + COALESCE(s.or_room_total, 0) +
+          COALESCE(s.stay_total, 0) AS grand_total,
         s.latest_invoice_id,
         s.latest_invoice_number
       FROM patients p
@@ -6482,8 +6484,10 @@ export class DatabaseStorage implements IStorage {
           pih.patient_name,
           SUM(CASE WHEN pil.source_type IS NULL AND pil.line_type = 'service'
               THEN pil.total_price ELSE 0 END) AS services_total,
-          SUM(CASE WHEN pil.line_type IN ('drug','consumable')
+          SUM(CASE WHEN pil.line_type = 'drug'
               THEN pil.total_price ELSE 0 END) AS drugs_total,
+          SUM(CASE WHEN pil.line_type = 'consumable'
+              THEN pil.total_price ELSE 0 END) AS consumables_total,
           SUM(CASE WHEN pil.source_type = 'OR_ROOM'
               THEN pil.total_price ELSE 0 END) AS or_room_total,
           SUM(CASE WHEN pil.source_type = 'STAY_ENGINE'
