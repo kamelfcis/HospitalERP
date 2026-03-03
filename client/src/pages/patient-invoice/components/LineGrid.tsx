@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, X, BarChart3 } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
-import type { Service, Item } from "@shared/schema";
+import type { Service, Item, Department } from "@shared/schema";
 import type { LineLocal } from "../types";
 import {
   itemHasMajorUnit,
@@ -27,6 +28,9 @@ interface LineGridProps {
   setServiceResults: (v: Service[]) => void;
   serviceResults: Service[];
   searchingServices: boolean;
+  serviceDeptId: string;
+  setServiceDeptId: (v: string) => void;
+  departments: Department[] | undefined;
   itemSearchRef: React.RefObject<HTMLInputElement>;
   itemDropdownRef: React.RefObject<HTMLDivElement>;
   serviceSearchRef: React.RefObject<HTMLInputElement>;
@@ -57,6 +61,9 @@ export function LineGrid({
   setServiceResults,
   serviceResults,
   searchingServices,
+  serviceDeptId,
+  setServiceDeptId,
+  departments,
   itemSearchRef,
   itemDropdownRef,
   serviceSearchRef,
@@ -128,6 +135,31 @@ export function LineGrid({
         </div>
       ) : (
         <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
+          {/* ─── فلتر القسم ─── */}
+          <Select
+            value={serviceDeptId || "all"}
+            onValueChange={v => {
+              setServiceDeptId(v === "all" ? "" : v);
+              setServiceSearch("");
+              setServiceResults([]);
+            }}
+            disabled={!isDraft}
+          >
+            <SelectTrigger
+              className="h-9 text-xs w-36 shrink-0"
+              data-testid="select-trigger-service-dept"
+            >
+              <SelectValue placeholder="كل الأقسام" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل الأقسام</SelectItem>
+              {(departments || []).map(d => (
+                <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* ─── بحث الخدمة ─── */}
           <div className="flex-1 min-w-[200px]">
             <SearchDropdown
               inputRef={serviceSearchRef}
@@ -148,7 +180,7 @@ export function LineGrid({
                 raw: svc,
               }))}
               onSelect={(si) => addServiceLine(si.raw)}
-              placeholder="بحث عن خدمة..."
+              placeholder={serviceDeptId ? "بحث عن خدمة في هذا القسم..." : "بحث عن خدمة..."}
               disabled={!isDraft}
               showSearchIcon
               inputClassName="pr-8"

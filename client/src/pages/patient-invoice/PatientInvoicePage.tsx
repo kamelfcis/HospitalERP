@@ -118,6 +118,7 @@ export default function PatientInvoice() {
   const [admissionId, setAdmissionId] = useState("");
 
   const [warehouseId, setWarehouseId] = useState("");
+  const [serviceDeptId, setServiceDeptId] = useState("");
   const [fefoLoading, setFefoLoading] = useState(false);
 
   const [statsItemId, setStatsItemId] = useState<string | null>(null);
@@ -251,7 +252,12 @@ export default function PatientInvoice() {
     }
     const controller = new AbortController();
     setSearchingServices(true);
-    fetch(`/api/services?search=${encodeURIComponent(debouncedServiceSearch)}&page=1&pageSize=10`, {
+    const svcQp = new URLSearchParams();
+    svcQp.set("search", debouncedServiceSearch);
+    svcQp.set("page", "1");
+    svcQp.set("pageSize", "15");
+    if (serviceDeptId) svcQp.set("departmentId", serviceDeptId);
+    fetch(`/api/services?${svcQp.toString()}`, {
       signal: controller.signal,
       credentials: "include",
     })
@@ -262,7 +268,7 @@ export default function PatientInvoice() {
       })
       .catch(() => setSearchingServices(false));
     return () => controller.abort();
-  }, [debouncedServiceSearch]);
+  }, [debouncedServiceSearch, serviceDeptId]);
 
   useEffect(() => {
     if (!debouncedItemSearch || debouncedItemSearch.length < 1) {
@@ -1161,6 +1167,8 @@ export default function PatientInvoice() {
             setServiceResults={setServiceResults}
             serviceResults={serviceResults}
             searchingServices={searchingServices}
+            serviceDeptId={serviceDeptId}
+            setServiceDeptId={setServiceDeptId}
             itemSearchRef={itemSearchRef}
             itemDropdownRef={itemDropdownRef}
             serviceSearchRef={serviceSearchRef}
