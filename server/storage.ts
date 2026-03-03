@@ -7027,13 +7027,20 @@ export class DatabaseStorage implements IStorage {
               cur.setUTCDate(cur.getUTCDate() + 1);
             }
           } else {
-            // hours_24 (default): count 24-hour periods from admission time
-            const elapsedMs = now.getTime() - startedAt.getTime();
-            const periodsCompleted = Math.max(0, Math.floor(elapsedMs / (24 * 60 * 60 * 1000)));
-            for (let n = 0; n <= periodsCompleted; n++) {
-              const periodStart = new Date(startedAt.getTime() + n * 24 * 60 * 60 * 1000);
-              const dateStr = periodStart.toISOString().split("T")[0];
-              bucketEntries.push({ key: dateStr, desc: `${seg.service_name_ar} – يوم ${n + 1}` });
+            // hours_24 / calendar_day (default):
+            // يوم 1 = يوم الدخول (تقويمياً)، يوم 2 = اليوم التالي منتصف الليل، إلخ.
+            // الحساب بالأيام التقويمية (UTC midnight) بدلاً من 24 ساعة متواصلة
+            // مما يتوافق مع التعامل المعيادي للمستشفيات: كل تاريخ ميلادي جديد = يوم إقامة جديد
+            const admDateStr  = startedAt.toISOString().split("T")[0]; // YYYY-MM-DD يوم الدخول
+            const todayStr    = now.toISOString().split("T")[0];        // YYYY-MM-DD اليوم الحالي
+            const admDateMs   = new Date(admDateStr + "T12:00:00Z").getTime();
+            const todayMs     = new Date(todayStr   + "T12:00:00Z").getTime();
+            const totalDays   = Math.floor((todayMs - admDateMs) / 86_400_000) + 1;
+
+            for (let d = 0; d < totalDays; d++) {
+              const dateStr = new Date(admDateMs + d * 86_400_000).toISOString().split("T")[0];
+              // source_id يبقى متوافقاً مع السطر الأول الذي يُدرج عند التسكين
+              bucketEntries.push({ key: dateStr, desc: `${seg.service_name_ar} – يوم ${d + 1}` });
             }
           }
 
