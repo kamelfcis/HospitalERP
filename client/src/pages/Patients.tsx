@@ -262,9 +262,18 @@ function AdmissionSection({ open, values, setters }: AdmissionSectionProps) {
   }, [values.selectedFloor]); // eslint-disable-line
 
   // ── إعادة تصفير السرير عند تغيير الغرفة
+  // وإذا كان في الغرفة سرير واحد فارغ فقط → اختره تلقائياً
   useEffect(() => {
     setters.setSelectedBed("");
+    // لا تنتظر الـ render التالي — أطلق الاختيار التلقائي بعد حساب الأسرة
   }, [values.selectedRoom]); // eslint-disable-line
+
+  // ── اختيار تلقائي للسرير عند وجود سرير واحد فارغ
+  useEffect(() => {
+    if (beds.length === 1 && !values.selectedBed) {
+      setters.setSelectedBed(beds[0].id);
+    }
+  }, [beds]); // eslint-disable-line
 
   return (
     <div className="border rounded-md overflow-hidden">
@@ -319,14 +328,19 @@ function AdmissionSection({ open, values, setters }: AdmissionSectionProps) {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">السرير</Label>
+              <Label className={`text-xs ${values.selectedRoom && !values.selectedBed ? "text-red-600 font-medium" : ""}`}>
+                السرير {values.selectedRoom && !values.selectedBed && <span className="text-red-500">*</span>}
+              </Label>
               <Select
                 value={values.selectedBed}
                 onValueChange={setters.setSelectedBed}
                 disabled={!values.selectedRoom}
               >
-                <SelectTrigger className="h-7 text-xs" data-testid="select-bed">
-                  <SelectValue placeholder="اختر" />
+                <SelectTrigger
+                  className={`h-7 text-xs ${values.selectedRoom && !values.selectedBed ? "border-red-400 ring-1 ring-red-400" : ""}`}
+                  data-testid="select-bed"
+                >
+                  <SelectValue placeholder={values.selectedRoom && !values.selectedBed ? "مطلوب ⚠" : "اختر"} />
                 </SelectTrigger>
                 <SelectContent>
                   {beds.length === 0 && (
@@ -598,6 +612,11 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
     }
     if (nationalId && !/^\d{14}$/.test(nationalId)) {
       toast({ title: "خطأ", description: "الرقم القومي يجب أن يكون 14 رقم", variant: "destructive" });
+      return false;
+    }
+    // إذا اختار غرفة يجب اختيار سرير فارغ أيضاً
+    if (selectedRoom && !selectedBed) {
+      toast({ title: "خطأ", description: "اختار غرفة — الرجاء اختيار سرير فارغ من القائمة", variant: "destructive" });
       return false;
     }
     return true;
