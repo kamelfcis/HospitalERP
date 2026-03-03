@@ -7190,7 +7190,31 @@ export class DatabaseStorage implements IStorage {
       const seq = parseInt((cntRes.rows[0] as any)?.cnt || "0") + 1;
       const admissionNumber = `ADM-${String(seq).padStart(6, "0")}`;
 
-      // 3. Create admission
+      // 3a. Upsert patient into patients table (so they appear in the patient registry)
+      const existingPatient = await tx.execute(
+        sql`SELECT id FROM patients WHERE full_name = ${params.patientName} AND is_active = true LIMIT 1`
+      );
+      if (existingPatient.rows.length === 0) {
+        await tx.execute(sql`
+          INSERT INTO patients (id, full_name, phone, national_id, age, is_active, created_at)
+          VALUES (
+            gen_random_uuid(),
+            ${params.patientName},
+            ${params.patientPhone || null},
+            null,
+            null,
+            true,
+            NOW()
+          )
+        `);
+      } else if (params.patientPhone) {
+        await tx.execute(sql`
+          UPDATE patients SET phone = ${params.patientPhone}
+          WHERE id = ${(existingPatient.rows[0] as any).id}
+        `);
+      }
+
+      // 3b. Create admission
       const [admission] = await tx.insert(admissions).values({
         admissionNumber,
         patientName: params.patientName,
