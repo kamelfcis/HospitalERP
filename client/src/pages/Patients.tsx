@@ -1105,7 +1105,7 @@ export default function Patients() {
           <Search className="h-3 w-3 text-muted-foreground" />
           <input
             type="text"
-            placeholder="بحث بالاسم أو التليفون..."
+            placeholder="بحث بالاسم أو التليفون أو الطبيب..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="peachtree-input text-xs w-48"

@@ -6452,12 +6452,21 @@ export class DatabaseStorage implements IStorage {
     const joinType = hasDateFilter ? "JOIN" : "LEFT JOIN";
 
     // ── فلتر البحث على مستوى المريض
+    // يدعم البحث بـ: الاسم، التليفون، أو اسم الطبيب (من أي فاتورة للمريض)
     let patientFilter = "p.is_active = true";
     if (filters?.search?.trim()) {
       const tokens = filters.search.trim().split(/\s+/).filter(Boolean);
       const conds = tokens.map(t => {
-        const pat = t.includes('%') ? t : `%${t}%`;
-        return `(p.full_name ILIKE '${pat.replace(/'/g, "''")}' OR p.phone ILIKE '${pat.replace(/'/g, "''")}')`;
+        const pat = `'%${t.replace(/'/g, "''").replace(/%/g, "\\%")}%'`;
+        return (
+          `(p.full_name ILIKE ${pat}` +
+          ` OR p.phone ILIKE ${pat}` +
+          ` OR EXISTS (` +
+            `SELECT 1 FROM patient_invoice_headers pih2` +
+            ` WHERE pih2.patient_name = p.full_name` +
+            ` AND pih2.doctor_name ILIKE ${pat}` +
+          `))`
+        );
       });
       patientFilter += ` AND (${conds.join(" AND ")})`;
     }
