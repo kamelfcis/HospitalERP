@@ -6420,10 +6420,18 @@ export class DatabaseStorage implements IStorage {
     const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
 
     // ── invoice subquery conditions (date + dept + not-cancelled)
+    // dept filter: match invoice.department_id directly OR through the invoice's warehouse.department_id
     const invConds: string[] = ["pih.status != 'cancelled'"];
     if (filters?.dateFrom) invConds.push(`pih.invoice_date >= '${filters.dateFrom}'`);
     if (filters?.dateTo)   invConds.push(`pih.invoice_date <= '${filters.dateTo}'`);
-    if (filters?.deptId)   invConds.push(`pih.department_id = '${filters.deptId}'`);
+    if (filters?.deptId) {
+      const d = filters.deptId.replace(/'/g, "''");
+      invConds.push(
+        `(pih.department_id = '${d}' OR (pih.department_id IS NULL AND EXISTS (` +
+        `SELECT 1 FROM warehouses w WHERE w.id = pih.warehouse_id AND w.department_id = '${d}'` +
+        `)))`
+      );
+    }
     const invFilter = invConds.join(" AND ");
 
     // ── when any date/dept filter is active → INNER JOIN (only patients with matching invoices)
@@ -6455,7 +6463,9 @@ export class DatabaseStorage implements IStorage {
         COALESCE(s.or_room_total, 0)   AS or_room_total,
         COALESCE(s.stay_total, 0)      AS stay_total,
         COALESCE(s.services_total, 0) + COALESCE(s.drugs_total, 0) +
-          COALESCE(s.or_room_total, 0) + COALESCE(s.stay_total, 0) AS grand_total
+          COALESCE(s.or_room_total, 0) + COALESCE(s.stay_total, 0) AS grand_total,
+        s.latest_invoice_id,
+        s.latest_invoice_number
       FROM patients p
       ${sql.raw(joinType)} (
         SELECT
@@ -6467,9 +6477,11 @@ export class DatabaseStorage implements IStorage {
           SUM(CASE WHEN pil.source_type = 'OR_ROOM'
               THEN pil.total_price ELSE 0 END) AS or_room_total,
           SUM(CASE WHEN pil.source_type = 'STAY_ENGINE'
-              THEN pil.total_price ELSE 0 END) AS stay_total
+              THEN pil.total_price ELSE 0 END) AS stay_total,
+          (ARRAY_AGG(pih.id ORDER BY pih.created_at DESC))[1]             AS latest_invoice_id,
+          (ARRAY_AGG(pih.invoice_number ORDER BY pih.created_at DESC))[1] AS latest_invoice_number
         FROM patient_invoice_headers pih
-        JOIN patient_invoice_lines pil ON pil.header_id = pih.id AND pil.is_void = false
+        LEFT JOIN patient_invoice_lines pil ON pil.header_id = pih.id AND pil.is_void = false
         WHERE ${sql.raw(invFilter)}
         GROUP BY pih.patient_name
       ) s ON s.patient_name = p.full_name

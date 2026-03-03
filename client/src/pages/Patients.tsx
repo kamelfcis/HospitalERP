@@ -30,8 +30,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, Search, Edit2, Trash2, Users, ChevronDown, ChevronUp,
+  Plus, Search, Edit2, Trash2, Users, ChevronDown, ChevronUp, FileText,
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { formatNumber } from "@/lib/formatters";
 import type { Patient, InsertPatient } from "@shared/schema";
 
@@ -59,6 +60,8 @@ interface PatientStats {
   orRoomTotal: number;
   stayTotal: number;
   grandTotal: number;
+  latestInvoiceId: string | null;
+  latestInvoiceNumber: string | null;
 }
 
 interface BedOption {
@@ -593,6 +596,7 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
 // ─── Main page component ──────────────────────────────────────────────────────
 
 export default function Patients() {
+  const [, navigate] = useLocation();
   const [searchQuery,    setSearchQuery]    = useState("");
   const [dateFrom,       setDateFrom]       = useState("");
   const [dateTo,         setDateTo]         = useState("");
@@ -637,6 +641,10 @@ export default function Patients() {
 
   function openAdd()  { setEditingPatient(null); setDialogOpen(true); }
   function openEdit(p: Patient) { setEditingPatient(p); setDialogOpen(true); }
+
+  function openInvoice(invoiceId: string) {
+    navigate(`/patient-invoices?load=${invoiceId}`);
+  }
 
   return (
     <div className="p-3 space-y-2 h-full flex flex-col">
@@ -760,7 +768,7 @@ export default function Patients() {
                   <th className="w-24 text-center">عملية</th>
                   <th className="w-24 text-center">إقامة</th>
                   <th className="w-28 text-center font-bold">الإجمالي</th>
-                  <th className="w-16 text-center">إجراءات</th>
+                  <th className="w-20 text-center">إجراءات</th>
                 </tr>
               </thead>
               <tbody>
@@ -787,8 +795,20 @@ export default function Patients() {
                       </td>
                       <td>
                         <div className="flex items-center justify-center gap-0.5">
+                          {/* Open invoice button — navigates to the patient's latest invoice */}
+                          {p.latestInvoiceId && (
+                            <Button
+                              variant="ghost" size="icon" className="h-6 w-6 text-blue-600"
+                              title={`فتح الفاتورة ${p.latestInvoiceNumber || ""}`}
+                              onClick={() => openInvoice(p.latestInvoiceId!)}
+                              data-testid={`button-open-invoice-${p.id}`}
+                            >
+                              <FileText className="h-3 w-3" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost" size="icon" className="h-6 w-6"
+                            title="تعديل بيانات المريض"
                             onClick={() => openEdit(p as unknown as Patient)}
                             data-testid={`button-edit-patient-${p.id}`}
                           >
