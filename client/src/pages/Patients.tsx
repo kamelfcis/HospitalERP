@@ -25,6 +25,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation }        from "@tanstack/react-query";
 import { useLocation }                  from "wouter";
 import { apiRequest, queryClient }      from "@/lib/queryClient";
+import { useAuth }                      from "@/hooks/use-auth";
 import { useToast }                     from "@/hooks/use-toast";
 import { formatNumber }                 from "@/lib/formatters";
 import type { Patient, InsertPatient }  from "@shared/schema";
@@ -743,15 +744,17 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
  *   - صف الإجماليات يحسب فقط المرضى الذين لهم نشاط (grand_total > 0).
  */
 interface PatientGridProps {
-  rows:          PatientStats[];
-  isLoading:     boolean;
-  hasDeptFilter: boolean;   // صحيح عند تفعيل فلتر القسم — يُميّز صفوف الصفر
-  onEdit:        (p: PatientStats) => void;
-  onDelete:      (p: PatientStats) => void;
-  onOpenInvoice: (invoiceId: string) => void;
+  rows:           PatientStats[];
+  isLoading:      boolean;
+  hasDeptFilter:  boolean;    // صحيح عند تفعيل فلتر القسم — يُميّز صفوف الصفر
+  canViewInvoice: boolean;    // صلاحية patient_invoices.view
+  canEdit:        boolean;    // صلاحية patients.edit
+  onEdit:         (p: PatientStats) => void;
+  onDelete:       (p: PatientStats) => void;
+  onOpenInvoice:  (invoiceId: string) => void;
 }
 
-function PatientGrid({ rows, isLoading, hasDeptFilter, onEdit, onDelete, onOpenInvoice }: PatientGridProps) {
+function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, onEdit, onDelete, onOpenInvoice }: PatientGridProps) {
   if (isLoading) {
     return (
       <div className="p-3 space-y-2">
@@ -802,6 +805,8 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, onEdit, onDelete, onOpenI
                   patient={p}
                   index={idx + 1}
                   dimmed={false}
+                  canViewInvoice={canViewInvoice}
+                  canEdit={canEdit}
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onOpenInvoice={onOpenInvoice}
@@ -825,6 +830,8 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, onEdit, onDelete, onOpenI
                       patient={p}
                       index={activeRows.length + idx + 1}
                       dimmed={true}
+                      canViewInvoice={canViewInvoice}
+                      canEdit={canEdit}
                       onEdit={onEdit}
                       onDelete={onDelete}
                       onOpenInvoice={onOpenInvoice}
@@ -850,18 +857,22 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, onEdit, onDelete, onOpenI
 
 /**
  * صف مريض واحد داخل الجدول.
- * `dimmed` = صحيح عندما لا يكون للمريض نشاط في القسم المفلتر عليه.
+ * - `dimmed`         = صحيح عندما لا يكون للمريض نشاط في القسم المفلتر عليه.
+ * - `canViewInvoice` = صلاحية patient_invoices.view — تُظهر زر الفاتورة.
+ * - `canEdit`        = صلاحية patients.edit — تُظهر أزرار التعديل والحذف.
  */
 interface PatientRowProps {
-  patient:       PatientStats;
-  index:         number;
-  dimmed:        boolean;
-  onEdit:        (p: PatientStats) => void;
-  onDelete:      (p: PatientStats) => void;
-  onOpenInvoice: (invoiceId: string) => void;
+  patient:        PatientStats;
+  index:          number;
+  dimmed:         boolean;
+  canViewInvoice: boolean;
+  canEdit:        boolean;
+  onEdit:         (p: PatientStats) => void;
+  onDelete:       (p: PatientStats) => void;
+  onOpenInvoice:  (invoiceId: string) => void;
 }
 
-function PatientRow({ patient: p, index, dimmed, onEdit, onDelete, onOpenInvoice }: PatientRowProps) {
+function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit, onDelete, onOpenInvoice }: PatientRowProps) {
   const rowClass = `peachtree-grid-row${dimmed ? " opacity-50" : ""}`;
 
   return (
@@ -880,12 +891,12 @@ function PatientRow({ patient: p, index, dimmed, onEdit, onDelete, onOpenInvoice
         {+p.grandTotal > 0 ? formatNumber(+p.grandTotal) : "—"}
       </td>
 
-      {/* أزرار الإجراءات */}
+      {/* أزرار الإجراءات — مُقيَّدة بالصلاحيات */}
       <td>
         <div className="flex items-center justify-center gap-0.5">
 
-          {/* فتح آخر فاتورة — يظهر فقط إذا كان للمريض فاتورة */}
-          {p.latestInvoiceId && (
+          {/* فتح آخر فاتورة — يحتاج صلاحية patient_invoices.view */}
+          {canViewInvoice && p.latestInvoiceId && (
             <Button
               variant="ghost" size="icon" className="h-6 w-6 text-blue-600"
               title={`فتح الفاتورة ${p.latestInvoiceNumber || ""}`}
@@ -896,25 +907,27 @@ function PatientRow({ patient: p, index, dimmed, onEdit, onDelete, onOpenInvoice
             </Button>
           )}
 
-          {/* تعديل بيانات المريض الأساسية */}
-          <Button
-            variant="ghost" size="icon" className="h-6 w-6"
-            title="تعديل بيانات المريض"
-            onClick={() => onEdit(p)}
-            data-testid={`button-edit-patient-${p.id}`}
-          >
-            <Edit2 className="h-3 w-3" />
-          </Button>
-
-          {/* حذف المريض (soft delete) */}
-          <Button
-            variant="ghost" size="icon" className="h-6 w-6"
-            title="حذف المريض"
-            onClick={() => onDelete(p)}
-            data-testid={`button-delete-patient-${p.id}`}
-          >
-            <Trash2 className="h-3 w-3 text-destructive" />
-          </Button>
+          {/* تعديل + حذف — يحتاج صلاحية patients.edit */}
+          {canEdit && (
+            <>
+              <Button
+                variant="ghost" size="icon" className="h-6 w-6"
+                title="تعديل بيانات المريض"
+                onClick={() => onEdit(p)}
+                data-testid={`button-edit-patient-${p.id}`}
+              >
+                <Edit2 className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost" size="icon" className="h-6 w-6"
+                title="حذف المريض"
+                onClick={() => onDelete(p)}
+                data-testid={`button-delete-patient-${p.id}`}
+              >
+                <Trash2 className="h-3 w-3 text-destructive" />
+              </Button>
+            </>
+          )}
 
         </div>
       </td>
@@ -939,8 +952,13 @@ const todayISO = new Date().toISOString().slice(0, 10);
  *   editingPatient → PatientFormDialog
  */
 export default function Patients() {
-  const [, navigate] = useLocation();
-  const { toast }    = useToast();
+  const [, navigate]        = useLocation();
+  const { hasPermission }   = useAuth();
+  const { toast }           = useToast();
+
+  const canCreate      = hasPermission("patients.create");
+  const canEdit        = hasPermission("patients.edit");
+  const canViewInvoice = hasPermission("patient_invoices.view");
 
   // ── حالة الفلاتر
   const [searchQuery, setSearchQuery] = useState("");
@@ -1026,14 +1044,16 @@ export default function Patients() {
             إدارة بيانات المرضى ({rows.length} مريض)
           </p>
         </div>
-        <Button
-          size="sm" onClick={handleAddNew}
-          className="h-7 text-xs px-3"
-          data-testid="button-add-patient"
-        >
-          <Plus className="h-3 w-3 ml-1" />
-          إضافة مريض
-        </Button>
+        {canCreate && (
+          <Button
+            size="sm" onClick={handleAddNew}
+            className="h-7 text-xs px-3"
+            data-testid="button-add-patient"
+          >
+            <Plus className="h-3 w-3 ml-1" />
+            إضافة مريض
+          </Button>
+        )}
       </div>
 
       {/* ── شريط الفلاتر ── */}
@@ -1115,6 +1135,8 @@ export default function Patients() {
           rows={rows}
           isLoading={isLoading}
           hasDeptFilter={!!deptId}
+          canViewInvoice={canViewInvoice}
+          canEdit={canEdit}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onOpenInvoice={handleOpenInvoice}
