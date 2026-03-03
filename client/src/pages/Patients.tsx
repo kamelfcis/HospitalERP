@@ -1000,8 +1000,8 @@ export default function Patients() {
 
   // ── حالة الفلاتر
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom,    setDateFrom]    = useState(todayISO);
-  const [dateTo,      setDateTo]      = useState(todayISO);
+  const [dateFrom,    setDateFrom]    = useState("");
+  const [dateTo,      setDateTo]      = useState("");
   const [deptId,      setDeptId]      = useState("");
 
   // ── حالة النافذة
