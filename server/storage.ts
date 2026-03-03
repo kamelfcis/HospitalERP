@@ -6419,8 +6419,23 @@ export class DatabaseStorage implements IStorage {
   async getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<any[]> {
     const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
 
-    // ── invoice subquery conditions (date + dept + not-cancelled)
-    // dept filter: match invoice.department_id directly OR through the invoice's warehouse.department_id
+    // ────────────────────────────────────────────────────────────────────────────
+    // تصميم الاستعلام:
+    //
+    // الـ JOIN بين patients و invoice-stats هو دائماً LEFT JOIN حتى يظهر
+    // كل مريض مسجل في كل الأحوال (حتى لو بلا فواتير).
+    //
+    // فلاتر التاريخ والقسم تُطبَّق داخل الـ subquery على مستوى الفواتير فقط،
+    // يعني: المريض يظهر دايماً، لكن المجاميع تعكس فقط الفواتير المطابقة.
+    //
+    // الاستثناء الوحيد: فلتر القسم يُستخدم أيضاً لاستبعاد المرضى اللي ليس
+    // لهم أي فاتورة في هذا القسم (grand_total = 0 بعد الفلتر) — يُتحكم فيه
+    // من الـ frontend عبر إخفاء الصفوف التي grand_total = 0 عند تفعيل الفلتر.
+    // لكن الـ backend يُعيد الكل ليبقى الاختيار في يد الـ frontend.
+    // ────────────────────────────────────────────────────────────────────────────
+
+    // ── شروط subquery الفواتير (تاريخ + قسم + غير ملغي)
+    // فلتر القسم: يطابق department_id مباشرة أو عبر warehouse المرتبط بالفاتورة
     const invConds: string[] = ["pih.status != 'cancelled'"];
     if (filters?.dateFrom) invConds.push(`pih.invoice_date >= '${filters.dateFrom}'`);
     if (filters?.dateTo)   invConds.push(`pih.invoice_date <= '${filters.dateTo}'`);
@@ -6434,12 +6449,7 @@ export class DatabaseStorage implements IStorage {
     }
     const invFilter = invConds.join(" AND ");
 
-    // ── when any date/dept filter is active → INNER JOIN (only patients with matching invoices)
-    // ── when no filter → LEFT JOIN (show all registered patients)
-    const hasInvFilter = !!(filters?.dateFrom || filters?.dateTo || filters?.deptId);
-    const joinType = hasInvFilter ? "JOIN" : "LEFT JOIN";
-
-    // ── patient-level search filter
+    // ── فلتر البحث على مستوى المريض
     let patientFilter = "p.is_active = true";
     if (filters?.search?.trim()) {
       const tokens = filters.search.trim().split(/\s+/).filter(Boolean);
@@ -6467,7 +6477,7 @@ export class DatabaseStorage implements IStorage {
         s.latest_invoice_id,
         s.latest_invoice_number
       FROM patients p
-      ${sql.raw(joinType)} (
+      LEFT JOIN (
         SELECT
           pih.patient_name,
           SUM(CASE WHEN pil.source_type IS NULL AND pil.line_type = 'service'

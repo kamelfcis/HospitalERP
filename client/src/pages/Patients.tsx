@@ -674,19 +674,26 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
  * الأعمدة: # | الاسم | التليفون | الرقم القومي | السن |
  *           خدمات | أدوية | عملية | إقامة | الإجمالي | إجراءات
  *
- * زر الفاتورة (أزرق) يفتح آخر فاتورة للمريض في صفحة فاتورة المريض.
- * زر التعديل يفتح نافذة تعديل بيانات المريض الأساسية.
- * زر الحذف يُلغّي نشاط المريض (soft delete).
+ * - زر الفاتورة (أزرق): يفتح آخر فاتورة للمريض في صفحة فاتورة المريض.
+ * - زر التعديل: يفتح نافذة تعديل بيانات المريض الأساسية.
+ * - زر الحذف: يُلغّي نشاط المريض (soft delete).
+ *
+ * سلوك الفلتر:
+ *   - الـ backend يُعيد دائماً كل المرضى (LEFT JOIN دائمي).
+ *   - عند تفعيل فلتر القسم، الصفوف التي grand_total=0 تُعرض بلون أفتح
+ *     مع تلميح "لا نشاط في هذا القسم" — هكذا لا يختفي أي مريض من العرض.
+ *   - صف الإجماليات يحسب فقط المرضى الذين لهم نشاط (grand_total > 0).
  */
 interface PatientGridProps {
   rows:          PatientStats[];
   isLoading:     boolean;
+  hasDeptFilter: boolean;   // صحيح عند تفعيل فلتر القسم — يُميّز صفوف الصفر
   onEdit:        (p: PatientStats) => void;
   onDelete:      (p: PatientStats) => void;
   onOpenInvoice: (invoiceId: string) => void;
 }
 
-function PatientGrid({ rows, isLoading, onEdit, onDelete, onOpenInvoice }: PatientGridProps) {
+function PatientGrid({ rows, isLoading, hasDeptFilter, onEdit, onDelete, onOpenInvoice }: PatientGridProps) {
   if (isLoading) {
     return (
       <div className="p-3 space-y-2">
@@ -694,6 +701,10 @@ function PatientGrid({ rows, isLoading, onEdit, onDelete, onOpenInvoice }: Patie
       </div>
     );
   }
+
+  // عند تفعيل فلتر القسم: مرضى لهم نشاط فيه (مجموع > 0) يُعرضون أولاً ثم الباقين
+  const activeRows = hasDeptFilter ? rows.filter(r => +r.grandTotal > 0) : rows;
+  const inactiveRows = hasDeptFilter ? rows.filter(r => +r.grandTotal === 0) : [];
 
   return (
     <ScrollArea className="h-[calc(100vh-210px)]">
@@ -716,7 +727,6 @@ function PatientGrid({ rows, isLoading, onEdit, onDelete, onOpenInvoice }: Patie
           </tr>
         </thead>
 
-        {/* ── الصفوف ── */}
         <tbody>
           {rows.length === 0 ? (
             <tr className="peachtree-grid-row">
@@ -725,73 +735,130 @@ function PatientGrid({ rows, isLoading, onEdit, onDelete, onOpenInvoice }: Patie
               </td>
             </tr>
           ) : (
-            rows.map((p, idx) => (
-              <tr key={p.id} className="peachtree-grid-row" data-testid={`row-patient-${p.id}`}>
-                <td className="text-center text-muted-foreground">{idx + 1}</td>
-                <td className="font-medium"        data-testid={`text-name-${p.id}`}>{p.fullName}</td>
-                <td className="font-mono"          data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
-                <td className="font-mono"          data-testid={`text-nationalid-${p.id}`}>{p.nationalId || "—"}</td>
-                <td className="text-center"        data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
-                <AmountCell value={+p.servicesTotal} />
-                <AmountCell value={+p.drugsTotal} />
-                <AmountCell value={+p.orRoomTotal} />
-                <AmountCell value={+p.stayTotal} />
-                <td className="text-center font-bold tabular-nums" data-testid={`text-total-${p.id}`}>
-                  {+p.grandTotal > 0 ? formatNumber(+p.grandTotal) : "—"}
-                </td>
+            <>
+              {/* ── المرضى الذين لهم نشاط في القسم المختار (أو كل المرضى بدون فلتر) ── */}
+              {activeRows.map((p, idx) => (
+                <PatientRow
+                  key={p.id}
+                  patient={p}
+                  index={idx + 1}
+                  dimmed={false}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onOpenInvoice={onOpenInvoice}
+                />
+              ))}
 
-                {/* ── أزرار الإجراءات ── */}
-                <td>
-                  <div className="flex items-center justify-center gap-0.5">
-
-                    {/* فتح آخر فاتورة — يظهر فقط إذا كان للمريض فاتورة */}
-                    {p.latestInvoiceId && (
-                      <Button
-                        variant="ghost" size="icon" className="h-6 w-6 text-blue-600"
-                        title={`فتح الفاتورة ${p.latestInvoiceNumber || ""}`}
-                        onClick={() => onOpenInvoice(p.latestInvoiceId!)}
-                        data-testid={`button-open-invoice-${p.id}`}
-                      >
-                        <FileText className="h-3 w-3" />
-                      </Button>
-                    )}
-
-                    {/* تعديل بيانات المريض الأساسية */}
-                    <Button
-                      variant="ghost" size="icon" className="h-6 w-6"
-                      title="تعديل بيانات المريض"
-                      onClick={() => onEdit(p)}
-                      data-testid={`button-edit-patient-${p.id}`}
+              {/* ── فاصل + مرضى بلا نشاط في القسم المختار ── */}
+              {inactiveRows.length > 0 && (
+                <>
+                  <tr>
+                    <td
+                      colSpan={11}
+                      className="py-1 px-2 text-xs text-muted-foreground bg-muted/20 border-y"
                     >
-                      <Edit2 className="h-3 w-3" />
-                    </Button>
-
-                    {/* حذف المريض (soft delete) */}
-                    <Button
-                      variant="ghost" size="icon" className="h-6 w-6"
-                      title="حذف المريض"
-                      onClick={() => onDelete(p)}
-                      data-testid={`button-delete-patient-${p.id}`}
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
-
-                  </div>
-                </td>
-              </tr>
-            ))
+                      المرضى التاليون لا توجد لهم فواتير في هذا القسم ({inactiveRows.length})
+                    </td>
+                  </tr>
+                  {inactiveRows.map((p, idx) => (
+                    <PatientRow
+                      key={p.id}
+                      patient={p}
+                      index={activeRows.length + idx + 1}
+                      dimmed={true}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      onOpenInvoice={onOpenInvoice}
+                    />
+                  ))}
+                </>
+              )}
+            </>
           )}
         </tbody>
 
-        {/* ── صف الإجماليات الرأسية ── */}
-        {rows.length > 0 && (
+        {/* ── صف الإجماليات — يحسب فقط المرضى الذين لهم نشاط ── */}
+        {activeRows.length > 0 && (
           <tfoot>
-            <TotalsRow rows={rows} />
+            <TotalsRow rows={activeRows} />
           </tfoot>
         )}
 
       </table>
     </ScrollArea>
+  );
+}
+
+/**
+ * صف مريض واحد داخل الجدول.
+ * `dimmed` = صحيح عندما لا يكون للمريض نشاط في القسم المفلتر عليه.
+ */
+interface PatientRowProps {
+  patient:       PatientStats;
+  index:         number;
+  dimmed:        boolean;
+  onEdit:        (p: PatientStats) => void;
+  onDelete:      (p: PatientStats) => void;
+  onOpenInvoice: (invoiceId: string) => void;
+}
+
+function PatientRow({ patient: p, index, dimmed, onEdit, onDelete, onOpenInvoice }: PatientRowProps) {
+  const rowClass = `peachtree-grid-row${dimmed ? " opacity-50" : ""}`;
+
+  return (
+    <tr className={rowClass} data-testid={`row-patient-${p.id}`}>
+      <td className="text-center text-muted-foreground">{index}</td>
+      <td className="font-medium"  data-testid={`text-name-${p.id}`}>{p.fullName}</td>
+      <td className="font-mono"    data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
+      <td className="font-mono"    data-testid={`text-nationalid-${p.id}`}>{p.nationalId || "—"}</td>
+      <td className="text-center"  data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
+      <AmountCell value={+p.servicesTotal} />
+      <AmountCell value={+p.drugsTotal} />
+      <AmountCell value={+p.orRoomTotal} />
+      <AmountCell value={+p.stayTotal} />
+      <td className="text-center font-bold tabular-nums" data-testid={`text-total-${p.id}`}>
+        {+p.grandTotal > 0 ? formatNumber(+p.grandTotal) : "—"}
+      </td>
+
+      {/* أزرار الإجراءات */}
+      <td>
+        <div className="flex items-center justify-center gap-0.5">
+
+          {/* فتح آخر فاتورة — يظهر فقط إذا كان للمريض فاتورة */}
+          {p.latestInvoiceId && (
+            <Button
+              variant="ghost" size="icon" className="h-6 w-6 text-blue-600"
+              title={`فتح الفاتورة ${p.latestInvoiceNumber || ""}`}
+              onClick={() => onOpenInvoice(p.latestInvoiceId!)}
+              data-testid={`button-open-invoice-${p.id}`}
+            >
+              <FileText className="h-3 w-3" />
+            </Button>
+          )}
+
+          {/* تعديل بيانات المريض الأساسية */}
+          <Button
+            variant="ghost" size="icon" className="h-6 w-6"
+            title="تعديل بيانات المريض"
+            onClick={() => onEdit(p)}
+            data-testid={`button-edit-patient-${p.id}`}
+          >
+            <Edit2 className="h-3 w-3" />
+          </Button>
+
+          {/* حذف المريض (soft delete) */}
+          <Button
+            variant="ghost" size="icon" className="h-6 w-6"
+            title="حذف المريض"
+            onClick={() => onDelete(p)}
+            data-testid={`button-delete-patient-${p.id}`}
+          >
+            <Trash2 className="h-3 w-3 text-destructive" />
+          </Button>
+
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -984,6 +1051,7 @@ export default function Patients() {
         <PatientGrid
           rows={rows}
           isLoading={isLoading}
+          hasDeptFilter={!!deptId}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onOpenInvoice={handleOpenInvoice}
