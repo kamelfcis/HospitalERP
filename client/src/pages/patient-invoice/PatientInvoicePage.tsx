@@ -118,7 +118,6 @@ export default function PatientInvoice() {
   const [admissionId, setAdmissionId] = useState("");
 
   const [warehouseId, setWarehouseId] = useState("");
-  const [serviceDeptId, setServiceDeptId] = useState("");
   const [fefoLoading, setFefoLoading] = useState(false);
 
   const [statsItemId, setStatsItemId] = useState<string | null>(null);
@@ -256,7 +255,7 @@ export default function PatientInvoice() {
     svcQp.set("search", debouncedServiceSearch);
     svcQp.set("page", "1");
     svcQp.set("pageSize", "15");
-    if (serviceDeptId) svcQp.set("departmentId", serviceDeptId);
+    if (departmentId) svcQp.set("departmentId", departmentId);
     fetch(`/api/services?${svcQp.toString()}`, {
       signal: controller.signal,
       credentials: "include",
@@ -268,7 +267,7 @@ export default function PatientInvoice() {
       })
       .catch(() => setSearchingServices(false));
     return () => controller.abort();
-  }, [debouncedServiceSearch, serviceDeptId]);
+  }, [debouncedServiceSearch, departmentId]);
 
   useEffect(() => {
     if (!debouncedItemSearch || debouncedItemSearch.length < 1) {
@@ -1167,8 +1166,6 @@ export default function PatientInvoice() {
             setServiceResults={setServiceResults}
             serviceResults={serviceResults}
             searchingServices={searchingServices}
-            serviceDeptId={serviceDeptId}
-            setServiceDeptId={setServiceDeptId}
             itemSearchRef={itemSearchRef}
             itemDropdownRef={itemDropdownRef}
             serviceSearchRef={serviceSearchRef}

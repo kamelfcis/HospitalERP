@@ -93,8 +93,6 @@ interface InvoiceTabProps {
   setServiceResults: (v: Service[]) => void;
   serviceResults: Service[];
   searchingServices: boolean;
-  serviceDeptId: string;
-  setServiceDeptId: (v: string) => void;
   itemSearchRef: React.RefObject<HTMLInputElement>;
   itemDropdownRef: React.RefObject<HTMLDivElement>;
   serviceSearchRef: React.RefObject<HTMLInputElement>;
@@ -165,7 +163,6 @@ export function InvoiceTab({
   lines, filteredLines,
   itemSearch, setItemSearch, setItemResults, itemResults, searchingItems, fefoLoading,
   serviceSearch, setServiceSearch, setServiceResults, serviceResults, searchingServices,
-  serviceDeptId, setServiceDeptId,
   itemSearchRef, itemDropdownRef, serviceSearchRef, serviceDropdownRef,
   pendingQtyRef,
   addServiceLine, addItemLine, updateLine, removeLine,
@@ -183,7 +180,6 @@ export function InvoiceTab({
     isDraft,
     itemSearch, setItemSearch, setItemResults, itemResults, searchingItems, fefoLoading,
     serviceSearch, setServiceSearch, setServiceResults, serviceResults, searchingServices,
-    serviceDeptId, setServiceDeptId, departments,
     itemSearchRef, itemDropdownRef, serviceSearchRef, serviceDropdownRef,
     pendingQtyRef,
     addServiceLine, addItemLine, updateLine, removeLine,
