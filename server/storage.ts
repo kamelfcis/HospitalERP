@@ -6504,8 +6504,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient> {
-    const [p] = await db.update(patients).set(data).where(eq(patients.id, id)).returning();
-    return p;
+    return db.transaction(async (tx) => {
+      // Fetch old name before update (needed for cascade)
+      const [old] = await tx.select({ fullName: patients.fullName })
+        .from(patients).where(eq(patients.id, id));
+
+      const [updated] = await tx.update(patients).set(data).where(eq(patients.id, id)).returning();
+
+      // Cascade name change to denormalized patient_name fields
+      if (data.fullName && old?.fullName && data.fullName !== old.fullName) {
+        await tx.execute(sql`
+          UPDATE patient_invoice_headers
+          SET patient_name = ${data.fullName}
+          WHERE patient_name = ${old.fullName}
+        `);
+        await tx.execute(sql`
+          UPDATE admissions
+          SET patient_name = ${data.fullName}
+          WHERE patient_name = ${old.fullName}
+        `);
+      }
+
+      return updated;
+    });
   }
 
   async deletePatient(id: string): Promise<boolean> {

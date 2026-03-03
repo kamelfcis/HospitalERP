@@ -643,7 +643,7 @@ export default function Patients() {
   function openEdit(p: Patient) { setEditingPatient(p); setDialogOpen(true); }
 
   function openInvoice(invoiceId: string) {
-    navigate(`/patient-invoices?load=${invoiceId}`);
+    navigate(`/patient-invoices?loadId=${invoiceId}`);
   }
 
   return (
