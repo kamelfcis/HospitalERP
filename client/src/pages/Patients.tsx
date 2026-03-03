@@ -63,14 +63,17 @@ interface PatientStats {
   nationalId: string | null;
   age: number | null;
   createdAt: string;
-  servicesTotal: number;
-  drugsTotal: number;
-  consumablesTotal: number;
-  orRoomTotal: number;
-  stayTotal: number;
-  grandTotal: number;
-  latestInvoiceId: string | null;
+  servicesTotal:     number;
+  drugsTotal:        number;
+  consumablesTotal:  number;
+  orRoomTotal:       number;
+  stayTotal:         number;
+  grandTotal:        number;
+  paidTotal:         number;
+  transferredTotal:  number;
+  latestInvoiceId:     string | null;
   latestInvoiceNumber: string | null;
+  latestInvoiceStatus: "draft" | "finalized" | "cancelled" | null;
 }
 
 /** نوع الطبيب المختار من القائمة */
@@ -134,6 +137,22 @@ function AmountCell({ value }: { value: number }) {
   return <td className="text-center tabular-nums">{formatNumber(+value)}</td>;
 }
 
+/** شارة حالة الفاتورة (مسودة / اعتماد / ملغي) داخل خلية جدول */
+function InvoiceStatusBadge({ status }: { status: string | null }) {
+  if (!status) return <td className="text-center text-muted-foreground">—</td>;
+  const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
+    draft:     { label: "مسودة",  variant: "secondary"    },
+    finalized: { label: "اعتماد", variant: "default"      },
+    cancelled: { label: "ملغي",   variant: "destructive"  },
+  };
+  const cfg = map[status] ?? { label: status, variant: "secondary" as const };
+  return (
+    <td className="text-center">
+      <Badge variant={cfg.variant} className="text-xs px-1 py-0">{cfg.label}</Badge>
+    </td>
+  );
+}
+
 /** صف الإجماليات الرأسية في أسفل الجدول */
 function TotalsRow({ rows }: { rows: PatientStats[] }) {
   const sum = (key: keyof PatientStats) =>
@@ -141,7 +160,7 @@ function TotalsRow({ rows }: { rows: PatientStats[] }) {
 
   return (
     <tr className="bg-muted/50 font-bold text-xs border-t-2">
-      <td colSpan={5} className="text-right pr-2 py-1">
+      <td colSpan={4} className="text-right pr-2 py-1">
         الإجمالي ({rows.length} مريض)
       </td>
       <td className="text-center tabular-nums">{formatNumber(sum("servicesTotal"))}</td>
@@ -150,7 +169,9 @@ function TotalsRow({ rows }: { rows: PatientStats[] }) {
       <td className="text-center tabular-nums">{formatNumber(sum("orRoomTotal"))}</td>
       <td className="text-center tabular-nums">{formatNumber(sum("stayTotal"))}</td>
       <td className="text-center tabular-nums">{formatNumber(sum("grandTotal"))}</td>
-      <td />
+      <td className="text-center tabular-nums">{formatNumber(sum("paidTotal"))}</td>
+      <td className="text-center tabular-nums">{formatNumber(sum("transferredTotal"))}</td>
+      <td /><td />
     </tr>
   );
 }
@@ -777,7 +798,6 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, 
             <th className="w-8  text-center">#</th>
             <th className="text-right">الاسم</th>
             <th className="w-28 text-right">التليفون</th>
-            <th className="w-36 text-right">الرقم القومي</th>
             <th className="w-12 text-center">السن</th>
             <th className="w-24 text-center">خدمات</th>
             <th className="w-24 text-center">أدوية</th>
@@ -785,6 +805,9 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, 
             <th className="w-24 text-center">عملية</th>
             <th className="w-24 text-center">إقامة</th>
             <th className="w-28 text-center font-bold">الإجمالي</th>
+            <th className="w-24 text-center text-green-700">المسدد</th>
+            <th className="w-28 text-center text-purple-700">محول لطبيب</th>
+            <th className="w-20 text-center">الحالة</th>
             <th className="w-20 text-center">إجراءات</th>
           </tr>
         </thead>
@@ -792,7 +815,7 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, 
         <tbody>
           {rows.length === 0 ? (
             <tr className="peachtree-grid-row">
-              <td colSpan={12} className="text-center py-6 text-muted-foreground">
+              <td colSpan={14} className="text-center py-6 text-muted-foreground">
                 لا يوجد مرضى
               </td>
             </tr>
@@ -818,7 +841,7 @@ function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, 
                 <>
                   <tr>
                     <td
-                      colSpan={12}
+                      colSpan={14}
                       className="py-1 px-2 text-xs text-muted-foreground bg-muted/20 border-y"
                     >
                       المرضى التاليون لا توجد لهم فواتير في هذا القسم ({inactiveRows.length})
@@ -880,7 +903,6 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit
       <td className="text-center text-muted-foreground">{index}</td>
       <td className="font-medium"  data-testid={`text-name-${p.id}`}>{p.fullName}</td>
       <td className="font-mono"    data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
-      <td className="font-mono"    data-testid={`text-nationalid-${p.id}`}>{p.nationalId || "—"}</td>
       <td className="text-center"  data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
       <AmountCell value={+p.servicesTotal} />
       <AmountCell value={+p.drugsTotal} />
@@ -890,6 +912,13 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit
       <td className="text-center font-bold tabular-nums" data-testid={`text-total-${p.id}`}>
         {+p.grandTotal > 0 ? formatNumber(+p.grandTotal) : "—"}
       </td>
+      <td className="text-center tabular-nums text-green-700" data-testid={`text-paid-${p.id}`}>
+        {+p.paidTotal > 0 ? formatNumber(+p.paidTotal) : "—"}
+      </td>
+      <td className="text-center tabular-nums text-purple-700" data-testid={`text-transferred-${p.id}`}>
+        {+p.transferredTotal > 0 ? formatNumber(+p.transferredTotal) : "—"}
+      </td>
+      <InvoiceStatusBadge status={p.latestInvoiceStatus} />
 
       {/* أزرار الإجراءات — مُقيَّدة بالصلاحيات */}
       <td>

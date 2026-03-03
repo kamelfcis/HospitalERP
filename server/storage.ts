@@ -6462,6 +6462,10 @@ export class DatabaseStorage implements IStorage {
       patientFilter += ` AND (${conds.join(" AND ")})`;
     }
 
+    // ── subquery ثنائي المستوى:
+    //   المستوى الأول: يجمّع بنود كل فاتورة على حدة (pih.id)
+    //     ← يضمن عدم تضاعف paid_amount عند الـ LEFT JOIN مع pil
+    //   المستوى الثاني: يجمّع الفواتير لكل مريض (patient_name)
     const result = await db.execute(sql`
       SELECT
         p.id,
@@ -6477,29 +6481,57 @@ export class DatabaseStorage implements IStorage {
         COALESCE(s.stay_total, 0)          AS stay_total,
         COALESCE(s.services_total, 0) + COALESCE(s.drugs_total, 0) +
           COALESCE(s.consumables_total, 0) + COALESCE(s.or_room_total, 0) +
-          COALESCE(s.stay_total, 0) AS grand_total,
+          COALESCE(s.stay_total, 0)        AS grand_total,
+        COALESCE(s.paid_total, 0)          AS paid_total,
+        COALESCE(s.transferred_total, 0)   AS transferred_total,
         s.latest_invoice_id,
-        s.latest_invoice_number
+        s.latest_invoice_number,
+        s.latest_invoice_status
       FROM patients p
       ${sql.raw(joinType)} (
         SELECT
-          pih.patient_name,
-          SUM(CASE WHEN pil.source_type IS NULL AND pil.line_type = 'service'
-              THEN pil.total_price ELSE 0 END) AS services_total,
-          SUM(CASE WHEN pil.line_type = 'drug'
-              THEN pil.total_price ELSE 0 END) AS drugs_total,
-          SUM(CASE WHEN pil.line_type = 'consumable'
-              THEN pil.total_price ELSE 0 END) AS consumables_total,
-          SUM(CASE WHEN pil.source_type = 'OR_ROOM'
-              THEN pil.total_price ELSE 0 END) AS or_room_total,
-          SUM(CASE WHEN pil.source_type = 'STAY_ENGINE'
-              THEN pil.total_price ELSE 0 END) AS stay_total,
-          (ARRAY_AGG(pih.id ORDER BY pih.created_at DESC))[1]             AS latest_invoice_id,
-          (ARRAY_AGG(pih.invoice_number ORDER BY pih.created_at DESC))[1] AS latest_invoice_number
-        FROM patient_invoice_headers pih
-        LEFT JOIN patient_invoice_lines pil ON pil.header_id = pih.id AND pil.is_void = false
-        WHERE ${sql.raw(invFilter)}
-        GROUP BY pih.patient_name
+          inv.patient_name,
+          SUM(inv.services_total)      AS services_total,
+          SUM(inv.drugs_total)         AS drugs_total,
+          SUM(inv.consumables_total)   AS consumables_total,
+          SUM(inv.or_room_total)       AS or_room_total,
+          SUM(inv.stay_total)          AS stay_total,
+          SUM(inv.paid_amount)         AS paid_total,
+          SUM(inv.transferred_total)   AS transferred_total,
+          (ARRAY_AGG(inv.id             ORDER BY inv.created_at DESC))[1] AS latest_invoice_id,
+          (ARRAY_AGG(inv.invoice_number ORDER BY inv.created_at DESC))[1] AS latest_invoice_number,
+          (ARRAY_AGG(inv.status         ORDER BY inv.created_at DESC))[1] AS latest_invoice_status
+        FROM (
+          SELECT
+            pih.id,
+            pih.patient_name,
+            pih.created_at,
+            pih.invoice_number,
+            pih.status,
+            pih.paid_amount,
+            COALESCE((
+              SELECT SUM(dt.amount)
+              FROM doctor_transfers dt
+              WHERE dt.invoice_id = pih.id
+            ), 0) AS transferred_total,
+            SUM(CASE WHEN pil.source_type IS NULL AND pil.line_type = 'service'
+                THEN pil.total_price ELSE 0 END) AS services_total,
+            SUM(CASE WHEN pil.line_type = 'drug'
+                THEN pil.total_price ELSE 0 END) AS drugs_total,
+            SUM(CASE WHEN pil.line_type = 'consumable'
+                THEN pil.total_price ELSE 0 END) AS consumables_total,
+            SUM(CASE WHEN pil.source_type = 'OR_ROOM'
+                THEN pil.total_price ELSE 0 END) AS or_room_total,
+            SUM(CASE WHEN pil.source_type = 'STAY_ENGINE'
+                THEN pil.total_price ELSE 0 END) AS stay_total
+          FROM patient_invoice_headers pih
+          LEFT JOIN patient_invoice_lines pil
+            ON pil.header_id = pih.id AND pil.is_void = false
+          WHERE ${sql.raw(invFilter)}
+          GROUP BY pih.id, pih.patient_name, pih.created_at,
+                   pih.invoice_number, pih.status, pih.paid_amount
+        ) inv
+        GROUP BY inv.patient_name
       ) s ON s.patient_name = p.full_name
       WHERE ${sql.raw(patientFilter)}
       ORDER BY p.created_at DESC
