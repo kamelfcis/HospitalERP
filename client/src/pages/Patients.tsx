@@ -593,28 +593,39 @@ function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogP
 // ─── Main page component ──────────────────────────────────────────────────────
 
 export default function Patients() {
-  const [searchQuery,   setSearchQuery]   = useState("");
-  const [dateFrom,      setDateFrom]      = useState(todayStr());
-  const [dateTo,        setDateTo]        = useState(todayStr());
-  const [dialogOpen,    setDialogOpen]    = useState(false);
+  const [searchQuery,    setSearchQuery]    = useState("");
+  const [dateFrom,       setDateFrom]       = useState("");
+  const [dateTo,         setDateTo]         = useState("");
+  const [deptId,         setDeptId]         = useState("");
+  const [dialogOpen,     setDialogOpen]     = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
 
   const debouncedSearch = useDebounce(searchQuery, 350);
 
-  // ── patient stats (drives both list and stats columns)
+  // ── departments list for filter dropdown
+  const { data: departments = [] } = useQuery<{ id: string; nameAr: string }[]>({
+    queryKey: ["/api/departments"],
+  });
+
+  // ── patient stats — drives list + columns
+  // When date or dept filter is active → backend returns only matching patients (INNER JOIN)
+  // When no filter → all registered patients (LEFT JOIN)
   const params = new URLSearchParams();
   if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
   if (dateFrom) params.set("dateFrom", dateFrom);
   if (dateTo)   params.set("dateTo",   dateTo);
+  if (deptId)   params.set("deptId",   deptId);
 
   const { data: rows = [], isLoading } = useQuery<PatientStats[]>({
-    queryKey: ["/api/patients/stats", debouncedSearch, dateFrom, dateTo],
+    queryKey: ["/api/patients/stats", debouncedSearch, dateFrom, dateTo, deptId],
     queryFn: async () => {
       const res = await fetch(`/api/patients/stats?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("فشل في جلب بيانات المرضى");
       return res.json();
     },
   });
+
+  const hasFilter = !!(dateFrom || dateTo || deptId);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/patients/${id}`),
@@ -654,17 +665,20 @@ export default function Patients() {
 
       {/* ─── Filters bar ─── */}
       <div className="peachtree-toolbar rounded flex items-center gap-3 flex-wrap">
+        {/* Search */}
         <div className="flex items-center gap-1">
           <Search className="h-3 w-3 text-muted-foreground" />
           <input
             type="text"
-            placeholder="بحث بالاسم أو التليفون... (استخدم % للبحث المتقدم)"
+            placeholder="بحث بالاسم أو التليفون..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="peachtree-input text-xs w-56"
+            className="peachtree-input text-xs w-48"
             data-testid="input-search-patients"
           />
         </div>
+
+        {/* Date from */}
         <div className="flex items-center gap-1">
           <Label className="text-xs text-muted-foreground whitespace-nowrap">من:</Label>
           <input
@@ -675,6 +689,8 @@ export default function Patients() {
             data-testid="input-date-from"
           />
         </div>
+
+        {/* Date to */}
         <div className="flex items-center gap-1">
           <Label className="text-xs text-muted-foreground whitespace-nowrap">إلى:</Label>
           <input
@@ -685,6 +701,42 @@ export default function Patients() {
             data-testid="input-date-to"
           />
         </div>
+
+        {/* Department filter */}
+        <div className="flex items-center gap-1">
+          <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
+          <Select value={deptId || "all"} onValueChange={v => setDeptId(v === "all" ? "" : v)}>
+            <SelectTrigger className="h-7 text-xs w-36" data-testid="select-dept-filter">
+              <SelectValue placeholder="كل الأقسام" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل الأقسام</SelectItem>
+              {departments.map(d => (
+                <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Clear filters button — shown only when a filter is active */}
+        {hasFilter && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs px-2"
+            onClick={() => { setDateFrom(""); setDateTo(""); setDeptId(""); }}
+            data-testid="button-clear-filters"
+          >
+            مسح الفلاتر
+          </Button>
+        )}
+
+        {/* Active filter badge */}
+        {hasFilter && (
+          <span className="text-xs text-amber-600 font-medium">
+            ● يعرض مرضى الفترة / القسم المحدد فقط
+          </span>
+        )}
       </div>
 
       {/* ─── Grid ─── */}

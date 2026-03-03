@@ -3365,8 +3365,8 @@ export async function registerRoutes(
 
   app.get("/api/patients/stats", async (req, res) => {
     try {
-      const { search, dateFrom, dateTo } = req.query as Record<string, string>;
-      const list = await storage.getPatientStats({ search, dateFrom, dateTo });
+      const { search, dateFrom, dateTo, deptId } = req.query as Record<string, string>;
+      const list = await storage.getPatientStats({ search, dateFrom, dateTo, deptId });
       res.json(list);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
