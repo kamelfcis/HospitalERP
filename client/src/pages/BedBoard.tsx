@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -750,6 +750,27 @@ export default function BedBoard() {
     queryFn: () => apiRequest("GET", "/api/bed-board").then(r => r.json()),
     refetchInterval: 30_000,
   });
+
+  // ── SSE: تحديث لحظي عند أي تغيير في حالة الأسرة ─────────────────────────
+  const sseRef = useRef<EventSource | null>(null);
+  useEffect(() => {
+    const es = new EventSource("/api/bed-board/events");
+    sseRef.current = es;
+
+    es.addEventListener("bed-board-update", () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
+    });
+
+    es.onerror = () => {
+      es.close();
+      // إعادة الاتصال بعد 5 ثواني تلقائياً عبر useEffect cleanup/remount
+    };
+
+    return () => {
+      es.close();
+      sseRef.current = null;
+    };
+  }, []);
 
   const [admitBed, setAdmitBed] = useState<BedData | null>(null);
   const [transferBed, setTransferBed] = useState<BedData | null>(null);

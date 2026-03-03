@@ -23,6 +23,16 @@ export function broadcastToPharmacy(pharmacyId: string, event: string, data: any
     }
   });
 }
+
+// ─── قناة SSE عالمية للوحة الأسرة ────────────────────────────────────────────
+const bedBoardClients = new Set<Response>();
+
+export function broadcastBedBoardUpdate() {
+  const payload = `event: bed-board-update\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`;
+  bedBoardClients.forEach((res) => {
+    try { res.write(payload); } catch { bedBoardClients.delete(res); }
+  });
+}
 import { 
   insertAccountSchema, 
   insertCostCenterSchema, 
@@ -3714,6 +3724,27 @@ export async function registerRoutes(
 
   // ==================== Bed Board ====================
 
+  // ── SSE stream: تحديث لحظي للوحة الأسرة عند أي تغيير ──────────────────────
+  app.get("/api/bed-board/events", (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    res.write(`event: connected\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+    bedBoardClients.add(res);
+
+    const keepAlive = setInterval(() => {
+      try { res.write(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
+    }, 15_000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      bedBoardClients.delete(res);
+    });
+  });
+
   app.get("/api/bed-board", async (_req, res) => {
     try {
       const data = await storage.getBedBoard();
@@ -3748,6 +3779,7 @@ export async function registerRoutes(
         insuranceCompany: insuranceCompany || undefined,
         surgeryTypeId: surgeryTypeId || undefined,
       });
+      broadcastBedBoardUpdate();
       res.status(201).json(result);
     } catch (error: any) {
       const code = error.message?.includes("غير فارغ") ? 409 : 400;
@@ -3765,6 +3797,7 @@ export async function registerRoutes(
         newServiceId: newServiceId || undefined,
         newInvoiceId: newInvoiceId || undefined,
       });
+      broadcastBedBoardUpdate();
       res.json(result);
     } catch (error: any) {
       const code = error.message?.includes("غير موجود") ? 404 : 409;
@@ -3820,6 +3853,7 @@ export async function registerRoutes(
       }
 
       const result = await storage.dischargeFromBed(bedId);
+      broadcastBedBoardUpdate();
       res.json(result);
     } catch (error: any) {
       const code = error.message?.includes("غير موجود") ? 404 : 409;
@@ -3833,6 +3867,7 @@ export async function registerRoutes(
       const ALLOWED = ["EMPTY", "NEEDS_CLEANING", "MAINTENANCE"];
       if (!ALLOWED.includes(status)) return res.status(400).json({ message: "حالة غير صالحة" });
       const bed = await storage.setBedStatus(req.params.id, status);
+      broadcastBedBoardUpdate();
       res.json(bed);
     } catch (error: any) {
       const code = error.message?.includes("مشغول") ? 409 : 400;

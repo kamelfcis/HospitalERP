@@ -1199,7 +1199,7 @@ export default function Patients() {
         <PatientGrid
           rows={rows}
           isLoading={isLoading}
-          hasDeptFilter={hasFilter}
+          hasDeptFilter={!!deptId}
           canViewInvoice={canViewInvoice}
           canEdit={canEdit}
           onEdit={handleEdit}
