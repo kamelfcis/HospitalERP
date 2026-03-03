@@ -924,6 +924,9 @@ function PatientRow({ patient: p, index, dimmed, onEdit, onDelete, onOpenInvoice
 
 // ─── 9. Patients — الصفحة الرئيسية (default export) ──────────────────────────
 
+/** تاريخ اليوم بصيغة YYYY-MM-DD — يُستخدم كقيمة افتراضية لفلاتر التاريخ */
+const todayISO = new Date().toISOString().slice(0, 10);
+
 /**
  * صفحة سجل المرضى — تجمع كل المكونات معاً.
  *
@@ -941,9 +944,8 @@ export default function Patients() {
 
   // ── حالة الفلاتر
   const [searchQuery, setSearchQuery] = useState("");
-  const today = new Date().toISOString().slice(0, 10);
-  const [dateFrom,    setDateFrom]    = useState(today);
-  const [dateTo,      setDateTo]      = useState(today);
+  const [dateFrom,    setDateFrom]    = useState(todayISO);
+  const [dateTo,      setDateTo]      = useState(todayISO);
   const [deptId,      setDeptId]      = useState("");
 
   // ── حالة النافذة

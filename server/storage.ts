@@ -6420,19 +6420,17 @@ export class DatabaseStorage implements IStorage {
     const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
 
     // ────────────────────────────────────────────────────────────────────────────
-    // تصميم الاستعلام:
+    // سياسة الـ JOIN:
     //
-    // الـ JOIN بين patients و invoice-stats هو دائماً LEFT JOIN حتى يظهر
-    // كل مريض مسجل في كل الأحوال (حتى لو بلا فواتير).
+    //  • فلتر التاريخ نشط  → INNER JOIN: يُظهر فقط مرضى لهم فواتير في هذه الفترة.
+    //    (السلوك المطلوب: "عرض مرضى اليوم فقط" = لا يظهر مرضى بلا نشاط)
     //
-    // فلاتر التاريخ والقسم تُطبَّق داخل الـ subquery على مستوى الفواتير فقط،
-    // يعني: المريض يظهر دايماً، لكن المجاميع تعكس فقط الفواتير المطابقة.
+    //  • فلتر القسم فقط    → LEFT JOIN: يُظهر كل المرضى لكن يُميّز (بـ opacity)
+    //    مَن ليس لهم نشاط في هذا القسم — حتى لا يختفي أي مريض.
     //
-    // الاستثناء الوحيد: فلتر القسم يُستخدم أيضاً لاستبعاد المرضى اللي ليس
-    // لهم أي فاتورة في هذا القسم (grand_total = 0 بعد الفلتر) — يُتحكم فيه
-    // من الـ frontend عبر إخفاء الصفوف التي grand_total = 0 عند تفعيل الفلتر.
-    // لكن الـ backend يُعيد الكل ليبقى الاختيار في يد الـ frontend.
+    //  • بدون فلتر         → LEFT JOIN: كل المرضى المسجّلين.
     // ────────────────────────────────────────────────────────────────────────────
+    const hasDateFilter = !!(filters?.dateFrom || filters?.dateTo);
 
     // ── شروط subquery الفواتير (تاريخ + قسم + غير ملغي)
     // فلتر القسم: يطابق department_id مباشرة أو عبر warehouse المرتبط بالفاتورة
@@ -6448,6 +6446,10 @@ export class DatabaseStorage implements IStorage {
       );
     }
     const invFilter = invConds.join(" AND ");
+
+    // INNER JOIN عند فلتر التاريخ (يُظهر فقط مرضى لهم فواتير في الفترة)
+    // LEFT JOIN  عند فلتر القسم فقط أو بدون فلتر (يُظهر كل المرضى)
+    const joinType = hasDateFilter ? "JOIN" : "LEFT JOIN";
 
     // ── فلتر البحث على مستوى المريض
     let patientFilter = "p.is_active = true";
@@ -6479,7 +6481,7 @@ export class DatabaseStorage implements IStorage {
         s.latest_invoice_id,
         s.latest_invoice_number
       FROM patients p
-      LEFT JOIN (
+      ${sql.raw(joinType)} (
         SELECT
           pih.patient_name,
           SUM(CASE WHEN pil.source_type IS NULL AND pil.line_type = 'service'
