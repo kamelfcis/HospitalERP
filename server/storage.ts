@@ -6546,6 +6546,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deletePatient(id: string): Promise<boolean> {
+    // تحقق من وجود فواتير غير ملغية بقيمة > 0 للمريض قبل السماح بالحذف
+    const [patient] = await db.select({ fullName: patients.fullName }).from(patients).where(eq(patients.id, id));
+    if (!patient) throw new Error("المريض غير موجود");
+
+    const check = await db.execute(sql`
+      SELECT COALESCE(SUM(net_amount), 0) AS total
+      FROM patient_invoice_headers
+      WHERE patient_name = ${patient.fullName}
+        AND status != 'cancelled'
+    `);
+    const total = parseFloat((check.rows[0] as any)?.total ?? "0");
+    if (total > 0) {
+      throw new Error("لا يمكن حذف المريض لوجود فواتير بقيمة غير صفرية");
+    }
+
     await db.update(patients).set({ isActive: false }).where(eq(patients.id, id));
     return true;
   }

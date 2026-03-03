@@ -918,13 +918,20 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit
               >
                 <Edit2 className="h-3 w-3" />
               </Button>
+
+              {/* الحذف — مسموح فقط إذا كانت إجمالي الفواتير = صفر */}
               <Button
                 variant="ghost" size="icon" className="h-6 w-6"
-                title="حذف المريض"
+                disabled={+p.grandTotal > 0}
+                title={
+                  +p.grandTotal > 0
+                    ? "لا يمكن حذف المريض لوجود فواتير بقيمة غير صفرية"
+                    : "حذف المريض"
+                }
                 onClick={() => onDelete(p)}
                 data-testid={`button-delete-patient-${p.id}`}
               >
-                <Trash2 className="h-3 w-3 text-destructive" />
+                <Trash2 className={`h-3 w-3 ${+p.grandTotal > 0 ? "text-muted-foreground" : "text-destructive"}`} />
               </Button>
             </>
           )}
