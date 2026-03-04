@@ -26,11 +26,11 @@ function AnnouncementPreview({ messages }: { messages: string[] }) {
         <CardTitle className="text-sm">معاينة الشريط</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="bg-primary rounded-b-md h-10 flex items-center px-4 overflow-hidden">
+        <div className="bg-sidebar rounded-b-md h-10 flex items-center px-4 overflow-hidden">
           <MarqueeTicker
             messages={messages}
             speed={70}
-            className="flex-1 text-primary-foreground/90"
+            className="flex-1 text-sidebar-foreground/90"
           />
         </div>
       </CardContent>

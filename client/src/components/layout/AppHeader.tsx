@@ -16,13 +16,13 @@ export function AppHeader() {
 
   return (
     <header
-      className="flex items-center h-10 px-4 bg-primary shrink-0 no-print overflow-hidden"
+      className="flex items-center h-10 px-4 bg-sidebar shrink-0 no-print overflow-hidden border-b border-sidebar-border"
       data-testid="app-header-ticker"
     >
       <MarqueeTicker
         messages={messages}
         speed={70}
-        className="flex-1 text-primary-foreground/90"
+        className="flex-1 text-sidebar-foreground/90"
       />
     </header>
   );
