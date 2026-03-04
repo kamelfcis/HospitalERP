@@ -52,6 +52,9 @@ export const PERMISSIONS = {
   PATIENT_INVOICES_FINALIZE: "patient_invoices.finalize",
   PATIENT_PAYMENTS: "patient_invoices.payments",
   PATIENT_INVOICES_DISCOUNT: "patient_invoices.discount",
+  PATIENT_INVOICES_TRANSFER_DOCTOR: "patient_invoices.transfer_doctor",
+
+  DOCTOR_SETTLEMENTS_CREATE: "doctor_settlements.create",
 
   CASHIER_VIEW: "cashier.view",
   CASHIER_COLLECT: "cashier.collect",
@@ -375,6 +378,13 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.PATIENT_INVOICES_FINALIZE, label: "اعتماد" },
       { key: PERMISSIONS.PATIENT_PAYMENTS, label: "مدفوعات" },
       { key: PERMISSIONS.PATIENT_INVOICES_DISCOUNT, label: "خصم على الفاتورة" },
+      { key: PERMISSIONS.PATIENT_INVOICES_TRANSFER_DOCTOR, label: "تحويل مستحقات طبيب" },
+    ],
+  },
+  {
+    label: "تسويات الأطباء",
+    permissions: [
+      { key: PERMISSIONS.DOCTOR_SETTLEMENTS_CREATE, label: "إنشاء تسوية" },
     ],
   },
   {

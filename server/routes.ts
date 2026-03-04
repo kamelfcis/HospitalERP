@@ -3503,11 +3503,10 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/patient-invoices/:id/transfer-to-doctor", requireAuth, async (req, res) => {
-    const user = (req.session as any)?.user;
-    if (!user || !["owner", "admin", "accounts_manager"].includes(user.role)) {
-      return res.status(403).json({ message: "غير مصرح - هذه العملية للمدير المالي أو المسؤول فقط" });
-    }
+  app.post("/api/patient-invoices/:id/transfer-to-doctor",
+    requireAuth,
+    checkPermission("patient_invoices.transfer_doctor"),
+    async (req, res) => {
     try {
       const { doctorName, amount, clientRequestId, notes } = req.body;
       if (!doctorName || !amount || !clientRequestId) {
@@ -3550,11 +3549,10 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/doctor-settlements", requireAuth, async (req, res) => {
-    const user = (req.session as any)?.user;
-    if (!user || !["owner", "admin", "accounts_manager"].includes(user.role)) {
-      return res.status(403).json({ message: "غير مصرح - هذه العملية للمدير المالي أو المسؤول فقط" });
-    }
+  app.post("/api/doctor-settlements",
+    requireAuth,
+    checkPermission("doctor_settlements.create"),
+    async (req, res) => {
     try {
       const { doctorName, paymentDate, amount, paymentMethod, settlementUuid, notes, allocations } = req.body;
       if (!doctorName || !paymentDate || !amount || !settlementUuid) {
