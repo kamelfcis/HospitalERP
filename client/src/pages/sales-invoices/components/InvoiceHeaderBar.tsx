@@ -1,0 +1,211 @@
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  ArrowRight, Save, CheckCircle, Loader2, Check, Barcode, Search, ShoppingCart,
+} from "lucide-react";
+import { salesInvoiceStatusLabels, customerTypeLabels } from "@shared/schema";
+import type { Warehouse } from "@shared/schema";
+
+interface Props {
+  isNew: boolean;
+  isDraft: boolean;
+  invoiceNumber?: string;
+  status?: string;
+  fefoLoading: boolean;
+  autoSaveStatus: "idle" | "saving" | "saved" | "error";
+  warehouseId: string;
+  setWarehouseId: (v: string) => void;
+  invoiceDate: string;
+  setInvoiceDate: (v: string) => void;
+  customerType: string;
+  setCustomerType: (v: string) => void;
+  customerName: string;
+  setCustomerName: (v: string) => void;
+  contractCompany: string;
+  setContractCompany: (v: string) => void;
+  barcodeInput: string;
+  setBarcodeInput: (v: string) => void;
+  barcodeLoading: boolean;
+  barcodeInputRef: React.RefObject<HTMLInputElement>;
+  warehouses: Warehouse[] | undefined;
+  savePending: boolean;
+  finalizePending: boolean;
+  onBack: () => void;
+  onSave: () => void;
+  onOpenFinalize: () => void;
+  onBarcodeScan: () => void;
+  onOpenSearch: () => void;
+  onOpenServiceSearch: () => void;
+}
+
+function statusBadge(status: string) {
+  const label = salesInvoiceStatusLabels[status] || status;
+  if (status === "finalized")
+    return <Badge className="bg-green-600 text-white no-default-hover-elevate no-default-active-elevate" data-testid="badge-status">{label}</Badge>;
+  if (status === "cancelled")
+    return <Badge className="bg-red-600 text-white no-default-hover-elevate no-default-active-elevate" data-testid="badge-status">{label}</Badge>;
+  return <Badge variant="secondary" data-testid="badge-status">{label}</Badge>;
+}
+
+export function InvoiceHeaderBar({
+  isNew, isDraft, invoiceNumber, status, fefoLoading, autoSaveStatus,
+  warehouseId, setWarehouseId, invoiceDate, setInvoiceDate,
+  customerType, setCustomerType, customerName, setCustomerName,
+  contractCompany, setContractCompany,
+  barcodeInput, setBarcodeInput, barcodeLoading, barcodeInputRef,
+  warehouses, savePending, finalizePending,
+  onBack, onSave, onOpenFinalize, onBarcodeScan, onOpenSearch, onOpenServiceSearch,
+}: Props) {
+  return (
+    <>
+      <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2 sticky top-0 z-50">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button variant="ghost" size="sm" onClick={onBack} data-testid="button-back">
+            <ArrowRight className="h-4 w-4 ml-1" />
+            رجوع
+          </Button>
+          <div className="h-6 w-px bg-border" />
+          <h1 className="text-sm font-bold">
+            {isNew ? "فاتورة بيع جديدة" : `فاتورة بيع #${invoiceNumber}`}
+          </h1>
+          {!isNew && status && statusBadge(status)}
+          {fefoLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+        </div>
+        {isDraft && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={onSave} disabled={savePending} data-testid="button-save">
+              {savePending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
+              حفظ
+            </Button>
+            {autoSaveStatus === "saving" && (
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                جاري الحفظ التلقائي...
+              </span>
+            )}
+            {autoSaveStatus === "saved" && (
+              <span className="text-[10px] text-green-600 flex items-center gap-1" data-testid="text-auto-save-status">
+                <Check className="h-3 w-3" />
+                تم الحفظ التلقائي
+              </span>
+            )}
+            <Button size="sm" onClick={onOpenFinalize} disabled={finalizePending} data-testid="button-finalize">
+              {finalizePending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
+              اعتماد نهائي
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="peachtree-toolbar flex items-center gap-4 flex-wrap text-[12px]">
+        <div className="flex items-center gap-1">
+          <span className="font-semibold">المخزن:</span>
+          {isDraft ? (
+            <select
+              value={warehouseId}
+              onChange={(e) => setWarehouseId(e.target.value)}
+              className="peachtree-select min-w-[140px]"
+              data-testid="select-warehouse"
+            >
+              <option value="">اختر المخزن</option>
+              {warehouses?.map((w) => (
+                <option key={w.id} value={w.id}>{w.nameAr}</option>
+              ))}
+            </select>
+          ) : (
+            <span data-testid="text-warehouse">{warehouses?.find((w) => w.id === warehouseId)?.nameAr || ""}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="font-semibold">التاريخ:</span>
+          {isDraft ? (
+            <input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+              className="peachtree-input w-[130px]"
+              data-testid="input-invoice-date"
+            />
+          ) : (
+            <span data-testid="text-invoice-date">{invoiceDate}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="font-semibold">نوع العميل:</span>
+          {isDraft ? (
+            <select
+              value={customerType}
+              onChange={(e) => setCustomerType(e.target.value)}
+              className="peachtree-select"
+              data-testid="select-customer-type"
+            >
+              <option value="cash">نقدي</option>
+              <option value="credit">آجل</option>
+              <option value="contract">تعاقد</option>
+            </select>
+          ) : (
+            <span data-testid="text-customer-type">{customerTypeLabels[customerType] || customerType}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="font-semibold">العميل:</span>
+          {isDraft ? (
+            <input
+              type="text"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="اسم العميل"
+              className="peachtree-input w-[160px]"
+              data-testid="input-customer-name"
+            />
+          ) : (
+            <span data-testid="text-customer-name">{customerName || "-"}</span>
+          )}
+        </div>
+        {customerType === "contract" && (
+          <div className="flex items-center gap-1">
+            <span className="font-semibold">الشركة الأم:</span>
+            {isDraft ? (
+              <input
+                type="text"
+                value={contractCompany}
+                onChange={(e) => setContractCompany(e.target.value)}
+                placeholder="الشركة الأم"
+                className="peachtree-input w-[160px]"
+                data-testid="input-contract-company"
+              />
+            ) : (
+              <span data-testid="text-contract-company">{contractCompany || "-"}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {isDraft && (
+        <div className="peachtree-toolbar flex items-center gap-2 text-[12px]">
+          <Barcode className="h-4 w-4 text-muted-foreground" />
+          <input
+            ref={barcodeInputRef}
+            type="text"
+            value={barcodeInput}
+            onChange={(e) => setBarcodeInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onBarcodeScan(); } }}
+            placeholder="امسح الباركود أو أدخل الكود..."
+            className="peachtree-input flex-1"
+            disabled={barcodeLoading}
+            data-testid="input-barcode"
+          />
+          {barcodeLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Button variant="outline" size="sm" onClick={onOpenSearch} data-testid="button-open-search">
+            <Search className="h-3 w-3 ml-1" />
+            بحث
+          </Button>
+          <Button variant="outline" size="sm" onClick={onOpenServiceSearch} data-testid="button-open-service-search">
+            <ShoppingCart className="h-3 w-3 ml-1" />
+            خدمة + مستهلكات
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}

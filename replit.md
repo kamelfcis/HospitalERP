@@ -1,157 +1,56 @@
 # Hospital General Ledger System
 
 ## Overview
-
-This project is an Arabic RTL web application for hospital general ledger (GL) accounting. It is designed to manage 500+ accounts, cost centers, and journal entries to generate IFRS-compliant financial reports in Egyptian Pounds (EGP). The system provides a robust, user-friendly accounting solution tailored for the healthcare sector in Arabic-speaking regions, featuring a classic accounting software UI aesthetic.
+This project is an Arabic RTL web application for hospital general ledger (GL) accounting. Its primary purpose is to manage accounts, cost centers, and journal entries to generate IFRS-compliant financial reports in Egyptian Pounds (EGP). It aims to provide a robust, user-friendly accounting solution specifically tailored for the healthcare sector in Arabic-speaking regions, featuring a classic accounting software UI aesthetic. Key capabilities include comprehensive financial management, inventory and sales processing, patient and service invoicing, multi-pharmacy support, and advanced security and reporting features. The project envisions becoming the leading accounting solution for healthcare providers in the Middle East.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
 ### Core Design
-The system is a full-stack web application with a React 18 frontend (TypeScript, Wouter, TanStack React Query, shadcn/ui, Tailwind CSS) and a Node.js Express 5 backend (TypeScript, Drizzle ORM). It uses PostgreSQL for data storage and is designed for full Arabic RTL localization.
+The system is a full-stack web application. The frontend is built with React 18, TypeScript, Wouter, TanStack React Query, shadcn/ui, and Tailwind CSS. The backend uses Node.js Express 5 with TypeScript and Drizzle ORM. PostgreSQL serves as the primary data store. The application is designed for full Arabic RTL localization.
 
 ### Key Features
-- **Financial Management**: Includes Chart of Accounts, Cost Centers (with Excel import), comprehensive Journal Entry system (create, post, reverse, templates), Fiscal Period controls, and IFRS-compliant financial reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger). Automatic Journal Entries are generated based on configurable account mappings.
+- **Financial Management**: Includes a Chart of Accounts, Cost Centers (with Excel import), a comprehensive Journal Entry system (create, post, reverse, templates), Fiscal Period controls, and IFRS-compliant financial reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger). Automatic Journal Entries are generated based on configurable account mappings.
 - **Inventory & Sales**: Features Supplier Receiving, Sales Invoicing (with barcode scanning, FEFO allocation, customer types, atomic stock deduction), Patient Invoicing (services, drugs, consumables, payments, "Distribute to Cases" feature, linked to admissions), Patient Admissions management, and Master Data for items, patients, and doctors.
-- **Services & Price Lists**: CRUD operations for services (department-scoped), price lists with inline editing and bulk adjustments, and integration with sales invoices.
-- **Multi-Pharmacy Support**: Supports multiple pharmacies with isolation for invoicing and cashier operations.
-- **Cashier & Security**: Includes real-time SSE for instant invoice visibility, password-protected cash drawers with GL account selection for shifts, department-level invoice isolation (each unit sees only its own pending invoices), a two-stage journal entry system for sales. Cashier screen fully refactored into hooks + compound components. Supports pharmacies AND departments as cashier units. One-shift-per-user enforcement. **Close-shift validation** (Rule A/B): close blocked if pending docs. `cashier.view_shift_totals` permission gates `ShiftTotalsWidget` visibility. **Cashier Scope Enforcement**: `cashier.all_units` permission for full access; otherwise user is limited to their assigned pharmacy (`users.pharmacyId`) and departments (`user_departments` table). `GET /api/cashier/units` filters by scope server-side; `POST /api/cashier/shift/open` validates unit access. `ScopeBadge` shows scope in user list. `ScopeSelector` in user form for admin to assign allowed units. `PUT /api/users/:id/cashier-scope` saves dept assignments + `cashier.all_units` permission.
-- **Reporting & Audit**: Generates balanced financial reports, incorporates full role-based access control (RBAC) with granular permissions, and maintains a comprehensive audit trail with strict validation and conflict resolution.
-- **User Experience**: Emphasizes a professional UI with collapsible sidebar, A4 print styles, focus management, and visual auto-save indicators.
-- **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing costs for patient accommodation, a Bed Board system for hospital bed management with atomic operations, real-time SSE updates, smart bed transfer with instant accommodation billing, and a Surgery Types System.
-- **Announcements Ticker**: A scrolling news-ticker header bar (replaces static title bar) that streams active announcements. Admins manage announcements via `/announcements` page. Ticker auto-refreshes every 60 s. Background matches `bg-sidebar` (same color as the sidebar).
+- **Services & Price Lists**: CRUD operations for department-scoped services, price lists with inline editing and bulk adjustments, and integration with sales invoices.
+- **Multi-Pharmacy Support**: The system supports multiple pharmacies with isolation for invoicing and cashier operations.
+- **Cashier & Security**: Includes real-time SSE for instant invoice visibility, password-protected cash drawers with GL account selection for shifts, department-level invoice isolation, a two-stage journal entry system for sales, and robust role-based access control (RBAC) with granular permissions. Close-shift validation and cashier scope enforcement are in place.
+- **Reporting & Audit**: Generates balanced financial reports, incorporates full RBAC, and maintains a comprehensive audit trail with strict validation and conflict resolution.
+- **User Experience**: Emphasizes a professional UI with a collapsible sidebar, A4 print styles, focus management, and visual auto-save indicators.
+- **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing patient accommodation costs, a Bed Board system with real-time updates and smart bed transfer, and a Surgery Types System. An announcements ticker provides streaming updates.
 
 ### Technical Implementations
-- **API**: RESTful JSON API.
-- **ORM**: Drizzle ORM with PostgreSQL dialect and Drizzle Kit.
-- **Validation**: Zod with drizzle-zod.
-- **Concurrency & Idempotency**: Utilizes `FOR UPDATE` row locks, optimistic concurrency with versioning, and idempotent conversion processes.
+- **API**: Utilizes a RESTful JSON API.
+- **ORM**: Drizzle ORM with PostgreSQL dialect and Drizzle Kit for database interactions.
+- **Validation**: Zod with drizzle-zod for schema validation.
+- **Concurrency & Idempotency**: Employs `FOR UPDATE` row locks, optimistic concurrency with versioning, and idempotent conversion processes to ensure data integrity.
 - **Financial Accuracy**: Invoice totals are recomputed server-side with `HALF_UP` decimal rounding.
-- **System Settings**: System settings are cached in memory for performance.
-- **Error Handling**: Centralized Arabic error messages with specific HTTP status codes and frontend integration.
+- **System Settings**: Critical system settings are cached in memory for performance optimization.
+- **Error Handling**: Centralized Arabic error messages are provided with specific HTTP status codes.
 - **Printing Safety**: Implements print tracking for cashier and refund receipts.
-- **Inventory Strictness**: Enforces expired batch blocking and FEFO ordering.
-- **Monitoring**: Includes slow request/query logging and basic ops endpoints.
-- **Backup & Restore**: Automated backup and restore scripts with retention.
-- **Auto-Save**: Document entry forms feature auto-save functionality.
+- **Inventory Strictness**: Enforces expired batch blocking and FEFO (First-Expired, First-Out) ordering for inventory.
+- **Monitoring**: Includes slow request/query logging and basic operations endpoints.
+- **Backup & Restore**: Automated backup and restore scripts are in place with retention policies.
 - **Architectural Enforcement**: Uses route helpers for error handling and validation, finance helpers for consistent money operations, a custom frontend mutation hook, ESLint rules, test templates, and a scaffold generator.
-- **Stay Engine Billing Modes**: Supports `hours_24` and `hotel_noon` billing modes for patient stays, both idempotent.
+- **Stay Engine Billing Modes**: Supports `hours_24` and `hotel_noon` idempotent billing modes for patient stays.
 - **Invoice & Discharge Business Rules**: Enforces payment before finalization and finalized invoices before discharge, with role-based bypass options.
-- **Audit Trail**: Captures audit entries for critical financial operations like stay line edits and removals.
-- **Sidebar Toggle Location**: Moved from top header to inside the sidebar footer (both expanded and collapsed states).
-- **AppLayout Structure**: `AppHeader` (marquee ticker) → `main` content. Sidebar toggle button lives in `SidebarFooter`.
-- **Source Field Preservation**: Ensures `sourceType`/`sourceId` fields are preserved across all frontend line pipelines.
+- **Audit Trail**: Captures audit entries for critical financial operations.
 - **Room Management**: Provides a dedicated page for CRUD operations on floors, rooms, and beds, including grade assignment.
 - **Surgery Types Integration**: Allows linking surgery types to admissions, impacting OR_ROOM line items and invoice totals.
 - **Admissions Management**: Enhanced admissions list with invoice status, department filtering, and financial totals.
-- **Admissions API**: SQL now includes fallback joins to link manually created invoices to patient admissions.
-
-## Patient Invoice Page — Architecture (Refactored)
-
-The `PatientInvoicePage` was refactored from ~1212 lines into ~270 lines using a clean hook-based compound architecture.
-
-### Hooks (client/src/pages/patient-invoice/hooks/)
-| Hook | Responsibility |
-|------|---------------|
-| `useInvoiceBootstrap` | Fetches nextNumber, departments, warehouses, activeAdmissions |
-| `useInvoiceForm` | All form field state + resetForm |
-| `useSearchState` | Patient/doctor/item/service search state & dropdowns |
-| `useLineManagement` | Invoice lines CRUD + FEFO item allocation |
-| `usePayments` | Payment rows state + loadPayments/resetPayments |
-| `useInvoiceMutations` | Save + Finalize mutations (no delete) |
-| `useInvoiceValidation` | Centralized validation: validateSave / validateDistribute / validateFinalize |
-| `useDoctorTransfer` | Doctor transfer state + mutation |
-| `useStatsDialog` | Stock statistics popup state |
-| `useAdmissions` | Admissions tab data + state |
-| `useAdmissionsMutations` | Create / Discharge / Consolidate admissions |
-| `useRegistry` | Invoice registry tab (search/filter/pagination) |
-
-### Validation Rules (useInvoiceValidation)
-- **Save**: Blocked if `patientName` is empty → toast + cancel
-- **Distribute**: Blocked if any of `departmentId`, `warehouseId`, `doctorName` is missing, or no lines exist → toast listing missing fields
-- **Finalize**: Blocked if invoice not saved, or service lines missing required doctor/nurse names
-
-### Business Rules
-- **No delete on patient invoices**: Delete permanently removed. Only path after finalization is مردود (refund).
-- `resetAll` composite: resets form + lines + payments in one call.
-- `useLineManagement` accepts individual stable params (not a `searchActions` object) to avoid unnecessary callback recreation.
-
-### Components (client/src/pages/patient-invoice/components/)
-- `InvoiceHeaderBar` — header fields + action buttons (save/finalize/distribute). No delete button.
-- `DoctorTransferSheet` — doctor transfer confirm sheet
-- `StockStatsDialog` — stock statistics dialog
-- `DistributeDialog` — distribute to cases dialog
-- `HeaderDiscountDialog` — header-level discount dialog
-- `SurgeryTypeBar` — surgery type selector bar (shown when invoice linked to admission)
-
-### Tabs (client/src/pages/patient-invoice/tabs/)
-- `InvoiceTab` — main invoice entry (header + lines + payments + doctor transfer)
-- `RegistryTab` — searchable invoice history
-- `AdmissionsTab` — admissions management
-
-## Cashier Collection Screen — Architecture (Refactored)
-
-`CashierCollection` was refactored from ~925 lines into ~200 lines + separate modules in `client/src/pages/cashier/`.
-
-### Hooks (`client/src/pages/cashier/hooks/`)
-| Hook | Responsibility |
-|------|---------------|
-| `useCashierShift` | Unit selection (pharmacy/department), shift open/close, GL account, drawer password, totals |
-| `usePendingInvoices` | Pending sales & returns queries + SSE real-time updates + invoice details |
-| `useCashierActions` | Collect & refund mutations + keyboard shortcuts (Ctrl+Enter / F9) |
-
-### Components (`client/src/pages/cashier/components/`)
-| Component | Responsibility |
-|-----------|---------------|
-| `UnitSelector` | Visual entry picker — shows pharmacies AND departments in a card grid |
-| `ShiftOpenForm` | Open-shift form: user dropdown (not free text), GL account + conditional password field |
-| `ShiftStatusBar` | Active-shift header bar with unit name, cashier name, opening balance |
-| `InvoiceTable` | Reusable pending invoice list (checkbox selection, search, row click) |
-| `InvoiceDetailsPanel` | Shows line details for single selection, aggregate totals for multi-selection |
-| `CloseShiftDialog` | Close-shift dialog with expected vs actual cash and variance |
-| `ShiftTotalsWidget` | Fixed bottom-left totals widget (collected / refunded / net) |
-
-### Business Rules
-- **Unit isolation**: Pharmacies see their `sales_invoices`; departments see sales from their warehouses (`warehouse.department_id`)
-- **Close restriction**: Backend blocks shift close if pending (finalized but uncollected) invoices exist for the unit
-- **Cashier name**: Selected from active users list — no free-text input
-- **Session-based cashier ID**: `cashierId` taken from `req.session.userId` (not hardcoded "cashier-1")
-- **Password field**: Conditionally shown only when the selected GL account has a stored password hash
-- **DB columns added**: `cashier_shifts.unit_type` (pharmacy|department), `cashier_shifts.department_id`
-
-### New API Endpoints
-- `GET /api/cashier/units` — combined pharmacies + departments for unit picker
-- `GET /api/cashier/staff` — active users for cashier name dropdown
-- `GET /api/cashier/shift/active?unitType=X&unitId=Y` — session-based active shift lookup
-
-## Critical Implementation Notes
-
-### DB / Backend
-- **`db:push` gets stuck** — always use raw SQL (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`)
-- **DB permissions ≠ Code constants**: `DEFAULT_ROLE_PERMISSIONS` NOT auto-synced to `role_permissions` DB table. Must manually `INSERT INTO role_permissions` for new permissions.
-- **Session structure**: stores `req.session.userId` and `req.session.role` (NOT `req.session.user`)
-- **`roundMoney`** in `server/finance-helpers.ts` returns **string** not number — wrap with `parseMoney()` before arithmetic
-- **accounts table**: field is `name` (not `nameAr`). Other tables use `nameAr`
-- **Raw SQL camelCase**: `db.execute(sql...)` returns snake_case column names — must add explicit `AS "camelCase"` aliases for all compound column names
-- **`auditLog` in routes.ts** is a function from `route-helpers.ts` — call as `await auditLog({...})`
-
-### Frontend
-- **Doctor transfer/settlement**: Uses `checkPermission("patient_invoices.transfer_doctor")` — NOT `req.session.user`
-- **Doctor statement**: SQL must use explicit `AS "patientName"` etc. aliases for camelCase
-- **`useInvoiceMutations` API**: param is `resetAll` (not `resetForm`); `deleteMutation` no longer exported
-- **Validation error suppression**: save mutation `onError` skips toast if `error.message === "validation"` (toast was already shown by `validateSave`)
+- **Refactored Pages**: `PatientInvoicePage`, `SalesInvoices`, and `CashierCollection` have been significantly refactored into modular, hook-based compound components for improved maintainability and readability, adhering to strict business rules and validation logic.
 
 ## External Dependencies
 
 ### Database
 - PostgreSQL
-- `connect-pg-simple`
+- `connect-pg-simple` (for session store)
 
 ### Key NPM Packages
-- `drizzle-orm`, `drizzle-kit`
+- `drizzle-orm`
+- `drizzle-kit`
 - `express`
 - `@tanstack/react-query`
 - `zod`
