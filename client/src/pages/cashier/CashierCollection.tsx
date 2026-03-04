@@ -1,17 +1,16 @@
 import { useState, useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { DollarSign, Loader2, Receipt, Undo2, Wallet } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAuth } from "@/hooks/use-auth";
 import { useCashierShift, UnitType } from "./hooks/useCashierShift";
 import { usePendingInvoices } from "./hooks/usePendingInvoices";
 import { useCashierActions } from "./hooks/useCashierActions";
 import { UnitSelector } from "./components/UnitSelector";
 import { ShiftOpenForm } from "./components/ShiftOpenForm";
 import { ShiftStatusBar } from "./components/ShiftStatusBar";
-import { ShiftSwitchBar } from "./components/ShiftSwitchBar";
 import { InvoiceTable } from "./components/InvoiceTable";
 import { InvoiceDetailsPanel } from "./components/InvoiceDetailsPanel";
 import { CloseShiftDialog } from "./components/CloseShiftDialog";
@@ -20,7 +19,7 @@ import { ShiftTotalsWidget } from "./components/ShiftTotalsWidget";
 import { formatNumber } from "@/lib/formatters";
 
 export default function CashierCollection() {
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const canViewTotals = hasPermission("cashier.view_shift_totals");
   const [activeTab, setActiveTab] = useState("sales");
 
@@ -29,11 +28,9 @@ export default function CashierCollection() {
     selectedUnitType, setSelectedUnitType,
     selectedUnitId, setSelectedUnitId,
     unitConfirmed, setUnitConfirmed,
-    unitsData, staffList,
-    filteredGlAccounts, glAccountSearch, setGlAccountSearch,
-    shiftGlAccountId, setShiftGlAccountId,
-    selectedDrawerHasPassword, drawerPassword, setDrawerPassword,
-    cashierName, setCashierName, openingCash, setOpeningCash,
+    unitsData, userGlAccount,
+    openingCash, setOpeningCash,
+    drawerPassword, setDrawerPassword,
     closeDialogOpen, setCloseDialogOpen, closingCash, setClosingCash,
     activeShift, shiftLoading, hasActiveShift,
     shiftId, shiftUnitType, shiftUnitId,
@@ -42,8 +39,6 @@ export default function CashierCollection() {
     validationDialogOpen, setValidationDialogOpen,
     validation, isValidating,
     handleCloseShiftClick, handleProceedFromValidation,
-    allOpenShifts, isAddingNew,
-    handleAddNewShift, handleBackFromNewShift, handleSwitchShift,
   } = shift;
 
   const invoices = usePendingInvoices(hasActiveShift, shiftUnitType, shiftUnitId, shiftId);
@@ -56,8 +51,9 @@ export default function CashierCollection() {
 
   const actions = useCashierActions({
     shiftId, shiftUnitType, shiftUnitId,
-    salesSelected, returnsSelected, cashierName, hasActiveShift,
-    activeTab, clearSelection,
+    salesSelected, returnsSelected,
+    cashierName: user?.fullName || "",
+    hasActiveShift, activeTab, clearSelection,
   });
   const { collectMutation, refundMutation } = actions;
 
@@ -84,15 +80,6 @@ export default function CashierCollection() {
     shiftUnitId,
   );
 
-  const openShiftUnitIds = useMemo(() => {
-    const ids = new Set<string>();
-    allOpenShifts.forEach(s => {
-      if (s.pharmacyId) ids.add(s.pharmacyId);
-      if (s.departmentId) ids.add(s.departmentId);
-    });
-    return ids;
-  }, [allOpenShifts]);
-
   const handleUnitSelect = (type: UnitType, id: string) => {
     setSelectedUnitType(type);
     setSelectedUnitId(id);
@@ -107,32 +94,15 @@ export default function CashierCollection() {
     clearSelection();
   };
 
-  const showSwitchBar = allOpenShifts.length > 0;
-
   return (
     <div className="p-3 space-y-3 overflow-x-hidden" dir="rtl" data-testid="page-cashier-collection">
       <h1 className="text-lg font-bold text-right">شاشة تحصيل الكاشير</h1>
-
-      {showSwitchBar && (
-        <Card>
-          <CardContent className="p-2.5">
-            <ShiftSwitchBar
-              allOpenShifts={allOpenShifts}
-              selectedShiftId={activeShift?.id}
-              unitsData={unitsData}
-              onSelectShift={handleSwitchShift}
-              onAddNew={handleAddNewShift}
-              isAddingNew={isAddingNew}
-            />
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardContent className="p-3">
           {shiftLoading ? (
             <Skeleton className="h-10 w-full" />
-          ) : hasActiveShift && activeShift && !isAddingNew ? (
+          ) : hasActiveShift && activeShift ? (
             <ShiftStatusBar
               activeShift={activeShift}
               unitName={activeUnitName}
@@ -145,17 +115,7 @@ export default function CashierCollection() {
               <UnitSelector
                 unitsData={unitsData}
                 onSelect={handleUnitSelect}
-                openShiftUnitIds={openShiftUnitIds}
-                title={isAddingNew ? "اختر الوحدة للوردية الجديدة" : undefined}
-                isAddingNew={isAddingNew}
               />
-              {isAddingNew && (
-                <div className="mt-4 flex justify-center">
-                  <Button variant="ghost" size="sm" onClick={handleBackFromNewShift}>
-                    رجوع
-                  </Button>
-                </div>
-              )}
             </div>
           ) : (
             <div className="py-4 space-y-6">
@@ -164,25 +124,18 @@ export default function CashierCollection() {
                   <Wallet className="h-7 w-7 text-primary" />
                 </div>
                 <h2 className="text-base font-semibold">لا توجد وردية مفتوحة</h2>
-                <p className="text-xs text-muted-foreground">أدخل بياناتك وارصيد الخزنة لبدء التحصيل</p>
+                <p className="text-xs text-muted-foreground">أدخل رصيد الخزنة لبدء التحصيل</p>
               </div>
               <ShiftOpenForm
                 unitType={selectedUnitType!}
                 unitName={resolveUnitName(selectedUnitType, selectedUnitId)}
-                staffList={staffList}
-                cashierName={cashierName}
-                setCashierName={setCashierName}
+                cashierName={user?.fullName || ""}
+                userGlAccount={userGlAccount}
                 openingCash={openingCash}
                 setOpeningCash={setOpeningCash}
-                filteredGlAccounts={filteredGlAccounts}
-                shiftGlAccountId={shiftGlAccountId}
-                setShiftGlAccountId={setShiftGlAccountId}
-                glAccountSearch={glAccountSearch}
-                setGlAccountSearch={setGlAccountSearch}
-                selectedDrawerHasPassword={selectedDrawerHasPassword}
                 drawerPassword={drawerPassword}
                 setDrawerPassword={setDrawerPassword}
-                onBack={isAddingNew ? handleBackFromNewShift : handleBack}
+                onBack={handleBack}
                 onSubmit={() => openShiftMutation.mutate()}
                 isPending={openShiftMutation.isPending}
                 canSubmit={canOpenShift}

@@ -12,7 +12,8 @@ import type { UserData, UserFormData } from "./types";
 
 const EMPTY_FORM: UserFormData = {
   username: "", password: "", fullName: "",
-  role: "data_entry", departmentId: "", pharmacyId: "", isActive: true,
+  role: "data_entry", departmentId: "", pharmacyId: "",
+  isActive: true, cashierGlAccountId: "",
 };
 
 export default function UsersManagement() {
@@ -23,16 +24,13 @@ export default function UsersManagement() {
   const canEdit   = hasPermission("users.edit");
   const canDelete = hasPermission("users.delete");
 
-  // ── نافذة إضافة / تعديل
   const [showDialog,  setShowDialog]  = useState(false);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [formData,    setFormData]    = useState<UserFormData>(EMPTY_FORM);
 
-  // ── نافذة الصلاحيات
   const [showPermDialog, setShowPermDialog] = useState(false);
   const [permUserId,     setPermUserId]     = useState<string | null>(null);
 
-  // ── جلب البيانات
   const { data: users = [], isLoading } = useQuery<UserData[]>({
     queryKey: ["/api/users"],
   });
@@ -45,7 +43,10 @@ export default function UsersManagement() {
     queryKey: ["/api/pharmacies"],
   });
 
-  // ── Mutations
+  const { data: cashierAccounts = [] } = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({
+    queryKey: ["/api/drawer-passwords"],
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => (await apiRequest("POST", "/api/users", data)).json(),
     onSuccess: () => {
@@ -76,7 +77,6 @@ export default function UsersManagement() {
     onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
   });
 
-  // ── Handlers
   function handleOpenNew() {
     setEditingUser(null);
     setFormData(EMPTY_FORM);
@@ -86,25 +86,27 @@ export default function UsersManagement() {
   function handleOpenEdit(user: UserData) {
     setEditingUser(user);
     setFormData({
-      username:     user.username,
-      password:     "",
-      fullName:     user.fullName,
-      role:         user.role,
-      departmentId: user.departmentId || "",
-      pharmacyId:   user.pharmacyId  || "",
-      isActive:     user.isActive,
+      username:           user.username,
+      password:           "",
+      fullName:           user.fullName,
+      role:               user.role,
+      departmentId:       user.departmentId || "",
+      pharmacyId:         user.pharmacyId  || "",
+      isActive:           user.isActive,
+      cashierGlAccountId: user.cashierGlAccountId || "",
     });
     setShowDialog(true);
   }
 
   function handleSave() {
     const payload: any = {
-      username:     formData.username,
-      fullName:     formData.fullName,
-      role:         formData.role,
-      departmentId: formData.departmentId || null,
-      pharmacyId:   formData.pharmacyId   || null,
-      isActive:     formData.isActive,
+      username:           formData.username,
+      fullName:           formData.fullName,
+      role:               formData.role,
+      departmentId:       formData.departmentId || null,
+      pharmacyId:         formData.pharmacyId   || null,
+      isActive:           formData.isActive,
+      cashierGlAccountId: formData.cashierGlAccountId || null,
     };
 
     if (editingUser) {
@@ -166,6 +168,7 @@ export default function UsersManagement() {
         formData={formData}
         departments={departments}
         pharmacies={pharmacies}
+        cashierAccounts={cashierAccounts}
         isPending={isPending}
         onFormChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
         onSave={handleSave}

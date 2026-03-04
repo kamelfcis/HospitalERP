@@ -1,23 +1,16 @@
-import { Loader2, LogIn } from "lucide-react";
+import { Loader2, LogIn, Wallet, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UnitType } from "../hooks/useCashierShift";
+import { Badge } from "@/components/ui/badge";
+import { UnitType, UserGlAccount } from "../hooks/useCashierShift";
 
 interface ShiftOpenFormProps {
   unitType: UnitType;
   unitName: string;
-  staffList: { id: string; username: string; fullName: string }[] | undefined;
   cashierName: string;
-  setCashierName: (v: string) => void;
+  userGlAccount: UserGlAccount | null | undefined;
   openingCash: string;
   setOpeningCash: (v: string) => void;
-  filteredGlAccounts: { glAccountId: string; code: string; name: string; hasPassword: boolean }[];
-  shiftGlAccountId: string;
-  setShiftGlAccountId: (v: string) => void;
-  glAccountSearch: string;
-  setGlAccountSearch: (v: string) => void;
-  selectedDrawerHasPassword: boolean;
   drawerPassword: string;
   setDrawerPassword: (v: string) => void;
   onBack: () => void;
@@ -27,10 +20,9 @@ interface ShiftOpenFormProps {
 }
 
 export function ShiftOpenForm({
-  unitType, unitName, staffList, cashierName, setCashierName,
-  openingCash, setOpeningCash, filteredGlAccounts, shiftGlAccountId,
-  setShiftGlAccountId, glAccountSearch, setGlAccountSearch,
-  selectedDrawerHasPassword, drawerPassword, setDrawerPassword,
+  unitType, unitName, cashierName, userGlAccount,
+  openingCash, setOpeningCash,
+  drawerPassword, setDrawerPassword,
   onBack, onSubmit, isPending, canSubmit,
 }: ShiftOpenFormProps) {
   return (
@@ -43,19 +35,26 @@ export function ShiftOpenForm({
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium block">اسم الكاشير</label>
-        <Select value={cashierName} onValueChange={setCashierName} data-testid="select-cashier-name">
-          <SelectTrigger className="text-right" data-testid="select-cashier-name-trigger">
-            <SelectValue placeholder="اختر اسمك من القائمة..." />
-          </SelectTrigger>
-          <SelectContent>
-            {(staffList || []).map(u => (
-              <SelectItem key={u.id} value={u.fullName || u.username} data-testid={`select-cashier-option-${u.id}`}>
-                {u.fullName || u.username}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <label className="text-sm font-medium block">الكاشير</label>
+        <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-right flex items-center gap-2" data-testid="display-cashier-name">
+          <Wallet className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <span className="font-medium">{cashierName || "—"}</span>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium block">حساب الخزنة (GL)</label>
+        {userGlAccount ? (
+          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-right flex items-center justify-between" data-testid="display-gl-account">
+            <Badge variant="outline" className="text-xs font-mono">{userGlAccount.code}</Badge>
+            <span className="font-medium">{userGlAccount.name}</span>
+          </div>
+        ) : (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-right flex items-center gap-2" data-testid="display-no-gl-account">
+            <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
+            <span className="text-destructive text-xs">لم يتم تحديد حساب خزنة لهذا المستخدم — تواصل مع المدير</span>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -71,35 +70,7 @@ export function ShiftOpenForm({
         <p className="text-xs text-muted-foreground">المبلغ الفعلي في درج الكاشير عند بداية الوردية</p>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium block">حساب الخزنة (GL)</label>
-        <Select value={shiftGlAccountId} onValueChange={(v) => { setShiftGlAccountId(v); setDrawerPassword(""); }}>
-          <SelectTrigger className="text-right" data-testid="select-gl-account-trigger">
-            <SelectValue placeholder="اختر حساب الخزنة..." />
-          </SelectTrigger>
-          <SelectContent>
-            <div className="p-2">
-              <Input
-                placeholder="بحث بالكود أو الاسم..."
-                value={glAccountSearch}
-                onChange={(e) => setGlAccountSearch(e.target.value)}
-                className="text-right"
-                data-testid="input-gl-account-search"
-              />
-            </div>
-            {filteredGlAccounts.map(a => (
-              <SelectItem key={a.glAccountId} value={a.glAccountId} data-testid={`select-gl-account-option-${a.glAccountId}`}>
-                <span className="flex items-center gap-1.5">
-                  {a.code} - {a.name}
-                  {a.hasPassword && <span className="text-[9px] text-amber-600 bg-amber-100 dark:bg-amber-900/40 rounded px-1">محمية</span>}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {selectedDrawerHasPassword && (
+      {userGlAccount?.hasPassword && (
         <div className="space-y-2">
           <label className="text-sm font-medium block">كلمة سر الخزنة</label>
           <Input
@@ -116,7 +87,7 @@ export function ShiftOpenForm({
 
       <Button
         onClick={onSubmit}
-        disabled={!canSubmit || isPending}
+        disabled={!canSubmit || isPending || !userGlAccount}
         className="w-full"
         data-testid="button-open-shift"
       >

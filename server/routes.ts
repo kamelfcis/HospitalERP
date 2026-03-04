@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 import { DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "./route-helpers";
 import { setSetting, getSetting, refreshSettings } from "./settings-cache";
-import { systemSettings } from "@shared/schema";
+import { systemSettings, users } from "@shared/schema";
 
 const sseClients = new Map<string, Set<Response>>();
 
@@ -376,7 +376,7 @@ export async function registerRoutes(
   app.patch("/api/users/:id", requireAuth, checkPermission("users.edit"), async (req, res) => {
     try {
       const { id } = req.params;
-      const { username, password, fullName, role, departmentId, pharmacyId, isActive } = req.body;
+      const { username, password, fullName, role, departmentId, pharmacyId, isActive, cashierGlAccountId } = req.body;
 
       const updateData: any = {};
       if (username !== undefined) updateData.username = username;
@@ -385,6 +385,7 @@ export async function registerRoutes(
       if (departmentId !== undefined) updateData.departmentId = departmentId;
       if (pharmacyId !== undefined) updateData.pharmacyId = pharmacyId;
       if (isActive !== undefined) updateData.isActive = isActive;
+      if (cashierGlAccountId !== undefined) updateData.cashierGlAccountId = cashierGlAccountId || null;
       if (password) {
         updateData.password = await bcrypt.hash(password, 10);
       }
@@ -4195,24 +4196,52 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/cashier/my-open-shift", async (req, res) => {
+    try {
+      const cashierId = (req.session as any).userId;
+      if (!cashierId) return res.json(null);
+      const shift = await storage.getMyOpenShift(cashierId);
+      res.json(shift || null);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/my-cashier-gl-account", async (req, res) => {
+    try {
+      const userId = (req.session as any).userId;
+      if (!userId) return res.json(null);
+      const account = await storage.getUserCashierGlAccount(userId);
+      res.json(account || null);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/cashier/shift/open", async (req, res) => {
     try {
-      const { cashierName, openingCash, unitType, pharmacyId, departmentId, glAccountId, drawerPassword } = req.body;
-      if (!cashierName) return res.status(400).json({ message: "اسم الكاشير مطلوب" });
+      const cashierId = (req.session as any).userId;
+      if (!cashierId) return res.status(401).json({ message: "يجب تسجيل الدخول" });
+
+      const { openingCash, unitType, pharmacyId, departmentId, drawerPassword } = req.body;
       if (!unitType || !["pharmacy", "department"].includes(unitType)) return res.status(400).json({ message: "يجب تحديد نوع الوحدة" });
       if (unitType === "pharmacy" && !pharmacyId) return res.status(400).json({ message: "يجب اختيار الصيدلية" });
       if (unitType === "department" && !departmentId) return res.status(400).json({ message: "يجب اختيار القسم" });
-      if (!glAccountId) return res.status(400).json({ message: "يجب اختيار حساب الخزنة" });
 
-      const passwordHash = await storage.getDrawerPassword(glAccountId);
+      const userGlAccount = await storage.getUserCashierGlAccount(cashierId);
+      if (!userGlAccount) return res.status(400).json({ message: "لم يتم تحديد حساب خزنة لهذا المستخدم — تواصل مع المدير لتعيين حساب الخزنة" });
+
+      const passwordHash = await storage.getDrawerPassword(userGlAccount.glAccountId);
       if (passwordHash) {
         if (!drawerPassword) return res.status(401).json({ message: "كلمة سر الخزنة مطلوبة" });
         const valid = await bcrypt.compare(drawerPassword, passwordHash);
         if (!valid) return res.status(401).json({ message: "كلمة سر الخزنة غير صحيحة" });
       }
 
-      const cashierId = (req.session as any).userId || "cashier-1";
-      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", unitType, pharmacyId, departmentId, glAccountId);
+      const [userRow] = await db.select({ fullName: users.fullName }).from(users).where(eq(users.id, cashierId));
+      const cashierName = userRow?.fullName || cashierId;
+
+      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", unitType, pharmacyId, departmentId, userGlAccount.glAccountId);
       res.json(shift);
     } catch (error: any) {
       if (error.message?.includes("مفتوحة")) return res.status(409).json({ message: error.message });

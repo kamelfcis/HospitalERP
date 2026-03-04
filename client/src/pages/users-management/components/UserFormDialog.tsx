@@ -11,19 +11,20 @@ import type { UserData, UserFormData } from "../types";
 const ROLES = Object.entries(ROLE_LABELS);
 
 interface UserFormDialogProps {
-  open:         boolean;
-  editingUser:  UserData | null;
-  formData:     UserFormData;
-  departments:  { id: string; nameAr: string }[];
-  pharmacies:   { id: string; nameAr: string }[];
-  isPending:    boolean;
-  onFormChange: (patch: Partial<UserFormData>) => void;
-  onSave:       () => void;
-  onOpenChange: (v: boolean) => void;
+  open:           boolean;
+  editingUser:    UserData | null;
+  formData:       UserFormData;
+  departments:    { id: string; nameAr: string }[];
+  pharmacies:     { id: string; nameAr: string }[];
+  cashierAccounts: { glAccountId: string; code: string; name: string; hasPassword: boolean }[];
+  isPending:      boolean;
+  onFormChange:   (patch: Partial<UserFormData>) => void;
+  onSave:         () => void;
+  onOpenChange:   (v: boolean) => void;
 }
 
 export function UserFormDialog({
-  open, editingUser, formData, departments, pharmacies,
+  open, editingUser, formData, departments, pharmacies, cashierAccounts,
   isPending, onFormChange, onSave, onOpenChange,
 }: UserFormDialogProps) {
   return (
@@ -117,6 +118,34 @@ export function UserFormDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label>حساب الخزنة (للكاشير)</Label>
+            <Select
+              value={formData.cashierGlAccountId || "none"}
+              onValueChange={v => onFormChange({ cashierGlAccountId: v === "none" ? "" : v })}
+            >
+              <SelectTrigger data-testid="select-user-cashier-gl">
+                <SelectValue placeholder="اختر حساب الخزنة..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">بدون (لا يعمل كاشير)</SelectItem>
+                {cashierAccounts.map(a => (
+                  <SelectItem key={a.glAccountId} value={a.glAccountId}>
+                    <span className="flex items-center gap-1.5">
+                      {a.code} - {a.name}
+                      {a.hasPassword && (
+                        <span className="text-[9px] text-amber-600 bg-amber-100 dark:bg-amber-900/40 rounded px-1">محمية</span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              الحساب المحاسبي المخصص لهذا الكاشير — لن يتمكن من اختيار حساب آخر عند فتح الوردية
+            </p>
           </div>
 
           <div className="flex items-center gap-2">

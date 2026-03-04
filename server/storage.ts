@@ -422,7 +422,9 @@ export interface IStorage {
   // Cashier
   openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<any>;
   getActiveShift(cashierId: string, unitType: string, unitId: string): Promise<any>;
+  getMyOpenShift(cashierId: string): Promise<any | null>;
   getMyOpenShifts(cashierId: string): Promise<any[]>;
+  getUserCashierGlAccount(userId: string): Promise<{ glAccountId: string; code: string; name: string; hasPassword: boolean } | null>;
   getShiftById(shiftId: string): Promise<any>;
   closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
   validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; otherShift: any; reasonCode: string }>;
@@ -6040,12 +6042,26 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  async getMyOpenShift(cashierId: string): Promise<CashierShift | null> {
+    const [shift] = await db.select().from(cashierShifts)
+      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.status, "open")))
+      .limit(1);
+    return shift || null;
+  }
+
+  async getUserCashierGlAccount(userId: string): Promise<{ glAccountId: string; code: string; name: string; hasPassword: boolean } | null> {
+    const [user] = await db.select({ cashierGlAccountId: users.cashierGlAccountId }).from(users).where(eq(users.id, userId));
+    if (!user?.cashierGlAccountId) return null;
+    const [account] = await db.select({ id: accounts.id, code: accounts.code, name: accounts.name })
+      .from(accounts).where(eq(accounts.id, user.cashierGlAccountId));
+    if (!account) return null;
+    const [pwd] = await db.select({ glAccountId: drawerPasswords.glAccountId }).from(drawerPasswords).where(eq(drawerPasswords.glAccountId, account.id));
+    return { glAccountId: account.id, code: account.code, name: account.name, hasPassword: !!pwd };
+  }
+
   async openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<CashierShift> {
-    const conditions = [eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.unitType, unitType), eq(cashierShifts.status, "open")];
-    if (unitType === "pharmacy" && pharmacyId) conditions.push(eq(cashierShifts.pharmacyId, pharmacyId));
-    if (unitType === "department" && departmentId) conditions.push(eq(cashierShifts.departmentId, departmentId));
-    const [existingOpen] = await db.select().from(cashierShifts).where(and(...conditions));
-    if (existingOpen) throw new Error("لديك وردية مفتوحة بالفعل على هذه الوحدة — لفتح وردية بكاشير آخر يجب تسجيل الدخول بحساب مختلف");
+    const existingOpen = await this.getMyOpenShift(cashierId);
+    if (existingOpen) throw new Error("لديك وردية مفتوحة بالفعل — أغلق وردياتك الحالية أولاً أو استخدم حساباً آخر");
 
     const unitLabel = unitType === "department" ? `قسم: ${departmentId}` : `صيدلية: ${pharmacyId}`;
     const [shift] = await db.insert(cashierShifts).values({
