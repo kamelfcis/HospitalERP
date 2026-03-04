@@ -46,6 +46,66 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Admissions Management**: Enhanced admissions list with invoice status, department filtering, and financial totals.
 - **Admissions API**: SQL now includes fallback joins to link manually created invoices to patient admissions.
 
+## Patient Invoice Page — Architecture (Refactored)
+
+The `PatientInvoicePage` was refactored from ~1212 lines into ~270 lines using a clean hook-based compound architecture.
+
+### Hooks (client/src/pages/patient-invoice/hooks/)
+| Hook | Responsibility |
+|------|---------------|
+| `useInvoiceBootstrap` | Fetches nextNumber, departments, warehouses, activeAdmissions |
+| `useInvoiceForm` | All form field state + resetForm |
+| `useSearchState` | Patient/doctor/item/service search state & dropdowns |
+| `useLineManagement` | Invoice lines CRUD + FEFO item allocation |
+| `usePayments` | Payment rows state + loadPayments/resetPayments |
+| `useInvoiceMutations` | Save + Finalize mutations (no delete) |
+| `useInvoiceValidation` | Centralized validation: validateSave / validateDistribute / validateFinalize |
+| `useDoctorTransfer` | Doctor transfer state + mutation |
+| `useStatsDialog` | Stock statistics popup state |
+| `useAdmissions` | Admissions tab data + state |
+| `useAdmissionsMutations` | Create / Discharge / Consolidate admissions |
+| `useRegistry` | Invoice registry tab (search/filter/pagination) |
+
+### Validation Rules (useInvoiceValidation)
+- **Save**: Blocked if `patientName` is empty → toast + cancel
+- **Distribute**: Blocked if any of `departmentId`, `warehouseId`, `doctorName` is missing, or no lines exist → toast listing missing fields
+- **Finalize**: Blocked if invoice not saved, or service lines missing required doctor/nurse names
+
+### Business Rules
+- **No delete on patient invoices**: Delete permanently removed. Only path after finalization is مردود (refund).
+- `resetAll` composite: resets form + lines + payments in one call.
+- `useLineManagement` accepts individual stable params (not a `searchActions` object) to avoid unnecessary callback recreation.
+
+### Components (client/src/pages/patient-invoice/components/)
+- `InvoiceHeaderBar` — header fields + action buttons (save/finalize/distribute). No delete button.
+- `DoctorTransferSheet` — doctor transfer confirm sheet
+- `StockStatsDialog` — stock statistics dialog
+- `DistributeDialog` — distribute to cases dialog
+- `HeaderDiscountDialog` — header-level discount dialog
+- `SurgeryTypeBar` — surgery type selector bar (shown when invoice linked to admission)
+
+### Tabs (client/src/pages/patient-invoice/tabs/)
+- `InvoiceTab` — main invoice entry (header + lines + payments + doctor transfer)
+- `RegistryTab` — searchable invoice history
+- `AdmissionsTab` — admissions management
+
+## Critical Implementation Notes
+
+### DB / Backend
+- **`db:push` gets stuck** — always use raw SQL (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`)
+- **DB permissions ≠ Code constants**: `DEFAULT_ROLE_PERMISSIONS` NOT auto-synced to `role_permissions` DB table. Must manually `INSERT INTO role_permissions` for new permissions.
+- **Session structure**: stores `req.session.userId` and `req.session.role` (NOT `req.session.user`)
+- **`roundMoney`** in `server/finance-helpers.ts` returns **string** not number — wrap with `parseMoney()` before arithmetic
+- **accounts table**: field is `name` (not `nameAr`). Other tables use `nameAr`
+- **Raw SQL camelCase**: `db.execute(sql...)` returns snake_case column names — must add explicit `AS "camelCase"` aliases for all compound column names
+- **`auditLog` in routes.ts** is a function from `route-helpers.ts` — call as `await auditLog({...})`
+
+### Frontend
+- **Doctor transfer/settlement**: Uses `checkPermission("patient_invoices.transfer_doctor")` — NOT `req.session.user`
+- **Doctor statement**: SQL must use explicit `AS "patientName"` etc. aliases for camelCase
+- **`useInvoiceMutations` API**: param is `resetAll` (not `resetForm`); `deleteMutation` no longer exported
+- **Validation error suppression**: save mutation `onError` skips toast if `error.message === "validation"` (toast was already shown by `validateSave`)
+
 ## External Dependencies
 
 ### Database
