@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,14 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
+
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap";
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,19 +156,17 @@ export default function Login() {
                   <rect width="58" height="58" rx="11" fill="#1e5fa8" />
                   <path d="M29 11 L29 47 M11 29 L47 29" stroke="white" strokeWidth="10" strokeLinecap="round" />
                 </svg>
-                <span
-                  style={{
-                    fontSize: "3.6rem",
-                    fontFamily: "'Arial Black', 'Impact', Arial, sans-serif",
-                    fontWeight: 900,
-                    color: "#ffffff",
-                    letterSpacing: "0.08em",
-                    lineHeight: 1,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  AMS
-                </span>
+                <svg width="180" height="62" viewBox="0 0 180 62" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <text
+                    x="2"
+                    y="56"
+                    fontFamily="'Bebas Neue', 'Arial Black', Impact, Arial, sans-serif"
+                    fontSize="62"
+                    fontWeight="400"
+                    fill="white"
+                    letterSpacing="6"
+                  >AMS</text>
+                </svg>
               </div>
               <p
                 style={{
