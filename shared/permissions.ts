@@ -51,6 +51,7 @@ export const PERMISSIONS = {
   PATIENT_INVOICES_EDIT: "patient_invoices.edit",
   PATIENT_INVOICES_FINALIZE: "patient_invoices.finalize",
   PATIENT_PAYMENTS: "patient_invoices.payments",
+  PATIENT_INVOICES_DISCOUNT: "patient_invoices.discount",
 
   CASHIER_VIEW: "cashier.view",
   CASHIER_COLLECT: "cashier.collect",
@@ -124,6 +125,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.TRANSFERS_VIEW,
     PERMISSIONS.SALES_VIEW,
     PERMISSIONS.PATIENT_INVOICES_VIEW,
+    PERMISSIONS.PATIENT_INVOICES_DISCOUNT,
     PERMISSIONS.CASHIER_VIEW,
     PERMISSIONS.SERVICES_VIEW,
     PERMISSIONS.WAREHOUSES_VIEW,
@@ -372,6 +374,7 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.PATIENT_INVOICES_EDIT, label: "تعديل" },
       { key: PERMISSIONS.PATIENT_INVOICES_FINALIZE, label: "اعتماد" },
       { key: PERMISSIONS.PATIENT_PAYMENTS, label: "مدفوعات" },
+      { key: PERMISSIONS.PATIENT_INVOICES_DISCOUNT, label: "خصم على الفاتورة" },
     ],
   },
   {

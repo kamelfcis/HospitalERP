@@ -743,6 +743,8 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   status: patientInvoiceStatusEnum("status").notNull().default("draft"),
   totalAmount: decimal("total_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   discountAmount: decimal("discount_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  headerDiscountPercent: decimal("header_discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
+  headerDiscountAmount: decimal("header_discount_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   netAmount: decimal("net_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   paidAmount: decimal("paid_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   finalizedAt: timestamp("finalized_at"),

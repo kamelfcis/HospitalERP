@@ -3244,6 +3244,91 @@ export async function registerRoutes(
     }
   });
 
+  // ── خصم على مستوى الفاتورة (بصلاحية patient_invoices.discount) ────────────
+  app.post("/api/patient-invoices/:id/header-discount",
+    requireAuth,
+    checkPermission("patient_invoices.discount"),
+    async (req, res) => {
+      try {
+        const invoiceId = req.params.id;
+        const { discountType, discountValue } = req.body;
+
+        if (!["percent", "amount"].includes(discountType)) {
+          return res.status(400).json({ message: "نوع الخصم غير صحيح — استخدم percent أو amount" });
+        }
+        const rawValue = parseFloat(String(discountValue));
+        if (isNaN(rawValue) || rawValue < 0) {
+          return res.status(400).json({ message: "قيمة الخصم غير صالحة" });
+        }
+
+        const invRes = await db.execute(sql`
+          SELECT id, status, total_amount, discount_amount, header_discount_percent, header_discount_amount, version
+          FROM patient_invoice_headers
+          WHERE id = ${invoiceId}
+          FOR UPDATE
+        `);
+        const inv = invRes.rows[0] as any;
+        if (!inv) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+        if (inv.status !== "draft") {
+          return res.status(409).json({ message: "لا يمكن تعديل فاتورة نهائية" });
+        }
+
+        const totalAmount = parseFloat(inv.total_amount || "0");
+        const lineDiscount = parseFloat(inv.discount_amount || "0");
+        // الأساس الذي يُطبّق عليه خصم الفاتورة (بعد خصومات السطور)
+        const subTotal = totalAmount - lineDiscount;
+
+        let headerDiscountPercent: number;
+        let headerDiscountAmount: number;
+
+        if (discountType === "percent") {
+          if (rawValue > 100) {
+            return res.status(400).json({ message: "نسبة الخصم لا يمكن أن تتجاوز 100%" });
+          }
+          headerDiscountPercent = rawValue;
+          headerDiscountAmount = +(subTotal * rawValue / 100).toFixed(2);
+        } else {
+          if (rawValue > subTotal) {
+            return res.status(400).json({ message: "مبلغ الخصم أكبر من صافي الفاتورة" });
+          }
+          headerDiscountAmount = +rawValue.toFixed(2);
+          headerDiscountPercent = subTotal > 0 ? +(rawValue / subTotal * 100).toFixed(4) : 0;
+        }
+
+        const newNetAmount = +(subTotal - headerDiscountAmount).toFixed(2);
+
+        await db.execute(sql`
+          UPDATE patient_invoice_headers
+          SET header_discount_percent = ${headerDiscountPercent},
+              header_discount_amount  = ${headerDiscountAmount},
+              net_amount              = ${newNetAmount},
+              version                 = version + 1,
+              updated_at              = NOW()
+          WHERE id = ${invoiceId}
+        `);
+
+        await auditLog({
+          tableName: "patient_invoice_headers",
+          recordId: invoiceId,
+          action: "header_discount",
+          newValues: JSON.stringify({
+            discountType,
+            discountValue,
+            headerDiscountPercent,
+            headerDiscountAmount,
+            newNetAmount,
+            appliedBy: (req.session as any)?.userId,
+          }),
+        });
+
+        const updated = await storage.getPatientInvoice(invoiceId);
+        res.json(updated);
+      } catch (err: any) {
+        res.status(500).json({ message: err.message });
+      }
+    }
+  );
+
   app.post("/api/patient-invoices/:id/finalize", async (req, res) => {
     try {
       const { expectedVersion } = req.body || {};

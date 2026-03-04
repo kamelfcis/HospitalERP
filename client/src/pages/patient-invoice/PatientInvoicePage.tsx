@@ -7,6 +7,7 @@ import { CheckCircle, Search, Loader2, FileText, BarChart3, BedDouble, ArrowLeft
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { formatNumber, formatCurrency } from "@/lib/formatters";
 
 import { genId } from "./utils/id";
@@ -38,6 +39,7 @@ import { useInvoiceMutations } from "./hooks/useInvoiceMutations";
 import { useSearchState } from "./hooks/useSearchState";
 import { useDoctorTransfer } from "./hooks/useDoctorTransfer";
 import { useStatsDialog } from "./hooks/useStatsDialog";
+import { HeaderDiscountDialog } from "./components/HeaderDiscountDialog";
 
 // ── Line recalc helpers ──────────────────────────────────────────────────────────
 function recalcLine(line: LineLocal): LineLocal {
@@ -63,6 +65,8 @@ function recalcLineFromAmount(line: LineLocal): LineLocal {
 // ────────────────────────────────────────────────────────────────────────────────
 export default function PatientInvoice() {
   const { toast } = useToast();
+  const { hasPermission } = useAuth();
+  const canDiscount = hasPermission("patient_invoices.discount");
 
   // ── Navigation tabs ────────────────────────────────────────────────────────────
   const [mainTab, setMainTab] = useState("invoice");
@@ -89,6 +93,11 @@ export default function PatientInvoice() {
 
   // ── Distribute dialog ──────────────────────────────────────────────────────────
   const [distOpen, setDistOpen] = useState(false);
+
+  // ── Header-level discount ──────────────────────────────────────────────────────
+  const [headerDiscountPercent, setHeaderDiscountPercent] = useState(0);
+  const [headerDiscountAmount, setHeaderDiscountAmount] = useState(0);
+  const [showDiscountDialog, setShowDiscountDialog] = useState(false);
 
   // ── Lines & Payments ───────────────────────────────────────────────────────────
   const [lines, setLines] = useState<LineLocal[]>([]);
@@ -171,17 +180,19 @@ export default function PatientInvoice() {
   const totals = useMemo(() => {
     const totalAmount = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
     const totalDiscount = lines.reduce((s, l) => s + l.discountAmount, 0);
-    const netAmount = totalAmount - totalDiscount;
+    const netAmount = totalAmount - totalDiscount - headerDiscountAmount;
     const paidAmount = payments.reduce((s, p) => s + p.amount, 0);
     const remaining = netAmount - paidAmount;
     return {
       totalAmount: +totalAmount.toFixed(2),
       discountAmount: +totalDiscount.toFixed(2),
+      headerDiscountPercent,
+      headerDiscountAmount,
       netAmount: +netAmount.toFixed(2),
       paidAmount: +paidAmount.toFixed(2),
       remaining: +remaining.toFixed(2),
     };
-  }, [lines, payments]);
+  }, [lines, payments, headerDiscountAmount, headerDiscountPercent]);
 
   // ── Doctor Transfer hook ───────────────────────────────────────────────────────
   const dt = useDoctorTransfer({ invoiceId, invoiceStatus: status, netAmount: totals.netAmount });
@@ -218,6 +229,8 @@ export default function PatientInvoice() {
     setNotes("");
     setAdmissionId("");
     setStatus("draft");
+    setHeaderDiscountPercent(0);
+    setHeaderDiscountAmount(0);
     setLines([]);
     setPayments([]);
     paymentRefOffsetRef.current = 0;
@@ -243,6 +256,8 @@ export default function PatientInvoice() {
       setNotes(data.notes || "");
       setAdmissionId(data.admissionId || "");
       setStatus(data.status);
+      setHeaderDiscountPercent(parseFloat(data.headerDiscountPercent) || 0);
+      setHeaderDiscountAmount(parseFloat(data.headerDiscountAmount) || 0);
 
       const loadedLines: LineLocal[] = (data.lines || []).map((l: any) => ({
         tempId: genId(),
@@ -942,6 +957,8 @@ export default function PatientInvoice() {
             openDtConfirm={dt.openDtConfirm}
             getStatusBadgeClass={getStatusBadgeClass}
             getServiceRowClass={getServiceRowClass}
+            canDiscount={canDiscount}
+            onOpenDiscountDialog={() => setShowDiscountDialog(true)}
           />
         </TabsContent>
 
@@ -1111,6 +1128,21 @@ export default function PatientInvoice() {
         }}
         onSuccess={() => resetForm()}
       />
+
+      {/* ── Header discount dialog ──────────────────────────────────────────────── */}
+      {canDiscount && (
+        <HeaderDiscountDialog
+          open={showDiscountDialog}
+          onOpenChange={setShowDiscountDialog}
+          invoiceId={invoiceId}
+          currentPercent={headerDiscountPercent}
+          currentAmount={headerDiscountAmount}
+          onApplied={(pct, amt) => {
+            setHeaderDiscountPercent(pct);
+            setHeaderDiscountAmount(amt);
+          }}
+        />
+      )}
 
       {/* ── Stock stats dialog ─────────────────────────────────────────────────── */}
       <Dialog

@@ -18,6 +18,8 @@ import { ConsolidatedTab } from "./ConsolidatedTab";
 interface Totals {
   totalAmount: number;
   discountAmount: number;
+  headerDiscountPercent?: number;
+  headerDiscountAmount?: number;
   netAmount: number;
   paidAmount: number;
   remaining: number;
@@ -136,6 +138,9 @@ interface InvoiceTabProps {
 
   getStatusBadgeClass: (status: string) => string;
   getServiceRowClass: (serviceType: string) => string;
+
+  canDiscount?: boolean;
+  onOpenDiscountDialog?: () => void;
 }
 
 export function InvoiceTab({
@@ -175,6 +180,7 @@ export function InvoiceTab({
   dtOpen, setDtOpen, dtAmount, setDtAmount,
   dtDoctorName, setDtDoctorName, dtNotes, setDtNotes, openDtConfirm,
   getStatusBadgeClass, getServiceRowClass,
+  canDiscount, onOpenDiscountDialog,
 }: InvoiceTabProps) {
   const lineGridSharedProps = {
     isDraft,
@@ -288,7 +294,20 @@ export function InvoiceTab({
       </div>
 
       <div className="border rounded-md p-2">
-        <TotalsSummaryCard totals={totals} />
+        <div className="flex flex-row-reverse items-center gap-2">
+          <TotalsSummaryCard totals={totals} />
+          {isDraft && canDiscount && invoiceId && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-orange-500 text-orange-600 dark:border-orange-400 dark:text-orange-400 shrink-0"
+              onClick={onOpenDiscountDialog}
+              data-testid="button-header-discount"
+            >
+              خصم الفاتورة
+            </Button>
+          )}
+        </div>
       </div>
 
       {status === "finalized" && invoiceId && (

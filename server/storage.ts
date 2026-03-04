@@ -5409,9 +5409,13 @@ export class DatabaseStorage implements IStorage {
       }
 
       const totals = this.computeInvoiceTotals(lines, payments);
+      // Preserve existing header-level discount when recomputing line totals
+      const existingHeaderDiscount = parseMoney(existing.header_discount_amount || "0");
+      const adjustedNetAmount = roundMoney(parseMoney(totals.netAmount) - existingHeaderDiscount);
       await tx.update(patientInvoiceHeaders).set({
         ...header,
         ...totals,
+        netAmount: adjustedNetAmount,
         version: newVersion,
         updatedAt: new Date(),
       }).where(eq(patientInvoiceHeaders.id, id));
