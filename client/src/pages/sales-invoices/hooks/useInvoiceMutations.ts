@@ -96,10 +96,11 @@ export function useInvoiceMutations(p: MutationParams) {
       }
     },
     onSuccess: () => {
-      toast({ title: "تم الاعتماد النهائي بنجاح" });
+      toast({ title: "✓ تم الاعتماد — جاري فتح فاتورة جديدة" });
       queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
       if (p.editId) queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices", p.editId] });
       p.onFinalizeSuccess();
+      p.navigate("/sales-invoices?id=new");
     },
     onError: (err: Error) => {
       toast({ title: "خطأ في الاعتماد", description: err.message, variant: "destructive" });
