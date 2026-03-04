@@ -7377,18 +7377,31 @@ export class DatabaseStorage implements IStorage {
     const result = await db.execute(sql`
       SELECT b.id, b.bed_number, b.status, b.room_id, b.current_admission_id,
              b.created_at, b.updated_at,
-             r.name_ar AS room_name_ar, f.name_ar AS floor_name_ar
+             r.name_ar AS room_name_ar, r.id AS room_id_ref,
+             f.name_ar AS floor_name_ar, f.sort_order AS floor_sort,
+             r.service_id AS room_service_id,
+             s.name_ar   AS room_service_name_ar,
+             s.base_price AS room_service_price
       FROM beds b
       JOIN rooms r  ON r.id = b.room_id
       JOIN floors f ON f.id = r.floor_id
+      LEFT JOIN services s ON s.id = r.service_id AND s.is_active = true
       WHERE b.status = 'EMPTY'
       ORDER BY f.sort_order, r.sort_order, b.bed_number
     `);
     return result.rows.map((row: any) => ({
-      id: row.id, bedNumber: row.bed_number, status: row.status,
-      roomId: row.room_id, currentAdmissionId: row.current_admission_id,
-      createdAt: row.created_at, updatedAt: row.updated_at,
-      roomNameAr: row.room_name_ar, floorNameAr: row.floor_name_ar,
+      id: row.id,
+      bedNumber: row.bed_number,
+      status: row.status,
+      roomId: row.room_id,
+      currentAdmissionId: row.current_admission_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      roomNameAr: row.room_name_ar,
+      floorNameAr: row.floor_name_ar,
+      roomServiceId: row.room_service_id ?? null,
+      roomServiceNameAr: row.room_service_name_ar ?? null,
+      roomServicePrice: row.room_service_price ? String(row.room_service_price) : null,
     }));
   }
 
@@ -7597,10 +7610,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async transferPatientBed(params: {
-    sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string;
+    sourceBedId: string;
+    targetBedId: string;
+    newServiceId?: string;
+    newInvoiceId?: string;
   }) {
     const result = await db.transaction(async (tx) => {
-      // Lock beds in deterministic order to prevent deadlock
+      // ── 1. Lock beds (deterministic order → no deadlock) ──────────────────
       const [id1, id2] = [params.sourceBedId, params.targetBedId].sort();
       await tx.execute(sql`SELECT id FROM beds WHERE id IN (${id1}, ${id2}) FOR UPDATE`);
 
@@ -7612,64 +7628,150 @@ export class DatabaseStorage implements IStorage {
       const tgtRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.targetBedId}`);
       const tgt = tgtRes.rows[0] as any;
       if (!tgt) throw new Error("السرير الهدف غير موجود");
-      if (tgt.status !== "EMPTY") throw new Error("السرير الهدف غير فارغ");
+      if (tgt.status !== "EMPTY") throw new Error("السرير الهدف غير فارغ — اختر سريراً آخر");
 
       const admissionId = src.current_admission_id;
 
-      // Transfer active stay segment if one exists
+      // ── 2. Resolve target room grade (serviceId + price + name) ───────────
+      const tgtRoomRes = await tx.execute(sql`
+        SELECT r.service_id,
+               COALESCE(s.base_price, '0') AS base_price,
+               COALESCE(s.name_ar, 'إقامة') AS service_name_ar
+        FROM beds b
+        JOIN rooms r ON r.id = b.room_id
+        LEFT JOIN services s ON s.id = r.service_id AND s.is_active = true
+        WHERE b.id = ${params.targetBedId}
+        LIMIT 1
+      `);
+      const tgtRoom = tgtRoomRes.rows[0] as any;
+
+      // explicit override wins; otherwise use target room's service
+      const effectiveServiceId: string | null =
+        params.newServiceId || tgtRoom?.service_id || null;
+      const ratePerDay = effectiveServiceId
+        ? params.newServiceId
+          ? String(((await tx.execute(
+              sql`SELECT base_price FROM services WHERE id = ${params.newServiceId} AND is_active = true LIMIT 1`
+            )).rows[0] as any)?.base_price ?? "0")
+          : String(tgtRoom?.base_price ?? "0")
+        : "0";
+      const serviceNameAr: string = String(tgtRoom?.service_name_ar ?? "إقامة");
+
+      // ── 3. Handle active stay segment ─────────────────────────────────────
       const activeSegRes = await tx.execute(
-        sql`SELECT id, invoice_id FROM stay_segments WHERE admission_id = ${admissionId} AND status = 'ACTIVE' LIMIT 1`
+        sql`SELECT id, invoice_id FROM stay_segments
+            WHERE admission_id = ${admissionId} AND status = 'ACTIVE'
+            LIMIT 1`
       );
       const activeSeg = activeSegRes.rows[0] as any;
 
+      let invoiceId: string | null = activeSeg?.invoice_id || params.newInvoiceId || null;
+
       if (activeSeg) {
-        const targetInvoiceId = params.newInvoiceId || activeSeg.invoice_id;
         // Close old segment
-        await tx.update(staySegments).set({ status: "CLOSED", endedAt: new Date() })
+        await tx.update(staySegments)
+          .set({ status: "CLOSED", endedAt: new Date() })
           .where(eq(staySegments.id, activeSeg.id));
-        // Open new segment
-        let ratePerDay = "0";
-        if (params.newServiceId) {
-          const svcRes = await tx.execute(
-            sql`SELECT base_price FROM services WHERE id = ${params.newServiceId} AND is_active = true LIMIT 1`
-          );
-          ratePerDay = String((svcRes.rows[0] as any)?.base_price ?? "0");
-        }
-        await tx.insert(staySegments).values({
+      }
+
+      // Open new segment (only when we have a grade)
+      let newSegId: string | undefined;
+      if (effectiveServiceId && invoiceId) {
+        const [seg] = await tx.insert(staySegments).values({
           admissionId,
-          serviceId: params.newServiceId || null,
-          invoiceId: targetInvoiceId,
+          serviceId: effectiveServiceId,
+          invoiceId,
           startedAt: new Date(),
           status: "ACTIVE",
           ratePerDay,
-        });
+        }).returning();
+        newSegId = seg.id;
+
+        // ── 4. Immediately add accommodation line to invoice ───────────────
+        const dateStr = new Date().toISOString().split("T")[0];
+        const sourceId = `transfer:${invoiceId}:${seg.id}:${dateStr}`;
+
+        // Count existing STAY_ENGINE lines to generate a sensible label
+        const lineCountRes = await tx.execute(
+          sql`SELECT COUNT(*) AS cnt FROM patient_invoice_lines
+              WHERE header_id = ${invoiceId}
+                AND source_type = 'STAY_ENGINE'
+                AND is_void = false`
+        );
+        const existingCount = parseInt((lineCountRes.rows[0] as any)?.cnt || "0");
+        const lineDesc = `${serviceNameAr} — إقامة إضافية (تحويل)`;
+
+        await tx.execute(sql`
+          INSERT INTO patient_invoice_lines
+            (header_id, line_type, service_id, description,
+             quantity, unit_price, discount_percent, discount_amount,
+             total_price, unit_level, sort_order, source_type, source_id)
+          VALUES
+            (${invoiceId}, 'service', ${effectiveServiceId}, ${lineDesc},
+             '1', ${ratePerDay}, '0', '0',
+             ${ratePerDay}, 'minor', ${existingCount + 10},
+             'STAY_ENGINE', ${sourceId})
+          ON CONFLICT (source_type, source_id)
+            WHERE is_void = false
+              AND source_type IS NOT NULL
+              AND source_id IS NOT NULL
+          DO NOTHING
+        `);
+
+        // Recompute invoice totals
+        const allLines = await tx.select().from(patientInvoiceLines)
+          .where(and(
+            eq(patientInvoiceLines.headerId, invoiceId),
+            eq(patientInvoiceLines.isVoid, false),
+          ));
+        const totals = this.computeInvoiceTotals(allLines, []);
+        await tx.update(patientInvoiceHeaders)
+          .set({ ...totals, updatedAt: new Date() })
+          .where(eq(patientInvoiceHeaders.id, invoiceId));
       }
 
-      // Source bed → NEEDS_CLEANING
+      // ── 5. Atomic bed status swap ─────────────────────────────────────────
+      // Source → NEEDS_CLEANING (freed)
       const [updatedSrc] = await tx.update(beds).set({
         status: "NEEDS_CLEANING",
         currentAdmissionId: null,
         updatedAt: new Date(),
       }).where(eq(beds.id, params.sourceBedId)).returning();
 
-      // Target bed → OCCUPIED
+      // Target → OCCUPIED
       const [updatedTgt] = await tx.update(beds).set({
         status: "OCCUPIED",
         currentAdmissionId: admissionId,
         updatedAt: new Date(),
       }).where(eq(beds.id, params.targetBedId)).returning();
 
+      // ── 6. Audit ──────────────────────────────────────────────────────────
       await tx.insert(auditLog).values({
         tableName: "beds",
         recordId: params.sourceBedId,
         action: "transfer",
-        newValues: JSON.stringify({ admissionId, targetBedId: params.targetBedId }),
+        newValues: JSON.stringify({
+          admissionId,
+          targetBedId: params.targetBedId,
+          newServiceId: effectiveServiceId,
+          invoiceId,
+          newSegmentId: newSegId,
+        }),
       });
 
-      return { sourceBed: updatedSrc, targetBed: updatedTgt };
+      return {
+        sourceBed: updatedSrc,
+        targetBed: updatedTgt,
+        invoiceId,
+        newServiceId: effectiveServiceId,
+        ratePerDay,
+      };
     });
 
-    console.log(`[BED_BOARD] Transfer: ${params.sourceBedId} → ${params.targetBedId}`);
+    console.log(
+      `[BED_BOARD] Transfer ${params.sourceBedId} → ${params.targetBedId}` +
+      (result.newServiceId ? ` | grade service=${result.newServiceId} rate=${result.ratePerDay}/day` : " | no grade"),
+    );
     return result;
   }
 

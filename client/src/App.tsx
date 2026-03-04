@@ -39,7 +39,7 @@ import CashierCollection from "@/pages/CashierCollection";
 import AccountMappings from "@/pages/AccountMappings";
 import DrawerPasswords from "@/pages/DrawerPasswords";
 import UsersManagement from "@/pages/UsersManagement";
-import BedBoard from "@/pages/BedBoard";
+import BedBoard from "@/pages/bed-board";
 import RoomManagement from "@/pages/RoomManagement";
 import DoctorSettlements from "@/pages/DoctorSettlements";
 import DoctorStatement from "@/pages/DoctorStatement";

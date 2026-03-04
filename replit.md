@@ -21,7 +21,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Cashier & Security**: Includes real-time SSE for instant invoice visibility, password-protected cash drawers with GL account selection for shifts, and a two-stage journal entry system for sales.
 - **Reporting & Audit**: Generates balanced financial reports, incorporates full role-based access control (RBAC) with granular permissions, and maintains a comprehensive audit trail with strict validation and conflict resolution.
 - **User Experience**: Emphasizes a professional UI with collapsible sidebar, A4 print styles, focus management, and visual auto-save indicators.
-- **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing costs for patient accommodation, a Bed Board system for hospital bed management with atomic operations and real-time status updates, and a Surgery Types System.
+- **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing costs for patient accommodation, a Bed Board system for hospital bed management with atomic operations, real-time SSE updates, smart bed transfer with instant accommodation billing, and a Surgery Types System.
 
 ### Technical Implementations
 - **API**: RESTful JSON API.
