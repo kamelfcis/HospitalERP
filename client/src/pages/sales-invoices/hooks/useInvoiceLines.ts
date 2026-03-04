@@ -176,11 +176,6 @@ export function useInvoiceLines(
           return [...filtered, ...newFefoLines];
         });
 
-        if (newFefoLines.length > 1) {
-          toast({ title: `تمت إضافة: ${itemData.nameAr}`, description: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
-        } else {
-          toast({ title: `تمت إضافة: ${itemData.nameAr}` });
-        }
       } catch (err: any) {
         toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
       } finally {
@@ -339,9 +334,6 @@ export function useInvoiceLines(
           return [...filtered, ...newFefoLines];
         });
 
-        if (newFefoLines.length > 1) {
-          toast({ title: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
-        }
       } catch (err: any) {
         toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
       } finally {
