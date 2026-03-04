@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -6,15 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import {
-  Pencil, Trash2, Plus, Banknote, Users, FileText, Search, X, Loader2, Eye,
-} from "lucide-react";
+import { Pencil, Trash2, Plus, Banknote, Users, FileText, Loader2, Eye } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { type Account } from "@shared/schema";
+import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
 
@@ -58,116 +56,6 @@ interface Statement {
 }
 
 const emptyForm = { name: "", glAccountId: "", isActive: true, notes: "" };
-
-// ─── SearchableAccountSelect (same pattern as AccountMappings) ──────────────
-
-function SearchableAccountSelect({
-  accounts,
-  value,
-  onChange,
-  placeholder = "اختر حساب...",
-  testId,
-}: {
-  accounts: Account[];
-  value: string;
-  onChange: (val: string) => void;
-  placeholder?: string;
-  testId: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const selectedAccount = accounts.find(a => a.id === value);
-
-  const filtered = search.trim()
-    ? accounts.filter(a => {
-        const q = search.trim().toLowerCase();
-        return a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q);
-      })
-    : accounts;
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const handleSelect = useCallback((id: string) => {
-    onChange(id);
-    setOpen(false);
-    setSearch("");
-  }, [onChange]);
-
-  const handleClear = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    onChange("");
-    setSearch("");
-  }, [onChange]);
-
-  return (
-    <div ref={containerRef} className="relative" data-testid={testId}>
-      <div
-        className="flex items-center h-9 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs cursor-pointer gap-1"
-        onClick={() => { setOpen(!open); setTimeout(() => inputRef.current?.focus(), 50); }}
-      >
-        {selectedAccount ? (
-          <>
-            <span className="truncate flex-1">
-              <span className="font-mono text-[10px] text-muted-foreground ml-1">{selectedAccount.code}</span>
-              {selectedAccount.name}
-            </span>
-            <X className="h-3 w-3 text-muted-foreground shrink-0 cursor-pointer" onClick={handleClear} />
-          </>
-        ) : (
-          <span className="text-muted-foreground flex-1">{placeholder}</span>
-        )}
-      </div>
-      {open && (
-        <div className="absolute z-50 top-full mt-1 w-full min-w-[300px] bg-popover border border-border rounded-md shadow-lg">
-          <div className="flex items-center gap-1 p-2 border-b">
-            <Search className="h-3 w-3 text-muted-foreground shrink-0" />
-            <Input
-              ref={inputRef}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="بحث بالكود أو الاسم..."
-              className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 p-0"
-              data-testid={`${testId}-search`}
-            />
-          </div>
-          <ScrollArea className="max-h-[220px]">
-            <div className="p-1">
-              {filtered.length === 0 ? (
-                <div className="text-xs text-muted-foreground text-center py-3">لا توجد نتائج</div>
-              ) : (
-                filtered.slice(0, 50).map(a => (
-                  <div
-                    key={a.id}
-                    className={`text-xs px-2 py-1.5 cursor-pointer rounded-sm hover-elevate ${a.id === value ? "bg-primary/10 font-medium" : ""}`}
-                    onClick={() => handleSelect(a.id)}
-                    data-testid={`${testId}-option-${a.id}`}
-                  >
-                    <span className="font-mono text-[10px] text-muted-foreground ml-2">{a.code}</span>
-                    {a.name}
-                  </div>
-                ))
-              )}
-              {filtered.length > 50 && (
-                <div className="text-[10px] text-muted-foreground text-center py-1">
-                  يوجد {filtered.length - 50} حساب إضافي — حسّن البحث
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
@@ -731,12 +619,12 @@ export default function TreasuriesPage() {
 
             <div className="space-y-1.5">
               <label className="text-sm font-medium block">الحساب في دليل الحسابات *</label>
-              <SearchableAccountSelect
+              <AccountSearchSelect
                 accounts={leafAccounts}
                 value={form.glAccountId}
                 onChange={v => setForm(f => ({ ...f, glAccountId: v }))}
                 placeholder="ابحث عن الحساب بالكود أو الاسم..."
-                testId="select-treasury-account"
+                data-testid="select-treasury-account"
               />
             </div>
 
