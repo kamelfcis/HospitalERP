@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { X, BarChart3 } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
-import { formatAvailability, getUnitOptions, computeUnitPriceFromBase, convertMinorToDisplayQty, calculateQtyInMinor } from "../utils";
+import { formatAvailability, getUnitOptions, computeUnitPriceFromBase, computeLineTotal, convertMinorToDisplayQty, calculateQtyInMinor } from "../utils";
 import type { SalesLineLocal } from "../types";
 
 interface Props {
@@ -156,7 +156,7 @@ export function InvoiceLineTable({
                               const newPrice = computeUnitPriceFromBase(newBase, ln.unitLevel, ln.item);
                               updates.baseSalePrice = newBase;
                               updates.salePrice = newPrice;
-                              updates.lineTotal = +(ln.qty * newPrice).toFixed(2);
+                              updates.lineTotal = computeLineTotal(ln.qty, newBase, ln.unitLevel, ln.item);
                             }
                             onUpdateLine(i, updates);
                           }

@@ -5,6 +5,7 @@ import {
   genId,
   calculateQtyInMinor,
   computeUnitPriceFromBase,
+  computeLineTotal,
   convertMinorToDisplayQty,
 } from "../utils";
 
@@ -31,7 +32,8 @@ export function useInvoiceLines(
           const lineSalePrice = computeUnitPriceFromBase(ln.baseSalePrice, newUnit, ln.item);
           const oldMinor = calculateQtyInMinor(ln.qty, ln.unitLevel, ln.item);
           const newQty = convertMinorToDisplayQty(oldMinor, newUnit, ln.item);
-          const total = +(newQty * lineSalePrice).toFixed(2);
+          // استخدم السعر الخام لحساب الإجمالي لتجنب 3 × 166.67 = 500.01
+          const total = computeLineTotal(newQty, ln.baseSalePrice, newUnit, ln.item);
           return { ...ln, unitLevel: newUnit, salePrice: lineSalePrice, qty: newQty, lineTotal: total };
         });
       }
@@ -39,7 +41,7 @@ export function useInvoiceLines(
       if (patch.unitLevel) {
         ln.salePrice = computeUnitPriceFromBase(ln.baseSalePrice, ln.unitLevel, ln.item);
       }
-      ln.lineTotal = +(ln.qty * ln.salePrice).toFixed(2);
+      ln.lineTotal = computeLineTotal(ln.qty, ln.baseSalePrice, ln.unitLevel, ln.item);
       updated[index] = ln;
       return updated;
     });
@@ -160,7 +162,7 @@ export function useInvoiceLines(
               qty: displayQty,
               salePrice: lineSalePrice,
               baseSalePrice: lineBaseSalePrice,
-              lineTotal: +(displayQty * lineSalePrice).toFixed(2),
+              lineTotal: computeLineTotal(displayQty, lineBaseSalePrice, unitLevel, itemData),
               expiryMonth: alloc.expiryMonth || null,
               expiryYear: alloc.expiryYear || null,
               lotId: alloc.lotId || null,
@@ -206,7 +208,7 @@ export function useInvoiceLines(
       qty: targetQty,
       salePrice,
       baseSalePrice,
-      lineTotal: +(targetQty * salePrice).toFixed(2),
+      lineTotal: computeLineTotal(targetQty, baseSalePrice, targetUnit, itemData),
       expiryMonth: null,
       expiryYear: null,
       lotId: null,
@@ -318,7 +320,7 @@ export function useInvoiceLines(
               qty: displayQty,
               salePrice: linePrice,
               baseSalePrice: lineBase,
-              lineTotal: +(displayQty * linePrice).toFixed(2),
+              lineTotal: computeLineTotal(displayQty, lineBase, unitLevel, itemData),
               expiryMonth: alloc.expiryMonth || null,
               expiryYear: alloc.expiryYear || null,
               lotId: alloc.lotId || null,

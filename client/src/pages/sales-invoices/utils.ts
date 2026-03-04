@@ -65,14 +65,41 @@ export function calculateQtyInMinor(qty: number, unitLevel: string, item: any): 
   return qty * (parseFloat(item.majorToMinor) || 1);
 }
 
-export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: any): number {
+// السعر الخام بدون تقريب — للحساب الداخلي فقط
+export function computeUnitPriceRaw(baseSalePrice: number, unitLevel: string, item: any): number {
   if (!item || !baseSalePrice) return baseSalePrice || 0;
   if (unitLevel === "major" || !unitLevel) return baseSalePrice;
-  const majorToMedium = parseFloat(String(item.majorToMedium)) || 1;
-  const majorToMinor = parseFloat(String(item.majorToMinor)) || 1;
-  if (unitLevel === "medium") return +(baseSalePrice / majorToMedium).toFixed(2);
-  if (unitLevel === "minor") return +(baseSalePrice / majorToMinor).toFixed(2);
+
+  const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
+  const majorToMinor  = parseFloat(String(item.majorToMinor))  || 0;
+  const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
+
+  if (unitLevel === "medium") {
+    if (majorToMedium > 0) return baseSalePrice / majorToMedium;
+    // اشتق النسبة: أعلى ÷ أصغر
+    if (majorToMinor > 0 && mediumToMinor > 0) return baseSalePrice / (majorToMinor / mediumToMinor);
+    return baseSalePrice;
+  }
+  if (unitLevel === "minor") {
+    if (majorToMinor > 0) return baseSalePrice / majorToMinor;
+    // اشتق: major_to_medium × medium_to_minor
+    if (majorToMedium > 0 && mediumToMinor > 0) return baseSalePrice / (majorToMedium * mediumToMinor);
+    return baseSalePrice;
+  }
   return baseSalePrice;
+}
+
+// السعر للعرض مقرّب لـ 2 منازل عشرية
+export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: any): number {
+  return +computeUnitPriceRaw(baseSalePrice, unitLevel, item).toFixed(2);
+}
+
+// إجمالي السطر يُحسب من السعر الخام لتجنب تراكم أخطاء التقريب
+// مثال: 3 شرائط بسعر 500/3 → 3 × 166.666... = 500.00 (صحيح)
+//        وليس 3 × 166.67 = 500.01 (خطأ تقريب)
+export function computeLineTotal(qty: number, baseSalePrice: number, unitLevel: string, item: any): number {
+  const rawPrice = computeUnitPriceRaw(baseSalePrice, unitLevel, item);
+  return +(qty * rawPrice).toFixed(2);
 }
 
 export function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: any): number {

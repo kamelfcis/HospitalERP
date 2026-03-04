@@ -4451,12 +4451,25 @@ export class DatabaseStorage implements IStorage {
         let salePrice = parseFloat(line.salePrice) || 0;
         if (item) {
           const masterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
+          const majorToMedium = parseFloat(item.majorToMedium || "0") || 0;
+          const majorToMinor  = parseFloat(item.majorToMinor  || "0") || 0;
+          const mediumToMinor = parseFloat(item.mediumToMinor || "0") || 0;
           if (line.unitLevel === "medium") {
-            const majorToMedium = parseFloat(item.majorToMedium || "1") || 1;
-            salePrice = masterPrice / majorToMedium;
+            if (majorToMedium > 0) {
+              salePrice = masterPrice / majorToMedium;
+            } else if (majorToMinor > 0 && mediumToMinor > 0) {
+              salePrice = masterPrice / (majorToMinor / mediumToMinor);
+            } else {
+              salePrice = masterPrice;
+            }
           } else if (line.unitLevel === "minor") {
-            const majorToMinor = parseFloat(item.majorToMinor || "1") || 1;
-            salePrice = masterPrice / majorToMinor;
+            if (majorToMinor > 0) {
+              salePrice = masterPrice / majorToMinor;
+            } else if (majorToMedium > 0 && mediumToMinor > 0) {
+              salePrice = masterPrice / (majorToMedium * mediumToMinor);
+            } else {
+              salePrice = masterPrice;
+            }
           } else {
             salePrice = masterPrice;
           }
@@ -4557,12 +4570,25 @@ export class DatabaseStorage implements IStorage {
         let salePrice = parseFloat(line.salePrice) || 0;
         if (item) {
           const masterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
+          const majorToMedium = parseFloat(item.majorToMedium || "0") || 0;
+          const majorToMinor  = parseFloat(item.majorToMinor  || "0") || 0;
+          const mediumToMinor = parseFloat(item.mediumToMinor || "0") || 0;
           if (line.unitLevel === "medium") {
-            const majorToMedium = parseFloat(item.majorToMedium || "1") || 1;
-            salePrice = masterPrice / majorToMedium;
+            if (majorToMedium > 0) {
+              salePrice = masterPrice / majorToMedium;
+            } else if (majorToMinor > 0 && mediumToMinor > 0) {
+              salePrice = masterPrice / (majorToMinor / mediumToMinor);
+            } else {
+              salePrice = masterPrice;
+            }
           } else if (line.unitLevel === "minor") {
-            const majorToMinor = parseFloat(item.majorToMinor || "1") || 1;
-            salePrice = masterPrice / majorToMinor;
+            if (majorToMinor > 0) {
+              salePrice = masterPrice / majorToMinor;
+            } else if (majorToMedium > 0 && mediumToMinor > 0) {
+              salePrice = masterPrice / (majorToMedium * mediumToMinor);
+            } else {
+              salePrice = masterPrice;
+            }
           } else {
             salePrice = masterPrice;
           }

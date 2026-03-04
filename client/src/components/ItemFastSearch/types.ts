@@ -6,8 +6,11 @@ export interface FastSearchItem {
   category: string;
   salePriceCurrent: string;
   majorUnitName: string | null;
+  mediumUnitName: string | null;
   minorUnitName: string | null;
+  majorToMedium: string | null;
   majorToMinor: string | null;
+  mediumToMinor: string | null;
   hasExpiry: boolean;
   availableQtyMinor: string;
 }
