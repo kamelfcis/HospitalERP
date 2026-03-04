@@ -3165,6 +3165,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/patient-invoice-payments/next-ref", requireAuth, async (req, res) => {
+    try {
+      const offset = parseInt(req.query.offset as string || "0") || 0;
+      const ref = await storage.getNextPaymentRefNumber(offset);
+      res.json({ ref });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/patient-invoices", async (req, res) => {
     try {
       const filters = {

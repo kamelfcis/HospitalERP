@@ -386,6 +386,7 @@ export interface IStorage {
 
   // Patient Invoices
   getNextPatientInvoiceNumber(): Promise<number>;
+  getNextPaymentRefNumber(offset?: number): Promise<string>;
   getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}>;
   getPatientInvoice(id: string): Promise<PatientInvoiceWithDetails | undefined>;
   createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
@@ -5270,6 +5271,16 @@ export class DatabaseStorage implements IStorage {
   async getNextPatientInvoiceNumber(): Promise<number> {
     const result = await db.select({ max: sql<string>`COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0)` }).from(patientInvoiceHeaders);
     return (parseInt(result[0]?.max || "0") || 0) + 1;
+  }
+
+  async getNextPaymentRefNumber(offset: number = 0): Promise<string> {
+    const result = await db.execute(sql`
+      SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(reference_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) AS max_num
+      FROM patient_invoice_payments
+      WHERE reference_number LIKE 'RCP-%'
+    `);
+    const maxNum = parseInt((result.rows[0] as any).max_num || "0") || 0;
+    return `RCP-${String(maxNum + 1 + offset).padStart(6, "0")}`;
   }
 
   async getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}> {

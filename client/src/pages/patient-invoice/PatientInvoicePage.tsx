@@ -132,6 +132,7 @@ export default function PatientInvoice() {
   useEffect(() => { linesRef.current = lines; }, [lines]);
   const pendingQtyRef = useRef<Map<string, string>>(new Map());
   const [payments, setPayments] = useState<PaymentLocal[]>([]);
+  const paymentRefOffsetRef = useRef(0);
 
   const [patientSearch, setPatientSearch] = useState("");
   const [patientResults, setPatientResults] = useState<Patient[]>([]);
@@ -476,6 +477,7 @@ export default function PatientInvoice() {
     setStatus("draft");
     setLines([]);
     setPayments([]);
+    paymentRefOffsetRef.current = 0;
     setSubTab("services");
   }, [nextNumber]);
 
@@ -566,6 +568,7 @@ export default function PatientInvoice() {
         treasuryId: p.treasuryId || null,
       }));
       setPayments(loadedPayments);
+      paymentRefOffsetRef.current = 0;
 
       setMainTab("invoice");
       setSubTab("services");
@@ -799,7 +802,15 @@ export default function PatientInvoice() {
     setLines((prev) => prev.filter((l) => l.tempId !== tempId));
   }, []);
 
-  const addPayment = useCallback(() => {
+  const addPayment = useCallback(async () => {
+    const offset = paymentRefOffsetRef.current;
+    paymentRefOffsetRef.current += 1;
+    let ref = "";
+    try {
+      const res = await apiRequest("GET", `/api/patient-invoice-payments/next-ref?offset=${offset}`);
+      const data = await res.json();
+      ref = data.ref ?? "";
+    } catch { /* fallback: empty ref */ }
     setPayments((prev) => [
       ...prev,
       {
@@ -807,7 +818,7 @@ export default function PatientInvoice() {
         paymentDate: new Date().toISOString().split("T")[0],
         amount: 0,
         paymentMethod: "cash",
-        referenceNumber: "",
+        referenceNumber: ref,
         notes: "",
         treasuryId: null,
       },
