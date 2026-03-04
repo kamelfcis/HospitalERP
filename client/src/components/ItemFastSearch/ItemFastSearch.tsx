@@ -2,13 +2,13 @@ import {
   useState, useRef, useCallback, useEffect, useLayoutEffect,
 } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Search, PackageX, Package } from "lucide-react";
+import { Loader2, Search, PackageX, Package, ChevronLeft } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import type {
   ItemFastSearchProps, FastSearchItem, BatchOption, SearchMode, FastSearchResponse,
 } from "./types";
 
-const DEBOUNCE_MS = 220;
+const DEBOUNCE_MS = 200;
 const PAGE_SIZE = 40;
 
 function parsePriceFilter(q: string): { nameQ: string; minPrice?: number; maxPrice?: number } {
@@ -48,49 +48,78 @@ export function ItemFastSearch({
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
+
+  // حالة الدُفعات — تُعبأ عند الطلب الصريح فقط (Enter الأولى)
   const [batches, setBatches] = useState<BatchOption[]>([]);
   const [batchLoading, setBatchLoading] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<BatchOption | null>(null);
   const [batchItemId, setBatchItemId] = useState<string | null>(null);
+  // batchMode: true = الدُفعات ظاهرة، Enter التالية تُضيف للفاتورة
+  const [batchMode, setBatchMode] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const batchAbortRef = useRef<AbortController | null>(null);
 
+  // ===== إعادة ضبط الدُفعات =====
   const resetBatches = useCallback(() => {
     setBatches([]);
     setSelectedBatch(null);
     setBatchItemId(null);
+    setBatchMode(false);
   }, []);
 
-  const loadBatches = useCallback(async (item: FastSearchItem) => {
-    if (!item.hasExpiry || !warehouseId) { resetBatches(); return; }
-    if (batchItemId === item.id) return;
+  // ===== تحميل الدُفعات عند الطلب الصريح فقط =====
+  const loadBatches = useCallback(async (item: FastSearchItem): Promise<boolean> => {
+    if (!item.hasExpiry || !warehouseId) return false;
+    // إذا مُحمّلة بالفعل لنفس الصنف
+    if (batchItemId === item.id && batches.length > 0) {
+      setBatchMode(true);
+      return true;
+    }
+    if (batchAbortRef.current) batchAbortRef.current.abort();
+    batchAbortRef.current = new AbortController();
     setBatchLoading(true);
     setBatchItemId(item.id);
+    setBatchMode(true);
     try {
       const date = invoiceDate || new Date().toISOString().split("T")[0];
-      const r = await fetch(`/api/items/${item.id}/expiry-options?warehouseId=${warehouseId}&asOfDate=${date}`);
+      const r = await fetch(
+        `/api/items/${item.id}/expiry-options?warehouseId=${warehouseId}&asOfDate=${date}`,
+        { signal: batchAbortRef.current.signal },
+      );
       if (r.ok) {
         const data: BatchOption[] = await r.json();
         setBatches(data);
         setSelectedBatch(data[0] ?? null);
-      } else {
-        resetBatches();
+        return true;
       }
-    } catch {
-      resetBatches();
+    } catch (e: any) {
+      if (e.name === "AbortError") return false;
     } finally {
       setBatchLoading(false);
     }
-  }, [warehouseId, invoiceDate, batchItemId, resetBatches]);
+    return false;
+  }, [warehouseId, invoiceDate, batchItemId, batches.length]);
 
+  // ===== إضافة صنف للفاتورة =====
+  const selectItem = useCallback((item: FastSearchItem, batch?: BatchOption | null) => {
+    const resolvedBatch = batch !== undefined ? batch : (selectedBatch ?? batches[0] ?? null);
+    onItemSelected({ item, batch: item.hasExpiry ? resolvedBatch : null, availableQtyMinor: item.availableQtyMinor });
+    // إعادة التركيز للبحث + تصفير batchMode
+    resetBatches();
+    setTimeout(() => searchRef.current?.focus(), 30);
+  }, [onItemSelected, selectedBatch, batches, resetBatches]);
+
+  // ===== معالجة البحث =====
   const doSearch = useCallback(async (q: string, pg: number, md: SearchMode) => {
-    if (!q.trim()) { setItems([]); setTotal(0); return; }
+    if (!q.trim()) { setItems([]); setTotal(0); resetBatches(); return; }
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
     setLoading(true);
+    resetBatches();
     try {
       const { nameQ, minPrice, maxPrice } = parsePriceFilter(q);
       const effectiveQ = nameQ || q;
@@ -113,15 +142,14 @@ export function ItemFastSearch({
         setItems(rows);
         setTotal(data.total ?? rows.length);
         setHighlighted(rows.length > 0 ? 0 : -1);
-        resetBatches();
-        if (rows[0]) loadBatches(rows[0]);
+        // لا نحمّل الدُفعات تلقائياً — فقط عند Enter
       }
     } catch (e: any) {
       if (e.name !== "AbortError") { setItems([]); setTotal(0); }
     } finally {
       setLoading(false);
     }
-  }, [warehouseId, excludeServices, drugsOnly, loadBatches, resetBatches]);
+  }, [warehouseId, excludeServices, drugsOnly, resetBatches]);
 
   const onQueryChange = useCallback((val: string) => {
     setQuery(val);
@@ -136,36 +164,51 @@ export function ItemFastSearch({
     if (query.trim()) doSearch(query, 1, md);
   }, [query, doSearch]);
 
-  const selectItem = useCallback((item: FastSearchItem) => {
-    const batch = item.hasExpiry ? (selectedBatch ?? batches[0] ?? null) : null;
-    onItemSelected({ item, batch, availableQtyMinor: item.availableQtyMinor });
-    setTimeout(() => searchRef.current?.focus(), 50);
-  }, [onItemSelected, selectedBatch, batches]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+  // ===== لوحة المفاتيح =====
+  const handleKeyDown = useCallback(async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlighted(h => {
         const next = Math.min(h + 1, items.length - 1);
         rowRefs.current[next]?.scrollIntoView({ block: "nearest" });
-        if (items[next]) loadBatches(items[next]);
         return next;
       });
+      // إعادة ضبط batchMode عند التنقل
+      resetBatches();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlighted(h => {
         const prev = Math.max(h - 1, 0);
         rowRefs.current[prev]?.scrollIntoView({ block: "nearest" });
-        if (items[prev]) loadBatches(items[prev]);
         return prev;
       });
+      resetBatches();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (highlighted >= 0 && items[highlighted]) selectItem(items[highlighted]);
+      const item = items[highlighted];
+      if (!item) return;
+
+      if (!item.hasExpiry) {
+        // صنف بدون صلاحية → إضافة فورية بدون API call
+        selectItem(item, null);
+        return;
+      }
+
+      if (!batchMode) {
+        // Enter الأولى → أظهر الدُفعات
+        await loadBatches(item);
+      } else {
+        // Enter الثانية → أضف للفاتورة بالدفعة المختارة
+        selectItem(item);
+      }
     } else if (e.key === "Escape") {
-      onClose();
+      if (batchMode) {
+        resetBatches();
+      } else {
+        onClose();
+      }
     }
-  }, [items, highlighted, selectItem, onClose, loadBatches]);
+  }, [items, highlighted, batchMode, selectItem, loadBatches, resetBatches, onClose]);
 
   useEffect(() => {
     if (!open) {
@@ -185,6 +228,8 @@ export function ItemFastSearch({
   }, [open]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
+  const currentItem = highlighted >= 0 ? items[highlighted] : null;
+  const showBatchPanel = batchMode && currentItem?.hasExpiry;
 
   const stockBadge = (item: FastSearchItem) => {
     const qty = parseFloat(item.availableQtyMinor ?? "0");
@@ -240,7 +285,7 @@ export function ItemFastSearch({
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder='ابحث بالاسم أو "اسم سعر" مثال: para 20 أو para 10-50'
+              placeholder='ابحث بالاسم، أو "اسم سعر" مثال: para 20 أو para 10-50'
               className="peachtree-input w-full h-8 text-[12px] pl-8"
               autoComplete="off"
               data-testid="input-fast-search-query"
@@ -249,9 +294,16 @@ export function ItemFastSearch({
               <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
             )}
           </div>
-          <kbd className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono border rounded text-muted-foreground bg-muted">
-            ↑↓ Enter ESC
-          </kbd>
+          {/* مؤشر الحالة */}
+          <div className="text-[10px] text-muted-foreground whitespace-nowrap hidden sm:block">
+            {!batchMode ? (
+              <span>↑↓ تنقل · <kbd className="border rounded px-1">↵</kbd> {currentItem?.hasExpiry ? "دُفعات" : "إضافة"} · ESC خروج</span>
+            ) : (
+              <span className="text-primary font-semibold">
+                <kbd className="border rounded px-1">↵</kbd> إضافة · ESC رجوع
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex" style={{ height: "52vh", minHeight: 260 }}>
@@ -279,13 +331,32 @@ export function ItemFastSearch({
                       className={`peachtree-grid-row cursor-pointer select-none transition-colors ${
                         isHl ? "bg-primary/15 outline outline-1 outline-primary/40" : ""
                       } ${!hasStock ? "opacity-50" : ""}`}
-                      onClick={() => { setHighlighted(idx); loadBatches(item); selectItem(item); }}
-                      onMouseEnter={() => { setHighlighted(idx); loadBatches(item); }}
+                      onClick={() => {
+                        setHighlighted(idx);
+                        resetBatches();
+                        if (!item.hasExpiry) {
+                          selectItem(item, null);
+                        } else {
+                          loadBatches(item);
+                        }
+                      }}
+                      onMouseEnter={() => {
+                        // الماوس يُحرّك التظليل فقط — بدون API call
+                        if (!isHl) {
+                          setHighlighted(idx);
+                          if (batchMode) resetBatches();
+                        }
+                      }}
                       data-testid={`row-fast-search-${item.id}`}
                     >
                       <td className="font-mono text-[11px]">{item.itemCode}</td>
                       <td className={`font-semibold ${!hasStock ? "text-muted-foreground" : ""}`}>
-                        {item.nameAr}
+                        <span className="flex items-center gap-1">
+                          {item.nameAr}
+                          {item.hasExpiry && (
+                            <span className="text-[9px] text-amber-500 font-normal">exp</span>
+                          )}
+                        </span>
                       </td>
                       <td className="text-muted-foreground text-[11px] truncate max-w-[120px]">
                         {item.nameEn || "—"}
@@ -319,15 +390,17 @@ export function ItemFastSearch({
             </table>
           </div>
 
-          {/* لوحة الدُفعات — تظهر فقط للأصناف ذات الانتهاء */}
-          {highlighted >= 0 && items[highlighted]?.hasExpiry && (
-            <div className="w-60 border-r flex flex-col bg-muted/20 shrink-0">
-              <div className="px-3 py-2 border-b text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                الدُفعات والتواريخ
+          {/* لوحة الدُفعات — تظهر فقط بعد Enter الأولى على صنف ذي صلاحية */}
+          {showBatchPanel && (
+            <div className="w-56 border-r flex flex-col bg-amber-50/60 shrink-0">
+              <div className="px-3 py-2 border-b text-[11px] font-semibold text-amber-700 flex items-center justify-between">
+                <span>اختر الدُفعة · ↵ للإضافة</span>
+                {batchLoading && <Loader2 className="h-3 w-3 animate-spin" />}
               </div>
               {batchLoading ? (
-                <div className="flex items-center justify-center flex-1">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <div className="flex items-center justify-center flex-1 gap-2 text-[12px] text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  جاري التحميل...
                 </div>
               ) : batches.length === 0 ? (
                 <div className="flex items-center justify-center flex-1 text-[12px] text-muted-foreground">
@@ -342,14 +415,16 @@ export function ItemFastSearch({
                     return (
                       <div
                         key={i}
-                        className={`flex items-center justify-between px-3 py-2 cursor-pointer border-b text-[12px] transition-colors ${
-                          isSel ? "bg-primary/15 font-semibold" : "hover:bg-muted/50"
+                        className={`flex items-center justify-between px-3 py-2.5 cursor-pointer border-b text-[12px] transition-colors ${
+                          isSel
+                            ? "bg-amber-200/70 font-semibold text-amber-900"
+                            : "hover:bg-amber-100/60"
                         }`}
-                        onClick={() => setSelectedBatch(b)}
+                        onClick={() => { setSelectedBatch(b); if (currentItem) selectItem(currentItem, b); }}
                         data-testid={`batch-option-${i}`}
                       >
                         <span className="font-mono">{label}</span>
-                        <span className={qty > 0 ? "text-emerald-600" : "text-slate-400"}>
+                        <span className={qty > 0 ? "text-emerald-600 font-semibold" : "text-slate-400"}>
                           {formatNumber(qty)}
                         </span>
                       </div>
@@ -357,11 +432,17 @@ export function ItemFastSearch({
                   })}
                 </div>
               )}
+              <div
+                className="px-3 py-2 border-t text-[10px] text-muted-foreground cursor-pointer hover:bg-muted/30 flex items-center gap-1"
+                onClick={resetBatches}
+              >
+                <ChevronLeft className="h-3 w-3" /> ESC رجوع
+              </div>
             </div>
           )}
         </div>
 
-        {/* شريط Pagination + إجراءات */}
+        {/* شريط Pagination */}
         <div className="flex items-center justify-between px-4 py-2 border-t bg-muted/30 text-[12px]">
           <div className="flex items-center gap-1">
             <button
@@ -385,21 +466,33 @@ export function ItemFastSearch({
             </button>
           </div>
           <div className="flex items-center gap-2">
-            {highlighted >= 0 && items[highlighted] && (
+            {currentItem && !showBatchPanel && (
               <button
                 className="peachtree-btn-sm bg-primary text-primary-foreground hover:bg-primary/90"
-                onClick={() => selectItem(items[highlighted])}
+                onClick={() => {
+                  if (!currentItem.hasExpiry) selectItem(currentItem, null);
+                  else loadBatches(currentItem);
+                }}
                 data-testid="button-fast-search-add"
               >
-                إضافة للفاتورة ↵
+                {currentItem.hasExpiry ? "دُفعات ↵" : "إضافة ↵"}
+              </button>
+            )}
+            {showBatchPanel && selectedBatch && currentItem && (
+              <button
+                className="peachtree-btn-sm bg-emerald-600 text-white hover:bg-emerald-700"
+                onClick={() => selectItem(currentItem)}
+                data-testid="button-fast-search-confirm-batch"
+              >
+                إضافة بالدفعة ↵
               </button>
             )}
             <button
               className="peachtree-btn-sm"
-              onClick={onClose}
+              onClick={() => batchMode ? resetBatches() : onClose()}
               data-testid="button-fast-search-close"
             >
-              إغلاق ESC
+              {batchMode ? "رجوع ESC" : "إغلاق ESC"}
             </button>
           </div>
         </div>
