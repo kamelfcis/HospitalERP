@@ -45,6 +45,7 @@ import DoctorSettlements from "@/pages/DoctorSettlements";
 import DoctorStatement from "@/pages/DoctorStatement";
 import SystemSettings from "@/pages/SystemSettings";
 import SurgeryTypes from "@/pages/SurgeryTypes";
+import TreasuriesPage from "@/pages/TreasuriesPage";
 import NotFound from "@/pages/not-found";
 
 function RequirePermission({ permission, children }: { permission: string; children: React.ReactNode }) {
@@ -106,6 +107,7 @@ function Router() {
         <Route path="/system-settings">{() => <G p="settings.account_mappings"><SystemSettings /></G>}</Route>
         <Route path="/account-mappings">{() => <G p="settings.account_mappings"><AccountMappings /></G>}</Route>
         <Route path="/drawer-passwords">{() => <G p="settings.drawer_passwords"><DrawerPasswords /></G>}</Route>
+        <Route path="/treasuries">{() => <G p="settings.account_mappings"><TreasuriesPage /></G>}</Route>
         <Route path="/users">{() => <G p="users.view"><UsersManagement /></G>}</Route>
         <Route component={NotFound} />
       </Switch>

@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +16,11 @@ interface PaymentsTabProps {
 }
 
 export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, removePayment }: PaymentsTabProps) {
+  const { data: treasuries = [] } = useQuery<{ id: string; name: string; isActive: boolean }[]>({
+    queryKey: ["/api/treasuries"],
+  });
+  const activeTreasuries = treasuries.filter(t => t.isActive);
+
   return (
     <div className="space-y-3">
       {isDraft && (
@@ -31,6 +37,7 @@ export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, remo
               <th className="text-center" style={{ width: 130 }}>التاريخ</th>
               <th className="text-center" style={{ width: 120 }}>المبلغ</th>
               <th className="text-center" style={{ width: 140 }}>طريقة الدفع</th>
+              <th className="text-center" style={{ width: 150 }}>الخزنة</th>
               <th>المرجع</th>
               <th>ملاحظات</th>
               {isDraft && <th className="text-center" style={{ width: 50 }}></th>}
@@ -86,6 +93,26 @@ export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, remo
                     paymentMethodLabels[p.paymentMethod] || p.paymentMethod
                   )}
                 </td>
+                <td className="text-center">
+                  {isDraft ? (
+                    <Select
+                      value={p.treasuryId ?? "none"}
+                      onValueChange={(v) => updatePayment(p.tempId, "treasuryId", v === "none" ? null : v)}
+                    >
+                      <SelectTrigger className="h-7 text-xs" data-testid={`select-pay-treasury-${i}`}>
+                        <SelectValue placeholder="بدون خزنة" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">بدون خزنة</SelectItem>
+                        {activeTreasuries.map(t => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    activeTreasuries.find(t => t.id === p.treasuryId)?.name ?? treasuries.find(t => t.id === p.treasuryId)?.name ?? "—"
+                  )}
+                </td>
                 <td>
                   {isDraft ? (
                     <Input
@@ -126,7 +153,7 @@ export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, remo
             ))}
             {payments.length === 0 && (
               <tr>
-                <td colSpan={isDraft ? 7 : 6} className="text-center text-muted-foreground py-4">
+                <td colSpan={isDraft ? 8 : 7} className="text-center text-muted-foreground py-4">
                   لا توجد دفعات
                 </td>
               </tr>

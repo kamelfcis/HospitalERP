@@ -102,6 +102,7 @@ export function useInvoiceMutations({
         paymentMethod: p.paymentMethod,
         referenceNumber: p.referenceNumber || null,
         notes: p.notes || null,
+        treasuryId: p.treasuryId || null,
       }));
 
       if (invoiceId) {

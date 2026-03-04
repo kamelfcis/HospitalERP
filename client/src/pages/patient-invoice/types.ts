@@ -33,4 +33,5 @@ export interface PaymentLocal {
   paymentMethod: "cash" | "card" | "bank_transfer" | "insurance";
   referenceNumber: string;
   notes: string;
+  treasuryId: string | null;
 }

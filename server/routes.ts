@@ -3283,6 +3283,12 @@ export async function registerRoutes(
           lines: glLines,
         }).catch(err => console.error("[GL] patient invoice finalize:", err));
       }
+
+      // 3. Treasury transactions — record payment transactions for this invoice
+      storage.createTreasuryTransactionsForInvoice(invoiceId, result.finalizedAt
+        ? new Date(result.finalizedAt).toISOString().split("T")[0]
+        : result.invoiceDate
+      ).catch(err => console.error("[Treasury] patient invoice finalize:", err));
       // ────────────────────────────────────────────────────────────────────────
 
       res.json(result);
@@ -4537,6 +4543,79 @@ export async function registerRoutes(
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
+  });
+
+  // ==================== الخزن ====================
+
+  app.get("/api/treasuries", requireAuth, async (req, res) => {
+    try {
+      const list = await storage.getTreasuries();
+      res.json(list);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/treasuries", requireAuth, async (req, res) => {
+    try {
+      const { name, glAccountId, isActive, notes } = req.body;
+      if (!name || !glAccountId) return res.status(400).json({ message: "الاسم والحساب مطلوبان" });
+      const row = await storage.createTreasury({ name, glAccountId, isActive: isActive ?? true, notes });
+      res.status(201).json(row);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/treasuries/:id", requireAuth, async (req, res) => {
+    try {
+      const { name, glAccountId, isActive, notes } = req.body;
+      const row = await storage.updateTreasury(req.params.id, { name, glAccountId, isActive, notes });
+      res.json(row);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/treasuries/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteTreasury(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/treasuries/mine", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const treasury = await storage.getUserTreasury(user.id);
+      res.json(treasury);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/treasuries/:id/statement", requireAuth, async (req, res) => {
+    try {
+      const { dateFrom, dateTo } = req.query as Record<string, string>;
+      const stmt = await storage.getTreasuryStatement({ treasuryId: req.params.id, dateFrom, dateTo });
+      res.json(stmt);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // User-Treasury assignments
+  app.get("/api/user-treasuries", requireAuth, async (req, res) => {
+    try {
+      const list = await storage.getAllUserTreasuries();
+      res.json(list);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/user-treasuries", requireAuth, async (req, res) => {
+    try {
+      const { userId, treasuryId } = req.body;
+      if (!userId || !treasuryId) return res.status(400).json({ message: "userId و treasuryId مطلوبان" });
+      await storage.assignUserTreasury(userId, treasuryId);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/user-treasuries/:userId", requireAuth, async (req, res) => {
+    try {
+      await storage.removeUserTreasury(req.params.userId);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   return httpServer;

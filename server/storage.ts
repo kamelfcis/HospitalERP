@@ -165,6 +165,12 @@ import {
   type SurgeryType,
   type SurgeryCategoryPrice,
   type InsertSurgeryType,
+  treasuries,
+  userTreasuries,
+  treasuryTransactions,
+  type Treasury,
+  type InsertTreasury,
+  type TreasuryTransaction,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -488,6 +494,19 @@ export interface IStorage {
   getDoctorSettlements(params?: { doctorName?: string }): Promise<(DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]>;
   getDoctorOutstandingTransfers(doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string })[]>;
   createDoctorSettlement(params: { doctorName: string; paymentDate: string; amount: string; paymentMethod: string; settlementUuid: string; notes?: string; allocations?: { transferId: string; amount: string }[] }): Promise<DoctorSettlement & { allocations: DoctorSettlementAllocation[] }>;
+
+  // Treasuries
+  getTreasuries(): Promise<(Treasury & { glAccountCode: string; glAccountName: string })[]>;
+  getTreasury(id: string): Promise<Treasury | undefined>;
+  createTreasury(data: InsertTreasury): Promise<Treasury>;
+  updateTreasury(id: string, data: Partial<InsertTreasury>): Promise<Treasury>;
+  deleteTreasury(id: string): Promise<boolean>;
+  getUserTreasury(userId: string): Promise<(Treasury & { glAccountCode: string; glAccountName: string }) | null>;
+  getAllUserTreasuries(): Promise<{ userId: string; treasuryId: string; treasuryName: string; userName: string }[]>;
+  assignUserTreasury(userId: string, treasuryId: string): Promise<void>;
+  removeUserTreasury(userId: string): Promise<void>;
+  getTreasuryStatement(params: { treasuryId: string; dateFrom?: string; dateTo?: string }): Promise<{ transactions: TreasuryTransaction[]; totalIn: string; totalOut: string; balance: string }>;
+  createTreasuryTransactionsForInvoice(invoiceId: string, finalizationDate: string): Promise<void>;
 
   // Account Mappings
   getAccountMappings(transactionType?: string): Promise<AccountMapping[]>;
@@ -8116,6 +8135,124 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return posted;
+  }
+
+  // ==================== الخزن ====================
+
+  async getTreasuries(): Promise<(Treasury & { glAccountCode: string; glAccountName: string })[]> {
+    const rows = await db.execute(sql`
+      SELECT t.*, a.code AS gl_account_code, a.name_ar AS gl_account_name
+      FROM treasuries t
+      JOIN accounts a ON a.id = t.gl_account_id
+      ORDER BY t.name
+    `);
+    return (rows.rows as any[]).map(r => ({
+      id: r.id, name: r.name, glAccountId: r.gl_account_id,
+      isActive: r.is_active, notes: r.notes, createdAt: r.created_at,
+      glAccountCode: r.gl_account_code, glAccountName: r.gl_account_name,
+    }));
+  }
+
+  async getTreasury(id: string): Promise<Treasury | undefined> {
+    const [row] = await db.select().from(treasuries).where(eq(treasuries.id, id));
+    return row;
+  }
+
+  async createTreasury(data: InsertTreasury): Promise<Treasury> {
+    const [row] = await db.insert(treasuries).values(data).returning();
+    return row;
+  }
+
+  async updateTreasury(id: string, data: Partial<InsertTreasury>): Promise<Treasury> {
+    const [row] = await db.update(treasuries).set(data).where(eq(treasuries.id, id)).returning();
+    if (!row) throw new Error("الخزنة غير موجودة");
+    return row;
+  }
+
+  async deleteTreasury(id: string): Promise<boolean> {
+    const res = await db.delete(treasuries).where(eq(treasuries.id, id)).returning();
+    return res.length > 0;
+  }
+
+  async getUserTreasury(userId: string): Promise<(Treasury & { glAccountCode: string; glAccountName: string }) | null> {
+    const rows = await db.execute(sql`
+      SELECT t.*, a.code AS gl_account_code, a.name_ar AS gl_account_name
+      FROM user_treasuries ut
+      JOIN treasuries t ON t.id = ut.treasury_id
+      JOIN accounts a ON a.id = t.gl_account_id
+      WHERE ut.user_id = ${userId}
+    `);
+    if (!rows.rows.length) return null;
+    const r = rows.rows[0] as any;
+    return {
+      id: r.id, name: r.name, glAccountId: r.gl_account_id,
+      isActive: r.is_active, notes: r.notes, createdAt: r.created_at,
+      glAccountCode: r.gl_account_code, glAccountName: r.gl_account_name,
+    };
+  }
+
+  async getAllUserTreasuries(): Promise<{ userId: string; treasuryId: string; treasuryName: string; userName: string }[]> {
+    const rows = await db.execute(sql`
+      SELECT ut.user_id, ut.treasury_id, t.name AS treasury_name, u.full_name AS user_name
+      FROM user_treasuries ut
+      JOIN treasuries t ON t.id = ut.treasury_id
+      JOIN users u ON u.id = ut.user_id
+      ORDER BY u.full_name
+    `);
+    return (rows.rows as any[]).map(r => ({
+      userId: r.user_id, treasuryId: r.treasury_id,
+      treasuryName: r.treasury_name, userName: r.user_name,
+    }));
+  }
+
+  async assignUserTreasury(userId: string, treasuryId: string): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO user_treasuries (user_id, treasury_id)
+      VALUES (${userId}, ${treasuryId})
+      ON CONFLICT (user_id) DO UPDATE SET treasury_id = ${treasuryId}, created_at = NOW()
+    `);
+  }
+
+  async removeUserTreasury(userId: string): Promise<void> {
+    await db.delete(userTreasuries).where(eq(userTreasuries.userId, userId));
+  }
+
+  async getTreasuryStatement(params: { treasuryId: string; dateFrom?: string; dateTo?: string }): Promise<{ transactions: TreasuryTransaction[]; totalIn: string; totalOut: string; balance: string }> {
+    let conds = [eq(treasuryTransactions.treasuryId, params.treasuryId)];
+    if (params.dateFrom) conds.push(sql`${treasuryTransactions.transactionDate} >= ${params.dateFrom}`);
+    if (params.dateTo)   conds.push(sql`${treasuryTransactions.transactionDate} <= ${params.dateTo}`);
+    const rows = await db.select().from(treasuryTransactions)
+      .where(and(...conds))
+      .orderBy(treasuryTransactions.transactionDate, treasuryTransactions.createdAt);
+    let totalIn = 0, totalOut = 0;
+    for (const r of rows) {
+      if (r.type === "in")  totalIn  += parseFloat(r.amount);
+      else                  totalOut += parseFloat(r.amount);
+    }
+    return {
+      transactions: rows,
+      totalIn:  totalIn.toFixed(2),
+      totalOut: totalOut.toFixed(2),
+      balance:  (totalIn - totalOut).toFixed(2),
+    };
+  }
+
+  async createTreasuryTransactionsForInvoice(invoiceId: string, finalizationDate: string): Promise<void> {
+    const payments = await db.execute(sql`
+      SELECT p.id, p.amount, p.payment_method, p.treasury_id, p.notes
+      FROM patient_invoice_payments p
+      WHERE p.header_id = ${invoiceId} AND p.treasury_id IS NOT NULL
+    `);
+    if (!payments.rows.length) return;
+    const header = await db.execute(sql`SELECT invoice_number FROM patient_invoice_headers WHERE id = ${invoiceId}`);
+    const invNum = (header.rows[0] as any)?.invoice_number ?? invoiceId;
+    for (const p of payments.rows as any[]) {
+      await db.execute(sql`
+        INSERT INTO treasury_transactions (treasury_id, type, amount, description, source_type, source_id, transaction_date)
+        VALUES (${p.treasury_id}, 'in', ${p.amount}, ${'تحصيل فاتورة مريض رقم ' + invNum}, 'patient_invoice', ${p.id}, ${finalizationDate})
+        ON CONFLICT (source_type, source_id, treasury_id) DO NOTHING
+      `);
+    }
   }
 }
 

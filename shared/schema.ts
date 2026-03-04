@@ -802,6 +802,7 @@ export const patientInvoicePayments = pgTable("patient_invoice_payments", {
   paymentMethod: paymentMethodEnum("payment_method").notNull().default("cash"),
   referenceNumber: text("reference_number"),
   notes: text("notes"),
+  treasuryId: varchar("treasury_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx: index("idx_pat_pay_header").on(table.headerId),
@@ -1584,6 +1585,49 @@ export const drawerPasswords = pgTable("drawer_passwords", {
 export const insertDrawerPasswordSchema = createInsertSchema(drawerPasswords).omit({ id: true, updatedAt: true });
 export type InsertDrawerPassword = z.infer<typeof insertDrawerPasswordSchema>;
 export type DrawerPassword = typeof drawerPasswords.$inferSelect;
+
+// ==================== الخزن ====================
+
+export const treasuries = pgTable("treasuries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  glAccountId: varchar("gl_account_id").notNull().references(() => accounts.id),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const userTreasuries = pgTable("user_treasuries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  treasuryId: varchar("treasury_id").notNull().references(() => treasuries.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const treasuryTransactions = pgTable("treasury_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  treasuryId: varchar("treasury_id").notNull().references(() => treasuries.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // "in" | "out"
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  description: text("description"),
+  sourceType: text("source_type"), // "patient_invoice" | "manual"
+  sourceId: varchar("source_id"),
+  transactionDate: date("transaction_date").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  treasuryIdx: index("idx_treasury_txn_treasury").on(table.treasuryId),
+  dateIdx:     index("idx_treasury_txn_date").on(table.transactionDate),
+  sourceIdx:   uniqueIndex("idx_treasury_txn_source").on(table.sourceType, table.sourceId, table.treasuryId),
+}));
+
+export const insertTreasurySchema = createInsertSchema(treasuries).omit({ id: true, createdAt: true });
+export const insertUserTreasurySchema = createInsertSchema(userTreasuries).omit({ id: true, createdAt: true });
+export const insertTreasuryTransactionSchema = createInsertSchema(treasuryTransactions).omit({ id: true, createdAt: true });
+
+export type Treasury = typeof treasuries.$inferSelect;
+export type InsertTreasury = z.infer<typeof insertTreasurySchema>;
+export type UserTreasury = typeof userTreasuries.$inferSelect;
+export type TreasuryTransaction = typeof treasuryTransactions.$inferSelect;
 
 export const sourceTypeLabels: Record<string, string> = {
   sales_invoice: "فاتورة مبيعات",

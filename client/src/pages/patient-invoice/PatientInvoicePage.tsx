@@ -563,6 +563,7 @@ export default function PatientInvoice() {
         paymentMethod: p.paymentMethod || "cash",
         referenceNumber: p.referenceNumber || "",
         notes: p.notes || "",
+        treasuryId: p.treasuryId || null,
       }));
       setPayments(loadedPayments);
 
@@ -808,6 +809,7 @@ export default function PatientInvoice() {
         paymentMethod: "cash",
         referenceNumber: "",
         notes: "",
+        treasuryId: null,
       },
     ]);
   }, []);
