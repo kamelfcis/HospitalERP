@@ -57,18 +57,28 @@ export default function Login() {
         <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
       )}
 
-      <Card className="w-full max-w-sm relative z-10 shadow-2xl border-0 bg-white/90 backdrop-blur-md">
-        <CardHeader className="text-center pb-2">
-          <div className="flex justify-center mb-3">
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-2 mb-1">
-                <div className="bg-[#1a3a5c] text-white rounded-md px-2 py-0.5 text-xs font-bold">+</div>
-                <span className="text-2xl font-extrabold text-[#1a3a5c] tracking-widest">AMS</span>
+      <Card className="w-full max-w-sm relative z-10 shadow-2xl border-0 bg-white/92 backdrop-blur-md">
+        <CardHeader className="text-center pb-2 pt-7">
+          <div className="flex justify-center mb-4">
+            <div className="text-center select-none">
+              <div className="flex items-center justify-center gap-3 mb-1.5">
+                <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="52" height="52" rx="9" fill="#1a3a5c"/>
+                  <path d="M26 10 L26 42 M10 26 L42 26" stroke="white" strokeWidth="9" strokeLinecap="round"/>
+                </svg>
+                <span
+                  className="font-black text-[#1a3a5c] tracking-[0.18em] leading-none"
+                  style={{ fontSize: "3.2rem", fontFamily: "'Arial Black', Arial, sans-serif", letterSpacing: "0.12em" }}
+                >
+                  AMS
+                </span>
               </div>
-              <p className="text-[10px] text-[#1a3a5c]/70 font-medium tracking-wider uppercase">Hospital Accounting System</p>
+              <p className="text-[11px] text-[#1a3a5c]/65 font-semibold tracking-[0.22em] uppercase mt-0.5">
+                Hospital Accounting System
+              </p>
             </div>
           </div>
-          <h1 className="text-lg font-bold text-foreground" data-testid="text-login-title">
+          <h1 className="text-base font-bold text-foreground" data-testid="text-login-title">
             نظام الحسابات العامة
           </h1>
           <p className="text-xs text-muted-foreground">المستشفى · الدفتر العام</p>
