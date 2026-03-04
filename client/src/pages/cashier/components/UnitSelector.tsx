@@ -1,4 +1,4 @@
-import { Building2, FlaskConical, RefreshCw } from "lucide-react";
+import { Building2, FlaskConical, PlusCircle, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { UnitType } from "../hooks/useCashierShift";
 
@@ -7,9 +7,10 @@ interface UnitSelectorProps {
   onSelect: (type: UnitType, id: string) => void;
   openShiftUnitIds?: Set<string>;
   title?: string;
+  isAddingNew?: boolean;
 }
 
-export function UnitSelector({ unitsData, onSelect, openShiftUnitIds, title }: UnitSelectorProps) {
+export function UnitSelector({ unitsData, onSelect, openShiftUnitIds, title, isAddingNew }: UnitSelectorProps) {
   const pharmacies = unitsData?.pharmacies || [];
   const departments = unitsData?.departments || [];
 
@@ -18,9 +19,11 @@ export function UnitSelector({ unitsData, onSelect, openShiftUnitIds, title }: U
       <div className="text-center space-y-1">
         <h2 className="text-base font-semibold">{title || "اختر الوحدة التي تعمل بها"}</h2>
         <p className="text-xs text-muted-foreground">
-          {openShiftUnitIds && openShiftUnitIds.size > 0
-            ? "الوحدات التي عليها وردية مفتوحة ستظهر مميزة — اضغط عليها للتبديل"
-            : "ستظهر فقط الفواتير الخاصة بالوحدة المختارة"}
+          {isAddingNew
+            ? "اختر الوحدة التي تريد فتح وردية جديدة عليها"
+            : openShiftUnitIds && openShiftUnitIds.size > 0
+              ? "الوحدات التي عليها وردية مفتوحة ستظهر مميزة — اضغط عليها للتبديل"
+              : "ستظهر فقط الفواتير الخاصة بالوحدة المختارة"}
         </p>
       </div>
 
@@ -39,7 +42,7 @@ export function UnitSelector({ unitsData, onSelect, openShiftUnitIds, title }: U
                   onClick={() => onSelect("pharmacy", p.id)}
                   className={`
                     flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-colors text-center group relative
-                    ${hasShift
+                    ${hasShift && !isAddingNew
                       ? "border-primary/50 bg-primary/5 hover:border-primary hover:bg-primary/10"
                       : "border-border hover:border-primary hover:bg-primary/5"
                     }
@@ -48,19 +51,21 @@ export function UnitSelector({ unitsData, onSelect, openShiftUnitIds, title }: U
                 >
                   {hasShift && (
                     <span className="absolute top-1 left-1">
-                      <RefreshCw className="h-3 w-3 text-primary" />
+                      {isAddingNew
+                        ? <PlusCircle className="h-3 w-3 text-muted-foreground" />
+                        : <RefreshCw className="h-3 w-3 text-primary" />}
                     </span>
                   )}
                   <div className={`
                     w-9 h-9 rounded-full flex items-center justify-center transition-colors
-                    ${hasShift ? "bg-primary/15" : "bg-blue-100 dark:bg-blue-900/40 group-hover:bg-primary/10"}
+                    ${hasShift && !isAddingNew ? "bg-primary/15" : "bg-blue-100 dark:bg-blue-900/40 group-hover:bg-primary/10"}
                   `}>
-                    <FlaskConical className={`h-4 w-4 ${hasShift ? "text-primary" : "text-blue-600 dark:text-blue-400 group-hover:text-primary"}`} />
+                    <FlaskConical className={`h-4 w-4 ${hasShift && !isAddingNew ? "text-primary" : "text-blue-600 dark:text-blue-400 group-hover:text-primary"}`} />
                   </div>
                   <span className="text-xs font-medium leading-tight">{p.nameAr}</span>
                   <div className="flex items-center gap-1">
                     <Badge variant="outline" className="text-[9px] px-1 py-0 no-default-hover-elevate no-default-active-elevate">{p.code}</Badge>
-                    {hasShift && (
+                    {hasShift && !isAddingNew && (
                       <Badge className="text-[9px] px-1 py-0 bg-primary/80 text-primary-foreground no-default-hover-elevate no-default-active-elevate">
                         مفتوحة
                       </Badge>
@@ -88,7 +93,7 @@ export function UnitSelector({ unitsData, onSelect, openShiftUnitIds, title }: U
                   onClick={() => onSelect("department", d.id)}
                   className={`
                     flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-colors text-center group relative
-                    ${hasShift
+                    ${hasShift && !isAddingNew
                       ? "border-primary/50 bg-primary/5 hover:border-primary hover:bg-primary/10"
                       : "border-border hover:border-primary hover:bg-primary/5"
                     }
@@ -97,19 +102,21 @@ export function UnitSelector({ unitsData, onSelect, openShiftUnitIds, title }: U
                 >
                   {hasShift && (
                     <span className="absolute top-1 left-1">
-                      <RefreshCw className="h-3 w-3 text-primary" />
+                      {isAddingNew
+                        ? <PlusCircle className="h-3 w-3 text-muted-foreground" />
+                        : <RefreshCw className="h-3 w-3 text-primary" />}
                     </span>
                   )}
                   <div className={`
                     w-9 h-9 rounded-full flex items-center justify-center transition-colors
-                    ${hasShift ? "bg-primary/15" : "bg-green-100 dark:bg-green-900/40 group-hover:bg-primary/10"}
+                    ${hasShift && !isAddingNew ? "bg-primary/15" : "bg-green-100 dark:bg-green-900/40 group-hover:bg-primary/10"}
                   `}>
-                    <Building2 className={`h-4 w-4 ${hasShift ? "text-primary" : "text-green-600 dark:text-green-400 group-hover:text-primary"}`} />
+                    <Building2 className={`h-4 w-4 ${hasShift && !isAddingNew ? "text-primary" : "text-green-600 dark:text-green-400 group-hover:text-primary"}`} />
                   </div>
                   <span className="text-xs font-medium leading-tight">{d.nameAr}</span>
                   <div className="flex items-center gap-1">
                     <Badge variant="outline" className="text-[9px] px-1 py-0 no-default-hover-elevate no-default-active-elevate">{d.code}</Badge>
-                    {hasShift && (
+                    {hasShift && !isAddingNew && (
                       <Badge className="text-[9px] px-1 py-0 bg-primary/80 text-primary-foreground no-default-hover-elevate no-default-active-elevate">
                         مفتوحة
                       </Badge>

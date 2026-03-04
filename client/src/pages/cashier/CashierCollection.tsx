@@ -132,7 +132,7 @@ export default function CashierCollection() {
         <CardContent className="p-3">
           {shiftLoading ? (
             <Skeleton className="h-10 w-full" />
-          ) : hasActiveShift && activeShift ? (
+          ) : hasActiveShift && activeShift && !isAddingNew ? (
             <ShiftStatusBar
               activeShift={activeShift}
               unitName={activeUnitName}
@@ -147,6 +147,7 @@ export default function CashierCollection() {
                 onSelect={handleUnitSelect}
                 openShiftUnitIds={openShiftUnitIds}
                 title={isAddingNew ? "اختر الوحدة للوردية الجديدة" : undefined}
+                isAddingNew={isAddingNew}
               />
               {isAddingNew && (
                 <div className="mt-4 flex justify-center">
