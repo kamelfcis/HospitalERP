@@ -424,6 +424,7 @@ export interface IStorage {
   getActiveShift(cashierId: string, unitType: string, unitId: string): Promise<any>;
   getShiftById(shiftId: string): Promise<any>;
   closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
+  validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; reasonCode: string }>;
   getPendingSalesInvoices(unitType: string, unitId: string, search?: string): Promise<any[]>;
   getPendingReturnInvoices(unitType: string, unitId: string, search?: string): Promise<any[]>;
   getSalesInvoiceDetails(invoiceId: string): Promise<any>;
@@ -6094,6 +6095,54 @@ export class DatabaseStorage implements IStorage {
     return 0;
   }
 
+  private async getPendingDocCountForUnit(shift: CashierShift): Promise<number> {
+    if (shift.unitType === "department" && shift.departmentId) {
+      const [result] = await db.select({ count: sql<number>`COUNT(*)` })
+        .from(salesInvoiceHeaders)
+        .innerJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
+        .where(and(eq(warehouses.departmentId, shift.departmentId), eq(salesInvoiceHeaders.status, "finalized")));
+      return Number(result?.count) || 0;
+    }
+    if (shift.pharmacyId) {
+      const [result] = await db.select({ count: sql<number>`COUNT(*)` })
+        .from(salesInvoiceHeaders)
+        .where(and(eq(salesInvoiceHeaders.pharmacyId, shift.pharmacyId), eq(salesInvoiceHeaders.status, "finalized")));
+      return Number(result?.count) || 0;
+    }
+    return 0;
+  }
+
+  private async existsOtherOpenShiftForUnit(currentShiftId: string, shift: CashierShift): Promise<boolean> {
+    const unitCondition = shift.unitType === "department" && shift.departmentId
+      ? eq(cashierShifts.departmentId, shift.departmentId)
+      : shift.pharmacyId
+        ? eq(cashierShifts.pharmacyId, shift.pharmacyId)
+        : sql`1=0`;
+    const [result] = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(cashierShifts)
+      .where(and(
+        eq(cashierShifts.status, "open"),
+        unitCondition,
+        sql`${cashierShifts.id} != ${currentShiftId}`,
+      ));
+    return Number(result?.count) > 0;
+  }
+
+  async validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; reasonCode: string }> {
+    const shift = await this.getShiftById(shiftId);
+    if (!shift) return { canClose: false, pendingCount: 0, hasOtherOpenShift: false, reasonCode: "NOT_FOUND" };
+    if (shift.status !== "open") return { canClose: false, pendingCount: 0, hasOtherOpenShift: false, reasonCode: "ALREADY_CLOSED" };
+
+    const [pendingCount, hasOtherOpenShift] = await Promise.all([
+      this.getPendingDocCountForUnit(shift),
+      this.existsOtherOpenShiftForUnit(shiftId, shift),
+    ]);
+
+    if (pendingCount === 0) return { canClose: true, pendingCount: 0, hasOtherOpenShift, reasonCode: "CLEAN" };
+    if (hasOtherOpenShift) return { canClose: true, pendingCount, hasOtherOpenShift: true, reasonCode: "PENDING_OTHER_SHIFT_EXISTS" };
+    return { canClose: false, pendingCount, hasOtherOpenShift: false, reasonCode: "PENDING_NO_OTHER_SHIFT" };
+  }
+
   async getShiftById(shiftId: string): Promise<CashierShift | null> {
     const [shift] = await db.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
     return shift || null;
@@ -6104,9 +6153,12 @@ export class DatabaseStorage implements IStorage {
     if (!shift) throw new Error("الوردية غير موجودة");
     if (shift.status !== "open") throw new Error("الوردية مغلقة بالفعل");
 
-    const pendingCount = await this.getPendingInvoiceCountForUnit(shift);
-    if (pendingCount > 0) {
-      throw new Error(`لا يمكن إغلاق الوردية - يوجد ${pendingCount} فاتورة معلقة لم يتم تحصيلها`);
+    const [pendingCount, hasOtherOpenShift] = await Promise.all([
+      this.getPendingDocCountForUnit(shift),
+      this.existsOtherOpenShiftForUnit(shiftId, shift),
+    ]);
+    if (pendingCount > 0 && !hasOtherOpenShift) {
+      throw new Error(`لا يمكن إغلاق الوردية - يوجد ${pendingCount} مستند معلّق لم يتم تحصيله`);
     }
 
     const totals = await this.getShiftTotals(shiftId);

@@ -1,4 +1,4 @@
-import { LogOut, Building2, FlaskConical } from "lucide-react";
+import { LogOut, Building2, FlaskConical, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/lib/formatters";
@@ -9,9 +9,10 @@ interface ShiftStatusBarProps {
   unitName: string;
   unitType: string;
   onCloseShift: () => void;
+  isClosing?: boolean;
 }
 
-export function ShiftStatusBar({ activeShift, unitName, unitType, onCloseShift }: ShiftStatusBarProps) {
+export function ShiftStatusBar({ activeShift, unitName, unitType, onCloseShift, isClosing }: ShiftStatusBarProps) {
   return (
     <div className="flex flex-row-reverse items-center justify-between gap-3 flex-wrap">
       <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
@@ -33,9 +34,12 @@ export function ShiftStatusBar({ activeShift, unitName, unitType, onCloseShift }
         variant="destructive"
         size="sm"
         onClick={onCloseShift}
+        disabled={isClosing}
         data-testid="button-close-shift"
       >
-        <LogOut className="ml-1 h-3 w-3" />
+        {isClosing
+          ? <Loader2 className="ml-1 h-3 w-3 animate-spin" />
+          : <LogOut className="ml-1 h-3 w-3" />}
         إغلاق الوردية
       </Button>
     </div>

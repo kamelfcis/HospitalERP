@@ -14,6 +14,7 @@ import { ShiftStatusBar } from "./components/ShiftStatusBar";
 import { InvoiceTable } from "./components/InvoiceTable";
 import { InvoiceDetailsPanel } from "./components/InvoiceDetailsPanel";
 import { CloseShiftDialog } from "./components/CloseShiftDialog";
+import { CloseShiftValidationDialog } from "./components/CloseShiftValidationDialog";
 import { ShiftTotalsWidget } from "./components/ShiftTotalsWidget";
 import { formatNumber } from "@/lib/formatters";
 
@@ -37,6 +38,9 @@ export default function CashierCollection() {
     shiftId, shiftUnitType, shiftUnitId,
     shiftTotals, expectedCash, varianceCalc,
     openShiftMutation, closeShiftMutation, canOpenShift,
+    validationDialogOpen, setValidationDialogOpen,
+    validation, isValidating,
+    handleCloseShiftClick, handleProceedFromValidation,
   } = shift;
 
   const invoices = usePendingInvoices(hasActiveShift, shiftUnitType, shiftUnitId, shiftId);
@@ -104,7 +108,8 @@ export default function CashierCollection() {
               activeShift={activeShift}
               unitName={activeUnitName}
               unitType={activeShift.unitType}
-              onCloseShift={() => { setClosingCash("0"); setCloseDialogOpen(true); }}
+              onCloseShift={() => { setClosingCash("0"); handleCloseShiftClick(); }}
+              isClosing={isValidating}
             />
           ) : !unitConfirmed ? (
             <div className="py-4">
@@ -245,6 +250,14 @@ export default function CashierCollection() {
       )}
 
       {hasActiveShift && shiftTotals && canViewTotals && <ShiftTotalsWidget totals={shiftTotals} />}
+
+      <CloseShiftValidationDialog
+        open={validationDialogOpen}
+        onOpenChange={setValidationDialogOpen}
+        validation={validation}
+        isValidating={isValidating}
+        onProceed={handleProceedFromValidation}
+      />
 
       <CloseShiftDialog
         open={closeDialogOpen}

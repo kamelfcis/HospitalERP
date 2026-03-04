@@ -4233,6 +4233,15 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/cashier/shift/:shiftId/validate-close", async (req, res) => {
+    try {
+      const result = await storage.validateShiftClose(req.params.shiftId);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/cashier/shift/:shiftId/close", async (req, res) => {
     try {
       const { closingCash } = req.body;
@@ -4240,7 +4249,7 @@ export async function registerRoutes(
       const shift = await storage.closeCashierShift(req.params.shiftId, closingCash);
       res.json(shift);
     } catch (error: any) {
-      if (error.message?.includes("معلقة") || error.message?.includes("مغلقة")) return res.status(409).json({ message: error.message });
+      if (error.message?.includes("معلق") || error.message?.includes("مغلق")) return res.status(409).json({ message: error.message });
       res.status(500).json({ message: error.message });
     }
   });

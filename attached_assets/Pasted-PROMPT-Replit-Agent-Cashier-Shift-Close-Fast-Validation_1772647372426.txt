@@ -1,0 +1,155 @@
+PROMPT (Replit Agent) — Cashier Shift Close: Fast Validation + No Hardcoded Tables/Paths
+Mission
+
+Implement a high-performance, safe validation for Cashier Shift Close:
+
+The cashier cannot close a shift if there are pending Sales or Returns documents for the same department/pharmacy,
+EXCEPT if another shift is currently open for the same department/pharmacy, then closing is allowed.
+
+Critical Constraints (must follow)
+
+DO NOT hardcode any DB table names, column names, or file paths.
+
+You must detect and use the project’s existing schema/entities/services/repositories.
+
+Must be fast: validation should feel instant to the user.
+
+No breaking changes: preserve existing patterns, endpoints, and business rules.
+
+Refactor + componentization required: avoid adding logic inside a giant UI component; centralize and reuse.
+
+Business Rules
+Rule A — Block close if pending docs exist
+
+When user clicks Close Shift:
+
+If there are any pending documents of type Sale or Return that still require cashier collection
+
+And they belong to the same department/pharmacy context as the shift being closed
+
+Then BLOCK closing.
+
+UI message:
+
+clear warning
+
+shows pending count
+
+Rule B — Allow close if another open shift exists
+
+If pending docs exist BUT there is another open shift for the same department/pharmacy context (excluding current shift):
+
+ALLOW closing
+
+Show informational message:
+
+“Allowed because another open shift exists and can receive pending docs.”
+
+Rule C — Must be race-condition safe
+
+Validation must run as part of the close operation (server-side), so an invoice created “during closing” can’t bypass.
+
+Performance Requirements (must)
+
+To make it “instant”:
+
+Use only minimal queries (prefer COUNT(*) / existence checks instead of fetching rows).
+
+Select only needed fields (department context + shift status + counts).
+
+Avoid N+1.
+
+Cache static configuration only if it already exists in the project (don’t invent a new cache layer).
+
+Add/confirm indexes only if the project already has a migrations system; if yes:
+
+create the smallest, safest indexes needed to accelerate:
+
+pending documents by status + department context
+
+open shifts by department context + status
+
+if migration system is unknown or risky: skip migrations and rely on optimized queries only.
+
+Implementation Plan (do this exactly)
+1) Identify existing “department/pharmacy context”
+
+Locate how the system currently decides “which department/pharmacy a shift belongs to”.
+
+It might be treasury → department, or shift → unit, or cashier session → stock/section.
+
+Use the same existing mapping and re-use its helper(s).
+
+2) Create a reusable validation function (no hardcoded paths)
+
+Put it where the project already keeps business logic (service layer / storage / domain / controller helper).
+
+Name it something consistent with existing naming conventions.
+
+Signature example (adapt to project style):
+
+validateShiftClose(shiftId, userContext?) -> { canClose, pendingCount, otherOpenShift, reasonCode }
+
+3) Ensure close endpoint uses server-side validation inside the close transaction
+
+In the existing “close shift” flow:
+
+lock/verify the shift is open
+
+compute department context
+
+pendingCount = countPendingDocs(context, [sale, return])
+
+if pendingCount > 0:
+
+otherOpenShift = existsOtherOpenShift(context, shiftId)
+
+if no otherOpenShift → reject close with 409/422 (use project conventions)
+
+if allowed → proceed close
+
+4) Frontend refactor + componentization
+
+Do NOT embed business logic into the screen.
+
+Add:
+
+a small hook (or existing query/mutation pattern) to call “validate then close”
+
+a reusable dialog component that:
+
+renders result message
+
+shows pending count + whether another open shift exists
+
+provides confirm/cancel UX
+
+5) UX behavior
+
+Click Close:
+
+show loading state immediately (button disabled / spinner)
+
+call server
+
+if blocked: show warning dialog
+
+if allowed: close shift and refresh screen state
+
+Copy should be short and clear:
+
+“لا يمكن قفل الوردية: في فواتير بيع/مرتجع معلّقة”
+
+“مسموح بالقفل لأن في وردية أخرى مفتوحة لنفس القسم”
+
+Testing / Verification (must)
+
+Add minimal tests or checks matching project style:
+
+No pending docs → close allowed ✅
+
+Pending docs + no other open shift → blocked ✅
+
+Pending docs + other open shift exists → allowed ✅
+
+Concurrency: simulate doc created while closing → close should block unless exception applies ✅

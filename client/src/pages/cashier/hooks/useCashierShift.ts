@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { ShiftCloseValidation } from "../components/CloseShiftValidationDialog";
 
 export type UnitType = "pharmacy" | "department";
 
@@ -50,6 +51,9 @@ export function useCashierShift() {
   const [glAccountSearch, setGlAccountSearch] = useState("");
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closingCash, setClosingCash] = useState("0");
+  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
+  const [validation, setValidation] = useState<ShiftCloseValidation | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
 
   const { data: unitsData } = useQuery<{ pharmacies: any[]; departments: any[] }>({
     queryKey: ["/api/cashier/units"],
@@ -152,6 +156,31 @@ export function useCashierShift() {
 
   const canOpenShift = !!cashierName.trim() && !!selectedUnitId && !!shiftGlAccountId && (!selectedDrawerHasPassword || !!drawerPassword);
 
+  const handleCloseShiftClick = useCallback(async () => {
+    if (!shiftId) return;
+    setIsValidating(true);
+    setValidation(null);
+    try {
+      const res = await fetch(`/api/cashier/shift/${shiftId}/validate-close`, { credentials: "include" });
+      const result: ShiftCloseValidation = await res.json();
+      setValidation(result);
+      if (result.reasonCode === "CLEAN") {
+        setCloseDialogOpen(true);
+      } else {
+        setValidationDialogOpen(true);
+      }
+    } catch {
+      toast({ title: "خطأ", description: "فشل التحقق من حالة الوردية", variant: "destructive" });
+    } finally {
+      setIsValidating(false);
+    }
+  }, [shiftId, toast]);
+
+  const handleProceedFromValidation = useCallback(() => {
+    setValidationDialogOpen(false);
+    setCloseDialogOpen(true);
+  }, []);
+
   return {
     selectedUnitType, setSelectedUnitType,
     selectedUnitId, setSelectedUnitId,
@@ -168,5 +197,8 @@ export function useCashierShift() {
     shiftId, shiftUnitType, shiftUnitId,
     shiftTotals, expectedCash, varianceCalc,
     openShiftMutation, closeShiftMutation, canOpenShift,
+    validationDialogOpen, setValidationDialogOpen,
+    validation, isValidating,
+    handleCloseShiftClick, handleProceedFromValidation,
   };
 }
