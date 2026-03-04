@@ -4173,11 +4173,35 @@ export async function registerRoutes(
 
   // ==================== Cashier API ====================
 
+  app.get("/api/cashier/units", async (_req, res) => {
+    try {
+      const pharms = await storage.getPharmacies();
+      const depts = await storage.getDepartments();
+      res.json({
+        pharmacies: pharms.filter((p: any) => p.isActive),
+        departments: depts.filter((d: any) => d.isActive),
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cashier/staff", async (req, res) => {
+    try {
+      const rows = await db.execute(sql`SELECT id, username, full_name AS "fullName" FROM users WHERE is_active = true ORDER BY full_name`);
+      res.json(rows.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/cashier/shift/open", async (req, res) => {
     try {
-      const { cashierId, cashierName, openingCash, pharmacyId, glAccountId, drawerPassword } = req.body;
-      if (!cashierId || !cashierName) return res.status(400).json({ message: "بيانات الكاشير مطلوبة" });
-      if (!pharmacyId) return res.status(400).json({ message: "يجب اختيار الصيدلية" });
+      const { cashierName, openingCash, unitType, pharmacyId, departmentId, glAccountId, drawerPassword } = req.body;
+      if (!cashierName) return res.status(400).json({ message: "اسم الكاشير مطلوب" });
+      if (!unitType || !["pharmacy", "department"].includes(unitType)) return res.status(400).json({ message: "يجب تحديد نوع الوحدة" });
+      if (unitType === "pharmacy" && !pharmacyId) return res.status(400).json({ message: "يجب اختيار الصيدلية" });
+      if (unitType === "department" && !departmentId) return res.status(400).json({ message: "يجب اختيار القسم" });
       if (!glAccountId) return res.status(400).json({ message: "يجب اختيار حساب الخزنة" });
 
       const passwordHash = await storage.getDrawerPassword(glAccountId);
@@ -4187,7 +4211,8 @@ export async function registerRoutes(
         if (!valid) return res.status(401).json({ message: "كلمة سر الخزنة غير صحيحة" });
       }
 
-      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", pharmacyId, glAccountId);
+      const cashierId = (req.session as any).userId || "cashier-1";
+      const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", unitType, pharmacyId, departmentId, glAccountId);
       res.json(shift);
     } catch (error: any) {
       if (error.message?.includes("مفتوحة")) return res.status(409).json({ message: error.message });
@@ -4195,11 +4220,13 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashier/shift/active/:cashierId", async (req, res) => {
+  app.get("/api/cashier/shift/active", async (req, res) => {
     try {
-      const pharmacyId = req.query.pharmacyId as string;
-      if (!pharmacyId) return res.status(400).json({ message: "يجب تحديد الصيدلية" });
-      const shift = await storage.getActiveShift(req.params.cashierId, pharmacyId);
+      const cashierId = (req.session as any).userId || "cashier-1";
+      const unitType = (req.query.unitType as string) || "pharmacy";
+      const unitId = req.query.unitId as string;
+      if (!unitId) return res.json(null);
+      const shift = await storage.getActiveShift(cashierId, unitType, unitId);
       res.json(shift);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -4229,10 +4256,11 @@ export async function registerRoutes(
 
   app.get("/api/cashier/pending-sales", async (req, res) => {
     try {
-      const pharmacyId = req.query.pharmacyId as string;
-      if (!pharmacyId) return res.status(400).json({ message: "يجب تحديد الصيدلية" });
+      const unitType = (req.query.unitType as string) || "pharmacy";
+      const unitId = req.query.unitId as string;
+      if (!unitId) return res.status(400).json({ message: "يجب تحديد الوحدة" });
       const search = req.query.search as string | undefined;
-      const invoices = await storage.getPendingSalesInvoices(pharmacyId, search);
+      const invoices = await storage.getPendingSalesInvoices(unitType, unitId, search);
       res.json(invoices);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -4241,10 +4269,11 @@ export async function registerRoutes(
 
   app.get("/api/cashier/pending-returns", async (req, res) => {
     try {
-      const pharmacyId = req.query.pharmacyId as string;
-      if (!pharmacyId) return res.status(400).json({ message: "يجب تحديد الصيدلية" });
+      const unitType = (req.query.unitType as string) || "pharmacy";
+      const unitId = req.query.unitId as string;
+      if (!unitId) return res.status(400).json({ message: "يجب تحديد الوحدة" });
       const search = req.query.search as string | undefined;
-      const invoices = await storage.getPendingReturnInvoices(pharmacyId, search);
+      const invoices = await storage.getPendingReturnInvoices(unitType, unitId, search);
       res.json(invoices);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

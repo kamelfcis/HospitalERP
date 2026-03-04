@@ -18,7 +18,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Inventory & Sales**: Features Supplier Receiving, Sales Invoicing (with barcode scanning, FEFO allocation, customer types, atomic stock deduction), Patient Invoicing (services, drugs, consumables, payments, "Distribute to Cases" feature, linked to admissions), Patient Admissions management, and Master Data for items, patients, and doctors.
 - **Services & Price Lists**: CRUD operations for services (department-scoped), price lists with inline editing and bulk adjustments, and integration with sales invoices.
 - **Multi-Pharmacy Support**: Supports multiple pharmacies with isolation for invoicing and cashier operations.
-- **Cashier & Security**: Includes real-time SSE for instant invoice visibility, password-protected cash drawers with GL account selection for shifts, and a two-stage journal entry system for sales.
+- **Cashier & Security**: Includes real-time SSE for instant invoice visibility, password-protected cash drawers with GL account selection for shifts, department-level invoice isolation (each unit sees only its own pending invoices), close-shift restriction when pending invoices exist, a two-stage journal entry system for sales. Cashier screen fully refactored into hooks + compound components (925→~200 lines). Supports pharmacies AND departments as cashier units.
 - **Reporting & Audit**: Generates balanced financial reports, incorporates full role-based access control (RBAC) with granular permissions, and maintains a comprehensive audit trail with strict validation and conflict resolution.
 - **User Experience**: Emphasizes a professional UI with collapsible sidebar, A4 print styles, focus management, and visual auto-save indicators.
 - **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing costs for patient accommodation, a Bed Board system for hospital bed management with atomic operations, real-time SSE updates, smart bed transfer with instant accommodation billing, and a Surgery Types System.
@@ -91,6 +91,41 @@ The `PatientInvoicePage` was refactored from ~1212 lines into ~270 lines using a
 - `InvoiceTab` — main invoice entry (header + lines + payments + doctor transfer)
 - `RegistryTab` — searchable invoice history
 - `AdmissionsTab` — admissions management
+
+## Cashier Collection Screen — Architecture (Refactored)
+
+`CashierCollection` was refactored from ~925 lines into ~200 lines + separate modules in `client/src/pages/cashier/`.
+
+### Hooks (`client/src/pages/cashier/hooks/`)
+| Hook | Responsibility |
+|------|---------------|
+| `useCashierShift` | Unit selection (pharmacy/department), shift open/close, GL account, drawer password, totals |
+| `usePendingInvoices` | Pending sales & returns queries + SSE real-time updates + invoice details |
+| `useCashierActions` | Collect & refund mutations + keyboard shortcuts (Ctrl+Enter / F9) |
+
+### Components (`client/src/pages/cashier/components/`)
+| Component | Responsibility |
+|-----------|---------------|
+| `UnitSelector` | Visual entry picker — shows pharmacies AND departments in a card grid |
+| `ShiftOpenForm` | Open-shift form: user dropdown (not free text), GL account + conditional password field |
+| `ShiftStatusBar` | Active-shift header bar with unit name, cashier name, opening balance |
+| `InvoiceTable` | Reusable pending invoice list (checkbox selection, search, row click) |
+| `InvoiceDetailsPanel` | Shows line details for single selection, aggregate totals for multi-selection |
+| `CloseShiftDialog` | Close-shift dialog with expected vs actual cash and variance |
+| `ShiftTotalsWidget` | Fixed bottom-left totals widget (collected / refunded / net) |
+
+### Business Rules
+- **Unit isolation**: Pharmacies see their `sales_invoices`; departments see sales from their warehouses (`warehouse.department_id`)
+- **Close restriction**: Backend blocks shift close if pending (finalized but uncollected) invoices exist for the unit
+- **Cashier name**: Selected from active users list — no free-text input
+- **Session-based cashier ID**: `cashierId` taken from `req.session.userId` (not hardcoded "cashier-1")
+- **Password field**: Conditionally shown only when the selected GL account has a stored password hash
+- **DB columns added**: `cashier_shifts.unit_type` (pharmacy|department), `cashier_shifts.department_id`
+
+### New API Endpoints
+- `GET /api/cashier/units` — combined pharmacies + departments for unit picker
+- `GET /api/cashier/staff` — active users for cashier name dropdown
+- `GET /api/cashier/shift/active?unitType=X&unitId=Y` — session-based active shift lookup
 
 ## Critical Implementation Notes
 

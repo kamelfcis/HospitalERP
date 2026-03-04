@@ -35,7 +35,7 @@ import Departments from "@/pages/Departments";
 import Patients from "@/pages/Patients";
 import Doctors from "@/pages/Doctors";
 import PatientInvoice from "@/pages/PatientInvoice";
-import CashierCollection from "@/pages/CashierCollection";
+import CashierCollection from "@/pages/cashier/CashierCollection";
 import AccountMappings from "@/pages/AccountMappings";
 import DrawerPasswords from "@/pages/DrawerPasswords";
 import UsersManagement from "@/pages/users-management";

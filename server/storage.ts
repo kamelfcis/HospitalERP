@@ -420,12 +420,12 @@ export interface IStorage {
   getDrawersWithPasswordStatus(): Promise<{ glAccountId: string; hasPassword: boolean; code: string; name: string }[]>;
 
   // Cashier
-  openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string, glAccountId?: string | null): Promise<any>;
-  getActiveShift(cashierId: string, pharmacyId: string): Promise<any>;
+  openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<any>;
+  getActiveShift(cashierId: string, unitType: string, unitId: string): Promise<any>;
   getShiftById(shiftId: string): Promise<any>;
   closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
-  getPendingSalesInvoices(pharmacyId: string, search?: string): Promise<any[]>;
-  getPendingReturnInvoices(pharmacyId: string, search?: string): Promise<any[]>;
+  getPendingSalesInvoices(unitType: string, unitId: string, search?: string): Promise<any[]>;
+  getPendingReturnInvoices(unitType: string, unitId: string, search?: string): Promise<any[]>;
   getSalesInvoiceDetails(invoiceId: string): Promise<any>;
   collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string, paymentDate?: string): Promise<any>;
   refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string, paymentDate?: string): Promise<any>;
@@ -6038,15 +6038,20 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async openCashierShift(cashierId: string, cashierName: string, openingCash: string, pharmacyId: string, glAccountId?: string | null): Promise<CashierShift> {
-    const [existingOpen] = await db.select().from(cashierShifts)
-      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.pharmacyId, pharmacyId), eq(cashierShifts.status, "open")));
-    if (existingOpen) throw new Error("يوجد وردية مفتوحة بالفعل لهذا الكاشير في هذه الصيدلية");
+  async openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<CashierShift> {
+    const conditions = [eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.unitType, unitType), eq(cashierShifts.status, "open")];
+    if (unitType === "pharmacy" && pharmacyId) conditions.push(eq(cashierShifts.pharmacyId, pharmacyId));
+    if (unitType === "department" && departmentId) conditions.push(eq(cashierShifts.departmentId, departmentId));
+    const [existingOpen] = await db.select().from(cashierShifts).where(and(...conditions));
+    if (existingOpen) throw new Error("يوجد وردية مفتوحة بالفعل لهذا الكاشير في هذه الوحدة");
 
+    const unitLabel = unitType === "department" ? `قسم: ${departmentId}` : `صيدلية: ${pharmacyId}`;
     const [shift] = await db.insert(cashierShifts).values({
       cashierId,
       cashierName,
-      pharmacyId,
+      unitType,
+      pharmacyId: unitType === "pharmacy" ? (pharmacyId || null) : null,
+      departmentId: unitType === "department" ? (departmentId || null) : null,
       openingCash,
       glAccountId: glAccountId || null,
       status: "open",
@@ -6057,28 +6062,36 @@ export class DatabaseStorage implements IStorage {
       action: "open_shift",
       entityType: "shift",
       entityId: shift.id,
-      details: `فتح وردية - رصيد افتتاحي: ${openingCash} - صيدلية: ${pharmacyId}`,
+      details: `فتح وردية - رصيد افتتاحي: ${openingCash} - ${unitLabel}`,
       performedBy: cashierName,
     });
 
     return shift;
   }
 
-  async getActiveShift(cashierId: string, pharmacyId: string): Promise<CashierShift | null> {
-    const [shift] = await db.select().from(cashierShifts)
-      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.pharmacyId, pharmacyId), eq(cashierShifts.status, "open")));
+  async getActiveShift(cashierId: string, unitType: string, unitId: string): Promise<CashierShift | null> {
+    const conditions = [eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.unitType, unitType), eq(cashierShifts.status, "open")];
+    if (unitType === "pharmacy") conditions.push(eq(cashierShifts.pharmacyId, unitId));
+    else conditions.push(eq(cashierShifts.departmentId, unitId));
+    const [shift] = await db.select().from(cashierShifts).where(and(...conditions));
     return shift || null;
   }
 
-  async getPendingInvoiceCountForPharmacy(pharmacyId: string): Promise<number> {
-    const [result] = await db.select({
-      count: sql<number>`COUNT(*)`,
-    }).from(salesInvoiceHeaders)
-      .where(and(
-        eq(salesInvoiceHeaders.pharmacyId, pharmacyId),
-        eq(salesInvoiceHeaders.status, "finalized"),
-      ));
-    return result?.count || 0;
+  async getPendingInvoiceCountForUnit(shift: CashierShift): Promise<number> {
+    if (shift.unitType === "department" && shift.departmentId) {
+      const [result] = await db.select({ count: sql<number>`COUNT(*)` })
+        .from(salesInvoiceHeaders)
+        .innerJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
+        .where(and(eq(warehouses.departmentId, shift.departmentId), eq(salesInvoiceHeaders.status, "finalized"), eq(salesInvoiceHeaders.isReturn, false)));
+      return Number(result?.count) || 0;
+    }
+    if (shift.pharmacyId) {
+      const [result] = await db.select({ count: sql<number>`COUNT(*)` })
+        .from(salesInvoiceHeaders)
+        .where(and(eq(salesInvoiceHeaders.pharmacyId, shift.pharmacyId), eq(salesInvoiceHeaders.status, "finalized"), eq(salesInvoiceHeaders.isReturn, false)));
+      return Number(result?.count) || 0;
+    }
+    return 0;
   }
 
   async getShiftById(shiftId: string): Promise<CashierShift | null> {
@@ -6091,11 +6104,9 @@ export class DatabaseStorage implements IStorage {
     if (!shift) throw new Error("الوردية غير موجودة");
     if (shift.status !== "open") throw new Error("الوردية مغلقة بالفعل");
 
-    if (shift.pharmacyId) {
-      const pendingCount = await this.getPendingInvoiceCountForPharmacy(shift.pharmacyId);
-      if (pendingCount > 0) {
-        throw new Error(`لا يمكن إغلاق الوردية - يوجد ${pendingCount} فاتورة معلقة لم يتم تحصيلها`);
-      }
+    const pendingCount = await this.getPendingInvoiceCountForUnit(shift);
+    if (pendingCount > 0) {
+      throw new Error(`لا يمكن إغلاق الوردية - يوجد ${pendingCount} فاتورة معلقة لم يتم تحصيلها`);
     }
 
     const totals = await this.getShiftTotals(shiftId);
@@ -6122,14 +6133,13 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getPendingSalesInvoices(pharmacyId: string, search?: string): Promise<any[]> {
-    const conditions = [
-      eq(salesInvoiceHeaders.status, "finalized"),
-      eq(salesInvoiceHeaders.isReturn, false),
-      eq(salesInvoiceHeaders.pharmacyId, pharmacyId),
-    ];
+  async getPendingSalesInvoices(unitType: string, unitId: string, search?: string): Promise<any[]> {
+    const baseConditions = [eq(salesInvoiceHeaders.status, "finalized"), eq(salesInvoiceHeaders.isReturn, false)];
+    const unitCondition = unitType === "department"
+      ? eq(warehouses.departmentId, unitId)
+      : eq(salesInvoiceHeaders.pharmacyId, unitId);
 
-    let query = db.select({
+    const results = await db.select({
       id: salesInvoiceHeaders.id,
       invoiceNumber: salesInvoiceHeaders.invoiceNumber,
       invoiceDate: salesInvoiceHeaders.invoiceDate,
@@ -6146,10 +6156,8 @@ export class DatabaseStorage implements IStorage {
     })
     .from(salesInvoiceHeaders)
     .leftJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
-    .where(and(...conditions))
+    .where(and(...baseConditions, unitCondition))
     .orderBy(asc(salesInvoiceHeaders.createdAt));
-
-    const results = await query;
 
     if (search) {
       const s = search.toLowerCase();
@@ -6159,18 +6167,16 @@ export class DatabaseStorage implements IStorage {
         (r.createdBy && r.createdBy.toLowerCase().includes(s))
       );
     }
-
     return results;
   }
 
-  async getPendingReturnInvoices(pharmacyId: string, search?: string): Promise<any[]> {
-    const conditions = [
-      eq(salesInvoiceHeaders.status, "finalized"),
-      eq(salesInvoiceHeaders.isReturn, true),
-      eq(salesInvoiceHeaders.pharmacyId, pharmacyId),
-    ];
+  async getPendingReturnInvoices(unitType: string, unitId: string, search?: string): Promise<any[]> {
+    const baseConditions = [eq(salesInvoiceHeaders.status, "finalized"), eq(salesInvoiceHeaders.isReturn, true)];
+    const unitCondition = unitType === "department"
+      ? eq(warehouses.departmentId, unitId)
+      : eq(salesInvoiceHeaders.pharmacyId, unitId);
 
-    let query = db.select({
+    const results = await db.select({
       id: salesInvoiceHeaders.id,
       invoiceNumber: salesInvoiceHeaders.invoiceNumber,
       invoiceDate: salesInvoiceHeaders.invoiceDate,
@@ -6188,10 +6194,8 @@ export class DatabaseStorage implements IStorage {
     })
     .from(salesInvoiceHeaders)
     .leftJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
-    .where(and(...conditions))
+    .where(and(...baseConditions, unitCondition))
     .orderBy(asc(salesInvoiceHeaders.createdAt));
-
-    const results = await query;
 
     if (search) {
       const s = search.toLowerCase();
@@ -6200,7 +6204,6 @@ export class DatabaseStorage implements IStorage {
         (r.customerName && r.customerName.toLowerCase().includes(s))
       );
     }
-
     return results;
   }
 
