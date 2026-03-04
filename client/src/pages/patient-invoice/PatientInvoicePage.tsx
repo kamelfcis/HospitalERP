@@ -23,6 +23,7 @@ import { useAdmissions }         from "./hooks/useAdmissions";
 import { useAdmissionsMutations } from "./hooks/useAdmissionsMutations";
 import { useRegistry }           from "./hooks/useRegistry";
 import { useInvoiceMutations }   from "./hooks/useInvoiceMutations";
+import { useInvoiceValidation }  from "./hooks/useInvoiceValidation";
 import { useSearchState }        from "./hooks/useSearchState";
 import { useDoctorTransfer }     from "./hooks/useDoctorTransfer";
 import { useStatsDialog }        from "./hooks/useStatsDialog";
@@ -90,8 +91,9 @@ export default function PatientInvoice() {
   }, [lm.lines, payments.payments, form.headerDiscountAmount, form.headerDiscountPercent]);
 
   // ── Hooks ────────────────────────────────────────────────────────────────────
-  const dt    = useDoctorTransfer({ invoiceId: form.invoiceId, invoiceStatus: form.status, netAmount: totals.netAmount });
-  const stats = useStatsDialog();
+  const dt       = useDoctorTransfer({ invoiceId: form.invoiceId, invoiceStatus: form.status, netAmount: totals.netAmount });
+  const stats    = useStatsDialog();
+  const validate = useInvoiceValidation();
 
   const { saveMutation, finalizeMutation } = useInvoiceMutations({
     invoiceId:    form.invoiceId,
@@ -207,12 +209,14 @@ export default function PatientInvoice() {
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const openDistributeDialog = useCallback(() => {
-    if (lm.lines.length === 0) {
-      toast({ title: "تنبيه", description: "لا توجد بنود للتوزيع", variant: "destructive" });
-      return;
-    }
+    if (!validate.validateDistribute({
+      departmentId: form.departmentId,
+      warehouseId:  form.warehouseId,
+      doctorName:   form.doctorName,
+      lines:        lm.lines,
+    })) return;
     setDistOpen(true);
-  }, [lm.lines, toast]);
+  }, [validate, form.departmentId, form.warehouseId, form.doctorName, lm.lines]);
 
   const admHandleCreateSubmit = () => {
     if (!admFormData.patientName.trim()) { toast({ title: "خطأ", description: "اسم المريض مطلوب", variant: "destructive" }); return; }

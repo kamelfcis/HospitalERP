@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { LineLocal, PaymentLocal } from "../types";
+import { useInvoiceValidation } from "./useInvoiceValidation";
 
 interface Totals {
   totalAmount: number;
@@ -39,9 +40,11 @@ export function useInvoiceMutations({
   setInvoiceId, setStatus, resetAll,
 }: UseInvoiceMutationsParams) {
   const { toast } = useToast();
+  const { validateSave, validateFinalize } = useInvoiceValidation();
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!validateSave({ patientName })) throw new Error("validation");
       const header = {
         invoiceNumber, invoiceDate, patientName,
         patientPhone: patientPhone || null,
@@ -105,17 +108,16 @@ export function useInvoiceMutations({
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices/next-number"] });
     },
     onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+      if (error.message !== "validation") {
+        toast({ title: "خطأ", description: error.message, variant: "destructive" });
+      }
     },
   });
 
   const finalizeMutation = useMutation({
     mutationFn: async () => {
-      if (!invoiceId) throw new Error("يجب حفظ الفاتورة أولاً");
-      const missingDoctor = lines.filter(l => l.lineType === "service" && l.requiresDoctor && !l.doctorName.trim());
-      const missingNurse  = lines.filter(l => l.lineType === "service" && l.requiresNurse && !l.nurseName.trim());
-      if (missingDoctor.length > 0) throw new Error(`يجب إدخال اسم الطبيب للخدمات: ${missingDoctor.map(l => l.description).join("، ")}`);
-      if (missingNurse.length > 0)  throw new Error(`يجب إدخال اسم الممرض للخدمات: ${missingNurse.map(l => l.description).join("، ")}`);
+      const error = validateFinalize({ invoiceId, lines });
+      if (error) throw new Error(error);
       const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/finalize`);
       return res.json();
     },
