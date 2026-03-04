@@ -100,7 +100,6 @@ const reportNavItems: NavItem[] = [
 const systemNavItems: NavItem[] = [
   { title: "إعدادات النظام", href: "/system-settings", icon: Settings, permission: "settings.account_mappings" },
   { title: "ربط الحسابات", href: "/account-mappings", icon: Settings, permission: "settings.account_mappings" },
-  { title: "كلمات سر الخزن", href: "/drawer-passwords", icon: Lock, permission: "settings.drawer_passwords" },
   { title: "الخزن", href: "/treasuries", icon: Banknote, permission: "settings.account_mappings" },
   { title: "سجل التدقيق", href: "/audit-log", icon: History, permission: "audit_log.view" },
   { title: "إدارة المستخدمين", href: "/users", icon: Shield, permission: "users.view" },

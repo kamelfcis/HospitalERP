@@ -4554,6 +4554,13 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  app.get("/api/treasuries/summary", requireAuth, async (req, res) => {
+    try {
+      const list = await storage.getTreasuriesSummary();
+      res.json(list);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   app.post("/api/treasuries", requireAuth, async (req, res) => {
     try {
       const { name, glAccountId, isActive, notes } = req.body;

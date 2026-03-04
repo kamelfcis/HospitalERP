@@ -8,15 +8,23 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Pencil, Trash2, Plus, Banknote, Users, FileText, Loader2, Eye } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Banknote, Users, FileText, Plus, Pencil, Trash2, Loader2,
+  KeyRound, Lock, Unlock, Eye,
+} from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { type Account } from "@shared/schema";
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 
-// ─── Interfaces ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
-interface Treasury {
+interface TreasurySummary {
   id: string;
   name: string;
   glAccountId: string;
@@ -24,6 +32,11 @@ interface Treasury {
   glAccountName: string;
   isActive: boolean;
   notes: string | null;
+  openingBalance: string;
+  totalIn: string;
+  totalOut: string;
+  balance: string;
+  hasPassword: boolean;
 }
 
 interface UserTreasuryRow {
@@ -40,52 +53,80 @@ interface UserRow {
   isActive: boolean;
 }
 
-interface TreasuryTransaction {
-  id: string;
-  type: string;
-  amount: string;
-  description: string | null;
-  transactionDate: string;
-}
-
 interface Statement {
-  transactions: TreasuryTransaction[];
+  transactions: {
+    id: string; type: string; amount: string;
+    description: string | null; transactionDate: string;
+  }[];
   totalIn: string;
   totalOut: string;
   balance: string;
 }
 
-const emptyForm = { name: "", glAccountId: "", isActive: true, notes: "" };
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab button helper
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ─── Main Page ──────────────────────────────────────────────────────────────
+function TabBtn({ active, onClick, icon: Icon, children, testId }: {
+  active: boolean; onClick: () => void;
+  icon: React.ElementType; children: React.ReactNode; testId: string;
+}) {
+  return (
+    <Button
+      variant={active ? "default" : "ghost"}
+      size="sm"
+      onClick={onClick}
+      data-testid={testId}
+    >
+      <Icon className="h-4 w-4 ml-1" />
+      {children}
+    </Button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Page
+// ─────────────────────────────────────────────────────────────────────────────
+
+const emptyForm = { name: "", glAccountId: "", isActive: true, notes: "" };
 
 export default function TreasuriesPage() {
   const { toast } = useToast();
-  const [tab, setTab] = useState<"treasuries" | "users" | "statement">("treasuries");
 
-  // form state
-  const [form, setForm] = useState(emptyForm);
+  // Tab
+  const [tab, setTab] = useState<"overview" | "users" | "statement">("overview");
+
+  // Treasury form dialog
+  const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Treasury | null>(null);
+  const [form, setForm] = useState(emptyForm);
 
-  // statement state
-  const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>("");
-  const [stmtDateFrom, setStmtDateFrom] = useState("");
-  const [stmtDateTo, setStmtDateTo] = useState("");
+  // Delete dialog
+  const [deleteTarget, setDeleteTarget] = useState<TreasurySummary | null>(null);
 
-  // user-assignment state
+  // Password dialog
+  const [pwdTarget, setPwdTarget] = useState<TreasurySummary | null>(null);
+  const [pwdNew, setPwdNew] = useState("");
+  const [pwdConfirm, setPwdConfirm] = useState("");
+
+  // Statement tab
+  const [stmtTreasuryId, setStmtTreasuryId] = useState("");
+  const [stmtFrom, setStmtFrom] = useState("");
+  const [stmtTo, setStmtTo] = useState("");
+
+  // User assignment tab
   const [assignUserId, setAssignUserId] = useState("");
   const [assignTreasuryId, setAssignTreasuryId] = useState("");
 
-  // ── Queries ──────────────────────────────────────────────────────────────
+  // ── Queries ────────────────────────────────────────────────────────────────
 
-  const { data: treasuries = [], isLoading: treasuriesLoading } = useQuery<Treasury[]>({
-    queryKey: ["/api/treasuries"],
+  const { data: summaries = [], isLoading: summariesLoading } = useQuery<TreasurySummary[]>({
+    queryKey: ["/api/treasuries/summary"],
   });
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
+    enabled: formOpen,
   });
 
   const { data: userAssignments = [] } = useQuery<UserTreasuryRow[]>({
@@ -99,31 +140,32 @@ export default function TreasuriesPage() {
   });
 
   const { data: statement, isFetching: stmtLoading } = useQuery<Statement>({
-    queryKey: ["/api/treasuries", selectedTreasuryId, "statement", stmtDateFrom, stmtDateTo],
+    queryKey: ["/api/treasuries", stmtTreasuryId, "statement", stmtFrom, stmtTo],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (stmtDateFrom) params.set("dateFrom", stmtDateFrom);
-      if (stmtDateTo) params.set("dateTo", stmtDateTo);
-      const res = await apiRequest("GET", `/api/treasuries/${selectedTreasuryId}/statement?${params}`);
+      const p = new URLSearchParams();
+      if (stmtFrom) p.set("dateFrom", stmtFrom);
+      if (stmtTo)   p.set("dateTo", stmtTo);
+      const res = await apiRequest("GET", `/api/treasuries/${stmtTreasuryId}/statement?${p}`);
       return res.json();
     },
-    enabled: tab === "statement" && !!selectedTreasuryId,
+    enabled: tab === "statement" && !!stmtTreasuryId,
   });
 
-  const leafAccounts = accounts.filter(a => a.isActive);
+  // ── Mutations ──────────────────────────────────────────────────────────────
 
-  // ── Mutations ─────────────────────────────────────────────────────────────
+  const invalidateSummary = () =>
+    queryClient.invalidateQueries({ queryKey: ["/api/treasuries/summary"] });
 
   const createMut = useMutation({
     mutationFn: async (data: typeof emptyForm) => {
       const res = await apiRequest("POST", "/api/treasuries", data);
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+      if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
     onSuccess: () => {
+      invalidateSummary();
       queryClient.invalidateQueries({ queryKey: ["/api/treasuries"] });
-      setDialogOpen(false);
-      setForm(emptyForm);
+      setFormOpen(false); setForm(emptyForm);
       toast({ title: "تم إنشاء الخزنة بنجاح" });
     },
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
@@ -132,14 +174,13 @@ export default function TreasuriesPage() {
   const updateMut = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof emptyForm }) => {
       const res = await apiRequest("PATCH", `/api/treasuries/${id}`, data);
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+      if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
     onSuccess: () => {
+      invalidateSummary();
       queryClient.invalidateQueries({ queryKey: ["/api/treasuries"] });
-      setDialogOpen(false);
-      setEditId(null);
-      setForm(emptyForm);
+      setFormOpen(false); setEditId(null); setForm(emptyForm);
       toast({ title: "تم تحديث الخزنة" });
     },
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
@@ -148,9 +189,10 @@ export default function TreasuriesPage() {
   const deleteMut = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("DELETE", `/api/treasuries/${id}`);
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+      if (!res.ok) throw new Error((await res.json()).message);
     },
     onSuccess: () => {
+      invalidateSummary();
       queryClient.invalidateQueries({ queryKey: ["/api/treasuries"] });
       setDeleteTarget(null);
       toast({ title: "تم حذف الخزنة" });
@@ -158,15 +200,41 @@ export default function TreasuriesPage() {
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
+  const setPasswordMut = useMutation({
+    mutationFn: async ({ glAccountId, password }: { glAccountId: string; password: string }) => {
+      const res = await apiRequest("POST", "/api/drawer-passwords/set", { glAccountId, password });
+      if (!res.ok) throw new Error((await res.json()).message);
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateSummary();
+      setPwdTarget(null); setPwdNew(""); setPwdConfirm("");
+      toast({ title: "تم تعيين كلمة السر بنجاح" });
+    },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+
+  const removePasswordMut = useMutation({
+    mutationFn: async (glAccountId: string) => {
+      const res = await apiRequest("DELETE", `/api/drawer-passwords/${glAccountId}`);
+      if (!res.ok) throw new Error((await res.json()).message);
+    },
+    onSuccess: () => {
+      invalidateSummary();
+      setPwdTarget(null);
+      toast({ title: "تم إزالة كلمة السر" });
+    },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+
   const assignMut = useMutation({
     mutationFn: async ({ userId, treasuryId }: { userId: string; treasuryId: string }) => {
       const res = await apiRequest("POST", "/api/user-treasuries", { userId, treasuryId });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+      if (!res.ok) throw new Error((await res.json()).message);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user-treasuries"] });
-      setAssignUserId("");
-      setAssignTreasuryId("");
+      setAssignUserId(""); setAssignTreasuryId("");
       toast({ title: "تم تعيين الخزنة للمستخدم" });
     },
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
@@ -175,7 +243,7 @@ export default function TreasuriesPage() {
   const removeAssignMut = useMutation({
     mutationFn: async (userId: string) => {
       const res = await apiRequest("DELETE", `/api/user-treasuries/${userId}`);
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+      if (!res.ok) throw new Error((await res.json()).message);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user-treasuries"] });
@@ -187,18 +255,16 @@ export default function TreasuriesPage() {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   const openCreate = () => {
-    setEditId(null);
-    setForm(emptyForm);
-    setDialogOpen(true);
+    setEditId(null); setForm(emptyForm); setFormOpen(true);
   };
 
-  const openEdit = (t: Treasury) => {
+  const openEdit = (t: TreasurySummary) => {
     setEditId(t.id);
     setForm({ name: t.name, glAccountId: t.glAccountId, isActive: t.isActive, notes: t.notes ?? "" });
-    setDialogOpen(true);
+    setFormOpen(true);
   };
 
-  const handleSubmit = () => {
+  const handleFormSubmit = () => {
     if (!form.name.trim()) {
       toast({ title: "يجب إدخال اسم الخزنة", variant: "destructive" }); return;
     }
@@ -209,7 +275,26 @@ export default function TreasuriesPage() {
     else createMut.mutate(form);
   };
 
-  const runningBalances = (txns: TreasuryTransaction[]) => {
+  const handleSetPassword = () => {
+    if (!pwdTarget) return;
+    if (pwdNew.length < 4) {
+      toast({ title: "كلمة السر يجب أن تكون 4 أحرف على الأقل", variant: "destructive" }); return;
+    }
+    if (pwdNew !== pwdConfirm) {
+      toast({ title: "كلمتا السر غير متطابقتين", variant: "destructive" }); return;
+    }
+    setPasswordMut.mutate({ glAccountId: pwdTarget.glAccountId, password: pwdNew });
+  };
+
+  const openStatement = (t: TreasurySummary) => {
+    setStmtTreasuryId(t.id);
+    setTab("statement");
+  };
+
+  const isSaving = createMut.isPending || updateMut.isPending;
+
+  // Running balance for statement
+  const runningBalances = (txns: Statement["transactions"]) => {
     let bal = 0;
     return txns.map(t => {
       bal += t.type === "in" ? parseFloat(t.amount) : -parseFloat(t.amount);
@@ -217,52 +302,34 @@ export default function TreasuriesPage() {
     });
   };
 
-  const isSaving = createMut.isPending || updateMut.isPending;
-
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6" dir="rtl">
+    <div className="p-6 max-w-7xl mx-auto space-y-5" dir="rtl">
 
-      {/* Page Header */}
+      {/* ── Page header ── */}
       <div className="flex items-center gap-3">
         <Banknote className="h-6 w-6 text-muted-foreground" />
         <h1 className="text-2xl font-bold">إدارة الخزن</h1>
       </div>
 
-      {/* Tab Buttons */}
-      <div className="flex gap-2 border-b pb-2">
-        <Button
-          variant={tab === "treasuries" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setTab("treasuries")}
-          data-testid="tab-treasuries"
-        >
-          <Banknote className="h-4 w-4 ml-1" />
-          الخزن
-        </Button>
-        <Button
-          variant={tab === "users" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setTab("users")}
-          data-testid="tab-users"
-        >
-          <Users className="h-4 w-4 ml-1" />
+      {/* ── Tabs ── */}
+      <div className="flex gap-1 border-b pb-3">
+        <TabBtn active={tab === "overview"} onClick={() => setTab("overview")} icon={Banknote} testId="tab-overview">
+          نظرة عامة على الخزن
+        </TabBtn>
+        <TabBtn active={tab === "users"} onClick={() => setTab("users")} icon={Users} testId="tab-users">
           تعيين المستخدمين
-        </Button>
-        <Button
-          variant={tab === "statement" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setTab("statement")}
-          data-testid="tab-statement"
-        >
-          <FileText className="h-4 w-4 ml-1" />
+        </TabBtn>
+        <TabBtn active={tab === "statement"} onClick={() => setTab("statement")} icon={FileText} testId="tab-statement">
           كشف حساب الخزنة
-        </Button>
+        </TabBtn>
       </div>
 
-      {/* ─── TAB: Treasuries ─────────────────────────────────────────────── */}
-      {tab === "treasuries" && (
+      {/* ══════════════════════════════════════════════════════════════════════
+          TAB 1 — نظرة عامة على الخزن
+      ══════════════════════════════════════════════════════════════════════ */}
+      {tab === "overview" && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-right">قائمة الخزن</CardTitle>
@@ -272,67 +339,103 @@ export default function TreasuriesPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            {treasuriesLoading ? (
-              <div className="flex justify-center py-8">
+            {summariesLoading ? (
+              <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
-            ) : treasuries.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">لا توجد خزن مضافة</p>
+            ) : summaries.length === 0 ? (
+              <p className="text-center text-muted-foreground py-12">
+                لا توجد خزن — اضغط «إضافة خزنة» للبدء
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-right">اسم الخزنة</TableHead>
                     <TableHead className="text-right">الحساب في دليل الحسابات</TableHead>
+                    <TableHead className="text-center">رصيد افتتاحي</TableHead>
+                    <TableHead className="text-center">وارد</TableHead>
+                    <TableHead className="text-center">منصرف</TableHead>
+                    <TableHead className="text-center">الرصيد الحالي</TableHead>
+                    <TableHead className="text-center">كلمة السر</TableHead>
                     <TableHead className="text-center">الحالة</TableHead>
-                    <TableHead className="text-right">ملاحظات</TableHead>
                     <TableHead className="text-center">إجراءات</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {treasuries.map(t => (
+                  {summaries.map(t => (
                     <TableRow key={t.id} data-testid={`row-treasury-${t.id}`}>
-                      <TableCell className="text-right font-medium">{t.name}</TableCell>
-                      <TableCell className="text-right">
-                        <span className="font-mono text-xs text-muted-foreground ml-2">{t.glAccountCode}</span>
+                      <TableCell className="font-medium">{t.name}</TableCell>
+                      <TableCell>
+                        <span className="font-mono text-xs text-muted-foreground ml-1">{t.glAccountCode}</span>
                         {t.glAccountName}
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-sm">
+                        {formatNumber(parseFloat(t.openingBalance))}
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-sm text-green-700 dark:text-green-400">
+                        {formatNumber(parseFloat(t.totalIn))}
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-sm text-red-700 dark:text-red-400">
+                        {formatNumber(parseFloat(t.totalOut))}
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-sm font-semibold">
+                        <span className={parseFloat(t.balance) >= 0 ? "text-blue-700 dark:text-blue-400" : "text-red-700"}>
+                          {formatNumber(parseFloat(t.balance))}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {t.hasPassword ? (
+                          <Badge className="bg-green-600 text-white">
+                            <Lock className="h-3 w-3 ml-1" />
+                            محمية
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            <Unlock className="h-3 w-3 ml-1" />
+                            مفتوحة
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant={t.isActive ? "default" : "secondary"}>
                           {t.isActive ? "نشط" : "موقف"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
-                        {t.notes || "—"}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-2">
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-1">
                           <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => { setSelectedTreasuryId(t.id); setTab("statement"); }}
+                            size="sm" variant="outline"
+                            onClick={() => openStatement(t)}
                             title="كشف الحساب"
-                            data-testid={`button-view-stmt-${t.id}`}
+                            data-testid={`button-stmt-${t.id}`}
                           >
-                            <Eye className="h-4 w-4 ml-1" />
+                            <Eye className="h-3.5 w-3.5 ml-1" />
                             كشف
                           </Button>
                           <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openEdit(t)}
-                            data-testid={`button-edit-treasury-${t.id}`}
+                            size="sm" variant="outline"
+                            onClick={() => { setPwdTarget(t); setPwdNew(""); setPwdConfirm(""); }}
+                            title={t.hasPassword ? "تغيير كلمة السر" : "تعيين كلمة السر"}
+                            data-testid={`button-pwd-${t.id}`}
                           >
-                            <Pencil className="h-4 w-4 ml-1" />
+                            <KeyRound className="h-3.5 w-3.5 ml-1" />
+                            {t.hasPassword ? "تغيير السر" : "تعيين سر"}
+                          </Button>
+                          <Button
+                            size="sm" variant="outline"
+                            onClick={() => openEdit(t)}
+                            data-testid={`button-edit-${t.id}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5 ml-1" />
                             تعديل
                           </Button>
                           <Button
-                            size="sm"
-                            variant="outline"
+                            size="sm" variant="outline"
                             onClick={() => setDeleteTarget(t)}
-                            data-testid={`button-delete-treasury-${t.id}`}
+                            data-testid={`button-delete-${t.id}`}
                           >
-                            <Trash2 className="h-4 w-4 ml-1" />
+                            <Trash2 className="h-3.5 w-3.5 ml-1" />
                             حذف
                           </Button>
                         </div>
@@ -340,26 +443,53 @@ export default function TreasuriesPage() {
                     </TableRow>
                   ))}
                 </TableBody>
+                {/* Totals row */}
+                {summaries.length > 1 && (
+                  <tfoot>
+                    <TableRow className="bg-muted/50 font-bold">
+                      <TableCell colSpan={2} className="text-right px-4">الإجمالي</TableCell>
+                      <TableCell className="text-center font-mono">
+                        {formatNumber(summaries.reduce((s, t) => s + parseFloat(t.openingBalance), 0))}
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-green-700 dark:text-green-400">
+                        {formatNumber(summaries.reduce((s, t) => s + parseFloat(t.totalIn), 0))}
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-red-700 dark:text-red-400">
+                        {formatNumber(summaries.reduce((s, t) => s + parseFloat(t.totalOut), 0))}
+                      </TableCell>
+                      <TableCell className="text-center font-mono">
+                        {formatNumber(summaries.reduce((s, t) => s + parseFloat(t.balance), 0))}
+                      </TableCell>
+                      <TableCell colSpan={3} />
+                    </TableRow>
+                  </tfoot>
+                )}
               </Table>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* ─── TAB: User Assignments ───────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          TAB 2 — تعيين المستخدمين
+      ══════════════════════════════════════════════════════════════════════ */}
       {tab === "users" && (
         <div className="space-y-4">
+          {/* Assignment form */}
           <Card>
             <CardHeader>
               <CardTitle className="text-right">تعيين خزنة لمستخدم</CardTitle>
             </CardHeader>
             <CardContent>
+              <p className="text-sm text-muted-foreground mb-3">
+                كل مستخدم يمكن ربطه بخزنة واحدة — يمكن لعدة مستخدمين الارتباط بنفس الخزنة.
+              </p>
               <div className="flex flex-wrap gap-3 items-end">
-                <div className="flex-1 min-w-52">
+                <div className="flex-1 min-w-48">
                   <label className="text-sm font-medium mb-1.5 block">المستخدم</label>
                   <Select value={assignUserId} onValueChange={setAssignUserId}>
                     <SelectTrigger data-testid="select-assign-user">
-                      <SelectValue placeholder="اختر مستخدم..." />
+                      <SelectValue placeholder="اختر مستخدماً..." />
                     </SelectTrigger>
                     <SelectContent>
                       {users.filter(u => u.isActive).map(u => (
@@ -371,14 +501,14 @@ export default function TreasuriesPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex-1 min-w-52">
+                <div className="flex-1 min-w-48">
                   <label className="text-sm font-medium mb-1.5 block">الخزنة</label>
                   <Select value={assignTreasuryId} onValueChange={setAssignTreasuryId}>
                     <SelectTrigger data-testid="select-assign-treasury">
                       <SelectValue placeholder="اختر خزنة..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {treasuries.filter(t => t.isActive).map(t => (
+                      {summaries.filter(t => t.isActive).map(t => (
                         <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -392,45 +522,47 @@ export default function TreasuriesPage() {
                     assignMut.mutate({ userId: assignUserId, treasuryId: assignTreasuryId });
                   }}
                   disabled={assignMut.isPending}
-                  data-testid="button-assign-treasury"
+                  data-testid="button-assign"
                 >
-                  {assignMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Plus className="h-4 w-4 ml-1" />}
+                  {assignMut.isPending
+                    ? <Loader2 className="h-4 w-4 animate-spin ml-1" />
+                    : <Plus className="h-4 w-4 ml-1" />}
                   تعيين
                 </Button>
               </div>
             </CardContent>
           </Card>
 
+          {/* Current assignments */}
           <Card>
             <CardHeader>
               <CardTitle className="text-right">التعيينات الحالية</CardTitle>
             </CardHeader>
             <CardContent>
               {userAssignments.length === 0 ? (
-                <p className="text-center text-muted-foreground py-6">لا توجد تعيينات</p>
+                <p className="text-center text-muted-foreground py-8">لا توجد تعيينات بعد</p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-right">المستخدم</TableHead>
                       <TableHead className="text-right">الخزنة المعينة</TableHead>
-                      <TableHead className="text-center">إلغاء</TableHead>
+                      <TableHead className="text-center">إلغاء التعيين</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {userAssignments.map(a => (
                       <TableRow key={a.userId} data-testid={`row-assign-${a.userId}`}>
-                        <TableCell className="text-right">{a.userName}</TableCell>
-                        <TableCell className="text-right">{a.treasuryName}</TableCell>
+                        <TableCell className="font-medium">{a.userName}</TableCell>
+                        <TableCell>{a.treasuryName}</TableCell>
                         <TableCell className="text-center">
                           <Button
-                            size="sm"
-                            variant="outline"
+                            size="sm" variant="outline"
                             onClick={() => removeAssignMut.mutate(a.userId)}
                             disabled={removeAssignMut.isPending}
                             data-testid={`button-remove-assign-${a.userId}`}
                           >
-                            <Trash2 className="h-4 w-4 ml-1" />
+                            <Trash2 className="h-3.5 w-3.5 ml-1" />
                             إلغاء
                           </Button>
                         </TableCell>
@@ -444,156 +576,146 @@ export default function TreasuriesPage() {
         </div>
       )}
 
-      {/* ─── TAB: Statement ──────────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          TAB 3 — كشف حساب الخزنة
+      ══════════════════════════════════════════════════════════════════════ */}
       {tab === "statement" && (
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-right">كشف حساب الخزنة</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Filters */}
-              <div className="flex flex-wrap gap-3 items-end">
-                <div className="flex-1 min-w-52">
-                  <label className="text-sm font-medium mb-1.5 block">الخزنة</label>
-                  <Select value={selectedTreasuryId} onValueChange={setSelectedTreasuryId}>
-                    <SelectTrigger data-testid="select-stmt-treasury">
-                      <SelectValue placeholder="اختر خزنة..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {treasuries.map(t => (
-                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1.5 block">من تاريخ</label>
-                  <Input
-                    type="date"
-                    value={stmtDateFrom}
-                    onChange={e => setStmtDateFrom(e.target.value)}
-                    className="w-40"
-                    data-testid="input-stmt-from"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1.5 block">إلى تاريخ</label>
-                  <Input
-                    type="date"
-                    value={stmtDateTo}
-                    onChange={e => setStmtDateTo(e.target.value)}
-                    className="w-40"
-                    data-testid="input-stmt-to"
-                  />
-                </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-right">كشف حساب الخزنة</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Filters */}
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex-1 min-w-48">
+                <label className="text-sm font-medium mb-1.5 block">الخزنة</label>
+                <Select value={stmtTreasuryId} onValueChange={setStmtTreasuryId}>
+                  <SelectTrigger data-testid="select-stmt-treasury">
+                    <SelectValue placeholder="اختر خزنة..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {summaries.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">من تاريخ</label>
+                <Input type="date" value={stmtFrom} onChange={e => setStmtFrom(e.target.value)} className="w-38" data-testid="input-stmt-from" />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">إلى تاريخ</label>
+                <Input type="date" value={stmtTo} onChange={e => setStmtTo(e.target.value)} className="w-38" data-testid="input-stmt-to" />
+              </div>
+            </div>
 
-              {!selectedTreasuryId && (
-                <p className="text-center text-muted-foreground py-10">اختر خزنة لعرض كشف الحساب</p>
-              )}
+            {!stmtTreasuryId && (
+              <p className="text-center text-muted-foreground py-12">اختر خزنة لعرض كشف الحساب</p>
+            )}
 
-              {selectedTreasuryId && stmtLoading && (
-                <div className="flex justify-center py-10">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              )}
+            {stmtTreasuryId && stmtLoading && (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            )}
 
-              {selectedTreasuryId && !stmtLoading && statement && (
-                <>
-                  {/* Summary */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="border rounded-md p-3 text-center bg-green-50 dark:bg-green-950/20">
-                      <div className="text-xs text-muted-foreground mb-1">إجمالي الوارد</div>
-                      <div className="text-lg font-bold text-green-700 dark:text-green-400" data-testid="text-total-in">
-                        {formatNumber(parseFloat(statement.totalIn))}
-                        <span className="text-xs font-normal mr-1">ج.م</span>
-                      </div>
-                    </div>
-                    <div className="border rounded-md p-3 text-center bg-red-50 dark:bg-red-950/20">
-                      <div className="text-xs text-muted-foreground mb-1">إجمالي الصادر</div>
-                      <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="text-total-out">
-                        {formatNumber(parseFloat(statement.totalOut))}
-                        <span className="text-xs font-normal mr-1">ج.م</span>
-                      </div>
-                    </div>
-                    <div className="border rounded-md p-3 text-center bg-blue-50 dark:bg-blue-950/20">
-                      <div className="text-xs text-muted-foreground mb-1">الرصيد الحالي</div>
-                      <div
-                        className={`text-lg font-bold ${parseFloat(statement.balance) >= 0 ? "text-blue-700 dark:text-blue-400" : "text-red-700 dark:text-red-400"}`}
-                        data-testid="text-balance"
-                      >
-                        {formatNumber(parseFloat(statement.balance))}
-                        <span className="text-xs font-normal mr-1">ج.م</span>
-                      </div>
-                    </div>
+            {stmtTreasuryId && !stmtLoading && statement && (
+              <>
+                {/* Summary cards */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="border rounded-md p-3 text-center bg-green-50 dark:bg-green-950/20">
+                    <p className="text-xs text-muted-foreground mb-1">إجمالي الوارد</p>
+                    <p className="text-xl font-bold text-green-700 dark:text-green-400" data-testid="text-total-in">
+                      {formatNumber(parseFloat(statement.totalIn))}
+                      <span className="text-xs font-normal mr-1">ج.م</span>
+                    </p>
                   </div>
+                  <div className="border rounded-md p-3 text-center bg-red-50 dark:bg-red-950/20">
+                    <p className="text-xs text-muted-foreground mb-1">إجمالي المنصرف</p>
+                    <p className="text-xl font-bold text-red-700 dark:text-red-400" data-testid="text-total-out">
+                      {formatNumber(parseFloat(statement.totalOut))}
+                      <span className="text-xs font-normal mr-1">ج.م</span>
+                    </p>
+                  </div>
+                  <div className="border rounded-md p-3 text-center bg-blue-50 dark:bg-blue-950/20">
+                    <p className="text-xs text-muted-foreground mb-1">الرصيد</p>
+                    <p
+                      className={`text-xl font-bold ${parseFloat(statement.balance) >= 0 ? "text-blue-700 dark:text-blue-400" : "text-red-700"}`}
+                      data-testid="text-balance"
+                    >
+                      {formatNumber(parseFloat(statement.balance))}
+                      <span className="text-xs font-normal mr-1">ج.م</span>
+                    </p>
+                  </div>
+                </div>
 
-                  {/* Transactions Table */}
-                  <Table>
-                    <TableHeader>
+                {/* Transactions table */}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-center w-10">#</TableHead>
+                      <TableHead className="text-right">التاريخ</TableHead>
+                      <TableHead className="text-right">البيان</TableHead>
+                      <TableHead className="text-center">وارد (ج.م)</TableHead>
+                      <TableHead className="text-center">منصرف (ج.م)</TableHead>
+                      <TableHead className="text-center">الرصيد (ج.م)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {statement.transactions.length === 0 ? (
                       <TableRow>
-                        <TableHead className="text-center w-12">#</TableHead>
-                        <TableHead className="text-right">التاريخ</TableHead>
-                        <TableHead className="text-right">البيان</TableHead>
-                        <TableHead className="text-center">وارد (ج.م)</TableHead>
-                        <TableHead className="text-center">صادر (ج.م)</TableHead>
-                        <TableHead className="text-center">الرصيد (ج.م)</TableHead>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
+                          لا توجد حركات في هذه الفترة
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {statement.transactions.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                            لا توجد حركات في هذه الفترة
+                    ) : (() => {
+                      const bals = runningBalances(statement.transactions);
+                      return statement.transactions.map((txn, i) => (
+                        <TableRow key={txn.id} data-testid={`row-txn-${i}`}>
+                          <TableCell className="text-center">{i + 1}</TableCell>
+                          <TableCell className="font-mono text-sm">{txn.transactionDate}</TableCell>
+                          <TableCell>{txn.description || "—"}</TableCell>
+                          <TableCell className="text-center font-medium text-green-700 dark:text-green-400">
+                            {txn.type === "in" ? formatNumber(parseFloat(txn.amount)) : "—"}
+                          </TableCell>
+                          <TableCell className="text-center font-medium text-red-700 dark:text-red-400">
+                            {txn.type === "out" ? formatNumber(parseFloat(txn.amount)) : "—"}
+                          </TableCell>
+                          <TableCell className={`text-center font-medium ${bals[i] >= 0 ? "text-blue-700 dark:text-blue-400" : "text-red-700"}`}>
+                            {formatNumber(bals[i])}
                           </TableCell>
                         </TableRow>
-                      ) : (() => {
-                        const balances = runningBalances(statement.transactions);
-                        return statement.transactions.map((txn, i) => (
-                          <TableRow key={txn.id} data-testid={`row-txn-${i}`}>
-                            <TableCell className="text-center">{i + 1}</TableCell>
-                            <TableCell className="text-right font-mono text-sm">{txn.transactionDate}</TableCell>
-                            <TableCell className="text-right">{txn.description || "—"}</TableCell>
-                            <TableCell className="text-center font-medium text-green-700 dark:text-green-400">
-                              {txn.type === "in" ? formatNumber(parseFloat(txn.amount)) : "—"}
-                            </TableCell>
-                            <TableCell className="text-center font-medium text-red-700 dark:text-red-400">
-                              {txn.type === "out" ? formatNumber(parseFloat(txn.amount)) : "—"}
-                            </TableCell>
-                            <TableCell className={`text-center font-medium ${balances[i] >= 0 ? "text-blue-700 dark:text-blue-400" : "text-red-700"}`}>
-                              {formatNumber(balances[i])}
-                            </TableCell>
-                          </TableRow>
-                        ));
-                      })()}
-                    </TableBody>
-                    {statement.transactions.length > 0 && (
-                      <tfoot>
-                        <TableRow className="bg-muted/50 font-bold">
-                          <TableCell colSpan={3} className="text-right px-4">الإجمالي</TableCell>
-                          <TableCell className="text-center text-green-700 dark:text-green-400">
-                            {formatNumber(parseFloat(statement.totalIn))}
-                          </TableCell>
-                          <TableCell className="text-center text-red-700 dark:text-red-400">
-                            {formatNumber(parseFloat(statement.totalOut))}
-                          </TableCell>
-                          <TableCell className={`text-center ${parseFloat(statement.balance) >= 0 ? "text-blue-700 dark:text-blue-400" : "text-red-700"}`}>
-                            {formatNumber(parseFloat(statement.balance))}
-                          </TableCell>
-                        </TableRow>
-                      </tfoot>
-                    )}
-                  </Table>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                      ));
+                    })()}
+                  </TableBody>
+                  {statement.transactions.length > 0 && (
+                    <tfoot>
+                      <TableRow className="bg-muted/50 font-bold">
+                        <TableCell colSpan={3} className="text-right px-4">الإجمالي</TableCell>
+                        <TableCell className="text-center text-green-700 dark:text-green-400">
+                          {formatNumber(parseFloat(statement.totalIn))}
+                        </TableCell>
+                        <TableCell className="text-center text-red-700 dark:text-red-400">
+                          {formatNumber(parseFloat(statement.totalOut))}
+                        </TableCell>
+                        <TableCell className={`text-center ${parseFloat(statement.balance) >= 0 ? "text-blue-700 dark:text-blue-400" : "text-red-700"}`}>
+                          {formatNumber(parseFloat(statement.balance))}
+                        </TableCell>
+                      </TableRow>
+                    </tfoot>
+                  )}
+                </Table>
+              </>
+            )}
+          </CardContent>
+        </Card>
       )}
 
-      {/* ─── Dialog: Create / Edit Treasury ─────────────────────────────── */}
-      <Dialog open={dialogOpen} onOpenChange={open => { if (!isSaving) setDialogOpen(open); }}>
+      {/* ══════════════════════════════════════════════════════════════════════
+          DIALOG — إضافة / تعديل خزنة
+      ══════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={formOpen} onOpenChange={open => { if (!isSaving) setFormOpen(open); }}>
         <DialogContent dir="rtl" className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-right">
@@ -601,7 +723,7 @@ export default function TreasuriesPage() {
             </DialogTitle>
             {editId && (
               <DialogDescription className="text-right">
-                تعديل بيانات الخزنة — التغييرات تسري فوراً
+                تعديل بيانات الخزنة — التغييرات تُطبَّق فوراً
               </DialogDescription>
             )}
           </DialogHeader>
@@ -612,7 +734,7 @@ export default function TreasuriesPage() {
               <Input
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="مثال: خزنة الاستقبال"
+                placeholder="مثال: خزنة الاستقبال الرئيسية"
                 data-testid="input-treasury-name"
               />
             </div>
@@ -620,12 +742,20 @@ export default function TreasuriesPage() {
             <div className="space-y-1.5">
               <label className="text-sm font-medium block">الحساب في دليل الحسابات *</label>
               <AccountSearchSelect
-                accounts={leafAccounts}
+                accounts={accounts.filter(a => a.isActive)}
                 value={form.glAccountId}
                 onChange={v => setForm(f => ({ ...f, glAccountId: v }))}
                 placeholder="ابحث عن الحساب بالكود أو الاسم..."
                 data-testid="select-treasury-account"
               />
+              {form.glAccountId && (() => {
+                const acc = accounts.find(a => a.id === form.glAccountId);
+                return acc ? (
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-mono">{acc.code}</span> — {acc.name}
+                  </p>
+                ) : null;
+              })()}
             </div>
 
             <div className="space-y-1.5">
@@ -638,38 +768,107 @@ export default function TreasuriesPage() {
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                id="chk-active"
                 checked={form.isActive}
                 onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))}
                 data-testid="checkbox-treasury-active"
               />
-              <label htmlFor="chk-active" className="text-sm">خزنة نشطة</label>
-            </div>
+              <span className="text-sm">خزنة نشطة</span>
+            </label>
           </div>
 
           <DialogFooter className="flex-row-reverse gap-2">
-            <Button onClick={handleSubmit} disabled={isSaving} data-testid="button-save-treasury">
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : null}
+            <Button onClick={handleFormSubmit} disabled={isSaving} data-testid="button-save-treasury">
+              {isSaving && <Loader2 className="h-4 w-4 animate-spin ml-1" />}
               {editId ? "تحديث" : "إضافة"}
             </Button>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
+            <Button variant="outline" onClick={() => setFormOpen(false)} disabled={isSaving}>
               إلغاء
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── Dialog: Confirm Delete ──────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          DIALOG — تعيين / تغيير كلمة السر
+      ══════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={!!pwdTarget} onOpenChange={open => { if (!open) setPwdTarget(null); }}>
+        <DialogContent dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-right">
+              {pwdTarget?.hasPassword ? "تغيير كلمة سر الخزنة" : "تعيين كلمة سر الخزنة"}
+            </DialogTitle>
+            <DialogDescription className="text-right">
+              {pwdTarget?.glAccountCode} — {pwdTarget?.name}
+              <br />
+              <span className="text-xs">الحساب: {pwdTarget?.glAccountCode} {pwdTarget?.glAccountName}</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium block">كلمة السر الجديدة</label>
+              <Input
+                type="password"
+                value={pwdNew}
+                onChange={e => setPwdNew(e.target.value)}
+                placeholder="أدخل كلمة السر (4 أحرف على الأقل)..."
+                data-testid="input-pwd-new"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium block">تأكيد كلمة السر</label>
+              <Input
+                type="password"
+                value={pwdConfirm}
+                onChange={e => setPwdConfirm(e.target.value)}
+                placeholder="أعد إدخال كلمة السر..."
+                data-testid="input-pwd-confirm"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex-row-reverse gap-2">
+            <Button
+              onClick={handleSetPassword}
+              disabled={setPasswordMut.isPending || !pwdNew || !pwdConfirm}
+              data-testid="button-save-pwd"
+            >
+              {setPasswordMut.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin ml-1" />
+                : <Lock className="h-4 w-4 ml-1" />}
+              حفظ كلمة السر
+            </Button>
+            {pwdTarget?.hasPassword && (
+              <Button
+                variant="destructive"
+                onClick={() => pwdTarget && removePasswordMut.mutate(pwdTarget.glAccountId)}
+                disabled={removePasswordMut.isPending}
+                data-testid="button-remove-pwd"
+              >
+                {removePasswordMut.isPending
+                  ? <Loader2 className="h-4 w-4 animate-spin ml-1" />
+                  : <Trash2 className="h-4 w-4 ml-1" />}
+                إزالة السر
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setPwdTarget(null)}>إلغاء</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          DIALOG — تأكيد الحذف
+      ══════════════════════════════════════════════════════════════════════ */}
       <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
         <DialogContent dir="rtl">
           <DialogHeader>
             <DialogTitle className="text-right">حذف الخزنة</DialogTitle>
             <DialogDescription className="text-right">
               هل أنت متأكد من حذف الخزنة «{deleteTarget?.name}»؟
-              لا يمكن التراجع عن هذه العملية.
+              {" "}سيُحذف كل تاريخ المعاملات المرتبط بها ولا يمكن التراجع عن هذه العملية.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-row-reverse gap-2">
@@ -679,15 +878,16 @@ export default function TreasuriesPage() {
               disabled={deleteMut.isPending}
               data-testid="button-confirm-delete"
             >
-              {deleteMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Trash2 className="h-4 w-4 ml-1" />}
+              {deleteMut.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin ml-1" />
+                : <Trash2 className="h-4 w-4 ml-1" />}
               حذف
             </Button>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              إلغاء
-            </Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>إلغاء</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

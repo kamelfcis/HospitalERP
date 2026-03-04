@@ -496,6 +496,7 @@ export interface IStorage {
   createDoctorSettlement(params: { doctorName: string; paymentDate: string; amount: string; paymentMethod: string; settlementUuid: string; notes?: string; allocations?: { transferId: string; amount: string }[] }): Promise<DoctorSettlement & { allocations: DoctorSettlementAllocation[] }>;
 
   // Treasuries
+  getTreasuriesSummary(): Promise<(Treasury & { glAccountCode: string; glAccountName: string; openingBalance: string; totalIn: string; totalOut: string; balance: string; hasPassword: boolean })[]>;
   getTreasuries(): Promise<(Treasury & { glAccountCode: string; glAccountName: string })[]>;
   getTreasury(id: string): Promise<Treasury | undefined>;
   createTreasury(data: InsertTreasury): Promise<Treasury>;
@@ -8139,9 +8140,46 @@ export class DatabaseStorage implements IStorage {
 
   // ==================== الخزن ====================
 
+  async getTreasuriesSummary(): Promise<(Treasury & {
+    glAccountCode: string; glAccountName: string;
+    openingBalance: string; totalIn: string; totalOut: string; balance: string; hasPassword: boolean;
+  })[]> {
+    const rows = await db.execute(sql`
+      SELECT
+        t.id, t.name, t.gl_account_id, t.is_active, t.notes, t.created_at,
+        a.code                AS gl_account_code,
+        a.name                AS gl_account_name,
+        COALESCE(a.opening_balance, 0) AS opening_balance,
+        COALESCE(SUM(CASE WHEN tt.type = 'in'  THEN tt.amount::numeric ELSE 0 END), 0) AS total_in,
+        COALESCE(SUM(CASE WHEN tt.type = 'out' THEN tt.amount::numeric ELSE 0 END), 0) AS total_out,
+        CASE WHEN dp.gl_account_id IS NOT NULL THEN true ELSE false END AS has_password
+      FROM treasuries t
+      JOIN accounts a ON a.id = t.gl_account_id
+      LEFT JOIN treasury_transactions tt ON tt.treasury_id = t.id
+      LEFT JOIN drawer_passwords dp ON dp.gl_account_id = t.gl_account_id
+      GROUP BY t.id, a.code, a.name, a.opening_balance, dp.gl_account_id
+      ORDER BY t.name
+    `);
+    return (rows.rows as any[]).map(r => {
+      const ob  = parseFloat(r.opening_balance)  || 0;
+      const tin = parseFloat(r.total_in)  || 0;
+      const tout = parseFloat(r.total_out) || 0;
+      return {
+        id: r.id, name: r.name, glAccountId: r.gl_account_id,
+        isActive: r.is_active, notes: r.notes, createdAt: r.created_at,
+        glAccountCode: r.gl_account_code, glAccountName: r.gl_account_name,
+        openingBalance: ob.toFixed(2),
+        totalIn:   tin.toFixed(2),
+        totalOut:  tout.toFixed(2),
+        balance:   (ob + tin - tout).toFixed(2),
+        hasPassword: r.has_password,
+      };
+    });
+  }
+
   async getTreasuries(): Promise<(Treasury & { glAccountCode: string; glAccountName: string })[]> {
     const rows = await db.execute(sql`
-      SELECT t.*, a.code AS gl_account_code, a.name_ar AS gl_account_name
+      SELECT t.*, a.code AS gl_account_code, a.name AS gl_account_name
       FROM treasuries t
       JOIN accounts a ON a.id = t.gl_account_id
       ORDER BY t.name
@@ -8176,7 +8214,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUserTreasury(userId: string): Promise<(Treasury & { glAccountCode: string; glAccountName: string }) | null> {
     const rows = await db.execute(sql`
-      SELECT t.*, a.code AS gl_account_code, a.name_ar AS gl_account_name
+      SELECT t.*, a.code AS gl_account_code, a.name AS gl_account_name
       FROM user_treasuries ut
       JOIN treasuries t ON t.id = ut.treasury_id
       JOIN accounts a ON a.id = t.gl_account_id
