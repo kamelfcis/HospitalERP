@@ -51,17 +51,26 @@ export function UserFormDialog({
           </div>
 
           <div className="space-y-1">
-            <Label>
-              {editingUser
-                ? "كلمة المرور الجديدة (اتركها فارغة لعدم التغيير)"
-                : "كلمة المرور"}
-            </Label>
+            <Label>{editingUser ? "تغيير كلمة المرور" : "كلمة المرور"}</Label>
             <Input
               data-testid="input-user-password"
               type="password"
               value={formData.password}
+              placeholder={editingUser ? "اتركها فارغة للإبقاء على كلمة المرور الحالية" : ""}
               onChange={e => onFormChange({ password: e.target.value })}
             />
+            {editingUser && !formData.password && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                كلمة المرور الحالية محفوظة — لن تتغير عند الحفظ
+              </p>
+            )}
+            {editingUser && formData.password && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                سيتم تغيير كلمة المرور عند الحفظ
+              </p>
+            )}
           </div>
 
           <div className="space-y-1">
