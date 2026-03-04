@@ -4742,6 +4742,33 @@ export async function registerRoutes(
 
   // ==================== System Settings ====================
 
+  app.get("/api/public/login-background", async (_req, res) => {
+    try {
+      const rows = await db.select().from(systemSettings).where(eq(systemSettings.key, "login_background"));
+      if (rows.length === 0 || !rows[0].value) return res.status(404).json({ message: "لا توجد صورة" });
+      res.json({ image: rows[0].value });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/admin/login-background", requireAuth, async (req: any, res) => {
+    try {
+      if (req.session.role !== "admin" && req.session.role !== "owner") {
+        return res.status(403).json({ message: "غير مصرح" });
+      }
+      const { image } = req.body;
+      if (typeof image !== "string" || !image.startsWith("data:image/")) {
+        return res.status(400).json({ message: "صورة غير صالحة" });
+      }
+      await db.insert(systemSettings).values({ key: "login_background", value: image, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: systemSettings.key, set: { value: image, updatedAt: new Date() } });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/settings", async (_req, res) => {
     try {
       const rows = await db.select().from(systemSettings);
