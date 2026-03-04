@@ -8288,17 +8288,26 @@ export class DatabaseStorage implements IStorage {
 
   async createTreasuryTransactionsForInvoice(invoiceId: string, finalizationDate: string): Promise<void> {
     const payments = await db.execute(sql`
-      SELECT p.id, p.amount, p.payment_method, p.treasury_id, p.notes
+      SELECT p.id, p.amount, p.payment_method, p.treasury_id, p.notes, p.reference_number
       FROM patient_invoice_payments p
       WHERE p.header_id = ${invoiceId} AND p.treasury_id IS NOT NULL
     `);
     if (!payments.rows.length) return;
-    const header = await db.execute(sql`SELECT invoice_number FROM patient_invoice_headers WHERE id = ${invoiceId}`);
-    const invNum = (header.rows[0] as any)?.invoice_number ?? invoiceId;
+    const header = await db.execute(sql`
+      SELECT h.invoice_number, pa.name AS patient_name
+      FROM patient_invoice_headers h
+      LEFT JOIN patients pa ON pa.id = h.patient_id
+      WHERE h.id = ${invoiceId}
+    `);
+    const row = header.rows[0] as any;
+    const invNum = row?.invoice_number ?? invoiceId;
+    const patientName = row?.patient_name ?? "";
     for (const p of payments.rows as any[]) {
+      const ref = p.reference_number ? `[${p.reference_number}] ` : "";
+      const desc = `${ref}تحصيل فاتورة مريض رقم ${invNum}${patientName ? ` - ${patientName}` : ""}`;
       await db.execute(sql`
         INSERT INTO treasury_transactions (treasury_id, type, amount, description, source_type, source_id, transaction_date)
-        VALUES (${p.treasury_id}, 'in', ${p.amount}, ${'تحصيل فاتورة مريض رقم ' + invNum}, 'patient_invoice', ${p.id}, ${finalizationDate})
+        VALUES (${p.treasury_id}, 'in', ${p.amount}, ${desc}, 'patient_invoice', ${p.id}, ${finalizationDate})
         ON CONFLICT (source_type, source_id, treasury_id) DO NOTHING
       `);
     }
