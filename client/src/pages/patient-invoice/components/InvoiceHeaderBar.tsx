@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Save, CheckCircle, Trash2, Plus, Loader2, Users } from "lucide-react";
+import { Save, CheckCircle, Plus, Loader2, Users } from "lucide-react";
 import { patientInvoiceStatusLabels, patientTypeLabels } from "@shared/schema";
 import type { Department, Admission } from "@shared/schema";
 import { SearchDropdown } from "./SearchDropdown";
@@ -66,8 +66,6 @@ interface InvoiceHeaderBarProps {
   resetForm: () => void;
   saveMutation: { mutate: () => void; isPending: boolean };
   finalizeMutation: { mutate: () => void; isPending: boolean };
-  deleteMutation: { mutate: (id: string, opts?: any) => void; isPending: boolean };
-  setConfirmDeleteId: (id: string | null) => void;
   openDistributeDialog: () => void;
 
   getStatusBadgeClass: (status: string) => string;
@@ -95,8 +93,7 @@ export function InvoiceHeaderBar({
   contractName, setContractName,
   notes, setNotes,
   lines,
-  resetForm, saveMutation, finalizeMutation, deleteMutation,
-  setConfirmDeleteId, openDistributeDialog,
+  resetForm, saveMutation, finalizeMutation, openDistributeDialog,
   getStatusBadgeClass,
 }: InvoiceHeaderBarProps) {
   return (
@@ -359,18 +356,6 @@ export function InvoiceHeaderBar({
               >
                 {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
                 اعتماد
-              </Button>
-            )}
-            {invoiceId && (
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => setConfirmDeleteId(invoiceId)}
-                disabled={deleteMutation.isPending}
-                data-testid="button-delete"
-              >
-                <Trash2 className="h-3 w-3 ml-1" />
-                حذف
               </Button>
             )}
             {lines.length > 0 && (

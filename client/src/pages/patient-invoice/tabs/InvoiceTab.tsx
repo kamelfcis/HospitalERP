@@ -120,8 +120,6 @@ interface InvoiceTabProps {
   resetForm: () => void;
   saveMutation: { mutate: () => void; isPending: boolean };
   finalizeMutation: { mutate: () => void; isPending: boolean };
-  deleteMutation: { mutate: (id: string, opts?: any) => void; isPending: boolean };
-  setConfirmDeleteId: (id: string | null) => void;
   openDistributeDialog: () => void;
 
   dtTransfers: DoctorTransfer[];
@@ -175,8 +173,7 @@ export function InvoiceTab({
   handleQtyConfirm, handleUnitLevelChange, openStatsPopup,
   payments, addPayment, updatePayment, removePayment,
   totals,
-  resetForm, saveMutation, finalizeMutation, deleteMutation,
-  setConfirmDeleteId, openDistributeDialog,
+  resetForm, saveMutation, finalizeMutation, openDistributeDialog,
   dtTransfers, dtAlreadyTransferred, dtRemaining,
   dtOpen, setDtOpen, dtAmount, setDtAmount,
   dtDoctorName, setDtDoctorName, dtNotes, setDtNotes, openDtConfirm,
@@ -245,8 +242,6 @@ export function InvoiceTab({
         resetForm={resetForm}
         saveMutation={saveMutation}
         finalizeMutation={finalizeMutation}
-        deleteMutation={deleteMutation}
-        setConfirmDeleteId={setConfirmDeleteId}
         openDistributeDialog={openDistributeDialog}
         getStatusBadgeClass={getStatusBadgeClass}
       />

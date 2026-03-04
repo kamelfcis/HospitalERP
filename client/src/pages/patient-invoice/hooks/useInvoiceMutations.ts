@@ -29,37 +29,21 @@ interface UseInvoiceMutationsParams {
   payments: PaymentLocal[];
   setInvoiceId: (id: string) => void;
   setStatus: (s: string) => void;
-  resetForm: () => void;
+  resetAll: () => void;
 }
 
 export function useInvoiceMutations({
-  invoiceId,
-  invoiceNumber,
-  invoiceDate,
-  patientName,
-  patientPhone,
-  patientType,
-  departmentId,
-  warehouseId,
-  doctorName,
-  contractName,
-  notes,
-  admissionId,
-  totals,
-  lines,
-  payments,
-  setInvoiceId,
-  setStatus,
-  resetForm,
+  invoiceId, invoiceNumber, invoiceDate, patientName, patientPhone,
+  patientType, departmentId, warehouseId, doctorName, contractName,
+  notes, admissionId, totals, lines, payments,
+  setInvoiceId, setStatus, resetAll,
 }: UseInvoiceMutationsParams) {
   const { toast } = useToast();
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       const header = {
-        invoiceNumber,
-        invoiceDate,
-        patientName,
+        invoiceNumber, invoiceDate, patientName,
         patientPhone: patientPhone || null,
         patientType,
         departmentId: departmentId || null,
@@ -96,7 +80,7 @@ export function useInvoiceMutations({
         sourceType: l.sourceType || null,
         sourceId: l.sourceId || null,
       }));
-      const payData = payments.map((p) => ({
+      const payData = payments.map(p => ({
         paymentDate: p.paymentDate,
         amount: String(p.amount),
         paymentMethod: p.paymentMethod,
@@ -129,13 +113,9 @@ export function useInvoiceMutations({
     mutationFn: async () => {
       if (!invoiceId) throw new Error("يجب حفظ الفاتورة أولاً");
       const missingDoctor = lines.filter(l => l.lineType === "service" && l.requiresDoctor && !l.doctorName.trim());
-      const missingNurse = lines.filter(l => l.lineType === "service" && l.requiresNurse && !l.nurseName.trim());
-      if (missingDoctor.length > 0) {
-        throw new Error(`يجب إدخال اسم الطبيب للخدمات: ${missingDoctor.map(l => l.description).join("، ")}`);
-      }
-      if (missingNurse.length > 0) {
-        throw new Error(`يجب إدخال اسم الممرض للخدمات: ${missingNurse.map(l => l.description).join("، ")}`);
-      }
+      const missingNurse  = lines.filter(l => l.lineType === "service" && l.requiresNurse && !l.nurseName.trim());
+      if (missingDoctor.length > 0) throw new Error(`يجب إدخال اسم الطبيب للخدمات: ${missingDoctor.map(l => l.description).join("، ")}`);
+      if (missingNurse.length > 0)  throw new Error(`يجب إدخال اسم الممرض للخدمات: ${missingNurse.map(l => l.description).join("، ")}`);
       const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/finalize`);
       return res.json();
     },
@@ -149,20 +129,5 @@ export function useInvoiceMutations({
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/patient-invoices/${id}`);
-    },
-    onSuccess: () => {
-      toast({ title: "تم الحذف", description: "تم حذف فاتورة المريض" });
-      resetForm();
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices/next-number"] });
-    },
-    onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
-    },
-  });
-
-  return { saveMutation, finalizeMutation, deleteMutation };
+  return { saveMutation, finalizeMutation };
 }
