@@ -6041,11 +6041,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<CashierShift> {
-    const conditions = [eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.unitType, unitType), eq(cashierShifts.status, "open")];
+    const conditions = [eq(cashierShifts.status, "open"), eq(cashierShifts.unitType, unitType)];
     if (unitType === "pharmacy" && pharmacyId) conditions.push(eq(cashierShifts.pharmacyId, pharmacyId));
     if (unitType === "department" && departmentId) conditions.push(eq(cashierShifts.departmentId, departmentId));
+    if (glAccountId) conditions.push(eq(cashierShifts.glAccountId, glAccountId));
     const [existingOpen] = await db.select().from(cashierShifts).where(and(...conditions));
-    if (existingOpen) throw new Error("يوجد وردية مفتوحة بالفعل لهذا الكاشير في هذه الوحدة");
+    if (existingOpen) throw new Error("يوجد وردية مفتوحة بالفعل على هذه الخزنة في نفس الوحدة — اختر خزنة مختلفة");
 
     const unitLabel = unitType === "department" ? `قسم: ${departmentId}` : `صيدلية: ${pharmacyId}`;
     const [shift] = await db.insert(cashierShifts).values({
