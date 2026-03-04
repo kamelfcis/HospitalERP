@@ -1,28 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { Save, CheckCircle, Trash2, Plus, Search, ChevronLeft, ChevronRight, Loader2, Eye, X, FileText, BarChart3, Users, BedDouble, Layers, LogOut, Printer, Stethoscope, ArrowLeftRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { CheckCircle, Search, Loader2, FileText, BarChart3, BedDouble, ArrowLeftRight } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatNumber, formatCurrency, formatDateShort } from "@/lib/formatters";
-import type { PatientInvoiceHeader, PatientInvoiceLine, PatientInvoicePayment, Department, Service, Item, Warehouse, Patient, Doctor, Admission, DoctorTransfer } from "@shared/schema";
-import { patientInvoiceStatusLabels, patientTypeLabels, lineTypeLabels, paymentMethodLabels } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import { formatNumber, formatCurrency } from "@/lib/formatters";
 
-import { useDebounce } from "./utils/debounce";
 import { genId } from "./utils/id";
+import { getStatusBadgeClass, getServiceRowClass } from "./utils/statusHelpers";
 import {
   getEffectiveMajorToMinor,
   getEffectiveMediumToMinor,
@@ -47,11 +35,14 @@ import { useAdmissions } from "./hooks/useAdmissions";
 import { useAdmissionsMutations } from "./hooks/useAdmissionsMutations";
 import { useRegistry } from "./hooks/useRegistry";
 import { useInvoiceMutations } from "./hooks/useInvoiceMutations";
+import { useSearchState } from "./hooks/useSearchState";
+import { useDoctorTransfer } from "./hooks/useDoctorTransfer";
+import { useStatsDialog } from "./hooks/useStatsDialog";
 
+// ── Line recalc helpers ──────────────────────────────────────────────────────────
 function recalcLine(line: LineLocal): LineLocal {
   const gross = line.quantity * line.unitPrice;
-  const discountAmount = line.discountAmount;
-  const totalPrice = Math.max(0, +(gross - discountAmount).toFixed(2));
+  const totalPrice = Math.max(0, +(gross - line.discountAmount).toFixed(2));
   return { ...line, totalPrice };
 }
 
@@ -69,45 +60,19 @@ function recalcLineFromAmount(line: LineLocal): LineLocal {
   return { ...line, discountPercent, totalPrice };
 }
 
-function getStatusBadgeClass(status: string) {
-  if (status === "draft") return "bg-yellow-500 text-white no-default-hover-elevate no-default-active-elevate";
-  if (status === "finalized") return "bg-green-600 text-white no-default-hover-elevate no-default-active-elevate";
-  if (status === "cancelled") return "bg-red-600 text-white no-default-hover-elevate no-default-active-elevate";
-  return "";
-}
-
-function getServiceRowClass(serviceType: string): string {
-  if (serviceType === "ACCOMMODATION") {
-    return "bg-amber-50 dark:bg-amber-950/30";
-  }
-  if (serviceType === "OPERATING_ROOM") {
-    return "bg-indigo-50 dark:bg-indigo-950/30";
-  }
-  return "";
-}
-
+// ────────────────────────────────────────────────────────────────────────────────
 export default function PatientInvoice() {
   const { toast } = useToast();
+
+  // ── Navigation tabs ────────────────────────────────────────────────────────────
   const [mainTab, setMainTab] = useState("invoice");
   const [subTab, setSubTab] = useState("services");
 
+  // ── Invoice form fields ────────────────────────────────────────────────────────
   const [invoiceId, setInvoiceId] = useState<string | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [patientName, setPatientName] = useState("");
-
-  useEffect(() => {
-    const originalTitle = document.title;
-    return () => { document.title = originalTitle; };
-  }, []);
-
-  useEffect(() => {
-    if (patientName.trim()) {
-      document.title = `فاتورة: ${patientName.trim()}`;
-    } else {
-      document.title = "فاتورة مريض جديدة";
-    }
-  }, [patientName]);
   const [patientPhone, setPatientPhone] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [doctorName, setDoctorName] = useState("");
@@ -116,17 +81,16 @@ export default function PatientInvoice() {
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState("draft");
   const [admissionId, setAdmissionId] = useState("");
-
   const [warehouseId, setWarehouseId] = useState("");
   const [fefoLoading, setFefoLoading] = useState(false);
 
-  const [statsItemId, setStatsItemId] = useState<string | null>(null);
-  const [statsItemName, setStatsItemName] = useState("");
-  const [statsData, setStatsData] = useState<any[] | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
+  // ── Delete confirm ─────────────────────────────────────────────────────────────
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // ── Distribute dialog ──────────────────────────────────────────────────────────
   const [distOpen, setDistOpen] = useState(false);
 
+  // ── Lines & Payments ───────────────────────────────────────────────────────────
   const [lines, setLines] = useState<LineLocal[]>([]);
   const linesRef = useRef(lines);
   useEffect(() => { linesRef.current = lines; }, [lines]);
@@ -134,47 +98,11 @@ export default function PatientInvoice() {
   const [payments, setPayments] = useState<PaymentLocal[]>([]);
   const paymentRefOffsetRef = useRef(0);
 
-  const [patientSearch, setPatientSearch] = useState("");
-  const [patientResults, setPatientResults] = useState<Patient[]>([]);
-  const [searchingPatients, setSearchingPatients] = useState(false);
-  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
-  const debouncedPatientSearch = useDebounce(patientSearch, 200);
-  const patientSearchRef = useRef<HTMLInputElement>(null);
-  const patientDropdownRef = useRef<HTMLDivElement>(null);
+  // ── Extracted hooks ────────────────────────────────────────────────────────────
+  const search = useSearchState({ departmentId });
+  const stats = useStatsDialog();
 
-  const [doctorSearch, setDoctorSearch] = useState("");
-  const [doctorResults, setDoctorResults] = useState<Doctor[]>([]);
-  const [searchingDoctors, setSearchingDoctors] = useState(false);
-  const [showDoctorDropdown, setShowDoctorDropdown] = useState(false);
-  const debouncedDoctorSearch = useDebounce(doctorSearch, 200);
-  const doctorSearchRef = useRef<HTMLInputElement>(null);
-  const doctorDropdownRef = useRef<HTMLDivElement>(null);
-
-  const [serviceSearch, setServiceSearch] = useState("");
-  const [serviceResults, setServiceResults] = useState<Service[]>([]);
-  const [searchingServices, setSearchingServices] = useState(false);
-  const debouncedServiceSearch = useDebounce(serviceSearch, 300);
-
-  const [itemSearch, setItemSearch] = useState("");
-  const [itemResults, setItemResults] = useState<Item[]>([]);
-  const [searchingItems, setSearchingItems] = useState(false);
-  const debouncedItemSearch = useDebounce(itemSearch, 300);
-  const itemSearchRef = useRef<HTMLInputElement>(null);
-  const itemDropdownRef = useRef<HTMLDivElement>(null);
-  const serviceSearchRef = useRef<HTMLInputElement>(null);
-  const serviceDropdownRef = useRef<HTMLDivElement>(null);
-  const addingItemRef = useRef<Set<string>>(new Set());
-
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-
-  const [dtOpen, setDtOpen] = useState(false);
-  const [dtDoctorName, setDtDoctorName] = useState("");
-  const [dtAmount, setDtAmount] = useState("");
-  const [dtNotes, setDtNotes] = useState("");
-  const [dtConfirmOpen, setDtConfirmOpen] = useState(false);
-  const [dtClientRequestId, setDtClientRequestId] = useState("");
-
-
+  // ── Shared data ────────────────────────────────────────────────────────────────
   const { nextNumber, departments, warehouses, activeAdmissions } = useInvoiceBootstrap();
 
   const {
@@ -214,6 +142,51 @@ export default function PatientInvoice() {
 
   const isDraft = status === "draft";
 
+  // ── Document title ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const original = document.title;
+    return () => { document.title = original; };
+  }, []);
+
+  useEffect(() => {
+    document.title = patientName.trim() ? `فاتورة: ${patientName.trim()}` : "فاتورة مريض جديدة";
+  }, [patientName]);
+
+  // ── Next invoice number ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (nextNumber && !invoiceId && !invoiceNumber) setInvoiceNumber(nextNumber);
+  }, [nextNumber, invoiceId, invoiceNumber]);
+
+  // ── Load from URL param ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const loadId = params.get("loadId");
+    if (loadId) {
+      loadInvoice(loadId);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  // ── Totals ─────────────────────────────────────────────────────────────────────
+  const totals = useMemo(() => {
+    const totalAmount = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+    const totalDiscount = lines.reduce((s, l) => s + l.discountAmount, 0);
+    const netAmount = totalAmount - totalDiscount;
+    const paidAmount = payments.reduce((s, p) => s + p.amount, 0);
+    const remaining = netAmount - paidAmount;
+    return {
+      totalAmount: +totalAmount.toFixed(2),
+      discountAmount: +totalDiscount.toFixed(2),
+      netAmount: +netAmount.toFixed(2),
+      paidAmount: +paidAmount.toFixed(2),
+      remaining: +remaining.toFixed(2),
+    };
+  }, [lines, payments]);
+
+  // ── Doctor Transfer hook ───────────────────────────────────────────────────────
+  const dt = useDoctorTransfer({ invoiceId, invoiceStatus: status, netAmount: totals.netAmount });
+
+  // ── Admissions create submit ───────────────────────────────────────────────────
   const admHandleCreateSubmit = () => {
     if (!admFormData.patientName.trim()) { toast({ title: "خطأ", description: "اسم المريض مطلوب", variant: "destructive" }); return; }
     if (!admFormData.admissionNumber.trim()) { toast({ title: "خطأ", description: "رقم الإقامة مطلوب", variant: "destructive" }); return; }
@@ -230,237 +203,7 @@ export default function PatientInvoice() {
     admCreateMutation.mutate(body);
   };
 
-  useEffect(() => {
-    if (nextNumber && !invoiceId && !invoiceNumber) {
-      setInvoiceNumber(nextNumber);
-    }
-  }, [nextNumber, invoiceId, invoiceNumber]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const loadId = params.get("loadId");
-    if (loadId) {
-      loadInvoice(loadId);
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!debouncedServiceSearch || debouncedServiceSearch.length < 2) {
-      setServiceResults([]);
-      return;
-    }
-    const controller = new AbortController();
-    setSearchingServices(true);
-    const svcQp = new URLSearchParams();
-    svcQp.set("search", debouncedServiceSearch);
-    svcQp.set("page", "1");
-    svcQp.set("pageSize", "15");
-    if (departmentId) svcQp.set("departmentId", departmentId);
-    fetch(`/api/services?${svcQp.toString()}`, {
-      signal: controller.signal,
-      credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        setServiceResults(data.data || []);
-        setSearchingServices(false);
-      })
-      .catch(() => setSearchingServices(false));
-    return () => controller.abort();
-  }, [debouncedServiceSearch, departmentId]);
-
-  useEffect(() => {
-    if (!debouncedItemSearch || debouncedItemSearch.length < 1) {
-      setItemResults([]);
-      return;
-    }
-    const controller = new AbortController();
-    setSearchingItems(true);
-    const useAdvanced = debouncedItemSearch.includes("%");
-    const url = useAdvanced
-      ? `/api/items/search?q=${encodeURIComponent(debouncedItemSearch)}&limit=15`
-      : `/api/items?search=${encodeURIComponent(debouncedItemSearch)}&limit=15&page=1`;
-    fetch(url, {
-      signal: controller.signal,
-      credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        setItemResults(useAdvanced ? (data || []) : (data.items || []));
-        setSearchingItems(false);
-      })
-      .catch(() => setSearchingItems(false));
-    return () => controller.abort();
-  }, [debouncedItemSearch]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        itemDropdownRef.current &&
-        !itemDropdownRef.current.contains(e.target as Node) &&
-        itemSearchRef.current &&
-        !itemSearchRef.current.contains(e.target as Node)
-      ) {
-        setItemResults([]);
-      }
-    }
-    if (itemResults.length > 0) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [itemResults.length]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        serviceDropdownRef.current &&
-        !serviceDropdownRef.current.contains(e.target as Node) &&
-        serviceSearchRef.current &&
-        !serviceSearchRef.current.contains(e.target as Node)
-      ) {
-        setServiceResults([]);
-      }
-    }
-    if (serviceResults.length > 0) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [serviceResults.length]);
-
-  useEffect(() => {
-    if (!debouncedPatientSearch || debouncedPatientSearch.length < 1) {
-      setPatientResults([]);
-      return;
-    }
-    const controller = new AbortController();
-    setSearchingPatients(true);
-    fetch(`/api/patients?search=${encodeURIComponent(debouncedPatientSearch)}`, {
-      signal: controller.signal,
-      credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        setPatientResults(Array.isArray(data) ? data : []);
-        setSearchingPatients(false);
-      })
-      .catch(() => setSearchingPatients(false));
-    return () => controller.abort();
-  }, [debouncedPatientSearch]);
-
-  useEffect(() => {
-    if (!debouncedDoctorSearch || debouncedDoctorSearch.length < 1) {
-      setDoctorResults([]);
-      return;
-    }
-    const controller = new AbortController();
-    setSearchingDoctors(true);
-    fetch(`/api/doctors?search=${encodeURIComponent(debouncedDoctorSearch)}`, {
-      signal: controller.signal,
-      credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        setDoctorResults(Array.isArray(data) ? data : []);
-        setSearchingDoctors(false);
-      })
-      .catch(() => setSearchingDoctors(false));
-    return () => controller.abort();
-  }, [debouncedDoctorSearch]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        patientDropdownRef.current &&
-        !patientDropdownRef.current.contains(e.target as Node) &&
-        patientSearchRef.current &&
-        !patientSearchRef.current.contains(e.target as Node)
-      ) {
-        setShowPatientDropdown(false);
-      }
-    }
-    if (showPatientDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showPatientDropdown]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        doctorDropdownRef.current &&
-        !doctorDropdownRef.current.contains(e.target as Node) &&
-        doctorSearchRef.current &&
-        !doctorSearchRef.current.contains(e.target as Node)
-      ) {
-        setShowDoctorDropdown(false);
-      }
-    }
-    if (showDoctorDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showDoctorDropdown]);
-
-
-  const totals = useMemo(() => {
-    const totalAmount = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
-    const totalDiscount = lines.reduce((s, l) => s + l.discountAmount, 0);
-    const netAmount = totalAmount - totalDiscount;
-    const paidAmount = payments.reduce((s, p) => s + p.amount, 0);
-    const remaining = netAmount - paidAmount;
-    return {
-      totalAmount: +totalAmount.toFixed(2),
-      discountAmount: +totalDiscount.toFixed(2),
-      netAmount: +netAmount.toFixed(2),
-      paidAmount: +paidAmount.toFixed(2),
-      remaining: +remaining.toFixed(2),
-    };
-  }, [lines, payments]);
-
-  const { data: dtTransfers = [], refetch: refetchTransfers } = useQuery<DoctorTransfer[]>({
-    queryKey: ["/api/patient-invoices", invoiceId, "transfers"],
-    enabled: !!invoiceId && status === "finalized",
-    queryFn: () => fetch(`/api/patient-invoices/${invoiceId}/transfers`, { credentials: "include" }).then(r => r.json()),
-  });
-
-  const dtAlreadyTransferred = dtTransfers.reduce((s, t) => s + parseFloat(t.amount), 0);
-  const dtRemaining = Math.max(0, totals.netAmount - dtAlreadyTransferred);
-
-  const dtMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("POST", `/api/patient-invoices/${invoiceId}/transfer-to-doctor`, {
-        doctorName: dtDoctorName.trim(),
-        amount: parseFloat(dtAmount),
-        clientRequestId: dtClientRequestId,
-        notes: dtNotes.trim() || undefined,
-      });
-    },
-    onSuccess: () => {
-      toast({ title: "تم التحويل", description: "تم تحويل المستحقات للطبيب بنجاح" });
-      setDtConfirmOpen(false);
-      setDtOpen(false);
-      setDtDoctorName("");
-      setDtAmount("");
-      setDtNotes("");
-      setDtClientRequestId("");
-      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", invoiceId, "transfers"] });
-    },
-    onError: (error: any) => {
-      toast({ variant: "destructive", title: "خطأ في التحويل", description: error.message });
-    },
-  });
-
-  function openDtConfirm() {
-    if (!dtDoctorName.trim()) { toast({ variant: "destructive", title: "اسم الطبيب مطلوب" }); return; }
-    const amt = parseFloat(dtAmount);
-    if (!dtAmount || isNaN(amt) || amt <= 0) { toast({ variant: "destructive", title: "أدخل مبلغاً صحيحاً" }); return; }
-    if (amt > dtRemaining + 0.001) { toast({ variant: "destructive", title: `المبلغ يتجاوز المتبقي (${dtRemaining.toFixed(2)})` }); return; }
-    const newId = genId();
-    setDtClientRequestId(newId);
-    setDtConfirmOpen(true);
-  }
-
+  // ── Reset form ─────────────────────────────────────────────────────────────────
   const resetForm = useCallback(() => {
     setInvoiceId(null);
     setInvoiceNumber(nextNumber || "");
@@ -481,35 +224,7 @@ export default function PatientInvoice() {
     setSubTab("services");
   }, [nextNumber]);
 
-  const { saveMutation, finalizeMutation, deleteMutation } = useInvoiceMutations({
-    invoiceId,
-    invoiceNumber,
-    invoiceDate,
-    patientName,
-    patientPhone,
-    patientType,
-    departmentId,
-    warehouseId,
-    doctorName,
-    contractName,
-    notes,
-    admissionId,
-    totals,
-    lines,
-    payments,
-    setInvoiceId,
-    setStatus,
-    resetForm,
-  });
-
-  const openDistributeDialog = useCallback(() => {
-    if (lines.length === 0) {
-      toast({ title: "تنبيه", description: "لا توجد بنود للتوزيع", variant: "destructive" });
-      return;
-    }
-    setDistOpen(true);
-  }, [lines, toast]);
-
+  // ── Load invoice ───────────────────────────────────────────────────────────────
   const loadInvoice = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/patient-invoices/${id}`, { credentials: "include" });
@@ -577,6 +292,29 @@ export default function PatientInvoice() {
     }
   }, [toast]);
 
+  // ── Invoice mutations ──────────────────────────────────────────────────────────
+  const { saveMutation, finalizeMutation, deleteMutation } = useInvoiceMutations({
+    invoiceId,
+    invoiceNumber,
+    invoiceDate,
+    patientName,
+    patientPhone,
+    patientType,
+    departmentId,
+    warehouseId,
+    doctorName,
+    contractName,
+    notes,
+    admissionId,
+    totals,
+    lines,
+    payments,
+    setInvoiceId,
+    setStatus,
+    resetForm,
+  });
+
+  // ── Add service line ───────────────────────────────────────────────────────────
   const addServiceLine = useCallback((svc: any) => {
     const newLine: LineLocal = {
       tempId: genId(),
@@ -594,7 +332,7 @@ export default function PatientInvoice() {
       requiresDoctor: svc.requiresDoctor ?? false,
       requiresNurse: svc.requiresNurse ?? false,
       notes: "",
-      sortOrder: lines.filter((l) => l.lineType === "service").length,
+      sortOrder: lines.filter(l => l.lineType === "service").length,
       serviceType: svc.serviceType || "SERVICE",
       unitLevel: "minor" as const,
       lotId: null,
@@ -604,11 +342,12 @@ export default function PatientInvoice() {
       sourceType: null,
       sourceId: null,
     };
-    setLines((prev) => [...prev, newLine]);
-    setServiceSearch("");
-    setServiceResults([]);
-  }, [lines]);
+    setLines(prev => [...prev, newLine]);
+    search.setServiceSearch("");
+    search.setServiceResults([]);
+  }, [lines, search]);
 
+  // ── Add item line ──────────────────────────────────────────────────────────────
   const addItemLine = useCallback((item: any, lineType: "drug" | "consumable" | "equipment") => {
     const hasMajor = itemHasMajorUnit(item);
     const hasMedium = itemHasMediumUnit(item);
@@ -622,8 +361,8 @@ export default function PatientInvoice() {
         description: "اختر المخزن أولاً لتفعيل التوزيع التلقائي للصلاحية (FEFO)",
         variant: "destructive",
       });
-      setItemSearch("");
-      setItemResults([]);
+      search.setItemSearch("");
+      search.setItemResults([]);
       return;
     }
 
@@ -656,13 +395,13 @@ export default function PatientInvoice() {
       sourceId: null,
     };
 
-    setLines((prev) => [...prev, placeholderLine]);
-    setItemSearch("");
-    setItemResults([]);
-    requestAnimationFrame(() => itemSearchRef.current?.focus());
+    setLines(prev => [...prev, placeholderLine]);
+    search.setItemSearch("");
+    search.setItemResults([]);
+    requestAnimationFrame(() => search.itemSearchRef.current?.focus());
 
     const asyncToken = genId();
-    addingItemRef.current.add(asyncToken);
+    search.addingItemRef.current.add(asyncToken);
 
     (async () => {
       try {
@@ -673,7 +412,7 @@ export default function PatientInvoice() {
             const params = new URLSearchParams({ itemId: item.id });
             if (departmentId) params.set("departmentId", departmentId);
             if (warehouseId) params.set("warehouseId", warehouseId);
-            const priceRes = await fetch(`/api/pricing?${params.toString()}`);
+            const priceRes = await fetch(`/api/pricing?${params}`);
             if (priceRes.ok) {
               const priceData = await priceRes.json();
               const resolved = parseFloat(priceData.price);
@@ -685,7 +424,7 @@ export default function PatientInvoice() {
         const isDeptPrice = priceSource === "department";
         const finalUnitPrice = computeUnitPriceFromBase(resolvedPrice, defaultUnit, item);
 
-        if (!addingItemRef.current.has(asyncToken)) return;
+        if (!search.addingItemRef.current.has(asyncToken)) return;
 
         if (item.hasExpiry && warehouseId) {
           setFefoLoading(true);
@@ -702,11 +441,11 @@ export default function PatientInvoice() {
               requiredQtyInMinor: String(totalRequiredMinor),
               asOfDate: invoiceDate,
             });
-            const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+            const res = await fetch(`/api/transfer/fefo-preview?${fefoParams}`);
             if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
             const preview = await res.json();
 
-            if (!addingItemRef.current.has(asyncToken)) return;
+            if (!search.addingItemRef.current.has(asyncToken)) return;
 
             if (!preview.fulfilled) {
               setLines(prev => prev.filter(l => l.tempId !== tempLineId));
@@ -728,7 +467,6 @@ export default function PatientInvoice() {
                   : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
                 const linePrice = computeUnitPriceFromBase(lineBasePrice, defaultUnit, item);
                 const lineTotal = +(displayQty * linePrice).toFixed(2);
-
                 return {
                   tempId: genId(),
                   lineType,
@@ -780,14 +518,15 @@ export default function PatientInvoice() {
           }
         }
       } finally {
-        addingItemRef.current.delete(asyncToken);
+        search.addingItemRef.current.delete(asyncToken);
       }
     })();
-  }, [departmentId, warehouseId, invoiceDate, toast]);
+  }, [departmentId, warehouseId, invoiceDate, toast, search]);
 
+  // ── Line operations ────────────────────────────────────────────────────────────
   const updateLine = useCallback((tempId: string, field: string, value: any) => {
-    setLines((prev) =>
-      prev.map((l) => {
+    setLines(prev =>
+      prev.map(l => {
         if (l.tempId !== tempId) return l;
         const updated = { ...l, [field]: value };
         if (field === "discountPercent") return recalcLineFromPercent(updated);
@@ -799,9 +538,15 @@ export default function PatientInvoice() {
   }, []);
 
   const removeLine = useCallback((tempId: string) => {
-    setLines((prev) => prev.filter((l) => l.tempId !== tempId));
+    setLines(prev => prev.filter(l => l.tempId !== tempId));
   }, []);
 
+  const filteredLines = useCallback(
+    (type: string) => lines.filter(l => l.lineType === type),
+    [lines]
+  );
+
+  // ── Payment operations ─────────────────────────────────────────────────────────
   const addPayment = useCallback(async () => {
     const offset = paymentRefOffsetRef.current;
     paymentRefOffsetRef.current += 1;
@@ -811,7 +556,7 @@ export default function PatientInvoice() {
       const data = await res.json();
       ref = data.ref ?? "";
     } catch { /* fallback: empty ref */ }
-    setPayments((prev) => [
+    setPayments(prev => [
       ...prev,
       {
         tempId: genId(),
@@ -826,35 +571,23 @@ export default function PatientInvoice() {
   }, []);
 
   const updatePayment = useCallback((tempId: string, field: string, value: any) => {
-    setPayments((prev) =>
-      prev.map((p) => (p.tempId === tempId ? { ...p, [field]: value } : p))
-    );
+    setPayments(prev => prev.map(p => p.tempId === tempId ? { ...p, [field]: value } : p));
   }, []);
 
   const removePayment = useCallback((tempId: string) => {
-    setPayments((prev) => prev.filter((p) => p.tempId !== tempId));
+    setPayments(prev => prev.filter(p => p.tempId !== tempId));
   }, []);
 
-  const filteredLines = useCallback(
-    (type: string) => lines.filter((l) => l.lineType === type),
-    [lines]
-  );
-
-  const openStatsPopup = useCallback(async (itemId: string, itemName: string) => {
-    setStatsItemId(itemId);
-    setStatsItemName(itemName);
-    setStatsData(null);
-    setStatsLoading(true);
-    try {
-      const res = await fetch(`/api/items/${itemId}/warehouse-stats`);
-      if (res.ok) {
-        setStatsData(await res.json());
-      }
-    } catch {} finally {
-      setStatsLoading(false);
+  // ── Distribute dialog ──────────────────────────────────────────────────────────
+  const openDistributeDialog = useCallback(() => {
+    if (lines.length === 0) {
+      toast({ title: "تنبيه", description: "لا توجد بنود للتوزيع", variant: "destructive" });
+      return;
     }
-  }, []);
+    setDistOpen(true);
+  }, [lines, toast]);
 
+  // ── Unit level change (FEFO-aware) ────────────────────────────────────────────
   const handleUnitLevelChange = useCallback(async (tempId: string, newLevel: "major" | "medium" | "minor") => {
     const currentLines = linesRef.current;
     const line = currentLines.find(l => l.tempId === tempId);
@@ -872,7 +605,7 @@ export default function PatientInvoice() {
         const params = new URLSearchParams({ itemId: line.itemId });
         if (departmentId) params.set("departmentId", departmentId);
         if (warehouseId) params.set("warehouseId", warehouseId);
-        const priceRes = await fetch(`/api/pricing?${params.toString()}`);
+        const priceRes = await fetch(`/api/pricing?${params}`);
         if (priceRes.ok) {
           const priceData = await priceRes.json();
           const resolved = parseFloat(priceData.price);
@@ -896,7 +629,7 @@ export default function PatientInvoice() {
           requiredQtyInMinor: String(totalMinor),
           asOfDate: invoiceDate,
         });
-        const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+        const res = await fetch(`/api/transfer/fefo-preview?${fefoParams}`);
         if (!res.ok) throw new Error("فشل حساب التوزيع");
         const preview = await res.json();
 
@@ -915,7 +648,6 @@ export default function PatientInvoice() {
                     line.item
                   );
               const lineTotal = +(displayQty * lotBase).toFixed(2);
-
               return {
                 tempId: genId(),
                 lineType: line.lineType,
@@ -964,6 +696,7 @@ export default function PatientInvoice() {
     }
   }, [warehouseId, invoiceDate, departmentId, toast]);
 
+  // ── Qty confirm (FEFO-aware) ───────────────────────────────────────────────────
   const handleQtyConfirm = useCallback(async (tempId: string) => {
     const currentLines = linesRef.current;
     const line = currentLines.find(l => l.tempId === tempId);
@@ -973,16 +706,10 @@ export default function PatientInvoice() {
     const qtyEntered = parseFloat(pendingVal ?? String(line.quantity)) || 0;
     pendingQtyRef.current.delete(tempId);
 
-    if (qtyEntered <= 0) {
-      toast({ title: "كمية غير صحيحة", variant: "destructive" });
-      return;
-    }
+    if (qtyEntered <= 0) { toast({ title: "كمية غير صحيحة", variant: "destructive" }); return; }
 
     const isExpiry = !!(line.lotId || line.expiryMonth || line.expiryYear);
-    if (!isExpiry || !warehouseId) {
-      updateLine(tempId, "quantity", qtyEntered);
-      return;
-    }
+    if (!isExpiry || !warehouseId) { updateLine(tempId, "quantity", qtyEntered); return; }
 
     const allLinesForItem = currentLines.filter(l => l.itemId === line.itemId);
     const otherLinesMinor = allLinesForItem
@@ -1001,7 +728,7 @@ export default function PatientInvoice() {
         requiredQtyInMinor: String(totalRequired),
         asOfDate: invoiceDate,
       });
-      const res = await fetch(`/api/transfer/fefo-preview?${fefoParams.toString()}`);
+      const res = await fetch(`/api/transfer/fefo-preview?${fefoParams}`);
       if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
       const preview = await res.json();
 
@@ -1023,7 +750,7 @@ export default function PatientInvoice() {
           const params = new URLSearchParams({ itemId: line.itemId });
           if (departmentId) params.set("departmentId", departmentId);
           if (warehouseId) params.set("warehouseId", warehouseId);
-          const priceRes = await fetch(`/api/pricing?${params.toString()}`);
+          const priceRes = await fetch(`/api/pricing?${params}`);
           if (priceRes.ok) {
             const priceData = await priceRes.json();
             const resolved = parseFloat(priceData.price);
@@ -1046,7 +773,6 @@ export default function PatientInvoice() {
             : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
           const linePrice = computeUnitPriceFromBase(basePrice, ul, itemRef);
           const lineTotal = +(displayQty * linePrice).toFixed(2);
-
           return {
             tempId: genId(),
             lineType: line.lineType,
@@ -1091,7 +817,7 @@ export default function PatientInvoice() {
     }
   }, [warehouseId, invoiceDate, departmentId, toast, updateLine]);
 
-
+  // ────────────────────────────────────────────────────────────────────────────────
   return (
     <div className="patient-invoice-page p-2 space-y-2" dir="rtl" lang="ar" data-testid="page-patient-invoice">
       <Tabs value={mainTab} onValueChange={setMainTab}>
@@ -1131,24 +857,24 @@ export default function PatientInvoice() {
             setPatientName={setPatientName}
             patientPhone={patientPhone}
             setPatientPhone={setPatientPhone}
-            patientSearch={patientSearch}
-            setPatientSearch={setPatientSearch}
-            patientResults={patientResults}
-            searchingPatients={searchingPatients}
-            showPatientDropdown={showPatientDropdown}
-            setShowPatientDropdown={setShowPatientDropdown}
-            patientSearchRef={patientSearchRef}
-            patientDropdownRef={patientDropdownRef}
+            patientSearch={search.patientSearch}
+            setPatientSearch={search.setPatientSearch}
+            patientResults={search.patientResults}
+            searchingPatients={search.searchingPatients}
+            showPatientDropdown={search.showPatientDropdown}
+            setShowPatientDropdown={search.setShowPatientDropdown}
+            patientSearchRef={search.patientSearchRef}
+            patientDropdownRef={search.patientDropdownRef}
             doctorName={doctorName}
             setDoctorName={setDoctorName}
-            doctorSearch={doctorSearch}
-            setDoctorSearch={setDoctorSearch}
-            doctorResults={doctorResults}
-            searchingDoctors={searchingDoctors}
-            showDoctorDropdown={showDoctorDropdown}
-            setShowDoctorDropdown={setShowDoctorDropdown}
-            doctorSearchRef={doctorSearchRef}
-            doctorDropdownRef={doctorDropdownRef}
+            doctorSearch={search.doctorSearch}
+            setDoctorSearch={search.setDoctorSearch}
+            doctorResults={search.doctorResults}
+            searchingDoctors={search.searchingDoctors}
+            showDoctorDropdown={search.showDoctorDropdown}
+            setShowDoctorDropdown={search.setShowDoctorDropdown}
+            doctorSearchRef={search.doctorSearchRef}
+            doctorDropdownRef={search.doctorDropdownRef}
             departmentId={departmentId}
             setDepartmentId={setDepartmentId}
             departments={departments}
@@ -1168,21 +894,21 @@ export default function PatientInvoice() {
             setSubTab={setSubTab}
             lines={lines}
             filteredLines={filteredLines}
-            itemSearch={itemSearch}
-            setItemSearch={setItemSearch}
-            setItemResults={setItemResults}
-            itemResults={itemResults}
-            searchingItems={searchingItems}
+            itemSearch={search.itemSearch}
+            setItemSearch={search.setItemSearch}
+            setItemResults={search.setItemResults}
+            itemResults={search.itemResults}
+            searchingItems={search.searchingItems}
             fefoLoading={fefoLoading}
-            serviceSearch={serviceSearch}
-            setServiceSearch={setServiceSearch}
-            setServiceResults={setServiceResults}
-            serviceResults={serviceResults}
-            searchingServices={searchingServices}
-            itemSearchRef={itemSearchRef}
-            itemDropdownRef={itemDropdownRef}
-            serviceSearchRef={serviceSearchRef}
-            serviceDropdownRef={serviceDropdownRef}
+            serviceSearch={search.serviceSearch}
+            setServiceSearch={search.setServiceSearch}
+            setServiceResults={search.setServiceResults}
+            serviceResults={search.serviceResults}
+            searchingServices={search.searchingServices}
+            itemSearchRef={search.itemSearchRef}
+            itemDropdownRef={search.itemDropdownRef}
+            serviceSearchRef={search.serviceSearchRef}
+            serviceDropdownRef={search.serviceDropdownRef}
             pendingQtyRef={pendingQtyRef}
             addServiceLine={addServiceLine}
             addItemLine={addItemLine}
@@ -1190,7 +916,7 @@ export default function PatientInvoice() {
             removeLine={removeLine}
             handleQtyConfirm={handleQtyConfirm}
             handleUnitLevelChange={handleUnitLevelChange}
-            openStatsPopup={openStatsPopup}
+            openStatsPopup={stats.openStatsPopup}
             payments={payments}
             addPayment={addPayment}
             updatePayment={updatePayment}
@@ -1202,18 +928,18 @@ export default function PatientInvoice() {
             deleteMutation={deleteMutation}
             setConfirmDeleteId={setConfirmDeleteId}
             openDistributeDialog={openDistributeDialog}
-            dtTransfers={dtTransfers}
-            dtAlreadyTransferred={dtAlreadyTransferred}
-            dtRemaining={dtRemaining}
-            dtOpen={dtOpen}
-            setDtOpen={setDtOpen}
-            dtAmount={dtAmount}
-            setDtAmount={setDtAmount}
-            dtDoctorName={dtDoctorName}
-            setDtDoctorName={setDtDoctorName}
-            dtNotes={dtNotes}
-            setDtNotes={setDtNotes}
-            openDtConfirm={openDtConfirm}
+            dtTransfers={dt.dtTransfers}
+            dtAlreadyTransferred={dt.dtAlreadyTransferred}
+            dtRemaining={dt.dtRemaining}
+            dtOpen={dt.dtOpen}
+            setDtOpen={dt.setDtOpen}
+            dtAmount={dt.dtAmount}
+            setDtAmount={dt.setDtAmount}
+            dtDoctorName={dt.dtDoctorName}
+            setDtDoctorName={dt.setDtDoctorName}
+            dtNotes={dt.dtNotes}
+            setDtNotes={dt.setDtNotes}
+            openDtConfirm={dt.openDtConfirm}
             getStatusBadgeClass={getStatusBadgeClass}
             getServiceRowClass={getServiceRowClass}
           />
@@ -1294,7 +1020,8 @@ export default function PatientInvoice() {
         </TabsContent>
       </Tabs>
 
-      <Sheet open={dtConfirmOpen} onOpenChange={setDtConfirmOpen}>
+      {/* ── Doctor Transfer confirm sheet ──────────────────────────────────────── */}
+      <Sheet open={dt.dtConfirmOpen} onOpenChange={dt.setDtConfirmOpen}>
         <SheetContent side="bottom" dir="rtl" className="rounded-t-xl">
           <SheetHeader>
             <SheetTitle className="flex flex-row-reverse items-center gap-2">
@@ -1305,16 +1032,16 @@ export default function PatientInvoice() {
           <div className="py-4 space-y-3 text-right">
             <div className="flex flex-row-reverse gap-2 text-sm">
               <span className="text-muted-foreground">الطبيب:</span>
-              <strong>{dtDoctorName}</strong>
+              <strong>{dt.dtDoctorName}</strong>
             </div>
             <div className="flex flex-row-reverse gap-2 text-sm">
               <span className="text-muted-foreground">المبلغ:</span>
-              <strong className="text-blue-700 text-base">{formatCurrency(parseFloat(dtAmount || "0"))}</strong>
+              <strong className="text-blue-700 text-base">{formatCurrency(parseFloat(dt.dtAmount || "0"))}</strong>
             </div>
-            {dtNotes && (
+            {dt.dtNotes && (
               <div className="flex flex-row-reverse gap-2 text-sm">
                 <span className="text-muted-foreground">ملاحظات:</span>
-                <span>{dtNotes}</span>
+                <span>{dt.dtNotes}</span>
               </div>
             )}
             <p className="text-xs text-muted-foreground border rounded p-2 bg-muted">
@@ -1323,22 +1050,23 @@ export default function PatientInvoice() {
           </div>
           <SheetFooter className="flex-row-reverse gap-2 pb-2">
             <Button
-              onClick={() => dtMutation.mutate()}
-              disabled={dtMutation.isPending}
+              onClick={() => dt.dtMutation.mutate()}
+              disabled={dt.dtMutation.isPending}
               className="bg-blue-600 hover:bg-blue-700 text-white"
               data-testid="button-dt-submit"
             >
-              {dtMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
+              {dt.dtMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
               تأكيد التحويل
             </Button>
-            <Button variant="outline" onClick={() => setDtConfirmOpen(false)} data-testid="button-dt-cancel">
+            <Button variant="outline" onClick={() => dt.setDtConfirmOpen(false)} data-testid="button-dt-cancel">
               إلغاء
             </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
 
-      <Dialog open={!!confirmDeleteId} onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}>
+      {/* ── Delete confirm dialog ──────────────────────────────────────────────── */}
+      <Dialog open={!!confirmDeleteId} onOpenChange={open => { if (!open) setConfirmDeleteId(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>تأكيد الحذف</DialogTitle>
@@ -1365,6 +1093,7 @@ export default function PatientInvoice() {
         </DialogContent>
       </Dialog>
 
+      {/* ── Distribute dialog ──────────────────────────────────────────────────── */}
       <DistributeDialog
         open={distOpen}
         onClose={() => setDistOpen(false)}
@@ -1383,23 +1112,29 @@ export default function PatientInvoice() {
         onSuccess={() => resetForm()}
       />
 
-      <Dialog open={!!statsItemId} onOpenChange={(open) => { if (!open) { setStatsItemId(null); setStatsData(null); } }}>
+      {/* ── Stock stats dialog ─────────────────────────────────────────────────── */}
+      <Dialog
+        open={!!stats.statsItemId}
+        onOpenChange={open => { if (!open) stats.closeStatsDialog(); }}
+      >
         <DialogContent className="max-w-lg" dir="rtl" data-testid="dialog-stock-stats">
           <DialogHeader>
             <DialogTitle className="text-right flex flex-row-reverse items-center gap-2">
               <BarChart3 className="h-4 w-4" />
-              <span>أرصدة المخازن - {statsItemName}</span>
+              <span>أرصدة المخازن - {stats.statsItemName}</span>
             </DialogTitle>
-            <DialogDescription className="text-right">كميات الصنف وتواريخ الصلاحية في جميع المخازن</DialogDescription>
+            <DialogDescription className="text-right">
+              كميات الصنف وتواريخ الصلاحية في جميع المخازن
+            </DialogDescription>
           </DialogHeader>
           <div className="max-h-[400px] overflow-y-auto">
-            {statsLoading ? (
+            {stats.statsLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : statsData && statsData.length > 0 ? (
+            ) : stats.statsData && stats.statsData.length > 0 ? (
               <div className="space-y-3">
-                {statsData.map((wh: any) => (
+                {stats.statsData.map((wh: any) => (
                   <div key={wh.warehouseId} className="border rounded-md p-3">
                     <div className="flex flex-row-reverse items-center justify-between gap-2 mb-2">
                       <span className="font-semibold text-sm">{wh.warehouseName}</span>
