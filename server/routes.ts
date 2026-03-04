@@ -4718,5 +4718,57 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ── Announcements (news ticker) ───────────────────────────────────────────
+  app.get("/api/announcements", requireAuth, async (_req, res) => {
+    try {
+      const rows = await db.execute(sql`SELECT id, message, is_active AS "isActive", created_at AS "createdAt", created_by AS "createdBy" FROM announcements ORDER BY created_at DESC`);
+      res.json(rows.rows);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/announcements/active", requireAuth, async (_req, res) => {
+    try {
+      const rows = await db.execute(sql`SELECT id, message FROM announcements WHERE is_active = true ORDER BY created_at DESC`);
+      res.json(rows.rows);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/announcements", requireAuth, async (req, res) => {
+    if (!["owner", "admin"].includes(req.session.role!)) return res.status(403).json({ message: "غير مصرح" });
+    try {
+      const { message } = req.body;
+      if (!message?.trim()) return res.status(400).json({ message: "نص الإعلان مطلوب" });
+      const rows = await db.execute(sql`
+        INSERT INTO announcements (message, is_active, created_by)
+        VALUES (${message.trim()}, true, ${req.session.userId})
+        RETURNING id, message, is_active AS "isActive", created_at AS "createdAt"
+      `);
+      res.json(rows.rows[0]);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/announcements/:id", requireAuth, async (req, res) => {
+    if (!["owner", "admin"].includes(req.session.role!)) return res.status(403).json({ message: "غير مصرح" });
+    try {
+      const { id } = req.params;
+      const { message, isActive } = req.body;
+      await db.execute(sql`
+        UPDATE announcements
+        SET message   = COALESCE(${message ?? null}, message),
+            is_active = COALESCE(${isActive ?? null}, is_active)
+        WHERE id = ${id}
+      `);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/announcements/:id", requireAuth, async (req, res) => {
+    if (!["owner", "admin"].includes(req.session.role!)) return res.status(403).json({ message: "غير مصرح" });
+    try {
+      await db.execute(sql`DELETE FROM announcements WHERE id = ${req.params.id}`);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   return httpServer;
 }

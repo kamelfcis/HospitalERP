@@ -22,6 +22,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Reporting & Audit**: Generates balanced financial reports, incorporates full role-based access control (RBAC) with granular permissions, and maintains a comprehensive audit trail with strict validation and conflict resolution.
 - **User Experience**: Emphasizes a professional UI with collapsible sidebar, A4 print styles, focus management, and visual auto-save indicators.
 - **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing costs for patient accommodation, a Bed Board system for hospital bed management with atomic operations, real-time SSE updates, smart bed transfer with instant accommodation billing, and a Surgery Types System.
+- **Announcements Ticker**: A scrolling news-ticker header bar (replaces static title bar) that streams active announcements. Admins manage announcements via `/announcements` page. Ticker auto-refreshes every 60 s. Background matches `bg-primary`.
 
 ### Technical Implementations
 - **API**: RESTful JSON API.
@@ -40,6 +41,8 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Stay Engine Billing Modes**: Supports `hours_24` and `hotel_noon` billing modes for patient stays, both idempotent.
 - **Invoice & Discharge Business Rules**: Enforces payment before finalization and finalized invoices before discharge, with role-based bypass options.
 - **Audit Trail**: Captures audit entries for critical financial operations like stay line edits and removals.
+- **Sidebar Toggle Location**: Moved from top header to inside the sidebar footer (both expanded and collapsed states).
+- **AppLayout Structure**: `AppHeader` (marquee ticker) → `main` content. Sidebar toggle button lives in `SidebarFooter`.
 - **Source Field Preservation**: Ensures `sourceType`/`sourceId` fields are preserved across all frontend line pipelines.
 - **Room Management**: Provides a dedicated page for CRUD operations on floors, rooms, and beds, including grade assignment.
 - **Surgery Types Integration**: Allows linking surgery types to admissions, impacting OR_ROOM line items and invoice totals.
