@@ -20,6 +20,7 @@ import { Loader2, Users, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useDebounce } from "../utils/debounce";
+import { isDirectDistributionLine } from "../utils/distributeHelpers";
 import type { LineLocal } from "../types";
 import type { Patient, PatientInvoiceHeader } from "@shared/schema";
 
@@ -169,14 +170,6 @@ export function DistributeDialog({ open, onClose, lines, invoiceContext, onSucce
   }, []);
 
   // ── 5. Preview computation ──────────────────────────────────────────────
-  // خطوط "مباشرة": تذهب كاملةً لكل مريض (لا تُقسَّم)
-  // - STAY_ENGINE / OR_ROOM من حيث الـ sourceType
-  // - ACCOMMODATION / OPERATING_ROOM من حيث الـ serviceType (سواء أُضيفت يدوياً أو من المحرك)
-  const DIRECT_SOURCE_TYPES = new Set(["STAY_ENGINE", "OR_ROOM"]);
-  const DIRECT_SERVICE_TYPES = new Set(["ACCOMMODATION", "OPERATING_ROOM"]);
-  const isDirectLine = (l: LineLocal) =>
-    DIRECT_SOURCE_TYPES.has(l.sourceType || "") || DIRECT_SERVICE_TYPES.has(l.serviceType || "");
-
   interface PreviewLine {
     tempId: string;
     description: string;
@@ -232,8 +225,8 @@ export function DistributeDialog({ open, onClose, lines, invoiceContext, onSucce
     });
 
   const hasInsufficientItems = previewLines.some(pl => pl.insufficient);
-  const directLines = lines.filter(l => isDirectLine(l));
-  const serviceLines = lines.filter(l => l.lineType === "service" && !isDirectLine(l));
+  const directLines = lines.filter(isDirectDistributionLine);
+  const serviceLines = lines.filter(l => l.lineType === "service" && !isDirectDistributionLine(l));
 
   // ── 6. Distribute handler ───────────────────────────────────────────────
   const handleDistribute = useCallback(async () => {
