@@ -45,7 +45,7 @@ import DoctorSettlements from "@/pages/DoctorSettlements";
 import DoctorStatement from "@/pages/DoctorStatement";
 import SystemSettings from "@/pages/SystemSettings";
 import SurgeryTypes from "@/pages/SurgeryTypes";
-import TreasuriesPage from "@/pages/TreasuriesPage";
+import TreasuriesPage from "@/pages/treasuries/TreasuriesPage";
 import NotFound from "@/pages/not-found";
 
 function RequirePermission({ permission, children }: { permission: string; children: React.ReactNode }) {
