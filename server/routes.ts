@@ -4233,6 +4233,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/cashier/my-shifts", async (req, res) => {
+    try {
+      const cashierId = (req.session as any).userId || "cashier-1";
+      const shifts = await storage.getMyOpenShifts(cashierId);
+      res.json(shifts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/cashier/shift/:shiftId/validate-close", async (req, res) => {
     try {
       const result = await storage.validateShiftClose(req.params.shiftId);

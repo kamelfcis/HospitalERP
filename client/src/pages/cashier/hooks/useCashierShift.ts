@@ -51,12 +51,19 @@ export function useCashierShift() {
   const [glAccountSearch, setGlAccountSearch] = useState("");
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closingCash, setClosingCash] = useState("0");
+  const [unitConfirmed, setUnitConfirmed] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [validation, setValidation] = useState<ShiftCloseValidation | null>(null);
   const [isValidating, setIsValidating] = useState(false);
+  const [previousSelection, setPreviousSelection] = useState<{ type: UnitType; id: string } | null>(null);
+  const [isAddingNew, setIsAddingNew] = useState(false);
 
   const { data: unitsData } = useQuery<{ pharmacies: any[]; departments: any[] }>({
     queryKey: ["/api/cashier/units"],
+  });
+
+  const { data: allOpenShifts = [] } = useQuery<CashierShift[]>({
+    queryKey: ["/api/cashier/my-shifts"],
   });
 
   const { data: staffList } = useQuery<{ id: string; username: string; fullName: string }[]>({
@@ -131,8 +138,11 @@ export function useCashierShift() {
     },
     onSuccess: () => {
       setDrawerPassword("");
+      setIsAddingNew(false);
+      setPreviousSelection(null);
       toast({ title: "تم فتح الوردية بنجاح" });
       queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift/active", selectedUnitType, selectedUnitId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/my-shifts"] });
     },
     onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
@@ -148,6 +158,7 @@ export function useCashierShift() {
       toast({ title: "تم إغلاق الوردية بنجاح" });
       setCloseDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/cashier/shift/active", selectedUnitType, selectedUnitId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashier/my-shifts"] });
     },
     onError: (error: Error) => {
       toast({ title: "خطأ في الإغلاق", description: error.message, variant: "destructive" });
@@ -155,6 +166,39 @@ export function useCashierShift() {
   });
 
   const canOpenShift = !!cashierName.trim() && !!selectedUnitId && !!shiftGlAccountId && (!selectedDrawerHasPassword || !!drawerPassword);
+
+  const handleAddNewShift = useCallback(() => {
+    if (selectedUnitType && selectedUnitId) {
+      setPreviousSelection({ type: selectedUnitType, id: selectedUnitId });
+    }
+    setIsAddingNew(true);
+    setSelectedUnitType(null);
+    setSelectedUnitId("");
+    setUnitConfirmed(false);
+  }, [selectedUnitType, selectedUnitId]);
+
+  const handleBackFromNewShift = useCallback(() => {
+    if (previousSelection) {
+      setSelectedUnitType(previousSelection.type);
+      setSelectedUnitId(previousSelection.id);
+      setUnitConfirmed(true);
+      setPreviousSelection(null);
+      setIsAddingNew(false);
+    } else {
+      setUnitConfirmed(false);
+      setSelectedUnitType(null);
+      setSelectedUnitId("");
+      setIsAddingNew(false);
+    }
+  }, [previousSelection]);
+
+  const handleSwitchShift = useCallback((shift: CashierShift) => {
+    setIsAddingNew(false);
+    setPreviousSelection(null);
+    setSelectedUnitType(shift.unitType as UnitType);
+    setSelectedUnitId((shift.pharmacyId || shift.departmentId) ?? "");
+    setUnitConfirmed(true);
+  }, []);
 
   const handleCloseShiftClick = useCallback(async () => {
     if (!shiftId) return;
@@ -184,6 +228,7 @@ export function useCashierShift() {
   return {
     selectedUnitType, setSelectedUnitType,
     selectedUnitId, setSelectedUnitId,
+    unitConfirmed, setUnitConfirmed,
     cashierName, setCashierName,
     openingCash, setOpeningCash,
     shiftGlAccountId, setShiftGlAccountId,
@@ -200,5 +245,7 @@ export function useCashierShift() {
     validationDialogOpen, setValidationDialogOpen,
     validation, isValidating,
     handleCloseShiftClick, handleProceedFromValidation,
+    allOpenShifts, isAddingNew,
+    handleAddNewShift, handleBackFromNewShift, handleSwitchShift,
   };
 }

@@ -11,6 +11,7 @@ import { useCashierActions } from "./hooks/useCashierActions";
 import { UnitSelector } from "./components/UnitSelector";
 import { ShiftOpenForm } from "./components/ShiftOpenForm";
 import { ShiftStatusBar } from "./components/ShiftStatusBar";
+import { ShiftSwitchBar } from "./components/ShiftSwitchBar";
 import { InvoiceTable } from "./components/InvoiceTable";
 import { InvoiceDetailsPanel } from "./components/InvoiceDetailsPanel";
 import { CloseShiftDialog } from "./components/CloseShiftDialog";
@@ -22,12 +23,12 @@ export default function CashierCollection() {
   const { hasPermission } = useAuth();
   const canViewTotals = hasPermission("cashier.view_shift_totals");
   const [activeTab, setActiveTab] = useState("sales");
-  const [unitConfirmed, setUnitConfirmed] = useState(false);
 
   const shift = useCashierShift();
   const {
     selectedUnitType, setSelectedUnitType,
     selectedUnitId, setSelectedUnitId,
+    unitConfirmed, setUnitConfirmed,
     unitsData, staffList,
     filteredGlAccounts, glAccountSearch, setGlAccountSearch,
     shiftGlAccountId, setShiftGlAccountId,
@@ -41,6 +42,8 @@ export default function CashierCollection() {
     validationDialogOpen, setValidationDialogOpen,
     validation, isValidating,
     handleCloseShiftClick, handleProceedFromValidation,
+    allOpenShifts, isAddingNew,
+    handleAddNewShift, handleBackFromNewShift, handleSwitchShift,
   } = shift;
 
   const invoices = usePendingInvoices(hasActiveShift, shiftUnitType, shiftUnitId, shiftId);
@@ -81,6 +84,15 @@ export default function CashierCollection() {
     shiftUnitId,
   );
 
+  const openShiftUnitIds = useMemo(() => {
+    const ids = new Set<string>();
+    allOpenShifts.forEach(s => {
+      if (s.pharmacyId) ids.add(s.pharmacyId);
+      if (s.departmentId) ids.add(s.departmentId);
+    });
+    return ids;
+  }, [allOpenShifts]);
+
   const handleUnitSelect = (type: UnitType, id: string) => {
     setSelectedUnitType(type);
     setSelectedUnitId(id);
@@ -95,9 +107,26 @@ export default function CashierCollection() {
     clearSelection();
   };
 
+  const showSwitchBar = allOpenShifts.length > 0;
+
   return (
     <div className="p-3 space-y-3 overflow-x-hidden" dir="rtl" data-testid="page-cashier-collection">
       <h1 className="text-lg font-bold text-right">شاشة تحصيل الكاشير</h1>
+
+      {showSwitchBar && (
+        <Card>
+          <CardContent className="p-2.5">
+            <ShiftSwitchBar
+              allOpenShifts={allOpenShifts}
+              selectedShiftId={activeShift?.id}
+              unitsData={unitsData}
+              onSelectShift={handleSwitchShift}
+              onAddNew={handleAddNewShift}
+              isAddingNew={isAddingNew}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-3">
@@ -113,7 +142,19 @@ export default function CashierCollection() {
             />
           ) : !unitConfirmed ? (
             <div className="py-4">
-              <UnitSelector unitsData={unitsData} onSelect={handleUnitSelect} />
+              <UnitSelector
+                unitsData={unitsData}
+                onSelect={handleUnitSelect}
+                openShiftUnitIds={openShiftUnitIds}
+                title={isAddingNew ? "اختر الوحدة للوردية الجديدة" : undefined}
+              />
+              {isAddingNew && (
+                <div className="mt-4 flex justify-center">
+                  <Button variant="ghost" size="sm" onClick={handleBackFromNewShift}>
+                    رجوع
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="py-4 space-y-6">
@@ -140,7 +181,7 @@ export default function CashierCollection() {
                 selectedDrawerHasPassword={selectedDrawerHasPassword}
                 drawerPassword={drawerPassword}
                 setDrawerPassword={setDrawerPassword}
-                onBack={handleBack}
+                onBack={isAddingNew ? handleBackFromNewShift : handleBack}
                 onSubmit={() => openShiftMutation.mutate()}
                 isPending={openShiftMutation.isPending}
                 canSubmit={canOpenShift}

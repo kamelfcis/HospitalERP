@@ -422,6 +422,7 @@ export interface IStorage {
   // Cashier
   openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<any>;
   getActiveShift(cashierId: string, unitType: string, unitId: string): Promise<any>;
+  getMyOpenShifts(cashierId: string): Promise<any[]>;
   getShiftById(shiftId: string): Promise<any>;
   closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
   validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; reasonCode: string }>;
@@ -6126,6 +6127,12 @@ export class DatabaseStorage implements IStorage {
         sql`${cashierShifts.id} != ${currentShiftId}`,
       ));
     return Number(result?.count) > 0;
+  }
+
+  async getMyOpenShifts(cashierId: string): Promise<CashierShift[]> {
+    return db.select().from(cashierShifts)
+      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.status, "open")))
+      .orderBy(cashierShifts.openedAt);
   }
 
   async validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; reasonCode: string }> {
