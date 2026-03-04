@@ -6710,11 +6710,18 @@ export class DatabaseStorage implements IStorage {
     const dateToFilter   = dateTo   ? sql`AND dt.transferred_at::date <= ${dateTo}::date`   : sql``;
     const res = await db.execute(sql`
       SELECT
-        dt.id, dt.invoice_id, dt.doctor_name, dt.amount::text AS amount,
-        dt.transferred_at, dt.notes,
-        COALESCE(SUM(dsa.amount), 0)::text  AS settled,
+        dt.id,
+        dt.invoice_id        AS "invoiceId",
+        dt.doctor_name       AS "doctorName",
+        dt.amount::text      AS amount,
+        dt.transferred_at    AS "transferredAt",
+        dt.notes,
+        COALESCE(SUM(dsa.amount), 0)::text              AS settled,
         (dt.amount - COALESCE(SUM(dsa.amount), 0))::text AS remaining,
-        pi.patient_name, pi.invoice_date, pi.net_amount::text AS invoice_total, pi.status AS invoice_status
+        pi.patient_name      AS "patientName",
+        pi.invoice_date      AS "invoiceDate",
+        pi.net_amount::text  AS "invoiceTotal",
+        pi.status            AS "invoiceStatus"
       FROM doctor_transfers dt
       LEFT JOIN doctor_settlement_allocations dsa ON dsa.transfer_id = dt.id
       LEFT JOIN patient_invoice_headers pi ON pi.id = dt.invoice_id
@@ -7919,8 +7926,15 @@ export class DatabaseStorage implements IStorage {
   async getDoctorOutstandingTransfers(doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string })[]> {
     const res = await db.execute(sql`
       SELECT
-        dt.*,
-        COALESCE(SUM(dsa.amount), 0)::text AS settled,
+        dt.id,
+        dt.invoice_id        AS "invoiceId",
+        dt.doctor_name       AS "doctorName",
+        dt.amount::text      AS amount,
+        dt.client_request_id AS "clientRequestId",
+        dt.transferred_at    AS "transferredAt",
+        dt.notes,
+        dt.created_at        AS "createdAt",
+        COALESCE(SUM(dsa.amount), 0)::text              AS settled,
         (dt.amount - COALESCE(SUM(dsa.amount), 0))::text AS remaining
       FROM doctor_transfers dt
       LEFT JOIN doctor_settlement_allocations dsa ON dsa.transfer_id = dt.id
@@ -7979,17 +7993,17 @@ export class DatabaseStorage implements IStorage {
           const rem = parseMoney(String(row.remaining));
           const alloc = Math.min(rem, leftover);
           resolvedAllocations.push({ transferId: row.id, amount: alloc });
-          leftover = roundMoney(leftover - alloc);
+          leftover = parseMoney(roundMoney(leftover - alloc));
         }
         if (leftover > 0.001) throw Object.assign(new Error(`مبلغ التسوية (${paymentTotal.toFixed(2)}) يتجاوز المستحقات المتبقية`), { statusCode: 400 });
       }
 
       // Enforce sum == payment amount exactly (last absorbs delta)
       const sumAlloc = resolvedAllocations.reduce((s, a) => s + a.amount, 0);
-      const delta = roundMoney(paymentTotal - sumAlloc);
+      const delta = parseMoney(roundMoney(paymentTotal - sumAlloc));
       if (Math.abs(delta) > 0.1) throw Object.assign(new Error("مجموع التخصيصات لا يساوي مبلغ التسوية"), { statusCode: 400 });
       if (resolvedAllocations.length > 0 && Math.abs(delta) > 0) {
-        resolvedAllocations[resolvedAllocations.length - 1].amount = roundMoney(resolvedAllocations[resolvedAllocations.length - 1].amount + delta);
+        resolvedAllocations[resolvedAllocations.length - 1].amount = parseMoney(roundMoney(resolvedAllocations[resolvedAllocations.length - 1].amount + delta));
       }
 
       // Insert settlement
@@ -8010,7 +8024,7 @@ export class DatabaseStorage implements IStorage {
         await tx.insert(doctorSettlementAllocations).values({
           settlementId: settlement.id,
           transferId: alloc.transferId,
-          amount: roundMoney(alloc.amount).toFixed(2),
+          amount: roundMoney(alloc.amount),
         });
       }
 
