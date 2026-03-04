@@ -22,7 +22,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Reporting & Audit**: Generates balanced financial reports, incorporates full role-based access control (RBAC) with granular permissions, and maintains a comprehensive audit trail with strict validation and conflict resolution.
 - **User Experience**: Emphasizes a professional UI with collapsible sidebar, A4 print styles, focus management, and visual auto-save indicators.
 - **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing costs for patient accommodation, a Bed Board system for hospital bed management with atomic operations, real-time SSE updates, smart bed transfer with instant accommodation billing, and a Surgery Types System.
-- **Announcements Ticker**: A scrolling news-ticker header bar (replaces static title bar) that streams active announcements. Admins manage announcements via `/announcements` page. Ticker auto-refreshes every 60 s. Background matches `bg-primary`.
+- **Announcements Ticker**: A scrolling news-ticker header bar (replaces static title bar) that streams active announcements. Admins manage announcements via `/announcements` page. Ticker auto-refreshes every 60 s. Background matches `bg-sidebar` (same color as the sidebar).
 
 ### Technical Implementations
 - **API**: RESTful JSON API.
