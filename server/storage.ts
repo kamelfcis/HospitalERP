@@ -425,7 +425,7 @@ export interface IStorage {
   getMyOpenShifts(cashierId: string): Promise<any[]>;
   getShiftById(shiftId: string): Promise<any>;
   closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
-  validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; reasonCode: string }>;
+  validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; otherShift: any; reasonCode: string }>;
   getPendingSalesInvoices(unitType: string, unitId: string, search?: string): Promise<any[]>;
   getPendingReturnInvoices(unitType: string, unitId: string, search?: string): Promise<any[]>;
   getSalesInvoiceDetails(invoiceId: string): Promise<any>;
@@ -6113,20 +6113,22 @@ export class DatabaseStorage implements IStorage {
     return 0;
   }
 
-  private async existsOtherOpenShiftForUnit(currentShiftId: string, shift: CashierShift): Promise<boolean> {
+  private async findOtherOpenShiftForUnit(currentShiftId: string, shift: CashierShift): Promise<CashierShift | null> {
     const unitCondition = shift.unitType === "department" && shift.departmentId
-      ? eq(cashierShifts.departmentId, shift.departmentId)
+      ? and(eq(cashierShifts.unitType, "department"), eq(cashierShifts.departmentId, shift.departmentId))
       : shift.pharmacyId
-        ? eq(cashierShifts.pharmacyId, shift.pharmacyId)
-        : sql`1=0`;
-    const [result] = await db.select({ count: sql<number>`COUNT(*)` })
+        ? and(eq(cashierShifts.unitType, "pharmacy"), eq(cashierShifts.pharmacyId, shift.pharmacyId))
+        : null;
+    if (!unitCondition) return null;
+    const [found] = await db.select()
       .from(cashierShifts)
       .where(and(
         eq(cashierShifts.status, "open"),
         unitCondition,
         sql`${cashierShifts.id} != ${currentShiftId}`,
-      ));
-    return Number(result?.count) > 0;
+      ))
+      .limit(1);
+    return found || null;
   }
 
   async getMyOpenShifts(cashierId: string): Promise<CashierShift[]> {
@@ -6135,19 +6137,20 @@ export class DatabaseStorage implements IStorage {
       .orderBy(cashierShifts.openedAt);
   }
 
-  async validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; reasonCode: string }> {
+  async validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; otherShift: any; reasonCode: string }> {
     const shift = await this.getShiftById(shiftId);
-    if (!shift) return { canClose: false, pendingCount: 0, hasOtherOpenShift: false, reasonCode: "NOT_FOUND" };
-    if (shift.status !== "open") return { canClose: false, pendingCount: 0, hasOtherOpenShift: false, reasonCode: "ALREADY_CLOSED" };
+    if (!shift) return { canClose: false, pendingCount: 0, hasOtherOpenShift: false, otherShift: null, reasonCode: "NOT_FOUND" };
+    if (shift.status !== "open") return { canClose: false, pendingCount: 0, hasOtherOpenShift: false, otherShift: null, reasonCode: "ALREADY_CLOSED" };
 
-    const [pendingCount, hasOtherOpenShift] = await Promise.all([
+    const [pendingCount, otherShift] = await Promise.all([
       this.getPendingDocCountForUnit(shift),
-      this.existsOtherOpenShiftForUnit(shiftId, shift),
+      this.findOtherOpenShiftForUnit(shiftId, shift),
     ]);
+    const hasOtherOpenShift = !!otherShift;
 
-    if (pendingCount === 0) return { canClose: true, pendingCount: 0, hasOtherOpenShift, reasonCode: "CLEAN" };
-    if (hasOtherOpenShift) return { canClose: true, pendingCount, hasOtherOpenShift: true, reasonCode: "PENDING_OTHER_SHIFT_EXISTS" };
-    return { canClose: false, pendingCount, hasOtherOpenShift: false, reasonCode: "PENDING_NO_OTHER_SHIFT" };
+    if (pendingCount === 0) return { canClose: true, pendingCount: 0, hasOtherOpenShift, otherShift: otherShift || null, reasonCode: "CLEAN" };
+    if (hasOtherOpenShift) return { canClose: true, pendingCount, hasOtherOpenShift: true, otherShift, reasonCode: "PENDING_OTHER_SHIFT_EXISTS" };
+    return { canClose: false, pendingCount, hasOtherOpenShift: false, otherShift: null, reasonCode: "PENDING_NO_OTHER_SHIFT" };
   }
 
   async getShiftById(shiftId: string): Promise<CashierShift | null> {
@@ -6160,11 +6163,11 @@ export class DatabaseStorage implements IStorage {
     if (!shift) throw new Error("الوردية غير موجودة");
     if (shift.status !== "open") throw new Error("الوردية مغلقة بالفعل");
 
-    const [pendingCount, hasOtherOpenShift] = await Promise.all([
+    const [pendingCount, otherShift] = await Promise.all([
       this.getPendingDocCountForUnit(shift),
-      this.existsOtherOpenShiftForUnit(shiftId, shift),
+      this.findOtherOpenShiftForUnit(shiftId, shift),
     ]);
-    if (pendingCount > 0 && !hasOtherOpenShift) {
+    if (pendingCount > 0 && !otherShift) {
       throw new Error(`لا يمكن إغلاق الوردية - يوجد ${pendingCount} مستند معلّق لم يتم تحصيله`);
     }
 

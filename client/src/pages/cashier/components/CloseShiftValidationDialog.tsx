@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Loader2, XCircle, User, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -6,6 +6,12 @@ export interface ShiftCloseValidation {
   canClose: boolean;
   pendingCount: number;
   hasOtherOpenShift: boolean;
+  otherShift: {
+    id: string;
+    cashierName: string;
+    unitType: string;
+    openedAt: string;
+  } | null;
   reasonCode: "CLEAN" | "PENDING_NO_OTHER_SHIFT" | "PENDING_OTHER_SHIFT_EXISTS" | "NOT_FOUND" | "ALREADY_CLOSED" | string;
 }
 
@@ -23,6 +29,10 @@ export function CloseShiftValidationDialog({
   const isBlocked = validation?.reasonCode === "PENDING_NO_OTHER_SHIFT";
   const isAllowedWithWarning = validation?.reasonCode === "PENDING_OTHER_SHIFT_EXISTS";
   const isClean = validation?.reasonCode === "CLEAN";
+
+  const otherShiftTime = validation?.otherShift?.openedAt
+    ? new Date(validation.otherShift.openedAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -70,9 +80,26 @@ export function CloseShiftValidationDialog({
                   مسموح بالإغلاق مع تنبيه
                 </p>
                 <p className="text-sm text-amber-700 mt-1">
-                  يوجد <span className="font-bold">{validation?.pendingCount}</span> فاتورة معلّقة، لكن يوجد وردية أخرى مفتوحة لنفس الوحدة يمكنها استقبالها.
+                  يوجد <span className="font-bold">{validation?.pendingCount}</span> فاتورة معلّقة، وسيتم نقلها للوردية المفتوحة أدناه.
                 </p>
               </div>
+
+              {validation?.otherShift && (
+                <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-right space-y-1">
+                  <p className="text-xs font-medium text-blue-700">الوردية المفتوحة لنفس الوحدة:</p>
+                  <div className="flex items-center gap-2 justify-end text-sm text-blue-800">
+                    <span>{validation.otherShift.cashierName}</span>
+                    <User className="h-4 w-4" />
+                  </div>
+                  {otherShiftTime && (
+                    <div className="flex items-center gap-2 justify-end text-xs text-blue-600">
+                      <span>مفتوحة منذ {otherShiftTime}</span>
+                      <Clock className="h-3 w-3" />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <p className="text-xs text-muted-foreground text-right">
                 هل تريد المتابعة وإغلاق الوردية؟
               </p>
@@ -96,7 +123,6 @@ export function CloseShiftValidationDialog({
             <Button
               onClick={onProceed}
               data-testid="button-proceed-close-shift"
-              variant={isAllowedWithWarning ? "default" : "default"}
             >
               متابعة الإغلاق
             </Button>
