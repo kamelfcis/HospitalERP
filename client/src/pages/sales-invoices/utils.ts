@@ -17,12 +17,36 @@ export function genId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10);
 }
 
+/**
+ * عدد الوحدات الصغرى في الوحدة الوسطى.
+ *
+ * القاعدة:
+ *  1. إذا mediumToMinor محدد → استخدمه مباشرةً.
+ *  2. إذا majorToMinor AND majorToMedium محددان → اشتق: majorToMinor / majorToMedium.
+ *  3. وإلا → الوحدة الوسطى هي الأصغر فعلياً → 1.
+ *
+ * خطأ شائع: استخدام (majorToMinor||1) / (majorToMedium||1) يُعطي 1/3=0.333 حين majorToMinor=null
+ * وهذا معكوس تماماً — لذا لا نفترض قيمة افتراضية لـ majorToMinor.
+ */
 export function getEffectiveMediumToMinor(item: any): number {
   const m2m = parseFloat(item?.mediumToMinor);
   if (m2m > 0) return m2m;
-  const maj2min = parseFloat(item?.majorToMinor) || 1;
-  const maj2med = parseFloat(item?.majorToMedium) || 1;
-  return maj2min / maj2med;
+  const maj2min = parseFloat(item?.majorToMinor);
+  const maj2med = parseFloat(item?.majorToMedium);
+  if (maj2min > 0 && maj2med > 0) return maj2min / maj2med;
+  return 1;
+}
+
+/**
+ * معامل الوحدة الكبرى إلى الصغرى.
+ * إذا majorToMinor غير محدد، ننظر في majorToMedium (الوسطى هي الصغرى).
+ */
+function getMajorToMinorFactor(item: any): number {
+  const maj2min = parseFloat(item?.majorToMinor);
+  if (maj2min > 0) return maj2min;
+  const maj2med = parseFloat(item?.majorToMedium);
+  if (maj2med > 0) return maj2med;
+  return 1;
 }
 
 export function formatAvailability(availQtyMinor: string, unitLevel: string, item: any): string {
@@ -30,12 +54,13 @@ export function formatAvailability(availQtyMinor: string, unitLevel: string, ite
   if (isNaN(minorQty)) return "0";
 
   if (item && unitLevel === "major") {
-    const factor = parseFloat(item.majorToMinor);
-    if (factor > 0 && factor !== 1) {
+    const factor = getMajorToMinorFactor(item);
+    if (factor > 1) {
       const wholeMajor = Math.floor(minorQty / factor);
       const remainderMinor = Math.round(minorQty - wholeMajor * factor);
       if (remainderMinor > 0) {
-        return `${wholeMajor} ${item.majorUnitName || ""} + ${remainderMinor} ${item.minorUnitName || ""}`;
+        const remUnitName = item.minorUnitName || item.mediumUnitName || "";
+        return `${wholeMajor} ${item.majorUnitName || ""} + ${remainderMinor} ${remUnitName}`;
       }
       return `${wholeMajor} ${item.majorUnitName || ""}`;
     }
@@ -44,7 +69,7 @@ export function formatAvailability(availQtyMinor: string, unitLevel: string, ite
 
   if (item && unitLevel === "medium") {
     const factor = getEffectiveMediumToMinor(item);
-    if (factor > 0 && factor !== 1) {
+    if (factor > 1) {
       const wholeMed = Math.floor(minorQty / factor);
       const remainderMinor = Math.round(minorQty - wholeMed * factor);
       if (remainderMinor > 0) {
@@ -58,14 +83,22 @@ export function formatAvailability(availQtyMinor: string, unitLevel: string, ite
   return `${minorQty} ${item?.minorUnitName || item?.majorUnitName || "وحدة"}`;
 }
 
+/**
+ * تحويل كمية البيع إلى وحدات صغرى — للحجز من المخزون.
+ */
 export function calculateQtyInMinor(qty: number, unitLevel: string, item: any): number {
   if (!item) return qty;
   if (unitLevel === "minor") return qty;
   if (unitLevel === "medium") return qty * getEffectiveMediumToMinor(item);
-  return qty * (parseFloat(item.majorToMinor) || 1);
+  return qty * getMajorToMinorFactor(item);
 }
 
-// السعر الخام بدون تقريب — للحساب الداخلي فقط
+/**
+ * السعر الخام بدون تقريب — للحساب الداخلي فقط.
+ *
+ * القاعدة: baseSalePrice دائماً سعر الوحدة الكبرى (علبة).
+ * نقسم للوصول لسعر الوحدات الأصغر.
+ */
 export function computeUnitPriceRaw(baseSalePrice: number, unitLevel: string, item: any): number {
   if (!item || !baseSalePrice) return baseSalePrice || 0;
   if (unitLevel === "major" || !unitLevel) return baseSalePrice;
@@ -76,36 +109,39 @@ export function computeUnitPriceRaw(baseSalePrice: number, unitLevel: string, it
 
   if (unitLevel === "medium") {
     if (majorToMedium > 0) return baseSalePrice / majorToMedium;
-    // اشتق النسبة: أعلى ÷ أصغر
     if (majorToMinor > 0 && mediumToMinor > 0) return baseSalePrice / (majorToMinor / mediumToMinor);
     return baseSalePrice;
   }
   if (unitLevel === "minor") {
     if (majorToMinor > 0) return baseSalePrice / majorToMinor;
-    // اشتق: major_to_medium × medium_to_minor
     if (majorToMedium > 0 && mediumToMinor > 0) return baseSalePrice / (majorToMedium * mediumToMinor);
+    if (majorToMedium > 0) return baseSalePrice / majorToMedium;
     return baseSalePrice;
   }
   return baseSalePrice;
 }
 
-// السعر للعرض مقرّب لـ 2 منازل عشرية
 export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: any): number {
   return +computeUnitPriceRaw(baseSalePrice, unitLevel, item).toFixed(2);
 }
 
-// إجمالي السطر يُحسب من السعر الخام لتجنب تراكم أخطاء التقريب
-// مثال: 3 شرائط بسعر 500/3 → 3 × 166.666... = 500.00 (صحيح)
-//        وليس 3 × 166.67 = 500.01 (خطأ تقريب)
+/**
+ * إجمالي السطر يُحسب من السعر الخام لتجنب تراكم أخطاء التقريب.
+ * مثال: 3 شرائط × (500÷3) = 3 × 166.666... = 500.00 (صحيح)
+ *        وليس 3 × 166.67 = 500.01 (خطأ تقريب)
+ */
 export function computeLineTotal(qty: number, baseSalePrice: number, unitLevel: string, item: any): number {
   const rawPrice = computeUnitPriceRaw(baseSalePrice, unitLevel, item);
   return +(qty * rawPrice).toFixed(2);
 }
 
+/**
+ * تحويل عدد الوحدات الصغرى المخصصة من FEFO إلى كمية العرض.
+ */
 export function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: any): number {
   let displayQty = allocMinor;
   if (unitLevel === "major") {
-    displayQty = allocMinor / (parseFloat(item?.majorToMinor) || 1);
+    displayQty = allocMinor / getMajorToMinorFactor(item);
   } else if (unitLevel === "medium") {
     displayQty = allocMinor / getEffectiveMediumToMinor(item);
   }

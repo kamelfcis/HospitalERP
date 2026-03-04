@@ -165,7 +165,8 @@ export function ItemFastSearch({
   }, [query, doSearch]);
 
   // ===== لوحة المفاتيح =====
-  const handleKeyDown = useCallback(async (e: React.KeyboardEvent<HTMLInputElement>) => {
+  // ملاحظة: لا يجوز جعل هذه الدالة async — يسبب race condition مع React state
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlighted(h => {
@@ -173,7 +174,6 @@ export function ItemFastSearch({
         rowRefs.current[next]?.scrollIntoView({ block: "nearest" });
         return next;
       });
-      // إعادة ضبط batchMode عند التنقل
       resetBatches();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -188,18 +188,19 @@ export function ItemFastSearch({
       const item = items[highlighted];
       if (!item) return;
 
+      // صنف بدون صلاحية → إضافة فورية
       if (!item.hasExpiry) {
-        // صنف بدون صلاحية → إضافة فورية بدون API call
         selectItem(item, null);
         return;
       }
 
-      if (!batchMode) {
-        // Enter الأولى → أظهر الدُفعات
-        await loadBatches(item);
-      } else {
-        // Enter الثانية → أضف للفاتورة بالدفعة المختارة
+      // صنف بصلاحية: Enter الثانية تُضيف، Enter الأولى تُظهر الدُفعات
+      if (batchMode) {
         selectItem(item);
+      } else {
+        // fire-and-forget — loadBatches يضبط setBatchMode(true) داخلياً
+        // الـ handler التالي سيرى batchMode=true تلقائياً بعد re-render
+        loadBatches(item);
       }
     } else if (e.key === "Escape") {
       if (batchMode) {
