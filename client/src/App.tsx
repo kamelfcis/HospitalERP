@@ -38,7 +38,7 @@ import PatientInvoice from "@/pages/PatientInvoice";
 import CashierCollection from "@/pages/CashierCollection";
 import AccountMappings from "@/pages/AccountMappings";
 import DrawerPasswords from "@/pages/DrawerPasswords";
-import UsersManagement from "@/pages/UsersManagement";
+import UsersManagement from "@/pages/users-management";
 import BedBoard from "@/pages/bed-board";
 import RoomManagement from "@/pages/RoomManagement";
 import DoctorSettlements from "@/pages/DoctorSettlements";
