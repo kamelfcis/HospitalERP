@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/hooks/use-auth";
 import { useCashierShift, UnitType } from "./hooks/useCashierShift";
 import { usePendingInvoices } from "./hooks/usePendingInvoices";
 import { useCashierActions } from "./hooks/useCashierActions";
@@ -17,6 +18,8 @@ import { ShiftTotalsWidget } from "./components/ShiftTotalsWidget";
 import { formatNumber } from "@/lib/formatters";
 
 export default function CashierCollection() {
+  const { hasPermission } = useAuth();
+  const canViewTotals = hasPermission("cashier.view_shift_totals");
   const [activeTab, setActiveTab] = useState("sales");
   const [unitConfirmed, setUnitConfirmed] = useState(false);
 
@@ -241,7 +244,7 @@ export default function CashierCollection() {
         </Tabs>
       )}
 
-      {hasActiveShift && shiftTotals && <ShiftTotalsWidget totals={shiftTotals} />}
+      {hasActiveShift && shiftTotals && canViewTotals && <ShiftTotalsWidget totals={shiftTotals} />}
 
       <CloseShiftDialog
         open={closeDialogOpen}
