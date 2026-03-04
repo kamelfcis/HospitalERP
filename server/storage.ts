@@ -5882,8 +5882,13 @@ export class DatabaseStorage implements IStorage {
 
         const newLines: any[] = [];
 
-        // Lines that go to EVERY patient in full (not divided among patients)
+        // خطوط "مباشرة": تذهب كاملةً لكل مريض بغض النظر عن العدد
+        // 1. sourceType: STAY_ENGINE أو OR_ROOM (مضاف من محرك الإقامة)
+        // 2. serviceType: ACCOMMODATION أو OPERATING_ROOM (مضاف يدوياً)
         const DIRECT_SOURCE_TYPES = new Set(["STAY_ENGINE", "OR_ROOM"]);
+        const DIRECT_SERVICE_TYPES = new Set(["ACCOMMODATION", "OPERATING_ROOM"]);
+        const isDirectLine = (cl: any) =>
+          DIRECT_SOURCE_TYPES.has(cl.sourceType) || DIRECT_SERVICE_TYPES.has(cl.serviceType);
 
         for (let li = 0; li < convertedLines.length; li++) {
           const cl = convertedLines[li];
@@ -5891,7 +5896,7 @@ export class DatabaseStorage implements IStorage {
 
           // Determine share: direct lines go fully to each patient; others are divided
           let share: number;
-          if (DIRECT_SOURCE_TYPES.has(cl.sourceType)) {
+          if (isDirectLine(cl)) {
             // Full amount for every patient — إقامة وفتح غرفة عمليات
             share = totalQty;
           } else {
@@ -5940,8 +5945,8 @@ export class DatabaseStorage implements IStorage {
             nurseName: cl.nurseName || null,
             notes: cl.notes || null,
             sortOrder: cl.sortOrder || 0,
-            sourceType: DIRECT_SOURCE_TYPES.has(cl.sourceType) ? cl.sourceType : "dist_direct",
-            sourceId: DIRECT_SOURCE_TYPES.has(cl.sourceType)
+            sourceType: isDirectLine(cl) ? (cl.sourceType || cl.serviceType) : "dist_direct",
+            sourceId: isDirectLine(cl) && cl.sourceId
               ? `${cl.sourceId}:p${pi}`
               : `${invoiceDate}:p${pi}:l${li}`,
           });

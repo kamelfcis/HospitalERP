@@ -169,7 +169,13 @@ export function DistributeDialog({ open, onClose, lines, invoiceContext, onSucce
   }, []);
 
   // ── 5. Preview computation ──────────────────────────────────────────────
+  // خطوط "مباشرة": تذهب كاملةً لكل مريض (لا تُقسَّم)
+  // - STAY_ENGINE / OR_ROOM من حيث الـ sourceType
+  // - ACCOMMODATION / OPERATING_ROOM من حيث الـ serviceType (سواء أُضيفت يدوياً أو من المحرك)
   const DIRECT_SOURCE_TYPES = new Set(["STAY_ENGINE", "OR_ROOM"]);
+  const DIRECT_SERVICE_TYPES = new Set(["ACCOMMODATION", "OPERATING_ROOM"]);
+  const isDirectLine = (l: LineLocal) =>
+    DIRECT_SOURCE_TYPES.has(l.sourceType || "") || DIRECT_SERVICE_TYPES.has(l.serviceType || "");
 
   interface PreviewLine {
     tempId: string;
@@ -226,8 +232,8 @@ export function DistributeDialog({ open, onClose, lines, invoiceContext, onSucce
     });
 
   const hasInsufficientItems = previewLines.some(pl => pl.insufficient);
-  const directLines = lines.filter(l => DIRECT_SOURCE_TYPES.has(l.sourceType || ""));
-  const serviceLines = lines.filter(l => l.lineType === "service" && !DIRECT_SOURCE_TYPES.has(l.sourceType || ""));
+  const directLines = lines.filter(l => isDirectLine(l));
+  const serviceLines = lines.filter(l => l.lineType === "service" && !isDirectLine(l));
 
   // ── 6. Distribute handler ───────────────────────────────────────────────
   const handleDistribute = useCallback(async () => {
@@ -241,6 +247,12 @@ export function DistributeDialog({ open, onClose, lines, invoiceContext, onSucce
       toast({ title: "تنبيه", description: "لا توجد بنود للتوزيع", variant: "destructive" });
       return;
     }
+
+    // ⚡ افتح النوافذ هنا قبل أي await — المتصفح يسمح بـ window.open فقط
+    // أثناء سياق الـ user gesture المباشر. بعد الـ await يُبلوك.
+    const preOpenedWindows = Array.from({ length: distCount }, () =>
+      window.open("about:blank", "_blank")
+    );
 
     setLoading(true);
     try {
@@ -265,6 +277,7 @@ export function DistributeDialog({ open, onClose, lines, invoiceContext, onSucce
         sortOrder: l.sortOrder,
         sourceType: l.sourceType,
         sourceId: l.sourceId,
+        serviceType: l.serviceType || "",   // ← مطلوب للسيرفر لتصنيف الإقامة/العمليات
       }));
 
       const res = await apiRequest("POST", `/api/patient-invoices/distribute-direct`, {
@@ -302,10 +315,17 @@ export function DistributeDialog({ open, onClose, lines, invoiceContext, onSucce
 
       onSuccess(newInvoices);
 
-      for (const inv of newInvoices) {
-        window.open(`/patient-invoices?loadId=${inv.id}`, "_blank");
-      }
+      // وجّه كل نافذة مفتوحة مسبقاً للفاتورة المقابلة
+      newInvoices.forEach((inv, i) => {
+        const win = preOpenedWindows[i];
+        if (win) win.location.href = `/patient-invoices?loadId=${inv.id}`;
+      });
+      // أغلق النوافذ الزيادة (مريض لم تُنشأ له فاتورة بسبب نقص الكميات)
+      preOpenedWindows.slice(newInvoices.length).forEach(win => win?.close());
+
     } catch (error: any) {
+      // أغلق كل النوافذ المفتوحة في حالة الخطأ
+      preOpenedWindows.forEach(win => win?.close());
       toast({ title: "خطأ في التوزيع", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
