@@ -6,30 +6,33 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 }  from "lucide-react";
 import { ROLE_LABELS } from "@shared/permissions";
+import { ScopeSelector } from "./ScopeSelector";
 import type { UserData, UserFormData } from "../types";
 
 const ROLES = Object.entries(ROLE_LABELS);
 
 interface UserFormDialogProps {
-  open:           boolean;
-  editingUser:    UserData | null;
-  formData:       UserFormData;
-  departments:    { id: string; nameAr: string }[];
-  pharmacies:     { id: string; nameAr: string }[];
+  open:            boolean;
+  editingUser:     UserData | null;
+  formData:        UserFormData;
+  departments:     { id: string; nameAr: string }[];
+  pharmacies:      { id: string; nameAr: string }[];
   cashierAccounts: { glAccountId: string; code: string; name: string; hasPassword: boolean }[];
-  isPending:      boolean;
-  onFormChange:   (patch: Partial<UserFormData>) => void;
-  onSave:         () => void;
-  onOpenChange:   (v: boolean) => void;
+  isPending:       boolean;
+  onFormChange:    (patch: Partial<UserFormData>) => void;
+  onSave:          () => void;
+  onOpenChange:    (v: boolean) => void;
 }
 
 export function UserFormDialog({
   open, editingUser, formData, departments, pharmacies, cashierAccounts,
   isPending, onFormChange, onSave, onOpenChange,
 }: UserFormDialogProps) {
+  const showScope = !!formData.cashierGlAccountId;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="max-w-md">
+      <DialogContent dir="rtl" className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle data-testid="text-dialog-title">
             {editingUser ? "تعديل مستخدم" : "إضافة مستخدم جديد"}
@@ -85,7 +88,7 @@ export function UserFormDialog({
           </div>
 
           <div className="space-y-1">
-            <Label>الصيدلية</Label>
+            <Label>الصيدلية الرئيسية</Label>
             <Select
               value={formData.pharmacyId || "none"}
               onValueChange={v => onFormChange({ pharmacyId: v === "none" ? "" : v })}
@@ -103,7 +106,7 @@ export function UserFormDialog({
           </div>
 
           <div className="space-y-1">
-            <Label>القسم</Label>
+            <Label>القسم الرئيسي</Label>
             <Select
               value={formData.departmentId || "none"}
               onValueChange={v => onFormChange({ departmentId: v === "none" ? "" : v })}
@@ -144,9 +147,22 @@ export function UserFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              الحساب المحاسبي المخصص لهذا الكاشير — لن يتمكن من اختيار حساب آخر عند فتح الوردية
+              الحساب المحاسبي المخصص لهذا الكاشير
             </p>
           </div>
+
+          {showScope && (
+            <ScopeSelector
+              pharmacies={pharmacies}
+              departments={departments}
+              allowedPharmacyIds={formData.allowedPharmacyIds}
+              allowedDepartmentIds={formData.allowedDepartmentIds}
+              hasAllUnits={formData.hasAllUnits}
+              onPharmaciesChange={ids => onFormChange({ allowedPharmacyIds: ids })}
+              onDepartmentsChange={ids => onFormChange({ allowedDepartmentIds: ids })}
+              onAllUnitsChange={v => onFormChange({ hasAllUnits: v })}
+            />
+          )}
 
           <div className="flex items-center gap-2">
             <Checkbox

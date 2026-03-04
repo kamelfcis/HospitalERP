@@ -1,0 +1,136 @@
+PROMPT (Replit Agent) — Cashier Collection Scoping + “All Warehouses” Permission (No Hardcoding, High Performance)
+Objective
+
+Implement server-enforced access scoping for the Cashier Collection workflow:
+
+A cashier/user must only see invoices/documents eligible for collection that match their assigned scope (departments/warehouses/context) — unless they have a permission that grants full scope (e.g., “All Warehouses” / “All Departments”) or they already have an existing Admin/Superuser role that implies full access.
+
+Non-Negotiable Constraints
+
+Do NOT hardcode or reference any specific DB table/column names or file paths.
+
+Discover the existing schema, entities, routes, and business rules from the project.
+
+Backend is the source of truth: filtering must be enforced in server queries.
+
+High performance:
+
+minimize queries
+
+use existence/count checks
+
+select minimal fields
+
+avoid N+1
+
+Preserve existing patterns: follow current RBAC, route style, service layer conventions, and UI architecture.
+
+Provide refactor + reusable components (no logic dumping inside one giant screen).
+
+Required Behavior
+A) Scope Modes (3 modes)
+
+You must support three mutually consistent scope modes:
+
+Scoped Mode
+User sees only documents that match at least one of their allowed scopes (based on existing “invoice→context mapping” in the system).
+
+Full Access Mode (“All Warehouses/All Departments”)
+If user has a specific permission/flag/role (use the project’s current permission system), they can see all collectable documents across all contexts.
+
+Admin/Superuser Mode
+If the project already defines admin/superuser privileges, treat them as full access (do not invent new admin logic).
+
+Important: Do not invent permission names. You must integrate into whatever permission / role model already exists. If nothing exists, implement the smallest minimal addition consistent with project style.
+
+B) Server-side Query Enforcement
+
+When loading collection items, server must apply this logic:
+
+Determine whether user is Full Access:
+
+via existing RBAC role/permission mechanism
+
+If full access → return all collectable docs
+
+Else → restrict results to docs whose “context” is in the user’s assigned scope list
+
+Scope matching must happen in the server query, not in JS filtering after fetch.
+
+C) Assignment UI / Admin Workflow
+
+Add or extend UI so an admin can configure per-user scope:
+
+Assign specific allowed scopes (multi-select)
+
+Enable a toggle/permission that gives full scope
+
+UI should make it clear:
+
+“هذا المستخدم لديه صلاحية الوصول لكل المخازن/الأقسام” (or equivalent)
+
+If enabled, specific selections are optional/ignored (but keep them stored if system prefers)
+
+Must follow existing UI patterns and components style.
+
+D) Refactor & Componentization
+
+Create reusable pieces (names follow existing conventions; don’t hardcode paths):
+
+A single reusable server function to compute user scope and access mode:
+
+returns:
+
+isFullAccess
+
+allowedScopeIds (or equivalent)
+
+optionally a scopeType if system distinguishes warehouse vs department
+
+A single reusable server function to apply scope filters to collection queries:
+
+accepts an existing query builder / repository call
+
+injects scope constraints only if needed
+
+Frontend:
+
+A reusable ScopeBadge / ScopeIndicator component to show whether user is scoped or full access
+
+A reusable ScopeSelector component for admin user edit screen (multi-select + “full access” toggle)
+
+A small hook that fetches:
+
+user scope summary
+
+collection results
+
+must use existing data fetching patterns (React Query or whatever exists)
+
+E) Performance Requirements
+
+To keep it fast:
+
+Collection list endpoint must return paginated results as it already does (do not load everything).
+
+Scope resolution must avoid repeated DB hits on every row:
+
+compute scope once per request
+
+then apply it to the query
+
+If there is an existing caching/settings mechanism in the project, you may use it; otherwise avoid adding heavy new infra.
+
+F) Safety & Tests
+
+Add minimal checks (unit or integration, consistent with repo):
+
+Scoped user sees only allowed context docs
+
+Full-access user sees everything
+
+Admin user sees everything (if already in RBAC)
+
+User with no scope and not full-access sees empty list (secure default)
+
+Attempt to collect an invoice outside scope must be rejected server-side (not just hidden)

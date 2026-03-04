@@ -14,6 +14,7 @@ const EMPTY_FORM: UserFormData = {
   username: "", password: "", fullName: "",
   role: "data_entry", departmentId: "", pharmacyId: "",
   isActive: true, cashierGlAccountId: "",
+  allowedPharmacyIds: [], allowedDepartmentIds: [], hasAllUnits: false,
 };
 
 export default function UsersManagement() {
@@ -27,29 +28,20 @@ export default function UsersManagement() {
   const [showDialog,  setShowDialog]  = useState(false);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [formData,    setFormData]    = useState<UserFormData>(EMPTY_FORM);
+  const [scopeLoading, setScopeLoading] = useState(false);
 
   const [showPermDialog, setShowPermDialog] = useState(false);
   const [permUserId,     setPermUserId]     = useState<string | null>(null);
 
-  const { data: users = [], isLoading } = useQuery<UserData[]>({
-    queryKey: ["/api/users"],
-  });
-
-  const { data: departments = [] } = useQuery<{ id: string; nameAr: string }[]>({
-    queryKey: ["/api/departments"],
-  });
-
-  const { data: pharmacies = [] } = useQuery<{ id: string; nameAr: string }[]>({
-    queryKey: ["/api/pharmacies"],
-  });
-
-  const { data: cashierAccounts = [] } = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({
-    queryKey: ["/api/drawer-passwords"],
-  });
+  const { data: users = [], isLoading } = useQuery<UserData[]>({ queryKey: ["/api/users"] });
+  const { data: departments = [] }      = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/departments"] });
+  const { data: pharmacies = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/pharmacies"] });
+  const { data: cashierAccounts = [] }  = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({ queryKey: ["/api/drawer-passwords"] });
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => (await apiRequest("POST", "/api/users", data)).json(),
-    onSuccess: () => {
+    onSuccess: async (newUser) => {
+      await saveScopeForUser(newUser.id);
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setShowDialog(false);
       toast({ title: "تم إنشاء المستخدم بنجاح" });
@@ -60,8 +52,10 @@ export default function UsersManagement() {
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) =>
       (await apiRequest("PATCH", `/api/users/${id}`, data)).json(),
-    onSuccess: () => {
+    onSuccess: async (_, { id }) => {
+      await saveScopeForUser(id);
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", id, "cashier-scope"] });
       setShowDialog(false);
       toast({ title: "تم تحديث المستخدم بنجاح" });
     },
@@ -77,24 +71,56 @@ export default function UsersManagement() {
     onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
   });
 
+  async function saveScopeForUser(userId: string) {
+    if (!formData.cashierGlAccountId) return;
+    try {
+      await apiRequest("PUT", `/api/users/${userId}/cashier-scope`, {
+        departmentIds: formData.allowedDepartmentIds,
+        hasAllUnits:   formData.hasAllUnits,
+      });
+    } catch {
+    }
+  }
+
+  async function handleOpenEdit(user: UserData) {
+    setEditingUser(user);
+    const base: UserFormData = {
+      username:            user.username,
+      password:            "",
+      fullName:            user.fullName,
+      role:                user.role,
+      departmentId:        user.departmentId || "",
+      pharmacyId:          user.pharmacyId  || "",
+      isActive:            user.isActive,
+      cashierGlAccountId:  user.cashierGlAccountId || "",
+      allowedPharmacyIds:  user.pharmacyId ? [user.pharmacyId] : [],
+      allowedDepartmentIds: [],
+      hasAllUnits:         false,
+    };
+    setFormData(base);
+    setShowDialog(true);
+
+    if (user.cashierGlAccountId) {
+      setScopeLoading(true);
+      try {
+        const res = await apiRequest("GET", `/api/users/${user.id}/cashier-scope`);
+        const scope = await res.json();
+        setFormData(prev => ({
+          ...prev,
+          allowedPharmacyIds:  scope.allowedPharmacyIds || [],
+          allowedDepartmentIds: (scope.assignedDepartments || []).map((d: any) => d.id),
+          hasAllUnits:          scope.isFullAccess && user.role !== "admin" && user.role !== "owner",
+        }));
+      } catch {
+      } finally {
+        setScopeLoading(false);
+      }
+    }
+  }
+
   function handleOpenNew() {
     setEditingUser(null);
     setFormData(EMPTY_FORM);
-    setShowDialog(true);
-  }
-
-  function handleOpenEdit(user: UserData) {
-    setEditingUser(user);
-    setFormData({
-      username:           user.username,
-      password:           "",
-      fullName:           user.fullName,
-      role:               user.role,
-      departmentId:       user.departmentId || "",
-      pharmacyId:         user.pharmacyId  || "",
-      isActive:           user.isActive,
-      cashierGlAccountId: user.cashierGlAccountId || "",
-    });
     setShowDialog(true);
   }
 
@@ -127,7 +153,7 @@ export default function UsersManagement() {
     setShowPermDialog(true);
   }
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = createMutation.isPending || updateMutation.isPending || scopeLoading;
 
   return (
     <div className="p-4 space-y-2" dir="rtl">

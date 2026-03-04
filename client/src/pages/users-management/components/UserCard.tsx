@@ -3,6 +3,7 @@ import { Button }            from "@/components/ui/button";
 import { Badge }             from "@/components/ui/badge";
 import { Pencil, Trash2, Shield, UserCircle, Wallet } from "lucide-react";
 import { ROLE_LABELS } from "@shared/permissions";
+import { ScopeBadge } from "../../cashier/components/ScopeBadge";
 import type { UserData } from "../types";
 
 interface UserCardProps {
@@ -35,10 +36,13 @@ export function UserCard({ user, canEdit, canDelete, onEdit, onDelete, onOpenPer
               {ROLE_LABELS[user.role] || user.role}
             </Badge>
             {user.cashierGlAccountId && (
-              <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`badge-user-cashier-${user.id}`}>
-                <Wallet className="h-3 w-3" />
-                كاشير
-              </Badge>
+              <>
+                <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`badge-user-cashier-${user.id}`}>
+                  <Wallet className="h-3 w-3" />
+                  كاشير
+                </Badge>
+                <ScopeBadge userId={user.id} />
+              </>
             )}
           </div>
 

@@ -307,6 +307,9 @@ export interface IStorage {
   getUserWarehouses(userId: string): Promise<Warehouse[]>;
   setUserWarehouses(userId: string, warehouseIds: string[]): Promise<void>;
 
+  // Cashier scope
+  getUserCashierScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[] }>;
+
   // Store Transfers
   getTransfers(): Promise<StoreTransferWithDetails[]>;
   getTransfersFiltered(params: {
@@ -1773,6 +1776,28 @@ export class DatabaseStorage implements IStorage {
         warehouseIds.map(whId => ({ userId, warehouseId: whId }))
       );
     }
+  }
+
+  async getUserCashierScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[] }> {
+    const user = await this.getUser(userId);
+    if (!user) return { isFullAccess: false, allowedPharmacyIds: [], allowedDepartmentIds: [] };
+
+    if (user.role === "admin" || user.role === "owner") {
+      return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [] };
+    }
+
+    const perms = await this.getUserEffectivePermissions(userId);
+    if (perms.includes("cashier.all_units")) {
+      return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [] };
+    }
+
+    const allowedPharmacyIds = user.pharmacyId ? [user.pharmacyId] : [];
+    const deptRows = await db.select({ id: userDepartments.departmentId })
+      .from(userDepartments)
+      .where(eq(userDepartments.userId, userId));
+    const allowedDepartmentIds = deptRows.map(r => r.id);
+
+    return { isFullAccess: false, allowedPharmacyIds, allowedDepartmentIds };
   }
 
   // Store Transfers

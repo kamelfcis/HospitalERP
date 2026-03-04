@@ -2014,6 +2014,37 @@ export async function registerRoutes(
     }
   });
 
+  // Cashier scope endpoint (combined)
+  app.get("/api/users/:id/cashier-scope", requireAuth, checkPermission("users.view"), async (req, res) => {
+    try {
+      const scope = await storage.getUserCashierScope(req.params.id);
+      const [depts] = await Promise.all([
+        storage.getUserDepartments(req.params.id),
+        storage.getUserWarehouses(req.params.id),
+      ]);
+      res.json({ ...scope, assignedDepartments: depts, assignedPharmacyIds: scope.allowedPharmacyIds });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/users/:id/cashier-scope", requireAuth, checkPermission("users.edit"), async (req, res) => {
+    try {
+      const { departmentIds = [], hasAllUnits = false } = req.body;
+      await storage.setUserDepartments(req.params.id, departmentIds);
+      const allPerms = await storage.getUserPermissions(req.params.id);
+      const filtered = allPerms.filter(p => p.permission !== "cashier.all_units");
+      const updated = [
+        ...filtered.map(p => ({ permission: p.permission, granted: p.granted as boolean })),
+        ...(hasAllUnits ? [{ permission: "cashier.all_units", granted: true }] : []),
+      ];
+      await storage.setUserPermissions(req.params.id, updated);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ===== PILOT TEST SEED =====
   app.post("/api/seed/pilot-test", async (req, res) => {
     try {
@@ -4174,13 +4205,24 @@ export async function registerRoutes(
 
   // ==================== Cashier API ====================
 
-  app.get("/api/cashier/units", async (_req, res) => {
+  app.get("/api/cashier/units", async (req, res) => {
     try {
-      const pharms = await storage.getPharmacies();
-      const depts = await storage.getDepartments();
+      const userId = (req.session as any).userId;
+      const [pharms, depts] = await Promise.all([storage.getPharmacies(), storage.getDepartments()]);
+      const activePharms = pharms.filter((p: any) => p.isActive);
+      const activeDepts = depts.filter((d: any) => d.isActive);
+
+      if (!userId) return res.json({ pharmacies: activePharms, departments: activeDepts });
+
+      const scope = await storage.getUserCashierScope(userId);
+      if (scope.isFullAccess) {
+        return res.json({ pharmacies: activePharms, departments: activeDepts, isFullAccess: true });
+      }
+
       res.json({
-        pharmacies: pharms.filter((p: any) => p.isActive),
-        departments: depts.filter((d: any) => d.isActive),
+        pharmacies: activePharms.filter((p: any) => scope.allowedPharmacyIds.includes(p.id)),
+        departments: activeDepts.filter((d: any) => scope.allowedDepartmentIds.includes(d.id)),
+        isFullAccess: false,
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -4230,6 +4272,16 @@ export async function registerRoutes(
 
       const userGlAccount = await storage.getUserCashierGlAccount(cashierId);
       if (!userGlAccount) return res.status(400).json({ message: "لم يتم تحديد حساب خزنة لهذا المستخدم — تواصل مع المدير لتعيين حساب الخزنة" });
+
+      // Validate scope: user must be allowed for this unit
+      const scope = await storage.getUserCashierScope(cashierId);
+      if (!scope.isFullAccess) {
+        const selectedId = unitType === "pharmacy" ? pharmacyId : departmentId;
+        const allowed = unitType === "pharmacy"
+          ? scope.allowedPharmacyIds.includes(selectedId)
+          : scope.allowedDepartmentIds.includes(selectedId);
+        if (!allowed) return res.status(403).json({ message: "ليس لديك صلاحية فتح وردية لهذه الوحدة" });
+      }
 
       const passwordHash = await storage.getDrawerPassword(userGlAccount.glAccountId);
       if (passwordHash) {

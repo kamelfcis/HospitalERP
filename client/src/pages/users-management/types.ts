@@ -11,12 +11,15 @@ export interface UserData {
 }
 
 export interface UserFormData {
-  username:           string;
-  password:           string;
-  fullName:           string;
-  role:               string;
-  departmentId:       string;
-  pharmacyId:         string;
-  isActive:           boolean;
-  cashierGlAccountId: string;
+  username:            string;
+  password:            string;
+  fullName:            string;
+  role:                string;
+  departmentId:        string;
+  pharmacyId:          string;
+  isActive:            boolean;
+  cashierGlAccountId:  string;
+  allowedPharmacyIds:  string[];
+  allowedDepartmentIds: string[];
+  hasAllUnits:         boolean;
 }

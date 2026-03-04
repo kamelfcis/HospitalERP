@@ -60,6 +60,7 @@ export const PERMISSIONS = {
   CASHIER_COLLECT: "cashier.collect",
   CASHIER_REFUND: "cashier.refund",
   CASHIER_VIEW_TOTALS: "cashier.view_shift_totals",
+  CASHIER_ALL_UNITS: "cashier.all_units",
 
   SERVICES_VIEW: "services.view",
   SERVICES_MANAGE: "services.manage",
