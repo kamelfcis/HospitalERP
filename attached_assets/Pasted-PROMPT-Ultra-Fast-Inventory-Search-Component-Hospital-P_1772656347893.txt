@@ -1,0 +1,351 @@
+PROMPT — Ultra Fast Inventory Search Component (Hospital / Pharmacy ERP)
+Objective
+
+Create a high-performance reusable Search Component for searching items/products inside the system.
+
+The component must be designed to handle large datasets (50,000+ items) with instant response and smooth navigation.
+
+The component must be reusable and decoupled from any specific screen, so it can be used in:
+
+Sales Invoice
+
+Purchase Invoice
+
+Stock Adjustment
+
+Internal Orders
+
+Pharmacy Dispensing
+
+This component must follow best practices for performance, refactoring, and UX.
+
+Do NOT assume or hardcode database table names, schema names, or file paths.
+You must integrate with the existing project architecture.
+
+Core Architecture Requirements
+Component Type
+
+Create a reusable component:
+
+ItemSearchComponent
+
+It must work as a search modal/panel that can be opened from invoice screens.
+
+The component must be:
+
+Fully reusable
+
+Independent
+
+Controlled by props
+
+Returning selected item via callback
+
+Search Performance (Critical)
+
+The search MUST be implemented using server-side querying.
+
+Do NOT load all items into the UI.
+
+The server must perform the search using optimized SQL queries.
+
+The UI must only display paginated search results.
+
+The search must support:
+
+fast partial text matching
+
+numeric filtering
+
+combined filters
+
+The system must remain responsive even with 50k+ items.
+
+Use best practices such as:
+
+debounced input
+
+server-side filtering
+
+minimal payload responses
+
+indexed search fields
+
+incremental search results
+
+Avoid client-side filtering completely.
+
+Search Capabilities
+
+The search box must support the following:
+
+1 — Search by item name
+
+Search must work using:
+
+Arabic name
+
+English name
+
+The search must support partial matching using % patterns.
+
+Example behavior:
+
+User types:
+
+para
+
+Results may include:
+
+Paracetamol
+Panadol Extra
+Paramol Syrup
+
+User types:
+
+amo cap
+
+Results may include:
+
+Amoxicillin Capsules
+
+2 — Search by selling price
+
+User can search using:
+
+exact selling price
+
+price range
+
+Example:
+
+Price = 20
+
+or
+
+Price between:
+
+20 → 50
+
+3 — Combined search
+
+Search must allow combinations:
+
+item name + selling price
+
+item name + price range
+
+Example:
+
+"para 20"
+
+or
+
+"para price 20-40"
+
+Result Display
+
+The search result must show:
+
+item name
+
+selling price
+
+available stock indicator
+
+Stock Visual Indicator
+
+Items with stock:
+
+Display with bright text
+
+Items without stock:
+
+Display with faded/grey text
+
+This helps pharmacists quickly identify available items.
+
+Item Selection Behavior
+
+When the user:
+
+Clicks an item
+or presses Enter
+
+The item must be immediately added to the invoice.
+
+The search window must remain open.
+
+This allows continuous fast entry of multiple items.
+
+After adding an item:
+
+focus returns automatically to the search input
+
+user can immediately type next item
+
+Keyboard Navigation (Very Important)
+
+Full keyboard support is required.
+
+Navigation must be extremely smooth.
+
+Keys behavior:
+
+TAB
+moves between search fields
+
+Arrow Up / Down
+navigate result rows
+
+ENTER
+select highlighted item and add to invoice
+
+ESC
+close search window
+
+Focus must always return to the search field after selecting an item.
+
+Batch and Expiry Information
+
+When a user selects an item in the result list:
+
+A detail section below the results must show:
+
+total stock quantity
+
+available batch quantities
+
+expiry dates
+
+If multiple batches exist:
+
+Show them inside a batch selection box.
+
+Each row must show:
+
+Batch expiry date
+Available quantity
+
+User must be able to select which batch will be used in the invoice.
+
+Invoice Integration
+
+When an item is chosen:
+
+The component must emit:
+
+onItemSelected(item, batch, quantityInfo)
+
+The parent invoice screen will then:
+
+add the item line
+
+calculate totals
+
+The search component itself must not contain invoice business logic.
+
+UX Requirements
+
+The search must feel instant and smooth.
+
+Requirements:
+
+No UI freezing
+
+No lag
+
+No blocking requests
+
+Input must remain responsive
+
+Use best UX practices such as:
+
+debounce typing
+
+loading indicator
+
+smooth result updates
+
+Refactor Requirements
+
+Implement clean architecture.
+
+Separate layers clearly:
+
+Search UI component
+
+Search service layer
+
+Server search endpoint
+
+Batch availability provider
+
+Avoid mixing UI logic with data logic.
+
+Follow the existing project patterns.
+
+Performance Strategy
+
+The server search endpoint must be optimized for large datasets.
+
+Key rules:
+
+return only necessary fields
+
+limit results
+
+support pagination
+
+support fast prefix/partial matching
+
+Avoid returning full item objects.
+
+Accessibility
+
+Keyboard-first workflow must be supported.
+
+Pharmacists must be able to:
+
+search
+navigate
+select
+add items
+
+without touching the mouse.
+
+Acceptance Criteria
+
+The system must handle:
+
+50,000+ items
+
+with:
+
+instant search response
+
+smooth scrolling
+
+zero UI lag
+
+and a fast pharmacist workflow.
+
+Final Result
+
+A reusable Ultra Fast Inventory Search Component that:
+
+works with large item databases
+
+supports Arabic and English search
+
+supports price filters
+
+supports % pattern matching
+
+supports batch/expiry selection
+
+integrates with invoices
+
+provides excellent keyboard workflow
+
+remains extremely fast and smooth.

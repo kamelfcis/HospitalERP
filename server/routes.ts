@@ -1341,7 +1341,7 @@ export async function registerRoutes(
 
   app.get("/api/items/search", async (req, res) => {
     try {
-      const { warehouseId, mode, q, limit, page, pageSize, includeZeroStock, drugsOnly, excludeServices } = req.query;
+      const { warehouseId, mode, q, limit, page, pageSize, includeZeroStock, drugsOnly, excludeServices, minPrice, maxPrice } = req.query;
       if (!q) {
         return res.status(400).json({ message: "q مطلوب" });
       }
@@ -1355,6 +1355,8 @@ export async function registerRoutes(
           includeZeroStock: includeZeroStock === 'true',
           drugsOnly: drugsOnly === 'true',
           excludeServices: excludeServices === 'true',
+          minPrice: minPrice ? parseFloat(minPrice as string) : undefined,
+          maxPrice: maxPrice ? parseFloat(maxPrice as string) : undefined,
         });
         res.json(result);
       } else {

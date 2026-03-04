@@ -12,6 +12,7 @@ import { genId } from "./utils";
 import { useInvoiceForm } from "./hooks/useInvoiceForm";
 import { useInvoiceLines } from "./hooks/useInvoiceLines";
 import { useItemSearch } from "./hooks/useItemSearch";
+import { ItemFastSearch } from "@/components/ItemFastSearch";
 import { useServiceSearch } from "./hooks/useServiceSearch";
 import { useAutoSave } from "./hooks/useAutoSave";
 import { useStatsDialog } from "./hooks/useStatsDialog";
@@ -21,7 +22,6 @@ import { useInvoiceMutations } from "./hooks/useInvoiceMutations";
 import { InvoiceHeaderBar } from "./components/InvoiceHeaderBar";
 import { InvoiceLineTable } from "./components/InvoiceLineTable";
 import { InvoiceTotals } from "./components/InvoiceTotals";
-import { ItemSearchDialog } from "./components/ItemSearchDialog";
 import { ServiceSearchDialog } from "./components/ServiceSearchDialog";
 import { StockStatsDialog } from "./components/StockStatsDialog";
 import { InvoiceRegistry } from "./components/InvoiceRegistry";
@@ -361,17 +361,13 @@ export default function SalesInvoices() {
           onDiscountValueChange={(v) => form.handleDiscountValueChange(v, subtotal)}
         />
 
-        <ItemSearchDialog
+        <ItemFastSearch
           open={itemSearch.searchModalOpen}
           onClose={itemSearch.closeSearchModal}
-          searchMode={itemSearch.searchMode}
-          setSearchMode={itemSearch.setSearchMode}
-          searchQuery={itemSearch.searchQuery}
-          onSearchQueryChange={itemSearch.onSearchQueryChange}
-          searchResults={itemSearch.searchResults}
-          searchLoading={itemSearch.searchLoading}
-          searchInputRef={itemSearch.searchInputRef}
-          onAddItem={addItemToLines}
+          warehouseId={form.warehouseId}
+          invoiceDate={form.invoiceDate}
+          excludeServices={false}
+          onItemSelected={({ item }) => addItemToLines(item)}
         />
 
         <ServiceSearchDialog

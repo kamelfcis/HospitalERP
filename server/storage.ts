@@ -341,6 +341,8 @@ export interface IStorage {
     includeZeroStock: boolean;
     drugsOnly: boolean;
     excludeServices?: boolean;
+    minPrice?: number;
+    maxPrice?: number;
   }): Promise<{items: any[]; total: number}>;
 
   searchItemsByPattern(query: string, limit: number): Promise<any[]>;
@@ -2312,8 +2314,10 @@ export class DatabaseStorage implements IStorage {
     includeZeroStock: boolean;
     drugsOnly: boolean;
     excludeServices?: boolean;
+    minPrice?: number;
+    maxPrice?: number;
   }): Promise<{items: any[]; total: number}> {
-    const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly, excludeServices } = params;
+    const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly, excludeServices, minPrice, maxPrice } = params;
     const offset = (page - 1) * pageSize;
 
     const buildPattern = (q: string) => {
@@ -2351,6 +2355,12 @@ export class DatabaseStorage implements IStorage {
     }
     if (excludeServices) {
       conditions.push(sql`${items.category} != 'service'`);
+    }
+    if (minPrice !== undefined) {
+      conditions.push(sql`${items.salePriceCurrent}::numeric >= ${minPrice}`);
+    }
+    if (maxPrice !== undefined) {
+      conditions.push(sql`${items.salePriceCurrent}::numeric <= ${maxPrice}`);
     }
 
     const itemIdRef = sql.raw(`"items"."id"`);

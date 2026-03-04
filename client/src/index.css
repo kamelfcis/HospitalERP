@@ -444,6 +444,25 @@
     cursor: pointer;
   }
 
+  .peachtree-btn-sm {
+    height: 26px;
+    font-size: 12px;
+    padding: 0 10px;
+    border: 1px solid hsl(210 10% 75%);
+    border-radius: 3px;
+    background: linear-gradient(180deg, hsl(210 8% 97%) 0%, hsl(210 8% 90%) 100%);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s;
+  }
+  .peachtree-btn-sm:hover:not(:disabled) {
+    background: linear-gradient(180deg, hsl(210 8% 92%) 0%, hsl(210 8% 84%) 100%);
+  }
+  .peachtree-btn-sm:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
   .peachtree-amount {
     font-family: 'Courier New', monospace;
     text-align: left;
