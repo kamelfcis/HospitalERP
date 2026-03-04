@@ -12,6 +12,7 @@ import type { LineLocal, PaymentLocal } from "../types";
 import { LineGrid } from "../components/LineGrid";
 import { InvoiceHeaderBar } from "../components/InvoiceHeaderBar";
 import { TotalsSummaryCard } from "../components/TotalsSummaryCard";
+import { DoctorSearchInput } from "../components/DoctorSearchInput";
 import { PaymentsTab } from "./PaymentsTab";
 import { ConsolidatedTab } from "./ConsolidatedTab";
 
@@ -360,12 +361,12 @@ export function InvoiceTab({
             <div className="flex flex-row-reverse items-end gap-2 flex-wrap border-t pt-2">
               <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs whitespace-nowrap">الطبيب *</Label>
-                <Input
+                <DoctorSearchInput
                   value={dtDoctorName}
-                  onChange={e => setDtDoctorName(e.target.value)}
-                  placeholder="اسم الطبيب"
-                  className="h-7 text-xs w-40"
-                  data-testid="input-dt-doctor"
+                  onChange={setDtDoctorName}
+                  placeholder="ابحث عن طبيب..."
+                  inputClassName="h-7 text-xs w-44"
+                  inputTestId="input-dt-doctor"
                 />
               </div>
               <div className="flex flex-row-reverse items-center gap-1">
