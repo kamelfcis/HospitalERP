@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -83,7 +82,6 @@ export default function SalesInvoices() {
     isNew,
   });
 
-  const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [seedLoading, setSeedLoading] = useState(false);
   const [quickTestLoading, setQuickTestLoading] = useState(false);
@@ -105,7 +103,7 @@ export default function SalesInvoices() {
     notes: form.notes,
     lines,
     onSaveSuccess: () => {},
-    onFinalizeSuccess: () => setConfirmFinalizeOpen(false),
+    onFinalizeSuccess: () => {},
     lastAutoSaveDataRef: autoSave.lastAutoSaveDataRef,
     setAutoSaveStatus: autoSave.setAutoSaveStatus,
     navigate,
@@ -206,6 +204,20 @@ export default function SalesInvoices() {
       setTimeout(() => barcodeInputRef.current?.focus(), 100);
     }
   }, [editId, isDraft]);
+
+  useEffect(() => {
+    if (!editId || !isDraft) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "F9") {
+        e.preventDefault();
+        if (!mutations.finalizeMutation.isPending) {
+          mutations.finalizeMutation.mutate();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [editId, isDraft, mutations.finalizeMutation]);
 
   const handleBarcodeScan = useCallback(async () => {
     const code = barcodeInput.trim();
@@ -319,11 +331,9 @@ export default function SalesInvoices() {
           barcodeLoading={barcodeLoading}
           barcodeInputRef={barcodeInputRef}
           warehouses={warehouses}
-          savePending={mutations.saveMutation.isPending}
           finalizePending={mutations.finalizeMutation.isPending}
           onBack={() => navigate("/sales-invoices")}
-          onSave={() => mutations.saveMutation.mutate()}
-          onOpenFinalize={() => setConfirmFinalizeOpen(true)}
+          onFinalize={() => mutations.finalizeMutation.mutate()}
           onBarcodeScan={handleBarcodeScan}
           onOpenSearch={itemSearch.openSearchModal}
           onOpenServiceSearch={serviceSearch.openServiceModal}
@@ -350,22 +360,6 @@ export default function SalesInvoices() {
           onDiscountPctChange={(v) => form.handleDiscountPctChange(v, subtotal)}
           onDiscountValueChange={(v) => form.handleDiscountValueChange(v, subtotal)}
         />
-
-        <Dialog open={confirmFinalizeOpen} onOpenChange={setConfirmFinalizeOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>تأكيد الاعتماد النهائي</DialogTitle>
-              <DialogDescription>هل أنت متأكد من اعتماد هذه الفاتورة نهائياً؟ لا يمكن التراجع عن هذا الإجراء.</DialogDescription>
-            </DialogHeader>
-            <div className="flex items-center justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setConfirmFinalizeOpen(false)} data-testid="button-cancel-finalize">إلغاء</Button>
-              <Button onClick={() => mutations.finalizeMutation.mutate()} disabled={mutations.finalizeMutation.isPending} data-testid="button-confirm-finalize">
-                {mutations.finalizeMutation.isPending && <Loader2 className="h-4 w-4 animate-spin ml-1" />}
-                تأكيد الاعتماد
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         <ItemSearchDialog
           open={itemSearch.searchModalOpen}

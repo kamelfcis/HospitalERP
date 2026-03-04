@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowRight, Save, CheckCircle, Loader2, Check, Barcode, Search, ShoppingCart,
+  ArrowRight, Save, Loader2, Barcode, Search, ShoppingCart,
 } from "lucide-react";
 import { salesInvoiceStatusLabels, customerTypeLabels } from "@shared/schema";
 import type { Warehouse } from "@shared/schema";
@@ -28,11 +28,9 @@ interface Props {
   barcodeLoading: boolean;
   barcodeInputRef: React.RefObject<HTMLInputElement>;
   warehouses: Warehouse[] | undefined;
-  savePending: boolean;
   finalizePending: boolean;
   onBack: () => void;
-  onSave: () => void;
-  onOpenFinalize: () => void;
+  onFinalize: () => void;
   onBarcodeScan: () => void;
   onOpenSearch: () => void;
   onOpenServiceSearch: () => void;
@@ -53,8 +51,8 @@ export function InvoiceHeaderBar({
   customerType, setCustomerType, customerName, setCustomerName,
   contractCompany, setContractCompany,
   barcodeInput, setBarcodeInput, barcodeLoading, barcodeInputRef,
-  warehouses, savePending, finalizePending,
-  onBack, onSave, onOpenFinalize, onBarcodeScan, onOpenSearch, onOpenServiceSearch,
+  warehouses, finalizePending,
+  onBack, onFinalize, onBarcodeScan, onOpenSearch, onOpenServiceSearch,
 }: Props) {
   return (
     <>
@@ -70,28 +68,27 @@ export function InvoiceHeaderBar({
           </h1>
           {!isNew && status && statusBadge(status)}
           {fefoLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+          {autoSaveStatus === "saving" && (
+            <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              جاري الحفظ التلقائي...
+            </span>
+          )}
         </div>
         {isDraft && (
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={onSave} disabled={savePending} data-testid="button-save">
-              {savePending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
+            <Button
+              size="sm"
+              onClick={onFinalize}
+              disabled={finalizePending}
+              className="bg-green-600 hover:bg-green-700 text-white"
+              data-testid="button-finalize"
+            >
+              {finalizePending
+                ? <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                : <Save className="h-3 w-3 ml-1" />}
               حفظ
-            </Button>
-            {autoSaveStatus === "saving" && (
-              <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                جاري الحفظ التلقائي...
-              </span>
-            )}
-            {autoSaveStatus === "saved" && (
-              <span className="text-[10px] text-green-600 flex items-center gap-1" data-testid="text-auto-save-status">
-                <Check className="h-3 w-3" />
-                تم الحفظ التلقائي
-              </span>
-            )}
-            <Button size="sm" onClick={onOpenFinalize} disabled={finalizePending} data-testid="button-finalize">
-              {finalizePending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
-              اعتماد نهائي
+              <span className="mr-1 text-[10px] opacity-70">[F9]</span>
             </Button>
           </div>
         )}
