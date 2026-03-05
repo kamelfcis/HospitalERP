@@ -281,13 +281,14 @@ export function ItemFastSearch({
               onKeyDown={handleKeyDown}
               dir={mode === "EN" ? "ltr" : "rtl"}
               lang={mode === "EN" ? "en" : "ar"}
+              inputMode={mode === "EN" ? "text" : "text"}
               placeholder={
                 mode === "AR"      ? 'ابحث بالاسم العربي، مثال: باراسيتامول 20' :
                 mode === "EN"      ? 'Search by English name, e.g. paracetamol 20' :
                 mode === "CODE"    ? 'ابحث بكود الصنف' :
                                      'ابحث بالباركود'
               }
-              className="peachtree-input w-full h-8 text-[13px] pl-8"
+              className={`peachtree-input w-full h-8 text-[13px] pl-8 ${mode === "EN" ? "font-mono tracking-wide" : ""}`}
               autoComplete="off"
               data-testid="input-fast-search-query"
             />
@@ -295,6 +296,15 @@ export function ItemFastSearch({
               <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
             )}
           </div>
+          {/* مؤشر لغة البحث */}
+          {mode === "EN" && (
+            <span
+              className="shrink-0 text-[10px] font-bold tracking-widest border rounded px-1.5 py-0.5 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700 select-none"
+              title="وضع الكتابة الإنجليزية نشط"
+            >
+              EN
+            </span>
+          )}
           {/* مؤشر الحالة */}
           <div className="text-[11px] text-muted-foreground whitespace-nowrap hidden sm:block">
             {!batchMode ? (
