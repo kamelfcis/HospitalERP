@@ -4,6 +4,7 @@ import { MessageCircle, X, ArrowRight, Send, Check, CheckCheck } from "lucide-re
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { ROLE_LABELS } from "@shared/permissions";
+import { toast } from "@/hooks/use-toast";
 
 interface ChatUser {
   id: string;
@@ -90,18 +91,36 @@ export function ChatPopup() {
     }
   }, [selectedUser, open, qc]);
 
+  const selectedUserRef = useRef(selectedUser);
+  selectedUserRef.current = selectedUser;
+  const openRef = useRef(open);
+  openRef.current = open;
+
   useEffect(() => {
     if (!user) return;
     const es = new EventSource("/api/chat/sse");
-    es.addEventListener("chat-message", () => {
+    es.addEventListener("chat-message", (e) => {
       qc.invalidateQueries({ queryKey: ["/api/chat/unread-count"] });
       qc.invalidateQueries({ queryKey: ["/api/chat/users"] });
-      if (selectedUser) {
-        qc.invalidateQueries({ queryKey: ["/api/chat/messages", selectedUser.id] });
-      }
+      try {
+        const data = JSON.parse(e.data);
+        const currentSelected = selectedUserRef.current;
+        const isOpen = openRef.current;
+        if (currentSelected) {
+          qc.invalidateQueries({ queryKey: ["/api/chat/messages", currentSelected.id] });
+        }
+        if (!isOpen || currentSelected?.id !== data.senderId) {
+          const preview = data.body?.length > 60 ? data.body.slice(0, 60) + "…" : data.body;
+          toast({
+            title: `رسالة من ${data.senderName ?? "مستخدم"}`,
+            description: preview,
+            duration: 6000,
+          });
+        }
+      } catch {}
     });
     return () => es.close();
-  }, [user, selectedUser, qc]);
+  }, [user, qc]);
 
   useEffect(() => {
     if (open && selectedUser) {

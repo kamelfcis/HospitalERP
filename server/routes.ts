@@ -5102,7 +5102,9 @@ export async function registerRoutes(
       const { receiverId, body } = req.body;
       if (!receiverId || !body?.trim()) return res.status(400).json({ message: "مستلم ونص الرسالة مطلوبان" });
       const msg = await storage.sendChatMessage(req.session.userId!, receiverId, body.trim());
-      broadcastChatMessage(receiverId, msg);
+      const senderRow = await db.execute(sql`SELECT full_name FROM users WHERE id = ${req.session.userId!}`);
+      const senderName = (senderRow.rows[0] as any)?.full_name ?? "مستخدم";
+      broadcastChatMessage(receiverId, { ...msg, senderName });
       res.json(msg);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
