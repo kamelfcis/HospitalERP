@@ -406,6 +406,12 @@
     background: hsl(210 30% 94%);
   }
 
+  .peachtree-grid input,
+  .peachtree-grid select {
+    -webkit-user-drag: none;
+    user-drag: none;
+  }
+
   .peachtree-grid-row td {
     padding: 3px 5px;
     border-right: 1px solid hsl(210 10% 88%);

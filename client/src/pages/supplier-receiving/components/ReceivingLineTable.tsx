@@ -101,7 +101,12 @@ export function ReceivingLineTable({
     <fieldset className="peachtree-grid p-2">
       <legend className="text-xs font-semibold px-1">أصناف الاستلام</legend>
       <div className="overflow-x-auto">
-        <table className="w-full text-[12px]" dir="rtl" data-testid="table-receiving-lines">
+        <table
+          className="w-full text-[12px]"
+          dir="rtl"
+          data-testid="table-receiving-lines"
+          onDragStart={(e) => e.preventDefault()}
+        >
           <thead>
             <tr className="peachtree-grid-header">
               <th className="py-1 px-2 text-right whitespace-nowrap">#</th>
