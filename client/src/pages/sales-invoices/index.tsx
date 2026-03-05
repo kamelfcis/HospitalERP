@@ -112,7 +112,9 @@ export default function SalesInvoices() {
 
   const barcode = useBarcodeScanner({
     warehouseId:    form.warehouseId,
+    isDraft:        !!isDraft,
     addItemToLines: linesHook.addItemToLines,
+    pendingQtyRef:  linesHook.pendingQtyRef,
     barcodeInputRef,
   });
 
@@ -193,11 +195,11 @@ export default function SalesInvoices() {
         lines={lines}
         subtotal={subtotal}
         netTotal={netTotal}
-        barcodeInput={barcode.barcodeInput}
-        setBarcodeInput={barcode.setBarcodeInput}
+        barcodeDisplay={barcode.barcodeDisplay}
+        setBarcodeDisplay={barcode.setBarcodeDisplay}
         barcodeLoading={barcode.barcodeLoading}
         barcodeInputRef={barcodeInputRef}
-        onBarcodeScan={barcode.handleBarcodeScan}
+        onBarcodeScan={barcode.handleBarcodeInputSubmit}
         linesHook={linesHook}
         mutationsHook={mutationsHook}
         autoSaveHook={autoSaveHook}

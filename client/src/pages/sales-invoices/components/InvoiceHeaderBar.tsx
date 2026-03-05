@@ -23,8 +23,8 @@ interface Props {
   setCustomerName: (v: string) => void;
   contractCompany: string;
   setContractCompany: (v: string) => void;
-  barcodeInput: string;
-  setBarcodeInput: (v: string) => void;
+  barcodeDisplay: string;
+  setBarcodeDisplay: (v: string) => void;
   barcodeLoading: boolean;
   barcodeInputRef: React.RefObject<HTMLInputElement>;
   warehouses: Warehouse[] | undefined;
@@ -50,7 +50,7 @@ export function InvoiceHeaderBar({
   warehouseId, setWarehouseId, invoiceDate, setInvoiceDate,
   customerType, setCustomerType, customerName, setCustomerName,
   contractCompany, setContractCompany,
-  barcodeInput, setBarcodeInput, barcodeLoading, barcodeInputRef,
+  barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef,
   warehouses, finalizePending,
   onBack, onFinalize, onBarcodeScan, onOpenSearch, onOpenServiceSearch,
 }: Props) {
@@ -184,10 +184,10 @@ export function InvoiceHeaderBar({
           <input
             ref={barcodeInputRef}
             type="text"
-            value={barcodeInput}
-            onChange={(e) => setBarcodeInput(e.target.value)}
+            value={barcodeDisplay}
+            onChange={(e) => setBarcodeDisplay(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onBarcodeScan(); } }}
-            placeholder="امسح الباركود أو أدخل الكود..."
+            placeholder="امسح الباركود من أي مكان..."
             className="peachtree-input flex-1"
             disabled={barcodeLoading}
             data-testid="input-barcode"

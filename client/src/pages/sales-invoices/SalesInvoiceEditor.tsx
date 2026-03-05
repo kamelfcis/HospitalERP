@@ -52,17 +52,17 @@ interface SalesInvoiceEditorProps {
   warehouses?:     Warehouse[];
 
   // حالة الفاتورة
-  form:            InvoiceFormHandlers;
-  lines:           SalesLineLocal[];
-  subtotal:        number;
-  netTotal:        number;
+  form:              InvoiceFormHandlers;
+  lines:             SalesLineLocal[];
+  subtotal:          number;
+  netTotal:          number;
 
-  // حقل الباركود
-  barcodeInput:    string;
-  setBarcodeInput: (v: string) => void;
-  barcodeLoading:  boolean;
-  barcodeInputRef: React.RefObject<HTMLInputElement>;
-  onBarcodeScan:   () => void;
+  // حقل الباركود (العالمي يعمل بدون هذا — هذا فقط للعرض في الـ header)
+  barcodeDisplay:    string;
+  setBarcodeDisplay: (v: string) => void;
+  barcodeLoading:    boolean;
+  barcodeInputRef:   React.RefObject<HTMLInputElement>;
+  onBarcodeScan:     () => void;
 
   // hooks
   linesHook:       ReturnType<typeof useInvoiceLines>;
@@ -114,7 +114,7 @@ function EditorNotFound({ onBack }: { onBack: () => void }) {
 export function SalesInvoiceEditor({
   editId, isNew, isDraft, invoiceDetail, detailLoading,
   warehouses, form, lines, subtotal, netTotal,
-  barcodeInput, setBarcodeInput, barcodeLoading, barcodeInputRef, onBarcodeScan,
+  barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef, onBarcodeScan,
   linesHook, mutationsHook, autoSaveHook, itemSearchHook, serviceSearchHook,
   statsHook, onBack,
 }: SalesInvoiceEditorProps) {
@@ -150,8 +150,8 @@ export function SalesInvoiceEditor({
         setCustomerName={form.setCustomerName}
         contractCompany={form.contractCompany}
         setContractCompany={form.setContractCompany}
-        barcodeInput={barcodeInput}
-        setBarcodeInput={setBarcodeInput}
+        barcodeDisplay={barcodeDisplay}
+        setBarcodeDisplay={setBarcodeDisplay}
         barcodeLoading={barcodeLoading}
         barcodeInputRef={barcodeInputRef}
         warehouses={warehouses}
