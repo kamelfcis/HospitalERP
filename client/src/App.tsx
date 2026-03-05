@@ -31,6 +31,7 @@ import SupplierReceiving from "@/pages/supplier-receiving";
 import PurchaseInvoice from "@/pages/purchase-invoices";
 import ServicesPricing from "@/pages/ServicesPricing";
 import SalesInvoices from "@/pages/SalesInvoices";
+import SalesReturns from "@/pages/sales-returns";
 import Warehouses from "@/pages/Warehouses";
 import Departments from "@/pages/Departments";
 import Patients from "@/pages/Patients";
@@ -94,6 +95,7 @@ function Router() {
         <Route path="/supplier-receiving">{() => <G p="receiving.view"><SupplierReceiving /></G>}</Route>
         <Route path="/purchase-invoices">{() => <G p="purchase_invoices.view"><PurchaseInvoice /></G>}</Route>
         <Route path="/sales-invoices">{() => <G p="sales.view"><SalesInvoices /></G>}</Route>
+        <Route path="/sales-returns">{() => <G p="sales.view"><SalesReturns /></G>}</Route>
         <Route path="/services-pricing">{() => <G p="services.view"><ServicesPricing /></G>}</Route>
         <Route path="/warehouses">{() => <G p="warehouses.view"><Warehouses /></G>}</Route>
         <Route path="/departments">{() => <G p="departments.view"><Departments /></G>}</Route>

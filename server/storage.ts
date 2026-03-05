@@ -544,6 +544,11 @@ export interface IStorage {
   sendChatMessage(senderId: string, receiverId: string, body: string): Promise<import("@shared/schema").ChatMessage>;
   markChatRead(senderId: string, currentUserId: string): Promise<void>;
   getChatUnreadCount(userId: string): Promise<number>;
+
+  // Sales Returns
+  searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]>;
+  getSaleInvoiceForReturn(invoiceId: string): Promise<any | null>;
+  createSalesReturn(data: { originalInvoiceId: string; warehouseId: string; returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[]; discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string }): Promise<any>;
 }
 
 function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
@@ -8625,6 +8630,189 @@ export class DatabaseStorage implements IStorage {
         ON CONFLICT (source_type, source_id, treasury_id) DO NOTHING
       `);
     }
+  }
+
+  async searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]> {
+    const chunks: any[] = [sql`h.is_return = false AND h.status = 'finalized'`];
+
+    if (params.invoiceNumber) {
+      chunks.push(sql`AND h.invoice_number = ${parseInt(params.invoiceNumber)}`);
+    }
+    if (params.receiptBarcode) {
+      chunks.push(sql`AND EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = h.id AND cr.receipt_number = ${parseInt(params.receiptBarcode)})`);
+    }
+    if (params.itemId) {
+      chunks.push(sql`AND EXISTS (SELECT 1 FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id AND sl.item_id = ${params.itemId})`);
+    }
+    if (params.dateFrom) {
+      chunks.push(sql`AND h.invoice_date >= ${params.dateFrom}`);
+    }
+    if (params.dateTo) {
+      chunks.push(sql`AND h.invoice_date <= ${params.dateTo}`);
+    }
+    if (params.warehouseId) {
+      chunks.push(sql`AND h.warehouse_id = ${params.warehouseId}`);
+    }
+
+    const where = sql.join(chunks, sql` `);
+    const result = await db.execute(sql`
+      SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
+             h.warehouse_id AS "warehouseId", w.name AS "warehouseName",
+             h.customer_name AS "customerName", h.net_total AS "netTotal",
+             (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id) AS "itemCount"
+      FROM sales_invoice_headers h
+      LEFT JOIN warehouses w ON w.id = h.warehouse_id
+      WHERE ${where}
+      ORDER BY h.invoice_date DESC, h.invoice_number DESC
+      LIMIT 50
+    `);
+    return result.rows as any[];
+  }
+
+  async getSaleInvoiceForReturn(invoiceId: string): Promise<any | null> {
+    const hdr = await db.execute(sql`
+      SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
+             h.warehouse_id AS "warehouseId", w.name AS "warehouseName",
+             h.customer_type AS "customerType", h.customer_name AS "customerName",
+             h.subtotal, h.discount_percent AS "discountPercent",
+             h.discount_value AS "discountValue", h.net_total AS "netTotal"
+      FROM sales_invoice_headers h
+      LEFT JOIN warehouses w ON w.id = h.warehouse_id
+      WHERE h.id = ${invoiceId} AND h.is_return = false AND h.status = 'finalized'
+    `);
+    if (!hdr.rows.length) return null;
+    const header = hdr.rows[0] as any;
+
+    const lines = await db.execute(sql`
+      SELECT l.id, l.line_no AS "lineNo", l.item_id AS "itemId",
+             i.item_code AS "itemCode", i.name_ar AS "itemNameAr",
+             l.unit_level AS "unitLevel", l.qty, l.qty_in_minor AS "qtyInMinor",
+             l.sale_price AS "salePrice", l.line_total AS "lineTotal",
+             l.expiry_month AS "expiryMonth", l.expiry_year AS "expiryYear", l.lot_id AS "lotId",
+             i.major_unit_name AS "majorUnitName", i.medium_unit_name AS "mediumUnitName",
+             i.minor_unit_name AS "minorUnitName",
+             i.major_to_minor AS "majorToMinor", i.medium_to_minor AS "mediumToMinor",
+             COALESCE((
+               SELECT SUM(ABS(rl.qty_in_minor::numeric))
+               FROM sales_invoice_lines rl
+               JOIN sales_invoice_headers rh ON rh.id = rl.invoice_id
+               WHERE rh.original_invoice_id = ${invoiceId}
+                 AND rh.is_return = true
+                 AND rh.status = 'finalized'
+                 AND rl.item_id = l.item_id
+                 AND COALESCE(rl.lot_id,'') = COALESCE(l.lot_id,'')
+             ), 0)::numeric AS "previouslyReturnedMinor"
+      FROM sales_invoice_lines l
+      JOIN items i ON i.id = l.item_id
+      WHERE l.invoice_id = ${invoiceId}
+      ORDER BY l.line_no
+    `);
+    header.lines = lines.rows;
+    return header;
+  }
+
+  async createSalesReturn(data: {
+    originalInvoiceId: string; warehouseId: string;
+    returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[];
+    discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string;
+  }): Promise<any> {
+    return await db.transaction(async (tx) => {
+      const origHeader = await tx.execute(sql`
+        SELECT id, invoice_date, warehouse_id, customer_type, customer_name, contract_company, pharmacy_id, status, is_return
+        FROM sales_invoice_headers WHERE id = ${data.originalInvoiceId} FOR UPDATE
+      `);
+      const orig = origHeader.rows[0] as any;
+      if (!orig) throw new Error("الفاتورة الأصلية غير موجودة");
+      if (orig.is_return) throw new Error("لا يمكن إرجاع فاتورة مرتجع");
+      if (orig.status !== "finalized") throw new Error("الفاتورة الأصلية غير مرحّلة");
+      if (orig.warehouse_id !== data.warehouseId) throw new Error("المخزن لا يتطابق مع فاتورة البيع الأصلية");
+
+      const origLines = await tx.execute(sql`
+        SELECT l.id, l.item_id, l.unit_level, l.qty_in_minor, l.sale_price, l.line_total, l.lot_id,
+               COALESCE((
+                 SELECT SUM(ABS(rl2.qty_in_minor::numeric))
+                 FROM sales_invoice_lines rl2
+                 JOIN sales_invoice_headers rh2 ON rh2.id = rl2.invoice_id
+                 WHERE rh2.original_invoice_id = ${data.originalInvoiceId}
+                   AND rh2.is_return = true AND rh2.status = 'finalized'
+                   AND rl2.item_id = l.item_id AND COALESCE(rl2.lot_id,'') = COALESCE(l.lot_id,'')
+               ), 0)::numeric AS "previouslyReturnedMinor"
+        FROM sales_invoice_lines l WHERE l.invoice_id = ${data.originalInvoiceId}
+      `);
+      const origLineMap = new Map<string, any>();
+      for (const ol of origLines.rows as any[]) {
+        origLineMap.set(ol.id, ol);
+      }
+
+      const validatedLines: typeof data.returnLines = [];
+      for (const rl of data.returnLines) {
+        const origLine = origLineMap.get(rl.originalLineId);
+        if (!origLine) throw new Error(`السطر ${rl.originalLineId} لا ينتمي للفاتورة الأصلية`);
+        if (origLine.item_id !== rl.itemId) throw new Error(`الصنف لا يتطابق مع السطر الأصلي`);
+
+        const availMinor = parseFloat(origLine.qty_in_minor) - parseFloat(origLine.previouslyReturnedMinor);
+        let returnMinor = parseFloat(rl.qtyInMinor);
+        if (returnMinor <= 0) continue;
+        if (returnMinor > availMinor) returnMinor = availMinor;
+        if (returnMinor <= 0) continue;
+
+        const pricePerMinor = parseFloat(origLine.line_total) / (parseFloat(origLine.qty_in_minor) || 1);
+        const lineTotal = Math.round(returnMinor * pricePerMinor * 100) / 100;
+
+        validatedLines.push({
+          ...rl,
+          qtyInMinor: String(returnMinor),
+          salePrice: origLine.sale_price,
+          lineTotal: lineTotal.toFixed(2),
+          lotId: origLine.lot_id,
+        });
+      }
+
+      if (!validatedLines.length) throw new Error("لا توجد كميات صالحة للإرجاع");
+
+      const subtotal = validatedLines.reduce((s, l) => s + parseFloat(l.lineTotal), 0);
+      const discountValue = data.discountType === "percent"
+        ? subtotal * (parseFloat(data.discountPercent) || 0) / 100
+        : Math.min(parseFloat(data.discountValue) || 0, subtotal);
+      const netTotal = Math.max(0, subtotal - discountValue);
+
+      const hdr = await tx.execute(sql`
+        INSERT INTO sales_invoice_headers
+          (invoice_date, warehouse_id, pharmacy_id, customer_type, customer_name, contract_company,
+           status, subtotal, discount_type, discount_percent, discount_value, net_total,
+           notes, created_by, is_return, original_invoice_id, finalized_at, finalized_by)
+        VALUES
+          (now()::date, ${orig.warehouse_id}, ${orig.pharmacy_id ?? null},
+           ${orig.customer_type ?? 'cash'}, ${orig.customer_name ?? null}, ${orig.contract_company ?? null},
+           'finalized', ${subtotal.toFixed(2)}, ${data.discountType},
+           ${data.discountType === 'percent' ? data.discountPercent : '0'},
+           ${discountValue.toFixed(2)}, ${netTotal.toFixed(2)},
+           ${data.notes || null}, ${data.createdBy}, true, ${data.originalInvoiceId}, now(), ${data.createdBy})
+        RETURNING id, invoice_number AS "invoiceNumber"
+      `);
+      const returnId = (hdr.rows[0] as any).id;
+      const returnNumber = (hdr.rows[0] as any).invoiceNumber;
+
+      for (let i = 0; i < validatedLines.length; i++) {
+        const rl = validatedLines[i];
+        await tx.execute(sql`
+          INSERT INTO sales_invoice_lines
+            (invoice_id, line_no, item_id, unit_level, qty, qty_in_minor, sale_price, line_total, expiry_month, expiry_year, lot_id)
+          VALUES
+            (${returnId}, ${i + 1}, ${rl.itemId}, ${rl.unitLevel}, ${rl.qty}, ${rl.qtyInMinor},
+             ${rl.salePrice}, ${rl.lineTotal}, ${rl.expiryMonth ?? null}, ${rl.expiryYear ?? null}, ${rl.lotId ?? null})
+        `);
+
+        await tx.execute(sql`
+          UPDATE warehouse_stock
+          SET qty_available = qty_available + ${parseFloat(rl.qtyInMinor)}
+          WHERE warehouse_id = ${orig.warehouse_id} AND item_id = ${rl.itemId}
+            AND COALESCE(lot_id, '') = COALESCE(${rl.lotId ?? null}::text, '')
+        `);
+      }
+
+      return { id: returnId, invoiceNumber: returnNumber, netTotal: netTotal.toFixed(2) };
+    });
   }
 
   async getChatUsers(currentUserId: string): Promise<{ id: string; fullName: string; role: string; unreadCount: number; lastMessage: string | null; lastMessageAt: Date | null }[]> {

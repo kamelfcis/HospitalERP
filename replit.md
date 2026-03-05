@@ -13,7 +13,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 
 ### Key Features
 - **Financial Management**: Includes Chart of Accounts, Cost Centers, a comprehensive Journal Entry system, Fiscal Period controls, and IFRS-compliant financial reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger). Automatic Journal Entries are generated based on configurable account mappings.
-- **Inventory & Sales**: Features Supplier Receiving, Sales Invoicing (with barcode scanning, FEFO allocation, customer types, atomic stock deduction), Patient Invoicing (services, drugs, consumables, payments, "Distribute to Cases" feature, linked to admissions), Patient Admissions management, and Master Data for items, patients, and doctors.
+- **Inventory & Sales**: Features Supplier Receiving, Sales Invoicing (with barcode scanning, FEFO allocation, customer types, atomic stock deduction), Sales Returns (search by invoice#/receipt barcode/item, server-validated return quantities, transactional stock restoration), Patient Invoicing (services, drugs, consumables, payments, "Distribute to Cases" feature, linked to admissions), Patient Admissions management, and Master Data for items, patients, and doctors.
 - **Services & Price Lists**: CRUD operations for department-scoped services, price lists with inline editing and bulk adjustments, and integration with sales invoices.
 - **Multi-Pharmacy Support**: Supports multiple pharmacies with isolation for invoicing and cashier operations.
 - **Cashier & Security**: Includes real-time SSE for instant invoice visibility, password-protected cash drawers, department-level invoice isolation, a two-stage journal entry system for sales, and robust role-based access control (RBAC).
@@ -40,7 +40,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Room Management**: Dedicated page for CRUD operations on floors, rooms, and beds, including grade assignment.
 - **Surgery Types Integration**: Allows linking surgery types to admissions, impacting OR_ROOM line items and invoice totals.
 - **Admissions Management**: Enhanced admissions list with invoice status, department filtering, and financial totals.
-- **Refactored Pages**: `PatientInvoicePage`, `SalesInvoices`, `CashierCollection`, and `StoreTransfers` are refactored into modular, hook-based compound components.
+- **Refactored Pages**: `PatientInvoicePage`, `SalesInvoices`, `CashierCollection`, `StoreTransfers`, and `SalesReturns` are refactored into modular, hook-based compound components.
 - **Shared ItemSearchDialog**: `@/components/ItemSearchDialog.tsx` is a shared, configurable search dialog used across pages. `ItemFastSearch` (`@/components/ItemFastSearch/`) is the primary fast-search component shared between sales invoices and store transfers.
 - **Transfer Preparation**: A smart preparation screen (`/transfer-preparation`) that queries sales data for a destination warehouse over a date range, shows source/destination stock levels in **major units** (e.g., علبة), allows bulk filtering/exclusion, suggested quantity fill in major units, and converts the prepared list into a store transfer with **auto FEFO distribution split into separate lines per expiry batch**. Refactored into compound components: `types.ts`, `hooks/usePreparationData.ts`, `SetupForm`, `FilterBar`, `PrepTable`, `ActionFooter`.
 

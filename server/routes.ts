@@ -5060,6 +5060,46 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ─── Sales Returns ──────────────────────────────────────────────────────────
+
+  app.get("/api/sales-returns/search", requireAuth, async (req, res) => {
+    try {
+      const { invoiceNumber, receiptBarcode, itemId, dateFrom, dateTo, warehouseId } = req.query as any;
+      if (!invoiceNumber && !receiptBarcode && !itemId) {
+        return res.status(400).json({ message: "يجب إدخال رقم فاتورة أو باركود إيصال أو صنف للبحث" });
+      }
+      const results = await storage.searchSaleInvoicesForReturn({ invoiceNumber, receiptBarcode, itemId, dateFrom, dateTo, warehouseId });
+      res.json(results);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/sales-returns/invoice/:id", requireAuth, async (req, res) => {
+    try {
+      const invoice = await storage.getSaleInvoiceForReturn(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة أو غير مرحّلة" });
+      res.json(invoice);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/sales-returns", requireAuth, async (req, res) => {
+    try {
+      const { originalInvoiceId, warehouseId, returnLines, discountType, discountPercent, discountValue, notes } = req.body;
+      if (!originalInvoiceId || !returnLines?.length) {
+        return res.status(400).json({ message: "بيانات المرتجع غير مكتملة" });
+      }
+      const activeLines = returnLines.filter((l: any) => parseFloat(l.qtyInMinor) > 0);
+      if (!activeLines.length) return res.status(400).json({ message: "يجب إدخال كمية مرتجعة لصنف واحد على الأقل" });
+
+      const result = await storage.createSalesReturn({
+        originalInvoiceId, warehouseId, returnLines: activeLines,
+        discountType: discountType || "percent", discountPercent: discountPercent || "0",
+        discountValue: discountValue || "0", notes: notes || "",
+        createdBy: req.session.userId!,
+      });
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   // ─── Chat ──────────────────────────────────────────────────────────────────
 
   app.get("/api/chat/sse", requireAuth, (req, res) => {
