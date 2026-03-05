@@ -103,21 +103,21 @@ export function ReceivingLineTable({
         <table className="w-full text-[12px]" dir="rtl" data-testid="table-receiving-lines">
           <thead>
             <tr className="peachtree-grid-header">
-              <th className="py-1 px-2 text-right font-bold whitespace-nowrap">#</th>
-              <th className="py-1 px-2 text-right font-bold text-[13px]">الصنف</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">#</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">الصنف</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">هدية</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">شراء</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">بيع</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">سعر الشراء</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">تشغيلة</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap font-bold text-primary">الإجمالي</th>
-              <th className="py-1 px-1 text-right whitespace-nowrap text-muted-foreground text-[10px]">آخر ش.</th>
-              <th className="py-1 px-1 text-right whitespace-nowrap text-muted-foreground text-[10px]">آخر ب.</th>
-              <th className="py-1 px-1 text-right whitespace-nowrap text-muted-foreground text-[10px]">رصيد</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">التشغيلة</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">الإجمالي</th>
+              <th className="py-1 px-1 text-right whitespace-nowrap text-[10px]" title="آخر سعر شراء">آخر ش.</th>
+              <th className="py-1 px-1 text-right whitespace-nowrap text-[10px]" title="آخر سعر بيع">آخر ب.</th>
+              <th className="py-1 px-1 text-right whitespace-nowrap text-[10px]" title="رصيد المخزن">رصيد</th>
               <th className="py-1 px-2 text-center whitespace-nowrap">إحصاء</th>
-              <th className="py-1 px-2 text-center whitespace-nowrap">▲</th>
+              <th className="py-1 px-2 text-center whitespace-nowrap">تنبيه</th>
               {!isViewOnly && <th className="py-1 px-2 text-center whitespace-nowrap">حذف</th>}
             </tr>
           </thead>

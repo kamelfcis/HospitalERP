@@ -375,20 +375,19 @@
   }
 
   .peachtree-grid-header {
-    background: linear-gradient(180deg, hsl(215 45% 45%) 0%, hsl(215 45% 35%) 100%);
-    color: white;
-    font-weight: 600;
+    background: linear-gradient(180deg, hsl(215 55% 38%) 0%, hsl(215 55% 28%) 100%);
+    color: #ffffff;
+    font-weight: 700;
     font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
   }
 
   .peachtree-grid-header th {
-    padding: 6px 8px;
-    border-right: 1px solid hsl(215 40% 50%);
-    border-bottom: 2px solid hsl(215 50% 25%);
-    text-align: center;
+    padding: 7px 8px;
+    border-right: 1px solid hsl(215 40% 45%);
+    border-bottom: 3px solid hsl(215 60% 20%);
+    text-align: right;
     white-space: nowrap;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
   }
 
   .peachtree-grid-header th:first-child {
