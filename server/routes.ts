@@ -5064,13 +5064,16 @@ export async function registerRoutes(
 
   app.get("/api/sales-returns/search", requireAuth, async (req, res) => {
     try {
-      const { invoiceNumber, receiptBarcode, itemId, dateFrom, dateTo, warehouseId } = req.query as any;
-      if (!invoiceNumber && !receiptBarcode && !itemId) {
+      const { invoiceNumber, receiptBarcode, itemBarcode, itemCode, itemId, dateFrom, dateTo, warehouseId } = req.query as any;
+      if (!invoiceNumber && !receiptBarcode && !itemBarcode && !itemCode && !itemId) {
         return res.status(400).json({ message: "يجب إدخال رقم فاتورة أو باركود إيصال أو صنف للبحث" });
       }
-      const results = await storage.searchSaleInvoicesForReturn({ invoiceNumber, receiptBarcode, itemId, dateFrom, dateTo, warehouseId });
+      const results = await storage.searchSaleInvoicesForReturn({ invoiceNumber, receiptBarcode, itemBarcode, itemCode, itemId, dateFrom, dateTo, warehouseId });
       res.json(results);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (e: any) {
+      console.error("[SALES_RETURNS_SEARCH]", e);
+      res.status(500).json({ message: e.message });
+    }
   });
 
   app.get("/api/sales-returns/invoice/:id", requireAuth, async (req, res) => {

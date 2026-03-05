@@ -546,7 +546,7 @@ export interface IStorage {
   getChatUnreadCount(userId: string): Promise<number>;
 
   // Sales Returns
-  searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]>;
+  searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]>;
   getSaleInvoiceForReturn(invoiceId: string): Promise<any | null>;
   createSalesReturn(data: { originalInvoiceId: string; warehouseId: string; returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[]; discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string }): Promise<any>;
 }
@@ -8632,29 +8632,24 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]> {
-    const chunks: any[] = [sql`h.is_return = false AND h.status = 'finalized'`];
+  async searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]> {
+    let resolvedItemId: string | null = null;
 
-    if (params.invoiceNumber) {
-      chunks.push(sql`AND h.invoice_number = ${parseInt(params.invoiceNumber)}`);
-    }
-    if (params.receiptBarcode) {
-      chunks.push(sql`AND EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = h.id AND cr.receipt_number = ${parseInt(params.receiptBarcode)})`);
-    }
-    if (params.itemId) {
-      chunks.push(sql`AND EXISTS (SELECT 1 FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id AND sl.item_id = ${params.itemId})`);
-    }
-    if (params.dateFrom) {
-      chunks.push(sql`AND h.invoice_date >= ${params.dateFrom}`);
-    }
-    if (params.dateTo) {
-      chunks.push(sql`AND h.invoice_date <= ${params.dateTo}`);
-    }
-    if (params.warehouseId) {
-      chunks.push(sql`AND h.warehouse_id = ${params.warehouseId}`);
+    if (params.itemBarcode) {
+      const item = await db.execute(sql`SELECT item_id FROM item_barcodes WHERE barcode_value = ${params.itemBarcode} AND is_active = true LIMIT 1`);
+      if (!item.rows.length) return [];
+      resolvedItemId = (item.rows[0] as any).item_id;
+    } else if (params.itemCode) {
+      const item = await db.execute(sql`SELECT id FROM items WHERE item_code = ${params.itemCode} LIMIT 1`);
+      if (!item.rows.length) return [];
+      resolvedItemId = (item.rows[0] as any).id;
+    } else if (params.itemId) {
+      resolvedItemId = params.itemId;
     }
 
-    const where = sql.join(chunks, sql` `);
+    const invoiceNum = params.invoiceNumber ? parseInt(params.invoiceNumber) : null;
+    const receiptNum = params.receiptBarcode ? parseInt(params.receiptBarcode) : null;
+
     const result = await db.execute(sql`
       SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
              h.warehouse_id AS "warehouseId", w.name AS "warehouseName",
@@ -8662,7 +8657,13 @@ export class DatabaseStorage implements IStorage {
              (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id) AS "itemCount"
       FROM sales_invoice_headers h
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
-      WHERE ${where}
+      WHERE h.is_return = false AND h.status = 'finalized'
+        AND (${invoiceNum}::int IS NULL OR h.invoice_number = ${invoiceNum})
+        AND (${receiptNum}::int IS NULL OR EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = h.id AND cr.receipt_number = ${receiptNum}))
+        AND (${resolvedItemId}::text IS NULL OR EXISTS (SELECT 1 FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id AND sl.item_id = ${resolvedItemId}))
+        AND (${params.dateFrom || null}::text IS NULL OR h.invoice_date >= ${params.dateFrom || null}::date)
+        AND (${params.dateTo || null}::text IS NULL OR h.invoice_date <= ${params.dateTo || null}::date)
+        AND (${params.warehouseId || null}::text IS NULL OR h.warehouse_id = ${params.warehouseId || null}::uuid)
       ORDER BY h.invoice_date DESC, h.invoice_number DESC
       LIMIT 50
     `);

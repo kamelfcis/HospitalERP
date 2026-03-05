@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ReturnSearchResult } from "../types";
 
-export type SearchMode = "invoiceNumber" | "receiptBarcode" | "item";
+export type SearchMode = "invoiceNumber" | "receiptBarcode" | "itemBarcode" | "itemCode" | "item";
 
 export function useReturnSearch() {
   const [searchMode, setSearchMode] = useState<SearchMode>("invoiceNumber");
@@ -18,6 +18,8 @@ export function useReturnSearch() {
     const params = new URLSearchParams();
     if (searchMode === "invoiceNumber" && searchValue) params.set("invoiceNumber", searchValue);
     if (searchMode === "receiptBarcode" && searchValue) params.set("receiptBarcode", searchValue);
+    if (searchMode === "itemBarcode" && searchValue) params.set("itemBarcode", searchValue);
+    if (searchMode === "itemCode" && searchValue) params.set("itemCode", searchValue);
     if (searchMode === "item" && selectedItemId) params.set("itemId", selectedItemId);
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
@@ -28,6 +30,8 @@ export function useReturnSearch() {
   const canSearch =
     (searchMode === "invoiceNumber" && !!searchValue.trim()) ||
     (searchMode === "receiptBarcode" && !!searchValue.trim()) ||
+    (searchMode === "itemBarcode" && !!searchValue.trim()) ||
+    (searchMode === "itemCode" && !!searchValue.trim()) ||
     (searchMode === "item" && !!selectedItemId);
 
   const queryString = buildParams();

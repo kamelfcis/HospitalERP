@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, FileText, Barcode, Package, Loader2 } from "lucide-react";
+import { Search, FileText, Barcode, Package, Loader2, Hash, ScanBarcode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useQuery } from "@tanstack/react-query";
@@ -49,8 +49,29 @@ export function SearchPanel({
   const modes: { key: SearchMode; label: string; icon: any }[] = [
     { key: "invoiceNumber", label: "رقم الفاتورة", icon: FileText },
     { key: "receiptBarcode", label: "باركود الإيصال", icon: Barcode },
-    { key: "item", label: "بحث بالصنف", icon: Package },
+    { key: "itemBarcode", label: "باركود الصنف", icon: ScanBarcode },
+    { key: "itemCode", label: "كود الصنف", icon: Hash },
+    { key: "item", label: "بحث بالاسم", icon: Package },
   ];
+
+  const directInputModes: SearchMode[] = ["invoiceNumber", "receiptBarcode", "itemBarcode", "itemCode"];
+  const isDirectInput = directInputModes.includes(searchMode);
+
+  const inputLabels: Record<string, string> = {
+    invoiceNumber: "رقم الفاتورة",
+    receiptBarcode: "رقم الإيصال",
+    itemBarcode: "باركود الصنف",
+    itemCode: "كود الصنف الداخلي",
+  };
+
+  const inputPlaceholders: Record<string, string> = {
+    invoiceNumber: "ادخل رقم الفاتورة",
+    receiptBarcode: "ادخل رقم الإيصال",
+    itemBarcode: "امسح أو ادخل باركود الصنف",
+    itemCode: "ادخل كود الصنف",
+  };
+
+  const showDateFilters = searchMode === "item" || searchMode === "itemBarcode" || searchMode === "itemCode";
 
   return (
     <div className="space-y-3" data-testid="section-search">
@@ -70,17 +91,17 @@ export function SearchPanel({
       </div>
 
       <div className="flex gap-2 flex-wrap items-end" dir="rtl">
-        {(searchMode === "invoiceNumber" || searchMode === "receiptBarcode") && (
-          <div className="w-48">
+        {isDirectInput && (
+          <div className="w-56">
             <label className="text-xs font-semibold text-muted-foreground mb-1 block">
-              {searchMode === "invoiceNumber" ? "رقم الفاتورة" : "رقم الإيصال"}
+              {inputLabels[searchMode]}
             </label>
             <Input
-              type="number"
+              type={searchMode === "invoiceNumber" || searchMode === "receiptBarcode" ? "number" : "text"}
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && triggerSearch()}
-              placeholder={searchMode === "invoiceNumber" ? "ادخل رقم الفاتورة" : "ادخل رقم الإيصال"}
+              placeholder={inputPlaceholders[searchMode]}
               className="h-9"
               autoFocus
               data-testid="input-search-value"
@@ -110,6 +131,7 @@ export function SearchPanel({
                   onFocus={() => setItemSearchOpen(true)}
                   placeholder="اسم أو كود الصنف..."
                   className="h-9"
+                  autoFocus
                   data-testid="input-item-search"
                 />
                 {itemSearchOpen && itemSearchTerm.length >= 2 && (
@@ -143,7 +165,7 @@ export function SearchPanel({
           </div>
         )}
 
-        {searchMode === "item" && (
+        {showDateFilters && (
           <>
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1 block">من تاريخ</label>
