@@ -106,15 +106,8 @@ export function ItemFastSearch({
       availableQtyMinor: item.availableQtyMinor,
     });
     resetBatches();
-    if (hideStockWarning) {
-      // وضع الاستلام: تصفير البحث وإبقاء النافذة مفتوحة للإدخال السريع
-      setQuery("");
-      setItems([]);
-      setTotal(0);
-      setHighlighted(-1);
-    }
     setTimeout(() => searchRef.current?.focus(), 30);
-  }, [onItemSelected, selectedBatch, batches, resetBatches, hideStockWarning]);
+  }, [onItemSelected, selectedBatch, batches, resetBatches]);
 
   // ── البحث ───────────────────────────────────────────────────────────────
   const doSearch = useCallback(async (q: string, pg: number, md: SearchMode) => {
