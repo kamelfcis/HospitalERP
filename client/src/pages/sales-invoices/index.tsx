@@ -43,7 +43,7 @@ export default function SalesInvoices() {
   const isNew               = editId === "new";
 
   // ── توجيه حسب الدور (الصيدلي → فاتورة جديدة مباشرة) ──────────────────────
-  const { isDirectRole } = useRoleRouter(editId, navigate);
+  const { canViewRegistry } = useRoleRouter(editId, navigate);
 
   // ── بيانات عامة ───────────────────────────────────────────────────────────
   const { data: warehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
@@ -215,8 +215,8 @@ export default function SalesInvoices() {
     );
   }
 
-  // الصيدلي لا يرى القائمة أبداً — ينتظر التوجيه للفاتورة الجديدة
-  if (isDirectRole && !editId) return null;
+  // من لا يملك صلاحية القائمة → ينتظر التوجيه للفاتورة الجديدة
+  if (!canViewRegistry && !editId) return null;
 
   return (
     <InvoiceRegistry

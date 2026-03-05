@@ -45,6 +45,7 @@ export const PERMISSIONS = {
   SALES_VIEW: "sales.view",
   SALES_CREATE: "sales.create",
   SALES_FINALIZE: "sales.finalize",
+  SALES_REGISTRY_VIEW: "sales.registry_view",
 
   PATIENT_INVOICES_VIEW: "patient_invoices.view",
   PATIENT_INVOICES_CREATE: "patient_invoices.create",
@@ -129,6 +130,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.PURCHASE_INVOICES_VIEW,
     PERMISSIONS.TRANSFERS_VIEW,
     PERMISSIONS.SALES_VIEW,
+    PERMISSIONS.SALES_REGISTRY_VIEW,
     PERMISSIONS.PATIENT_INVOICES_VIEW,
     PERMISSIONS.PATIENT_INVOICES_DISCOUNT,
     PERMISSIONS.CASHIER_VIEW,
@@ -172,6 +174,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.FISCAL_PERIODS_MANAGE,
     PERMISSIONS.TEMPLATES_VIEW,
     PERMISSIONS.TEMPLATES_MANAGE,
+    PERMISSIONS.SALES_VIEW,
+    PERMISSIONS.SALES_REGISTRY_VIEW,
     PERMISSIONS.REPORTS_TRIAL_BALANCE,
     PERMISSIONS.REPORTS_INCOME_STATEMENT,
     PERMISSIONS.REPORTS_BALANCE_SHEET,
@@ -371,6 +375,7 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.SALES_VIEW, label: "عرض" },
       { key: PERMISSIONS.SALES_CREATE, label: "إنشاء" },
       { key: PERMISSIONS.SALES_FINALIZE, label: "اعتماد" },
+      { key: PERMISSIONS.SALES_REGISTRY_VIEW, label: "عرض قائمة الفواتير" },
     ],
   },
   {

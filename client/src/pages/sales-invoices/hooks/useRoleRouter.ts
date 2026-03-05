@@ -1,33 +1,30 @@
 /**
- * useRoleRouter — توجيه حسب دور المستخدم داخل صفحة فواتير المبيعات
+ * useRoleRouter — توجيه حسب صلاحيات المستخدم داخل صفحة فواتير المبيعات
  *
- * الصيدلي / الكاشير / مساعد المخزن:
- *   - لا يرون قائمة الفواتير أبداً
- *   - عند الدخول للصفحة يُحوَّلون مباشرة لفاتورة جديدة
+ * من يملك صلاحية sales.registry_view → يرى قائمة الفواتير عادياً
+ * من لا يملكها (صيدلي، كاشير، ...) → يُوجَّه مباشرة لفاتورة جديدة
+ *
+ * التحكم من شاشة إدارة المستخدمين — يمكن منح/سحب الصلاحية لأي مستخدم
  */
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
-
-/** الأدوار التي تقفز مباشرة إلى فاتورة جديدة بدون قائمة */
-const DIRECT_INVOICE_ROLES = ["pharmacist", "cashier", "warehouse_assistant"];
+import { PERMISSIONS } from "@shared/permissions";
 
 export function useRoleRouter(editId: string | null, navigate: (path: string) => void) {
-  const { user, isLoading } = useAuth();
-  const role = user?.role || "";
-  const isDirectRole = DIRECT_INVOICE_ROLES.includes(role);
+  const { hasPermission, isLoading } = useAuth();
+  const canViewRegistry = hasPermission(PERMISSIONS.SALES_REGISTRY_VIEW);
 
   useEffect(() => {
     // انتظر تحميل بيانات اليوزر أولاً
     if (isLoading) return;
-    // لو الدور مقيّد والمستخدم في شاشة القائمة → وجّهه لفاتورة جديدة
-    if (isDirectRole && !editId) {
+    // لو لا يملك صلاحية القائمة وهو في شاشة القائمة → وجّهه لفاتورة جديدة
+    if (!canViewRegistry && !editId) {
       navigate("/sales-invoices?id=new");
     }
-  }, [isLoading, isDirectRole, editId, navigate]);
+  }, [isLoading, canViewRegistry, editId, navigate]);
 
   return {
-    isDirectRole,
-    role,
+    canViewRegistry,
     isLoading,
   };
 }
