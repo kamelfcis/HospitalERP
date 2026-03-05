@@ -1918,6 +1918,26 @@ export async function registerRoutes(
   // ===== WAREHOUSES =====
   app.get("/api/warehouses", async (req, res) => {
     try {
+      const userId = req.session?.userId as string | undefined;
+      const role   = req.session?.role   as string | undefined;
+
+      // الأدوار التي ترى كل المخازن (إدارة + محاسبة)
+      const fullAccessRoles = ["admin", "accountant", "manager"];
+
+      if (!userId || fullAccessRoles.includes(role || "")) {
+        // أدمن / محاسب / مدير → كل المخازن
+        const whs = await storage.getWarehouses();
+        return res.json(whs);
+      }
+
+      // باقي الأدوار → المخازن المعيّنة فقط
+      const assigned = await storage.getUserWarehouses(userId);
+
+      if (assigned.length > 0) {
+        return res.json(assigned);
+      }
+
+      // لا توجد تعيينات بعد (حساب جديد لم يُعَدّ) → كل المخازن كـ fallback
       const whs = await storage.getWarehouses();
       res.json(whs);
     } catch (error: any) {
