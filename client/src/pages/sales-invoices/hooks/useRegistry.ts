@@ -1,12 +1,19 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { SalesInvoiceWithDetails } from "@shared/schema";
+import type { SalesInvoiceWithDetails, User } from "@shared/schema";
+
+interface RegistryTotals {
+  subtotal: number;
+  discountValue: number;
+  netTotal: number;
+}
 
 export function useRegistry(today: string, enabled: boolean) {
   const [filterDateFrom, setFilterDateFrom] = useState(today);
   const [filterDateTo, setFilterDateTo] = useState(today);
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCustomerType, setFilterCustomerType] = useState("all");
+  const [filterPharmacistId, setFilterPharmacistId] = useState("all");
   const [filterSearch, setFilterSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -26,14 +33,15 @@ export function useRegistry(today: string, enabled: boolean) {
     p.set("pageSize", pageSize.toString());
     if (filterStatus !== "all") p.set("status", filterStatus);
     if (filterCustomerType !== "all") p.set("customerType", filterCustomerType);
+    if (filterPharmacistId !== "all") p.set("pharmacistId", filterPharmacistId);
     if (filterDateFrom) p.set("dateFrom", filterDateFrom);
     if (filterDateTo) p.set("dateTo", filterDateTo);
     if (debouncedSearch) p.set("search", debouncedSearch);
     return p.toString();
   };
 
-  const { data: listData, isLoading: listLoading } = useQuery<{ data: SalesInvoiceWithDetails[]; total: number }>({
-    queryKey: ["/api/sales-invoices", page, filterStatus, filterCustomerType, filterDateFrom, filterDateTo, debouncedSearch],
+  const { data: listData, isLoading: listLoading } = useQuery<{ data: SalesInvoiceWithDetails[]; total: number; totals: RegistryTotals }>({
+    queryKey: ["/api/sales-invoices", page, filterStatus, filterCustomerType, filterPharmacistId, filterDateFrom, filterDateTo, debouncedSearch],
     queryFn: async () => {
       const res = await fetch(`/api/sales-invoices?${buildQuery()}`);
       if (!res.ok) throw new Error("Failed to fetch");
@@ -42,15 +50,26 @@ export function useRegistry(today: string, enabled: boolean) {
     enabled,
   });
 
+  const { data: usersData } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+    enabled,
+  });
+
   const invoices = listData?.data || [];
   const totalInvoices = listData?.total || 0;
   const totalPages = Math.max(1, Math.ceil(totalInvoices / pageSize));
+  const totals: RegistryTotals = listData?.totals || { subtotal: 0, discountValue: 0, netTotal: 0 };
+
+  const pharmacistUsers = (usersData || []).filter(u =>
+    ["pharmacist", "cashier", "warehouse_assistant", "admin"].includes(u.role)
+  );
 
   return {
     filterDateFrom, setFilterDateFrom,
     filterDateTo, setFilterDateTo,
     filterStatus, setFilterStatus,
     filterCustomerType, setFilterCustomerType,
+    filterPharmacistId, setFilterPharmacistId,
     filterSearch, setFilterSearch,
     page, setPage,
     pageSize,
@@ -58,5 +77,7 @@ export function useRegistry(today: string, enabled: boolean) {
     totalInvoices,
     totalPages,
     listLoading,
+    totals,
+    pharmacistUsers,
   };
 }

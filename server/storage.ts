@@ -382,7 +382,7 @@ export interface IStorage {
 
   // Sales Invoices
   getNextSalesInvoiceNumber(): Promise<number>;
-  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}>;
+  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}>;
   getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined>;
   createSalesInvoice(header: any, lines: any[]): Promise<SalesInvoiceHeader>;
   updateSalesInvoice(id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader>;
@@ -4326,7 +4326,7 @@ export class DatabaseStorage implements IStorage {
     return (result?.max || 0) + 1;
   }
 
-  async getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}> {
+  async getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}> {
     const conditions: any[] = [];
     if (filters.status && filters.status !== "all") {
       conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
@@ -4336,6 +4336,7 @@ export class DatabaseStorage implements IStorage {
     if (filters.dateFrom) conditions.push(sql`${salesInvoiceHeaders.invoiceDate} >= ${filters.dateFrom}`);
     if (filters.dateTo) conditions.push(sql`${salesInvoiceHeaders.invoiceDate} <= ${filters.dateTo}`);
     if (filters.customerType && filters.customerType !== "all") conditions.push(eq(salesInvoiceHeaders.customerType, filters.customerType as any));
+    if (filters.pharmacistId && filters.pharmacistId !== "all") conditions.push(eq(salesInvoiceHeaders.createdBy, filters.pharmacistId));
     if (filters.search) {
       const searchTerm = filters.search.replace(/^SI-/i, '').trim();
       conditions.push(or(
@@ -4348,21 +4349,47 @@ export class DatabaseStorage implements IStorage {
     const pageSize = filters.pageSize || 20;
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(salesInvoiceHeaders).where(whereClause);
+    // count + totals in one query
+    const [agg] = await db.select({
+      count: sql<number>`count(*)`,
+      subtotal: sql<number>`COALESCE(SUM(${salesInvoiceHeaders.subtotal}::numeric), 0)`,
+      discountValue: sql<number>`COALESCE(SUM(${salesInvoiceHeaders.discountValue}::numeric), 0)`,
+      netTotal: sql<number>`COALESCE(SUM(${salesInvoiceHeaders.netTotal}::numeric), 0)`,
+    }).from(salesInvoiceHeaders).where(whereClause);
 
-    const headers = await db.select().from(salesInvoiceHeaders)
-      .where(whereClause)
-      .orderBy(desc(salesInvoiceHeaders.createdAt))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize);
+    // main query: JOIN warehouse + user + line count
+    const rows = await db.select({
+      h: salesInvoiceHeaders,
+      warehouseNameAr: warehouses.nameAr,
+      pharmacistName: users.fullName,
+      itemCount: sql<number>`COUNT(DISTINCT ${salesInvoiceLines.id})`,
+    })
+    .from(salesInvoiceHeaders)
+    .leftJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
+    .leftJoin(users, eq(salesInvoiceHeaders.createdBy, users.id))
+    .leftJoin(salesInvoiceLines, eq(salesInvoiceLines.invoiceId, salesInvoiceHeaders.id))
+    .where(whereClause)
+    .groupBy(salesInvoiceHeaders.id, warehouses.nameAr, users.fullName)
+    .orderBy(desc(salesInvoiceHeaders.createdAt))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
 
-    const data = [];
-    for (const h of headers) {
-      const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
-      data.push({ ...h, warehouse: wh });
-    }
+    const data = rows.map(r => ({
+      ...r.h,
+      warehouse: r.warehouseNameAr ? { nameAr: r.warehouseNameAr } : undefined,
+      pharmacistName: r.pharmacistName || null,
+      itemCount: Number(r.itemCount) || 0,
+    }));
 
-    return { data, total: Number(countResult.count) };
+    return {
+      data,
+      total: Number(agg.count),
+      totals: {
+        subtotal: Number(agg.subtotal),
+        discountValue: Number(agg.discountValue),
+        netTotal: Number(agg.netTotal),
+      },
+    };
   }
 
   async getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined> {
