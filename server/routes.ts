@@ -5078,6 +5078,7 @@ export async function registerRoutes(
 
   app.get("/api/sales-returns/invoice/:id", requireAuth, async (req, res) => {
     try {
+      res.set("Cache-Control", "no-store");
       const invoice = await storage.getSaleInvoiceForReturn(req.params.id);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة أو غير مرحّلة" });
       res.json(invoice);
