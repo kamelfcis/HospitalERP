@@ -32,7 +32,7 @@ export function ReceivingLineTable({
   qtyInputRefs, salePriceInputRefs, expiryInputRefs,
   lineFieldFocusedRef, focusedLineIdx, setFocusedLineIdx,
 }: Props) {
-  const colSpan = isViewOnly ? 13 : 14;
+  const colSpan = isViewOnly ? 14 : 15;
 
   return (
     <fieldset className="peachtree-grid p-2">
@@ -46,6 +46,7 @@ export function ReceivingLineTable({
               <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">هدية</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">سعر الشراء</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">رقم التشغيلة</th>
@@ -121,8 +122,11 @@ function LineRow({
   qtyInputRefs, salePriceInputRefs, expiryInputRefs,
   lineFieldFocusedRef, setFocusedLineIdx,
 }: RowProps) {
-  const hasExpiryErr   = lineErrors.some((e) => e.lineIndex === idx && e.field === "expiry");
-  const hasSalePriceErr = lineErrors.some((e) => e.lineIndex === idx && e.field === "salePrice");
+  const hasExpiryErr      = lineErrors.some((e) => e.lineIndex === idx && e.field === "expiry");
+  const hasSalePriceErr   = lineErrors.some((e) => e.lineIndex === idx && e.field === "salePrice");
+  const hasPurchasePriceErr = lineErrors.some(
+    (e) => e.lineIndex === idx && (e.field === "purchasePrice" || e.field === "costOverPrice")
+  );
 
   // تنبيهات
   const salesPriceChanged =
@@ -184,6 +188,20 @@ function LineRow({
             onBlur={() => { lineFieldFocusedRef.current = false; }}
             className="w-[55px] h-6 text-[11px] px-1 border rounded text-center bg-transparent"
             placeholder="0" min="0" step="any" data-testid={`input-bonus-qty-${idx}`} />
+        )}
+      </td>
+      {/* سعر الشراء */}
+      <td className="py-0.5 px-2 whitespace-nowrap">
+        {isViewOnly ? (
+          <span className="font-mono">{line.purchasePrice > 0 ? line.purchasePrice.toFixed(2) : "—"}</span>
+        ) : (
+          <input
+            type="number" value={line.purchasePrice || ""}
+            onChange={(e) => onUpdate({ purchasePrice: parseFloat(e.target.value) || 0 })}
+            onFocus={(e) => { lineFieldFocusedRef.current = true; e.target.select(); }}
+            onBlur={() => { lineFieldFocusedRef.current = false; }}
+            className={`w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center ${hasPurchasePriceErr ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
+            placeholder="0.00" min="0" step="any" data-testid={`input-purchase-price-${idx}`} />
         )}
       </td>
       {/* سعر البيع */}

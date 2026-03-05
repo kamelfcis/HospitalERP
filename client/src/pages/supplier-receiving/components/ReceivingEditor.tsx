@@ -90,9 +90,10 @@ export function ReceivingEditor({
   const { isViewOnly, formStatus, formCorrectionStatus, formConvertedToInvoiceId,
     formReceivingNumber, invoiceDuplicateError } = form;
 
-  // شرط إضافة الأصناف: لازم المستودع ورقم فاتورة المورد مكملين
+  // شرط إضافة الأصناف: لازم المستودع والمورد ورقم فاتورة المورد مكملين
   const canAddItems = !isViewOnly
     && !!form.warehouseId
+    && !!form.supplierId
     && !!form.supplierInvoiceNo.trim();
 
   const { toast: addToast } = useToast();
@@ -101,12 +102,16 @@ export function ReceivingEditor({
       addToast({ title: "اختر المستودع أولاً", variant: "destructive" });
       return;
     }
+    if (!form.supplierId) {
+      addToast({ title: "اختر المورد أولاً", variant: "destructive" });
+      return;
+    }
     if (!form.supplierInvoiceNo.trim()) {
       addToast({ title: "أدخل رقم فاتورة المورد أولاً", variant: "destructive" });
       return;
     }
     setItemSearchOpen(true);
-  }, [form.warehouseId, form.supplierInvoiceNo, setItemSearchOpen, addToast]);
+  }, [form.warehouseId, form.supplierId, form.supplierInvoiceNo, setItemSearchOpen, addToast]);
 
   const lineFieldFocusedRef = lines.lineFieldFocusedRef;
   const safeFocusBarcode = useCallback((delay = 50) => {
@@ -183,7 +188,8 @@ export function ReceivingEditor({
               }
             }}
             placeholder={
-              !form.warehouseId        ? "اختر المستودع أولاً..." :
+              !form.warehouseId            ? "اختر المستودع أولاً..." :
+              !form.supplierId             ? "اختر المورد أولاً..." :
               !form.supplierInvoiceNo.trim() ? "أدخل رقم فاتورة المورد أولاً..." :
               "امسح الباركود هنا... (F2)"
             }

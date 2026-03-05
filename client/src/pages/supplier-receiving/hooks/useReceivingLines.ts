@@ -77,6 +77,10 @@ export function useReceivingLines(): UseReceivingLinesReturn {
         line.bonusQtyInMinor = calculateQtyInMinor(bonus, unit, line.item);
         line.unitLevel       = unit;
       }
+      // إعادة حساب الإجمالي عند أي تغيير في الكمية أو سعر الشراء
+      if ("qtyEntered" in updates || "bonusQty" in updates || "unitLevel" in updates || "purchasePrice" in updates) {
+        line.lineTotal = (line.purchasePrice || 0) * (line.qtyInMinor + line.bonusQtyInMinor);
+      }
       copy[index] = line;
       return copy;
     });
@@ -133,9 +137,24 @@ export function useReceivingLines(): UseReceivingLinesReturn {
     for (let i = 0; i < formLines.length; i++) {
       const line = formLines[i];
       if (line.isRejected) continue;
+
+      // سعر البيع مطلوب وأكبر من صفر
       if (line.salePrice == null || line.salePrice <= 0) {
-        errors.push({ lineIndex: i, field: "salePrice", messageAr: "سعر البيع مطلوب" });
+        errors.push({ lineIndex: i, field: "salePrice", messageAr: "سعر البيع مطلوب ويجب أن يكون أكبر من صفر" });
       }
+      // سعر الشراء (التكلفة) مطلوب وأكبر من صفر
+      if (!line.purchasePrice || line.purchasePrice <= 0) {
+        errors.push({ lineIndex: i, field: "purchasePrice", messageAr: "سعر الشراء (التكلفة) مطلوب ويجب أن يكون أكبر من صفر" });
+      }
+      // التكلفة لا تتجاوز سعر البيع
+      if (
+        line.purchasePrice > 0 &&
+        line.salePrice != null && line.salePrice > 0 &&
+        line.purchasePrice > line.salePrice
+      ) {
+        errors.push({ lineIndex: i, field: "costOverPrice", messageAr: "سعر الشراء أعلى من سعر البيع" });
+      }
+      // تاريخ الصلاحية مطلوب للأصناف ذات الصلاحية
       if (line.item?.hasExpiry) {
         if (
           line.expiryMonth == null || line.expiryYear == null ||

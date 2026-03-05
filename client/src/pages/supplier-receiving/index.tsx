@@ -121,6 +121,7 @@ export default function SupplierReceiving() {
       isDraft:        form.formStatus === "draft"
         && !itemSearchOpen
         && !!form.warehouseId
+        && !!form.supplierId
         && !!form.supplierInvoiceNo.trim(),
       addItemToLines,
       pendingQtyRef,
