@@ -66,6 +66,7 @@ export function TransferLineTable({
             <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
             <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
             <th className="py-1 px-2 text-right whitespace-nowrap">الرصيد المتاح</th>
+            <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع</th>
             <th className="py-1 px-2 text-right whitespace-nowrap">ملاحظات</th>
             <th className="py-1 px-2 text-center whitespace-nowrap">تنبيه</th>
             {!isViewOnly && <th className="py-1 px-2 text-center whitespace-nowrap">حذف</th>}
@@ -217,6 +218,16 @@ export function TransferLineTable({
                     {line.item ? formatAvailability(line.availableQtyMinor, line.unitLevel, line.item) : "—"}
                   </td>
 
+                  <td
+                    className={`py-0.5 px-2 whitespace-nowrap font-mono font-semibold ${hasMultiPrice ? "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300" : "text-foreground"}`}
+                    title={hasMultiPrice ? "تنبيه: هذا الصنف له أكثر من سعر بيع — تحقق من السعر على العلبة" : "سعر بيع الدفعة"}
+                    data-testid={`text-lot-price-${idx}`}
+                  >
+                    {line.lotSalePrice && parseFloat(line.lotSalePrice) > 0
+                      ? parseFloat(line.lotSalePrice).toFixed(2)
+                      : "—"}
+                  </td>
+
                   <td className="py-0.5 px-2 text-muted-foreground">{line.notes || "—"}</td>
 
                   <td className="py-0.5 px-2 text-center whitespace-nowrap" data-testid={`cell-warning-${idx}`}>
@@ -248,7 +259,7 @@ export function TransferLineTable({
             })
           ) : (
             <tr>
-              <td colSpan={isViewOnly ? 8 : 9} className="py-4 text-center text-muted-foreground">
+              <td colSpan={isViewOnly ? 9 : 10} className="py-4 text-center text-muted-foreground">
                 لا توجد أصناف - اضغط "إضافة صنف" لإضافة أصناف
               </td>
             </tr>
