@@ -12,9 +12,16 @@ export function useReturnSearch() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
-  const [searchTriggered, setSearchTriggered] = useState(false);
+  const [submittedUrl, setSubmittedUrl] = useState<string | null>(null);
 
-  const buildParams = useCallback(() => {
+  const canSearch =
+    (searchMode === "invoiceNumber" && !!searchValue.trim()) ||
+    (searchMode === "receiptBarcode" && !!searchValue.trim()) ||
+    (searchMode === "itemBarcode" && !!searchValue.trim()) ||
+    (searchMode === "itemCode" && !!searchValue.trim()) ||
+    (searchMode === "item" && !!selectedItemId);
+
+  const buildUrl = useCallback(() => {
     const params = new URLSearchParams();
     if (searchMode === "invoiceNumber" && searchValue) params.set("invoiceNumber", searchValue);
     if (searchMode === "receiptBarcode" && searchValue) params.set("receiptBarcode", searchValue);
@@ -24,30 +31,21 @@ export function useReturnSearch() {
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
     if (warehouseId) params.set("warehouseId", warehouseId);
-    return params.toString();
+    const qs = params.toString();
+    return qs ? `/api/sales-returns/search?${qs}` : null;
   }, [searchMode, searchValue, selectedItemId, dateFrom, dateTo, warehouseId]);
 
-  const canSearch =
-    (searchMode === "invoiceNumber" && !!searchValue.trim()) ||
-    (searchMode === "receiptBarcode" && !!searchValue.trim()) ||
-    (searchMode === "itemBarcode" && !!searchValue.trim()) ||
-    (searchMode === "itemCode" && !!searchValue.trim()) ||
-    (searchMode === "item" && !!selectedItemId);
-
-  const queryString = buildParams();
-  const fullUrl = queryString ? `/api/sales-returns/search?${queryString}` : "/api/sales-returns/search";
-
-  const { data: results = [], isLoading, refetch } = useQuery<ReturnSearchResult[]>({
-    queryKey: [fullUrl],
-    enabled: searchTriggered && canSearch,
+  const { data: results = [], isLoading } = useQuery<ReturnSearchResult[]>({
+    queryKey: [submittedUrl],
+    enabled: !!submittedUrl,
   });
 
   const triggerSearch = useCallback(() => {
     if (canSearch) {
-      setSearchTriggered(true);
-      refetch();
+      const url = buildUrl();
+      setSubmittedUrl(url);
     }
-  }, [canSearch, refetch]);
+  }, [canSearch, buildUrl]);
 
   const resetSearch = useCallback(() => {
     setSearchValue("");
@@ -55,7 +53,7 @@ export function useReturnSearch() {
     setSelectedItemName("");
     setDateFrom("");
     setDateTo("");
-    setSearchTriggered(false);
+    setSubmittedUrl(null);
   }, []);
 
   return {

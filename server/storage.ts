@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, pool } from "./db";
 import { getSetting } from "./settings-cache";
 import { eq, desc, and, gte, lte, sql, or, like, ilike, asc, isNull, isNotNull } from "drizzle-orm";
 import {
@@ -8647,27 +8647,48 @@ export class DatabaseStorage implements IStorage {
       resolvedItemId = params.itemId;
     }
 
-    const invoiceNum = params.invoiceNumber ? parseInt(params.invoiceNumber) : null;
-    const receiptNum = params.receiptBarcode ? parseInt(params.receiptBarcode) : null;
+    let whereExtra = "";
+    const vals: any[] = [];
+    let idx = 1;
 
-    const result = await db.execute(sql`
+    if (params.invoiceNumber) {
+      whereExtra += ` AND h.invoice_number = $${idx++}`;
+      vals.push(parseInt(params.invoiceNumber));
+    }
+    if (params.receiptBarcode) {
+      whereExtra += ` AND EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = h.id AND cr.receipt_number = $${idx++})`;
+      vals.push(parseInt(params.receiptBarcode));
+    }
+    if (resolvedItemId) {
+      whereExtra += ` AND EXISTS (SELECT 1 FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id AND sl.item_id = $${idx++})`;
+      vals.push(resolvedItemId);
+    }
+    if (params.dateFrom) {
+      whereExtra += ` AND h.invoice_date >= $${idx++}::date`;
+      vals.push(params.dateFrom);
+    }
+    if (params.dateTo) {
+      whereExtra += ` AND h.invoice_date <= $${idx++}::date`;
+      vals.push(params.dateTo);
+    }
+    if (params.warehouseId) {
+      whereExtra += ` AND h.warehouse_id = $${idx++}`;
+      vals.push(params.warehouseId);
+    }
+
+    const q = `
       SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
              h.warehouse_id AS "warehouseId", w.name_ar AS "warehouseName",
              h.customer_name AS "customerName", h.net_total AS "netTotal",
              (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id) AS "itemCount"
       FROM sales_invoice_headers h
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
-      WHERE h.is_return = false AND h.status = 'finalized'
-        AND (${invoiceNum}::int IS NULL OR h.invoice_number = ${invoiceNum})
-        AND (${receiptNum}::int IS NULL OR EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = h.id AND cr.receipt_number = ${receiptNum}))
-        AND (${resolvedItemId}::text IS NULL OR EXISTS (SELECT 1 FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id AND sl.item_id = ${resolvedItemId}))
-        AND (${params.dateFrom || null}::text IS NULL OR h.invoice_date >= ${params.dateFrom || null}::date)
-        AND (${params.dateTo || null}::text IS NULL OR h.invoice_date <= ${params.dateTo || null}::date)
-        AND (${params.warehouseId || null}::text IS NULL OR h.warehouse_id = ${params.warehouseId || null}::uuid)
+      WHERE h.is_return = false AND h.status = 'finalized'${whereExtra}
       ORDER BY h.invoice_date DESC, h.invoice_number DESC
       LIMIT 50
-    `);
-    return result.rows as any[];
+    `;
+    const result = await pool.query(q, vals);
+    return result.rows;
   }
 
   async getSaleInvoiceForReturn(invoiceId: string): Promise<any | null> {
