@@ -46,7 +46,7 @@ export function PrepTable() {
 
   return (
     <div className="overflow-x-auto border rounded-lg" data-testid="section-results">
-      <table className="w-full text-[12px]" dir="rtl" data-testid="table-preparation">
+      <table className="w-full text-[13px]" dir="rtl" data-testid="table-preparation">
         <thead>
           <tr className="peachtree-grid-header">
             <th className="py-1 px-2 text-center w-8">#</th>
@@ -112,14 +112,14 @@ function PrepRow({ line, idx, onQtyChange, onExclude, onKeyDown, inputRef }: {
   return (
     <tr className={`border-b hover:bg-muted/30 ${sourceInsufficient ? "opacity-50" : ""}`} data-testid={`row-prep-${idx}`}>
       <td className="py-0.5 px-2 text-center text-muted-foreground">{idx + 1}</td>
-      <td className="py-0.5 px-2 font-medium" data-testid={`text-item-name-${idx}`}>{line.name_ar}</td>
-      <td className="py-0.5 px-2 text-muted-foreground" data-testid={`text-item-code-${idx}`}>{line.item_code}</td>
-      <td className="py-0.5 px-2 whitespace-nowrap">{unitName}</td>
-      <td className="py-0.5 px-2 text-center font-semibold">{fmtQty(totalSold)}</td>
-      <td className={`py-0.5 px-2 text-center ${sourceInsufficient ? "text-red-500 font-bold" : ""}`}>
+      <td className="py-0.5 px-2 font-bold text-[14px]" data-testid={`text-item-name-${idx}`}>{line.name_ar}</td>
+      <td className="py-0.5 px-2 text-muted-foreground font-mono" data-testid={`text-item-code-${idx}`}>{line.item_code}</td>
+      <td className="py-0.5 px-2 whitespace-nowrap font-semibold">{unitName}</td>
+      <td className="py-0.5 px-2 text-center font-bold text-[14px]">{fmtQty(totalSold)}</td>
+      <td className={`py-0.5 px-2 text-center font-bold text-[14px] ${sourceInsufficient ? "text-red-500" : ""}`}>
         {sourceStock > 0 ? fmtQty(sourceStock) : "0"}
       </td>
-      <td className={`py-0.5 px-2 text-center ${destCoversNeed ? "text-green-600" : "text-orange-500"}`}>
+      <td className={`py-0.5 px-2 text-center font-bold text-[14px] ${destCoversNeed ? "text-green-600" : "text-orange-500"}`}>
         {fmtQty(destStock)}
       </td>
       <td className="py-0.5 px-2 text-center text-muted-foreground whitespace-nowrap">
@@ -133,7 +133,7 @@ function PrepRow({ line, idx, onQtyChange, onExclude, onKeyDown, inputRef }: {
           onChange={(e) => onQtyChange(line.item_id, e.target.value)}
           onKeyDown={(e) => onKeyDown(e, idx)}
           onFocus={(e) => e.target.select()}
-          className={`h-7 w-[80px] text-xs text-center mx-auto border rounded px-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500 ${transferExceedsSource ? "border-red-500 bg-red-50 dark:bg-red-900/20" : "border-border"} ${sourceInsufficient ? "opacity-50 cursor-not-allowed" : ""}`}
+          className={`h-7 w-[80px] text-[14px] font-bold text-center mx-auto border rounded px-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500 ${transferExceedsSource ? "border-red-500 bg-red-50 dark:bg-red-900/20" : "border-border"} ${sourceInsufficient ? "opacity-50 cursor-not-allowed" : ""}`}
           disabled={sourceInsufficient}
           placeholder="0"
           data-testid={`input-transfer-qty-${idx}`}
