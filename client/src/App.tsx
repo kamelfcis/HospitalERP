@@ -27,7 +27,7 @@ import ItemsList from "@/pages/ItemsList";
 import ItemCard from "@/pages/ItemCard";
 import StoreTransfers from "@/pages/StoreTransfers";
 import SupplierReceiving from "@/pages/supplier-receiving";
-import PurchaseInvoice from "@/pages/PurchaseInvoice";
+import PurchaseInvoice from "@/pages/purchase-invoices";
 import ServicesPricing from "@/pages/ServicesPricing";
 import SalesInvoices from "@/pages/SalesInvoices";
 import Warehouses from "@/pages/Warehouses";
