@@ -166,7 +166,7 @@ export default function SupplierReceiving() {
         qtyEntered:            parseFloat(line.qtyEntered as string),
         qtyInMinor:            parseFloat(line.qtyInMinor as string),
         purchasePrice:         parseFloat(line.purchasePrice as string) || 0,
-        lineTotal:             (parseFloat(line.purchasePrice as string) || 0) * (parseFloat(line.qtyInMinor as string) || 0),
+        lineTotal:             (parseFloat(line.purchasePrice as string) || 0) * (parseFloat(line.qtyEntered as string) || 0),
         batchNumber:           line.batchNumber || "",
         expiryMonth:           line.expiryMonth ?? null,
         expiryYear:            line.expiryYear ?? null,
