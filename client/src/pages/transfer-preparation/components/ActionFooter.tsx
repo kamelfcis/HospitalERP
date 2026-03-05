@@ -3,21 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeftRight, Loader2 } from "lucide-react";
+import { usePrep } from "../context";
 
-interface Props {
-  sourceName: string;
-  destName: string;
-  linesWithQty: number;
-  isCreating: boolean;
-  onCreateTransfer: (transferDate: string) => void;
-}
-
-export function ActionFooter({ sourceName, destName, linesWithQty, isCreating, onCreateTransfer }: Props) {
+export function ActionFooter() {
+  const { sourceName, destName, linesWithQty, isCreating, handleCreateTransfer } = usePrep();
   const transferDateRef = useRef<HTMLInputElement>(null);
 
   const handleClick = () => {
     const transferDate = transferDateRef.current?.value || new Date().toISOString().split("T")[0];
-    onCreateTransfer(transferDate);
+    handleCreateTransfer(transferDate);
   };
 
   return (
@@ -51,11 +45,7 @@ export function ActionFooter({ sourceName, destName, linesWithQty, isCreating, o
             className="min-w-[160px]"
             data-testid="button-create-transfer"
           >
-            {isCreating ? (
-              <Loader2 className="h-4 w-4 animate-spin ml-1" />
-            ) : (
-              <ArrowLeftRight className="h-4 w-4 ml-1" />
-            )}
+            {isCreating ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <ArrowLeftRight className="h-4 w-4 ml-1" />}
             إنشاء إذن تحويل
           </Button>
         </div>

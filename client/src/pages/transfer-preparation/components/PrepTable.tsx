@@ -2,33 +2,22 @@ import { useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, ArrowUpDown, Trash2 } from "lucide-react";
 import type { PrepLine } from "../types";
-import { getMajorToMinor, toMajor, getUnitName } from "../types";
+import { getMajorToMinor, toMajor, getUnitName, fmtQty } from "../types";
+import { usePrep } from "../context";
 
-interface Props {
-  visibleLines: PrepLine[];
-  linesCount: number;
-  sortSourceAsc: boolean | null;
-  setSortSourceAsc: (v: boolean | null) => void;
-  sortDestAsc: boolean | null;
-  setSortDestAsc: (v: boolean | null) => void;
-  onQtyChange: (itemId: string, val: string) => void;
-  onExcludeItem: (itemId: string) => void;
-}
+export function PrepTable() {
+  const {
+    visibleLines, linesCount,
+    sortSourceAsc, setSortSourceAsc,
+    sortDestAsc, setSortDestAsc,
+    handleQtyChange, handleExcludeItem,
+  } = usePrep();
 
-export function PrepTable({
-  visibleLines, linesCount,
-  sortSourceAsc, setSortSourceAsc,
-  sortDestAsc, setSortDestAsc,
-  onQtyChange, onExcludeItem,
-}: Props) {
   const inputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
 
   const focusRow = useCallback((idx: number) => {
     const el = inputRefs.current.get(idx);
-    if (el) {
-      el.focus();
-      el.select();
-    }
+    if (el) { el.focus(); el.select(); }
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent, idx: number) => {
@@ -65,25 +54,11 @@ export function PrepTable({
             <th className="py-1 px-2 text-right whitespace-nowrap">كود الصنف</th>
             <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
             <th className="py-1 px-2 text-center whitespace-nowrap">كمية البيع</th>
-            <th
-              className="py-1 px-2 text-center whitespace-nowrap cursor-pointer select-none"
-              onClick={toggleSourceSort}
-              data-testid="th-source-stock-sort"
-            >
-              <span className="inline-flex items-center gap-0.5">
-                رصيد المصدر
-                <ArrowUpDown className="h-3 w-3" />
-              </span>
+            <th className="py-1 px-2 text-center whitespace-nowrap cursor-pointer select-none" onClick={toggleSourceSort} data-testid="th-source-stock-sort">
+              <span className="inline-flex items-center gap-0.5">رصيد المصدر<ArrowUpDown className="h-3 w-3" /></span>
             </th>
-            <th
-              className="py-1 px-2 text-center whitespace-nowrap cursor-pointer select-none"
-              onClick={toggleDestSort}
-              data-testid="th-dest-stock-sort"
-            >
-              <span className="inline-flex items-center gap-0.5">
-                رصيد الوجهة
-                <ArrowUpDown className="h-3 w-3" />
-              </span>
+            <th className="py-1 px-2 text-center whitespace-nowrap cursor-pointer select-none" onClick={toggleDestSort} data-testid="th-dest-stock-sort">
+              <span className="inline-flex items-center gap-0.5">رصيد الوجهة<ArrowUpDown className="h-3 w-3" /></span>
             </th>
             <th className="py-1 px-2 text-center whitespace-nowrap">أقرب صلاحية (مصدر)</th>
             <th className="py-1 px-2 text-center whitespace-nowrap">الكمية المحوّلة</th>
@@ -98,21 +73,16 @@ export function PrepTable({
                 key={line.item_id}
                 line={line}
                 idx={idx}
-                onQtyChange={onQtyChange}
-                onExclude={onExcludeItem}
+                onQtyChange={handleQtyChange}
+                onExclude={handleExcludeItem}
                 onKeyDown={handleKeyDown}
-                inputRef={(el) => {
-                  if (el) inputRefs.current.set(idx, el);
-                  else inputRefs.current.delete(idx);
-                }}
+                inputRef={(el) => { if (el) inputRefs.current.set(idx, el); else inputRefs.current.delete(idx); }}
               />
             ))
           ) : (
             <tr>
               <td colSpan={11} className="py-8 text-center text-muted-foreground">
-                {linesCount === 0
-                  ? "لا توجد بيانات مبيعات في الفترة المختارة"
-                  : "جميع الأصناف مستبعدة أو مغطاة"}
+                {linesCount === 0 ? "لا توجد بيانات مبيعات في الفترة المختارة" : "جميع الأصناف مستبعدة أو مغطاة"}
               </td>
             </tr>
           )}
@@ -122,11 +92,8 @@ export function PrepTable({
   );
 }
 
-function PrepRow({
-  line, idx, onQtyChange, onExclude, onKeyDown, inputRef,
-}: {
-  line: PrepLine;
-  idx: number;
+function PrepRow({ line, idx, onQtyChange, onExclude, onKeyDown, inputRef }: {
+  line: PrepLine; idx: number;
   onQtyChange: (itemId: string, val: string) => void;
   onExclude: (itemId: string) => void;
   onKeyDown: (e: React.KeyboardEvent, idx: number) => void;
@@ -134,31 +101,16 @@ function PrepRow({
 }) {
   const m2m = getMajorToMinor(line);
   const unitName = getUnitName(line);
-
-  const totalSoldMinor = parseFloat(line.total_sold) || 0;
-  const sourceStockMinor = parseFloat(line.source_stock) || 0;
-  const destStockMinor = parseFloat(line.dest_stock) || 0;
-
-  const totalSold = toMajor(totalSoldMinor, m2m);
-  const sourceStock = toMajor(sourceStockMinor, m2m);
-  const destStock = toMajor(destStockMinor, m2m);
-
+  const totalSold = toMajor(parseFloat(line.total_sold) || 0, m2m);
+  const sourceStock = toMajor(parseFloat(line.source_stock) || 0, m2m);
+  const destStock = toMajor(parseFloat(line.dest_stock) || 0, m2m);
   const transferQty = parseFloat(line._transferQty) || 0;
-
-  const sourceInsufficient = sourceStockMinor <= 0;
+  const sourceInsufficient = (parseFloat(line.source_stock) || 0) <= 0;
   const transferExceedsSource = transferQty > sourceStock;
   const destCoversNeed = destStock >= totalSold;
 
-  const fmtQty = (val: number) => {
-    if (Number.isInteger(val)) return String(val);
-    return val.toFixed(2).replace(/\.?0+$/, "");
-  };
-
   return (
-    <tr
-      className={`border-b hover:bg-muted/30 ${sourceInsufficient ? "opacity-50" : ""}`}
-      data-testid={`row-prep-${idx}`}
-    >
+    <tr className={`border-b hover:bg-muted/30 ${sourceInsufficient ? "opacity-50" : ""}`} data-testid={`row-prep-${idx}`}>
       <td className="py-0.5 px-2 text-center text-muted-foreground">{idx + 1}</td>
       <td className="py-0.5 px-2 font-medium" data-testid={`text-item-name-${idx}`}>{line.name_ar}</td>
       <td className="py-0.5 px-2 text-muted-foreground" data-testid={`text-item-code-${idx}`}>{line.item_code}</td>
@@ -171,16 +123,12 @@ function PrepRow({
         {fmtQty(destStock)}
       </td>
       <td className="py-0.5 px-2 text-center text-muted-foreground whitespace-nowrap">
-        {line.nearest_expiry
-          ? new Date(line.nearest_expiry).toLocaleDateString("ar-EG", { year: "numeric", month: "short" })
-          : "—"}
+        {line.nearest_expiry ? new Date(line.nearest_expiry).toLocaleDateString("ar-EG", { year: "numeric", month: "short" }) : "—"}
       </td>
       <td className="py-0.5 px-1 text-center">
         <input
           ref={inputRef}
-          type="number"
-          min="0"
-          step="1"
+          type="number" min="0" step="1"
           value={line._transferQty}
           onChange={(e) => onQtyChange(line.item_id, e.target.value)}
           onKeyDown={(e) => onKeyDown(e, idx)}
@@ -193,29 +141,14 @@ function PrepRow({
       </td>
       <td className="py-0.5 px-2 text-center" data-testid={`cell-warning-${idx}`}>
         <div className="flex gap-0.5 items-center justify-center">
-          {sourceInsufficient && (
-            <span title="لا يوجد رصيد في المخزن المصدر" className="text-red-500">
-              <AlertTriangle className="h-3.5 w-3.5" />
-            </span>
-          )}
+          {sourceInsufficient && <span title="لا يوجد رصيد في المخزن المصدر" className="text-red-500"><AlertTriangle className="h-3.5 w-3.5" /></span>}
           {transferExceedsSource && !sourceInsufficient && (
-            <span
-              title={`الكمية المحوّلة (${transferQty}) أكبر من رصيد المصدر (${sourceStock})`}
-              className="text-orange-500"
-            >
-              <AlertTriangle className="h-3.5 w-3.5" />
-            </span>
+            <span title={`الكمية المحوّلة (${transferQty}) أكبر من رصيد المصدر (${sourceStock})`} className="text-orange-500"><AlertTriangle className="h-3.5 w-3.5" /></span>
           )}
         </div>
       </td>
       <td className="py-0.5 px-2 text-center">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={() => onExclude(line.item_id)}
-          data-testid={`button-exclude-${idx}`}
-        >
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onExclude(line.item_id)} data-testid={`button-exclude-${idx}`}>
           <Trash2 className="h-3 w-3 text-destructive" />
         </Button>
       </td>

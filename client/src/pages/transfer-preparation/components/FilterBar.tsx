@@ -7,33 +7,18 @@ import {
 } from "@/components/ui/select";
 import { Filter, FileSpreadsheet } from "lucide-react";
 import type { BulkField, BulkOp } from "../types";
+import { usePrep } from "../context";
 
-interface Props {
-  excludeCovered: boolean;
-  setExcludeCovered: (v: boolean) => void;
-  bulkField: BulkField;
-  setBulkField: (v: BulkField) => void;
-  bulkOp: BulkOp;
-  setBulkOp: (v: BulkOp) => void;
-  bulkThreshold: string;
-  setBulkThreshold: (v: string) => void;
-  onBulkExclude: () => void;
-  onResetExclusions: () => void;
-  onFillSuggested: () => void;
-  excludedCount: number;
-  totalItems: number;
-  visibleCount: number;
-  linesWithQty: number;
-}
+export function FilterBar() {
+  const {
+    excludeCovered, setExcludeCovered,
+    bulkField, setBulkField,
+    bulkOp, setBulkOp,
+    bulkThreshold, setBulkThreshold,
+    handleBulkExclude, handleResetExclusions, handleFillSuggested,
+    excludedCount, totalItems, visibleLines, linesWithQty,
+  } = usePrep();
 
-export function FilterBar({
-  excludeCovered, setExcludeCovered,
-  bulkField, setBulkField,
-  bulkOp, setBulkOp,
-  bulkThreshold, setBulkThreshold,
-  onBulkExclude, onResetExclusions, onFillSuggested,
-  excludedCount, totalItems, visibleCount, linesWithQty,
-}: Props) {
   return (
     <div className="border rounded-lg p-3 bg-card space-y-3" data-testid="section-filters">
       <div className="flex flex-wrap items-center gap-4">
@@ -80,18 +65,18 @@ export function FilterBar({
             placeholder="الكمية"
             data-testid="input-bulk-threshold"
           />
-          <Button size="sm" variant="outline" onClick={onBulkExclude} className="h-7 text-xs" data-testid="button-bulk-exclude">
+          <Button size="sm" variant="outline" onClick={handleBulkExclude} className="h-7 text-xs" data-testid="button-bulk-exclude">
             تطبيق
           </Button>
         </div>
 
         {excludedCount > 0 && (
-          <Button size="sm" variant="ghost" onClick={onResetExclusions} className="h-7 text-xs" data-testid="button-reset-exclusions">
+          <Button size="sm" variant="ghost" onClick={handleResetExclusions} className="h-7 text-xs" data-testid="button-reset-exclusions">
             إلغاء الاستبعاد ({excludedCount})
           </Button>
         )}
 
-        <Button size="sm" variant="outline" onClick={onFillSuggested} className="h-7 text-xs" data-testid="button-fill-suggested">
+        <Button size="sm" variant="outline" onClick={handleFillSuggested} className="h-7 text-xs" data-testid="button-fill-suggested">
           <FileSpreadsheet className="h-3.5 w-3.5 ml-1" />
           ملء الكميات المقترحة
         </Button>
@@ -99,7 +84,7 @@ export function FilterBar({
 
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span>إجمالي الأصناف: {totalItems}</span>
-        <span>المعروض: {visibleCount}</span>
+        <span>المعروض: {visibleLines.length}</span>
         {excludedCount > 0 && <span className="text-orange-500">مستبعد: {excludedCount}</span>}
         {linesWithQty > 0 && <span className="text-green-600">بكميات تحويل: {linesWithQty}</span>}
       </div>

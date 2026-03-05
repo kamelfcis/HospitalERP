@@ -1,4 +1,3 @@
-import type { Warehouse } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,29 +5,17 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Search, Loader2 } from "lucide-react";
+import { usePrep } from "../context";
 
-interface Props {
-  sourceWarehouseId: string;
-  setSourceWarehouseId: (v: string) => void;
-  destWarehouseId: string;
-  setDestWarehouseId: (v: string) => void;
-  dateFrom: string;
-  setDateFrom: (v: string) => void;
-  dateTo: string;
-  setDateTo: (v: string) => void;
-  warehouses: Warehouse[] | undefined;
-  queryEnabled: boolean;
-  isFetching: boolean;
-  onQuery: () => void;
-}
+export function SetupForm() {
+  const {
+    sourceWarehouseId, setSourceWarehouseId,
+    destWarehouseId, setDestWarehouseId,
+    dateFrom, setDateFrom,
+    dateTo, setDateTo,
+    warehouses, queryEnabled, isFetching, handleQuery,
+  } = usePrep();
 
-export function SetupForm({
-  sourceWarehouseId, setSourceWarehouseId,
-  destWarehouseId, setDestWarehouseId,
-  dateFrom, setDateFrom,
-  dateTo, setDateTo,
-  warehouses, queryEnabled, isFetching, onQuery,
-}: Props) {
   return (
     <div className="border rounded-lg p-4 bg-card space-y-3" data-testid="section-setup">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
@@ -71,7 +58,7 @@ export function SetupForm({
         </div>
 
         <div>
-          <Button onClick={onQuery} disabled={!queryEnabled || isFetching} className="w-full" data-testid="button-query">
+          <Button onClick={handleQuery} disabled={!queryEnabled || isFetching} className="w-full" data-testid="button-query">
             {isFetching ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Search className="h-4 w-4 ml-1" />}
             استعلام
           </Button>
