@@ -151,30 +151,22 @@ export function useInvoiceLines(
   const pendingQtyRef               = useRef<Map<string, string>>(new Map());
 
   // ── تحديث سطر ──────────────────────────────────────────────────────────────
+  // كل سطر يتحدث بشكل مستقل — حتى لو كان FEFO
   const updateLine = useCallback((index: number, patch: Partial<SalesLineLocal>) => {
     setLines((prev) => {
       const updated = [...prev];
       const target  = updated[index];
+      const ln      = { ...target, ...patch };
 
-      // تغيير الوحدة على صنف FEFO → يُحدَّث كل سطور نفس الصنف
-      if (patch.unitLevel && target.fefoLocked) {
-        const newUnit = patch.unitLevel;
-        return updated.map((ln) => {
-          if (ln.itemId !== target.itemId) return ln;
-          const lineSalePrice = computeUnitPriceFromBase(ln.baseSalePrice, newUnit, ln.item);
-          const oldMinor      = calculateQtyInMinor(ln.qty, ln.unitLevel, ln.item);
-          const newQty        = convertMinorToDisplayQty(oldMinor, newUnit, ln.item);
-          const total         = computeLineTotal(newQty, ln.baseSalePrice, newUnit, ln.item);
-          return { ...ln, unitLevel: newUnit, salePrice: lineSalePrice, qty: newQty, lineTotal: total };
-        });
-      }
-
-      const ln = { ...target, ...patch };
       if (patch.unitLevel) {
-        ln.salePrice = computeUnitPriceFromBase(ln.baseSalePrice, ln.unitLevel, ln.item);
+        // تحويل الكمية من الوحدة القديمة للجديدة بدون خسارة في القيمة
+        const oldMinor = calculateQtyInMinor(target.qty, target.unitLevel, target.item);
+        ln.qty         = convertMinorToDisplayQty(oldMinor, patch.unitLevel, target.item);
+        ln.salePrice   = computeUnitPriceFromBase(ln.baseSalePrice, ln.unitLevel, ln.item);
       }
-      ln.lineTotal    = computeLineTotal(ln.qty, ln.baseSalePrice, ln.unitLevel, ln.item);
-      updated[index]  = ln;
+
+      ln.lineTotal   = computeLineTotal(ln.qty, ln.baseSalePrice, ln.unitLevel, ln.item);
+      updated[index] = ln;
       return updated;
     });
   }, []);
