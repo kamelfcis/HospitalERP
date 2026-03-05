@@ -8652,7 +8652,7 @@ export class DatabaseStorage implements IStorage {
 
     const result = await db.execute(sql`
       SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
-             h.warehouse_id AS "warehouseId", w.name AS "warehouseName",
+             h.warehouse_id AS "warehouseId", w.name_ar AS "warehouseName",
              h.customer_name AS "customerName", h.net_total AS "netTotal",
              (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id) AS "itemCount"
       FROM sales_invoice_headers h
@@ -8673,7 +8673,7 @@ export class DatabaseStorage implements IStorage {
   async getSaleInvoiceForReturn(invoiceId: string): Promise<any | null> {
     const hdr = await db.execute(sql`
       SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
-             h.warehouse_id AS "warehouseId", w.name AS "warehouseName",
+             h.warehouse_id AS "warehouseId", w.name_ar AS "warehouseName",
              h.customer_type AS "customerType", h.customer_name AS "customerName",
              h.subtotal, h.discount_percent AS "discountPercent",
              h.discount_value AS "discountValue", h.net_total AS "netTotal"
