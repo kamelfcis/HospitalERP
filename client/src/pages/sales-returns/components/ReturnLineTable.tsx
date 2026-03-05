@@ -113,12 +113,13 @@ function formatMinorToOrigUnit(line: ReturnLine): string {
 
 function getUnitOptions(line: ReturnLine): { value: string; label: string }[] {
   const all: { value: string; label: string }[] = [];
-  if (line.majorUnitName && parseFloat(line.majorToMinor || "0") > 0)
+  if (line.majorUnitName)
     all.push({ value: "major", label: line.majorUnitName });
   if (line.mediumUnitName && parseFloat(line.mediumToMinor || "0") > 0)
     all.push({ value: "medium", label: line.mediumUnitName });
-  if (line.minorUnitName) all.push({ value: "minor", label: line.minorUnitName });
-  if (all.length === 0) all.push({ value: "minor", label: "وحدة" });
+  if (line.minorUnitName && line.minorUnitName !== line.majorUnitName)
+    all.push({ value: "minor", label: line.minorUnitName });
+  if (all.length === 0) all.push({ value: line.unitLevel, label: unitLabel(line.unitLevel, line) });
   const origIdx = all.findIndex(u => u.value === line.unitLevel);
   if (origIdx > 0) {
     const [orig] = all.splice(origIdx, 1);

@@ -62,9 +62,9 @@ export function getAvailableUnits(line: OriginalLine): { value: string; label: s
 }
 
 export function getUnitName(line: OriginalLine, level: string): string {
-  if (level === "major") return line.majorUnitName || "وحدة كبرى";
+  if (level === "major") return line.majorUnitName || line.minorUnitName || "وحدة";
   if (level === "medium") return line.mediumUnitName || "وحدة وسطى";
-  return line.minorUnitName || "وحدة صغرى";
+  return line.minorUnitName || line.majorUnitName || "وحدة";
 }
 
 export const unitLabel = getUnitName;

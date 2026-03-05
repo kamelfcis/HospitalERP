@@ -8798,13 +8798,18 @@ export class DatabaseStorage implements IStorage {
         : Math.min(parseFloat(data.discountValue) || 0, subtotal);
       const netTotal = Math.max(0, subtotal - discountValue);
 
+      const nextNumResult = await tx.execute(sql`
+        SELECT COALESCE(MAX(invoice_number), 0) + 1 AS "nextNum" FROM sales_invoice_headers
+      `);
+      const nextInvoiceNumber = (nextNumResult.rows[0] as any).nextNum;
+
       const hdr = await tx.execute(sql`
         INSERT INTO sales_invoice_headers
-          (invoice_date, warehouse_id, pharmacy_id, customer_type, customer_name, contract_company,
+          (invoice_number, invoice_date, warehouse_id, pharmacy_id, customer_type, customer_name, contract_company,
            status, subtotal, discount_type, discount_percent, discount_value, net_total,
            notes, created_by, is_return, original_invoice_id, finalized_at, finalized_by)
         VALUES
-          (now()::date, ${orig.warehouse_id}, ${orig.pharmacy_id ?? null},
+          (${nextInvoiceNumber}, now()::date, ${orig.warehouse_id}, ${orig.pharmacy_id ?? null},
            ${orig.customer_type ?? 'cash'}, ${orig.customer_name ?? null}, ${orig.contract_company ?? null},
            'finalized', ${subtotal.toFixed(2)}, ${data.discountType},
            ${data.discountType === 'percent' ? data.discountPercent : '0'},
