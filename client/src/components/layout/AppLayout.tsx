@@ -162,10 +162,10 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
                 <Link
                   href={item.href}
                   data-testid={`nav-link-${item.href.replace(/\//g, "-").replace(/^-/, "")}`}
-                  className="flex items-center gap-2"
+                  className="flex flex-row-reverse items-center gap-2 group-data-[collapsible=icon]:justify-center"
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
-                  <span>{item.title}</span>
+                  <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
