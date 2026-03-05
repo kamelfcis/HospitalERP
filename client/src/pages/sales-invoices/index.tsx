@@ -223,6 +223,7 @@ export default function SalesInvoices() {
       filterStatus={registry.filterStatus}
       filterCustomerType={registry.filterCustomerType}
       filterPharmacistId={registry.filterPharmacistId}
+      filterWarehouseId={registry.filterWarehouseId}
       filterSearch={registry.filterSearch}
       listLoading={registry.listLoading}
       deletePending={mutationsHook.deleteMutation.isPending}
@@ -239,6 +240,7 @@ export default function SalesInvoices() {
       onSetFilterStatus={registry.setFilterStatus}
       onSetFilterCustomerType={registry.setFilterCustomerType}
       onSetFilterPharmacistId={registry.setFilterPharmacistId}
+      onSetFilterWarehouseId={registry.setFilterWarehouseId}
       onSetFilterSearch={registry.setFilterSearch}
       onNewInvoice={() => navigate("/sales-invoices?id=new")}
       onOpenInvoice={(id) => navigate(`/sales-invoices?id=${id}`)}

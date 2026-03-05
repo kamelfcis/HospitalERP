@@ -382,7 +382,7 @@ export interface IStorage {
 
   // Sales Invoices
   getNextSalesInvoiceNumber(): Promise<number>;
-  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}>;
+  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}>;
   getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined>;
   createSalesInvoice(header: any, lines: any[]): Promise<SalesInvoiceHeader>;
   updateSalesInvoice(id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader>;
@@ -4326,7 +4326,7 @@ export class DatabaseStorage implements IStorage {
     return (result?.max || 0) + 1;
   }
 
-  async getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}> {
+  async getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}> {
     const conditions: any[] = [];
     if (filters.status && filters.status !== "all") {
       conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
@@ -4337,6 +4337,7 @@ export class DatabaseStorage implements IStorage {
     if (filters.dateTo) conditions.push(sql`${salesInvoiceHeaders.invoiceDate} <= ${filters.dateTo}`);
     if (filters.customerType && filters.customerType !== "all") conditions.push(eq(salesInvoiceHeaders.customerType, filters.customerType as any));
     if (filters.pharmacistId && filters.pharmacistId !== "all") conditions.push(eq(salesInvoiceHeaders.createdBy, filters.pharmacistId));
+    if (filters.warehouseId && filters.warehouseId !== "all") conditions.push(eq(salesInvoiceHeaders.warehouseId, filters.warehouseId));
     if (filters.search) {
       const searchTerm = filters.search.replace(/^SI-/i, '').trim();
       conditions.push(or(

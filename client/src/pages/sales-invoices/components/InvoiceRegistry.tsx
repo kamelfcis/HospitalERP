@@ -25,6 +25,7 @@ interface Props {
   filterStatus: string;
   filterCustomerType: string;
   filterPharmacistId: string;
+  filterWarehouseId: string;
   filterSearch: string;
   listLoading: boolean;
   deletePending: boolean;
@@ -41,6 +42,7 @@ interface Props {
   onSetFilterStatus: (v: string) => void;
   onSetFilterCustomerType: (v: string) => void;
   onSetFilterPharmacistId: (v: string) => void;
+  onSetFilterWarehouseId: (v: string) => void;
   onSetFilterSearch: (v: string) => void;
   onNewInvoice: () => void;
   onOpenInvoice: (id: string) => void;
@@ -62,11 +64,11 @@ function statusBadge(status: string) {
 
 export function InvoiceRegistry({
   invoices, totalInvoices, totalPages, page, pageSize,
-  filterDateFrom, filterDateTo, filterStatus, filterCustomerType, filterPharmacistId, filterSearch,
+  filterDateFrom, filterDateTo, filterStatus, filterCustomerType, filterPharmacistId, filterWarehouseId, filterSearch,
   listLoading, deletePending, deleteVariables, confirmDeleteId,
   warehouses, pharmacistUsers, totals,
   seedLoading, quickTestLoading,
-  onSetPage, onSetFilterDateFrom, onSetFilterDateTo, onSetFilterStatus, onSetFilterCustomerType, onSetFilterPharmacistId, onSetFilterSearch,
+  onSetPage, onSetFilterDateFrom, onSetFilterDateTo, onSetFilterStatus, onSetFilterCustomerType, onSetFilterPharmacistId, onSetFilterWarehouseId, onSetFilterSearch,
   onNewInvoice, onOpenInvoice, onDeleteClick, onConfirmDelete, onCancelDelete, onSeedDemo, onQuickTest,
 }: Props) {
   const warehouseName = (id: string) => warehouses?.find((w) => w.id === id)?.nameAr || "";
@@ -186,6 +188,20 @@ export function InvoiceRegistry({
             <option value="all">الكل</option>
             {pharmacistUsers.map(u => (
               <option key={u.id} value={u.id}>{u.fullName}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs font-medium">المخزن:</span>
+          <select
+            value={filterWarehouseId}
+            onChange={(e) => { onSetFilterWarehouseId(e.target.value); onSetPage(1); }}
+            className="peachtree-select min-w-[130px]"
+            data-testid="select-filter-warehouse"
+          >
+            <option value="all">الكل</option>
+            {(warehouses || []).map(w => (
+              <option key={w.id} value={w.id}>{w.nameAr}</option>
             ))}
           </select>
         </div>

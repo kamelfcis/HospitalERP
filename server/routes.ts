@@ -2911,7 +2911,7 @@ export async function registerRoutes(
   
   app.get("/api/sales-invoices", async (req, res) => {
     try {
-      const { status, dateFrom, dateTo, customerType, search, pharmacistId, page, pageSize, includeCancelled } = req.query;
+      const { status, dateFrom, dateTo, customerType, search, pharmacistId, warehouseId, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getSalesInvoices({
         status: status as string,
         dateFrom: dateFrom as string,
@@ -2919,6 +2919,7 @@ export async function registerRoutes(
         customerType: customerType as string,
         search: search as string,
         pharmacistId: pharmacistId as string,
+        warehouseId: warehouseId as string,
         page: parseInt(page as string) || 1,
         pageSize: parseInt(pageSize as string) || 20,
         includeCancelled: includeCancelled === 'true',

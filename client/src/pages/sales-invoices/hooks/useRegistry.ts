@@ -14,6 +14,7 @@ export function useRegistry(today: string, enabled: boolean) {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCustomerType, setFilterCustomerType] = useState("all");
   const [filterPharmacistId, setFilterPharmacistId] = useState("all");
+  const [filterWarehouseId, setFilterWarehouseId] = useState("all");
   const [filterSearch, setFilterSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -34,6 +35,7 @@ export function useRegistry(today: string, enabled: boolean) {
     if (filterStatus !== "all") p.set("status", filterStatus);
     if (filterCustomerType !== "all") p.set("customerType", filterCustomerType);
     if (filterPharmacistId !== "all") p.set("pharmacistId", filterPharmacistId);
+    if (filterWarehouseId !== "all") p.set("warehouseId", filterWarehouseId);
     if (filterDateFrom) p.set("dateFrom", filterDateFrom);
     if (filterDateTo) p.set("dateTo", filterDateTo);
     if (debouncedSearch) p.set("search", debouncedSearch);
@@ -41,7 +43,7 @@ export function useRegistry(today: string, enabled: boolean) {
   };
 
   const { data: listData, isLoading: listLoading } = useQuery<{ data: SalesInvoiceWithDetails[]; total: number; totals: RegistryTotals }>({
-    queryKey: ["/api/sales-invoices", page, filterStatus, filterCustomerType, filterPharmacistId, filterDateFrom, filterDateTo, debouncedSearch],
+    queryKey: ["/api/sales-invoices", page, filterStatus, filterCustomerType, filterPharmacistId, filterWarehouseId, filterDateFrom, filterDateTo, debouncedSearch],
     queryFn: async () => {
       const res = await fetch(`/api/sales-invoices?${buildQuery()}`);
       if (!res.ok) throw new Error("Failed to fetch");
@@ -70,6 +72,7 @@ export function useRegistry(today: string, enabled: boolean) {
     filterStatus, setFilterStatus,
     filterCustomerType, setFilterCustomerType,
     filterPharmacistId, setFilterPharmacistId,
+    filterWarehouseId, setFilterWarehouseId,
     filterSearch, setFilterSearch,
     page, setPage,
     pageSize,
