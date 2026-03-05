@@ -162,9 +162,9 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
                 <Link
                   href={item.href}
                   data-testid={`nav-link-${item.href.replace(/\//g, "-").replace(/^-/, "")}`}
-                  className="flex flex-row-reverse items-center gap-2"
+                  className="flex items-center gap-2"
                 >
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className="h-4 w-4 shrink-0" />
                   <span>{item.title}</span>
                 </Link>
               </SidebarMenuButton>
@@ -190,12 +190,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Sidebar side="right" collapsible="icon" className="no-print" data-sidebar="main">
           <SidebarHeader className="border-b border-border/50 p-4">
             <div className="flex flex-row-reverse items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <BookOpen className="h-5 w-5 text-primary" />
+              <div className="p-2 rounded-lg bg-white/20 shrink-0">
+                <BookOpen className="h-5 w-5 text-white" />
               </div>
               <div className="group-data-[collapsible=icon]:hidden text-right">
-                <h2 className="font-bold text-foreground">الدفتر العام</h2>
-                <p className="text-xs text-muted-foreground">نظام المحاسبة</p>
+                <h2 className="font-bold text-white text-[15px]">AMS نظام المستشفى</h2>
+                <p className="text-xs text-white/70">نظام المحاسبة والمخازن</p>
               </div>
             </div>
           </SidebarHeader>
@@ -212,10 +212,12 @@ export function AppLayout({ children }: AppLayoutProps) {
             <div className="group-data-[collapsible=icon]:hidden space-y-2">
               <div className="flex flex-row-reverse items-center justify-between gap-2">
                 <div className="flex flex-row-reverse items-center gap-2 text-sm">
-                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <div className="h-7 w-7 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                    <Users className="h-4 w-4 text-white" />
+                  </div>
                   <div className="text-right">
-                    <p className="font-medium text-foreground text-xs" data-testid="text-current-user">{user?.fullName}</p>
-                    <p className="text-xs text-muted-foreground">{ROLE_LABELS[user?.role || ""] || user?.role}</p>
+                    <p className="font-bold text-white text-xs" data-testid="text-current-user">{user?.fullName}</p>
+                    <p className="text-xs text-white/70">{ROLE_LABELS[user?.role || ""] || user?.role}</p>
                   </div>
                 </div>
                 <SidebarToggleButton />
@@ -223,7 +225,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-start gap-2"
+                className="w-full justify-start gap-2 text-white/80 hover:text-white hover:bg-white/10"
                 onClick={logout}
                 data-testid="button-logout"
               >
