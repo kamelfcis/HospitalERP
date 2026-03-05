@@ -7,7 +7,7 @@ import {
   computeUnitPriceFromBase,
   computeLineTotal,
   convertMinorToDisplayQty,
-} from "../utils";
+} from "@/lib/invoice-lines";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // أنواع مساعدة

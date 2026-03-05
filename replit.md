@@ -65,69 +65,66 @@ The system is a full-stack web application. The frontend is built with React 18,
 
 ---
 
-## آخر تحديث — جلسة 2026-03-04
+## آخر تحديث — جلسة 2026-03-05
 
-### ما تم إنجازه (فاتورة المبيعات — منطق الوحدات والبحث السريع)
+### ما تم إنجازه (جلسة 2026-03-04) — فاتورة المبيعات، منطق الوحدات
 
-#### 1. إصلاح مفتاح Enter في ItemFastSearch
-- **المشكلة**: `handleKeyDown` كان `async` → race condition مع React state
-- **الحل**: إزالة `async`، استدعاء `loadBatches` كـ fire-and-forget
-- **السلوك الحالي**:
-  - صنف **بدون صلاحية** → Enter واحدة = إضافة فورية
-  - صنف **بصلاحية** → Enter أولى = تُظهر الدُفعات، Enter ثانية = إضافة للفاتورة
-  - ESC في وضع الدُفعات = رجوع للقائمة
+#### 1. إصلاح Enter في ItemFastSearch + إصلاح حساب الأسعار + استقلالية سطور FEFO
+- `handleKeyDown` غير async — QtyCell controlled — كل سطر يتحدث بشكل مستقل
 
-#### 2. إصلاح حساب الأسعار (`computeUnitPriceRaw`)
-- `baseSalePrice` = سعر الوحدة الكبرى دائماً
-- سعر الشريط = `baseSalePrice ÷ majorToMedium` (بدون تقريب مبكر)
-- `computeLineTotal` يضرب بالسعر الخام → يمنع `3 × 166.67 = 500.01`
-- الصح: `3 × 166.666... = 500.00`
-
-#### 3. قواعد منطق الوحدات (مُثبَّتة ومُوثَّقة)
-
+#### 2. قواعد منطق الوحدات (ثابتة)
 ```
-qty_in_minor:
-  - يُخزَّن بالوحدة الكبرى إذا majorToMinor = null
-    (1 علبة = 1 وحدة صغرى)
-  - يُخزَّن بالوحدة الصغرى الفعلية إذا majorToMinor محدد
-
-getEffectiveMediumToMinor(item):
-  mediumToMinor محدد    → يستخدمه مباشرة
-  كلاهما محدد           → majorToMinor / majorToMedium
-  وإلا (null/null)      → (1||1) / (majorToMedium||1)
-                         مثال: majorToMedium=3 → 1/3=0.333
-  هذا صحيح! لأن qty مخزّن بالعلبة، فالشريط = 1/3 علبة
-
-computeUnitPriceRaw:
-  major  → baseSalePrice
-  medium → baseSalePrice ÷ majorToMedium (أو مشتق)
-  minor  → baseSalePrice ÷ majorToMinor (أو مشتق أو majorToMedium)
-  إذا لم يوجد معامل → نفس السعر (لا نقسم على null)
-
-مثال عملي:
-  علبة = 3 شرائط | qty_in_minor=22 (علبة) | baseSalePrice=500
-  ├── عرض كبرى:   22 علبة   | سعر 500     | إجمالي 500
-  ├── FEFO لشريط: يطلب 0.333 وحدة صغرى
-  └── عرض وسطى:  66 شريط   | سعر 166.67  | إجمالي 500.00
+qty_in_minor يُخزَّن بالكبرى إذا majorToMinor=null
+baseSalePrice = سعر الوحدة الكبرى دائماً
+computeLineTotal يستخدم السعر الخام (بدون تقريب مبكر)
+getEffectiveMediumToMinor: mediumToMinor → (1||1)/(majorToMedium||1) إذا null
 ```
 
-#### 4. Refactor — useInvoiceLines.ts
-- استخراج `runFefo()` → دالة خالصة تتعامل مع كل منطق FEFO
-- استخراج `resolvePricing()` → دالة خالصة لجلب السعر
-- `addItemToLines` و `handleQtyConfirm` يستدعيان الدالتين المشتركتين
-- تعريف `FefoOptions` / `FefoResult` كـ interfaces واضحة
-- أي تعديل في FEFO يتم في **مكان واحد فقط**
+---
 
-### الملفات المعدَّلة
+### ما تم إنجازه (جلسة 2026-03-05) — Compound Component Refactor الكامل
+
+#### الهدف: إعادة هيكلة صفحة المبيعات لتكون مقروءة ومشتركة
+
+#### الملفات الجديدة
+| الملف | الغرض |
+|-------|--------|
+| `client/src/lib/invoice-lines.ts` | **مكتبة مشتركة**: وحدات + تسعير + FEFO utils — تُستخدم في كل الشاشات |
+| `client/src/components/StockStatsDialog/index.tsx` | **مكوّن مشترك**: نافذة أرصدة المخازن (مبيعات + مريض + أي شاشة) |
+| `client/src/pages/sales-invoices/hooks/useLoadInvoice.ts` | تحميل الفاتورة وتعبئة السطور + الأرصدة + الصلاحيات |
+| `client/src/pages/sales-invoices/hooks/useBarcodeScanner.ts` | قراءة الباركود وحل الصنف وإضافته |
+| `client/src/pages/sales-invoices/SalesInvoiceEditor.tsx` | Compound component للمحرر (UI خالص) |
+
+#### التغييرات على الملفات الموجودة
 | الملف | التغيير |
 |-------|---------|
-| `client/src/components/ItemFastSearch/ItemFastSearch.tsx` | إزالة async من handleKeyDown |
-| `client/src/pages/sales-invoices/utils.ts` | computeUnitPriceRaw محسَّن، منطق مُوثَّق |
-| `client/src/pages/sales-invoices/hooks/useInvoiceLines.ts` | Refactor كامل — إزالة تكرار FEFO |
+| `utils.ts` | أصبح re-export خالص من `lib/invoice-lines.ts` |
+| `useInvoiceLines.ts` | imports من `@/lib/invoice-lines` |
+| `InvoiceLineTable.tsx` | imports من `@/lib/invoice-lines` |
+| `useInvoiceForm.ts` | أضاف `InvoiceFormHandlers` type export |
+| `index.tsx` | orchestrator نظيف: Router فقط |
+| `components/StockStatsDialog.tsx` | re-export للمكوّن المشترك |
 
-### ملاحظات مهمة للجلسة القادمة
-- الأخطاء في `SurgeryTypeBar.tsx` و `routes.ts` موجودة قبل جلسة اليوم (pre-existing)
+#### البنية الجديدة لـ index.tsx
+```
+SalesInvoices (index.tsx)
+  ├── جميع الـ hooks (useInvoiceForm, useInvoiceLines, useAutoSave, ...)
+  ├── useLoadInvoice   ← تحميل الفاتورة
+  ├── useBarcodeScanner ← الباركود
+  ├── إذا editId → SalesInvoiceEditor (compound component)
+  └── إلا      → InvoiceRegistry (قائمة الفواتير)
+
+SalesInvoiceEditor (SalesInvoiceEditor.tsx)
+  ├── InvoiceHeaderBar
+  ├── InvoiceLineTable
+  ├── InvoiceTotals
+  └── Dialogs (ItemFastSearch | ServiceSearchDialog | StockStatsDialog)
+```
+
+### ملاحظات مهمة
+- الأخطاء في `SurgeryTypeBar.tsx` و `routes.ts` → pre-existing (ليست من هذا الـ refactor)
 - `salePriceCurrent` دائماً سعر الوحدة **الكبرى**
-- إذا لم يكن `majorToMedium` محدداً في كارت الصنف → الشريط يأخذ نفس سعر العلبة (المستخدم يحتاج يحدد المعامل)
 - `db:push` يتعطل → استخدم `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` مباشرة
 - Session: `req.session.userId` و `req.session.role`
+- لإضافة شاشة جديدة تستخدم مخزون: استورد من `@/lib/invoice-lines` مباشرة
+- StockStatsDialog المشترك: `{ open, onClose, itemName?, data, isLoading }`

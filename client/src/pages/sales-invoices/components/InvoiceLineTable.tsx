@@ -5,7 +5,7 @@ import { formatNumber } from "@/lib/formatters";
 import {
   formatAvailability, getUnitOptions,
   computeUnitPriceFromBase, computeLineTotal,
-} from "../utils";
+} from "@/lib/invoice-lines";
 import type { SalesLineLocal } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
