@@ -2944,19 +2944,21 @@ export async function registerRoutes(
       const { header, lines, existingId } = req.body;
       if (!header?.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
       const safeLines = Array.isArray(lines) ? lines.filter((l: any) => l.itemId) : [];
+      // دائماً نحقن اليوزر من الـ session — لا نثق بالـ client
+      const enrichedHeader = { ...header, createdBy: req.session?.userId || header.createdBy || null };
 
       if (existingId) {
         const existing = await storage.getSalesInvoice(existingId);
         if (!existing) return res.status(404).json({ message: "الفاتورة غير موجودة" });
         if (existing.status !== "draft") return res.status(409).json({ message: "لا يمكن تعديل فاتورة معتمدة" });
-        const invoice = await storage.updateSalesInvoice(existingId, header, safeLines);
+        const invoice = await storage.updateSalesInvoice(existingId, enrichedHeader, safeLines);
         return res.json(invoice);
       } else {
         if (safeLines.length === 0) {
-          const invoice = await storage.createSalesInvoice(header, []);
+          const invoice = await storage.createSalesInvoice(enrichedHeader, []);
           return res.status(201).json(invoice);
         }
-        const invoice = await storage.createSalesInvoice(header, safeLines);
+        const invoice = await storage.createSalesInvoice(enrichedHeader, safeLines);
         return res.status(201).json(invoice);
       }
     } catch (error: any) {
@@ -2976,7 +2978,8 @@ export async function registerRoutes(
         if (!line.qty || parseFloat(line.qty) <= 0) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
       }
 
-      const invoice = await storage.createSalesInvoice(header, lines);
+      const enriched = { ...header, createdBy: req.session?.userId || header.createdBy || null };
+      const invoice = await storage.createSalesInvoice(enriched, lines);
       res.status(201).json(invoice);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
