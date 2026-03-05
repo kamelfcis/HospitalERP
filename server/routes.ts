@@ -2226,6 +2226,104 @@ export async function registerRoutes(
     }
   });
 
+  // ===== TRANSFER PREPARATION (إعداد إذن تحويل) =====
+  app.get("/api/transfer-preparation/query", async (req, res) => {
+    try {
+      const { sourceWarehouseId, destWarehouseId, dateFrom, dateTo } = req.query;
+      if (!sourceWarehouseId || !destWarehouseId || !dateFrom || !dateTo) {
+        return res.status(400).json({ message: "جميع الحقول مطلوبة: المخزن المصدر، المخزن الوجهة، من تاريخ، إلى تاريخ" });
+      }
+      if (sourceWarehouseId === destWarehouseId) {
+        return res.status(400).json({ message: "المخزن المصدر والمخزن الوجهة لا يمكن أن يكونا نفس المخزن" });
+      }
+
+      const result = await db.execute(sql`
+        WITH sales_retail AS (
+          SELECT l.item_id, SUM(l.qty_in_minor::numeric) as total_sold_minor
+          FROM sales_invoice_lines l
+          JOIN sales_invoice_headers h ON l.invoice_id = h.id
+          WHERE h.warehouse_id = ${destWarehouseId as string}
+            AND h.invoice_date >= ${dateFrom as string}
+            AND h.invoice_date <= ${dateTo as string}
+            AND h.status = 'finalized'
+            AND h.is_return = false
+          GROUP BY l.item_id
+        ),
+        sales_patient AS (
+          SELECT l.item_id,
+            SUM(
+              CASE
+                WHEN l.unit_level = 'major' THEN l.quantity::numeric * COALESCE(i.major_to_minor::numeric, 1)
+                WHEN l.unit_level = 'medium' THEN l.quantity::numeric * COALESCE(i.medium_to_minor::numeric, 1)
+                ELSE l.quantity::numeric
+              END
+            ) as total_sold_minor
+          FROM patient_invoice_lines l
+          JOIN patient_invoice_headers h ON l.header_id = h.id
+          JOIN items i ON l.item_id = i.id
+          WHERE h.warehouse_id = ${destWarehouseId as string}
+            AND h.invoice_date >= ${dateFrom as string}
+            AND h.invoice_date <= ${dateTo as string}
+            AND h.status = 'finalized'
+            AND l.line_type IN ('drug', 'consumable')
+            AND l.item_id IS NOT NULL
+            AND l.is_void = false
+          GROUP BY l.item_id
+        ),
+        combined AS (
+          SELECT item_id, SUM(total_sold_minor) as total_sold
+          FROM (
+            SELECT * FROM sales_retail
+            UNION ALL
+            SELECT * FROM sales_patient
+          ) u
+          GROUP BY item_id
+        ),
+        source_stock AS (
+          SELECT item_id,
+            SUM(qty_in_minor::numeric) as stock,
+            MIN(CASE WHEN qty_in_minor::numeric > 0 AND expiry_year IS NOT NULL
+              THEN make_date(expiry_year, GREATEST(COALESCE(expiry_month, 1), 1), 1)
+            END) as nearest_expiry
+          FROM inventory_lots
+          WHERE warehouse_id = ${sourceWarehouseId as string} AND is_active = true AND qty_in_minor::numeric > 0
+          GROUP BY item_id
+        ),
+        dest_stock AS (
+          SELECT item_id, SUM(qty_in_minor::numeric) as stock
+          FROM inventory_lots
+          WHERE warehouse_id = ${destWarehouseId as string} AND is_active = true AND qty_in_minor::numeric > 0
+          GROUP BY item_id
+        )
+        SELECT
+          c.item_id,
+          i.item_code,
+          i.name_ar,
+          i.has_expiry,
+          i.minor_unit_name,
+          i.major_unit_name,
+          i.medium_unit_name,
+          i.major_to_minor::text,
+          i.medium_to_minor::text,
+          c.total_sold::text,
+          COALESCE(ss.stock, 0)::text as source_stock,
+          COALESCE(ds.stock, 0)::text as dest_stock,
+          ss.nearest_expiry
+        FROM combined c
+        JOIN items i ON c.item_id = i.id
+        LEFT JOIN source_stock ss ON c.item_id = ss.item_id
+        LEFT JOIN dest_stock ds ON c.item_id = ds.item_id
+        WHERE i.is_active = true
+          AND c.total_sold > 0
+        ORDER BY c.total_sold DESC
+      `);
+
+      res.json(result.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ===== SUPPLIERS =====
   app.get("/api/suppliers", async (req, res) => {
     try {

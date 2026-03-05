@@ -42,6 +42,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Admissions Management**: Enhanced admissions list with invoice status, department filtering, and financial totals.
 - **Refactored Pages**: `PatientInvoicePage`, `SalesInvoices`, `CashierCollection`, and `StoreTransfers` are refactored into modular, hook-based compound components.
 - **Shared ItemSearchDialog**: `@/components/ItemSearchDialog.tsx` is a shared, configurable search dialog used across pages. `ItemFastSearch` (`@/components/ItemFastSearch/`) is the primary fast-search component shared between sales invoices and store transfers.
+- **Transfer Preparation**: A smart preparation screen (`/transfer-preparation`) that queries sales data for a destination warehouse over a date range, shows source/destination stock levels, allows bulk filtering/exclusion, suggested quantity fill, and converts the prepared list into a store transfer with auto FEFO distribution.
 
 ## External Dependencies
 

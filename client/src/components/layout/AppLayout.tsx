@@ -45,6 +45,7 @@ import {
   DoorOpen,
   Scissors,
   Megaphone,
+  FileSpreadsheet,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -76,6 +77,7 @@ const mainNavItems: NavItem[] = [
   { title: "استلام من مورد",          href: "/supplier-receiving", icon: Truck,             permission: "receiving.view" },
   { title: "فواتير الشراء",           href: "/purchase-invoices",  icon: Receipt,           permission: "purchase_invoices.view" },
   { title: "تحويل مخزني",            href: "/store-transfers",    icon: ArrowLeftRight,    permission: "transfers.view" },
+  { title: "إعداد إذن تحويل",         href: "/transfer-preparation", icon: FileSpreadsheet,  permission: "transfers.view" },
   { title: "فواتير البيع",            href: "/sales-invoices",     icon: ShoppingCart,      permission: "sales.view" },
   { title: "فاتورة مريض",            href: "/patient-invoices",   icon: UserRound,         permission: "patient_invoices.view" },
   { title: "لوحة الأسرّة",            href: "/bed-board",          icon: BedDouble,         permission: "patient_invoices.view" },

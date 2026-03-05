@@ -26,6 +26,7 @@ import AuditLog from "@/pages/AuditLog";
 import ItemsList from "@/pages/ItemsList";
 import ItemCard from "@/pages/ItemCard";
 import StoreTransfers from "@/pages/store-transfers";
+import TransferPreparation from "@/pages/transfer-preparation";
 import SupplierReceiving from "@/pages/supplier-receiving";
 import PurchaseInvoice from "@/pages/purchase-invoices";
 import ServicesPricing from "@/pages/ServicesPricing";
@@ -89,6 +90,7 @@ function Router() {
         <Route path="/items/new">{() => <G p="items.create"><ItemCard /></G>}</Route>
         <Route path="/items/:id">{(params) => <G p="items.view"><ItemCard /></G>}</Route>
         <Route path="/store-transfers">{() => <G p="transfers.view"><StoreTransfers /></G>}</Route>
+        <Route path="/transfer-preparation">{() => <G p="transfers.view"><TransferPreparation /></G>}</Route>
         <Route path="/supplier-receiving">{() => <G p="receiving.view"><SupplierReceiving /></G>}</Route>
         <Route path="/purchase-invoices">{() => <G p="purchase_invoices.view"><PurchaseInvoice /></G>}</Route>
         <Route path="/sales-invoices">{() => <G p="sales.view"><SalesInvoices /></G>}</Route>
