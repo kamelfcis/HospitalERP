@@ -43,7 +43,7 @@ export default function SalesInvoices() {
   const isNew               = editId === "new";
 
   // ── توجيه حسب الدور (الصيدلي → فاتورة جديدة مباشرة) ──────────────────────
-  const { canViewRegistry } = useRoleRouter(editId, navigate);
+  const { canViewRegistry, permissionsReady } = useRoleRouter(editId, navigate);
 
   // ── بيانات عامة ───────────────────────────────────────────────────────────
   const { data: warehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
@@ -215,8 +215,10 @@ export default function SalesInvoices() {
     );
   }
 
+  // انتظار جلب الصلاحيات الطازة من السيرفر قبل أي قرار
+  if (!permissionsReady && !editId) return null;
   // من لا يملك صلاحية القائمة → ينتظر التوجيه للفاتورة الجديدة
-  if (!canViewRegistry && !editId) return null;
+  if (permissionsReady && !canViewRegistry && !editId) return null;
 
   return (
     <InvoiceRegistry
