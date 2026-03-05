@@ -115,7 +115,7 @@ export function ReceivingLineTable({
               <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">هدية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap" title="نسبة الخصم %">ن الخصم%</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap" title="نسبة الخصم %">خصم%</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">سعر الشراء</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">التشغيلة</th>
