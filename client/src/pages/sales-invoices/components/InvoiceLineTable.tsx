@@ -106,16 +106,16 @@ export function InvoiceLineTable({
       <table className="peachtree-grid w-full text-[12px]" data-testid="table-lines">
         <thead>
           <tr className="peachtree-grid-header">
-            <th className="w-8">#</th>
+            <th className="w-6">#</th>
             <th>الصنف</th>
-            <th className="w-24">الوحدة</th>
-            <th className="w-20">الكمية</th>
-            <th className="w-24">سعر البيع</th>
-            <th className="w-24">إجمالي السطر</th>
-            <th className="w-28">الصلاحية</th>
-            <th className="w-28">الرصيد المتاح</th>
-            <th className="w-10">إحصاء</th>
-            {isDraft && <th className="w-10">حذف</th>}
+            <th className="w-[100px]">الوحدة</th>
+            <th className="w-[72px]">الكمية</th>
+            <th className="w-[90px]">سعر البيع</th>
+            <th className="w-[90px]">إجمالي السطر</th>
+            <th className="w-[110px]">الصلاحية</th>
+            <th className="w-[100px]">الرصيد المتاح</th>
+            <th className="w-9">إحصاء</th>
+            {isDraft && <th className="w-9">حذف</th>}
           </tr>
         </thead>
         <tbody>
@@ -283,13 +283,15 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
           }
           onUpdateLine(i, updates);
         }}
-        className={`peachtree-select w-full text-[11px] ${needsExpiry ? "border-yellow-400" : ""}`}
+        className={`peachtree-select w-full ${needsExpiry ? "border-yellow-400" : ""}`}
         data-testid={`select-expiry-${i}`}
+        title={ln.expiryMonth && ln.expiryYear
+          ? `${String(ln.expiryMonth).padStart(2, "0")}/${ln.expiryYear}`
+          : "اختر الصلاحية"}
       >
         {ln.expiryOptions.map((opt) => (
           <option key={opt.lotId} value={opt.lotId}>
             {String(opt.expiryMonth).padStart(2, "0")}/{opt.expiryYear}
-            {" "}({formatNumber(opt.qtyAvailableMinor)})
           </option>
         ))}
       </select>
@@ -305,14 +307,13 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
           const [m, y] = e.target.value.split("-").map(Number);
           onUpdateLine(i, { expiryMonth: m || null, expiryYear: y || null });
         }}
-        className={`peachtree-select w-full text-[11px] ${needsExpiry ? "border-yellow-400" : ""}`}
+        className={`peachtree-select w-full ${needsExpiry ? "border-yellow-400" : ""}`}
         data-testid={`select-expiry-${i}`}
       >
-        <option value="">اختر الصلاحية</option>
+        <option value="">— اختر —</option>
         {ln.expiryOptions.map((opt) => (
           <option key={`${opt.expiryMonth}-${opt.expiryYear}`} value={`${opt.expiryMonth}-${opt.expiryYear}`}>
             {String(opt.expiryMonth).padStart(2, "0")}/{opt.expiryYear}
-            {" "}({formatNumber(opt.qtyAvailableMinor)})
           </option>
         ))}
       </select>
