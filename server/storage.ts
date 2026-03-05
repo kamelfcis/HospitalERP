@@ -8720,7 +8720,7 @@ export class DatabaseStorage implements IStorage {
                JOIN sales_invoice_headers rh ON rh.id = rl.invoice_id
                WHERE rh.original_invoice_id = ${invoiceId}
                  AND rh.is_return = true
-                 AND rh.status = 'finalized'
+                 AND rh.status IN ('finalized', 'collected')
                  AND rl.item_id = l.item_id
                  AND COALESCE(rl.lot_id,'') = COALESCE(l.lot_id,'')
              ), 0)::numeric AS "previouslyReturnedMinor"
@@ -8756,7 +8756,7 @@ export class DatabaseStorage implements IStorage {
                  FROM sales_invoice_lines rl2
                  JOIN sales_invoice_headers rh2 ON rh2.id = rl2.invoice_id
                  WHERE rh2.original_invoice_id = ${data.originalInvoiceId}
-                   AND rh2.is_return = true AND rh2.status = 'finalized'
+                   AND rh2.is_return = true AND rh2.status IN ('finalized', 'collected')
                    AND rl2.item_id = l.item_id AND COALESCE(rl2.lot_id,'') = COALESCE(l.lot_id,'')
                ), 0)::numeric AS "previouslyReturnedMinor"
         FROM sales_invoice_lines l WHERE l.invoice_id = ${data.originalInvoiceId}

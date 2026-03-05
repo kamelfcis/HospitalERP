@@ -18,6 +18,8 @@ export function useReturnForm() {
   const { data: invoiceData, isLoading: invoiceLoading } = useQuery<ReturnInvoiceData>({
     queryKey: [`/api/sales-returns/invoice/${selectedInvoiceId}`],
     enabled: !!selectedInvoiceId,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const selectInvoice = useCallback((invoiceId: string) => {

@@ -38,6 +38,7 @@ export function useReturnSearch() {
   const { data: results = [], isLoading } = useQuery<ReturnSearchResult[]>({
     queryKey: [submittedUrl],
     enabled: !!submittedUrl,
+    staleTime: 0,
   });
 
   const triggerSearch = useCallback(() => {
