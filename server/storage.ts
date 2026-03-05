@@ -537,6 +537,13 @@ export interface IStorage {
     periodId?: string;
   }): Promise<JournalEntry | null>;
   batchPostJournalEntries(ids: string[], userId: string): Promise<number>;
+
+  // Chat
+  getChatUsers(currentUserId: string): Promise<{ id: string; fullName: string; role: string; unreadCount: number; lastMessage: string | null; lastMessageAt: Date | null }[]>;
+  getChatConversation(userAId: string, userBId: string, limit?: number): Promise<import("@shared/schema").ChatMessage[]>;
+  sendChatMessage(senderId: string, receiverId: string, body: string): Promise<import("@shared/schema").ChatMessage>;
+  markChatRead(senderId: string, currentUserId: string): Promise<void>;
+  getChatUnreadCount(userId: string): Promise<number>;
 }
 
 function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
@@ -8618,6 +8625,72 @@ export class DatabaseStorage implements IStorage {
         ON CONFLICT (source_type, source_id, treasury_id) DO NOTHING
       `);
     }
+  }
+
+  async getChatUsers(currentUserId: string): Promise<{ id: string; fullName: string; role: string; unreadCount: number; lastMessage: string | null; lastMessageAt: Date | null }[]> {
+    const rows = await db.execute(sql`
+      SELECT
+        u.id,
+        u.full_name AS "fullName",
+        u.role,
+        COALESCE(unread.cnt, 0)::int AS "unreadCount",
+        lm.body AS "lastMessage",
+        lm.created_at AS "lastMessageAt"
+      FROM users u
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS cnt
+        FROM chat_messages cm
+        WHERE cm.sender_id = u.id AND cm.receiver_id = ${currentUserId} AND cm.read_at IS NULL
+      ) unread ON true
+      LEFT JOIN LATERAL (
+        SELECT body, created_at
+        FROM chat_messages cm2
+        WHERE (cm2.sender_id = u.id AND cm2.receiver_id = ${currentUserId})
+           OR (cm2.sender_id = ${currentUserId} AND cm2.receiver_id = u.id)
+        ORDER BY cm2.created_at DESC
+        LIMIT 1
+      ) lm ON true
+      WHERE u.id != ${currentUserId} AND u.is_active = true
+      ORDER BY lm.created_at DESC NULLS LAST, u.full_name
+    `);
+    return rows.rows as any[];
+  }
+
+  async getChatConversation(userAId: string, userBId: string, limit = 100): Promise<import("@shared/schema").ChatMessage[]> {
+    const rows = await db.execute(sql`
+      SELECT id, sender_id AS "senderId", receiver_id AS "receiverId", body, read_at AS "readAt", created_at AS "createdAt"
+      FROM chat_messages
+      WHERE (sender_id = ${userAId} AND receiver_id = ${userBId})
+         OR (sender_id = ${userBId} AND receiver_id = ${userAId})
+      ORDER BY created_at ASC
+      LIMIT ${limit}
+    `);
+    return rows.rows as any[];
+  }
+
+  async sendChatMessage(senderId: string, receiverId: string, body: string): Promise<import("@shared/schema").ChatMessage> {
+    const rows = await db.execute(sql`
+      INSERT INTO chat_messages (sender_id, receiver_id, body)
+      VALUES (${senderId}, ${receiverId}, ${body})
+      RETURNING id, sender_id AS "senderId", receiver_id AS "receiverId", body, read_at AS "readAt", created_at AS "createdAt"
+    `);
+    return rows.rows[0] as any;
+  }
+
+  async markChatRead(senderId: string, currentUserId: string): Promise<void> {
+    await db.execute(sql`
+      UPDATE chat_messages
+      SET read_at = now()
+      WHERE sender_id = ${senderId} AND receiver_id = ${currentUserId} AND read_at IS NULL
+    `);
+  }
+
+  async getChatUnreadCount(userId: string): Promise<number> {
+    const rows = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM chat_messages
+      WHERE receiver_id = ${userId} AND read_at IS NULL
+    `);
+    return (rows.rows[0] as any)?.cnt ?? 0;
   }
 }
 

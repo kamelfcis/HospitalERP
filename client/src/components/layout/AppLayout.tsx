@@ -54,6 +54,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAuth } from "@/hooks/use-auth";
 import { ROLE_LABELS } from "@shared/permissions";
 import { AppHeader } from "./AppHeader";
+import { ChatPopup } from "@/components/chat/ChatPopup";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -252,6 +253,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           <main className="flex-1 overflow-auto">
             {children}
           </main>
+          <ChatPopup />
         </div>
       </div>
     </SidebarProvider>

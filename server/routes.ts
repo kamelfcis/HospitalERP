@@ -33,6 +33,15 @@ export function broadcastBedBoardUpdate() {
     try { res.write(payload); } catch { bedBoardClients.delete(res); }
   });
 }
+
+// ─── قناة SSE للمحادثات الداخلية ─────────────────────────────────────────────
+const chatSseClients = new Map<string, Response>();
+
+function broadcastChatMessage(receiverId: string, data: any) {
+  const res = chatSseClients.get(receiverId);
+  if (!res) return;
+  try { res.write(`event: chat-message\ndata: ${JSON.stringify(data)}\n\n`); } catch { chatSseClients.delete(receiverId); }
+}
 import { 
   insertAccountSchema, 
   insertCostCenterSchema, 
@@ -5047,6 +5056,60 @@ export async function registerRoutes(
     if (!["owner", "admin"].includes(req.session.role!)) return res.status(403).json({ message: "غير مصرح" });
     try {
       await db.execute(sql`DELETE FROM announcements WHERE id = ${req.params.id}`);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ─── Chat ──────────────────────────────────────────────────────────────────
+
+  app.get("/api/chat/sse", requireAuth, (req, res) => {
+    const userId = req.session.userId!;
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+    chatSseClients.set(userId, res);
+    const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { clearInterval(ping); } }, 25000);
+    req.on("close", () => { clearInterval(ping); chatSseClients.delete(userId); });
+  });
+
+  app.get("/api/chat/users", requireAuth, async (req, res) => {
+    try {
+      const users = await storage.getChatUsers(req.session.userId!);
+      res.json(users);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/chat/unread-count", requireAuth, async (req, res) => {
+    try {
+      const count = await storage.getChatUnreadCount(req.session.userId!);
+      res.json({ count });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/chat/messages/:otherUserId", requireAuth, async (req, res) => {
+    try {
+      const { otherUserId } = req.params;
+      const me = req.session.userId!;
+      await storage.markChatRead(otherUserId, me);
+      const msgs = await storage.getChatConversation(me, otherUserId);
+      res.json(msgs);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/chat/messages", requireAuth, async (req, res) => {
+    try {
+      const { receiverId, body } = req.body;
+      if (!receiverId || !body?.trim()) return res.status(400).json({ message: "مستلم ونص الرسالة مطلوبان" });
+      const msg = await storage.sendChatMessage(req.session.userId!, receiverId, body.trim());
+      broadcastChatMessage(receiverId, msg);
+      res.json(msg);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/chat/messages/read/:senderId", requireAuth, async (req, res) => {
+    try {
+      await storage.markChatRead(req.params.senderId, req.session.userId!);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
