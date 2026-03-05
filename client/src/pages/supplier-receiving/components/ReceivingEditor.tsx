@@ -259,10 +259,9 @@ export function ReceivingEditor({
         invoiceDate={form.receiveDate}
         excludeServices
         hideStockWarning
-        title="بحث عن صنف للاستلام"
+        title="بحث عن صنف للاستلام — اضغط Esc للإغلاق"
         onItemSelected={({ item }) => {
           onItemSelected(item);
-          setItemSearchOpen(false);
         }}
       />
 
