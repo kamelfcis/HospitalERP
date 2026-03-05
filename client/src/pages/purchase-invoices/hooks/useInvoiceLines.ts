@@ -16,17 +16,29 @@ export function useInvoiceLines() {
   // ── تحميل الأسطر من بيانات السيرفر ────────────────────────────────────
   const mapServerLines = useCallback((serverLines: any[]): InvoiceLineLocal[] =>
     (serverLines || []).map((ln: any) => {
+      const sellingPrice  = parseFloat(String(ln.sellingPrice))  || 0;
+      const purchasePrice = parseFloat(String(ln.purchasePrice)) || 0;
+
+      // نحسب lineDiscountPct دايماً من السعرين — مصدر الحقيقة
+      // لو القيمة المخزّنة صفر (بيانات قديمة) تُحسب تلقائياً
+      const storedPct     = parseFloat(String(ln.lineDiscountPct)) || 0;
+      const derivedPct    = sellingPrice > 0 && sellingPrice >= purchasePrice
+        ? +((sellingPrice - purchasePrice) / sellingPrice * 100).toFixed(4)
+        : 0;
+      // نستخدم القيمة المخزّنة لو موجودة، وإلا نشتق من السعرين
+      const lineDiscountPct = storedPct > 0 ? storedPct : derivedPct;
+
       const line: InvoiceLineLocal = {
         id:               ln.id,
         receivingLineId:  ln.receivingLineId || null,
         itemId:           ln.itemId,
         item:             ln.item || null,
         unitLevel:        ln.unitLevel,
-        qty:              parseFloat(String(ln.qty))              || 0,
-        bonusQty:         parseFloat(String(ln.bonusQty))         || 0,
-        sellingPrice:     parseFloat(String(ln.sellingPrice))     || 0,
-        purchasePrice:    parseFloat(String(ln.purchasePrice))    || 0,
-        lineDiscountPct:  parseFloat(String(ln.lineDiscountPct))  || 0,
+        qty:              parseFloat(String(ln.qty))     || 0,
+        bonusQty:         parseFloat(String(ln.bonusQty))|| 0,
+        sellingPrice,
+        purchasePrice,
+        lineDiscountPct,
         lineDiscountValue:parseFloat(String(ln.lineDiscountValue))|| 0,
         vatRate:          parseFloat(String(ln.vatRate))          || 14,
         valueBeforeVat:   parseFloat(String(ln.valueBeforeVat))   || 0,
