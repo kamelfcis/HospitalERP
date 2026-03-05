@@ -100,6 +100,47 @@ export function useTransferForm() {
           fefoLocked: true,
         }));
         setFormLines(loadedLines);
+
+        if (transfer.status === "draft") {
+          const itemIds = Array.from(new Set(loadedLines.map((l) => l.itemId)));
+          const asOfDate = transfer.transferDate || new Date().toISOString().split("T")[0];
+          const expiryPromises = itemIds.map(async (itemId) => {
+            try {
+              const eres = await fetch(
+                `/api/items/${itemId}/expiry-options?warehouseId=${transfer.sourceWarehouseId}&asOfDate=${asOfDate}`,
+                { credentials: "include" }
+              );
+              if (!eres.ok) return { itemId, options: [] as ExpiryOption[] };
+              const options: ExpiryOption[] = await eres.json();
+              return { itemId, options };
+            } catch {
+              return { itemId, options: [] as ExpiryOption[] };
+            }
+          });
+          const expiryResults = await Promise.all(expiryPromises);
+          const optsByItem: Record<string, ExpiryOption[]> = {};
+          for (const r of expiryResults) optsByItem[r.itemId] = r.options;
+
+          setFormLines((prev) =>
+            prev.map((ln) => {
+              const opts = optsByItem[ln.itemId] || [];
+              if (ln.selectedExpiryMonth && ln.selectedExpiryYear) {
+                const match = opts.find(
+                  (o) => o.expiryMonth === ln.selectedExpiryMonth && o.expiryYear === ln.selectedExpiryYear
+                );
+                if (match?.lotSalePrice) return { ...ln, lotSalePrice: match.lotSalePrice };
+              }
+              return ln;
+            })
+          );
+
+          const newExpiryOpts: Record<string, ExpiryOption[]> = {};
+          loadedLines.forEach((ln) => {
+            if (optsByItem[ln.itemId]) newExpiryOpts[ln.id] = optsByItem[ln.itemId];
+          });
+          setLineExpiryOptions((prev) => ({ ...prev, ...newExpiryOpts }));
+        }
+
         onLoaded?.();
       } catch (err: any) {
         toast({ title: "خطأ في تحميل التحويل", description: err.message, variant: "destructive" });
