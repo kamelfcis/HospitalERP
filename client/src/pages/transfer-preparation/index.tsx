@@ -77,6 +77,7 @@ export default function TransferPreparation() {
   const [queried, setQueried] = useState(false);
   const [excludeCovered, setExcludeCovered] = useState(true);
   const [sortDestAsc, setSortDestAsc] = useState<boolean | null>(null);
+  const [sortSourceAsc, setSortSourceAsc] = useState<boolean | null>(null);
   const [bulkThreshold, setBulkThreshold] = useState("");
   const [bulkOp, setBulkOp] = useState<"gt" | "lt" | "eq">("gt");
   const [bulkField, setBulkField] = useState<"dest_stock" | "source_stock" | "total_sold">("dest_stock");
@@ -132,6 +133,8 @@ export default function TransferPreparation() {
   const visibleLines = useMemo(() => {
     let result = lines.filter((l) => !l._excluded);
 
+    result = result.filter((l) => (parseFloat(l.source_stock) || 0) > 0);
+
     if (excludeCovered) {
       result = result.filter((l) => {
         const destStock = parseFloat(l.dest_stock) || 0;
@@ -140,7 +143,13 @@ export default function TransferPreparation() {
       });
     }
 
-    if (sortDestAsc !== null) {
+    if (sortSourceAsc !== null) {
+      result = [...result].sort((a, b) => {
+        const aVal = parseFloat(a.source_stock) || 0;
+        const bVal = parseFloat(b.source_stock) || 0;
+        return sortSourceAsc ? aVal - bVal : bVal - aVal;
+      });
+    } else if (sortDestAsc !== null) {
       result = [...result].sort((a, b) => {
         const aVal = parseFloat(a.dest_stock) || 0;
         const bVal = parseFloat(b.dest_stock) || 0;
@@ -149,7 +158,7 @@ export default function TransferPreparation() {
     }
 
     return result;
-  }, [lines, excludeCovered, sortDestAsc]);
+  }, [lines, excludeCovered, sortDestAsc, sortSourceAsc]);
 
   const handleExcludeItem = useCallback((itemId: string) => {
     setLines((prev) => prev.map((l) => l.item_id === itemId ? { ...l, _excluded: true } : l));
@@ -402,10 +411,19 @@ export default function TransferPreparation() {
                   <th className="py-1 px-2 text-right whitespace-nowrap">كود الصنف</th>
                   <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
                   <th className="py-1 px-2 text-center whitespace-nowrap">كمية البيع</th>
-                  <th className="py-1 px-2 text-center whitespace-nowrap">رصيد المصدر</th>
                   <th
                     className="py-1 px-2 text-center whitespace-nowrap cursor-pointer select-none"
-                    onClick={() => setSortDestAsc((prev) => prev === null ? true : prev ? false : null)}
+                    onClick={() => { setSortSourceAsc((prev) => prev === null ? true : prev ? false : null); setSortDestAsc(null); }}
+                    data-testid="th-source-stock-sort"
+                  >
+                    <span className="inline-flex items-center gap-0.5">
+                      رصيد المصدر
+                      <ArrowUpDown className="h-3 w-3" />
+                    </span>
+                  </th>
+                  <th
+                    className="py-1 px-2 text-center whitespace-nowrap cursor-pointer select-none"
+                    onClick={() => { setSortDestAsc((prev) => prev === null ? true : prev ? false : null); setSortSourceAsc(null); }}
                     data-testid="th-dest-stock-sort"
                   >
                     <span className="inline-flex items-center gap-0.5">
