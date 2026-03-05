@@ -3,12 +3,26 @@
  *
  * يعرض السطور ويمكّن تعديلها إذا كان الإذن مسودة.
  * لا يحمل أي حالة — كل شيء يأتي من الـ props.
+ *
+ * التنقل بالأسهم (spreadsheet-style):
+ *  ← يسار  = عمود أعلى (RTL)     → يمين = عمود أدنى (RTL)
+ *  ↑ فوق   = سطر أعلى            ↓ تحت  = سطر أدنى
  */
+import { useRef, useCallback } from "react";
 import { AlertTriangle, BarChart3, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ExpiryInput } from "@/components/ui/expiry-input";
 import type { ReceivingLineLocal, LineError } from "../types";
 import { getUnitName } from "../types";
+
+// ── أعمدة التنقل (بالترتيب من اليمين في RTL) ─────────────────────────────
+const NAV_QTY      = 0;
+const NAV_BONUS    = 1;
+const NAV_PURCHASE = 2;
+const NAV_SALE     = 3;
+const NAV_EXPIRY   = 4;
+const NAV_BATCH    = 5;
+const NAV_COUNT    = 6;
 
 interface Props {
   lines:        ReceivingLineLocal[];
@@ -33,6 +47,56 @@ export function ReceivingLineTable({
   lineFieldFocusedRef, focusedLineIdx, setFocusedLineIdx,
 }: Props) {
   const colSpan = isViewOnly ? 14 : 15;
+
+  // ── شبكة مراجع التنقل ───────────────────────────────────────────────────
+  const navRefs    = useRef<Map<string, HTMLInputElement>>(new Map());
+  const expiryDivs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  const registerNav = useCallback((row: number, col: number, el: HTMLInputElement | null) => {
+    const key = `${row}-${col}`;
+    if (el) navRefs.current.set(key, el);
+    else    navRefs.current.delete(key);
+  }, []);
+
+  const registerExpiryDiv = useCallback((row: number, el: HTMLDivElement | null) => {
+    if (el) expiryDivs.current.set(row, el);
+    else    expiryDivs.current.delete(row);
+  }, []);
+
+  const focusNav = useCallback((row: number, col: number) => {
+    if (col === NAV_EXPIRY) {
+      const div = expiryDivs.current.get(row);
+      if (div) {
+        const inp = div.querySelector<HTMLInputElement>("input");
+        inp?.focus();
+        inp?.select();
+      }
+      return;
+    }
+    const el = navRefs.current.get(`${row}-${col}`);
+    if (el) { el.focus(); el.select(); }
+  }, []);
+
+  const handleNavKey = useCallback((
+    e: React.KeyboardEvent,
+    row: number,
+    col: number,
+  ) => {
+    let nextRow = row;
+    let nextCol = col;
+    switch (e.key) {
+      case "ArrowLeft":  nextCol = col + 1; break; // RTL: يسار = عمود تالٍ
+      case "ArrowRight": nextCol = col - 1; break; // RTL: يمين = عمود سابق
+      case "ArrowUp":    nextRow = row - 1; break;
+      case "ArrowDown":  nextRow = row + 1; break;
+      default: return;
+    }
+    if (nextCol < 0 || nextCol >= NAV_COUNT) return;
+    if (nextRow < 0 || nextRow >= lines.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    focusNav(nextRow, nextCol);
+  }, [lines.length, focusNav]);
 
   return (
     <fieldset className="peachtree-grid p-2">
@@ -75,6 +139,9 @@ export function ReceivingLineTable({
                 expiryInputRefs={expiryInputRefs}
                 lineFieldFocusedRef={lineFieldFocusedRef}
                 setFocusedLineIdx={setFocusedLineIdx}
+                registerNav={registerNav}
+                registerExpiryDiv={registerExpiryDiv}
+                handleNavKey={handleNavKey}
               />
             )) : (
               <tr>
@@ -114,6 +181,10 @@ interface RowProps {
   expiryInputRefs:     React.MutableRefObject<Map<number, HTMLDivElement>>;
   lineFieldFocusedRef: React.MutableRefObject<boolean>;
   setFocusedLineIdx:   (v: number | null) => void;
+  // تنقل الخلايا
+  registerNav:      (row: number, col: number, el: HTMLInputElement | null) => void;
+  registerExpiryDiv:(row: number, el: HTMLDivElement | null) => void;
+  handleNavKey:     (e: React.KeyboardEvent, row: number, col: number) => void;
 }
 
 function LineRow({
@@ -121,6 +192,7 @@ function LineRow({
   onUpdate, onDelete, onOpenStats,
   qtyInputRefs, salePriceInputRefs, expiryInputRefs,
   lineFieldFocusedRef, setFocusedLineIdx,
+  registerNav, registerExpiryDiv, handleNavKey,
 }: RowProps) {
   const hasExpiryErr      = lineErrors.some((e) => e.lineIndex === idx && e.field === "expiry");
   const hasSalePriceErr   = lineErrors.some((e) => e.lineIndex === idx && e.field === "salePrice");
@@ -166,58 +238,73 @@ function LineRow({
           </select>
         )}
       </td>
-      {/* الكمية */}
+      {/* الكمية — NAV_QTY = 0 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span data-testid={`text-qty-${idx}`}>{line.qtyEntered}</span> : (
           <input
-            ref={(el) => { if (el) qtyInputRefs.current.set(idx, el); else qtyInputRefs.current.delete(idx); }}
+            ref={(el) => {
+              if (el) qtyInputRefs.current.set(idx, el);
+              else    qtyInputRefs.current.delete(idx);
+              registerNav(idx, NAV_QTY, el);
+            }}
             type="number" value={line.qtyEntered}
             onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) onUpdate({ qtyEntered: v }); }}
             onFocus={(e) => { lineFieldFocusedRef.current = true; setFocusedLineIdx(idx); e.target.select(); }}
             onBlur={() => { lineFieldFocusedRef.current = false; setFocusedLineIdx(null); if (line.qtyEntered <= 0) onUpdate({ qtyEntered: 1 }); }}
+            onKeyDown={(e) => handleNavKey(e, idx, NAV_QTY)}
             className="w-[70px] h-6 text-[12px] px-1 border rounded text-center bg-transparent focus:border-blue-400 dark:focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
             data-testid={`input-qty-${idx}`} min="0" step="any" />
         )}
       </td>
-      {/* هدية */}
+      {/* هدية — NAV_BONUS = 1 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span>{line.bonusQty}</span> : (
-          <input type="number" value={line.bonusQty || ""}
+          <input
+            ref={(el) => registerNav(idx, NAV_BONUS, el)}
+            type="number" value={line.bonusQty || ""}
             onChange={(e) => onUpdate({ bonusQty: parseFloat(e.target.value) || 0 })}
             onFocus={() => { lineFieldFocusedRef.current = true; }}
             onBlur={() => { lineFieldFocusedRef.current = false; }}
+            onKeyDown={(e) => handleNavKey(e, idx, NAV_BONUS)}
             className="w-[55px] h-6 text-[11px] px-1 border rounded text-center bg-transparent"
             placeholder="0" min="0" step="any" data-testid={`input-bonus-qty-${idx}`} />
         )}
       </td>
-      {/* سعر الشراء */}
+      {/* سعر الشراء — NAV_PURCHASE = 2 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? (
           <span className="font-mono">{line.purchasePrice > 0 ? line.purchasePrice.toFixed(2) : "—"}</span>
         ) : (
           <input
+            ref={(el) => registerNav(idx, NAV_PURCHASE, el)}
             type="number" value={line.purchasePrice || ""}
             onChange={(e) => onUpdate({ purchasePrice: parseFloat(e.target.value) || 0 })}
             onFocus={(e) => { lineFieldFocusedRef.current = true; e.target.select(); }}
             onBlur={() => { lineFieldFocusedRef.current = false; }}
+            onKeyDown={(e) => handleNavKey(e, idx, NAV_PURCHASE)}
             className={`w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center ${hasPurchasePriceErr ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
             placeholder="0.00" min="0" step="any" data-testid={`input-purchase-price-${idx}`} />
         )}
       </td>
-      {/* سعر البيع */}
+      {/* سعر البيع — NAV_SALE = 3 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span>{line.salePrice != null ? line.salePrice.toFixed(2) : "—"}</span> : (
           <input
-            ref={(el) => { if (el) salePriceInputRefs.current.set(idx, el); else salePriceInputRefs.current.delete(idx); }}
+            ref={(el) => {
+              if (el) salePriceInputRefs.current.set(idx, el);
+              else    salePriceInputRefs.current.delete(idx);
+              registerNav(idx, NAV_SALE, el);
+            }}
             type="number" value={line.salePrice ?? ""}
             onChange={(e) => onUpdate({ salePrice: e.target.value ? parseFloat(e.target.value) : null })}
             onFocus={() => { lineFieldFocusedRef.current = true; }}
             onBlur={() => { lineFieldFocusedRef.current = false; }}
+            onKeyDown={(e) => handleNavKey(e, idx, NAV_SALE)}
             className={`w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center ${hasSalePriceErr ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
             placeholder="0.00" min="0" step="any" data-testid={`input-sale-price-${idx}`} />
         )}
       </td>
-      {/* الصلاحية */}
+      {/* الصلاحية — NAV_EXPIRY = 4 */}
       <td className="py-0.5 px-2 whitespace-nowrap"
         onFocusCapture={() => { lineFieldFocusedRef.current = true; }}
         onBlurCapture={() => { lineFieldFocusedRef.current = false; }}>
@@ -225,7 +312,24 @@ function LineRow({
           <span>{line.expiryMonth && line.expiryYear ? `${String(line.expiryMonth).padStart(2, "0")}/${line.expiryYear}` : "—"}</span>
         ) : (
           <div
-            ref={(el) => { if (el) expiryInputRefs.current.set(idx, el); else expiryInputRefs.current.delete(idx); }}
+            ref={(el) => {
+              if (el) expiryInputRefs.current.set(idx, el);
+              else    expiryInputRefs.current.delete(idx);
+              registerExpiryDiv(idx, el);
+            }}
+            onKeyDownCapture={(e) => {
+              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+                // السماح لـ ExpiryInput باستخدام ←/→ بين الشهر والسنة أولاً
+                // إذا كانت الإشارة من داخل ExpiryInput ذاته، نتركها
+                const target = e.target as HTMLInputElement;
+                const isExpLeft  = e.key === "ArrowLeft"  && target.selectionStart === target.value.length;
+                const isExpRight = e.key === "ArrowRight" && target.selectionStart === 0;
+                const isUpDown   = e.key === "ArrowUp" || e.key === "ArrowDown";
+                if (isUpDown || isExpLeft || isExpRight) {
+                  handleNavKey(e as unknown as React.KeyboardEvent, idx, NAV_EXPIRY);
+                }
+              }
+            }}
             className={hasExpiryErr ? "[&_input]:border-red-500 [&_input]:bg-red-50 dark:[&_input]:bg-red-900/20" : ""}>
             <ExpiryInput
               expiryMonth={line.expiryMonth} expiryYear={line.expiryYear}
@@ -235,13 +339,26 @@ function LineRow({
           </div>
         )}
       </td>
-      {/* رقم التشغيلة */}
+      {/* رقم التشغيلة — NAV_BATCH = 5 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span>{line.batchNumber || "—"}</span> : (
-          <input type="text" value={line.batchNumber}
+          <input
+            ref={(el) => registerNav(idx, NAV_BATCH, el)}
+            type="text" value={line.batchNumber}
             onChange={(e) => onUpdate({ batchNumber: e.target.value })}
             onFocus={() => { lineFieldFocusedRef.current = true; }}
             onBlur={() => { lineFieldFocusedRef.current = false; }}
+            onKeyDown={(e) => {
+              // في حقل النص: تنقّل بالأسهم فقط من حافة النص
+              const target = e.target as HTMLInputElement;
+              const atStart = target.selectionStart === 0 && target.selectionEnd === 0;
+              const atEnd   = target.selectionStart === target.value.length;
+              const isUpDown = e.key === "ArrowUp" || e.key === "ArrowDown";
+              // RTL: ArrowRight → col أدنى (يمين)، ArrowLeft → col أعلى (يسار)
+              const goRight = e.key === "ArrowRight" && atStart;
+              const goLeft  = e.key === "ArrowLeft"  && atEnd;
+              if (isUpDown || goRight || goLeft) handleNavKey(e, idx, NAV_BATCH);
+            }}
             className="w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent"
             placeholder={line.item?.hasBatch ? "مطلوب" : "—"}
             data-testid={`input-batch-${idx}`} />
