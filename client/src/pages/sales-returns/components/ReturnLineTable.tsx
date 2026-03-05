@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input";
 import type { ReturnLine } from "../types";
-import { availableToReturnMinor, unitLabel, calcQtyMinor } from "../types";
+import { availableToReturnMinor, unitLabel, calcQtyMinor, salePriceForUnit } from "../types";
 
 interface Props {
   lines: ReturnLine[];
@@ -33,10 +33,14 @@ export function ReturnLineTable({ lines, onChangeQty, onChangeUnit }: Props) {
         <tbody>
           {lines.map((line, idx) => {
             const availMinor = availableToReturnMinor(line);
-            const perUnit = calcQtyMinor(1, line.returnUnitLevel, line);
-            const availInUnit = perUnit > 0 ? Math.floor(availMinor / perUnit) : 0;
+            const returnPerUnit = calcQtyMinor(1, line.returnUnitLevel, line);
+            const availInReturnUnit = returnPerUnit > 0 ? Math.floor(availMinor / returnPerUnit) : 0;
+
+            const origPerUnit = calcQtyMinor(1, line.unitLevel, line);
+            const availInOrigUnit = origPerUnit > 0 ? Math.floor(availMinor / origPerUnit) : 0;
             const prevReturnedDisplay = formatMinorToOrigUnit(line);
 
+            const displayPrice = salePriceForUnit(line, line.returnUnitLevel);
             const unitOptions = getUnitOptions(line);
 
             return (
@@ -51,7 +55,9 @@ export function ReturnLineTable({ lines, onChangeQty, onChangeUnit }: Props) {
                 <td className="py-1.5 px-2 text-center">{unitLabel(line.unitLevel, line)}</td>
                 <td className="py-1.5 px-2 text-center font-semibold">{line.qty}</td>
                 <td className="py-1.5 px-2 text-center text-orange-600 font-semibold">{prevReturnedDisplay}</td>
-                <td className="py-1.5 px-2 text-center font-bold text-blue-700 dark:text-blue-400">{availInUnit}</td>
+                <td className="py-1.5 px-2 text-center font-bold text-blue-700 dark:text-blue-400">
+                  {availInOrigUnit} {unitLabel(line.unitLevel, line)}
+                </td>
                 <td className="py-1.5 px-2 text-center">
                   <select
                     value={line.returnUnitLevel}
@@ -69,7 +75,7 @@ export function ReturnLineTable({ lines, onChangeQty, onChangeUnit }: Props) {
                   <Input
                     type="number"
                     min="0"
-                    max={availInUnit}
+                    max={availInReturnUnit}
                     step="1"
                     value={line.returnQty}
                     onChange={(e) => onChangeQty(line.id, e.target.value)}
@@ -78,7 +84,7 @@ export function ReturnLineTable({ lines, onChangeQty, onChangeUnit }: Props) {
                     data-testid={`input-return-qty-${idx}`}
                   />
                 </td>
-                <td className="py-1.5 px-2 text-left font-mono">{parseFloat(line.salePrice).toFixed(2)}</td>
+                <td className="py-1.5 px-2 text-left font-mono">{displayPrice.toFixed(2)}</td>
                 <td className="py-1.5 px-2 text-left font-mono font-bold">
                   {line.returnLineTotal > 0 ? line.returnLineTotal.toFixed(2) : "—"}
                 </td>
@@ -106,12 +112,17 @@ function formatMinorToOrigUnit(line: ReturnLine): string {
 }
 
 function getUnitOptions(line: ReturnLine): { value: string; label: string }[] {
-  const opts: { value: string; label: string }[] = [];
-  if (line.minorUnitName) opts.push({ value: "minor", label: line.minorUnitName });
-  if (line.mediumUnitName && parseFloat(line.mediumToMinor || "0") > 0)
-    opts.push({ value: "medium", label: line.mediumUnitName });
+  const all: { value: string; label: string }[] = [];
   if (line.majorUnitName && parseFloat(line.majorToMinor || "0") > 0)
-    opts.push({ value: "major", label: line.majorUnitName });
-  if (opts.length === 0) opts.push({ value: "minor", label: "وحدة" });
-  return opts;
+    all.push({ value: "major", label: line.majorUnitName });
+  if (line.mediumUnitName && parseFloat(line.mediumToMinor || "0") > 0)
+    all.push({ value: "medium", label: line.mediumUnitName });
+  if (line.minorUnitName) all.push({ value: "minor", label: line.minorUnitName });
+  if (all.length === 0) all.push({ value: "minor", label: "وحدة" });
+  const origIdx = all.findIndex(u => u.value === line.unitLevel);
+  if (origIdx > 0) {
+    const [orig] = all.splice(origIdx, 1);
+    all.unshift(orig);
+  }
+  return all;
 }

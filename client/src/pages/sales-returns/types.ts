@@ -112,3 +112,11 @@ export function calcLineTotal(returnQtyMinor: number, salePricePerUnit: string, 
   const pricePerMinor = origTotal / origQty;
   return Math.round(returnQtyMinor * pricePerMinor * 100) / 100;
 }
+
+export function salePriceForUnit(line: OriginalLine, unitLevel: string): number {
+  const origQtyMinor = parseFloat(line.qtyInMinor) || 1;
+  const origTotal = parseFloat(line.lineTotal) || 0;
+  const pricePerMinor = origTotal / origQtyMinor;
+  const minorPerUnit = calcQtyMinor(1, unitLevel, line);
+  return Math.round(pricePerMinor * minorPerUnit * 100) / 100;
+}
