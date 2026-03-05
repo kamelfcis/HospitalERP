@@ -26,6 +26,7 @@ import { useStatsDialog }     from "./hooks/useStatsDialog";
 import { useRegistry }        from "./hooks/useRegistry";
 import { useLoadInvoice }     from "./hooks/useLoadInvoice";
 import { useBarcodeScanner }  from "./hooks/useBarcodeScanner";
+import { useRoleRouter }      from "./hooks/useRoleRouter";
 
 import { SalesInvoiceEditor } from "./SalesInvoiceEditor";
 import { InvoiceRegistry }    from "./components/InvoiceRegistry";
@@ -40,6 +41,9 @@ export default function SalesInvoices() {
   const editId              = params.get("id");
   const today               = new Date().toISOString().split("T")[0];
   const isNew               = editId === "new";
+
+  // ── توجيه حسب الدور (الصيدلي → فاتورة جديدة مباشرة) ──────────────────────
+  const { isDirectRole } = useRoleRouter(editId, navigate);
 
   // ── بيانات عامة ───────────────────────────────────────────────────────────
   const { data: warehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
@@ -210,6 +214,9 @@ export default function SalesInvoices() {
       />
     );
   }
+
+  // الصيدلي لا يرى القائمة أبداً — ينتظر التوجيه للفاتورة الجديدة
+  if (isDirectRole && !editId) return null;
 
   return (
     <InvoiceRegistry
