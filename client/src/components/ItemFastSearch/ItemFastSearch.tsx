@@ -154,6 +154,8 @@ export function ItemFastSearch({
     setMode(md);
     setPage(1);
     if (query.trim()) doSearch(query, 1, md);
+    // ركّز على حقل البحث بعد تغيير الوضع
+    setTimeout(() => searchRef.current?.focus(), 0);
   }, [query, doSearch]);
 
   // ── لوحة المفاتيح ────────────────────────────────────────────────────────
@@ -277,7 +279,14 @@ export function ItemFastSearch({
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder='ابحث بالاسم، أو "اسم سعر" مثال: para 20 أو para 10-50'
+              dir={mode === "EN" ? "ltr" : "rtl"}
+              lang={mode === "EN" ? "en" : "ar"}
+              placeholder={
+                mode === "AR"      ? 'ابحث بالاسم العربي، مثال: باراسيتامول 20' :
+                mode === "EN"      ? 'Search by English name, e.g. paracetamol 20' :
+                mode === "CODE"    ? 'ابحث بكود الصنف' :
+                                     'ابحث بالباركود'
+              }
               className="peachtree-input w-full h-8 text-[13px] pl-8"
               autoComplete="off"
               data-testid="input-fast-search-query"
