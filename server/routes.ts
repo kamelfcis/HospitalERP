@@ -4567,6 +4567,7 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: any) {
       if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
+      if (error.message?.includes("رصيد الخزنة غير كافٍ")) return res.status(422).json({ message: error.message });
       if (error.message?.includes("مصروف") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
         return res.status(409).json({ message: error.message });
       }

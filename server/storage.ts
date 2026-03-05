@@ -1,6 +1,6 @@
 import { db, pool } from "./db";
 import { getSetting } from "./settings-cache";
-import { eq, desc, and, gte, lte, sql, or, like, ilike, asc, isNull, isNotNull } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, or, like, ilike, asc, isNull, isNotNull, inArray } from "drizzle-orm";
 import {
   users,
   accounts,
@@ -6500,6 +6500,34 @@ export class DatabaseStorage implements IStorage {
       const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
       if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
       if (!shift.glAccountId) throw new Error("الوردية لا تحتوي على حساب خزنة - يجب إغلاق الوردية وفتح وردية جديدة مع اختيار حساب الخزنة");
+
+      // ── حساب الرصيد المتاح في الخزنة ──
+      const [collectSum] = await tx.select({ total: sql<string>`COALESCE(SUM(amount::numeric), 0)` })
+        .from(cashierReceipts).where(eq(cashierReceipts.shiftId, shiftId));
+      const [refundSum] = await tx.select({ total: sql<string>`COALESCE(SUM(amount::numeric), 0)` })
+        .from(cashierRefundReceipts).where(eq(cashierRefundReceipts.shiftId, shiftId));
+      const availableCash =
+        parseFloat(shift.openingCash || "0") +
+        parseFloat(collectSum?.total || "0") -
+        parseFloat(refundSum?.total || "0");
+
+      // ── حساب إجمالي المبالغ المطلوب صرفها ──
+      const invoiceRows = await tx.select({ id: salesInvoiceHeaders.id, invoiceNumber: salesInvoiceHeaders.invoiceNumber, netTotal: salesInvoiceHeaders.netTotal, status: salesInvoiceHeaders.status, isReturn: salesInvoiceHeaders.isReturn })
+        .from(salesInvoiceHeaders)
+        .where(inArray(salesInvoiceHeaders.id, invoiceIds));
+      const invoiceMap = new Map(invoiceRows.map(r => [r.id, r]));
+
+      let requestedTotal = 0;
+      for (const invoiceId of invoiceIds) {
+        const inv = invoiceMap.get(invoiceId);
+        if (inv) requestedTotal += parseFloat(inv.netTotal);
+      }
+
+      if (requestedTotal > availableCash) {
+        throw new Error(
+          `رصيد الخزنة غير كافٍ — الرصيد المتاح: ${availableCash.toFixed(2)} ج.م، والمطلوب صرفه: ${requestedTotal.toFixed(2)} ج.م`
+        );
+      }
 
       const [maxNumResult] = await tx.select({ maxNum: sql<number>`COALESCE(MAX(receipt_number), 0)` }).from(cashierRefundReceipts);
       let nextRefundNumber = (maxNumResult?.maxNum || 0) + 1;
