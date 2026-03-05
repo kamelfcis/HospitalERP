@@ -1,5 +1,5 @@
+import { useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { AlertTriangle, ArrowUpDown, Trash2 } from "lucide-react";
 import type { PrepLine } from "../types";
 import { getMajorToMinor, toMajor, getUnitName } from "../types";
@@ -21,6 +21,30 @@ export function PrepTable({
   sortDestAsc, setSortDestAsc,
   onQtyChange, onExcludeItem,
 }: Props) {
+  const inputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+
+  const focusRow = useCallback((idx: number) => {
+    const el = inputRefs.current.get(idx);
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  }, []);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent, idx: number) => {
+    if (e.key === "ArrowDown" || (e.key === "Enter" && !e.shiftKey)) {
+      e.preventDefault();
+      let next = idx + 1;
+      while (next < visibleLines.length && !inputRefs.current.has(next)) next++;
+      if (next < visibleLines.length) focusRow(next);
+    } else if (e.key === "ArrowUp" || (e.key === "Enter" && e.shiftKey)) {
+      e.preventDefault();
+      let prev = idx - 1;
+      while (prev >= 0 && !inputRefs.current.has(prev)) prev--;
+      if (prev >= 0) focusRow(prev);
+    }
+  }, [visibleLines.length, focusRow]);
+
   const toggleSourceSort = () => {
     setSortSourceAsc(sortSourceAsc === null ? true : sortSourceAsc ? false : null);
     setSortDestAsc(null);
@@ -76,6 +100,11 @@ export function PrepTable({
                 idx={idx}
                 onQtyChange={onQtyChange}
                 onExclude={onExcludeItem}
+                onKeyDown={handleKeyDown}
+                inputRef={(el) => {
+                  if (el) inputRefs.current.set(idx, el);
+                  else inputRefs.current.delete(idx);
+                }}
               />
             ))
           ) : (
@@ -94,12 +123,14 @@ export function PrepTable({
 }
 
 function PrepRow({
-  line, idx, onQtyChange, onExclude,
+  line, idx, onQtyChange, onExclude, onKeyDown, inputRef,
 }: {
   line: PrepLine;
   idx: number;
   onQtyChange: (itemId: string, val: string) => void;
   onExclude: (itemId: string) => void;
+  onKeyDown: (e: React.KeyboardEvent, idx: number) => void;
+  inputRef: (el: HTMLInputElement | null) => void;
 }) {
   const m2m = getMajorToMinor(line);
   const unitName = getUnitName(line);
@@ -145,13 +176,16 @@ function PrepRow({
           : "—"}
       </td>
       <td className="py-0.5 px-1 text-center">
-        <Input
+        <input
+          ref={inputRef}
           type="number"
           min="0"
           step="1"
           value={line._transferQty}
           onChange={(e) => onQtyChange(line.item_id, e.target.value)}
-          className={`h-7 w-[80px] text-xs text-center mx-auto ${transferExceedsSource ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
+          onKeyDown={(e) => onKeyDown(e, idx)}
+          onFocus={(e) => e.target.select()}
+          className={`h-7 w-[80px] text-xs text-center mx-auto border rounded px-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500 ${transferExceedsSource ? "border-red-500 bg-red-50 dark:bg-red-900/20" : "border-border"} ${sourceInsufficient ? "opacity-50 cursor-not-allowed" : ""}`}
           disabled={sourceInsufficient}
           placeholder="0"
           data-testid={`input-transfer-qty-${idx}`}
