@@ -38,6 +38,8 @@ export interface ItemFastSearchProps {
   excludeServices?: boolean;
   drugsOnly?: boolean;
   title?: string;
+  /** وضع الاستلام — يُخفي تلوين الأصناف منعدمة الرصيد (الاستلام مش بيع) */
+  hideStockWarning?: boolean;
 }
 
 export type SearchMode = "AR" | "EN" | "CODE" | "BARCODE";

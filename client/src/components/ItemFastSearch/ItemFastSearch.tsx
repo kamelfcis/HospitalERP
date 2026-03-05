@@ -34,6 +34,7 @@ function parsePriceFilter(q: string): { nameQ: string; minPrice?: number; maxPri
 export function ItemFastSearch({
   open, onClose, warehouseId, invoiceDate, onItemSelected,
   excludeServices, drugsOnly, title = "بحث سريع عن صنف",
+  hideStockWarning = false,
 }: ItemFastSearchProps) {
   const [mode,        setMode]        = useState<SearchMode>("AR");
   const [query,       setQuery]       = useState("");
@@ -211,6 +212,15 @@ export function ItemFastSearch({
   // ── شارة المخزون ────────────────────────────────────────────────────────
   const StockBadge = ({ item }: { item: FastSearchItem }) => {
     const qty = parseFloat(item.availableQtyMinor ?? "0");
+    if (hideStockWarning) {
+      // وضع الاستلام: لا تلوين — فقط الرقم
+      return (
+        <span className="inline-flex items-center gap-1 text-muted-foreground text-[12px]">
+          <Package className="h-3.5 w-3.5" />
+          {formatNumber(qty)}
+        </span>
+      );
+    }
     if (qty > 0) {
       return (
         <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold text-[12px]">
@@ -321,7 +331,7 @@ export function ItemFastSearch({
                       className={[
                         "peachtree-grid-row cursor-pointer select-none transition-colors",
                         isHl ? "bg-primary/15 outline outline-2 outline-primary/50" : "",
-                        !hasStock ? "opacity-55" : "",
+                        !hasStock && !hideStockWarning ? "opacity-55" : "",
                       ].join(" ")}
                       onClick={() => {
                         setHighlighted(idx);
@@ -339,7 +349,7 @@ export function ItemFastSearch({
                       </td>
                       <td>
                         <div className="flex items-center gap-1.5">
-                          <span className={`font-semibold text-[13px] ${!hasStock ? "text-muted-foreground" : "text-foreground"}`}>
+                          <span className={`font-semibold text-[13px] ${!hasStock && !hideStockWarning ? "text-muted-foreground" : "text-foreground"}`}>
                             {item.nameAr}
                           </span>
                           {item.hasExpiry && (

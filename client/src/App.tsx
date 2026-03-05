@@ -26,7 +26,7 @@ import AuditLog from "@/pages/AuditLog";
 import ItemsList from "@/pages/ItemsList";
 import ItemCard from "@/pages/ItemCard";
 import StoreTransfers from "@/pages/StoreTransfers";
-import SupplierReceiving from "@/pages/SupplierReceiving";
+import SupplierReceiving from "@/pages/supplier-receiving";
 import PurchaseInvoice from "@/pages/PurchaseInvoice";
 import ServicesPricing from "@/pages/ServicesPricing";
 import SalesInvoices from "@/pages/SalesInvoices";
