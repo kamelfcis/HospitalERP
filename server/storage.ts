@@ -3339,24 +3339,36 @@ export class DatabaseStorage implements IStorage {
 
       for (const line of lines) {
         if (line.isRejected) continue;
+
+        const salePrice     = parseFloat(String(line.salePrice     || "0")) || 0;
+        const purchasePrice = parseFloat(String(line.purchasePrice  || "0")) || 0;
+        const qty           = parseFloat(String(line.qtyEntered     || "0")) || 0;
+
+        // نسبة الخصم = (سعر البيع - سعر الشراء) / سعر البيع × 100
+        const discountVal = salePrice > 0 ? Math.max(0, salePrice - purchasePrice) : 0;
+        const discountPct = salePrice > 0 ? +((discountVal / salePrice) * 100).toFixed(4) : 0;
+
+        // الإجماليات (ض.ق.م = 0 في البداية، يعدّلها المستخدم في الفاتورة)
+        const valueBeforeVat = +(qty * purchasePrice).toFixed(2);
+
         await tx.insert(purchaseInvoiceLines).values({
-          invoiceId: invoice.id,
-          receivingLineId: line.id,
-          itemId: line.itemId,
-          unitLevel: line.unitLevel,
-          qty: line.qtyEntered,
-          bonusQty: line.bonusQty || "0",
-          sellingPrice: line.salePrice || "0",
-          purchasePrice: line.purchasePrice || "0",
-          lineDiscountPct: "0",
-          lineDiscountValue: "0",
-          vatRate: "0",
-          valueBeforeVat: "0",
-          vatAmount: "0",
-          valueAfterVat: "0",
-          batchNumber: line.batchNumber,
-          expiryMonth: line.expiryMonth,
-          expiryYear: line.expiryYear,
+          invoiceId:        invoice.id,
+          receivingLineId:  line.id,
+          itemId:           line.itemId,
+          unitLevel:        line.unitLevel,
+          qty:              line.qtyEntered,
+          bonusQty:         line.bonusQty || "0",
+          sellingPrice:     line.salePrice || "0",
+          purchasePrice:    line.purchasePrice || "0",
+          lineDiscountPct:  String(discountPct),
+          lineDiscountValue:String(discountVal.toFixed(2)),
+          vatRate:          "0",
+          valueBeforeVat:   String(valueBeforeVat),
+          vatAmount:        "0",
+          valueAfterVat:    String(valueBeforeVat),
+          batchNumber:      line.batchNumber,
+          expiryMonth:      line.expiryMonth,
+          expiryYear:       line.expiryYear,
         } as any);
       }
 
