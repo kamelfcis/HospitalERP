@@ -8830,12 +8830,26 @@ export class DatabaseStorage implements IStorage {
              ${rl.salePrice}, ${rl.lineTotal}, ${rl.expiryMonth ?? null}, ${rl.expiryYear ?? null}, ${rl.lotId ?? null})
         `);
 
-        await tx.execute(sql`
-          UPDATE warehouse_stock
-          SET qty_available = qty_available + ${parseFloat(rl.qtyInMinor)}
-          WHERE warehouse_id = ${orig.warehouse_id} AND item_id = ${rl.itemId}
-            AND COALESCE(lot_id, '') = COALESCE(${rl.lotId ?? null}::text, '')
-        `);
+        if (rl.lotId) {
+          await tx.execute(sql`
+            UPDATE inventory_lots
+            SET qty_in_minor = qty_in_minor + ${parseFloat(rl.qtyInMinor)}, updated_at = NOW()
+            WHERE id = ${rl.lotId}
+          `);
+        } else {
+          await tx.execute(sql`
+            UPDATE inventory_lots
+            SET qty_in_minor = qty_in_minor + ${parseFloat(rl.qtyInMinor)}, updated_at = NOW()
+            WHERE id = (
+              SELECT id FROM inventory_lots
+              WHERE item_id = ${rl.itemId} AND warehouse_id = ${orig.warehouse_id}
+                AND COALESCE(expiry_month, 0) = COALESCE(${rl.expiryMonth ?? null}, 0)
+                AND COALESCE(expiry_year, 0) = COALESCE(${rl.expiryYear ?? null}, 0)
+              ORDER BY expiry_year NULLS LAST, expiry_month NULLS LAST
+              LIMIT 1
+            )
+          `);
+        }
       }
 
       return { id: returnId, invoiceNumber: returnNumber, netTotal: netTotal.toFixed(2) };
