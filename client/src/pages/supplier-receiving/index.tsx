@@ -166,6 +166,11 @@ export default function SupplierReceiving() {
         qtyEntered:            parseFloat(line.qtyEntered as string),
         qtyInMinor:            parseFloat(line.qtyInMinor as string),
         purchasePrice:         parseFloat(line.purchasePrice as string) || 0,
+        discountPct:           (() => {
+          const sp = line.salePrice ? parseFloat(line.salePrice as string) : 0;
+          const pp = parseFloat(line.purchasePrice as string) || 0;
+          return (sp > 0 && pp > 0) ? Math.round(((sp - pp) / sp) * 10000) / 100 : 0;
+        })(),
         lineTotal:             (parseFloat(line.purchasePrice as string) || 0) * (parseFloat(line.qtyEntered as string) || 0),
         batchNumber:           line.batchNumber || "",
         expiryMonth:           line.expiryMonth ?? null,

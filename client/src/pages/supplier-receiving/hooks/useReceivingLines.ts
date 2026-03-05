@@ -77,8 +77,21 @@ export function useReceivingLines(): UseReceivingLinesReturn {
         line.bonusQtyInMinor = calculateQtyInMinor(bonus, unit, line.item);
         line.unitLevel       = unit;
       }
-      // إعادة حساب الإجمالي — سعر الشراء × الكمية المُدخَلة (بالوحدة المختارة)
-      if ("qtyEntered" in updates || "bonusQty" in updates || "unitLevel" in updates || "purchasePrice" in updates) {
+      // علاقة متبادلة: ن الخصم ↔ سعر الشراء (على أساس سعر البيع)
+      if ("discountPct" in updates && line.salePrice != null && line.salePrice > 0) {
+        const pct = Math.max(0, Math.min(100, updates.discountPct ?? 0));
+        line.discountPct = pct;
+        line.purchasePrice = Math.round((line.salePrice - (line.salePrice * pct / 100)) * 100) / 100;
+      } else if ("purchasePrice" in updates && line.salePrice != null && line.salePrice > 0) {
+        line.discountPct = Math.round(((line.salePrice - (line.purchasePrice || 0)) / line.salePrice) * 10000) / 100;
+      } else if ("salePrice" in updates) {
+        const sp = updates.salePrice ?? 0;
+        if (sp != null && sp > 0 && line.discountPct > 0) {
+          line.purchasePrice = Math.round((sp - (sp * line.discountPct / 100)) * 100) / 100;
+        }
+      }
+      // إعادة حساب الإجمالي — سعر الشراء × الكمية المُدخَلة
+      if ("qtyEntered" in updates || "unitLevel" in updates || "purchasePrice" in updates || "discountPct" in updates || "salePrice" in updates) {
         line.lineTotal = (line.purchasePrice || 0) * (line.qtyEntered || 0);
       }
       copy[index] = line;
@@ -104,6 +117,9 @@ export function useReceivingLines(): UseReceivingLinesReturn {
     const currentSalePrice   = hints?.currentSalePrice  ? parseFloat(hints.currentSalePrice)  : 0;
     const lastSalePrice      = hints?.lastSalePrice     ? parseFloat(hints.lastSalePrice)      : null;
 
+    const discountPct = (currentSalePrice > 0 && lastPurchasePrice > 0)
+      ? Math.round(((currentSalePrice - lastPurchasePrice) / currentSalePrice) * 10000) / 100
+      : 0;
     const newLine: ReceivingLineLocal = {
       id: crypto.randomUUID(),
       itemId: item.id,
@@ -112,6 +128,7 @@ export function useReceivingLines(): UseReceivingLinesReturn {
       qtyEntered,
       qtyInMinor,
       purchasePrice:       lastPurchasePrice,
+      discountPct,
       lineTotal:           lastPurchasePrice * qtyEntered,
       batchNumber:         "",
       expiryMonth:         null,

@@ -11,6 +11,7 @@ export interface ReceivingLineLocal {
   qtyEntered: number;
   qtyInMinor: number;
   purchasePrice: number;
+  discountPct: number;
   lineTotal: number;
   batchNumber: string;
   expiryMonth: number | null;

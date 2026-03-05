@@ -15,11 +15,12 @@ import { getUnitName } from "../types";
 // ── أعمدة التنقل (بالترتيب من اليمين في RTL) ─────────────────────────────
 const NAV_QTY      = 0;
 const NAV_BONUS    = 1;
-const NAV_PURCHASE = 2;
-const NAV_SALE     = 3;
-const NAV_EXPIRY   = 4;
-const NAV_BATCH    = 5;
-const NAV_COUNT    = 6;
+const NAV_SALE     = 2;
+const NAV_DISCOUNT = 3;
+const NAV_PURCHASE = 4;
+const NAV_EXPIRY   = 5;
+const NAV_BATCH    = 6;
+const NAV_COUNT    = 7;
 
 interface Props {
   lines:        ReceivingLineLocal[];
@@ -44,8 +45,8 @@ export function ReceivingLineTable({
   lineFieldFocusedRef, focusedLineIdx, setFocusedLineIdx,
 }: Props) {
   // عدد الأعمدة الكلي (للـ colspan)
-  // #(1) + صنف(1) + وحدة(1) + كمية(1) + هدية(1) + شراء(1) + بيع(1) + صلاحية(1) + تشغيلة(1) + إجمالي(1) + آخرش(1) + آخرب(1) + رصيد(1) + إحصاء(1) + تنبيه(1) [+ حذف(1)]
-  const colSpan = isViewOnly ? 15 : 16;
+  // #(1) + صنف(1) + وحدة(1) + كمية(1) + هدية(1) + بيع(1) + ن الخصم(1) + شراء(1) + صلاحية(1) + تشغيلة(1) + إجمالي(1) + آخرش(1) + آخرب(1) + رصيد(1) + إحصاء(1) + تنبيه(1) [+ حذف(1)]
+  const colSpan = isViewOnly ? 16 : 17;
 
   // ── شبكة مراجع التنقل ───────────────────────────────────────────────────
   const navRefs    = useRef<Map<string, HTMLInputElement>>(new Map());
@@ -108,8 +109,9 @@ export function ReceivingLineTable({
               <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">هدية</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">سعر الشراء</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap" title="نسبة الخصم %">ن الخصم%</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">سعر الشراء</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">التشغيلة</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الإجمالي</th>
@@ -155,7 +157,7 @@ export function ReceivingLineTable({
               <tr className="border-t-2 bg-muted/30">
                 <td colSpan={2} className="py-1.5 px-2 font-bold text-right text-[11px]">الإجمالي الكلي</td>
                 <td className="py-1.5 px-2 font-mono text-[11px] text-muted-foreground">{lines.length} صنف</td>
-                <td colSpan={6}></td>
+                <td colSpan={7}></td>
                 <td className="py-1.5 px-2 font-bold font-mono text-primary text-[13px] whitespace-nowrap">
                   {grandTotal.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
@@ -283,25 +285,7 @@ function LineRow({
         )}
       </td>
 
-      {/* سعر الشراء — NAV_PURCHASE = 2 */}
-      <td className="py-0.5 px-2 whitespace-nowrap">
-        {isViewOnly ? (
-          <span className="font-mono">{line.purchasePrice > 0 ? line.purchasePrice.toFixed(2) : "—"}</span>
-        ) : (
-          <input
-            ref={(el) => registerNav(idx, NAV_PURCHASE, el)}
-            type="number" value={line.purchasePrice || ""}
-            onChange={(e) => onUpdate({ purchasePrice: parseFloat(e.target.value) || 0 })}
-            onFocus={(e) => { lineFieldFocusedRef.current = true; e.target.select(); }}
-            onBlur={() => { lineFieldFocusedRef.current = false; }}
-            onKeyDown={(e) => handleNavKey(e, idx, NAV_PURCHASE)}
-            className={`w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center ${hasPurchasePriceErr ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
-            placeholder="0.00" min="0" step="any" data-testid={`input-purchase-price-${idx}`}
-          />
-        )}
-      </td>
-
-      {/* سعر البيع — NAV_SALE = 3 */}
+      {/* سعر البيع — NAV_SALE = 2 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span>{line.salePrice != null ? line.salePrice.toFixed(2) : "—"}</span> : (
           <input
@@ -321,7 +305,43 @@ function LineRow({
         )}
       </td>
 
-      {/* الصلاحية — NAV_EXPIRY = 4 */}
+      {/* ن الخصم % — NAV_DISCOUNT = 3 */}
+      <td className="py-0.5 px-2 whitespace-nowrap">
+        {isViewOnly ? (
+          <span className="font-mono">{line.discountPct > 0 ? `${line.discountPct}%` : "—"}</span>
+        ) : (
+          <input
+            ref={(el) => registerNav(idx, NAV_DISCOUNT, el)}
+            type="number" value={line.discountPct || ""}
+            onChange={(e) => onUpdate({ discountPct: parseFloat(e.target.value) || 0 })}
+            onFocus={(e) => { lineFieldFocusedRef.current = true; e.target.select(); }}
+            onBlur={() => { lineFieldFocusedRef.current = false; }}
+            onKeyDown={(e) => handleNavKey(e, idx, NAV_DISCOUNT)}
+            className="w-[65px] h-6 text-[11px] px-1 border rounded bg-transparent text-center"
+            placeholder="0%" min="0" max="100" step="any" data-testid={`input-discount-pct-${idx}`}
+          />
+        )}
+      </td>
+
+      {/* سعر الشراء — NAV_PURCHASE = 4 */}
+      <td className="py-0.5 px-2 whitespace-nowrap">
+        {isViewOnly ? (
+          <span className="font-mono">{line.purchasePrice > 0 ? line.purchasePrice.toFixed(2) : "—"}</span>
+        ) : (
+          <input
+            ref={(el) => registerNav(idx, NAV_PURCHASE, el)}
+            type="number" value={line.purchasePrice || ""}
+            onChange={(e) => onUpdate({ purchasePrice: parseFloat(e.target.value) || 0 })}
+            onFocus={(e) => { lineFieldFocusedRef.current = true; e.target.select(); }}
+            onBlur={() => { lineFieldFocusedRef.current = false; }}
+            onKeyDown={(e) => handleNavKey(e, idx, NAV_PURCHASE)}
+            className={`w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center ${hasPurchasePriceErr ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
+            placeholder="0.00" min="0" step="any" data-testid={`input-purchase-price-${idx}`}
+          />
+        )}
+      </td>
+
+      {/* الصلاحية — NAV_EXPIRY = 5 */}
       <td
         className="py-0.5 px-2 whitespace-nowrap"
         onFocusCapture={() => { lineFieldFocusedRef.current = true; }}
@@ -363,7 +383,7 @@ function LineRow({
         )}
       </td>
 
-      {/* رقم التشغيلة — NAV_BATCH = 5 */}
+      {/* رقم التشغيلة — NAV_BATCH = 6 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span>{line.batchNumber || "—"}</span> : (
           <input
