@@ -1,4 +1,4 @@
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatDateShort } from "@/lib/formatters";
 import type { TransferLineLocal, ExpiryOption } from "../types";
@@ -67,6 +67,7 @@ export function TransferLineTable({
             <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
             <th className="py-1 px-2 text-right whitespace-nowrap">الرصيد المتاح</th>
             <th className="py-1 px-2 text-right whitespace-nowrap">ملاحظات</th>
+            <th className="py-1 px-2 text-center whitespace-nowrap">تنبيه</th>
             {!isViewOnly && <th className="py-1 px-2 text-center whitespace-nowrap">حذف</th>}
           </tr>
         </thead>
@@ -218,6 +219,18 @@ export function TransferLineTable({
 
                   <td className="py-0.5 px-2 text-muted-foreground">{line.notes || "—"}</td>
 
+                  <td className="py-0.5 px-2 text-center whitespace-nowrap" data-testid={`cell-warning-${idx}`}>
+                    {hasMultiPrice && (
+                      <span
+                        title="تنبيه: هذا الصنف له دفعتين أو أكثر بأسعار بيع مختلفة — راجع تسعير المخزن الوجهة"
+                        className="text-orange-500 inline-flex items-center justify-center"
+                        data-testid={`icon-multi-price-${idx}`}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                  </td>
+
                   {!isViewOnly && (
                     <td className="py-0.5 px-2 text-center">
                       <Button
@@ -235,7 +248,7 @@ export function TransferLineTable({
             })
           ) : (
             <tr>
-              <td colSpan={isViewOnly ? 7 : 8} className="py-4 text-center text-muted-foreground">
+              <td colSpan={isViewOnly ? 8 : 9} className="py-4 text-center text-muted-foreground">
                 لا توجد أصناف - اضغط "إضافة صنف" لإضافة أصناف
               </td>
             </tr>
