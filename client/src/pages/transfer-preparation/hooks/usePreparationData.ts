@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Warehouse } from "@shared/schema";
 import type { PrepItem, PrepLine, BulkField, BulkOp } from "../types";
+import { getMajorToMinor, toMajor, toMinor } from "../types";
 
 export function usePreparationData() {
   const { toast } = useToast();
@@ -66,14 +67,20 @@ export function usePreparationData() {
     }
   }, [queryEnabled, refetch, toast]);
 
+  const getValInMajor = useCallback((line: PrepLine, field: BulkField): number => {
+    const m2m = getMajorToMinor(line);
+    return toMajor(parseFloat(line[field]) || 0, m2m);
+  }, []);
+
   const visibleLines = useMemo(() => {
     let result = lines.filter((l) => !l._excluded);
     result = result.filter((l) => (parseFloat(l.source_stock) || 0) > 0);
 
     if (excludeCovered) {
       result = result.filter((l) => {
-        const destStock = parseFloat(l.dest_stock) || 0;
-        const totalSold = parseFloat(l.total_sold) || 0;
+        const m2m = getMajorToMinor(l);
+        const destStock = toMajor(parseFloat(l.dest_stock) || 0, m2m);
+        const totalSold = toMajor(parseFloat(l.total_sold) || 0, m2m);
         return destStock < totalSold;
       });
     }
@@ -108,7 +115,7 @@ export function usePreparationData() {
     setLines((prev) =>
       prev.map((l) => {
         if (l._excluded) return l;
-        const val = parseFloat(l[bulkField]) || 0;
+        const val = getValInMajor(l, bulkField);
         let match = false;
         if (bulkOp === "gt") match = val > threshold;
         else if (bulkOp === "lt") match = val < threshold;
@@ -117,7 +124,7 @@ export function usePreparationData() {
       }),
     );
     toast({ title: "تم", description: "تم استبعاد الأصناف المطابقة" });
-  }, [bulkThreshold, bulkOp, bulkField, toast]);
+  }, [bulkThreshold, bulkOp, bulkField, getValInMajor, toast]);
 
   const handleResetExclusions = useCallback(() => {
     setLines((prev) => prev.map((l) => ({ ...l, _excluded: false })));
@@ -131,15 +138,17 @@ export function usePreparationData() {
     setLines((prev) =>
       prev.map((l) => {
         if (l._excluded) return l;
-        const destStock = parseFloat(l.dest_stock) || 0;
-        const totalSold = parseFloat(l.total_sold) || 0;
-        const sourceStock = parseFloat(l.source_stock) || 0;
+        const m2m = getMajorToMinor(l);
+        const destStock = toMajor(parseFloat(l.dest_stock) || 0, m2m);
+        const totalSold = toMajor(parseFloat(l.total_sold) || 0, m2m);
+        const sourceStock = toMajor(parseFloat(l.source_stock) || 0, m2m);
         const needed = Math.max(0, totalSold - destStock);
         const suggested = Math.min(needed, sourceStock);
-        return { ...l, _transferQty: suggested > 0 ? String(suggested) : "" };
+        const rounded = Math.ceil(suggested);
+        return { ...l, _transferQty: rounded > 0 ? String(rounded) : "" };
       }),
     );
-    toast({ title: "تم", description: "تم ملء الكميات المقترحة (الناقص بحد أقصى رصيد المصدر)" });
+    toast({ title: "تم", description: "تم ملء الكميات المقترحة بالوحدة الكبرى (الناقص بحد أقصى رصيد المصدر)" });
   }, [toast]);
 
   const createTransferMutation = useMutation({
@@ -163,29 +172,84 @@ export function usePreparationData() {
   });
 
   const handleCreateTransfer = useCallback(
-    (transferDate: string) => {
+    async (transferDate: string) => {
       const errors: string[] = [];
-      const transferLines = visibleLines
+      const itemsToTransfer = visibleLines
         .filter((l) => parseFloat(l._transferQty) > 0)
-        .map((l, idx) => {
-          const entered = parseFloat(l._transferQty);
-          const srcStock = parseFloat(l.source_stock) || 0;
-          const capped = Math.min(entered, srcStock);
-          if (entered > srcStock) {
+        .map((l) => {
+          const m2m = getMajorToMinor(l);
+          const enteredMajor = parseFloat(l._transferQty);
+          const enteredMinor = toMinor(enteredMajor, m2m);
+          const srcStockMinor = parseFloat(l.source_stock) || 0;
+          const cappedMinor = Math.min(enteredMinor, srcStockMinor);
+
+          if (enteredMinor > srcStockMinor) {
+            const cappedMajor = toMajor(cappedMinor, m2m);
             errors.push(
-              `${l.name_ar}: الكمية (${entered}) أكبر من رصيد المصدر (${srcStock}) — تم تعديلها إلى ${capped}`,
+              `${l.name_ar}: الكمية (${enteredMajor}) أكبر من رصيد المصدر (${toMajor(srcStockMinor, m2m)}) — تم تعديلها إلى ${cappedMajor}`,
             );
           }
-          return { itemId: l.item_id, unitLevel: "minor", qtyEntered: capped, qtyInMinor: capped, lineNo: idx + 1, notes: "" };
+          return { line: l, m2m, cappedMinor };
         })
-        .filter((l) => l.qtyEntered > 0);
+        .filter((x) => x.cappedMinor > 0);
 
-      if (transferLines.length === 0) {
+      if (itemsToTransfer.length === 0) {
         toast({ title: "تنبيه", description: "لا توجد أصناف بكميات للتحويل", variant: "destructive" });
         return;
       }
       if (errors.length > 0) {
         toast({ title: "تم تعديل بعض الكميات", description: errors.join("\n"), variant: "default" });
+      }
+
+      const fefoResults = await Promise.all(
+        itemsToTransfer.map(async ({ line, m2m, cappedMinor }) => {
+          try {
+            const params = new URLSearchParams({
+              itemId: line.item_id,
+              warehouseId: sourceWarehouseId,
+              requiredQtyInMinor: String(cappedMinor),
+              asOfDate: transferDate,
+            });
+            const res = await fetch(`/api/transfer/fefo-preview?${params}`, { credentials: "include" });
+            if (!res.ok) throw new Error("FEFO preview failed");
+            const preview = await res.json();
+            return { line, m2m, allocations: preview.allocations as any[] };
+          } catch {
+            return {
+              line,
+              m2m,
+              allocations: [{ allocatedQty: String(cappedMinor), expiryMonth: null, expiryYear: null, expiryDate: null }],
+            };
+          }
+        }),
+      );
+
+      let lineNo = 0;
+      const transferLines: any[] = [];
+
+      for (const { line, m2m, allocations } of fefoResults) {
+        for (const alloc of allocations) {
+          const allocMinor = parseFloat(alloc.allocatedQty) || 0;
+          if (allocMinor <= 0) continue;
+          lineNo++;
+          const allocMajor = toMajor(allocMinor, m2m);
+          transferLines.push({
+            itemId: line.item_id,
+            unitLevel: m2m > 1 ? "major" : "minor",
+            qtyEntered: String(allocMajor),
+            qtyInMinor: String(allocMinor),
+            selectedExpiryDate: alloc.expiryDate || null,
+            expiryMonth: alloc.expiryMonth || null,
+            expiryYear: alloc.expiryYear || null,
+            lineNo,
+            notes: "",
+          });
+        }
+      }
+
+      if (transferLines.length === 0) {
+        toast({ title: "تنبيه", description: "لا توجد أصناف بكميات للتحويل", variant: "destructive" });
+        return;
       }
 
       createTransferMutation.mutate({

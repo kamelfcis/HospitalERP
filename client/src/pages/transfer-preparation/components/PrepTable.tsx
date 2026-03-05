@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertTriangle, ArrowUpDown, Trash2 } from "lucide-react";
 import type { PrepLine } from "../types";
-import { formatQtyInUnit } from "../types";
+import { getMajorToMinor, toMajor, getUnitName } from "../types";
 
 interface Props {
   visibleLines: PrepLine[];
@@ -101,15 +101,27 @@ function PrepRow({
   onQtyChange: (itemId: string, val: string) => void;
   onExclude: (itemId: string) => void;
 }) {
-  const totalSold = parseFloat(line.total_sold) || 0;
-  const sourceStock = parseFloat(line.source_stock) || 0;
-  const destStock = parseFloat(line.dest_stock) || 0;
-  const transferQty = parseFloat(line._transferQty) || 0;
-  const majorToMinor = parseFloat(line.major_to_minor || "0") || null;
+  const m2m = getMajorToMinor(line);
+  const unitName = getUnitName(line);
 
-  const sourceInsufficient = sourceStock <= 0;
+  const totalSoldMinor = parseFloat(line.total_sold) || 0;
+  const sourceStockMinor = parseFloat(line.source_stock) || 0;
+  const destStockMinor = parseFloat(line.dest_stock) || 0;
+
+  const totalSold = toMajor(totalSoldMinor, m2m);
+  const sourceStock = toMajor(sourceStockMinor, m2m);
+  const destStock = toMajor(destStockMinor, m2m);
+
+  const transferQty = parseFloat(line._transferQty) || 0;
+
+  const sourceInsufficient = sourceStockMinor <= 0;
   const transferExceedsSource = transferQty > sourceStock;
   const destCoversNeed = destStock >= totalSold;
+
+  const fmtQty = (val: number) => {
+    if (Number.isInteger(val)) return String(val);
+    return val.toFixed(2).replace(/\.?0+$/, "");
+  };
 
   return (
     <tr
@@ -119,15 +131,13 @@ function PrepRow({
       <td className="py-0.5 px-2 text-center text-muted-foreground">{idx + 1}</td>
       <td className="py-0.5 px-2 font-medium" data-testid={`text-item-name-${idx}`}>{line.name_ar}</td>
       <td className="py-0.5 px-2 text-muted-foreground" data-testid={`text-item-code-${idx}`}>{line.item_code}</td>
-      <td className="py-0.5 px-2 whitespace-nowrap">{line.minor_unit_name || "وحدة"}</td>
-      <td className="py-0.5 px-2 text-center font-semibold">{totalSold}</td>
+      <td className="py-0.5 px-2 whitespace-nowrap">{unitName}</td>
+      <td className="py-0.5 px-2 text-center font-semibold">{fmtQty(totalSold)}</td>
       <td className={`py-0.5 px-2 text-center ${sourceInsufficient ? "text-red-500 font-bold" : ""}`}>
-        {sourceStock > 0
-          ? formatQtyInUnit(sourceStock, majorToMinor, line.major_unit_name, line.minor_unit_name)
-          : "0"}
+        {sourceStock > 0 ? fmtQty(sourceStock) : "0"}
       </td>
       <td className={`py-0.5 px-2 text-center ${destCoversNeed ? "text-green-600" : "text-orange-500"}`}>
-        {formatQtyInUnit(destStock, majorToMinor, line.major_unit_name, line.minor_unit_name)}
+        {fmtQty(destStock)}
       </td>
       <td className="py-0.5 px-2 text-center text-muted-foreground whitespace-nowrap">
         {line.nearest_expiry

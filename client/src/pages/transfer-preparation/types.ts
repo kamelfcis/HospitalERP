@@ -22,6 +22,28 @@ export interface PrepLine extends PrepItem {
 export type BulkField = "dest_stock" | "source_stock" | "total_sold";
 export type BulkOp = "gt" | "lt" | "eq";
 
+export function getMajorToMinor(line: PrepItem): number {
+  const m2m = parseFloat(line.major_to_minor || "0");
+  return m2m > 1 ? m2m : 1;
+}
+
+export function toMajor(qtyMinor: number, majorToMinor: number): number {
+  if (majorToMinor <= 1) return qtyMinor;
+  const result = qtyMinor / majorToMinor;
+  return Math.round(result * 10000) / 10000;
+}
+
+export function toMinor(qtyMajor: number, majorToMinor: number): number {
+  if (majorToMinor <= 1) return qtyMajor;
+  return Math.round(qtyMajor * majorToMinor * 10000) / 10000;
+}
+
+export function getUnitName(line: PrepItem): string {
+  const m2m = parseFloat(line.major_to_minor || "0");
+  if (m2m > 1 && line.major_unit_name) return line.major_unit_name;
+  return line.minor_unit_name || "وحدة";
+}
+
 export function formatQtyInUnit(
   qtyMinor: number,
   majorToMinor: number | null,
