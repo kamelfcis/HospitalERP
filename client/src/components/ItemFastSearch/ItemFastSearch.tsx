@@ -179,7 +179,7 @@ export function ItemFastSearch({
       e.preventDefault();
       const item = items[highlighted];
       if (!item) return;
-      if (!item.hasExpiry) {
+      if (!item.hasExpiry || hideStockWarning) {
         selectItem(item, null);
       } else if (batchMode) {
         selectItem(item);
@@ -336,7 +336,7 @@ export function ItemFastSearch({
                       onClick={() => {
                         setHighlighted(idx);
                         resetBatches();
-                        if (!item.hasExpiry) selectItem(item, null);
+                        if (!item.hasExpiry || hideStockWarning) selectItem(item, null);
                         else loadBatches(item);
                       }}
                       onMouseEnter={() => {
