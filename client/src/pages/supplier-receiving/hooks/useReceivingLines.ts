@@ -77,9 +77,9 @@ export function useReceivingLines(): UseReceivingLinesReturn {
         line.bonusQtyInMinor = calculateQtyInMinor(bonus, unit, line.item);
         line.unitLevel       = unit;
       }
-      // إعادة حساب الإجمالي عند أي تغيير في الكمية أو سعر الشراء
+      // إعادة حساب الإجمالي — الهدية مجانية، لا تُحسب في التكلفة
       if ("qtyEntered" in updates || "bonusQty" in updates || "unitLevel" in updates || "purchasePrice" in updates) {
-        line.lineTotal = (line.purchasePrice || 0) * (line.qtyInMinor + line.bonusQtyInMinor);
+        line.lineTotal = (line.purchasePrice || 0) * line.qtyInMinor;
       }
       copy[index] = line;
       return copy;
@@ -112,7 +112,7 @@ export function useReceivingLines(): UseReceivingLinesReturn {
       qtyEntered,
       qtyInMinor,
       purchasePrice:       lastPurchasePrice,
-      lineTotal:           0,
+      lineTotal:           lastPurchasePrice * qtyInMinor,
       batchNumber:         "",
       expiryMonth:         null,
       expiryYear:          null,
