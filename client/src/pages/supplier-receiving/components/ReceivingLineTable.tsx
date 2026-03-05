@@ -1,9 +1,6 @@
 /**
  * ReceivingLineTable — جدول أصناف إذن الاستلام
  *
- * يعرض السطور ويمكّن تعديلها إذا كان الإذن مسودة.
- * لا يحمل أي حالة — كل شيء يأتي من الـ props.
- *
  * التنقل بالأسهم (spreadsheet-style):
  *  ← يسار  = عمود أعلى (RTL)     → يمين = عمود أدنى (RTL)
  *  ↑ فوق   = سطر أعلى            ↓ تحت  = سطر أدنى
@@ -28,10 +25,10 @@ interface Props {
   lines:        ReceivingLineLocal[];
   lineErrors:   LineError[];
   isViewOnly:   boolean;
+  grandTotal:   number;
   onUpdateLine: (idx: number, updates: Partial<ReceivingLineLocal>) => void;
   onDeleteLine: (idx: number) => void;
   onOpenStats:  (itemId: string) => void;
-  // refs للتركيز
   qtyInputRefs:        React.MutableRefObject<Map<number, HTMLInputElement>>;
   salePriceInputRefs:  React.MutableRefObject<Map<number, HTMLInputElement>>;
   expiryInputRefs:     React.MutableRefObject<Map<number, HTMLDivElement>>;
@@ -41,12 +38,14 @@ interface Props {
 }
 
 export function ReceivingLineTable({
-  lines, lineErrors, isViewOnly,
+  lines, lineErrors, isViewOnly, grandTotal,
   onUpdateLine, onDeleteLine, onOpenStats,
   qtyInputRefs, salePriceInputRefs, expiryInputRefs,
   lineFieldFocusedRef, focusedLineIdx, setFocusedLineIdx,
 }: Props) {
-  const colSpan = isViewOnly ? 14 : 15;
+  // عدد الأعمدة الكلي (للـ colspan)
+  // #(1) + صنف(1) + وحدة(1) + كمية(1) + هدية(1) + شراء(1) + بيع(1) + صلاحية(1) + تشغيلة(1) + إجمالي(1) + آخرش(1) + آخرب(1) + رصيد(1) + إحصاء(1) + تنبيه(1) [+ حذف(1)]
+  const colSpan = isViewOnly ? 15 : 16;
 
   // ── شبكة مراجع التنقل ───────────────────────────────────────────────────
   const navRefs    = useRef<Map<string, HTMLInputElement>>(new Map());
@@ -68,8 +67,7 @@ export function ReceivingLineTable({
       const div = expiryDivs.current.get(row);
       if (div) {
         const inp = div.querySelector<HTMLInputElement>("input");
-        inp?.focus();
-        inp?.select();
+        inp?.focus(); inp?.select();
       }
       return;
     }
@@ -110,15 +108,16 @@ export function ReceivingLineTable({
               <th className="py-1 px-2 text-right whitespace-nowrap">الوحدة</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الكمية</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">هدية</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">سعر الشراء</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">سعر البيع</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">شراء</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">بيع</th>
               <th className="py-1 px-2 text-right whitespace-nowrap">الصلاحية</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">رقم التشغيلة</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">آخر شراء</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">آخر بيع</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">رصيد المخزن</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap">تشغيلة</th>
+              <th className="py-1 px-2 text-right whitespace-nowrap font-bold text-primary">الإجمالي</th>
+              <th className="py-1 px-1 text-right whitespace-nowrap text-muted-foreground text-[10px]">آخر ش.</th>
+              <th className="py-1 px-1 text-right whitespace-nowrap text-muted-foreground text-[10px]">آخر ب.</th>
+              <th className="py-1 px-1 text-right whitespace-nowrap text-muted-foreground text-[10px]">رصيد</th>
               <th className="py-1 px-2 text-center whitespace-nowrap">إحصاء</th>
-              <th className="py-1 px-2 text-center whitespace-nowrap">تنبيه</th>
+              <th className="py-1 px-2 text-center whitespace-nowrap">▲</th>
               {!isViewOnly && <th className="py-1 px-2 text-center whitespace-nowrap">حذف</th>}
             </tr>
           </thead>
@@ -153,10 +152,14 @@ export function ReceivingLineTable({
           </tbody>
           {lines.length > 0 && (
             <tfoot>
-              <tr className="border-t font-bold">
-                <td colSpan={3} className="py-1 px-2 text-left">إجمالي الأصناف</td>
-                <td className="py-1 px-2 font-mono">{lines.length}</td>
-                <td colSpan={isViewOnly ? 9 : 10}></td>
+              <tr className="border-t-2 bg-muted/30">
+                <td colSpan={2} className="py-1.5 px-2 font-bold text-right text-[11px]">الإجمالي الكلي</td>
+                <td className="py-1.5 px-2 font-mono text-[11px] text-muted-foreground">{lines.length} صنف</td>
+                <td colSpan={6}></td>
+                <td className="py-1.5 px-2 font-bold font-mono text-primary text-[13px] whitespace-nowrap">
+                  {grandTotal.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td colSpan={isViewOnly ? 5 : 6}></td>
               </tr>
             </tfoot>
           )}
@@ -181,7 +184,6 @@ interface RowProps {
   expiryInputRefs:     React.MutableRefObject<Map<number, HTMLDivElement>>;
   lineFieldFocusedRef: React.MutableRefObject<boolean>;
   setFocusedLineIdx:   (v: number | null) => void;
-  // تنقل الخلايا
   registerNav:      (row: number, col: number, el: HTMLInputElement | null) => void;
   registerExpiryDiv:(row: number, el: HTMLDivElement | null) => void;
   handleNavKey:     (e: React.KeyboardEvent, row: number, col: number) => void;
@@ -194,29 +196,31 @@ function LineRow({
   lineFieldFocusedRef, setFocusedLineIdx,
   registerNav, registerExpiryDiv, handleNavKey,
 }: RowProps) {
-  const hasExpiryErr      = lineErrors.some((e) => e.lineIndex === idx && e.field === "expiry");
-  const hasSalePriceErr   = lineErrors.some((e) => e.lineIndex === idx && e.field === "salePrice");
+  const hasExpiryErr        = lineErrors.some((e) => e.lineIndex === idx && e.field === "expiry");
+  const hasSalePriceErr     = lineErrors.some((e) => e.lineIndex === idx && e.field === "salePrice");
   const hasPurchasePriceErr = lineErrors.some(
     (e) => e.lineIndex === idx && (e.field === "purchasePrice" || e.field === "costOverPrice")
   );
 
-  // تنبيهات
   const salesPriceChanged =
     line.salePrice != null && line.lastSalePriceHint != null && line.lastSalePriceHint > 0 &&
     Math.abs(line.salePrice - line.lastSalePriceHint) > 0.01;
 
   const expiryNear = (() => {
     if (!line.expiryMonth || !line.expiryYear) return false;
-    const now = new Date();
+    const now    = new Date();
     const months = (line.expiryYear - now.getFullYear()) * 12 + (line.expiryMonth - (now.getMonth() + 1));
     return months <= 6 && months >= 0;
   })();
 
   return (
-    <tr className={`peachtree-grid-row ${isFocused ? "ring-1 ring-blue-300 dark:ring-blue-700" : ""}`}
-      data-testid={`row-line-${idx}`}>
+    <tr
+      className={`peachtree-grid-row ${isFocused ? "ring-1 ring-blue-300 dark:ring-blue-700" : ""}`}
+      data-testid={`row-line-${idx}`}
+    >
       {/* # */}
       <td className="py-0.5 px-2 text-muted-foreground">{idx + 1}</td>
+
       {/* الصنف */}
       <td className="py-1 px-2" title={`${line.item?.nameAr || ""} — ${line.item?.itemCode || ""}`}>
         <div className="leading-tight">
@@ -226,18 +230,23 @@ function LineRow({
           <div className="text-[10px] text-muted-foreground font-mono">{line.item?.itemCode || ""}</div>
         </div>
       </td>
+
       {/* الوحدة */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? getUnitName(line.item, line.unitLevel) : (
-          <select value={line.unitLevel} onChange={(e) => onUpdate({ unitLevel: e.target.value })}
+          <select
+            value={line.unitLevel}
+            onChange={(e) => onUpdate({ unitLevel: e.target.value })}
             className="h-6 text-[11px] px-0.5 border rounded bg-transparent"
-            data-testid={`select-unit-${idx}`}>
+            data-testid={`select-unit-${idx}`}
+          >
             {line.item?.majorUnitName  && <option value="major">{line.item.majorUnitName}</option>}
             {line.item?.mediumUnitName && <option value="medium">{line.item.mediumUnitName}</option>}
             <option value="minor">{line.item?.minorUnitName || "وحدة صغرى"}</option>
           </select>
         )}
       </td>
+
       {/* الكمية — NAV_QTY = 0 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span data-testid={`text-qty-${idx}`}>{line.qtyEntered}</span> : (
@@ -253,9 +262,11 @@ function LineRow({
             onBlur={() => { lineFieldFocusedRef.current = false; setFocusedLineIdx(null); if (line.qtyEntered <= 0) onUpdate({ qtyEntered: 1 }); }}
             onKeyDown={(e) => handleNavKey(e, idx, NAV_QTY)}
             className="w-[70px] h-6 text-[12px] px-1 border rounded text-center bg-transparent focus:border-blue-400 dark:focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            data-testid={`input-qty-${idx}`} min="0" step="any" />
+            data-testid={`input-qty-${idx}`} min="0" step="any"
+          />
         )}
       </td>
+
       {/* هدية — NAV_BONUS = 1 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span>{line.bonusQty}</span> : (
@@ -267,9 +278,11 @@ function LineRow({
             onBlur={() => { lineFieldFocusedRef.current = false; }}
             onKeyDown={(e) => handleNavKey(e, idx, NAV_BONUS)}
             className="w-[55px] h-6 text-[11px] px-1 border rounded text-center bg-transparent"
-            placeholder="0" min="0" step="any" data-testid={`input-bonus-qty-${idx}`} />
+            placeholder="0" min="0" step="any" data-testid={`input-bonus-qty-${idx}`}
+          />
         )}
       </td>
+
       {/* سعر الشراء — NAV_PURCHASE = 2 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? (
@@ -283,9 +296,11 @@ function LineRow({
             onBlur={() => { lineFieldFocusedRef.current = false; }}
             onKeyDown={(e) => handleNavKey(e, idx, NAV_PURCHASE)}
             className={`w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center ${hasPurchasePriceErr ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
-            placeholder="0.00" min="0" step="any" data-testid={`input-purchase-price-${idx}`} />
+            placeholder="0.00" min="0" step="any" data-testid={`input-purchase-price-${idx}`}
+          />
         )}
       </td>
+
       {/* سعر البيع — NAV_SALE = 3 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span>{line.salePrice != null ? line.salePrice.toFixed(2) : "—"}</span> : (
@@ -301,15 +316,23 @@ function LineRow({
             onBlur={() => { lineFieldFocusedRef.current = false; }}
             onKeyDown={(e) => handleNavKey(e, idx, NAV_SALE)}
             className={`w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent text-center ${hasSalePriceErr ? "border-red-500 bg-red-50 dark:bg-red-900/20" : ""}`}
-            placeholder="0.00" min="0" step="any" data-testid={`input-sale-price-${idx}`} />
+            placeholder="0.00" min="0" step="any" data-testid={`input-sale-price-${idx}`}
+          />
         )}
       </td>
+
       {/* الصلاحية — NAV_EXPIRY = 4 */}
-      <td className="py-0.5 px-2 whitespace-nowrap"
+      <td
+        className="py-0.5 px-2 whitespace-nowrap"
         onFocusCapture={() => { lineFieldFocusedRef.current = true; }}
-        onBlurCapture={() => { lineFieldFocusedRef.current = false; }}>
+        onBlurCapture={() => { lineFieldFocusedRef.current = false; }}
+      >
         {isViewOnly ? (
-          <span>{line.expiryMonth && line.expiryYear ? `${String(line.expiryMonth).padStart(2, "0")}/${line.expiryYear}` : "—"}</span>
+          <span>
+            {line.expiryMonth && line.expiryYear
+              ? `${String(line.expiryMonth).padStart(2, "0")}/${line.expiryYear}`
+              : "—"}
+          </span>
         ) : (
           <div
             ref={(el) => {
@@ -318,27 +341,28 @@ function LineRow({
               registerExpiryDiv(idx, el);
             }}
             onKeyDownCapture={(e) => {
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
-                // السماح لـ ExpiryInput باستخدام ←/→ بين الشهر والسنة أولاً
-                // إذا كانت الإشارة من داخل ExpiryInput ذاته، نتركها
-                const target = e.target as HTMLInputElement;
-                const isExpLeft  = e.key === "ArrowLeft"  && target.selectionStart === target.value.length;
-                const isExpRight = e.key === "ArrowRight" && target.selectionStart === 0;
-                const isUpDown   = e.key === "ArrowUp" || e.key === "ArrowDown";
-                if (isUpDown || isExpLeft || isExpRight) {
-                  handleNavKey(e as unknown as React.KeyboardEvent, idx, NAV_EXPIRY);
-                }
+              const target   = e.target as HTMLInputElement;
+              const isUpDown = e.key === "ArrowUp" || e.key === "ArrowDown";
+              const atStart  = target.selectionStart === 0;
+              const atEnd    = target.selectionStart === target.value.length;
+              const goRight  = e.key === "ArrowRight" && atStart;
+              const goLeft   = e.key === "ArrowLeft"  && atEnd;
+              if (isUpDown || goRight || goLeft) {
+                handleNavKey(e as unknown as React.KeyboardEvent, idx, NAV_EXPIRY);
               }
             }}
-            className={hasExpiryErr ? "[&_input]:border-red-500 [&_input]:bg-red-50 dark:[&_input]:bg-red-900/20" : ""}>
+            className={hasExpiryErr ? "[&_input]:border-red-500 [&_input]:bg-red-50 dark:[&_input]:bg-red-900/20" : ""}
+          >
             <ExpiryInput
               expiryMonth={line.expiryMonth} expiryYear={line.expiryYear}
               onChange={(month, year) => onUpdate({ expiryMonth: month, expiryYear: year })}
               disabled={isViewOnly || !line.item?.hasExpiry}
-              data-testid={`input-expiry-${idx}`} />
+              data-testid={`input-expiry-${idx}`}
+            />
           </div>
         )}
       </td>
+
       {/* رقم التشغيلة — NAV_BATCH = 5 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
         {isViewOnly ? <span>{line.batchNumber || "—"}</span> : (
@@ -349,42 +373,58 @@ function LineRow({
             onFocus={() => { lineFieldFocusedRef.current = true; }}
             onBlur={() => { lineFieldFocusedRef.current = false; }}
             onKeyDown={(e) => {
-              // في حقل النص: تنقّل بالأسهم فقط من حافة النص
-              const target = e.target as HTMLInputElement;
-              const atStart = target.selectionStart === 0 && target.selectionEnd === 0;
-              const atEnd   = target.selectionStart === target.value.length;
+              const target   = e.target as HTMLInputElement;
               const isUpDown = e.key === "ArrowUp" || e.key === "ArrowDown";
-              // RTL: ArrowRight → col أدنى (يمين)، ArrowLeft → col أعلى (يسار)
-              const goRight = e.key === "ArrowRight" && atStart;
-              const goLeft  = e.key === "ArrowLeft"  && atEnd;
+              const atStart  = target.selectionStart === 0 && target.selectionEnd === 0;
+              const atEnd    = target.selectionStart === target.value.length;
+              const goRight  = e.key === "ArrowRight" && atStart;
+              const goLeft   = e.key === "ArrowLeft"  && atEnd;
               if (isUpDown || goRight || goLeft) handleNavKey(e, idx, NAV_BATCH);
             }}
             className="w-[80px] h-6 text-[11px] px-1 border rounded bg-transparent"
             placeholder={line.item?.hasBatch ? "مطلوب" : "—"}
-            data-testid={`input-batch-${idx}`} />
+            data-testid={`input-batch-${idx}`}
+          />
         )}
       </td>
-      {/* hints */}
-      <td className="py-0.5 px-2 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
+
+      {/* الإجمالي (للقراءة فقط) */}
+      <td className="py-0.5 px-2 whitespace-nowrap text-right">
+        <span
+          className={`font-mono text-[12px] font-semibold ${line.lineTotal > 0 ? "text-primary" : "text-muted-foreground"}`}
+          data-testid={`text-line-total-${idx}`}
+        >
+          {line.lineTotal > 0 ? line.lineTotal.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+        </span>
+      </td>
+
+      {/* hints — مضغوطة */}
+      <td className="py-0.5 px-1 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
         {line.lastPurchasePriceHint != null ? line.lastPurchasePriceHint.toFixed(2) : "—"}
       </td>
-      <td className="py-0.5 px-2 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
+      <td className="py-0.5 px-1 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
         {line.lastSalePriceHint != null ? line.lastSalePriceHint.toFixed(2) : "—"}
       </td>
-      <td className="py-0.5 px-2 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
+      <td className="py-0.5 px-1 whitespace-nowrap text-muted-foreground font-mono text-[10px] max-w-[60px] truncate"
+          title={line.onHandInWarehouse}>
         {line.onHandInWarehouse}
       </td>
+
       {/* إحصاء */}
       <td className="py-0.5 px-2 text-center">
         <Button variant="outline" size="icon" onClick={onOpenStats} data-testid={`button-stats-${idx}`}>
           <BarChart3 className="h-3 w-3" />
         </Button>
       </td>
+
       {/* تنبيه */}
       <td className="py-0.5 px-2 text-center whitespace-nowrap">
         <div className="flex gap-0.5 items-center justify-center">
           {salesPriceChanged && (
-            <span title={`سعر البيع (${line.salePrice}) يختلف عن آخر سعر (${line.lastSalePriceHint})`} className="text-orange-500">
+            <span
+              title={`سعر البيع (${line.salePrice}) يختلف عن آخر سعر (${line.lastSalePriceHint})`}
+              className="text-orange-500"
+            >
               <AlertTriangle className="h-3.5 w-3.5" />
             </span>
           )}
@@ -395,6 +435,7 @@ function LineRow({
           )}
         </div>
       </td>
+
       {/* حذف */}
       {!isViewOnly && (
         <td className="py-0.5 px-2 text-center">

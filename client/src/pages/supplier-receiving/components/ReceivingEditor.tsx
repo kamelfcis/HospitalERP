@@ -214,6 +214,7 @@ export function ReceivingEditor({
           lines={lines.formLines}
           lineErrors={lines.lineErrors}
           isViewOnly={isViewOnly}
+          grandTotal={grandTotal}
           onUpdateLine={lines.updateLine}
           onDeleteLine={lines.handleDeleteLine}
           onOpenStats={openStats}

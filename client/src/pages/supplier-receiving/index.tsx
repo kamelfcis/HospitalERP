@@ -100,6 +100,11 @@ export default function SupplierReceiving() {
 
   // ── إضافة صنف للسطور ────────────────────────────────────────────────────
   const addItemToLines = useCallback(async (item: any) => {
+    // الصنف لازم يكون له كود — بدونه لا يُضاف سطر
+    if (!item?.itemCode) {
+      toast({ title: "هذا الصنف ليس له كود — لا يمكن إضافته", variant: "destructive" });
+      return;
+    }
     const newLine = await lines.addItemLine(item, form.supplierId, form.warehouseId);
     if (newLine) {
       // تركيز على حقل الكمية للسطر الجديد
@@ -109,7 +114,7 @@ export default function SupplierReceiving() {
         if (lastIdx >= 0) lines.qtyInputRefs.current.get(lastIdx)?.focus();
       }, 80);
     }
-  }, [form.supplierId, form.warehouseId, lines]);
+  }, [form.supplierId, form.warehouseId, lines, toast]);
 
   // ── باركود ──────────────────────────────────────────────────────────────
   const barcodeInputRef = useRef<HTMLInputElement>(null);
