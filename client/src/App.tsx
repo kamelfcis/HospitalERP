@@ -25,7 +25,7 @@ import AccountLedger from "@/pages/AccountLedger";
 import AuditLog from "@/pages/AuditLog";
 import ItemsList from "@/pages/ItemsList";
 import ItemCard from "@/pages/ItemCard";
-import StoreTransfers from "@/pages/StoreTransfers";
+import StoreTransfers from "@/pages/store-transfers";
 import SupplierReceiving from "@/pages/supplier-receiving";
 import PurchaseInvoice from "@/pages/purchase-invoices";
 import ServicesPricing from "@/pages/ServicesPricing";

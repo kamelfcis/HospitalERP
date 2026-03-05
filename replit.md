@@ -40,7 +40,8 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Room Management**: Dedicated page for CRUD operations on floors, rooms, and beds, including grade assignment.
 - **Surgery Types Integration**: Allows linking surgery types to admissions, impacting OR_ROOM line items and invoice totals.
 - **Admissions Management**: Enhanced admissions list with invoice status, department filtering, and financial totals.
-- **Refactored Pages**: `PatientInvoicePage`, `SalesInvoices`, and `CashierCollection` are refactored into modular, hook-based compound components.
+- **Refactored Pages**: `PatientInvoicePage`, `SalesInvoices`, `CashierCollection`, and `StoreTransfers` are refactored into modular, hook-based compound components.
+- **Shared ItemSearchDialog**: `@/components/ItemSearchDialog.tsx` is a shared, configurable search dialog used across pages. `ItemFastSearch` (`@/components/ItemFastSearch/`) is the primary fast-search component shared between sales invoices and store transfers.
 
 ## External Dependencies
 
