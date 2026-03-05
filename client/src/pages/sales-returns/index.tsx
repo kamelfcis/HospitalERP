@@ -68,35 +68,31 @@ export default function SalesReturnsPage() {
             onChangeUnit={form.updateReturnUnit}
           />
 
-          {form.hasReturnItems && (
-            <>
-              <ReturnTotals
-                subtotal={form.subtotal}
-                discountType={form.discountType}
-                setDiscountType={form.setDiscountType}
-                discountPercent={form.discountPercent}
-                setDiscountPercent={form.setDiscountPercent}
-                discountValue={form.discountValue}
-                setDiscountValue={form.setDiscountValue}
-                computedDiscount={form.computedDiscount}
-                netTotal={form.netTotal}
-                notes={form.notes}
-                setNotes={form.setNotes}
-              />
+          <ReturnTotals
+            subtotal={form.subtotal}
+            discountType={form.discountType}
+            setDiscountType={form.setDiscountType}
+            discountPercent={form.discountPercent}
+            setDiscountPercent={form.setDiscountPercent}
+            discountValue={form.discountValue}
+            setDiscountValue={form.setDiscountValue}
+            computedDiscount={form.computedDiscount}
+            netTotal={form.netTotal}
+            notes={form.notes}
+            setNotes={form.setNotes}
+          />
 
-              <div className="flex justify-end">
-                <Button
-                  onClick={() => form.submitReturn()}
-                  disabled={form.isSubmitting || !form.hasReturnItems}
-                  className="min-w-[180px]"
-                  data-testid="button-submit-return"
-                >
-                  {form.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Undo2 className="h-4 w-4 ml-2" />}
-                  تسجيل المرتجع
-                </Button>
-              </div>
-            </>
-          )}
+          <div className="flex justify-end">
+            <Button
+              onClick={() => form.submitReturn()}
+              disabled={form.isSubmitting || !form.hasReturnItems}
+              className="min-w-[180px]"
+              data-testid="button-submit-return"
+            >
+              {form.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Undo2 className="h-4 w-4 ml-2" />}
+              تسجيل المرتجع
+            </Button>
+          </div>
         </>
       )}
     </div>
