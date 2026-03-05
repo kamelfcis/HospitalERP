@@ -4,8 +4,8 @@
  * يجمع: بيانات الرأس + جدول السطور + شريط الأدوات + نوافذ الحوار.
  * لا يحمل حالة — كل شيء يأتي من الـ orchestrator (index.tsx).
  */
-import { useCallback, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
 import { Plus, Save, Send, RotateCcw, FileText, ScanBarcode, Loader2, Check, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +90,24 @@ export function ReceivingEditor({
   const { isViewOnly, formStatus, formCorrectionStatus, formConvertedToInvoiceId,
     formReceivingNumber, invoiceDuplicateError } = form;
 
+  // شرط إضافة الأصناف: لازم المستودع ورقم فاتورة المورد مكملين
+  const canAddItems = !isViewOnly
+    && !!form.warehouseId
+    && !!form.supplierInvoiceNo.trim();
+
+  const { toast: addToast } = useToast();
+  const handleOpenItemSearch = useCallback(() => {
+    if (!form.warehouseId) {
+      addToast({ title: "اختر المستودع أولاً", variant: "destructive" });
+      return;
+    }
+    if (!form.supplierInvoiceNo.trim()) {
+      addToast({ title: "أدخل رقم فاتورة المورد أولاً", variant: "destructive" });
+      return;
+    }
+    setItemSearchOpen(true);
+  }, [form.warehouseId, form.supplierInvoiceNo, setItemSearchOpen, addToast]);
+
   const lineFieldFocusedRef = lines.lineFieldFocusedRef;
   const safeFocusBarcode = useCallback((delay = 50) => {
     setTimeout(() => { if (!lineFieldFocusedRef.current) barcodeInputRef.current?.focus(); }, delay);
@@ -151,21 +169,26 @@ export function ReceivingEditor({
       {/* ── شريط الباركود ────────────────────────────────────────────────── */}
       {!isViewOnly && (
         <div className="flex items-center gap-2 px-2 mt-2">
-          <ScanBarcode className="h-4 w-4 text-muted-foreground shrink-0" />
+          <ScanBarcode className={`h-4 w-4 shrink-0 ${canAddItems ? "text-muted-foreground" : "text-muted-foreground/40"}`} />
           <Input
             ref={barcodeInputRef}
             type="text"
             value={barcodeDisplay}
-            onChange={(e) => setBarcodeDisplay(e.target.value)}
+            onChange={(e) => canAddItems && setBarcodeDisplay(e.target.value)}
             onKeyDown={(e) => {
+              if (!canAddItems) { e.preventDefault(); return; }
               if (e.key === "Enter" && barcodeDisplay.trim()) {
                 e.preventDefault();
                 onBarcodeSubmit();
               }
             }}
-            placeholder="امسح الباركود هنا... (F2)"
-            className="h-7 text-[11px] px-2 max-w-[300px]"
-            disabled={barcodeLoading}
+            placeholder={
+              !form.warehouseId        ? "اختر المستودع أولاً..." :
+              !form.supplierInvoiceNo.trim() ? "أدخل رقم فاتورة المورد أولاً..." :
+              "امسح الباركود هنا... (F2)"
+            }
+            className={`h-7 text-[11px] px-2 max-w-[300px] ${!canAddItems ? "opacity-50 cursor-not-allowed" : ""}`}
+            disabled={barcodeLoading || !canAddItems}
             data-testid="input-barcode-scan"
           />
           {barcodeLoading && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -200,7 +223,7 @@ export function ReceivingEditor({
       {/* ── شريط الأزرار (مسودة) ─────────────────────────────────────────── */}
       {!isViewOnly && (
         <div className="flex items-center gap-2 flex-wrap no-print mt-2">
-          <Button variant="outline" size="sm" onClick={() => setItemSearchOpen(true)} data-testid="button-add-item">
+          <Button variant="outline" size="sm" onClick={handleOpenItemSearch} data-testid="button-add-item">
             <Plus className="h-3 w-3 ml-1" /> إضافة صنف
           </Button>
           <Button variant="outline" size="sm" disabled={!canSaveDraft || isPending} onClick={onSaveDraft} data-testid="button-save-draft">

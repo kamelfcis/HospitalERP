@@ -118,7 +118,10 @@ export default function SupplierReceiving() {
   const { barcodeDisplay, setBarcodeDisplay, barcodeLoading, handleBarcodeInputSubmit } =
     useBarcodeScanner({
       warehouseId:    form.warehouseId,
-      isDraft:        form.formStatus === "draft" && !itemSearchOpen,
+      isDraft:        form.formStatus === "draft"
+        && !itemSearchOpen
+        && !!form.warehouseId
+        && !!form.supplierInvoiceNo.trim(),
       addItemToLines,
       pendingQtyRef,
       barcodeInputRef,
