@@ -1,10 +1,13 @@
 import { useState, useRef } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CalendarDays, Plus, Printer, Settings } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CalendarDays, Plus, Printer, Settings, ClipboardList } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
 import { useClinicBooking } from "./hooks/useClinicBooking";
 import { useAppointmentQueue } from "./hooks/useAppointmentQueue";
 import { ClinicHeader } from "./components/ClinicHeader";
@@ -13,6 +16,7 @@ import { AppointmentQueue } from "./components/AppointmentQueue";
 import { BookingDialog } from "./components/BookingDialog";
 import { TurnReceipt } from "./components/TurnReceipt";
 import { ClinicManagementDialog } from "./components/ClinicManagementDialog";
+import { DoctorStatementTab } from "../doctor-consultation/components/DoctorStatementTab";
 import type { ClinicAppointment } from "./types";
 
 export default function ClinicBooking() {
@@ -22,6 +26,13 @@ export default function ClinicBooking() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [printAppointment, setPrintAppointment] = useState<ClinicAppointment | null>(null);
+  const [activeTab, setActiveTab] = useState("queue");
+
+  const { data: myDoctor } = useQuery<{ doctorId: string | null }>({
+    queryKey: ["/api/clinic-my-doctor"],
+    queryFn: () => apiRequest("GET", "/api/clinic-my-doctor").then((r) => r.json()),
+  });
+  const myDoctorId = myDoctor?.doctorId || undefined;
 
   const {
     clinics,
@@ -94,40 +105,61 @@ export default function ClinicBooking() {
       )}
 
       {selectedClinicId && (
-        <>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-40"
-                data-testid="input-date-picker"
-              />
-            </div>
-            <div className="mr-auto flex gap-2">
-              {hasPermission("clinic.book") && (
-                <Button
-                  onClick={() => setBookingOpen(true)}
-                  className="gap-2"
-                  data-testid="button-new-booking"
-                >
-                  <Plus className="h-4 w-4" />
-                  حجز جديد
-                </Button>
-              )}
-            </div>
-          </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="h-9">
+            <TabsTrigger value="queue" className="text-sm gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" />
+              قائمة الانتظار
+            </TabsTrigger>
+            {myDoctorId && (
+              <TabsTrigger value="statement" className="text-sm gap-1.5">
+                <ClipboardList className="h-3.5 w-3.5" />
+                كشف الحساب
+              </TabsTrigger>
+            )}
+          </TabsList>
 
-          <AppointmentQueue
-            appointments={appointments}
-            isLoading={isLoading}
-            onStatusChange={(id, status) => statusMutation.mutate({ id, status })}
-            isChanging={statusMutation.isPending}
-            onStartConsultation={handleStartConsultation}
-          />
-        </>
+          <TabsContent value="queue" className="mt-3 space-y-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-40"
+                  data-testid="input-date-picker"
+                />
+              </div>
+              <div className="mr-auto flex gap-2">
+                {hasPermission("clinic.book") && (
+                  <Button
+                    onClick={() => setBookingOpen(true)}
+                    className="gap-2"
+                    data-testid="button-new-booking"
+                  >
+                    <Plus className="h-4 w-4" />
+                    حجز جديد
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <AppointmentQueue
+              appointments={appointments}
+              isLoading={isLoading}
+              onStatusChange={(id, status) => statusMutation.mutate({ id, status })}
+              isChanging={statusMutation.isPending}
+              onStartConsultation={handleStartConsultation}
+            />
+          </TabsContent>
+
+          {myDoctorId && (
+            <TabsContent value="statement" className="mt-3">
+              <DoctorStatementTab doctorId={myDoctorId} />
+            </TabsContent>
+          )}
+        </Tabs>
       )}
 
       <BookingDialog
