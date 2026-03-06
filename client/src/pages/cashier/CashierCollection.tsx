@@ -1,107 +1,123 @@
-import { useState, useMemo } from "react";
-import { useAuth } from "@/hooks/use-auth";
+// ============================================================
+//  CashierCollection — شاشة تحصيل الكاشير (orchestrator)
+//
+//  هذا الملف orchestrator فقط — لا يحتوي على منطق عمل.
+//  كل منطق موزّع على الـ hooks والمكوّنات المتخصصة:
+//
+//  useCashierShift     → دورة حياة الوردية (فتح / إغلاق / تحقق)
+//  usePendingInvoices  → جلب البيانات + SSE
+//  useInvoiceTab       → حالة كل تاب (بحث + اختيار + تفاصيل)
+//  useCashierActions   → mutations التحصيل والصرف + اختصارات
+//  InvoiceWorkArea     → compound component لكل تاب
+// ============================================================
+import { useState } from "react";
 import { DollarSign, Loader2, Receipt, Undo2, Wallet } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCashierShift, UnitType } from "./hooks/useCashierShift";
-import { usePendingInvoices } from "./hooks/usePendingInvoices";
-import { useCashierActions } from "./hooks/useCashierActions";
-import { UnitSelector } from "./components/UnitSelector";
-import { ShiftOpenForm } from "./components/ShiftOpenForm";
-import { ShiftStatusBar } from "./components/ShiftStatusBar";
-import { InvoiceTable } from "./components/InvoiceTable";
-import { InvoiceDetailsPanel } from "./components/InvoiceDetailsPanel";
-import { CloseShiftDialog } from "./components/CloseShiftDialog";
-import { CloseShiftValidationDialog } from "./components/CloseShiftValidationDialog";
-import { ShiftTotalsWidget } from "./components/ShiftTotalsWidget";
+import { useAuth } from "@/hooks/use-auth";
 import { formatNumber } from "@/lib/formatters";
 
+import { useCashierShift }    from "./hooks/useCashierShift";
+import { usePendingInvoices } from "./hooks/usePendingInvoices";
+import { useInvoiceTab }      from "./hooks/useInvoiceTab";
+import { useCashierActions }  from "./hooks/useCashierActions";
+
+import { UnitSelector }                 from "./components/UnitSelector";
+import { ShiftOpenForm }                from "./components/ShiftOpenForm";
+import { ShiftStatusBar }               from "./components/ShiftStatusBar";
+import { InvoiceWorkArea }              from "./components/InvoiceWorkArea";
+import { ShiftTotalsWidget }            from "./components/ShiftTotalsWidget";
+import { CloseShiftDialog }             from "./components/CloseShiftDialog";
+import { CloseShiftValidationDialog }   from "./components/CloseShiftValidationDialog";
+
+// ============================================================
 export default function CashierCollection() {
   const { user, hasPermission } = useAuth();
   const canViewTotals = hasPermission("cashier.view_shift_totals");
-  const [activeTab, setActiveTab] = useState("sales");
+  const [activeTab, setActiveTab] = useState<"sales" | "returns">("sales");
 
+  // ── الوردية ───────────────────────────────────────────────
   const shift = useCashierShift();
   const {
     selectedUnitType, setSelectedUnitType,
-    selectedUnitId, setSelectedUnitId,
-    unitConfirmed, setUnitConfirmed,
-    unitsData, userGlAccount,
-    openingCash, setOpeningCash,
-    drawerPassword, setDrawerPassword,
-    closeDialogOpen, setCloseDialogOpen, closingCash, setClosingCash,
-    activeShift, shiftLoading, hasActiveShift,
-    shiftId, shiftUnitType, shiftUnitId,
-    shiftTotals, expectedCash, varianceCalc,
-    openShiftMutation, closeShiftMutation, canOpenShift,
+    selectedUnitId,   setSelectedUnitId,
+    unitConfirmed,    setUnitConfirmed,
+    unitsData,        resolveUnitName, activeUnitName,
+    openingCash,      setOpeningCash,
+    drawerPassword,   setDrawerPassword,
+    userGlAccount,    canOpenShift,
+    openShiftMutation,
+    activeShift,      shiftLoading, hasActiveShift,
+    shiftId,          shiftUnitType, shiftUnitId,
+    shiftTotals,      expectedCash, varianceCalc,
+    closeDialogOpen,      setCloseDialogOpen,
+    closingCash,          setClosingCash,
     validationDialogOpen, setValidationDialogOpen,
-    validation, isValidating,
+    validation,           isValidating,
+    closeShiftMutation,
     handleCloseShiftClick, handleProceedFromValidation,
   } = shift;
 
-  const invoices = usePendingInvoices(hasActiveShift, shiftUnitType, shiftUnitId, shiftId);
-  const {
-    salesSearch, setSalesSearch, salesSelected, setSalesSelected,
-    returnsSearch, setReturnsSearch, returnsSelected, setReturnsSelected,
-    pendingSales, salesLoading, pendingReturns, returnsLoading,
-    salesDetails, returnsDetails, clearSelection,
-  } = invoices;
-
-  const actions = useCashierActions({
-    shiftId, shiftUnitType, shiftUnitId,
-    salesSelected, returnsSelected,
-    cashierName: user?.fullName || "",
-    hasActiveShift, activeTab, clearSelection,
+  // ── جلب البيانات + SSE ────────────────────────────────────
+  const { pendingSales, salesLoading, pendingReturns, returnsLoading } = usePendingInvoices({
+    hasActiveShift, shiftUnitType, shiftUnitId, shiftId,
   });
-  const { collectMutation, refundMutation } = actions;
 
-  const salesAggregated = useMemo(() => {
-    if (salesSelected.size <= 1) return null;
-    const items = (pendingSales || []).filter(inv => salesSelected.has(inv.id));
-    return { count: items.length, subtotal: items.reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0), netTotal: items.reduce((s, i) => s + parseFloat(i.netTotal || "0"), 0) };
-  }, [salesSelected, pendingSales]);
+  // ── تاب المبيعات ──────────────────────────────────────────
+  const salesTab = useInvoiceTab({
+    invoices:        pendingSales,
+    hasActiveShift,
+    detailsEndpoint: (id) => `/api/cashier/invoice/${id}/details`,
+  });
 
-  const returnsAggregated = useMemo(() => {
-    if (returnsSelected.size <= 1) return null;
-    const items = (pendingReturns || []).filter(inv => returnsSelected.has(inv.id));
-    return { count: items.length, subtotal: items.reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0), netTotal: items.reduce((s, i) => s + parseFloat(i.netTotal || "0"), 0) };
-  }, [returnsSelected, pendingReturns]);
+  // ── تاب المرتجعات ─────────────────────────────────────────
+  const returnsTab = useInvoiceTab({
+    invoices:        pendingReturns,
+    hasActiveShift,
+    detailsEndpoint: (id) => `/api/cashier/invoice/${id}/details`,
+  });
 
-  const resolveUnitName = (type: string | null, id: string) => {
-    if (!unitsData || !id) return id;
-    if (type === "pharmacy") return unitsData.pharmacies.find(p => p.id === id)?.nameAr || id;
-    return unitsData.departments.find(d => d.id === id)?.nameAr || id;
-  };
+  // ── مسح الاختيار في كلا التابين معاً ─────────────────────
+  const clearAllSelections = () => { salesTab.clearSelection(); returnsTab.clearSelection(); };
 
-  const activeUnitName = resolveUnitName(
-    activeShift?.unitType || selectedUnitType,
-    shiftUnitId,
-  );
+  // ── mutations التحصيل والصرف + اختصارات لوحة المفاتيح ───
+  const { collectMutation, refundMutation } = useCashierActions({
+    shiftId, shiftUnitType, shiftUnitId,
+    salesSelected:   salesTab.selected,
+    returnsSelected: returnsTab.selected,
+    cashierName:     user?.fullName || "",
+    hasActiveShift,  activeTab,
+    clearSelection:  clearAllSelections,
+  });
 
-  const handleUnitSelect = (type: UnitType, id: string) => {
+  // ── handlers اختيار الوحدة ────────────────────────────────
+  const handleUnitSelect = (type: "pharmacy" | "department", id: string) => {
     setSelectedUnitType(type);
     setSelectedUnitId(id);
     setUnitConfirmed(true);
-    clearSelection();
+    clearAllSelections();
   };
 
   const handleBack = () => {
     setUnitConfirmed(false);
     setSelectedUnitType(null);
     setSelectedUnitId("");
-    clearSelection();
+    clearAllSelections();
   };
 
+  // ============================================================
   return (
     <div className="p-3 space-y-3 overflow-x-hidden" dir="rtl" data-testid="page-cashier-collection">
       <h1 className="text-lg font-bold text-right">شاشة تحصيل الكاشير</h1>
 
+      {/* ── كارت الوردية (فتح / حالة) ── */}
       <Card>
         <CardContent className="p-3">
           {shiftLoading ? (
             <Skeleton className="h-10 w-full" />
+
           ) : hasActiveShift && activeShift ? (
             <ShiftStatusBar
               activeShift={activeShift}
@@ -110,13 +126,12 @@ export default function CashierCollection() {
               onCloseShift={() => { setClosingCash("0"); handleCloseShiftClick(); }}
               isClosing={isValidating}
             />
+
           ) : !unitConfirmed ? (
             <div className="py-4">
-              <UnitSelector
-                unitsData={unitsData}
-                onSelect={handleUnitSelect}
-              />
+              <UnitSelector unitsData={unitsData} onSelect={handleUnitSelect} />
             </div>
+
           ) : (
             <div className="py-4 space-y-6">
               <div className="text-center space-y-2">
@@ -145,107 +160,114 @@ export default function CashierCollection() {
         </CardContent>
       </Card>
 
+      {/* ── تابات التحصيل (تظهر فقط عند وجود وردية) ── */}
       {hasActiveShift && (
-        <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "sales" | "returns")} dir="rtl">
           <TabsList className="w-full justify-start gap-2">
+
+            {/* تاب المبيعات */}
             <TabsTrigger value="sales" data-testid="tab-sales">
               <Receipt className="ml-2 h-4 w-4" />
               تحصيل فواتير البيع
-              {(pendingSales?.length ?? 0) > 0 && (
-                <span className="mr-1.5 bg-primary text-primary-foreground rounded-full text-[10px] px-1.5 py-0 min-w-[18px] text-center">
-                  {pendingSales!.length}
-                </span>
-              )}
+              <CountBadge count={pendingSales?.length} color="primary" />
             </TabsTrigger>
+
+            {/* تاب المرتجعات */}
             <TabsTrigger value="returns" data-testid="tab-returns">
               <Undo2 className="ml-2 h-4 w-4" />
               رد مرتجعات
-              {(pendingReturns?.length ?? 0) > 0 && (
-                <span className="mr-1.5 bg-destructive text-destructive-foreground rounded-full text-[10px] px-1.5 py-0 min-w-[18px] text-center">
-                  {pendingReturns!.length}
-                </span>
-              )}
+              <CountBadge count={pendingReturns?.length} color="destructive" />
             </TabsTrigger>
           </TabsList>
 
+          {/* ── محتوى تاب المبيعات ── */}
           <TabsContent value="sales">
-            <div className="flex flex-row-reverse gap-3 overflow-hidden">
-              <div className="w-[60%] min-w-0 overflow-hidden space-y-2">
-                <InvoiceTable
-                  invoices={pendingSales || []}
-                  loading={salesLoading}
-                  search={salesSearch}
-                  setSearch={setSalesSearch}
-                  selected={salesSelected}
-                  setSelected={setSalesSelected}
-                  shiftUnitId={shiftUnitId}
-                  testPrefix="sales"
-                />
-                <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
+            <InvoiceWorkArea
+              invoices={salesTab.filtered}
+              loading={salesLoading}
+              search={salesTab.search}
+              setSearch={salesTab.setSearch}
+              selected={salesTab.selected}
+              toggleOne={salesTab.toggleOne}
+              toggleAll={salesTab.toggleAll}
+              shiftUnitId={shiftUnitId}
+              details={salesTab.details}
+              detailsLoading={salesTab.detailsLoading}
+              aggregated={salesTab.aggregated}
+              testPrefix="sales"
+              actionBar={
+                <>
                   <Button
                     size="sm"
                     onClick={() => collectMutation.mutate()}
-                    disabled={salesSelected.size === 0 || !hasActiveShift || collectMutation.isPending}
+                    disabled={salesTab.selected.size === 0 || !hasActiveShift || collectMutation.isPending}
                     data-testid="button-collect"
                   >
-                    {collectMutation.isPending ? <Loader2 className="ml-1 h-3 w-3 animate-spin" /> : <DollarSign className="ml-1 h-3 w-3" />}
-                    تحصيل ({salesSelected.size})
+                    {collectMutation.isPending
+                      ? <Loader2 className="ml-1 h-3 w-3 animate-spin" />
+                      : <DollarSign className="ml-1 h-3 w-3" />}
+                    تحصيل ({salesTab.selected.size})
                   </Button>
-                  {salesSelected.size > 0 && salesAggregated && (
+
+                  {salesTab.selected.size > 0 && salesTab.aggregated && (
                     <span className="text-xs font-medium text-green-700 dark:text-green-400">
-                      الصافي: {formatNumber(salesAggregated.netTotal)} ج.م
+                      الصافي: {formatNumber(salesTab.aggregated.netTotal)} ج.م
                     </span>
                   )}
                   <span className="text-[10px] text-muted-foreground">Ctrl+Enter / F9</span>
-                </div>
-              </div>
-              <div className="w-[40%] min-w-0">
-                <InvoiceDetailsPanel selected={salesSelected} details={salesDetails} aggregated={salesAggregated} testPrefix="sales" />
-              </div>
-            </div>
+                </>
+              }
+            />
           </TabsContent>
 
+          {/* ── محتوى تاب المرتجعات ── */}
           <TabsContent value="returns">
-            <div className="flex flex-row-reverse gap-3 overflow-hidden">
-              <div className="w-[60%] min-w-0 overflow-hidden space-y-2">
-                <InvoiceTable
-                  invoices={pendingReturns || []}
-                  loading={returnsLoading}
-                  search={returnsSearch}
-                  setSearch={setReturnsSearch}
-                  selected={returnsSelected}
-                  setSelected={setReturnsSelected}
-                  shiftUnitId={shiftUnitId}
-                  testPrefix="returns"
-                />
-                <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
+            <InvoiceWorkArea
+              invoices={returnsTab.filtered}
+              loading={returnsLoading}
+              search={returnsTab.search}
+              setSearch={returnsTab.setSearch}
+              selected={returnsTab.selected}
+              toggleOne={returnsTab.toggleOne}
+              toggleAll={returnsTab.toggleAll}
+              shiftUnitId={shiftUnitId}
+              details={returnsTab.details}
+              detailsLoading={returnsTab.detailsLoading}
+              aggregated={returnsTab.aggregated}
+              testPrefix="returns"
+              actionBar={
+                <>
                   <Button
                     size="sm"
                     onClick={() => refundMutation.mutate()}
-                    disabled={returnsSelected.size === 0 || !hasActiveShift || refundMutation.isPending}
+                    disabled={returnsTab.selected.size === 0 || !hasActiveShift || refundMutation.isPending}
                     data-testid="button-refund"
                   >
-                    {refundMutation.isPending ? <Loader2 className="ml-1 h-3 w-3 animate-spin" /> : <Undo2 className="ml-1 h-3 w-3" />}
-                    صرف المرتجع ({returnsSelected.size})
+                    {refundMutation.isPending
+                      ? <Loader2 className="ml-1 h-3 w-3 animate-spin" />
+                      : <Undo2 className="ml-1 h-3 w-3" />}
+                    صرف المرتجع ({returnsTab.selected.size})
                   </Button>
-                  {returnsSelected.size > 0 && returnsAggregated && (
+
+                  {returnsTab.selected.size > 0 && returnsTab.aggregated && (
                     <span className="text-xs font-medium text-red-700 dark:text-red-400">
-                      الصافي: {formatNumber(returnsAggregated.netTotal)} ج.م
+                      الصافي: {formatNumber(returnsTab.aggregated.netTotal)} ج.م
                     </span>
                   )}
                   <span className="text-[10px] text-muted-foreground">Ctrl+Enter / F9</span>
-                </div>
-              </div>
-              <div className="w-[40%] min-w-0">
-                <InvoiceDetailsPanel selected={returnsSelected} details={returnsDetails} aggregated={returnsAggregated} testPrefix="returns" />
-              </div>
-            </div>
+                </>
+              }
+            />
           </TabsContent>
         </Tabs>
       )}
 
-      {hasActiveShift && shiftTotals && canViewTotals && <ShiftTotalsWidget totals={shiftTotals} />}
+      {/* ── ويدجت إجماليات الوردية (أسفل يسار) ── */}
+      {hasActiveShift && shiftTotals && canViewTotals && (
+        <ShiftTotalsWidget totals={shiftTotals} />
+      )}
 
+      {/* ── dialogs إغلاق الوردية ── */}
       <CloseShiftValidationDialog
         open={validationDialogOpen}
         onOpenChange={setValidationDialogOpen}
@@ -265,5 +287,18 @@ export default function CashierCollection() {
         isPending={closeShiftMutation.isPending}
       />
     </div>
+  );
+}
+
+// ── CountBadge — عدداد صغير على الـ tab ──────────────────────
+function CountBadge({ count, color }: { count: number | undefined; color: "primary" | "destructive" }) {
+  if (!count) return null;
+  const cls = color === "primary"
+    ? "bg-primary text-primary-foreground"
+    : "bg-destructive text-destructive-foreground";
+  return (
+    <span className={`mr-1.5 ${cls} rounded-full text-[10px] px-1.5 py-0 min-w-[18px] text-center`}>
+      {count}
+    </span>
   );
 }

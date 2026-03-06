@@ -2,7 +2,7 @@ import { LogOut, Building2, FlaskConical, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/lib/formatters";
-import { CashierShift } from "../hooks/useCashierShift";
+import type { CashierShift } from "../types";
 
 interface ShiftStatusBarProps {
   activeShift: CashierShift;

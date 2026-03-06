@@ -1,6 +1,6 @@
 import { Building2, FlaskConical, PlusCircle, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { UnitType } from "../hooks/useCashierShift";
+import type { UnitType } from "../types";
 
 interface UnitSelectorProps {
   unitsData: { pharmacies: any[]; departments: any[] } | undefined;

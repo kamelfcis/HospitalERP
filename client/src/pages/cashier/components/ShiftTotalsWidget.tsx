@@ -1,7 +1,7 @@
 import { Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatNumber } from "@/lib/formatters";
-import { ShiftTotals } from "../hooks/useCashierShift";
+import type { ShiftTotals } from "../types";
 
 interface ShiftTotalsWidgetProps {
   totals: ShiftTotals;

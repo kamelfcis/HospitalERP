@@ -2,7 +2,7 @@ import { Loader2, LogIn, Wallet, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { UnitType, UserGlAccount } from "../hooks/useCashierShift";
+import type { UnitType, UserGlAccount } from "../types";
 
 interface ShiftOpenFormProps {
   unitType: UnitType;
