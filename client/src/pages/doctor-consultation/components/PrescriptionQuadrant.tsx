@@ -8,7 +8,6 @@ import type { ItemSelectedPayload } from "@/components/ItemFastSearch/types";
 import { QuadrantCard } from "./QuadrantCard";
 import { FavoriteDrugsPanel } from "./FavoriteDrugsPanel";
 import type { ConsultationDrug, FavoriteDrug, FrequentDrug } from "../types";
-import { useToast } from "@/hooks/use-toast";
 
 function computeUnitPrice(baseSalePrice: number, unitLevel: string, item: any): number {
   if (!baseSalePrice || !item) return baseSalePrice || 0;
@@ -61,7 +60,6 @@ export function PrescriptionQuadrant({
   onAddFavorite, onRemoveFavorite,
   defaultPharmacyId,
 }: Props) {
-  const { toast } = useToast();
   const [searchOpen, setSearchOpen] = useState(false);
 
   const handleItemSelected = (payload: ItemSelectedPayload) => {
@@ -103,7 +101,6 @@ export function PrescriptionQuadrant({
     const favId = getFavoriteId(drug.itemId);
     if (favId) {
       onRemoveFavorite(favId);
-      toast({ title: "تم إزالة الدواء من المفضلة" });
     } else {
       onAddFavorite({
         itemId: drug.itemId,
@@ -112,7 +109,6 @@ export function PrescriptionQuadrant({
         defaultFrequency: drug.frequency,
         defaultDuration: drug.duration,
       });
-      toast({ title: "تم إضافة الدواء للمفضلة" });
     }
   };
 

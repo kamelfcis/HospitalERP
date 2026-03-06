@@ -1,8 +1,10 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { FavoriteDrug, FrequentDrug } from "../types";
 
 export function useFavoriteDrugs(clinicId?: string | null) {
+  const { toast } = useToast();
   const qp = clinicId ? `?clinicId=${clinicId}` : "";
 
   const { data: favorites = [], isLoading } = useQuery<FavoriteDrug[]>({
@@ -21,13 +23,23 @@ export function useFavoriteDrugs(clinicId?: string | null) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-favorite-drugs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-frequent-drugs"] });
+      toast({ title: "تم إضافة الدواء للمفضلة" });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "تعذر إضافة المفضلة", description: e.message });
     },
   });
 
   const removeMutation = useMutation({
     mutationFn: (id: string) =>
       apiRequest("DELETE", `/api/clinic-favorite-drugs/${id}`).then((r) => r.json()),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/clinic-favorite-drugs"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-favorite-drugs"] });
+      toast({ title: "تم إزالة الدواء من المفضلة" });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "تعذر إزالة المفضلة", description: e.message });
+    },
   });
 
   const isFavorite = (itemId: string | null | undefined) =>

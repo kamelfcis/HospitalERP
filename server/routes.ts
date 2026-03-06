@@ -5392,7 +5392,7 @@ export async function registerRoutes(
   app.get("/api/clinic-favorite-drugs", requireAuth, async (req, res) => {
     try {
       const doctorId = await storage.getUserDoctorId(req.session.userId!);
-      if (!doctorId) return res.status(404).json({ message: "لم يتم ربط حسابك بطبيب" });
+      if (!doctorId) return res.json([]);
       const clinicId = (req.query.clinicId as string) || null;
       const favorites = await storage.getDoctorFavoriteDrugs(doctorId, clinicId);
       res.json(snakeToCamel(favorites));
