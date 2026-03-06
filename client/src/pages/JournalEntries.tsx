@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -35,24 +35,61 @@ import {
   FileText,
   Loader2,
   CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { formatCurrency, formatDateShort, journalStatusLabels } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
 import { sourceTypeLabels } from "@shared/schema";
 import type { JournalEntry } from "@shared/schema";
 
+const PAGE_SIZE = 50;
+
 export default function JournalEntries() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const { data: entries, isLoading } = useQuery<JournalEntry[]>({
-    queryKey: ["/api/journal-entries"],
+  const debounceTimer = useState<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value);
+    if (debounceTimer[0]) clearTimeout(debounceTimer[0]);
+    debounceTimer[0] = setTimeout(() => {
+      setDebouncedSearch(value);
+      setPage(1);
+    }, 400);
+  }, []);
+
+  const queryParams = new URLSearchParams();
+  queryParams.set("page", String(page));
+  queryParams.set("pageSize", String(PAGE_SIZE));
+  if (statusFilter !== "all") queryParams.set("status", statusFilter);
+  if (sourceFilter !== "all") queryParams.set("sourceType", sourceFilter);
+  if (dateFrom) queryParams.set("dateFrom", dateFrom);
+  if (dateTo) queryParams.set("dateTo", dateTo);
+  if (debouncedSearch) queryParams.set("search", debouncedSearch);
+
+  const { data: result, isLoading } = useQuery<{ data: JournalEntry[]; total: number }>({
+    queryKey: ["/api/journal-entries", page, statusFilter, sourceFilter, dateFrom, dateTo, debouncedSearch],
+    queryFn: async () => {
+      const res = await fetch(`/api/journal-entries?${queryParams.toString()}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
   });
+
+  const entries = result?.data || [];
+  const total = result?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const postMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -97,27 +134,7 @@ export default function JournalEntries() {
     },
   });
 
-  const filteredEntries = entries?.filter((entry) => {
-    const matchesSearch =
-      searchQuery === "" ||
-      entry.entryNumber.toString().includes(searchQuery) ||
-      entry.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (entry.reference && entry.reference.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    const matchesStatus = statusFilter === "all" || entry.status === statusFilter;
-    
-    const matchesSource = sourceFilter === "all" ||
-      (sourceFilter === "manual" && !entry.sourceType) ||
-      entry.sourceType === sourceFilter;
-
-    let matchesDate = true;
-    if (dateFrom) matchesDate = matchesDate && entry.entryDate >= dateFrom;
-    if (dateTo) matchesDate = matchesDate && entry.entryDate <= dateTo;
-
-    return matchesSearch && matchesStatus && matchesSource && matchesDate;
-  }) || [];
-
-  const draftEntries = filteredEntries.filter(e => e.status === "draft");
+  const draftEntries = entries.filter(e => e.status === "draft");
   const selectedDraftIds = Array.from(selectedIds).filter(id => draftEntries.some(e => e.id === id));
 
   const toggleSelect = (id: string) => {
@@ -183,7 +200,13 @@ export default function JournalEntries() {
     );
   };
 
-  if (isLoading) {
+  const handleFilterChange = (setter: (v: string) => void) => (value: string) => {
+    setter(value);
+    setPage(1);
+    setSelectedIds(new Set());
+  };
+
+  if (isLoading && entries.length === 0) {
     return (
       <div className="p-6 space-y-6">
         <Skeleton className="h-8 w-48" />
@@ -199,7 +222,7 @@ export default function JournalEntries() {
         <div>
           <h1 className="text-sm font-bold text-foreground">القيود اليومية</h1>
           <p className="text-xs text-muted-foreground">
-            إدارة القيود المحاسبية ({entries?.length || 0} قيد)
+            إدارة القيود المحاسبية ({total} قيد)
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -231,12 +254,12 @@ export default function JournalEntries() {
           <Input
             placeholder="بحث برقم القيد أو البيان..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="peachtree-input pr-7 text-xs"
             data-testid="input-search-entries"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={handleFilterChange(setStatusFilter)}>
           <SelectTrigger className="peachtree-select w-[120px] text-xs" data-testid="select-status-filter">
             <Filter className="h-3 w-3 ml-1" />
             <SelectValue placeholder="الحالة" />
@@ -248,7 +271,7 @@ export default function JournalEntries() {
             <SelectItem value="reversed" className="text-xs">ملغي</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={sourceFilter} onValueChange={setSourceFilter}>
+        <Select value={sourceFilter} onValueChange={handleFilterChange(setSourceFilter)}>
           <SelectTrigger className="peachtree-select w-[140px] text-xs" data-testid="select-source-filter">
             <FileText className="h-3 w-3 ml-1" />
             <SelectValue placeholder="المصدر" />
@@ -265,7 +288,7 @@ export default function JournalEntries() {
           <Input
             type="date"
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
             className="peachtree-input w-[120px] text-xs"
             placeholder="من تاريخ"
             data-testid="input-date-from"
@@ -274,7 +297,7 @@ export default function JournalEntries() {
           <Input
             type="date"
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
             className="peachtree-input w-[120px] text-xs"
             placeholder="إلى تاريخ"
             data-testid="input-date-to"
@@ -283,7 +306,7 @@ export default function JournalEntries() {
       </div>
 
       <div className="peachtree-grid rounded">
-        <ScrollArea className="h-[calc(100vh-280px)]">
+        <ScrollArea className="h-[calc(100vh-320px)]">
           <Table>
             <TableHeader className="peachtree-grid-header">
               <TableRow>
@@ -305,14 +328,14 @@ export default function JournalEntries() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredEntries.length === 0 ? (
+              {entries.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-4 text-xs text-muted-foreground">
-                    لا توجد قيود
+                    {isLoading ? "جارٍ التحميل..." : "لا توجد قيود"}
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredEntries.map((entry) => (
+                entries.map((entry) => (
                   <TableRow key={entry.id} className="peachtree-grid-row" data-testid={`row-entry-${entry.id}`}>
                     <TableCell>
                       {entry.status === "draft" && (
@@ -416,60 +439,80 @@ export default function JournalEntries() {
         </ScrollArea>
       </div>
 
-      {filteredEntries.length > 0 && (
-        <div className="peachtree-totals rounded p-2">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">إجمالي القيود:</span>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{filteredEntries.length}</Badge>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">مسودة:</span>
-                <Badge className="status-draft text-[10px] px-1.5 py-0">
-                  {filteredEntries.filter((e) => e.status === "draft").length}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">مُرحّل:</span>
-                <Badge className="status-posted text-[10px] px-1.5 py-0">
-                  {filteredEntries.filter((e) => e.status === "posted").length}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">تلقائي:</span>
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                  {filteredEntries.filter((e) => e.sourceType).length}
-                </Badge>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-left">
-                <p className="text-[10px] text-muted-foreground">إجمالي المدين</p>
-                <p className="text-sm font-bold peachtree-amount peachtree-amount-debit font-mono">
-                  {formatCurrency(
-                    filteredEntries.reduce(
-                      (sum, e) => sum + parseFloat(e.totalDebit || "0"),
-                      0
-                    )
-                  )}
-                </p>
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] text-muted-foreground">إجمالي الدائن</p>
-                <p className="text-sm font-bold peachtree-amount peachtree-amount-credit font-mono">
-                  {formatCurrency(
-                    filteredEntries.reduce(
-                      (sum, e) => sum + parseFloat(e.totalCredit || "0"),
-                      0
-                    )
-                  )}
-                </p>
-              </div>
-            </div>
-          </div>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            صفحة {page} من {totalPages} ({total} قيد)
+          </span>
+          {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
         </div>
-      )}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            disabled={page <= 1}
+            onClick={() => setPage(1)}
+            data-testid="button-first-page"
+          >
+            <ChevronsRight className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            disabled={page <= 1}
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            data-testid="button-prev-page"
+          >
+            <ChevronRight className="h-3 w-3" />
+          </Button>
+          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+            let pageNum: number;
+            if (totalPages <= 5) {
+              pageNum = i + 1;
+            } else if (page <= 3) {
+              pageNum = i + 1;
+            } else if (page >= totalPages - 2) {
+              pageNum = totalPages - 4 + i;
+            } else {
+              pageNum = page - 2 + i;
+            }
+            return (
+              <Button
+                key={pageNum}
+                variant={pageNum === page ? "default" : "outline"}
+                size="sm"
+                className="h-7 w-7 text-xs p-0"
+                onClick={() => setPage(pageNum)}
+                data-testid={`button-page-${pageNum}`}
+              >
+                {pageNum}
+              </Button>
+            );
+          })}
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            disabled={page >= totalPages}
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            data-testid="button-next-page"
+          >
+            <ChevronLeft className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            disabled={page >= totalPages}
+            onClick={() => setPage(totalPages)}
+            data-testid="button-last-page"
+          >
+            <ChevronsLeft className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

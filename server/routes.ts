@@ -447,7 +447,16 @@ export async function registerRoutes(
   app.put("/api/users/:id/permissions", requireAuth, checkPermission("users.edit"), async (req, res) => {
     try {
       const { permissions } = req.body;
+      const oldPerms = await storage.getUserPermissions(req.params.id);
       await storage.setUserPermissions(req.params.id, permissions || []);
+      auditLog({
+        tableName: "user_permissions",
+        recordId: req.params.id,
+        action: "update",
+        oldValues: oldPerms.map((p: any) => p.permission),
+        newValues: permissions || [],
+        userId: req.session.userId,
+      }).catch(err => console.error("[Audit] permission change:", err));
       res.json({ message: "تم تحديث الصلاحيات" });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -525,10 +534,17 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/accounts", async (req, res) => {
+  app.post("/api/accounts", requireAuth, checkPermission(PERMISSIONS.ACCOUNTS_CREATE), async (req, res) => {
     try {
       const validated = insertAccountSchema.parse(req.body);
       const account = await storage.createAccount(validated);
+      auditLog({
+        tableName: "accounts",
+        recordId: account.id,
+        action: "create",
+        newValues: validated,
+        userId: req.session?.userId,
+      }).catch(err => console.error("[Audit] account create:", err));
       res.status(201).json(account);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -538,13 +554,22 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/accounts/:id", async (req, res) => {
+  app.patch("/api/accounts/:id", requireAuth, checkPermission(PERMISSIONS.ACCOUNTS_EDIT), async (req, res) => {
     try {
       const validated = insertAccountSchema.partial().parse(req.body);
+      const oldAccount = await storage.getAccount(req.params.id);
       const account = await storage.updateAccount(req.params.id, validated);
       if (!account) {
         return res.status(404).json({ message: "الحساب غير موجود" });
       }
+      auditLog({
+        tableName: "accounts",
+        recordId: req.params.id,
+        action: "update",
+        oldValues: oldAccount,
+        newValues: validated,
+        userId: req.session?.userId,
+      }).catch(err => console.error("[Audit] account update:", err));
       res.json(account);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -554,9 +579,17 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/accounts/:id", async (req, res) => {
+  app.delete("/api/accounts/:id", requireAuth, checkPermission(PERMISSIONS.ACCOUNTS_DELETE), async (req, res) => {
     try {
+      const deletedAccount = await storage.getAccount(req.params.id);
       await storage.deleteAccount(req.params.id);
+      auditLog({
+        tableName: "accounts",
+        recordId: req.params.id,
+        action: "delete",
+        oldValues: deletedAccount,
+        userId: req.session?.userId,
+      }).catch(err => console.error("[Audit] account delete:", err));
       res.status(204).send();
     } catch (error: any) {
       if (error.message?.includes("violates foreign key constraint") || error.code === "23503") {
@@ -615,7 +648,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cost-centers", async (req, res) => {
+  app.post("/api/cost-centers", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_CREATE), async (req, res) => {
     try {
       const validated = insertCostCenterSchema.parse(req.body);
       const costCenter = await storage.createCostCenter(validated);
@@ -628,7 +661,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/cost-centers/:id", async (req, res) => {
+  app.patch("/api/cost-centers/:id", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_EDIT), async (req, res) => {
     try {
       const validated = insertCostCenterSchema.partial().parse(req.body);
       const costCenter = await storage.updateCostCenter(req.params.id, validated);
@@ -644,7 +677,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cost-centers/:id", async (req, res) => {
+  app.delete("/api/cost-centers/:id", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_DELETE), async (req, res) => {
     try {
       await storage.deleteCostCenter(req.params.id);
       res.status(204).send();
@@ -667,7 +700,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/fiscal-periods", async (req, res) => {
+  app.post("/api/fiscal-periods", requireAuth, checkPermission(PERMISSIONS.FISCAL_PERIODS_MANAGE), async (req, res) => {
     try {
       const validated = insertFiscalPeriodSchema.parse(req.body);
       const period = await storage.createFiscalPeriod(validated);
@@ -680,7 +713,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/fiscal-periods/:id/close", async (req, res) => {
+  app.post("/api/fiscal-periods/:id/close", requireAuth, checkPermission(PERMISSIONS.FISCAL_PERIODS_MANAGE), async (req, res) => {
     try {
       const period = await storage.closeFiscalPeriod(req.params.id, null);
       if (!period) {
@@ -692,7 +725,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/fiscal-periods/:id/reopen", async (req, res) => {
+  app.post("/api/fiscal-periods/:id/reopen", requireAuth, checkPermission(PERMISSIONS.FISCAL_PERIODS_MANAGE), async (req, res) => {
     try {
       const period = await storage.reopenFiscalPeriod(req.params.id);
       if (!period) {
@@ -707,8 +740,20 @@ export async function registerRoutes(
   // Journal Entries
   app.get("/api/journal-entries", async (req, res) => {
     try {
-      const entries = await storage.getJournalEntries();
-      res.json(addFormattedNumbers(entries, "journal_entry"));
+      const { page, pageSize, status, sourceType, dateFrom, dateTo, search } = req.query;
+      const result = await storage.getJournalEntriesPaginated({
+        page: page ? parseInt(page as string) : 1,
+        pageSize: pageSize ? parseInt(pageSize as string) : 50,
+        status: status as string | undefined,
+        sourceType: sourceType as string | undefined,
+        dateFrom: dateFrom as string | undefined,
+        dateTo: dateTo as string | undefined,
+        search: search as string | undefined,
+      });
+      res.json({
+        data: addFormattedNumbers(result.data, "journal_entry"),
+        total: result.total,
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -726,7 +771,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/journal-entries", async (req, res) => {
+  app.post("/api/journal-entries", requireAuth, checkPermission(PERMISSIONS.JOURNAL_CREATE), async (req, res) => {
     try {
       // Validate request body
       const validated = journalEntryWithLinesSchema.parse(req.body);
@@ -785,7 +830,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/journal-entries/:id", async (req, res) => {
+  app.patch("/api/journal-entries/:id", requireAuth, checkPermission(PERMISSIONS.JOURNAL_EDIT), async (req, res) => {
     try {
       // Validate request body with Zod
       const validated = journalEntryUpdateSchema.parse(req.body);
@@ -857,7 +902,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/journal-entries/:id/post", async (req, res) => {
+  app.post("/api/journal-entries/:id/post", requireAuth, checkPermission(PERMISSIONS.JOURNAL_POST), async (req, res) => {
     try {
       const existingEntry = await storage.getJournalEntry(req.params.id);
       if (!existingEntry) {
@@ -888,7 +933,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/journal-entries/:id/reverse", async (req, res) => {
+  app.post("/api/journal-entries/:id/reverse", requireAuth, checkPermission(PERMISSIONS.JOURNAL_REVERSE), async (req, res) => {
     try {
       const existingEntry = await storage.getJournalEntry(req.params.id);
       if (!existingEntry) return res.status(404).json({ message: "القيد غير موجود" });
@@ -908,7 +953,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/journal-entries/:id", async (req, res) => {
+  app.delete("/api/journal-entries/:id", requireAuth, checkPermission(PERMISSIONS.JOURNAL_EDIT), async (req, res) => {
     try {
       const result = await storage.deleteJournalEntry(req.params.id);
       if (!result) {
@@ -1016,10 +1061,24 @@ export async function registerRoutes(
   });
 
   // Audit Log
-  app.get("/api/audit-log", async (req, res) => {
+  app.get("/api/audit-log", requireAuth, checkPermission(PERMISSIONS.AUDIT_LOG_VIEW), async (req, res) => {
     try {
-      const logs = await storage.getAuditLogs();
-      res.json(logs);
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string) || 50));
+      const tableName = req.query.tableName as string | undefined;
+      const action = req.query.action as string | undefined;
+      const dateFrom = req.query.dateFrom as string | undefined;
+      const dateTo = req.query.dateTo as string | undefined;
+
+      const result = await storage.getAuditLogsPaginated({
+        page,
+        pageSize,
+        tableName: tableName || undefined,
+        action: action || undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      });
+      res.json(result);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -1448,7 +1507,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/items", async (req, res) => {
+  app.post("/api/items", requireAuth, checkPermission(PERMISSIONS.ITEMS_CREATE), async (req, res) => {
     try {
       const parsed = insertItemSchema.parse(req.body);
 
@@ -1525,7 +1584,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/items/:id", async (req, res) => {
+  app.put("/api/items/:id", requireAuth, checkPermission(PERMISSIONS.ITEMS_EDIT), async (req, res) => {
     try {
       const parsed = insertItemSchema.partial().parse(req.body);
 
@@ -1558,7 +1617,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/items/:id", async (req, res) => {
+  app.delete("/api/items/:id", requireAuth, checkPermission(PERMISSIONS.ITEMS_DELETE), async (req, res) => {
     try {
       await storage.deleteItem(req.params.id);
       res.status(204).send();
@@ -2015,7 +2074,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/users/:id/departments", async (req, res) => {
+  app.put("/api/users/:id/departments", requireAuth, checkPermission(PERMISSIONS.USERS_EDIT), async (req, res) => {
     try {
       const validated = userDepartmentsAssignmentSchema.parse(req.body);
       const { departmentIds } = validated;
@@ -2039,7 +2098,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/users/:id/warehouses", async (req, res) => {
+  app.put("/api/users/:id/warehouses", requireAuth, checkPermission(PERMISSIONS.USERS_EDIT), async (req, res) => {
     try {
       const validated = userWarehousesAssignmentSchema.parse(req.body);
       const { warehouseIds } = validated;
@@ -4736,7 +4795,7 @@ export async function registerRoutes(
   });
 
   // Batch post journal entries
-  app.post("/api/journal-entries/batch-post", async (req, res) => {
+  app.post("/api/journal-entries/batch-post", requireAuth, checkPermission(PERMISSIONS.JOURNAL_POST), async (req, res) => {
     try {
       const { ids, userId } = req.body;
       if (!Array.isArray(ids) || ids.length === 0) {
@@ -4966,7 +5025,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/settings/:key", async (req, res) => {
+  app.put("/api/settings/:key", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { key } = req.params;
       const { value } = req.body;

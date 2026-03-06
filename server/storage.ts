@@ -254,6 +254,15 @@ export interface IStorage {
   
   // Journal Entries
   getJournalEntries(): Promise<JournalEntry[]>;
+  getJournalEntriesPaginated(filters: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    sourceType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    search?: string;
+  }): Promise<{ data: JournalEntry[]; total: number }>;
   getJournalEntry(id: string): Promise<JournalEntryWithLines | undefined>;
   getNextEntryNumber(): Promise<number>;
   createJournalEntry(entry: InsertJournalEntry, lines: InsertJournalLine[]): Promise<JournalEntry>;
@@ -275,6 +284,7 @@ export interface IStorage {
   
   // Audit Log
   getAuditLogs(): Promise<AuditLog[]>;
+  getAuditLogsPaginated(filters: { page: number; pageSize: number; tableName?: string; action?: string; dateFrom?: string; dateTo?: string }): Promise<{ data: AuditLog[]; total: number }>;
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
   
   // Reports
@@ -878,6 +888,70 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(journalEntries).orderBy(desc(journalEntries.entryNumber));
   }
 
+  async getJournalEntriesPaginated(filters: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    sourceType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    search?: string;
+  }): Promise<{ data: JournalEntry[]; total: number }> {
+    const page = filters.page || 1;
+    const pageSize = filters.pageSize || 50;
+    const offset = (page - 1) * pageSize;
+
+    const conditions: any[] = [];
+
+    if (filters.status && filters.status !== "all") {
+      conditions.push(eq(journalEntries.status, filters.status as any));
+    }
+
+    if (filters.sourceType && filters.sourceType !== "all") {
+      if (filters.sourceType === "manual") {
+        conditions.push(isNull(journalEntries.sourceType));
+      } else {
+        conditions.push(eq(journalEntries.sourceType, filters.sourceType));
+      }
+    }
+
+    if (filters.dateFrom) {
+      conditions.push(gte(journalEntries.entryDate, filters.dateFrom));
+    }
+
+    if (filters.dateTo) {
+      conditions.push(lte(journalEntries.entryDate, filters.dateTo));
+    }
+
+    if (filters.search) {
+      const searchPattern = `%${filters.search}%`;
+      conditions.push(
+        or(
+          sql`CAST(${journalEntries.entryNumber} AS TEXT) LIKE ${searchPattern}`,
+          ilike(journalEntries.description, searchPattern),
+          ilike(journalEntries.reference, searchPattern)
+        )
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(journalEntries)
+      .where(whereClause);
+
+    const data = await db
+      .select()
+      .from(journalEntries)
+      .where(whereClause)
+      .orderBy(desc(journalEntries.entryNumber))
+      .limit(pageSize)
+      .offset(offset);
+
+    return { data, total: countResult?.count || 0 };
+  }
+
   async getJournalEntry(id: string): Promise<JournalEntryWithLines | undefined> {
     const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
     if (!entry) return undefined;
@@ -1110,6 +1184,43 @@ export class DatabaseStorage implements IStorage {
   // Audit Log
   async getAuditLogs(): Promise<AuditLog[]> {
     return db.select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(500);
+  }
+
+  async getAuditLogsPaginated(filters: { page: number; pageSize: number; tableName?: string; action?: string; dateFrom?: string; dateTo?: string }): Promise<{ data: AuditLog[]; total: number }> {
+    const { page, pageSize, tableName, action, dateFrom, dateTo } = filters;
+    const conditions: any[] = [];
+
+    if (tableName) {
+      conditions.push(eq(auditLog.tableName, tableName));
+    }
+    if (action) {
+      conditions.push(eq(auditLog.action, action));
+    }
+    if (dateFrom) {
+      conditions.push(gte(auditLog.createdAt, new Date(dateFrom)));
+    }
+    if (dateTo) {
+      const endDate = new Date(dateTo);
+      endDate.setDate(endDate.getDate() + 1);
+      conditions.push(lte(auditLog.createdAt, endDate));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(auditLog)
+      .where(whereClause);
+
+    const data = await db
+      .select()
+      .from(auditLog)
+      .where(whereClause)
+      .orderBy(desc(auditLog.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+
+    return { data, total: Number(countResult.count) };
   }
 
   async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {

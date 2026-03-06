@@ -10,9 +10,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, Search, Filter, History } from "lucide-react";
+import { Download, Search, Filter, History, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatDateTime } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import type { AuditLog as AuditLogType } from "@shared/schema";
 
 interface AuditLogWithUser extends AuditLogType {
@@ -23,25 +24,38 @@ interface AuditLogWithUser extends AuditLogType {
 }
 
 export default function AuditLog() {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [tableFilter, setTableFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
-  const { data: logs, isLoading } = useQuery<AuditLogWithUser[]>({
-    queryKey: ["/api/audit-log"],
+  const queryParams = new URLSearchParams();
+  queryParams.set("page", String(page));
+  queryParams.set("pageSize", String(pageSize));
+  if (actionFilter !== "all") queryParams.set("action", actionFilter);
+  if (tableFilter !== "all") queryParams.set("tableName", tableFilter);
+  if (dateFrom) queryParams.set("dateFrom", dateFrom);
+  if (dateTo) queryParams.set("dateTo", dateTo);
+
+  const { data, isLoading } = useQuery<{ data: AuditLogWithUser[]; total: number }>({
+    queryKey: ["/api/audit-log", page, pageSize, actionFilter, tableFilter, dateFrom, dateTo],
+    queryFn: async () => {
+      const res = await fetch(`/api/audit-log?${queryParams.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch audit logs");
+      return res.json();
+    },
   });
 
-  const filteredLogs = logs?.filter((log) => {
-    const matchesSearch =
-      searchQuery === "" ||
-      log.recordId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (log.user?.fullName && log.user.fullName.toLowerCase().includes(searchQuery.toLowerCase()));
+  const logs = data?.data || [];
+  const total = data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-    const matchesAction = actionFilter === "all" || log.action === actionFilter;
-    const matchesTable = tableFilter === "all" || log.tableName === tableFilter;
-
-    return matchesSearch && matchesAction && matchesTable;
-  }) || [];
+  const handleFilterChange = (setter: (v: string) => void) => (value: string) => {
+    setter(value);
+    setPage(1);
+  };
 
   const getActionBadge = (action: string) => {
     switch (action) {
@@ -84,7 +98,6 @@ export default function AuditLog() {
 
   return (
     <div className="p-3 space-y-3">
-      {/* Page Header - Peachtree Toolbar Style */}
       <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <History className="h-4 w-4 text-muted-foreground" />
@@ -97,22 +110,10 @@ export default function AuditLog() {
         </Button>
       </div>
 
-      {/* Filters - Compact Peachtree Style */}
       <div className="peachtree-toolbar flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[160px] max-w-[240px]">
-          <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="بحث..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="peachtree-input w-full pr-7 text-xs"
-            data-testid="input-search-audit"
-          />
-        </div>
         <div className="flex items-center gap-1">
           <Filter className="h-3 w-3 text-muted-foreground" />
-          <Select value={actionFilter} onValueChange={setActionFilter}>
+          <Select value={actionFilter} onValueChange={handleFilterChange(setActionFilter)}>
             <SelectTrigger className="peachtree-select w-[120px] text-xs" data-testid="select-action-filter">
               <SelectValue placeholder="العملية" />
             </SelectTrigger>
@@ -128,7 +129,7 @@ export default function AuditLog() {
         </div>
         <div className="flex items-center gap-1">
           <Filter className="h-3 w-3 text-muted-foreground" />
-          <Select value={tableFilter} onValueChange={setTableFilter}>
+          <Select value={tableFilter} onValueChange={handleFilterChange(setTableFilter)}>
             <SelectTrigger className="peachtree-select w-[130px] text-xs" data-testid="select-table-filter">
               <SelectValue placeholder="الجدول" />
             </SelectTrigger>
@@ -142,15 +143,34 @@ export default function AuditLog() {
             </SelectContent>
           </Select>
         </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">من:</span>
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+            className="text-xs w-[130px]"
+            data-testid="input-date-from"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">إلى:</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+            className="text-xs w-[130px]"
+            data-testid="input-date-to"
+          />
+        </div>
         <div className="flex items-center gap-1 mr-auto">
           <span className="text-xs text-muted-foreground">إجمالي:</span>
-          <span className="text-xs font-mono font-semibold">{filteredLogs.length}</span>
+          <span className="text-xs font-mono font-semibold" data-testid="text-total-count">{total}</span>
         </div>
       </div>
 
-      {/* Audit Log Table - Peachtree Grid Style */}
       <div className="peachtree-grid">
-        <ScrollArea className="h-[calc(100vh-200px)]">
+        <ScrollArea className="h-[calc(100vh-250px)]">
           <table className="w-full">
             <thead className="peachtree-grid-header sticky top-0">
               <tr>
@@ -163,7 +183,7 @@ export default function AuditLog() {
               </tr>
             </thead>
             <tbody>
-              {filteredLogs.length === 0 ? (
+              {logs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center py-8">
                     <History className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
@@ -171,13 +191,13 @@ export default function AuditLog() {
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((log) => (
+                logs.map((log) => (
                   <tr key={log.id} className="peachtree-grid-row" data-testid={`row-audit-${log.id}`}>
                     <td className="font-mono text-xs">
                       {formatDateTime(log.createdAt)}
                     </td>
                     <td className="text-xs">
-                      {log.user?.fullName || "غير معروف"}
+                      {(log as AuditLogWithUser).user?.fullName || "غير معروف"}
                     </td>
                     <td className="text-center">{getActionBadge(log.action)}</td>
                     <td className="text-xs">
@@ -196,6 +216,34 @@ export default function AuditLog() {
           </table>
         </ScrollArea>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            data-testid="button-prev-page"
+          >
+            <ChevronRight className="h-3 w-3" />
+            السابق
+          </Button>
+          <span className="text-xs text-muted-foreground" data-testid="text-page-info">
+            صفحة {page} من {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            data-testid="button-next-page"
+          >
+            التالي
+            <ChevronLeft className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
