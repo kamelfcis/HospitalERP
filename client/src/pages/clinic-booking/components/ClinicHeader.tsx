@@ -1,16 +1,20 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Settings } from "lucide-react";
 import type { ClinicClinic } from "../types";
 
 interface Props {
   clinics: ClinicClinic[];
   selectedClinicId: string;
   onSelect: (id: string) => void;
+  onManage?: () => void;
 }
 
-export function ClinicHeader({ clinics, selectedClinicId, onSelect }: Props) {
+export function ClinicHeader({ clinics, selectedClinicId, onSelect, onManage }: Props) {
   const { hasPermission } = useAuth();
   const isAdmin = hasPermission("clinic.view_all");
+  const canManage = hasPermission("clinic.manage");
   const selected = clinics.find((c) => c.id === selectedClinicId);
 
   if (!isAdmin && selected) {
@@ -40,6 +44,18 @@ export function ClinicHeader({ clinics, selectedClinicId, onSelect }: Props) {
           ))}
         </SelectContent>
       </Select>
+      {canManage && onManage && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1 h-8 text-xs mr-auto"
+          onClick={onManage}
+          data-testid="button-manage-clinics"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          إدارة العيادات
+        </Button>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CalendarDays, Plus, Printer } from "lucide-react";
+import { CalendarDays, Plus, Printer, Settings } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useClinicBooking } from "./hooks/useClinicBooking";
@@ -12,6 +12,7 @@ import { AdminSummaryCards } from "./components/AdminSummaryCards";
 import { AppointmentQueue } from "./components/AppointmentQueue";
 import { BookingDialog } from "./components/BookingDialog";
 import { TurnReceipt } from "./components/TurnReceipt";
+import { ClinicManagementDialog } from "./components/ClinicManagementDialog";
 import type { ClinicAppointment } from "./types";
 
 export default function ClinicBooking() {
@@ -19,6 +20,7 @@ export default function ClinicBooking() {
   const { toast } = useToast();
   const { hasPermission } = useAuth();
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [printAppointment, setPrintAppointment] = useState<ClinicAppointment | null>(null);
 
   const {
@@ -61,7 +63,14 @@ export default function ClinicBooking() {
       <div className="p-6 text-center text-muted-foreground">
         <p className="text-lg">لا توجد عيادات مُضافة بعد</p>
         {hasPermission("clinic.manage") && (
-          <p className="text-sm mt-2">يمكنك إضافة عيادات من صفحة الإعدادات</p>
+          <>
+            <p className="text-sm mt-2">ابدأ بإضافة عيادة جديدة</p>
+            <Button className="mt-3 gap-2" onClick={() => setManageOpen(true)} data-testid="button-add-first-clinic">
+              <Settings className="h-4 w-4" />
+              إضافة عيادة
+            </Button>
+            <ClinicManagementDialog open={manageOpen} onClose={() => setManageOpen(false)} />
+          </>
         )}
       </div>
     );
@@ -73,6 +82,7 @@ export default function ClinicBooking() {
         clinics={clinics}
         selectedClinicId={selectedClinicId}
         onSelect={setSelectedClinicId}
+        onManage={() => setManageOpen(true)}
       />
 
       {hasPermission("clinic.view_all") && !selectedClinicId && (
@@ -133,6 +143,8 @@ export default function ClinicBooking() {
         appointment={printAppointment}
         clinicName={selectedClinic?.nameAr ?? ""}
       />
+
+      <ClinicManagementDialog open={manageOpen} onClose={() => setManageOpen(false)} />
     </div>
   );
 }
