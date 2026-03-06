@@ -29,36 +29,36 @@ export default function DeptServicesPage() {
   const departmentName = dept?.nameAr || dept?.name_ar || DEPT_NAME_MAP[deptCode] || deptCode;
 
   return (
-    <div className="p-6 space-y-4" dir="rtl">
+    <div className="p-3 md:p-4" dir="rtl">
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-xl" data-testid="text-page-title">
-            <FileText className="h-6 w-6" />
-            خدمات {departmentName}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="single" dir="rtl">
-            <TabsList className="mb-4">
-              <TabsTrigger value="single" className="gap-1" data-testid="tab-single">
-                <FileText className="h-4 w-4" />
-                طلب فردي
-              </TabsTrigger>
-              <TabsTrigger value="batch" className="gap-1" data-testid="tab-batch">
-                <Users className="h-4 w-4" />
-                إدخال جماعي
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="single">
+        <Tabs defaultValue="single" dir="rtl">
+          <CardHeader className="pb-1 pt-3 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-lg" data-testid="text-page-title">
+                <FileText className="h-5 w-5" />
+                خدمات {departmentName}
+              </CardTitle>
+              <TabsList className="h-8">
+                <TabsTrigger value="single" className="gap-1 text-xs h-7 px-3" data-testid="tab-single">
+                  <FileText className="h-3.5 w-3.5" />
+                  طلب فردي
+                </TabsTrigger>
+                <TabsTrigger value="batch" className="gap-1 text-xs h-7 px-3" data-testid="tab-batch">
+                  <Users className="h-3.5 w-3.5" />
+                  إدخال جماعي
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-3 pt-1">
+            <TabsContent value="single" className="mt-0">
               <SingleOrderTab departmentId={departmentId} departmentName={departmentName} />
             </TabsContent>
-
-            <TabsContent value="batch">
+            <TabsContent value="batch" className="mt-0">
               <BatchTab departmentId={departmentId} departmentName={departmentName} />
             </TabsContent>
-          </Tabs>
-        </CardContent>
+          </CardContent>
+        </Tabs>
       </Card>
     </div>
   );

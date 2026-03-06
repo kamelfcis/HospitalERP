@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Search } from "lucide-react";
 
 export interface ServiceLine {
   serviceId: string;
@@ -19,25 +18,36 @@ interface Props {
 }
 
 export function ServicesGrid({ services, selectedLines, onChange, isLoading }: Props) {
-  const [selectedServiceId, setSelectedServiceId] = useState<string>("");
+  const [searchText, setSearchText] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const addService = () => {
-    if (!selectedServiceId) return;
-    const svc = services.find((s: any) => s.id === selectedServiceId);
-    if (!svc) return;
-    if (selectedLines.some(l => l.serviceId === selectedServiceId)) return;
+  const safeServices = Array.isArray(services) ? services : [];
+  const available = safeServices.filter(
+    (s: any) => !selectedLines.some(l => l.serviceId === s.id)
+  );
+  const filtered = searchText.trim()
+    ? available.filter((s: any) => {
+        const name = (s.nameAr || s.name_ar || s.name || "").toLowerCase();
+        const code = (s.code || "").toLowerCase();
+        const q = searchText.toLowerCase();
+        return name.includes(q) || code.includes(q);
+      })
+    : available;
+
+  const addService = (svc: any) => {
     onChange([...selectedLines, {
       serviceId: svc.id,
       serviceName: svc.nameAr || svc.name_ar || svc.name || "",
       quantity: 1,
       unitPrice: parseFloat(String(svc.basePrice || svc.base_price || 0)),
     }]);
-    setSelectedServiceId("");
+    setSearchText("");
+    setShowDropdown(false);
+    inputRef.current?.focus();
   };
 
-  const removeLine = (idx: number) => {
-    onChange(selectedLines.filter((_, i) => i !== idx));
-  };
+  const removeLine = (idx: number) => onChange(selectedLines.filter((_, i) => i !== idx));
 
   const updateLine = (idx: number, field: keyof ServiceLine, value: number) => {
     const updated = [...selectedLines];
@@ -45,80 +55,72 @@ export function ServicesGrid({ services, selectedLines, onChange, isLoading }: P
     onChange(updated);
   };
 
-  const safeServices = Array.isArray(services) ? services : [];
-  const availableServices = safeServices.filter(
-    (s: any) => !selectedLines.some(l => l.serviceId === s.id)
-  );
-
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2 items-center">
-        <Select value={selectedServiceId} onValueChange={setSelectedServiceId}>
-          <SelectTrigger className="flex-1" data-testid="select-service">
-            <SelectValue placeholder="اختر خدمة..." />
-          </SelectTrigger>
-          <SelectContent>
-            {availableServices.map((s: any) => (
-              <SelectItem key={s.id} value={s.id} data-testid={`service-option-${s.id}`}>
-                {s.nameAr || s.name_ar || s.name} — {parseFloat(String(s.basePrice || s.base_price || 0)).toFixed(2)} ج.م
-              </SelectItem>
+    <div className="space-y-1">
+      <div className="relative">
+        <div className="relative">
+          <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            ref={inputRef}
+            value={searchText}
+            onChange={e => { setSearchText(e.target.value); setShowDropdown(true); }}
+            onFocus={() => setShowDropdown(true)}
+            onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+            placeholder="ابحث عن خدمة بالاسم أو الكود..."
+            className="h-7 text-sm pr-8"
+            data-testid="input-search-service"
+          />
+        </div>
+        {showDropdown && filtered.length > 0 && (
+          <div className="absolute z-50 top-full mt-0.5 w-full border rounded-md bg-background shadow-lg max-h-44 overflow-auto">
+            {filtered.map((s: any) => (
+              <button
+                key={s.id}
+                type="button"
+                className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-muted text-sm"
+                onMouseDown={() => addService(s)}
+                data-testid={`service-option-${s.id}`}
+              >
+                <span>{s.nameAr || s.name_ar || s.name}</span>
+                <span className="text-muted-foreground text-xs">{parseFloat(String(s.basePrice || s.base_price || 0)).toFixed(2)} ج.م</span>
+              </button>
             ))}
-          </SelectContent>
-        </Select>
-        <Button onClick={addService} disabled={!selectedServiceId} size="sm" data-testid="btn-add-service">
-          <Plus className="h-4 w-4" />
-        </Button>
+          </div>
+        )}
+        {showDropdown && searchText && filtered.length === 0 && (
+          <div className="absolute z-50 top-full mt-0.5 w-full border rounded-md bg-background shadow-lg px-3 py-2 text-sm text-muted-foreground">
+            لا توجد نتائج
+          </div>
+        )}
       </div>
 
       {selectedLines.length > 0 && (
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="p-2 text-right">الخدمة</th>
-                <th className="p-2 text-center w-20">الكمية</th>
-                <th className="p-2 text-center w-28">السعر</th>
-                <th className="p-2 text-center w-28">الإجمالي</th>
-                <th className="p-2 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedLines.map((line, idx) => (
-                <tr key={line.serviceId} className="border-t">
-                  <td className="p-2 text-right" data-testid={`text-service-name-${idx}`}>{line.serviceName}</td>
-                  <td className="p-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={line.quantity}
-                      onChange={e => updateLine(idx, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
-                      className="text-center h-8"
-                      data-testid={`input-qty-${idx}`}
-                    />
-                  </td>
-                  <td className="p-2">
-                    <Input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={line.unitPrice}
-                      onChange={e => updateLine(idx, 'unitPrice', Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="text-center h-8"
-                      data-testid={`input-price-${idx}`}
-                    />
-                  </td>
-                  <td className="p-2 text-center font-medium" data-testid={`text-line-total-${idx}`}>
-                    {(line.quantity * line.unitPrice).toFixed(2)}
-                  </td>
-                  <td className="p-2">
-                    <Button variant="ghost" size="sm" onClick={() => removeLine(idx)} data-testid={`btn-remove-${idx}`}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-0.5">
+          {selectedLines.map((line, idx) => (
+            <div key={line.serviceId} className="flex items-center gap-1.5 bg-muted/40 rounded px-2 py-0.5 text-sm">
+              <span className="flex-1 truncate font-medium text-xs" data-testid={`text-service-name-${idx}`}>{line.serviceName}</span>
+              <Input
+                type="number" min={1} value={line.quantity}
+                onChange={e => updateLine(idx, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-14 h-6 text-center text-xs p-0"
+                data-testid={`input-qty-${idx}`}
+              />
+              <span className="text-[10px] text-muted-foreground">×</span>
+              <Input
+                type="number" min={0} step={0.01} value={line.unitPrice}
+                onChange={e => updateLine(idx, 'unitPrice', Math.max(0, parseFloat(e.target.value) || 0))}
+                className="w-20 h-6 text-center text-xs p-0"
+                data-testid={`input-price-${idx}`}
+              />
+              <span className="text-[10px] text-muted-foreground">=</span>
+              <span className="w-20 text-center font-bold text-xs tabular-nums" data-testid={`text-line-total-${idx}`}>
+                {(line.quantity * line.unitPrice).toFixed(2)}
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => removeLine(idx)} className="h-6 w-6 p-0" data-testid={`btn-remove-${idx}`}>
+                <Trash2 className="h-3 w-3 text-destructive" />
+              </Button>
+            </div>
+          ))}
         </div>
       )}
     </div>
