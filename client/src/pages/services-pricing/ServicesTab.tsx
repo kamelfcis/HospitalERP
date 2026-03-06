@@ -59,7 +59,7 @@ export default function ServicesTab() {
     },
   });
 
-  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
+  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"], staleTime: 0 });
   const { data: categories }  = useQuery<string[]>({ queryKey: ["/api/service-categories"] });
 
   const services    = servicesData?.data  || [];

@@ -73,10 +73,10 @@ export default function ServiceDialog({
   const [consumableResults, setConsumableResults] = useState<Item[]>([]);
   const [searchingItems, setSearchingItems] = useState(false);
 
-  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
-  const { data: warehouses }  = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
-  const { data: accounts }    = useQuery<Account[]>({ queryKey: ["/api/accounts?pageSize=5000"] });
-  const { data: costCenters } = useQuery<CostCenter[]>({ queryKey: ["/api/cost-centers"] });
+  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"], staleTime: 0 });
+  const { data: warehouses }  = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"], staleTime: 0 });
+  const { data: accounts }    = useQuery<Account[]>({ queryKey: ["/api/accounts?pageSize=5000"], staleTime: 0 });
+  const { data: costCenters } = useQuery<CostCenter[]>({ queryKey: ["/api/cost-centers"], staleTime: 0 });
 
   // تحميل مستهلكات الخدمة عند فتح التعديل
   useEffect(() => {
