@@ -9406,7 +9406,7 @@ export class DatabaseStorage implements IStorage {
               (consultation_id, appointment_id, doctor_id, patient_name,
                order_type, target_type, target_id, target_name,
                service_id, service_name_manual, quantity, unit_price, status)
-            VALUES ($1,$2,$3,$4,'service','department',$5,$6,$7,$8,1,$9,'pending')
+            VALUES ($1,$2,$3,$4,'service','department',$5,$6,$7,$8,1,$9,'executed')
           `, [
             consultation.id, data.appointmentId, appt.doctor_id, appt.patient_name,
             appt.consultation_service_dept_id ?? null, appt.consultation_service_dept_name ?? null,
