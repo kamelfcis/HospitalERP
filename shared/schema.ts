@@ -1751,6 +1751,7 @@ export const clinicConsultationDrugs = pgTable("clinic_consultation_drugs", {
 export const clinicDoctorFavoriteDrugs = pgTable("clinic_doctor_favorite_drugs", {
   id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   doctorId:        varchar("doctor_id").notNull().references(() => doctors.id),
+  clinicId:        varchar("clinic_id").references(() => clinicClinics.id),
   itemId:          varchar("item_id").references(() => items.id),
   drugName:        text("drug_name").notNull(),
   defaultDose:     text("default_dose"),

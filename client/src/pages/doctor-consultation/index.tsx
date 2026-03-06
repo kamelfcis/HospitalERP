@@ -38,10 +38,11 @@ export default function DoctorConsultation() {
     favorites,
     frequentDrugs,
     isFavorite,
+    getFavoriteId,
     isFrequent,
     addMutation: addFav,
     removeMutation: removeFav,
-  } = useFavoriteDrugs();
+  } = useFavoriteDrugs(form.clinicId);
 
   if (isLoading) {
     return (
@@ -132,6 +133,7 @@ export default function DoctorConsultation() {
           favorites={favorites}
           frequentDrugs={frequentDrugs}
           isFavorite={isFavorite}
+          getFavoriteId={getFavoriteId}
           isFrequent={isFrequent}
           onAddFavorite={(data) => addFav.mutate(data)}
           onRemoveFavorite={(id) => removeFav.mutate(id)}

@@ -579,10 +579,10 @@ export interface IStorage {
   saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[] }): Promise<any>;
 
   // الأدوية المفضلة
-  getDoctorFavoriteDrugs(doctorId: string): Promise<any[]>;
-  addFavoriteDrug(data: { doctorId: string; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<any>;
-  removeFavoriteDrug(id: string): Promise<void>;
-  getFrequentDrugsNotInFavorites(doctorId: string, minCount?: number): Promise<any[]>;
+  getDoctorFavoriteDrugs(doctorId: string, clinicId?: string | null): Promise<any[]>;
+  addFavoriteDrug(data: { doctorId: string; clinicId?: string | null; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<any>;
+  removeFavoriteDrug(id: string, doctorId?: string): Promise<void>;
+  getFrequentDrugsNotInFavorites(doctorId: string, minCount?: number, clinicId?: string | null): Promise<any[]>;
 
   // الأوامر الطبية
   getClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<any[]>;
@@ -9185,7 +9185,7 @@ export class DatabaseStorage implements IStorage {
     const consRows = await db.execute(sql`
       SELECT c.*,
              a.patient_name, a.patient_phone, a.appointment_date, a.appointment_time,
-             a.turn_number, a.status AS appointment_status, a.doctor_id,
+             a.turn_number, a.status AS appointment_status, a.doctor_id, a.clinic_id,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
              cl.name_ar AS clinic_name, cl.default_pharmacy_id,
              cl.consultation_service_id
@@ -9415,31 +9415,36 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getDoctorFavoriteDrugs(doctorId: string): Promise<any[]> {
+  async getDoctorFavoriteDrugs(doctorId: string, clinicId?: string | null): Promise<any[]> {
     const rows = await db.execute(sql`
       SELECT f.*, i.name_ar AS item_name_ar, i.sale_price_current
       FROM clinic_doctor_favorite_drugs f
       LEFT JOIN items i ON i.id = f.item_id
       WHERE f.doctor_id = ${doctorId}
+        AND (f.clinic_id IS NULL OR f.clinic_id = ${clinicId ?? null})
       ORDER BY f.sort_order, f.drug_name
     `);
     return rows.rows as any[];
   }
 
-  async addFavoriteDrug(data: { doctorId: string; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<any> {
+  async addFavoriteDrug(data: { doctorId: string; clinicId?: string | null; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<any> {
     const rows = await db.execute(sql`
-      INSERT INTO clinic_doctor_favorite_drugs (doctor_id, item_id, drug_name, default_dose, default_frequency, default_duration)
-      VALUES (${data.doctorId}, ${data.itemId ?? null}, ${data.drugName}, ${data.defaultDose ?? null}, ${data.defaultFrequency ?? null}, ${data.defaultDuration ?? null})
+      INSERT INTO clinic_doctor_favorite_drugs (doctor_id, clinic_id, item_id, drug_name, default_dose, default_frequency, default_duration)
+      VALUES (${data.doctorId}, ${data.clinicId ?? null}, ${data.itemId ?? null}, ${data.drugName}, ${data.defaultDose ?? null}, ${data.defaultFrequency ?? null}, ${data.defaultDuration ?? null})
       RETURNING *
     `);
     return rows.rows[0] as any;
   }
 
-  async removeFavoriteDrug(id: string): Promise<void> {
-    await db.execute(sql`DELETE FROM clinic_doctor_favorite_drugs WHERE id = ${id}`);
+  async removeFavoriteDrug(id: string, doctorId?: string): Promise<void> {
+    if (doctorId) {
+      await db.execute(sql`DELETE FROM clinic_doctor_favorite_drugs WHERE id = ${id} AND doctor_id = ${doctorId}`);
+    } else {
+      await db.execute(sql`DELETE FROM clinic_doctor_favorite_drugs WHERE id = ${id}`);
+    }
   }
 
-  async getFrequentDrugsNotInFavorites(doctorId: string, minCount: number = 2): Promise<any[]> {
+  async getFrequentDrugsNotInFavorites(doctorId: string, minCount: number = 2, clinicId?: string | null): Promise<any[]> {
     const rows = await db.execute(sql`
       SELECT cd.item_id, cd.drug_name,
              COUNT(DISTINCT cd.consultation_id)::int AS usage_count
@@ -9447,10 +9452,13 @@ export class DatabaseStorage implements IStorage {
       JOIN clinic_consultations c ON c.id = cd.consultation_id
       JOIN clinic_appointments a ON a.id = c.appointment_id
       WHERE a.doctor_id = ${doctorId}
+        AND (${clinicId ?? null}::varchar IS NULL OR a.clinic_id = ${clinicId ?? null})
         AND cd.item_id IS NOT NULL
         AND cd.item_id NOT IN (
           SELECT item_id FROM clinic_doctor_favorite_drugs
-          WHERE doctor_id = ${doctorId} AND item_id IS NOT NULL
+          WHERE doctor_id = ${doctorId}
+            AND (clinic_id IS NULL OR clinic_id = ${clinicId ?? null})
+            AND item_id IS NOT NULL
         )
       GROUP BY cd.item_id, cd.drug_name
       HAVING COUNT(DISTINCT cd.consultation_id) >= ${minCount}

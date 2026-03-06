@@ -5393,7 +5393,8 @@ export async function registerRoutes(
     try {
       const doctorId = await storage.getUserDoctorId(req.session.userId!);
       if (!doctorId) return res.status(404).json({ message: "لم يتم ربط حسابك بطبيب" });
-      const favorites = await storage.getDoctorFavoriteDrugs(doctorId);
+      const clinicId = (req.query.clinicId as string) || null;
+      const favorites = await storage.getDoctorFavoriteDrugs(doctorId, clinicId);
       res.json(snakeToCamel(favorites));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -5402,16 +5403,18 @@ export async function registerRoutes(
     try {
       const doctorId = await storage.getUserDoctorId(req.session.userId!);
       if (!doctorId) return res.status(404).json({ message: "لم يتم ربط حسابك بطبيب" });
-      const { itemId, drugName, defaultDose, defaultFrequency, defaultDuration } = req.body;
+      const { itemId, drugName, defaultDose, defaultFrequency, defaultDuration, clinicId } = req.body;
       if (!drugName?.trim()) return res.status(400).json({ message: "اسم الدواء مطلوب" });
-      const fav = await storage.addFavoriteDrug({ doctorId, itemId: itemId || null, drugName: drugName.trim(), defaultDose, defaultFrequency, defaultDuration });
+      const fav = await storage.addFavoriteDrug({ doctorId, clinicId: clinicId || null, itemId: itemId || null, drugName: drugName.trim(), defaultDose, defaultFrequency, defaultDuration });
       res.status(201).json(snakeToCamel(fav));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.delete("/api/clinic-favorite-drugs/:id", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
     try {
-      await storage.removeFavoriteDrug(req.params.id);
+      const doctorId = await storage.getUserDoctorId(req.session.userId!);
+      if (!doctorId) return res.status(404).json({ message: "لم يتم ربط حسابك بطبيب" });
+      await storage.removeFavoriteDrug(req.params.id, doctorId);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -5422,7 +5425,8 @@ export async function registerRoutes(
       const doctorId = await storage.getUserDoctorId(req.session.userId!);
       if (!doctorId) return res.json([]);
       const minCount = parseInt(req.query.minCount as string) || 2;
-      const drugs = await storage.getFrequentDrugsNotInFavorites(doctorId, minCount);
+      const clinicId = (req.query.clinicId as string) || null;
+      const drugs = await storage.getFrequentDrugsNotInFavorites(doctorId, minCount, clinicId);
       res.json(snakeToCamel(drugs));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

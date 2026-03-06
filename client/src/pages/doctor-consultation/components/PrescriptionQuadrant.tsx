@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Star } from "lucide-react";
 import { ItemFastSearch } from "@/components/ItemFastSearch";
 import type { ItemSelectedPayload } from "@/components/ItemFastSearch/types";
 import { QuadrantCard } from "./QuadrantCard";
@@ -48,6 +48,7 @@ interface Props {
   favorites: FavoriteDrug[];
   frequentDrugs: FrequentDrug[];
   isFavorite: (itemId: string | null | undefined) => boolean;
+  getFavoriteId: (itemId: string | null | undefined) => string | null;
   isFrequent: (itemId: string | null | undefined) => boolean;
   onAddFavorite: (data: { itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }) => void;
   onRemoveFavorite: (id: string) => void;
@@ -56,13 +57,12 @@ interface Props {
 
 export function PrescriptionQuadrant({
   drugs, onAdd, onUpdate, onRemove,
-  favorites, frequentDrugs, isFavorite, isFrequent,
+  favorites, frequentDrugs, isFavorite, getFavoriteId, isFrequent,
   onAddFavorite, onRemoveFavorite,
   defaultPharmacyId,
 }: Props) {
   const { toast } = useToast();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [suggestFav, setSuggestFav] = useState<{ itemId: string; drugName: string } | null>(null);
 
   const handleItemSelected = (payload: ItemSelectedPayload) => {
     const { item } = payload;
@@ -83,10 +83,6 @@ export function PrescriptionQuadrant({
       salePriceCurrent: item.salePriceCurrent,
     });
     setSearchOpen(false);
-
-    if (item.id && isFrequent(item.id) && !isFavorite(item.id)) {
-      setSuggestFav({ itemId: item.id, drugName: item.nameAr });
-    }
   };
 
   const handleUnitChange = (drug: ConsultationDrug, newUnit: string) => {
@@ -102,11 +98,22 @@ export function PrescriptionQuadrant({
     onUpdate(drug.lineNo, { quantity: newQty });
   };
 
-  const handleConfirmFavorite = () => {
-    if (!suggestFav) return;
-    onAddFavorite({ itemId: suggestFav.itemId, drugName: suggestFav.drugName });
-    toast({ title: "تم إضافة الدواء للمفضلة" });
-    setSuggestFav(null);
+  const handleToggleFavorite = (drug: ConsultationDrug) => {
+    if (!drug.itemId) return;
+    const favId = getFavoriteId(drug.itemId);
+    if (favId) {
+      onRemoveFavorite(favId);
+      toast({ title: "تم إزالة الدواء من المفضلة" });
+    } else {
+      onAddFavorite({
+        itemId: drug.itemId,
+        drugName: drug.drugName,
+        defaultDose: drug.dose,
+        defaultFrequency: drug.frequency,
+        defaultDuration: drug.duration,
+      });
+      toast({ title: "تم إضافة الدواء للمفضلة" });
+    }
   };
 
   const warehouseId = defaultPharmacyId || "";
@@ -145,10 +152,23 @@ export function PrescriptionQuadrant({
             const price = parseFloat(String(drug.unitPrice)) || 0;
             const lineTotal = qty * price;
             const multiUnit = hasMultipleUnits(drug);
+            const starred = isFavorite(drug.itemId);
             return (
               <div key={drug.lineNo} className="space-y-1 border-b border-muted pb-1.5 last:border-0">
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground w-5 shrink-0 text-left">{drug.lineNo}.</span>
+                  {drug.itemId && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 shrink-0"
+                      onClick={() => handleToggleFavorite(drug)}
+                      title={starred ? "إزالة من المفضلة" : "إضافة للمفضلة"}
+                      data-testid={`button-toggle-fav-${drug.lineNo}`}
+                    >
+                      <Star className={`h-3.5 w-3.5 ${starred ? "fill-yellow-400 text-yellow-500" : "text-muted-foreground"}`} />
+                    </Button>
+                  )}
                   <Input
                     className="h-7 text-sm border-muted flex-1"
                     value={drug.drugName}
@@ -235,22 +255,6 @@ export function PrescriptionQuadrant({
             <span className="text-xs font-bold text-foreground" data-testid="text-prescription-total">
               الإجمالي: {drugs.reduce((s, d) => s + (parseFloat(String(d.quantity)) || 1) * (parseFloat(String(d.unitPrice)) || 0), 0).toFixed(2)} ج.م
             </span>
-          </div>
-        </div>
-      )}
-
-      {suggestFav && (
-        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs flex items-center gap-2 justify-between">
-          <span className="text-yellow-800">
-            ⭐ تستخدم "{suggestFav.drugName}" كثيراً — أضفه لمفضلتك؟
-          </span>
-          <div className="flex gap-1">
-            <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-yellow-300" onClick={handleConfirmFavorite} data-testid="button-confirm-favorite">
-              نعم
-            </Button>
-            <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setSuggestFav(null)} data-testid="button-dismiss-favorite">
-              تجاهل
-            </Button>
           </div>
         </div>
       )}
