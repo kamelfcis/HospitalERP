@@ -573,6 +573,8 @@ export interface IStorage {
   // الربط بالمستخدم/الطبيب
   getUserDoctorId(userId: string): Promise<string | null>;
   assignUserToDoctor(userId: string, doctorId: string): Promise<void>;
+  removeUserDoctorAssignment(userId: string): Promise<void>;
+  getUserAssignedDoctorId(userId: string): Promise<string | null>;
 
   // الكشف والروشتة
   getConsultationByAppointment(appointmentId: string): Promise<any | null>;
@@ -9179,6 +9181,15 @@ export class DatabaseStorage implements IStorage {
       VALUES (${userId}, ${doctorId})
       ON CONFLICT (user_id) DO UPDATE SET doctor_id = EXCLUDED.doctor_id
     `);
+  }
+
+  async removeUserDoctorAssignment(userId: string): Promise<void> {
+    await db.execute(sql`DELETE FROM clinic_user_doctor_assignments WHERE user_id = ${userId}`);
+  }
+
+  async getUserAssignedDoctorId(userId: string): Promise<string | null> {
+    const rows = await db.execute(sql`SELECT doctor_id FROM clinic_user_doctor_assignments WHERE user_id = ${userId}`);
+    return (rows.rows[0] as any)?.doctor_id ?? null;
   }
 
   async getConsultationByAppointment(appointmentId: string): Promise<any | null> {

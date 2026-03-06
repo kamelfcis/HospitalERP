@@ -5305,11 +5305,25 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  app.get("/api/clinic-user-doctor/:userId", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const doctorId = await storage.getUserAssignedDoctorId(req.params.userId);
+      res.json({ doctorId });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   app.post("/api/clinic-user-doctor", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
       const { userId, doctorId } = req.body;
       if (!userId || !doctorId) return res.status(400).json({ message: "userId و doctorId مطلوبان" });
       await storage.assignUserToDoctor(userId, doctorId);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/clinic-user-doctor/:userId", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      await storage.removeUserDoctorAssignment(req.params.userId);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

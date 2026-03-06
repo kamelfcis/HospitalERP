@@ -7,7 +7,7 @@ import { Button }     from "@/components/ui/button";
 import { Badge }      from "@/components/ui/badge";
 import { Checkbox }   from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, X, Plus } from "lucide-react";
+import { Loader2, X, Plus, Stethoscope } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_LABELS, PERMISSION_GROUPS, DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
 
@@ -21,6 +21,105 @@ interface ClinicOption {
   id: string;
   nameAr: string;
   isActive: boolean;
+}
+
+interface DoctorOption { id: string; name: string; }
+
+function DoctorAssignmentSection({ userId }: { userId: string }) {
+  const { toast } = useToast();
+
+  const { data: doctors = [] } = useQuery<DoctorOption[]>({
+    queryKey: ["/api/doctors"],
+    staleTime: 0,
+  });
+
+  const { data: assignedData, isLoading } = useQuery<{ doctorId: string | null }>({
+    queryKey: ["/api/clinic-user-doctor", userId],
+    queryFn: () => apiRequest("GET", `/api/clinic-user-doctor/${userId}`).then((r) => r.json()),
+    enabled: !!userId,
+    staleTime: 0,
+  });
+
+  const assignedDoctorId = assignedData?.doctorId ?? null;
+  const assignedDoctor = doctors.find((d) => d.id === assignedDoctorId);
+  const [selectedDoctorId, setSelectedDoctorId] = useState("");
+
+  const assignMutation = useMutation({
+    mutationFn: (doctorId: string) =>
+      apiRequest("POST", "/api/clinic-user-doctor", { userId, doctorId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-user-doctor", userId] });
+      setSelectedDoctorId("");
+      toast({ title: "تم ربط المستخدم بالطبيب" });
+    },
+    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("DELETE", `/api/clinic-user-doctor/${userId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-user-doctor", userId] });
+      toast({ title: "تم إلغاء ربط الطبيب" });
+    },
+    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+  });
+
+  if (isLoading) {
+    return <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {assignedDoctor ? (
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs gap-1.5 bg-green-50 text-green-700 border-green-200 pr-1.5 py-1">
+            <Stethoscope className="h-3 w-3" />
+            {assignedDoctor.name}
+            <button
+              type="button"
+              className="hover:bg-green-200 rounded-full p-0.5 transition-colors"
+              onClick={() => removeMutation.mutate()}
+              disabled={removeMutation.isPending}
+              data-testid="button-remove-doctor"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Select value={selectedDoctorId} onValueChange={setSelectedDoctorId}>
+            <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-assign-doctor">
+              <SelectValue placeholder="اختر طبيباً لربطه بهذا المستخدم..." />
+            </SelectTrigger>
+            <SelectContent>
+              {doctors.length === 0 ? (
+                <SelectItem value="__none__" disabled>لا يوجد أطباء</SelectItem>
+              ) : (
+                doctors.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            className="h-8 text-xs gap-1"
+            disabled={!selectedDoctorId || selectedDoctorId === "__none__" || assignMutation.isPending}
+            onClick={() => assignMutation.mutate(selectedDoctorId)}
+            data-testid="button-assign-doctor"
+          >
+            {assignMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+            ربط
+          </Button>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        ربط المستخدم بطبيب يتيح له استخدام ميزات الطبيب (المفضلة، كشف الحساب...)
+      </p>
+    </div>
+  );
 }
 
 function ClinicAssignmentsSection({ userId }: { userId: string }) {
@@ -245,6 +344,13 @@ export function PermissionsDialog({ userId, open, onOpenChange }: PermissionsDia
                 </div>
               </div>
             ))}
+
+            {userId && (
+              <div>
+                <p className="font-medium text-sm mb-1">ربط بطبيب</p>
+                <DoctorAssignmentSection userId={userId} />
+              </div>
+            )}
 
             {userId && (
               <div>
