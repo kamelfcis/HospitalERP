@@ -5419,21 +5419,20 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  // كشف حساب الطبيب
-  app.get("/api/clinic-doctor-statement", requireAuth, checkPermission("doctor.view_statement"), async (req, res) => {
+  // كشف حساب الطبيب / العيادة
+  app.get("/api/clinic-doctor-statement", requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;
       let doctorId = req.query.doctorId as string;
+      const clinicId = req.query.clinicId as string;
 
-      // الطبيب يرى كشفه فقط، الأدمن يمكنه تحديد طبيب
       if (!doctorId) {
         doctorId = (await storage.getUserDoctorId(userId)) || '';
       }
-      if (!doctorId) return res.status(400).json({ message: "doctorId مطلوب" });
 
-      const from = (req.query.from as string) || new Date().toISOString().slice(0, 7) + '-01';
+      const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
       const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
-      const rows = await storage.getClinicDoctorStatement(doctorId, from, to);
+      const rows = await storage.getClinicDoctorStatement(doctorId || null, from, to, clinicId || null);
       res.json(snakeToCamel(rows));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

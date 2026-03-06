@@ -7,10 +7,11 @@ import { useDoctorStatement } from "../hooks/useDoctorStatement";
 
 interface Props {
   doctorId?: string;
+  clinicId?: string;
 }
 
-export function DoctorStatementTab({ doctorId }: Props) {
-  const { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useDoctorStatement(doctorId);
+export function DoctorStatementTab({ doctorId, clinicId }: Props) {
+  const { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useDoctorStatement(doctorId, clinicId);
 
   return (
     <div className="space-y-3">
@@ -44,7 +45,7 @@ export function DoctorStatementTab({ doctorId }: Props) {
                 <TableHead className="text-right w-12">الدور</TableHead>
                 <TableHead className="text-right">التاريخ</TableHead>
                 <TableHead className="text-right">المريض</TableHead>
-                <TableHead className="text-right">العيادة</TableHead>
+                <TableHead className="text-right">الطبيب</TableHead>
                 <TableHead className="text-right">التشخيص</TableHead>
                 <TableHead className="text-right w-24">الحالة</TableHead>
               </TableRow>
@@ -55,7 +56,7 @@ export function DoctorStatementTab({ doctorId }: Props) {
                   <TableCell className="text-sm font-bold text-center">{row.turnNumber}</TableCell>
                   <TableCell className="text-sm" dir="ltr">{row.appointmentDate}</TableCell>
                   <TableCell className="text-sm font-medium">{row.patientName}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{row.clinicName || "—"}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{row.doctorName || "—"}</TableCell>
                   <TableCell className="text-sm truncate max-w-[200px]">{row.diagnosis || "—"}</TableCell>
                   <TableCell>
                     {row.appointmentStatus === "done" ? (

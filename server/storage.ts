@@ -590,7 +590,7 @@ export interface IStorage {
   cancelClinicOrder(orderId: string): Promise<void>;
 
   // كشف حساب الطبيب - عيادات
-  getClinicDoctorStatement(doctorId: string, dateFrom: string, dateTo: string): Promise<any[]>;
+  getClinicDoctorStatement(doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<any[]>;
 }
 
 function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
@@ -9448,7 +9448,9 @@ export class DatabaseStorage implements IStorage {
     await db.execute(sql`UPDATE clinic_orders SET status = 'cancelled' WHERE id = ${orderId} AND status = 'pending'`);
   }
 
-  async getClinicDoctorStatement(doctorId: string, dateFrom: string, dateTo: string): Promise<any[]> {
+  async getClinicDoctorStatement(doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<any[]> {
+    const doctorFilter = doctorId ? sql`AND a.doctor_id = ${doctorId}` : sql``;
+    const clinicFilter = clinicId ? sql`AND a.clinic_id = ${clinicId}` : sql``;
     const rows = await db.execute(sql`
       SELECT
         a.id AS appointment_id,
@@ -9458,13 +9460,16 @@ export class DatabaseStorage implements IStorage {
         a.status AS appointment_status,
         c.chief_complaint,
         c.diagnosis,
-        cl.name_ar AS clinic_name
+        cl.name_ar AS clinic_name,
+        d.name AS doctor_name
       FROM clinic_appointments a
       LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
       LEFT JOIN clinic_clinics cl ON cl.id = a.clinic_id
-      WHERE a.doctor_id = ${doctorId}
-        AND a.appointment_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
+      LEFT JOIN doctors d ON d.id = a.doctor_id
+      WHERE a.appointment_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
         AND a.status IN ('in_consultation', 'done')
+        ${doctorFilter}
+        ${clinicFilter}
       ORDER BY a.appointment_date DESC, a.turn_number
     `);
     return rows.rows as any[];

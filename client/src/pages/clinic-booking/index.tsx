@@ -111,12 +111,10 @@ export default function ClinicBooking() {
               <CalendarDays className="h-3.5 w-3.5" />
               قائمة الانتظار
             </TabsTrigger>
-            {myDoctorId && (
-              <TabsTrigger value="statement" className="text-sm gap-1.5">
-                <ClipboardList className="h-3.5 w-3.5" />
-                كشف الحساب
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="statement" className="text-sm gap-1.5">
+              <ClipboardList className="h-3.5 w-3.5" />
+              كشف الحساب
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="queue" className="mt-3 space-y-3">
@@ -154,11 +152,9 @@ export default function ClinicBooking() {
             />
           </TabsContent>
 
-          {myDoctorId && (
-            <TabsContent value="statement" className="mt-3">
-              <DoctorStatementTab doctorId={myDoctorId} />
-            </TabsContent>
-          )}
+          <TabsContent value="statement" className="mt-3">
+            <DoctorStatementTab doctorId={myDoctorId} clinicId={selectedClinicId} />
+          </TabsContent>
         </Tabs>
       )}
 
