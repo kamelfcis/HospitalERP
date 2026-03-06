@@ -6,6 +6,7 @@ export function useDoctorStatement(doctorId?: string, clinicId?: string) {
   const today = new Date().toISOString().slice(0, 10);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
+  const [execFilter, setExecFilter] = useState<"all" | "executed" | "pending">("all");
 
   const params = new URLSearchParams({ from: dateFrom, to: dateTo });
   if (doctorId) params.set("doctorId", doctorId);
@@ -17,7 +18,9 @@ export function useDoctorStatement(doctorId?: string, clinicId?: string) {
       apiRequest("GET", `/api/clinic-doctor-statement?${params.toString()}`)
         .then((r) => r.json())
         .catch(() => []),
+    refetchInterval: 15000,
+    staleTime: 0,
   });
 
-  return { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo };
+  return { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo, execFilter, setExecFilter };
 }

@@ -9583,7 +9583,14 @@ export class DatabaseStorage implements IStorage {
         d.name AS doctor_name,
         COALESCE(sdp_fee.price, s_fee.base_price, 0) AS consultation_fee,
         COALESCE(drugs_totals.total, 0) AS drugs_total,
-        COALESCE(services_by_dept.details, '[]'::json) AS services_by_department
+        COALESCE(services_by_dept.details, '[]'::json) AS services_by_department,
+        COALESCE(exec_stats.total_orders, 0) AS total_orders,
+        COALESCE(exec_stats.executed_orders, 0) AS executed_orders,
+        COALESCE(exec_stats.pending_orders, 0) AS pending_orders,
+        COALESCE(exec_stats.total_service_orders, 0) AS total_service_orders,
+        COALESCE(exec_stats.executed_service_orders, 0) AS executed_service_orders,
+        COALESCE(exec_stats.total_pharmacy_orders, 0) AS total_pharmacy_orders,
+        COALESCE(exec_stats.executed_pharmacy_orders, 0) AS executed_pharmacy_orders
       FROM clinic_appointments a
       LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
       LEFT JOIN clinic_clinics cl ON cl.id = a.clinic_id
@@ -9619,6 +9626,18 @@ export class DatabaseStorage implements IStorage {
           GROUP BY dep.id, dep.name_ar
         ) sub
       ) services_by_dept ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)::int AS total_orders,
+          COUNT(*) FILTER (WHERE eo.status = 'executed')::int AS executed_orders,
+          COUNT(*) FILTER (WHERE eo.status = 'pending')::int AS pending_orders,
+          COUNT(*) FILTER (WHERE eo.order_type = 'service' AND eo.status != 'cancelled')::int AS total_service_orders,
+          COUNT(*) FILTER (WHERE eo.order_type = 'service' AND eo.status = 'executed')::int AS executed_service_orders,
+          COUNT(*) FILTER (WHERE eo.order_type = 'pharmacy' AND eo.status != 'cancelled')::int AS total_pharmacy_orders,
+          COUNT(*) FILTER (WHERE eo.order_type = 'pharmacy' AND eo.status = 'executed')::int AS executed_pharmacy_orders
+        FROM clinic_orders eo
+        WHERE eo.appointment_id = a.id AND eo.status != 'cancelled'
+      ) exec_stats ON true
       WHERE a.appointment_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
         AND a.status IN ('in_consultation', 'done')
         ${doctorFilter}
