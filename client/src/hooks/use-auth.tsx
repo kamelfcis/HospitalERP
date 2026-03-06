@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback } from "react";
+import { createContext, useContext, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -45,6 +45,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     staleTime: Infinity,
     retry: false,
   });
+
+  useEffect(() => {
+    if (!data?.user) return;
+    const prefetchKeys = [
+      ["/api/departments"],
+      ["/api/warehouses"],
+      ["/api/doctors"],
+    ];
+    for (const queryKey of prefetchKeys) {
+      queryClient.prefetchQuery({ queryKey });
+    }
+  }, [data?.user]);
 
   const loginMutation = useMutation({
     mutationFn: async ({ username, password }: { username: string; password: string }) => {

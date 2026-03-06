@@ -50,14 +50,16 @@ export function ChatPopup() {
 
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/chat/unread-count"],
-    refetchInterval: 20000,
+    refetchInterval: 60000,
+    staleTime: 30000,
     enabled: !!user,
   });
 
   const { data: chatUsers = [] } = useQuery<ChatUser[]>({
     queryKey: ["/api/chat/users"],
     enabled: open && !selectedUser,
-    refetchInterval: open && !selectedUser ? 15000 : false,
+    refetchInterval: open && !selectedUser ? 30000 : false,
+    staleTime: 15000,
   });
 
   const { data: messages = [] } = useQuery<ChatMessage[]>({

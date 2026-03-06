@@ -9,7 +9,8 @@ interface Announcement {
 export function AppHeader() {
   const { data: announcements = [] } = useQuery<Announcement[]>({
     queryKey: ["/api/announcements/active"],
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
+    staleTime: 60_000,
   });
 
   const messages = announcements.map(a => a.message);
