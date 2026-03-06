@@ -9483,27 +9483,38 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<any[]> {
-    const conditions: string[] = [];
+    const conditions: string[] = [
+      // إخفاء أوامر خدمة الكشف (consultation fee)
+      `(cl.consultation_service_id IS NULL OR o.service_id IS DISTINCT FROM cl.consultation_service_id)`,
+    ];
     if (filters.targetType) conditions.push(`o.target_type = '${filters.targetType}'`);
     if (filters.status) conditions.push(`o.status = '${filters.status}'`);
     if (filters.targetId) conditions.push(`o.target_id = '${filters.targetId}'`);
     if (filters.doctorId) conditions.push(`o.doctor_id = '${filters.doctorId}'`);
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = `WHERE ${conditions.join(' AND ')}`;
     const rows = await db.execute(sql.raw(`
       SELECT o.*,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
              s.name_ar AS service_name_ar, s.base_price AS service_price,
              i.name_ar AS item_name_ar,
-             a.appointment_date, a.appointment_time, a.turn_number
+             a.appointment_date, a.appointment_time, a.turn_number,
+             COALESCE(o.target_name, dep.name_ar) AS resolved_target_name
       FROM clinic_orders o
       JOIN doctors d ON d.id = o.doctor_id
       JOIN clinic_appointments a ON a.id = o.appointment_id
+      JOIN clinic_clinics cl ON cl.id = a.clinic_id
       LEFT JOIN services s ON s.id = o.service_id
+      LEFT JOIN departments dep ON o.target_type = 'department'
+        AND dep.id = COALESCE(NULLIF(o.target_id, ''), s.department_id)
       LEFT JOIN items i ON i.id = o.item_id
       ${where}
       ORDER BY o.created_at DESC
     `));
-    return rows.rows as any[];
+    // دمج اسم القسم المحلول مع target_name الأصلي
+    return (rows.rows as any[]).map((r) => ({
+      ...r,
+      target_name: r.resolved_target_name ?? r.target_name,
+    }));
   }
 
   async getClinicOrder(id: string): Promise<any | null> {
