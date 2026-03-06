@@ -1,66 +1,88 @@
+// ============================================================
+//  صفحة مردودات المبيعات
+//
+//  البنية:
+//  ┌─ SalesReturnsPage ────────────────────────────────────┐
+//  │  useReturnSearch  → SearchView                        │
+//  │  useReturnForm    → InvoiceHeader                     │
+//  │                   → ReturnLineTable                   │
+//  │                   → ReturnFooter                      │
+//  └────────────────────────────────────────────────────────┘
+// ============================================================
 import { Undo2, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useReturnSearch } from "./hooks/useReturnSearch";
-import { useReturnForm } from "./hooks/useReturnForm";
-import { SearchPanel } from "./components/SearchPanel";
-import { ReturnLineTable } from "./components/ReturnLineTable";
-import { ReturnTotals } from "./components/ReturnTotals";
 
+import { useReturnSearch } from "./hooks/useReturnSearch";
+import { useReturnForm }   from "./hooks/useReturnForm";
+
+import { SearchView }       from "./components/SearchView";
+import { InvoiceHeader }    from "./components/InvoiceHeader";
+import { ReturnLineTable }  from "./components/ReturnLineTable";
+import { ReturnFooter }     from "./components/ReturnFooter";
+
+// ============================================================
 export default function SalesReturnsPage() {
   const search = useReturnSearch();
-  const form = useReturnForm();
+  const form   = useReturnForm();
 
   return (
     <div className="p-4 space-y-4 max-w-[1400px] mx-auto" dir="rtl" data-testid="page-sales-returns">
+
+      {/* ── شريط العنوان ── */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold flex items-center gap-2">
           <Undo2 className="h-5 w-5" />
           مردودات المبيعات
         </h1>
         {form.selectedInvoiceId && (
-          <Button variant="outline" size="sm" onClick={form.clearInvoice} data-testid="button-back-search">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={form.clearInvoice}
+            data-testid="button-back-search"
+          >
             العودة للبحث
           </Button>
         )}
       </div>
 
-      {!form.selectedInvoiceId ? (
+      {/* ── الوضع الأول: البحث عن فاتورة ── */}
+      {!form.selectedInvoiceId && (
         <Card>
           <CardHeader className="py-3 px-4">
             <CardTitle className="text-base">بحث عن فاتورة البيع الأصلية</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <SearchPanel
+            <SearchView
               {...search}
               onSelectInvoice={form.selectInvoice}
             />
           </CardContent>
         </Card>
-      ) : form.invoiceLoading ? (
+      )}
+
+      {/* ── الوضع الثاني: تحميل الفاتورة ── */}
+      {form.selectedInvoiceId && form.invoiceLoading && (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : !form.invoiceData ? (
+      )}
+
+      {/* ── الوضع الثالث: خطأ في تحميل الفاتورة ── */}
+      {form.selectedInvoiceId && !form.invoiceLoading && !form.invoiceData && (
         <Card>
           <CardContent className="py-8 text-center">
             <AlertCircle className="h-8 w-8 mx-auto text-destructive mb-2" />
             <p className="text-sm text-muted-foreground">الفاتورة غير موجودة أو غير مرحّلة</p>
           </CardContent>
         </Card>
-      ) : (
+      )}
+
+      {/* ── الوضع الرابع: إدخال المرتجع ── */}
+      {form.selectedInvoiceId && !form.invoiceLoading && form.invoiceData && (
         <>
-          <Card>
-            <CardContent className="py-3 px-4">
-              <div className="flex flex-wrap gap-x-8 gap-y-1 text-sm" dir="rtl">
-                <div><span className="text-muted-foreground">فاتورة رقم: </span><span className="font-bold text-base">{form.invoiceData.invoiceNumber}</span></div>
-                <div><span className="text-muted-foreground">التاريخ: </span><span className="font-semibold">{new Date(form.invoiceData.invoiceDate).toLocaleDateString("ar-EG")}</span></div>
-                <div><span className="text-muted-foreground">المخزن: </span><span className="font-semibold">{form.invoiceData.warehouseName}</span></div>
-                <div><span className="text-muted-foreground">العميل: </span><span className="font-semibold">{form.invoiceData.customerName || "نقدي"}</span></div>
-                <div><span className="text-muted-foreground">صافي الفاتورة: </span><span className="font-bold">{parseFloat(form.invoiceData.netTotal).toFixed(2)} ج.م</span></div>
-              </div>
-            </CardContent>
-          </Card>
+          <InvoiceHeader invoice={form.invoiceData} />
 
           <ReturnLineTable
             lines={form.returnLines}
@@ -68,31 +90,22 @@ export default function SalesReturnsPage() {
             onChangeUnit={form.updateReturnUnit}
           />
 
-          <ReturnTotals
+          <ReturnFooter
             subtotal={form.subtotal}
+            computedDiscount={form.computedDiscount}
+            netTotal={form.netTotal}
             discountType={form.discountType}
             setDiscountType={form.setDiscountType}
             discountPercent={form.discountPercent}
             setDiscountPercent={form.setDiscountPercent}
             discountValue={form.discountValue}
             setDiscountValue={form.setDiscountValue}
-            computedDiscount={form.computedDiscount}
-            netTotal={form.netTotal}
             notes={form.notes}
             setNotes={form.setNotes}
+            onSubmit={form.submitReturn}
+            isSubmitting={form.isSubmitting}
+            canSubmit={form.hasReturnItems}
           />
-
-          <div className="flex justify-end">
-            <Button
-              onClick={() => form.submitReturn()}
-              disabled={form.isSubmitting || !form.hasReturnItems}
-              className="min-w-[180px]"
-              data-testid="button-submit-return"
-            >
-              {form.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Undo2 className="h-4 w-4 ml-2" />}
-              تسجيل المرتجع
-            </Button>
-          </div>
         </>
       )}
     </div>
