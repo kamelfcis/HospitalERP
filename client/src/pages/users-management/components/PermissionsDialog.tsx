@@ -29,7 +29,8 @@ function DoctorAssignmentSection({ userId }: { userId: string }) {
   const { toast } = useToast();
 
   const { data: doctors = [] } = useQuery<DoctorOption[]>({
-    queryKey: ["/api/doctors"],
+    queryKey: ["/api/doctors", "includeInactive"],
+    queryFn: () => apiRequest("GET", "/api/doctors?includeInactive=true").then((r) => r.json()),
     staleTime: 0,
   });
 

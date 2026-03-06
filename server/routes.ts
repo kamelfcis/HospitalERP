@@ -3790,7 +3790,8 @@ export async function registerRoutes(
   app.get("/api/doctors", async (req, res) => {
     try {
       const search = req.query.search as string;
-      const list = search ? await storage.searchDoctors(search) : await storage.getDoctors();
+      const includeInactive = req.query.includeInactive === "true";
+      const list = search ? await storage.searchDoctors(search) : await storage.getDoctors(includeInactive);
       res.json(list);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

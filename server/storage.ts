@@ -457,7 +457,7 @@ export interface IStorage {
   deletePatient(id: string): Promise<boolean>;
 
   // Doctors
-  getDoctors(): Promise<Doctor[]>;
+  getDoctors(includeInactive?: boolean): Promise<Doctor[]>;
   searchDoctors(search: string): Promise<Doctor[]>;
   getDoctor(id: string): Promise<Doctor | undefined>;
   createDoctor(data: InsertDoctor): Promise<Doctor>;
@@ -6924,7 +6924,10 @@ export class DatabaseStorage implements IStorage {
 
   // ==================== Doctors ====================
 
-  async getDoctors(): Promise<Doctor[]> {
+  async getDoctors(includeInactive?: boolean): Promise<Doctor[]> {
+    if (includeInactive) {
+      return db.select().from(doctors).orderBy(asc(doctors.name));
+    }
     return db.select().from(doctors).where(eq(doctors.isActive, true)).orderBy(asc(doctors.name));
   }
 
