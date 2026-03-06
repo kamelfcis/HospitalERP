@@ -5193,9 +5193,9 @@ export async function registerRoutes(
 
   app.post("/api/clinic-clinics", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
-      const { nameAr, departmentId, defaultPharmacyId } = req.body;
+      const { nameAr, departmentId, defaultPharmacyId, consultationServiceId } = req.body;
       if (!nameAr?.trim()) return res.status(400).json({ message: "اسم العيادة مطلوب" });
-      const clinic = await storage.createClinic({ nameAr: nameAr.trim(), departmentId, defaultPharmacyId });
+      const clinic = await storage.createClinic({ nameAr: nameAr.trim(), departmentId, defaultPharmacyId, consultationServiceId });
       res.status(201).json(snakeToCamel(clinic));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -5419,20 +5419,34 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  // كشف حساب الطبيب / العيادة
+  // كشف حساب الطبيب / العيادة — الطبيب يشوف بياناته فقط، الأدمن يشوف الكل
   app.get("/api/clinic-doctor-statement", requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      const isAdmin = perms.includes("clinic.view_all");
+      const isDoctor = perms.includes("doctor.view_statement");
+
+      if (!isAdmin && !isDoctor) {
+        return res.status(403).json({ message: "لا تملك صلاحية لعرض كشف الحساب" });
+      }
+
+      const myDoctorId = await storage.getUserDoctorId(userId);
       let doctorId = req.query.doctorId as string;
       const clinicId = req.query.clinicId as string;
 
-      if (!doctorId) {
-        doctorId = (await storage.getUserDoctorId(userId)) || '';
+      if (!isAdmin) {
+        // الطبيب يشوف بياناته فقط — تجاهل أي doctorId/clinicId يرسله
+        doctorId = myDoctorId || '';
+        if (!doctorId) return res.status(403).json({ message: "حسابك غير مربوط بطبيب" });
+      } else {
+        // الأدمن: لو مبعتش doctorId نجيب الكل
+        if (!doctorId) doctorId = '';
       }
 
       const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
       const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
-      const rows = await storage.getClinicDoctorStatement(doctorId || null, from, to, clinicId || null);
+      const rows = await storage.getClinicDoctorStatement(doctorId || null, from, to, isAdmin ? (clinicId || null) : null);
       res.json(snakeToCamel(rows));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

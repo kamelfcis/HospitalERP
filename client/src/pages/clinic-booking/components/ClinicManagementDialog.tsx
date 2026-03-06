@@ -14,27 +14,39 @@ import type { ClinicClinic } from "../types";
 
 interface Department { id: string; nameAr: string; }
 interface Warehouse { id: string; nameAr: string; }
+interface Service { id: string; nameAr: string; basePrice: string; }
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
+interface ClinicFormData {
+  nameAr: string;
+  departmentId?: string;
+  defaultPharmacyId?: string;
+  consultationServiceId?: string;
+}
+
 function ClinicForm({ clinic, onSave, onCancel, isPending }: {
   clinic?: ClinicClinic;
-  onSave: (data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string }) => void;
+  onSave: (data: ClinicFormData) => void;
   onCancel: () => void;
   isPending: boolean;
 }) {
   const [nameAr, setNameAr] = useState(clinic?.nameAr || "");
   const [departmentId, setDepartmentId] = useState(clinic?.departmentId || "__none__");
   const [pharmacyId, setPharmacyId] = useState(clinic?.defaultPharmacyId || "__none__");
+  const [consultationServiceId, setConsultationServiceId] = useState(clinic?.consultationServiceId || "__none__");
 
   const { data: departments = [] } = useQuery<Department[]>({
     queryKey: ["/api/departments"],
   });
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
+  });
+  const { data: services = [] } = useQuery<Service[]>({
+    queryKey: ["/api/services"],
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -44,6 +56,7 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
       nameAr: nameAr.trim(),
       departmentId: departmentId !== "__none__" ? departmentId : undefined,
       defaultPharmacyId: pharmacyId !== "__none__" ? pharmacyId : undefined,
+      consultationServiceId: consultationServiceId !== "__none__" ? consultationServiceId : undefined,
     });
   };
 
@@ -90,6 +103,22 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
           </Select>
         </div>
       </div>
+      <div className="space-y-1">
+        <Label className="text-xs">خدمة الكشف (لكشف حساب الطبيب)</Label>
+        <Select value={consultationServiceId} onValueChange={setConsultationServiceId}>
+          <SelectTrigger className="h-8 text-xs" data-testid="select-consultation-service">
+            <SelectValue placeholder="اختر خدمة الكشف..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">بدون خدمة كشف</SelectItem>
+            {services.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.nameAr} — {parseFloat(String(s.basePrice || 0)).toLocaleString("ar-EG")} ج.م
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="flex gap-2 justify-end pt-1">
         <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={onCancel}>
           إلغاء
@@ -114,7 +143,7 @@ export function ClinicManagementDialog({ open, onClose }: Props) {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string }) =>
+    mutationFn: (data: ClinicFormData) =>
       apiRequest("POST", "/api/clinic-clinics", data).then((r) => r.json()),
     onSuccess: () => {
       toast({ title: "تم إضافة العيادة بنجاح" });
@@ -125,7 +154,7 @@ export function ClinicManagementDialog({ open, onClose }: Props) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: string; nameAr?: string; departmentId?: string; defaultPharmacyId?: string; isActive?: boolean }) =>
+    mutationFn: ({ id, ...data }: { id: string } & Partial<ClinicFormData & { isActive: boolean }>) =>
       apiRequest("PATCH", `/api/clinic-clinics/${id}`, data).then((r) => r.json()),
     onSuccess: () => {
       toast({ title: "تم التحديث" });
@@ -136,7 +165,7 @@ export function ClinicManagementDialog({ open, onClose }: Props) {
     onError: (err: any) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
   });
 
-  const handleSave = (data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string }) => {
+  const handleSave = (data: ClinicFormData) => {
     if (editingClinic) {
       updateMutation.mutate({ id: editingClinic.id, ...data });
     } else {

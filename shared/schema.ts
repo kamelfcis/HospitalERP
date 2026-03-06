@@ -1677,6 +1677,7 @@ export const clinicClinics = pgTable("clinic_clinics", {
   nameAr:           text("name_ar").notNull(),
   departmentId:     varchar("department_id"),
   defaultPharmacyId:varchar("default_pharmacy_id"),
+  consultationServiceId: varchar("consultation_service_id"),
   isActive:         boolean("is_active").notNull().default(true),
   createdAt:        timestamp("created_at").notNull().defaultNow(),
 });

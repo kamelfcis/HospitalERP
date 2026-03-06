@@ -554,8 +554,8 @@ export interface IStorage {
   // العيادات
   getClinics(userId: string, role: string): Promise<any[]>;
   getClinicById(id: string): Promise<any | null>;
-  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string }): Promise<any>;
-  updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; isActive: boolean }>): Promise<any>;
+  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string }): Promise<any>;
+  updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; isActive: boolean }>): Promise<any>;
   getUserClinicIds(userId: string): Promise<string[]>;
   assignUserToClinic(userId: string, clinicId: string): Promise<void>;
   removeUserFromClinic(userId: string, clinicId: string): Promise<void>;
@@ -9001,20 +9001,24 @@ export class DatabaseStorage implements IStorage {
     if (isAdmin) {
       const rows = await db.execute(sql`
         SELECT c.*, d.name_ar AS department_name,
-               w.name_ar AS pharmacy_name
+               w.name_ar AS pharmacy_name,
+               sv.name_ar AS consultation_service_name
         FROM clinic_clinics c
         LEFT JOIN departments d ON d.id = c.department_id
         LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
+        LEFT JOIN services sv ON sv.id = c.consultation_service_id
         ORDER BY c.name_ar
       `);
       return rows.rows as any[];
     }
     const rows = await db.execute(sql`
       SELECT c.*, d.name_ar AS department_name,
-             w.name_ar AS pharmacy_name
+             w.name_ar AS pharmacy_name,
+             sv.name_ar AS consultation_service_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
+      LEFT JOIN services sv ON sv.id = c.consultation_service_id
       JOIN clinic_user_clinic_assignments a ON a.clinic_id = c.id AND a.user_id = ${userId}
       ORDER BY c.name_ar
     `);
@@ -9024,32 +9028,36 @@ export class DatabaseStorage implements IStorage {
   async getClinicById(id: string): Promise<any | null> {
     const rows = await db.execute(sql`
       SELECT c.*, d.name_ar AS department_name,
-             w.name_ar AS pharmacy_name
+             w.name_ar AS pharmacy_name,
+             sv.name_ar AS consultation_service_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
+      LEFT JOIN services sv ON sv.id = c.consultation_service_id
       WHERE c.id = ${id}
     `);
     return (rows.rows[0] as any) ?? null;
   }
 
-  async createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string }): Promise<any> {
+  async createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string }): Promise<any> {
     const rows = await db.execute(sql`
-      INSERT INTO clinic_clinics (name_ar, department_id, default_pharmacy_id)
-      VALUES (${data.nameAr}, ${data.departmentId ?? null}, ${data.defaultPharmacyId ?? null})
+      INSERT INTO clinic_clinics (name_ar, department_id, default_pharmacy_id, consultation_service_id)
+      VALUES (${data.nameAr}, ${data.departmentId ?? null}, ${data.defaultPharmacyId ?? null}, ${data.consultationServiceId ?? null})
       RETURNING *
     `);
     return rows.rows[0] as any;
   }
 
-  async updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; isActive: boolean }>): Promise<any> {
-    const sets: string[] = [];
-    if (data.nameAr !== undefined) sets.push(`name_ar = '${data.nameAr.replace(/'/g,"''")}'`);
-    if (data.departmentId !== undefined) sets.push(`department_id = ${data.departmentId ? `'${data.departmentId}'` : 'NULL'}`);
-    if (data.defaultPharmacyId !== undefined) sets.push(`default_pharmacy_id = ${data.defaultPharmacyId ? `'${data.defaultPharmacyId}'` : 'NULL'}`);
-    if (data.isActive !== undefined) sets.push(`is_active = ${data.isActive}`);
-    if (sets.length === 0) return this.getClinicById(id);
-    await db.execute(sql.raw(`UPDATE clinic_clinics SET ${sets.join(', ')} WHERE id = '${id}'`));
+  async updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; isActive: boolean }>): Promise<any> {
+    const updates: any[] = [];
+    if (data.nameAr !== undefined) updates.push(sql`name_ar = ${data.nameAr}`);
+    if (data.departmentId !== undefined) updates.push(sql`department_id = ${data.departmentId || null}`);
+    if (data.defaultPharmacyId !== undefined) updates.push(sql`default_pharmacy_id = ${data.defaultPharmacyId || null}`);
+    if (data.consultationServiceId !== undefined) updates.push(sql`consultation_service_id = ${data.consultationServiceId || null}`);
+    if (data.isActive !== undefined) updates.push(sql`is_active = ${data.isActive}`);
+    if (updates.length === 0) return this.getClinicById(id);
+    const setClauses = updates.reduce((acc, clause, i) => i === 0 ? clause : sql`${acc}, ${clause}`);
+    await db.execute(sql`UPDATE clinic_clinics SET ${setClauses} WHERE id = ${id}`);
     return this.getClinicById(id);
   }
 
@@ -9458,14 +9466,33 @@ export class DatabaseStorage implements IStorage {
         a.turn_number,
         a.patient_name,
         a.status AS appointment_status,
-        c.chief_complaint,
-        c.diagnosis,
         cl.name_ar AS clinic_name,
-        d.name AS doctor_name
+        d.name AS doctor_name,
+        COALESCE(s_fee.base_price, 0) AS consultation_fee,
+        COALESCE(drugs_totals.total, 0) AS drugs_total,
+        COALESCE(services_totals.total, 0) AS services_total
       FROM clinic_appointments a
       LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
       LEFT JOIN clinic_clinics cl ON cl.id = a.clinic_id
       LEFT JOIN doctors d ON d.id = a.doctor_id
+      LEFT JOIN services s_fee ON s_fee.id = cl.consultation_service_id
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(cd.quantity * cd.unit_price), 0) AS total
+        FROM clinic_consultation_drugs cd
+        WHERE cd.consultation_id = c.id
+      ) drugs_totals ON true
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(
+          CASE WHEN co.service_id IS NOT NULL THEN COALESCE(sv.base_price, 0) * COALESCE(co.quantity, 1)
+               ELSE COALESCE(co.unit_price, 0) * COALESCE(co.quantity, 1) END
+        ), 0) AS total
+        FROM clinic_orders co
+        LEFT JOIN services sv ON sv.id = co.service_id
+        WHERE co.appointment_id = a.id
+          AND co.order_type = 'service'
+          AND co.status != 'cancelled'
+          AND (cl.consultation_service_id IS NULL OR co.service_id IS DISTINCT FROM cl.consultation_service_id)
+      ) services_totals ON true
       WHERE a.appointment_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
         AND a.status IN ('in_consultation', 'done')
         ${doctorFilter}

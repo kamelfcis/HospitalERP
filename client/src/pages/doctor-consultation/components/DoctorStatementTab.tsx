@@ -1,4 +1,4 @@
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -10,8 +10,15 @@ interface Props {
   clinicId?: string;
 }
 
+function fmt(val: any): string {
+  const n = parseFloat(String(val || 0));
+  return n.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function DoctorStatementTab({ doctorId, clinicId }: Props) {
   const { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useDoctorStatement(doctorId, clinicId);
+
+  const totalConsultationFee = rows.reduce((sum, r) => sum + parseFloat(String(r.consultationFee || 0)), 0);
 
   return (
     <div className="space-y-3">
@@ -46,7 +53,9 @@ export function DoctorStatementTab({ doctorId, clinicId }: Props) {
                 <TableHead className="text-right">التاريخ</TableHead>
                 <TableHead className="text-right">المريض</TableHead>
                 <TableHead className="text-right">الطبيب</TableHead>
-                <TableHead className="text-right">التشخيص</TableHead>
+                <TableHead className="text-right">قيمة الكشف</TableHead>
+                <TableHead className="text-right">إجمالي الأدوية</TableHead>
+                <TableHead className="text-right">إجمالي الخدمات</TableHead>
                 <TableHead className="text-right w-24">الحالة</TableHead>
               </TableRow>
             </TableHeader>
@@ -57,7 +66,9 @@ export function DoctorStatementTab({ doctorId, clinicId }: Props) {
                   <TableCell className="text-sm" dir="ltr">{row.appointmentDate}</TableCell>
                   <TableCell className="text-sm font-medium">{row.patientName}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{row.doctorName || "—"}</TableCell>
-                  <TableCell className="text-sm truncate max-w-[200px]">{row.diagnosis || "—"}</TableCell>
+                  <TableCell className="text-sm font-semibold text-emerald-700">{fmt(row.consultationFee)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{fmt(row.drugsTotal)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{fmt(row.servicesTotal)}</TableCell>
                   <TableCell>
                     {row.appointmentStatus === "done" ? (
                       <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">انتهى</Badge>
@@ -68,6 +79,13 @@ export function DoctorStatementTab({ doctorId, clinicId }: Props) {
                 </TableRow>
               ))}
             </TableBody>
+            <TableFooter>
+              <TableRow className="bg-muted/60 font-bold">
+                <TableCell colSpan={4} className="text-sm text-left">الإجمالي</TableCell>
+                <TableCell className="text-sm font-bold text-emerald-800">{fmt(totalConsultationFee)}</TableCell>
+                <TableCell colSpan={3} />
+              </TableRow>
+            </TableFooter>
           </Table>
         </div>
       )}

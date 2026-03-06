@@ -3,10 +3,12 @@ export interface ClinicClinic {
   nameAr: string;
   departmentId?: string | null;
   defaultPharmacyId?: string | null;
+  consultationServiceId?: string | null;
   isActive: boolean;
   createdAt: string;
   departmentName?: string | null;
   pharmacyName?: string | null;
+  consultationServiceName?: string | null;
 }
 
 export interface ClinicAppointment {

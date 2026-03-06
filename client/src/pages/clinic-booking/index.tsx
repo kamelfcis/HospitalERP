@@ -104,20 +104,62 @@ export default function ClinicBooking() {
         />
       )}
 
-      {selectedClinicId && (
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="h-9">
-            <TabsTrigger value="queue" className="text-sm gap-1.5">
-              <CalendarDays className="h-3.5 w-3.5" />
-              قائمة الانتظار
-            </TabsTrigger>
-            <TabsTrigger value="statement" className="text-sm gap-1.5">
-              <ClipboardList className="h-3.5 w-3.5" />
-              كشف الحساب
-            </TabsTrigger>
-          </TabsList>
+      {selectedClinicId && (() => {
+        const canViewStatement = hasPermission("doctor.view_statement") || hasPermission("clinic.view_all");
+        return canViewStatement ? (
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="h-9">
+              <TabsTrigger value="queue" className="text-sm gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5" />
+                قائمة الانتظار
+              </TabsTrigger>
+              <TabsTrigger value="statement" className="text-sm gap-1.5">
+                <ClipboardList className="h-3.5 w-3.5" />
+                كشف الحساب
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="queue" className="mt-3 space-y-3">
+            <TabsContent value="queue" className="mt-3 space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className="w-40"
+                    data-testid="input-date-picker"
+                  />
+                </div>
+                <div className="mr-auto flex gap-2">
+                  {hasPermission("clinic.book") && (
+                    <Button
+                      onClick={() => setBookingOpen(true)}
+                      className="gap-2"
+                      data-testid="button-new-booking"
+                    >
+                      <Plus className="h-4 w-4" />
+                      حجز جديد
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <AppointmentQueue
+                appointments={appointments}
+                isLoading={isLoading}
+                onStatusChange={(id, status) => statusMutation.mutate({ id, status })}
+                isChanging={statusMutation.isPending}
+                onStartConsultation={handleStartConsultation}
+              />
+            </TabsContent>
+
+            <TabsContent value="statement" className="mt-3">
+              <DoctorStatementTab doctorId={myDoctorId} clinicId={selectedClinicId} />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="space-y-3">
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 text-muted-foreground" />
@@ -150,13 +192,9 @@ export default function ClinicBooking() {
               isChanging={statusMutation.isPending}
               onStartConsultation={handleStartConsultation}
             />
-          </TabsContent>
-
-          <TabsContent value="statement" className="mt-3">
-            <DoctorStatementTab doctorId={myDoctorId} clinicId={selectedClinicId} />
-          </TabsContent>
-        </Tabs>
-      )}
+          </div>
+        );
+      })()}
 
       <BookingDialog
         open={bookingOpen}
