@@ -2040,7 +2040,8 @@ export class DatabaseStorage implements IStorage {
               eq(inventoryLots.expiryMonth, selMonth),
               eq(inventoryLots.expiryYear, selYear)
             ))
-            .orderBy(asc(inventoryLots.receivedDate));
+            .orderBy(asc(inventoryLots.receivedDate))
+            .for("update");
 
           for (const lot of selectedLots) {
             if (remaining <= 0) break;
@@ -2066,7 +2067,8 @@ export class DatabaseStorage implements IStorage {
               sql`${inventoryLots.qtyInMinor}::numeric > 0`,
               sql`${inventoryLots.expiryDate} = ${line.selectedExpiryDate}`
             ))
-            .orderBy(asc(inventoryLots.receivedDate));
+            .orderBy(asc(inventoryLots.receivedDate))
+            .for("update");
 
           for (const lot of selectedLots) {
             if (remaining <= 0) break;
@@ -2114,7 +2116,8 @@ export class DatabaseStorage implements IStorage {
                 ? [sql`${inventoryLots.id} NOT IN (${sql.join(alreadyUsedLotIds.map(id => sql`${id}`), sql`, `)})`]
                 : [])
             ))
-            .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth), asc(inventoryLots.receivedDate));
+            .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth), asc(inventoryLots.receivedDate))
+            .for("update");
 
           for (const lot of fefoLots) {
             if (remaining <= 0) break;

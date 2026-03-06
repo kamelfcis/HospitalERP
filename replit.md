@@ -27,7 +27,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **API**: Utilizes a RESTful JSON API.
 - **ORM**: Drizzle ORM with PostgreSQL dialect and Drizzle Kit.
 - **Validation**: Zod with drizzle-zod for schema validation.
-- **Concurrency & Idempotency**: Employs `FOR UPDATE` row locks, optimistic concurrency with versioning, and idempotent conversion processes.
+- **Concurrency & Idempotency**: Employs `FOR UPDATE` row locks on inventory lots (sales invoices, patient invoices, and store transfers), optimistic concurrency with versioning, and idempotent conversion processes.
 - **Financial Accuracy**: Invoice totals are recomputed server-side with `HALF_UP` decimal rounding.
 - **System Settings**: Critical system settings are cached in memory.
 - **Error Handling**: Centralized Arabic error messages with specific HTTP status codes.
