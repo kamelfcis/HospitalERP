@@ -155,7 +155,20 @@ app.use((req, res, next) => {
       console.error("[STAY_ENGINE] tick error:", err.message);
     }
   };
-  // Run once on startup, then every 30 minutes
   setTimeout(runStayTick, 5000);
   setInterval(runStayTick, STAY_TICK_MS);
+
+  const JOURNAL_RETRY_MS = 5 * 60 * 1000;
+  const runJournalRetry = async () => {
+    try {
+      const result = await storage.retryFailedJournals();
+      if (result.attempted > 0) {
+        log(`[JOURNAL_RETRY] attempted=${result.attempted} succeeded=${result.succeeded} failed=${result.failed}`);
+      }
+    } catch (err: any) {
+      console.error("[JOURNAL_RETRY] tick error:", err.message);
+    }
+  };
+  setTimeout(runJournalRetry, 15000);
+  setInterval(runJournalRetry, JOURNAL_RETRY_MS);
 })();

@@ -620,6 +620,9 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   isReturn: boolean("is_return").notNull().default(false),
   originalInvoiceId: varchar("original_invoice_id"),
   clinicOrderId: varchar("clinic_order_id"),
+  journalStatus: text("journal_status").default("none"),
+  journalError: text("journal_error"),
+  journalRetries: integer("journal_retries").default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -627,6 +630,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   statusIdx: index("idx_sales_inv_status").on(table.status),
   isReturnIdx: index("idx_sales_inv_is_return").on(table.isReturn),
   pharmacyIdx: index("idx_sales_inv_pharmacy").on(table.pharmacyId),
+  journalStatusIdx: index("idx_sales_inv_journal_status").on(table.journalStatus),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {

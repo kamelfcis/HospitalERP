@@ -38,6 +38,8 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Architectural Enforcement**: Uses route helpers, finance helpers, custom frontend mutation hooks, ESLint rules, and scaffold generators.
 - **Stay Engine Billing Modes**: Supports `hours_24` and `hotel_noon` idempotent billing modes.
 - **Invoice & Discharge Business Rules**: Enforces payment before finalization and finalized invoices before discharge, with role-based bypass options.
+- **Journal Safety Net**: Sales invoice finalization attempts journal generation inside the same DB transaction. If journal fails (missing account mappings, unbalanced), the invoice still finalizes but gets `journal_status = 'failed'`. A background retry runs every 5 minutes. API endpoints: `GET /api/sales-invoices/journal-failures`, `POST /api/sales-invoices/retry-all-journals`, `POST /api/sales-invoices/:id/regenerate-journal`.
+- **HTTP Compression**: Express uses `compression` middleware (threshold 1024 bytes) for API response compression.
 - **Audit Trail**: Captures audit entries for critical financial operations.
 - **Room Management**: Dedicated page for CRUD operations on floors, rooms, and beds, including grade assignment.
 - **Surgery Types Integration**: Allows linking surgery types to admissions, impacting OR_ROOM line items and invoice totals.

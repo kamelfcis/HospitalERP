@@ -5098,20 +5098,37 @@ export class DatabaseStorage implements IStorage {
         });
       }
 
+      let journalStatus: string = "pending";
+      let journalError: string | null = null;
+
+      try {
+        await tx.execute(sql`SAVEPOINT journal_attempt`);
+        const journalResult = await this.generateSalesInvoiceJournalInTx(tx, id, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
+        if (journalResult) {
+          await tx.execute(sql`RELEASE SAVEPOINT journal_attempt`);
+          journalStatus = "posted";
+        } else {
+          await tx.execute(sql`RELEASE SAVEPOINT journal_attempt`);
+          journalStatus = "posted";
+        }
+      } catch (journalErr: any) {
+        await tx.execute(sql`ROLLBACK TO SAVEPOINT journal_attempt`);
+        journalStatus = "failed";
+        journalError = journalErr.message || "خطأ غير معروف في إنشاء القيد المحاسبي";
+        console.error(`[JOURNAL_SAFETY] Sales invoice ${id} finalized but journal failed:`, journalErr.message);
+      }
+
       await tx.update(salesInvoiceHeaders).set({
         status: "finalized",
         finalizedAt: new Date(),
         updatedAt: new Date(),
+        journalStatus,
+        journalError,
       }).where(eq(salesInvoiceHeaders.id, id));
 
       const [updated] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
       return updated;
     });
-
-    if (finalResult) {
-      this.generateSalesInvoiceJournal(id, finalResult, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies)
-        .catch(err => console.error("Auto journal for sales invoice failed:", err));
-    }
 
     return finalResult;
   }
@@ -5158,19 +5175,83 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    return this.generateSalesInvoiceJournal(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
+    try {
+      const entry = await this.generateSalesInvoiceJournal(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
+      if (entry) {
+        await db.update(salesInvoiceHeaders).set({
+          journalStatus: "posted",
+          journalError: null,
+          journalRetries: sql`COALESCE(journal_retries, 0) + 1`,
+        }).where(eq(salesInvoiceHeaders.id, invoiceId));
+      }
+      return entry;
+    } catch (err: any) {
+      await db.update(salesInvoiceHeaders).set({
+        journalStatus: "failed",
+        journalError: err.message,
+        journalRetries: sql`COALESCE(journal_retries, 0) + 1`,
+      }).where(eq(salesInvoiceHeaders.id, invoiceId));
+      throw err;
+    }
   }
 
-  private async generateSalesInvoiceJournal(
-    invoiceId: string, invoice: any, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
-  ): Promise<JournalEntry | null> {
-    console.log(`[Journal] Starting generateSalesInvoiceJournal for invoice ${invoiceId}, cogsDrugs=${cogsDrugs}, cogsSupplies=${cogsSupplies}, revenueDrugs=${revenueDrugs}, revenueSupplies=${revenueSupplies}`);
-    const existingEntries = await db.select().from(journalEntries)
+  async retryFailedJournals(): Promise<{ attempted: number, succeeded: number, failed: number }> {
+    const failedInvoices = await db.select({
+      id: salesInvoiceHeaders.id,
+      invoiceNumber: salesInvoiceHeaders.invoiceNumber,
+      journalRetries: salesInvoiceHeaders.journalRetries,
+    }).from(salesInvoiceHeaders)
+      .where(and(
+        eq(salesInvoiceHeaders.status, "finalized"),
+        eq(salesInvoiceHeaders.journalStatus, "failed")
+      ))
+      .limit(20);
+
+    let succeeded = 0, failed = 0;
+
+    for (const inv of failedInvoices) {
+      try {
+        const entry = await this.regenerateJournalForInvoice(inv.id);
+        if (entry) {
+          succeeded++;
+          console.log(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - journal posted successfully (attempt ${(inv.journalRetries || 0) + 1})`);
+        } else {
+          const existing = await db.select().from(journalEntries)
+            .where(and(
+              eq(journalEntries.sourceType, "sales_invoice"),
+              eq(journalEntries.sourceDocumentId, inv.id)
+            )).limit(1);
+          if (existing.length > 0) {
+            await db.update(salesInvoiceHeaders).set({
+              journalStatus: "posted",
+              journalError: null,
+            }).where(eq(salesInvoiceHeaders.id, inv.id));
+            succeeded++;
+            console.log(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - journal already exists, marked as posted`);
+          } else {
+            failed++;
+            console.error(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - could not generate journal (null result)`);
+          }
+        }
+      } catch (err: any) {
+        failed++;
+        console.error(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - still failing: ${err.message}`);
+      }
+    }
+
+    return { attempted: failedInvoices.length, succeeded, failed };
+  }
+
+  private async buildSalesJournalLines(
+    invoiceId: string, invoice: any, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number,
+    queryCtx: any = db
+  ): Promise<{ journalLineData: InsertJournalLine[], totalDebits: number, totalCredits: number } | null> {
+    const existingEntries = await queryCtx.select().from(journalEntries)
       .where(and(
         eq(journalEntries.sourceType, "sales_invoice"),
         eq(journalEntries.sourceDocumentId, invoiceId)
       ));
-    if (existingEntries.length > 0) return existingEntries[0];
+    if (existingEntries.length > 0) return null;
 
     const mappings = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId);
     const mappingMap = new Map<string, AccountMapping>();
@@ -5178,7 +5259,6 @@ export class DatabaseStorage implements IStorage {
       mappingMap.set(m.lineType, m);
     }
 
-    const subtotal = parseFloat(invoice.subtotal || "0");
     const discountValue = parseFloat(invoice.discountValue || "0");
     const netTotal = parseFloat(invoice.netTotal || "0");
 
@@ -5186,13 +5266,12 @@ export class DatabaseStorage implements IStorage {
     let debitAccountId: string | null = receivablesMapping?.debitAccountId || null;
 
     if (!debitAccountId) {
-      console.error("Sales invoice journal: no receivables account mapping found - configure 'receivables' line type in account mappings for sales_invoice");
-      return null;
+      throw new Error("لم يتم تعيين حساب المدينون (receivables) في ربط حسابات فواتير المبيعات");
     }
 
     let inventoryAccountId: string | null = null;
     if (invoice.warehouseId) {
-      const [wh] = await db.select().from(warehouses)
+      const [wh] = await queryCtx.select().from(warehouses)
         .where(eq(warehouses.id, invoice.warehouseId));
       if (wh?.glAccountId) {
         inventoryAccountId = wh.glAccountId;
@@ -5363,43 +5442,67 @@ export class DatabaseStorage implements IStorage {
     const diff = Math.abs(totalDebits - totalCredits);
 
     if (diff > 0.01) {
-      console.error(`[Journal] Sales invoice journal unbalanced: debits=${totalDebits}, credits=${totalCredits}, diff=${diff}, lines=${JSON.stringify(journalLineData)}`);
-      return null;
+      throw new Error(`القيد غير متوازن: مدين=${totalDebits.toFixed(2)} دائن=${totalCredits.toFixed(2)}`);
     }
-    console.log(`[Journal] Journal balanced: debits=${totalDebits}, credits=${totalCredits}, lines=${journalLineData.length}`);
 
+    return { journalLineData, totalDebits, totalCredits };
+  }
+
+  private async insertJournalEntry(
+    tx: any, invoiceId: string, invoice: any,
+    journalLineData: InsertJournalLine[], totalDebits: number, totalCredits: number
+  ): Promise<JournalEntry> {
+    const [period] = await tx.select().from(fiscalPeriods)
+      .where(and(
+        lte(fiscalPeriods.startDate, invoice.invoiceDate),
+        gte(fiscalPeriods.endDate, invoice.invoiceDate),
+        eq(fiscalPeriods.isClosed, false)
+      ))
+      .limit(1);
+
+    const entryNumber = await this.getNextEntryNumber();
+
+    const [entry] = await tx.insert(journalEntries).values({
+      entryNumber,
+      entryDate: invoice.invoiceDate,
+      reference: `SI-${invoice.invoiceNumber}`,
+      description: `قيد فاتورة مبيعات رقم ${invoice.invoiceNumber}`,
+      status: "draft",
+      periodId: period?.id || null,
+      sourceType: "sales_invoice",
+      sourceDocumentId: invoiceId,
+      totalDebit: String(totalDebits.toFixed(2)),
+      totalCredit: String(totalCredits.toFixed(2)),
+    }).returning();
+
+    const linesWithEntryId = journalLineData.map((l, idx) => ({
+      ...l,
+      journalEntryId: entry.id,
+      lineNumber: idx + 1,
+    }));
+
+    await tx.insert(journalLines).values(linesWithEntryId);
+    return entry;
+  }
+
+  private async generateSalesInvoiceJournalInTx(
+    tx: any, invoiceId: string, invoice: any,
+    cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
+  ): Promise<JournalEntry | null> {
+    console.log(`[Journal] Starting generateSalesInvoiceJournalInTx for invoice ${invoiceId}`);
+    const result = await this.buildSalesJournalLines(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies, tx);
+    if (!result) return null;
+    return this.insertJournalEntry(tx, invoiceId, invoice, result.journalLineData, result.totalDebits, result.totalCredits);
+  }
+
+  private async generateSalesInvoiceJournal(
+    invoiceId: string, invoice: any, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
+  ): Promise<JournalEntry | null> {
+    console.log(`[Journal] Starting generateSalesInvoiceJournal for invoice ${invoiceId}`);
+    const result = await this.buildSalesJournalLines(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
+    if (!result) return null;
     return db.transaction(async (tx) => {
-      const [period] = await tx.select().from(fiscalPeriods)
-        .where(and(
-          lte(fiscalPeriods.startDate, invoice.invoiceDate),
-          gte(fiscalPeriods.endDate, invoice.invoiceDate),
-          eq(fiscalPeriods.isClosed, false)
-        ))
-        .limit(1);
-
-      const entryNumber = await this.getNextEntryNumber();
-
-      const [entry] = await tx.insert(journalEntries).values({
-        entryNumber,
-        entryDate: invoice.invoiceDate,
-        reference: `SI-${invoice.invoiceNumber}`,
-        description: `قيد فاتورة مبيعات رقم ${invoice.invoiceNumber}`,
-        status: "draft",
-        periodId: period?.id || null,
-        sourceType: "sales_invoice",
-        sourceDocumentId: invoiceId,
-        totalDebit: String(totalDebits.toFixed(2)),
-        totalCredit: String(totalCredits.toFixed(2)),
-      }).returning();
-
-      const linesWithEntryId = journalLineData.map((l, idx) => ({
-        ...l,
-        journalEntryId: entry.id,
-        lineNumber: idx + 1,
-      }));
-
-      await tx.insert(journalLines).values(linesWithEntryId);
-      return entry;
+      return this.insertJournalEntry(tx, invoiceId, invoice, result.journalLineData, result.totalDebits, result.totalCredits);
     });
   }
 

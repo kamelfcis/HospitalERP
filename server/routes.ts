@@ -3045,6 +3045,35 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/sales-invoices/journal-failures", async (_req, res) => {
+    try {
+      const result = await db.select({
+        id: salesInvoiceHeaders.id,
+        invoiceNumber: salesInvoiceHeaders.invoiceNumber,
+        invoiceDate: salesInvoiceHeaders.invoiceDate,
+        netTotal: salesInvoiceHeaders.netTotal,
+        journalStatus: salesInvoiceHeaders.journalStatus,
+        journalError: salesInvoiceHeaders.journalError,
+        journalRetries: salesInvoiceHeaders.journalRetries,
+        finalizedAt: salesInvoiceHeaders.finalizedAt,
+      }).from(salesInvoiceHeaders)
+        .where(eq(salesInvoiceHeaders.journalStatus, "failed"))
+        .orderBy(salesInvoiceHeaders.finalizedAt);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/sales-invoices/retry-all-journals", async (_req, res) => {
+    try {
+      const result = await storage.retryFailedJournals();
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/sales-invoices/:id", async (req, res) => {
     try {
       const invoice = await storage.getSalesInvoice(req.params.id);
