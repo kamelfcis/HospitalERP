@@ -9177,7 +9177,7 @@ export class DatabaseStorage implements IStorage {
     const consRows = await db.execute(sql`
       SELECT c.*,
              a.patient_name, a.patient_phone, a.appointment_date, a.appointment_time,
-             a.turn_number, a.status AS appointment_status,
+             a.turn_number, a.status AS appointment_status, a.doctor_id,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
              cl.name_ar AS clinic_name, cl.default_pharmacy_id,
              cl.consultation_service_id
@@ -9242,7 +9242,29 @@ export class DatabaseStorage implements IStorage {
       FROM clinic_orders o
       WHERE o.consultation_id = ${consultation.id} AND o.order_type = 'service' ORDER BY o.created_at
     `);
-    return { ...consultation, drugs: drugRows.rows, serviceOrders: orderRows.rows };
+    const serviceOrders = [...orderRows.rows] as any[];
+    if (clinicServiceId && !serviceOrders.some((o: any) => o.service_id === clinicServiceId)) {
+      const svcRows = await db.execute(sql`
+        SELECT s.id, s.name_ar,
+               COALESCE(sdp.price, s.base_price) AS unit_price
+        FROM services s
+        LEFT JOIN clinic_service_doctor_prices sdp
+          ON sdp.service_id = s.id AND sdp.doctor_id = ${consultation.doctor_id || (consultation as any).doctor_id}
+        WHERE s.id = ${clinicServiceId}
+      `);
+      if (svcRows.rows.length) {
+        const svc = svcRows.rows[0] as any;
+        serviceOrders.unshift({
+          service_id: svc.id,
+          service_name_manual: svc.name_ar,
+          unit_price: svc.unit_price,
+          order_type: 'service',
+          status: 'pending',
+          is_consultation_service: true,
+        });
+      }
+    }
+    return { ...consultation, drugs: drugRows.rows, serviceOrders };
   }
 
   async saveConsultation(data: {
