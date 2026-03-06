@@ -619,6 +619,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   finalizedBy: varchar("finalized_by"),
   isReturn: boolean("is_return").notNull().default(false),
   originalInvoiceId: varchar("original_invoice_id"),
+  clinicOrderId: varchar("clinic_order_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

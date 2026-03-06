@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Stethoscope, Loader2 } from "lucide-react";
+import { Stethoscope, Loader2, Trash2 } from "lucide-react";
 import type { ClinicAppointment } from "../types";
 import { STATUS_LABELS, STATUS_COLORS } from "../types";
 
@@ -86,18 +86,32 @@ export function AppointmentQueue({ appointments, isLoading, onStatusChange, isCh
                 </Select>
               </TableCell>
               <TableCell>
-                {(apt.status === "waiting" || apt.status === "in_consultation") && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs gap-1"
-                    onClick={() => onStartConsultation(apt)}
-                    data-testid={`button-consult-${apt.id}`}
-                  >
-                    <Stethoscope className="h-3 w-3" />
-                    بدء الكشف
-                  </Button>
-                )}
+                <div className="flex gap-1">
+                  {(apt.status === "waiting" || apt.status === "in_consultation") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs gap-1"
+                      onClick={() => onStartConsultation(apt)}
+                      data-testid={`button-consult-${apt.id}`}
+                    >
+                      <Stethoscope className="h-3 w-3" />
+                      بدء الكشف
+                    </Button>
+                  )}
+                  {apt.status === "waiting" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => onStatusChange(apt.id, "cancelled")}
+                      disabled={isChanging}
+                      data-testid={`button-cancel-${apt.id}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
               </TableCell>
             </TableRow>
           ))}

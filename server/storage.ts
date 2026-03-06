@@ -4675,6 +4675,7 @@ export class DatabaseStorage implements IStorage {
         discountValue: String(actualDiscount.toFixed(2)),
         netTotal: roundMoney(netTotal),
         notes: header.notes || null,
+        clinicOrderId: header.clinicOrderId || null,
       }).returning();
 
       for (let i = 0; i < processedLines.length; i++) {

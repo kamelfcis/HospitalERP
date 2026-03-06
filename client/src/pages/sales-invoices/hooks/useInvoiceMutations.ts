@@ -16,6 +16,7 @@ interface MutationParams {
   subtotal: number;
   netTotal: number;
   notes: string;
+  clinicOrderId?: string | null;
   lines: SalesLineLocal[];
   onSaveSuccess: (id?: string) => void;
   onFinalizeSuccess: () => void;
@@ -38,6 +39,7 @@ export function useInvoiceMutations(p: MutationParams) {
     subtotal: +p.subtotal.toFixed(2),
     netTotal: +p.netTotal.toFixed(2),
     notes: p.notes || null,
+    clinicOrderId: p.clinicOrderId || null,
   });
 
   const buildLines = () =>
@@ -99,6 +101,8 @@ export function useInvoiceMutations(p: MutationParams) {
       toast({ title: "✓ تم الاعتماد — جاري فتح فاتورة جديدة" });
       queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
       if (p.editId) queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices", p.editId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-doctor-statement"] });
       p.onFinalizeSuccess();
       p.navigate("/sales-invoices?id=new");
     },

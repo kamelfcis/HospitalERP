@@ -87,6 +87,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
       toast({ title: "تم الحفظ بنجاح", description: `فاتورة رقم ${data.invoiceNumber}` });
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-doctor-statement"] });
       resetForm();
     },
     onError: (err: any) => {

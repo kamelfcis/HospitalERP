@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
@@ -3086,7 +3086,7 @@ export async function registerRoutes(
         if (!line.qty || parseFloat(line.qty) <= 0) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
       }
 
-      const enriched = { ...header, createdBy: req.session?.userId || header.createdBy || null };
+      const enriched = { ...header, createdBy: req.session?.userId || header.createdBy || null, clinicOrderId: header.clinicOrderId || null };
       const invoice = await storage.createSalesInvoice(enriched, lines);
       res.status(201).json(invoice);
     } catch (error: any) {
@@ -3134,6 +3134,16 @@ export async function registerRoutes(
 
       const invoice = await storage.finalizeSalesInvoice(req.params.id);
       await storage.createAuditLog({ tableName: "sales_invoice_headers", recordId: req.params.id, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });
+      if (invoice.clinicOrderId) {
+        try {
+          await pool.query(
+            `UPDATE clinic_orders SET status = 'executed', executed_at = NOW(), executed_invoice_id = $1 WHERE id = $2 AND status = 'pending'`,
+            [req.params.id, invoice.clinicOrderId]
+          );
+        } catch (e: any) {
+          console.error('[CLINIC_ORDER_LINK]', e.message);
+        }
+      }
       if (invoice.pharmacyId) {
         broadcastToPharmacy(invoice.pharmacyId, "invoice_finalized", {
           id: invoice.id,

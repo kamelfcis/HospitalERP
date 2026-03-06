@@ -95,6 +95,13 @@ export default function SalesInvoices() {
     lines, editId, isNew,
   });
 
+  const clinicOrderId = params.get("clinicOrderId");
+
+  const [savedClinicOrderId, setSavedClinicOrderId] = useState<string | null>(null);
+  useEffect(() => {
+    if (clinicOrderId && !savedClinicOrderId) setSavedClinicOrderId(clinicOrderId);
+  }, [clinicOrderId]);
+
   const mutationsHook = useInvoiceMutations({
     editId, isNew,
     warehouseId:     form.warehouseId,
@@ -106,9 +113,10 @@ export default function SalesInvoices() {
     discountValue:   form.discountValue,
     subtotal, netTotal,
     notes:           form.notes,
+    clinicOrderId:   savedClinicOrderId,
     lines,
     onSaveSuccess:   () => {},
-    onFinalizeSuccess: () => {},
+    onFinalizeSuccess: () => { setSavedClinicOrderId(null); },
     lastAutoSaveDataRef: autoSaveHook.lastAutoSaveDataRef,
     setAutoSaveStatus:   autoSaveHook.setAutoSaveStatus,
     navigate,
@@ -130,7 +138,6 @@ export default function SalesInvoices() {
   }, [editId, isDraft]);
 
   // ── prefill صيدلانى من أمر عيادة (?clinicOrderId) ────────────────────────
-  const clinicOrderId = params.get("clinicOrderId");
   const pharmacyIdParam = params.get("pharmacyId");
   const altItemIdParam = params.get("altItemId");
   const clinicPrefillDoneRef = useRef(false);
