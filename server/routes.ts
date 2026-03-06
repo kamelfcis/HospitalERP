@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { db, pool } from "./db";
 import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "./route-helpers";
 import { setSetting, getSetting, refreshSettings } from "./settings-cache";
 import { systemSettings, users } from "@shared/schema";
@@ -484,7 +484,7 @@ export async function registerRoutes(
   });
 
   // Accounts
-  app.get("/api/accounts", async (req, res) => {
+  app.get("/api/accounts", requireAuth, async (req, res) => {
     try {
       const accounts = await storage.getAccounts();
       res.json(accounts);
@@ -601,7 +601,7 @@ export async function registerRoutes(
   });
 
   // Cost Centers
-  app.get("/api/cost-centers", async (req, res) => {
+  app.get("/api/cost-centers", requireAuth, async (req, res) => {
     try {
       const costCenters = await storage.getCostCenters();
       res.json(costCenters);
@@ -715,10 +715,17 @@ export async function registerRoutes(
 
   app.post("/api/fiscal-periods/:id/close", requireAuth, checkPermission(PERMISSIONS.FISCAL_PERIODS_MANAGE), async (req, res) => {
     try {
-      const period = await storage.closeFiscalPeriod(req.params.id, null);
+      const period = await storage.closeFiscalPeriod(req.params.id, req.session.userId || null);
       if (!period) {
         return res.status(404).json({ message: "الفترة غير موجودة" });
       }
+      auditLog({
+        tableName: "fiscal_periods",
+        recordId: req.params.id,
+        action: "close",
+        newValues: { name: period.name },
+        userId: req.session.userId,
+      }).catch(err => console.error("[Audit] fiscal period close:", err));
       res.json(period);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -731,6 +738,13 @@ export async function registerRoutes(
       if (!period) {
         return res.status(404).json({ message: "الفترة غير موجودة" });
       }
+      auditLog({
+        tableName: "fiscal_periods",
+        recordId: req.params.id,
+        action: "reopen",
+        newValues: { name: period.name },
+        userId: req.session.userId,
+      }).catch(err => console.error("[Audit] fiscal period reopen:", err));
       res.json(period);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -738,7 +752,7 @@ export async function registerRoutes(
   });
 
   // Journal Entries
-  app.get("/api/journal-entries", async (req, res) => {
+  app.get("/api/journal-entries", requireAuth, async (req, res) => {
     try {
       const { page, pageSize, status, sourceType, dateFrom, dateTo, search } = req.query;
       const result = await storage.getJournalEntriesPaginated({
@@ -1369,7 +1383,7 @@ export async function registerRoutes(
   });
 
   // Items
-  app.get("/api/items", async (req, res) => {
+  app.get("/api/items", requireAuth, async (req, res) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -5211,6 +5225,13 @@ export async function registerRoutes(
         discountValue: discountValue || "0", notes: notes || "",
         createdBy: req.session.userId!,
       });
+      auditLog({
+        tableName: "sales_invoice_headers",
+        recordId: result.id || originalInvoiceId,
+        action: "sales_return",
+        newValues: { originalInvoiceId, linesCount: activeLines.length },
+        userId: req.session.userId,
+      }).catch(err => console.error("[Audit] sales return:", err));
       res.json(result);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
