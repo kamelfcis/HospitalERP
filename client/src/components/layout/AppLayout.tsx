@@ -98,8 +98,8 @@ const mainNavItems: NavItem[] = [
 const clinicNavItems: NavItem[] = [
   { title: "حجز العيادات",        href: "/clinic-booking",       icon: Calendar,      permission: "clinic.view_own" },
   { title: "أوامر الطبيب",       href: "/doctor-orders",        icon: ClipboardList, permission: "doctor_orders.view" },
-  { title: "خدمات المعمل",       href: "/dept-services/LAB",    icon: FileText,      permission: "doctor_orders.view" },
-  { title: "خدمات الأشعة",       href: "/dept-services/RAD",    icon: FileText,      permission: "doctor_orders.view" },
+  { title: "خدمات المعمل",       href: "/dept-services/LAB",    icon: FileText,      permission: "dept_services.create" },
+  { title: "خدمات الأشعة",       href: "/dept-services/RAD",    icon: FileText,      permission: "dept_services.create" },
 ];
 
 const reportNavItems: NavItem[] = [

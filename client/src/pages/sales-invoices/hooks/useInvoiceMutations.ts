@@ -17,6 +17,7 @@ interface MutationParams {
   netTotal: number;
   notes: string;
   clinicOrderId?: string | null;
+  clinicOrderIds?: string[];
   lines: SalesLineLocal[];
   onSaveSuccess: (id?: string) => void;
   onFinalizeSuccess: () => void;
@@ -39,7 +40,7 @@ export function useInvoiceMutations(p: MutationParams) {
     subtotal: +p.subtotal.toFixed(2),
     netTotal: +p.netTotal.toFixed(2),
     notes: p.notes || null,
-    clinicOrderId: p.clinicOrderId || null,
+    clinicOrderId: (p.clinicOrderIds && p.clinicOrderIds.length > 0) ? p.clinicOrderIds.join(",") : (p.clinicOrderId || null),
   });
 
   const buildLines = () =>

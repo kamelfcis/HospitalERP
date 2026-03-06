@@ -96,11 +96,15 @@ export default function SalesInvoices() {
   });
 
   const clinicOrderId = params.get("clinicOrderId");
+  const clinicOrderIdsParam = params.get("clinicOrderIds");
+  const allClinicIds = clinicOrderIdsParam
+    ? clinicOrderIdsParam.split(",").filter(Boolean)
+    : clinicOrderId ? [clinicOrderId] : [];
 
-  const [savedClinicOrderId, setSavedClinicOrderId] = useState<string | null>(null);
+  const [savedClinicOrderIds, setSavedClinicOrderIds] = useState<string[]>([]);
   useEffect(() => {
-    if (clinicOrderId && !savedClinicOrderId) setSavedClinicOrderId(clinicOrderId);
-  }, [clinicOrderId]);
+    if (allClinicIds.length > 0 && savedClinicOrderIds.length === 0) setSavedClinicOrderIds(allClinicIds);
+  }, [allClinicIds.join(",")]);
 
   const mutationsHook = useInvoiceMutations({
     editId, isNew,
@@ -113,10 +117,11 @@ export default function SalesInvoices() {
     discountValue:   form.discountValue,
     subtotal, netTotal,
     notes:           form.notes,
-    clinicOrderId:   savedClinicOrderId,
+    clinicOrderId:   savedClinicOrderIds[0] || null,
+    clinicOrderIds:  savedClinicOrderIds,
     lines,
     onSaveSuccess:   () => {},
-    onFinalizeSuccess: () => { setSavedClinicOrderId(null); },
+    onFinalizeSuccess: () => { setSavedClinicOrderIds([]); },
     lastAutoSaveDataRef: autoSaveHook.lastAutoSaveDataRef,
     setAutoSaveStatus:   autoSaveHook.setAutoSaveStatus,
     navigate,
@@ -137,37 +142,54 @@ export default function SalesInvoices() {
     }
   }, [editId, isDraft]);
 
-  // ── prefill صيدلانى من أمر عيادة (?clinicOrderId) ────────────────────────
+  // ── prefill صيدلانى من أمر عيادة (?clinicOrderId / ?clinicOrderIds) ──────
   const pharmacyIdParam = params.get("pharmacyId");
   const altItemIdParam = params.get("altItemId");
   const clinicPrefillDoneRef = useRef(false);
+  const hasClinicParam = allClinicIds.length > 0;
 
   useEffect(() => {
-    if (!clinicOrderId) return;
-    // إذا لم نكن في وضع المحرر → وجّه لفاتورة جديدة مع الحفاظ على الباراميترات
+    if (!hasClinicParam) return;
     if (!editId) {
       const newParams = new URLSearchParams();
       newParams.set("id", "new");
-      newParams.set("clinicOrderId", clinicOrderId);
+      if (allClinicIds.length > 1) {
+        newParams.set("clinicOrderIds", allClinicIds.join(","));
+      } else {
+        newParams.set("clinicOrderId", allClinicIds[0]);
+      }
       if (pharmacyIdParam) newParams.set("pharmacyId", pharmacyIdParam);
       if (altItemIdParam) newParams.set("altItemId", altItemIdParam);
       navigate(`/sales-invoices?${newParams.toString()}`);
       return;
     }
     if (editId !== "new" || clinicPrefillDoneRef.current) return;
-  }, [clinicOrderId, editId, navigate, pharmacyIdParam, altItemIdParam]);
+  }, [hasClinicParam, editId, navigate, pharmacyIdParam, altItemIdParam]);
+
+  const pendingClinicItemsRef = useRef<any[]>([]);
 
   useEffect(() => {
-    if (!clinicOrderId || editId !== "new" || clinicPrefillDoneRef.current) return;
+    if (!hasClinicParam || editId !== "new" || clinicPrefillDoneRef.current) return;
     const doFetch = async () => {
       try {
-        const res = await fetch(`/api/clinic-orders/${clinicOrderId}`);
-        if (!res.ok) return;
-        const order = await res.json();
-        const wId = pharmacyIdParam || order.targetId || "";
+        const allOrders: any[] = [];
+        for (const oid of allClinicIds) {
+          const res = await fetch(`/api/clinic-orders/${oid}`);
+          if (res.ok) allOrders.push(await res.json());
+        }
+        if (allOrders.length === 0) return;
+
+        const firstOrder = allOrders[0];
+        const wId = pharmacyIdParam || firstOrder.targetId || "";
         if (wId) form.setWarehouseId(wId);
-        const itemIdToAdd = altItemIdParam || order.itemId;
-        if (itemIdToAdd) {
+        if (firstOrder.patientName || firstOrder.apptPatientName) {
+          form.setCustomerName(firstOrder.apptPatientName || firstOrder.patientName);
+        }
+
+        const itemsToAdd: any[] = [];
+        for (const order of allOrders) {
+          const itemIdToAdd = (allOrders.length === 1 && altItemIdParam) ? altItemIdParam : order.itemId;
+          if (!itemIdToAdd) continue;
           let itemData: any = null;
           try {
             const itemRes = await fetch(`/api/items/${itemIdToAdd}`);
@@ -195,9 +217,7 @@ export default function SalesInvoices() {
             itemData = {
               id: itemIdToAdd,
               nameAr: order.drugName || order.itemNameAr || "",
-              nameEn: null,
-              itemCode: "",
-              category: "drug",
+              nameEn: null, itemCode: "", category: "drug",
               salePriceCurrent: order.salePriceCurrent || "0",
               majorUnitName: order.majorUnitName || null,
               mediumUnitName: order.mediumUnitName || null,
@@ -209,18 +229,27 @@ export default function SalesInvoices() {
               availableQtyMinor: "0",
             };
           }
-          const clinicUnit = order.unitLevel || "major";
-          const clinicQty = parseFloat(order.quantity) || 1;
-          await linesHook.addItemToLines(itemData, { qty: clinicQty, unitLevel: clinicUnit });
+          itemsToAdd.push({ itemData, qty: parseFloat(order.quantity) || 1, unitLevel: order.unitLevel || "major" });
         }
-        if (order.patientName) form.setCustomerName(order.patientName);
+        pendingClinicItemsRef.current = itemsToAdd;
         clinicPrefillDoneRef.current = true;
         navigate("/sales-invoices?id=new");
       } catch (_) {}
     };
     const timer = setTimeout(doFetch, 400);
     return () => clearTimeout(timer);
-  }, [clinicOrderId, editId, pharmacyIdParam, altItemIdParam]);
+  }, [hasClinicParam, editId, pharmacyIdParam, altItemIdParam]);
+
+  useEffect(() => {
+    if (pendingClinicItemsRef.current.length === 0 || !form.warehouseId) return;
+    const items = pendingClinicItemsRef.current;
+    pendingClinicItemsRef.current = [];
+    (async () => {
+      for (const { itemData, qty, unitLevel } of items) {
+        await linesHook.addItemToLines(itemData, { qty, unitLevel });
+      }
+    })();
+  }, [form.warehouseId]);
 
   // ── F9 للإنهاء ───────────────────────────────────────────────────────────
   useEffect(() => {

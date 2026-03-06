@@ -3136,10 +3136,13 @@ export async function registerRoutes(
       await storage.createAuditLog({ tableName: "sales_invoice_headers", recordId: req.params.id, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });
       if (invoice.clinicOrderId) {
         try {
-          await pool.query(
-            `UPDATE clinic_orders SET status = 'executed', executed_at = NOW(), executed_invoice_id = $1 WHERE id = $2 AND status = 'pending'`,
-            [req.params.id, invoice.clinicOrderId]
-          );
+          const orderIds = invoice.clinicOrderId.split(",").filter(Boolean);
+          for (const oid of orderIds) {
+            await pool.query(
+              `UPDATE clinic_orders SET status = 'executed', executed_at = NOW(), executed_invoice_id = $1 WHERE id = $2 AND status = 'pending'`,
+              [req.params.id, oid.trim()]
+            );
+          }
         } catch (e: any) {
           console.error('[CLINIC_ORDER_LINK]', e.message);
         }
@@ -5492,6 +5495,9 @@ export async function registerRoutes(
 
   app.get("/api/clinic-orders/:id", requireAuth, async (req, res) => {
     try {
+      const perms = await storage.getUserEffectivePermissions(req.session.userId!);
+      const canView = perms.includes("doctor_orders.view") || perms.includes("clinic.pharmacy_orders") || perms.includes("dept_services.create");
+      if (!canView) return res.status(403).json({ message: "لا تملك صلاحية لهذا الإجراء" });
       const order = await storage.getClinicOrder(req.params.id);
       if (!order) return res.status(404).json({ message: "الأمر غير موجود" });
       res.json(snakeToCamel(order));
@@ -5570,7 +5576,7 @@ export async function registerRoutes(
 
   // ========== خدمات الأقسام (معمل / أشعة) ==========
 
-  app.post("/api/dept-service-orders/check-duplicate", requireAuth, async (req, res) => {
+  app.post("/api/dept-service-orders/check-duplicate", requireAuth, checkPermission("dept_services.create"), async (req, res) => {
     try {
       const { patientName, serviceIds, date } = req.body;
       if (!patientName || !serviceIds?.length) return res.json([]);
@@ -5579,7 +5585,7 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/dept-service-orders", requireAuth, async (req, res) => {
+  app.post("/api/dept-service-orders", requireAuth, checkPermission("dept_services.create"), async (req, res) => {
     try {
       const { patientName, patientPhone, doctorId, doctorName, departmentId,
         orderType, contractName, treasuryId, services, discountPercent,
@@ -5587,6 +5593,14 @@ export async function registerRoutes(
 
       if (!patientName || !departmentId || !services?.length) {
         return res.status(400).json({ message: "اسم المريض والقسم والخدمات مطلوبة" });
+      }
+
+      const hasDiscount = (discountPercent && parseFloat(discountPercent) > 0) || (discountAmount && parseFloat(discountAmount) > 0);
+      if (hasDiscount) {
+        const userPerms = await storage.getUserEffectivePermissions(req.session.userId!);
+        if (!userPerms.includes("dept_services.discount")) {
+          return res.status(403).json({ message: "ليس لديك صلاحية إضافة خصم على خدمات الأقسام" });
+        }
       }
 
       const result = await storage.saveDeptServiceOrder({
@@ -5599,7 +5613,7 @@ export async function registerRoutes(
     } catch (e: any) { res.status(400).json({ message: e.message }); }
   });
 
-  app.post("/api/dept-service-orders/batch", requireAuth, async (req, res) => {
+  app.post("/api/dept-service-orders/batch", requireAuth, checkPermission("dept_services.batch"), async (req, res) => {
     try {
       const { patients, doctorId, doctorName, departmentId,
         orderType, contractName, treasuryId, services,
@@ -5607,6 +5621,14 @@ export async function registerRoutes(
 
       if (!patients?.length || !departmentId || !services?.length) {
         return res.status(400).json({ message: "المرضى والقسم والخدمات مطلوبة" });
+      }
+
+      const hasDiscount = (discountPercent && parseFloat(discountPercent) > 0) || (discountAmount && parseFloat(discountAmount) > 0);
+      if (hasDiscount) {
+        const userPerms = await storage.getUserEffectivePermissions(req.session.userId!);
+        if (!userPerms.includes("dept_services.discount")) {
+          return res.status(403).json({ message: "ليس لديك صلاحية إضافة خصم على خدمات الأقسام" });
+        }
       }
 
       const result = await storage.saveDeptServiceOrderBatch({
