@@ -1,5 +1,62 @@
-import { db, pool } from "./db";
-import { getSetting } from "./settings-cache";
+/*
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  Storage Layer — طبقة تخزين البيانات
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  هذا الملف يحتوي على كل عمليات قاعدة البيانات.
+ *  استخدم Ctrl+F للبحث عن القسم المطلوب بالاسم أو رقم السطر.
+ *
+ *  TABLE OF CONTENTS — فهرس المحتويات:
+ *
+ *  SECTION                              | القسم                    | LINE
+ *  ─────────────────────────────────────┼──────────────────────────┼──────
+ *  IStorage Interface (contract)        | واجهة التخزين            | ~218
+ *  DatabaseStorage Class                | كلاس قاعدة البيانات     | ~677
+ *  ├─ Users & RBAC                      | المستخدمون والصلاحيات   | ~697
+ *  ├─ Accounts (Chart of Accounts)      | دليل الحسابات           | ~773
+ *  ├─ Cost Centers                      | مراكز التكلفة           | ~807
+ *  ├─ Fiscal Periods                    | الفترات المحاسبية       | ~832
+ *  ├─ Journal Entries                   | القيود المحاسبية        | ~886
+ *  ├─ Journal Templates                 | قوالب القيود            | ~1126
+ *  ├─ Audit Log                         | سجل المراجعة            | ~1184
+ *  ├─ Reports                           | التقارير المالية        | ~1231
+ *  ├─ Items                             | الأصناف                 | ~1595
+ *  ├─ Item Form Types                   | أشكال الأصناف           | ~1729
+ *  ├─ Departments                       | الأقسام                 | ~1777
+ *  ├─ Item Department Prices            | أسعار الأقسام           | ~1805
+ *  ├─ Inventory Lots                    | دفعات المخزون           | ~1856
+ *  ├─ FEFO Preview                      | معاينة FEFO             | ~1881
+ *  ├─ Item Barcodes                     | باركود الأصناف          | ~1918
+ *  ├─ Warehouses                        | المخازن                 | ~1961
+ *  ├─ Store Transfers                   | تحويلات المخازن         | ~2046
+ *  ├─ Suppliers                         | الموردون                | ~3116
+ *  ├─ Receiving (GRN)                   | استلام البضاعة          | ~3179
+ *  ├─ Purchase Invoices                 | فواتير المشتريات        | ~3560
+ *  ├─ Services                          | الخدمات                 | ~4238
+ *  ├─ Service Consumables               | مستهلكات الخدمات        | ~4304
+ *  ├─ Price Lists                       | قوائم الأسعار           | ~4354
+ *  ├─ Sales Invoices (COMPLEX)          | فواتير المبيعات         | ~4500
+ *  ├─ Patient Invoices (COMPLEX)        | فواتير المرضى           | ~5723
+ *  ├─ Cashier                           | الكاشير                 | ~6433
+ *  ├─ Drawer Passwords                  | كلمات سر الأدراج       | ~6454
+ *  ├─ Print Tracking                    | تتبع الطباعة            | ~6954
+ *  ├─ Patients                          | المرضى                  | ~6996
+ *  ├─ Doctors                           | الأطباء                 | ~7210
+ *  ├─ Admissions                        | حالات الدخول            | ~7318
+ *  ├─ Stay Engine (COMPLEX)             | محرك الإقامة            | ~7527
+ *  ├─ Surgery Types                     | أنواع العمليات          | ~7787
+ *  ├─ Bed Board                         | لوحة الأسرة             | ~7908
+ *  ├─ Doctor Transfers & Settlements    | تحويلات وتسويات الأطباء | ~8435
+ *  ├─ Account Mappings                  | ربط الحسابات            | ~8646
+ *  ├─ Treasuries                        | الخزن                   | ~8852
+ *  └─ Clinic Module (Self-contained)    | العيادات الخارجية       | ~9306
+ *
+ *  (COMPLEX) = يحتوي على منطق معقد — اقرأ التعليقات قبل التعديل
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+import { db, pool } from "../db";
+import { getSetting } from "../settings-cache";
 import { eq, desc, and, gte, lte, sql, or, like, ilike, asc, isNull, isNotNull, inArray } from "drizzle-orm";
 import {
   users,
@@ -668,7 +725,7 @@ function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: 
   return enteredPrice;
 }
 
-import { roundMoney, roundQty, parseMoney } from "./finance-helpers";
+import { roundMoney, roundQty, parseMoney } from "../finance-helpers";
 export { roundMoney, roundQty };
 
 export class DatabaseStorage implements IStorage {
@@ -2140,6 +2197,17 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  /*
+   * postTransfer — ترحيل تحويل مخزني
+   * ──────────────────────────────────
+   * ينقل الكميات من المخزن المصدر إلى المخزن الوجهة:
+   * 1. قفل التحويل (FOR UPDATE) ومنع الترحيل المزدوج
+   * 2. لكل سطر: قفل دفعات المخزون في المصدر (FEFO) وخصم الكميات
+   * 3. إضافة (أو تحديث) دفعات المخزون في الوجهة بنفس بيانات الصلاحية
+   * 4. تسجيل حركة المخزون وتحديث الحالة إلى "posted"
+   *
+   * ⚠️ تحذير: لا تعدل ترتيب الـ FOR UPDATE — يمنع deadlocks
+   */
   async postTransfer(transferId: string): Promise<StoreTransfer> {
     return await db.transaction(async (tx) => {
     const [transfer] = await tx.select().from(storeTransfers).where(eq(storeTransfers.id, transferId)).for("update");
@@ -5135,6 +5203,27 @@ export class DatabaseStorage implements IStorage {
     return { movementHeaderId, lineResults };
   }
 
+  /*
+   * finalizeSalesInvoice — اعتماد فاتورة المبيعات
+   * ─────────────────────────────────────────────
+   * عملية معقدة تتم داخل transaction واحدة لضمان تكامل البيانات:
+   *
+   * المراحل (Phases):
+   * 1. قفل الفاتورة (FOR UPDATE) ومنع التعديل المتزامن
+   * 2. جمع بيانات الأصناف والتحقق من الصلاحية (لا يمكن بيع صنف منتهي)
+   * 3. خصم الكميات من المخزون بنظام FEFO (الأقرب انتهاءً يُصرف أولاً)
+   *    - يتم قفل سجلات المخزون (FOR UPDATE) لمنع التعارض
+   *    - إذا الكمية المطلوبة أكبر من المتاح → خطأ ولن تُعتمد الفاتورة
+   * 4. حساب تكلفة المبيعات (COGS) بالتكلفة المرجحة من الدفعات
+   * 5. إعادة حساب الإجمالي والخصم والضريبة server-side (لا نثق بالعميل)
+   * 6. تسجيل كل حركة مخزون في sales_transactions
+   * 7. تحديث حالة الفاتورة إلى "finalized"
+   *
+   * بعد نجاح الـ transaction:
+   * - يتم محاولة إنشاء قيد محاسبي (journal entry) تلقائي
+   * - لو فشل القيد (بسبب عدم ربط الحسابات) → الفاتورة تبقى معتمدة
+   *   لكن journal_status = 'failed' وسيُعاد المحاولة كل 5 دقائق
+   */
   async finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader> {
     let cogsDrugs = 0;
     let cogsSupplies = 0;
@@ -5142,6 +5231,7 @@ export class DatabaseStorage implements IStorage {
     let revenueSupplies = 0;
 
     const finalResult = await db.transaction(async (tx) => {
+      // خطوة 1: قفل الفاتورة — FOR UPDATE يمنع أي عملية أخرى من تعديلها
       const lockResult = await tx.execute(sql`SELECT * FROM sales_invoice_headers WHERE id = ${id} FOR UPDATE`);
       const locked = lockResult.rows?.[0] as any;
       if (!locked) throw new Error("الفاتورة غير موجودة");
@@ -5152,7 +5242,7 @@ export class DatabaseStorage implements IStorage {
       const lines = await tx.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
       if (lines.length === 0) throw new Error("لا يمكن اعتماد فاتورة بدون أصناف");
 
-      // Phase 1: collect item data + validate expiry; split service vs inventory lines
+      // خطوة 2: جمع بيانات الأصناف والتحقق من الصلاحية
       const now = new Date();
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
@@ -5906,6 +5996,16 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  /*
+   * finalizePatientInvoice — اعتماد فاتورة مريض
+   * ──────────────────────────────────────────────
+   * 1. قفل الفاتورة (FOR UPDATE) + فحص التزامن (optimistic concurrency via version)
+   * 2. إعادة حساب الإجمالي من السطور server-side
+   * 3. التحقق من السداد الكامل (يجب أن يكون المدفوع ≥ الصافي)
+   * 4. تحديث الحالة إلى "finalized" مع رفع رقم الإصدار (version)
+   *
+   * ⚠️ يتم استدعاء generateJournalEntry بعد هذه الدالة في الـ route
+   */
   async finalizePatientInvoice(id: string, expectedVersion?: number): Promise<PatientInvoiceHeader> {
     const result = await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
@@ -7646,8 +7746,22 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  /*
+   * accrueStayLines — محرك الإقامة (يعمل كل 5 دقائق)
+   * ─────────────────────────────────────────────────────
+   * يحسب تكلفة الإقامة اليومية لكل مريض مقيم:
+   *
+   * الأوضاع (Billing Modes):
+   * - hours_24: يوم = 24 ساعة من وقت الدخول (مثلاً: دخل 3 مساءً → اليوم الثاني يبدأ 3 مساءً اليوم التالي)
+   * - hotel_noon: يوم = حتى ظهر اليوم التالي (نظام فندقي — مثلاً: أي دخول قبل 12 ظهراً = يوم كامل)
+   *
+   * لكل segment نشط:
+   * 1. يحسب عدد الأيام المستحقة من started_at حتى الآن
+   * 2. يتخطى اليوم الأول (n=0) إذا كان هناك تحويل سرير (لمنع الفوترة المزدوجة)
+   * 3. يُنشئ سطر في patient_invoice_lines لكل يوم (UPSERT — لو موجود لا يتكرر)
+   * 4. idempotent: تشغيله مرتين لنفس اليوم لن ينتج سطور مكررة
+   */
   async accrueStayLines(): Promise<{ segmentsProcessed: number; linesUpserted: number }> {
-    // Fetch all ACTIVE segments with service name for description
     const activeResult = await db.execute(sql`
       SELECT s.id, s.admission_id, s.invoice_id, s.service_id, s.started_at,
              s.rate_per_day, COALESCE(srv.name_ar, 'إقامة') AS service_name_ar

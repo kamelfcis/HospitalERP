@@ -23,6 +23,21 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Department Services Orders (LAB/RAD)**: A unified module at `/dept-services/:deptCode` for ordering medical services (lab, radiology). Two tabs: Single Order (one patient + services + consumables + discount + payment) and Batch Entry (multiple patients × services → bulk invoice generation). Saving creates `patient_invoice_headers/lines`, deducts consumables via FEFO from department warehouse, logs treasury transactions for cash orders. RBAC permissions: `dept_services.create`, `dept_services.batch`, `dept_services.discount`. Duplicate detection (same patient + service + date). Integrated with Doctor Orders — "تنفيذ" on service orders navigates to dept-services with pre-filled data; pharmacy orders open grouped popup → sales invoice with all drugs pre-filled via `clinicOrderIds` multi-ID support. Multi-clinic-order finalize: comma-separated IDs in `clinic_order_id` column, all marked `executed` on invoice finalization. Two-phase clinic prefill: warehouse state set first, items added after re-render to ensure FEFO allocation works correctly.
 - **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing patient accommodation costs (with transfer double-billing prevention), a Bed Board system with real-time updates and smart bed transfer, and a Surgery Types System.
 
+### Backend File Structure
+- **`server/routes/`** — API route modules, split by domain:
+  - `_shared.ts` — Shared middleware (requireAuth, checkPermission), SSE broadcasters, validation schemas
+  - `index.ts` — Barrel file that imports and registers all route modules
+  - `auth.ts` — Authentication, user management, permissions, dashboard
+  - `finance.ts` — Accounts, cost centers, fiscal periods, journal entries, reports, templates, audit log, account mappings
+  - `inventory.ts` — Items, warehouses, transfers, suppliers, receiving, purchase invoices
+  - `invoicing.ts` — Sales invoices, patient invoices, services, price lists, patients, doctors, admissions, sales returns
+  - `hospital.ts` — Bed board, cashier, drawers, pharmacy, room management, treasuries, stay engine
+  - `system.ts` — System settings, announcements, chat
+  - `clinic.ts` — Outpatient clinic module, dept-service orders
+- **`server/storage/index.ts`** — Data access layer (IStorage interface + DatabaseStorage class) with TABLE OF CONTENTS for navigation
+- **`server/route-helpers.ts`** — asyncHandler, auditLog, validateBody utilities
+- **`server/finance-helpers.ts`** — roundMoney, roundQty, parseMoney utilities
+
 ### Technical Implementations
 - **API**: Utilizes a RESTful JSON API.
 - **ORM**: Drizzle ORM with PostgreSQL dialect and Drizzle Kit.
