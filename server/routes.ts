@@ -5558,5 +5558,56 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ========== خدمات الأقسام (معمل / أشعة) ==========
+
+  app.post("/api/dept-service-orders/check-duplicate", requireAuth, async (req, res) => {
+    try {
+      const { patientName, serviceIds, date } = req.body;
+      if (!patientName || !serviceIds?.length) return res.json([]);
+      const dupes = await storage.checkDeptServiceDuplicate(patientName, serviceIds, date || new Date().toISOString().slice(0, 10));
+      res.json(snakeToCamel(dupes));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/dept-service-orders", requireAuth, async (req, res) => {
+    try {
+      const { patientName, patientPhone, doctorId, doctorName, departmentId,
+        orderType, contractName, treasuryId, services, discountPercent,
+        discountAmount, notes, clinicOrderIds } = req.body;
+
+      if (!patientName || !departmentId || !services?.length) {
+        return res.status(400).json({ message: "اسم المريض والقسم والخدمات مطلوبة" });
+      }
+
+      const result = await storage.saveDeptServiceOrder({
+        patientName, patientPhone, doctorId, doctorName, departmentId,
+        orderType: orderType || 'cash', contractName, treasuryId,
+        services, discountPercent, discountAmount, notes,
+        userId: req.session.userId!, clinicOrderIds,
+      });
+      res.json(result);
+    } catch (e: any) { res.status(400).json({ message: e.message }); }
+  });
+
+  app.post("/api/dept-service-orders/batch", requireAuth, async (req, res) => {
+    try {
+      const { patients, doctorId, doctorName, departmentId,
+        orderType, contractName, treasuryId, services,
+        discountPercent, discountAmount, notes } = req.body;
+
+      if (!patients?.length || !departmentId || !services?.length) {
+        return res.status(400).json({ message: "المرضى والقسم والخدمات مطلوبة" });
+      }
+
+      const result = await storage.saveDeptServiceOrderBatch({
+        patients, doctorId, doctorName, departmentId,
+        orderType: orderType || 'cash', contractName, treasuryId,
+        services, discountPercent, discountAmount, notes,
+        userId: req.session.userId!,
+      });
+      res.json(result);
+    } catch (e: any) { res.status(400).json({ message: e.message }); }
+  });
+
   return httpServer;
 }
