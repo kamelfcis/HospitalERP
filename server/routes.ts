@@ -5419,6 +5419,30 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // تسعير الخدمات حسب الطبيب
+  app.get("/api/clinic-service-doctor-prices/:serviceId", requireAuth, async (req, res) => {
+    try {
+      const rows = await storage.getServiceDoctorPrices(req.params.serviceId);
+      res.json(snakeToCamel(rows));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-service-doctor-prices", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const { serviceId, doctorId, price } = req.body;
+      if (!serviceId || !doctorId) return res.status(400).json({ message: "serviceId و doctorId مطلوبان" });
+      const row = await storage.upsertServiceDoctorPrice(serviceId, doctorId, parseFloat(price) || 0);
+      res.json(snakeToCamel(row));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/clinic-service-doctor-prices/:id", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      await storage.deleteServiceDoctorPrice(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   // كشف حساب الطبيب / العيادة — الطبيب يشوف بياناته فقط، الأدمن يشوف الكل
   app.get("/api/clinic-doctor-statement", requireAuth, async (req, res) => {
     try {

@@ -1757,6 +1757,14 @@ export const clinicDoctorFavoriteDrugs = pgTable("clinic_doctor_favorite_drugs",
   sortOrder:       integer("sort_order").default(0),
 });
 
+export const clinicServiceDoctorPrices = pgTable("clinic_service_doctor_prices", {
+  id:         varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceId:  varchar("service_id").notNull(),
+  doctorId:   varchar("doctor_id").notNull(),
+  price:      decimal("price", { precision: 10, scale: 2 }).notNull().default("0"),
+  createdAt:  timestamp("created_at").notNull().defaultNow(),
+});
+
 export const clinicOrders = pgTable("clinic_orders", {
   id:                varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   consultationId:    varchar("consultation_id").references(() => clinicConsultations.id),

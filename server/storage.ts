@@ -591,6 +591,12 @@ export interface IStorage {
 
   // كشف حساب الطبيب - عيادات
   getClinicDoctorStatement(doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<any[]>;
+
+  // تسعير خدمات حسب الطبيب
+  getServiceDoctorPrices(serviceId: string): Promise<any[]>;
+  upsertServiceDoctorPrice(serviceId: string, doctorId: string, price: number): Promise<any>;
+  deleteServiceDoctorPrice(id: string): Promise<void>;
+  getDoctorServicePrice(serviceId: string, doctorId: string): Promise<number | null>;
 }
 
 function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
@@ -9217,11 +9223,17 @@ export class DatabaseStorage implements IStorage {
     try {
       await client.query('BEGIN');
 
-      // جلب بيانات الموعد
+      // جلب بيانات الموعد مع خدمة الكشف
       const apptRes = await client.query(
-        `SELECT a.*, d.name AS doctor_name, cl.default_pharmacy_id FROM clinic_appointments a
+        `SELECT a.*, d.name AS doctor_name, cl.default_pharmacy_id, cl.consultation_service_id,
+                s.name_ar AS consultation_service_name, s.base_price AS consultation_service_base_price,
+                s.department_id AS consultation_service_dept_id,
+                dep.name_ar AS consultation_service_dept_name
+         FROM clinic_appointments a
          JOIN doctors d ON d.id = a.doctor_id
          JOIN clinic_clinics cl ON cl.id = a.clinic_id
+         LEFT JOIN services s ON s.id = cl.consultation_service_id
+         LEFT JOIN departments dep ON dep.id = s.department_id
          WHERE a.id = $1`, [data.appointmentId]
       );
       const appt = apptRes.rows[0];
@@ -9283,6 +9295,36 @@ export class DatabaseStorage implements IStorage {
           svc.targetId ?? null, svc.targetName ?? null,
           svc.serviceId ?? null, svc.serviceNameManual ?? null
         ]);
+      }
+
+      // إضافة خدمة الكشف أوتوماتيك (لو العيادة محدد لها خدمة كشف)
+      if (appt.consultation_service_id) {
+        const alreadyHasConsultationService = data.serviceOrders.some(
+          (s) => s.serviceId === appt.consultation_service_id
+        );
+        if (!alreadyHasConsultationService) {
+          // جلب السعر المخصص للطبيب أو السعر الأساسي
+          const doctorPriceRes = await client.query(
+            `SELECT price FROM clinic_service_doctor_prices WHERE service_id = $1 AND doctor_id = $2`,
+            [appt.consultation_service_id, appt.doctor_id]
+          );
+          const consultationPrice = doctorPriceRes.rows.length > 0
+            ? parseFloat(String(doctorPriceRes.rows[0].price))
+            : parseFloat(String(appt.consultation_service_base_price || 0));
+
+          await client.query(`
+            INSERT INTO clinic_orders
+              (consultation_id, appointment_id, doctor_id, patient_name,
+               order_type, target_type, target_id, target_name,
+               service_id, service_name_manual, quantity, unit_price, status)
+            VALUES ($1,$2,$3,$4,'service','department',$5,$6,$7,$8,1,$9,'pending')
+          `, [
+            consultation.id, data.appointmentId, appt.doctor_id, appt.patient_name,
+            appt.consultation_service_dept_id ?? null, appt.consultation_service_dept_name ?? null,
+            appt.consultation_service_id, appt.consultation_service_name,
+            consultationPrice
+          ]);
+        }
       }
 
       // تحديث حالة الموعد إلى "in_consultation"
@@ -9405,8 +9447,8 @@ export class DatabaseStorage implements IStorage {
       if (!orderRes.rows.length) throw new Error("الأمر غير موجود أو تم تنفيذه مسبقاً");
       const order = orderRes.rows[0];
 
-      // حساب السعر: من الخدمة أو 0
-      const unitPrice = parseFloat(order.service_price ?? '0') || 0;
+      // حساب السعر: من الأمر (سعر مخصص) أو من الخدمة أو 0
+      const unitPrice = parseFloat(order.unit_price ?? '0') || parseFloat(order.service_price ?? '0') || 0;
       const totalAmount = unitPrice.toFixed(2);
 
       // إنشاء رأس فاتورة مريض
@@ -9468,7 +9510,7 @@ export class DatabaseStorage implements IStorage {
         a.status AS appointment_status,
         cl.name_ar AS clinic_name,
         d.name AS doctor_name,
-        COALESCE(s_fee.base_price, 0) AS consultation_fee,
+        COALESCE(sdp_fee.price, s_fee.base_price, 0) AS consultation_fee,
         COALESCE(drugs_totals.total, 0) AS drugs_total,
         COALESCE(services_totals.total, 0) AS services_total
       FROM clinic_appointments a
@@ -9476,6 +9518,7 @@ export class DatabaseStorage implements IStorage {
       LEFT JOIN clinic_clinics cl ON cl.id = a.clinic_id
       LEFT JOIN doctors d ON d.id = a.doctor_id
       LEFT JOIN services s_fee ON s_fee.id = cl.consultation_service_id
+      LEFT JOIN clinic_service_doctor_prices sdp_fee ON sdp_fee.service_id = cl.consultation_service_id AND sdp_fee.doctor_id = a.doctor_id
       LEFT JOIN LATERAL (
         SELECT COALESCE(SUM(cd.quantity * cd.unit_price), 0) AS total
         FROM clinic_consultation_drugs cd
@@ -9500,6 +9543,40 @@ export class DatabaseStorage implements IStorage {
       ORDER BY a.appointment_date DESC, a.turn_number
     `);
     return rows.rows as any[];
+  }
+
+  async getServiceDoctorPrices(serviceId: string): Promise<any[]> {
+    const rows = await db.execute(sql`
+      SELECT sdp.*, d.name AS doctor_name, d.specialty
+      FROM clinic_service_doctor_prices sdp
+      JOIN doctors d ON d.id = sdp.doctor_id
+      WHERE sdp.service_id = ${serviceId}
+      ORDER BY d.name
+    `);
+    return rows.rows as any[];
+  }
+
+  async upsertServiceDoctorPrice(serviceId: string, doctorId: string, price: number): Promise<any> {
+    const rows = await db.execute(sql`
+      INSERT INTO clinic_service_doctor_prices (service_id, doctor_id, price)
+      VALUES (${serviceId}, ${doctorId}, ${price})
+      ON CONFLICT (service_id, doctor_id) DO UPDATE SET price = EXCLUDED.price
+      RETURNING *
+    `);
+    return rows.rows[0] as any;
+  }
+
+  async deleteServiceDoctorPrice(id: string): Promise<void> {
+    await db.execute(sql`DELETE FROM clinic_service_doctor_prices WHERE id = ${id}`);
+  }
+
+  async getDoctorServicePrice(serviceId: string, doctorId: string): Promise<number | null> {
+    const rows = await db.execute(sql`
+      SELECT price FROM clinic_service_doctor_prices
+      WHERE service_id = ${serviceId} AND doctor_id = ${doctorId}
+    `);
+    if (rows.rows.length > 0) return parseFloat(String((rows.rows[0] as any).price));
+    return null;
   }
 }
 

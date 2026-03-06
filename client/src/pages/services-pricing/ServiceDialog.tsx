@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, UserPlus } from "lucide-react";
 import { serviceTypeLabels } from "@shared/schema";
 import type {
   ServiceWithDepartment, Department, Account, CostCenter, Warehouse, Item, ServiceConsumableWithItem,
@@ -382,6 +384,8 @@ export default function ServiceDialog({
           )}
         </div>
 
+        {editingService && <DoctorPricingSection serviceId={editingService.id} />}
+
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} data-testid="button-cancel-service">إلغاء</Button>
           <Button onClick={onSave} disabled={saving || !canSave} data-testid="button-save-service">
@@ -391,5 +395,136 @@ export default function ServiceDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface Doctor { id: string; name: string; specialty?: string; }
+interface DoctorPrice { id: string; serviceId: string; doctorId: string; price: string; doctorName: string; specialty?: string; }
+
+function DoctorPricingSection({ serviceId }: { serviceId: string }) {
+  const { toast } = useToast();
+  const [selectedDoctorId, setSelectedDoctorId] = useState("__none__");
+  const [price, setPrice] = useState("");
+
+  const { data: doctorPrices = [] } = useQuery<DoctorPrice[]>({
+    queryKey: ["/api/clinic-service-doctor-prices", serviceId],
+    queryFn: () => apiRequest("GET", `/api/clinic-service-doctor-prices/${serviceId}`).then(r => r.json()),
+  });
+
+  const { data: doctors = [] } = useQuery<Doctor[]>({
+    queryKey: ["/api/doctors"],
+  });
+
+  const assignedDoctorIds = new Set(doctorPrices.map(dp => dp.doctorId));
+  const availableDoctors = doctors.filter(d => !assignedDoctorIds.has(d.id));
+
+  const addMutation = useMutation({
+    mutationFn: (data: { serviceId: string; doctorId: string; price: number }) =>
+      apiRequest("POST", "/api/clinic-service-doctor-prices", data).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-service-doctor-prices", serviceId] });
+      setSelectedDoctorId("__none__");
+      setPrice("");
+      toast({ title: "تم تخصيص السعر" });
+    },
+    onError: (err: any) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/clinic-service-doctor-prices/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-service-doctor-prices", serviceId] });
+      toast({ title: "تم الحذف" });
+    },
+  });
+
+  const handleAdd = () => {
+    if (selectedDoctorId === "__none__" || !price) return;
+    addMutation.mutate({ serviceId, doctorId: selectedDoctorId, price: parseFloat(price) || 0 });
+  };
+
+  return (
+    <div className="border-t pt-3 mt-2">
+      <Label className="text-sm font-semibold">تخصيص السعر حسب الطبيب</Label>
+      <p className="text-xs text-muted-foreground mb-2">
+        حدد سعر مختلف لكل طبيب — لو مفيش تخصيص بيستخدم السعر الأساسي
+      </p>
+
+      <div className="flex items-end gap-2 mb-2">
+        <div className="flex-1 space-y-1">
+          <Label className="text-xs">الطبيب</Label>
+          <Select value={selectedDoctorId} onValueChange={setSelectedDoctorId}>
+            <SelectTrigger className="h-8 text-xs" data-testid="select-doctor-price">
+              <SelectValue placeholder="اختر طبيب..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">اختر طبيب...</SelectItem>
+              {availableDoctors.map(d => (
+                <SelectItem key={d.id} value={d.id}>{d.name} {d.specialty ? `(${d.specialty})` : ""}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-28 space-y-1">
+          <Label className="text-xs">السعر</Label>
+          <Input
+            type="number" min="0" step="0.01" value={price}
+            onChange={e => setPrice(e.target.value)}
+            className="h-8 text-xs"
+            data-testid="input-doctor-price"
+          />
+        </div>
+        <Button
+          size="sm" className="h-8 gap-1 text-xs"
+          onClick={handleAdd}
+          disabled={selectedDoctorId === "__none__" || !price || addMutation.isPending}
+          data-testid="button-add-doctor-price"
+        >
+          {addMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
+          إضافة
+        </Button>
+      </div>
+
+      {doctorPrices.length > 0 ? (
+        <div className="border rounded-md overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-muted/50">
+                <th className="text-right p-1.5">الطبيب</th>
+                <th className="text-right p-1.5 w-24">السعر</th>
+                <th className="w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {doctorPrices.map(dp => (
+                <tr key={dp.id} className="border-t" data-testid={`doctor-price-row-${dp.doctorId}`}>
+                  <td className="p-1.5">
+                    <span className="font-medium">{dp.doctorName}</span>
+                    {dp.specialty && <span className="text-muted-foreground mr-1">({dp.specialty})</span>}
+                  </td>
+                  <td className="p-1.5 font-semibold text-emerald-700">
+                    {parseFloat(String(dp.price)).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ج.م
+                  </td>
+                  <td className="p-1.5">
+                    <Button
+                      size="icon" variant="ghost" className="h-6 w-6"
+                      onClick={() => deleteMutation.mutate(dp.id)}
+                      disabled={deleteMutation.isPending}
+                      data-testid={`button-remove-doctor-price-${dp.doctorId}`}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground text-center py-3 border rounded-md bg-muted/20">
+          لم يتم تخصيص أسعار لأطباء بعد — سيتم استخدام السعر الأساسي لجميع الأطباء
+        </div>
+      )}
+    </div>
   );
 }
