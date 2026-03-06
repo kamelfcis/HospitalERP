@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Plus, Lock, AlertTriangle } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import { Trash2, Plus, Lock, AlertTriangle, ChevronsUpDown, Check } from "lucide-react";
 import { QuadrantCard } from "./QuadrantCard";
 import type { ServiceOrder, Service } from "../types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,7 +18,8 @@ interface Props {
 }
 
 export function ServicesQuadrant({ serviceOrders, onAdd, onRemove, hasConsultationServiceConfig }: Props) {
-  const [selectedId, setSelectedId] = useState("");
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const { data: services = [] } = useQuery<Service[]>({
     queryKey: ["/api/services"],
@@ -26,44 +28,83 @@ export function ServicesQuadrant({ serviceOrders, onAdd, onRemove, hasConsultati
       const json = await res.json();
       return Array.isArray(json) ? json : (json.data ?? json.services ?? []);
     },
+    staleTime: 0,
   });
 
-  const handleAdd = () => {
-    const svc = services.find((s) => s.id === selectedId);
+  const filtered = services.filter((s) =>
+    s.nameAr.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleSelect = (svcId: string) => {
+    const svc = services.find((s) => s.id === svcId);
     if (!svc) return;
     onAdd({
       serviceId: svc.id,
       serviceNameManual: svc.nameAr,
       unitPrice: svc.basePrice ? parseFloat(String(svc.basePrice)) : 0,
     });
-    setSelectedId("");
+    setOpen(false);
+    setSearch("");
   };
 
   return (
     <QuadrantCard label="الخدمات المطلوبة">
       <div className="flex gap-1 mb-2">
-        <Select value={selectedId} onValueChange={setSelectedId}>
-          <SelectTrigger className="h-7 text-xs flex-1" data-testid="select-service">
-            <SelectValue placeholder="اختر خدمة..." />
-          </SelectTrigger>
-          <SelectContent>
-            {services.map((s) => (
-              <SelectItem key={s.id} value={s.id} data-testid={`service-option-${s.id}`}>
-                {s.nameAr}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          size="icon"
-          variant="outline"
-          className="h-7 w-7 shrink-0"
-          onClick={handleAdd}
-          disabled={!selectedId}
-          data-testid="button-add-service"
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              className="h-7 text-xs flex-1 justify-between font-normal"
+              data-testid="select-service"
+            >
+              <span className="truncate text-muted-foreground">ابحث عن خدمة...</span>
+              <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50 mr-1" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[300px] p-0" align="start">
+            <Command shouldFilter={false}>
+              <CommandInput
+                placeholder="اكتب اسم الخدمة..."
+                value={search}
+                onValueChange={setSearch}
+                className="h-8 text-xs"
+                data-testid="input-search-service"
+              />
+              <CommandList>
+                <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                  لا توجد خدمات مطابقة
+                </CommandEmpty>
+                <CommandGroup>
+                  {filtered.map((s) => {
+                    const alreadyAdded = serviceOrders.some((so) => so.serviceId === s.id);
+                    return (
+                      <CommandItem
+                        key={s.id}
+                        value={s.id}
+                        onSelect={handleSelect}
+                        disabled={alreadyAdded}
+                        className="text-xs"
+                        data-testid={`service-option-${s.id}`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className={alreadyAdded ? "text-muted-foreground" : ""}>
+                            {s.nameAr}
+                          </span>
+                          <span className="text-muted-foreground text-[10px] mr-2">
+                            {parseFloat(String(s.basePrice || 0)).toFixed(2)} ج.م
+                          </span>
+                        </div>
+                        {alreadyAdded && <Check className="h-3 w-3 text-green-600 shrink-0" />}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {hasConsultationServiceConfig === false && (
