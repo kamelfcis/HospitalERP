@@ -141,7 +141,9 @@ export function PrescriptionQuadrant({
       ) : (
         <div className="space-y-2">
           {drugs.map((drug) => {
-            const lineTotal = (drug.quantity || 1) * (drug.unitPrice || 0);
+            const qty = parseFloat(String(drug.quantity)) || 1;
+            const price = parseFloat(String(drug.unitPrice)) || 0;
+            const lineTotal = qty * price;
             const multiUnit = hasMultipleUnits(drug);
             return (
               <div key={drug.lineNo} className="space-y-1 border-b border-muted pb-1.5 last:border-0">
@@ -195,7 +197,7 @@ export function PrescriptionQuadrant({
                     )}
                     <span className="text-xs text-muted-foreground mx-1">×</span>
                     <span className="text-xs font-medium" data-testid={`text-drug-price-${drug.lineNo}`}>
-                      {(drug.unitPrice || 0).toFixed(2)}
+                      {price.toFixed(2)}
                     </span>
                     <span className="text-xs text-muted-foreground mx-1">=</span>
                     <span className="text-xs font-bold text-green-700" data-testid={`text-drug-total-${drug.lineNo}`}>
@@ -231,7 +233,7 @@ export function PrescriptionQuadrant({
           })}
           <div className="flex justify-end pt-1 border-t">
             <span className="text-xs font-bold text-foreground" data-testid="text-prescription-total">
-              الإجمالي: {drugs.reduce((s, d) => s + (d.quantity || 1) * (d.unitPrice || 0), 0).toFixed(2)} ج.م
+              الإجمالي: {drugs.reduce((s, d) => s + (parseFloat(String(d.quantity)) || 1) * (parseFloat(String(d.unitPrice)) || 0), 0).toFixed(2)} ج.م
             </span>
           </div>
         </div>
