@@ -24,9 +24,10 @@ interface Props {
   isLoading: boolean;
   onExecute: (order: ClinicOrder) => void;
   isExecuting: boolean;
+  canExecute: boolean;
 }
 
-export function OrdersTable({ orders, isLoading, onExecute, isExecuting }: Props) {
+export function OrdersTable({ orders, isLoading, onExecute, isExecuting, canExecute }: Props) {
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -53,7 +54,7 @@ export function OrdersTable({ orders, isLoading, onExecute, isExecuting }: Props
             <TableHead className="text-right">الأمر</TableHead>
             <TableHead className="text-right w-36">الجهة</TableHead>
             <TableHead className="text-right w-24">الحالة</TableHead>
-            <TableHead className="text-right w-32">إجراءات</TableHead>
+            {canExecute && <TableHead className="text-right w-32">إجراءات</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -103,45 +104,47 @@ export function OrdersTable({ orders, isLoading, onExecute, isExecuting }: Props
                   {STATUS_LABELS[order.status] || order.status}
                 </Badge>
               </TableCell>
-              <TableCell>
-                {order.status === "pending" && (
-                  order.orderType === "pharmacy" ? (
-                    <PharmacyDrugPopup
-                      order={order}
-                      trigger={
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs gap-1 border-green-300 text-green-700 hover:bg-green-50"
-                          data-testid={`button-pharmacy-popup-${order.id}`}
-                        >
-                          <Pill className="h-3 w-3" />
-                          صرف
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs gap-1 border-blue-300 text-blue-700 hover:bg-blue-50"
-                      onClick={() => onExecute(order)}
-                      disabled={isExecuting}
-                      data-testid={`button-execute-${order.id}`}
-                    >
-                      {isExecuting ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-3 w-3" />
-                      )}
-                      تنفيذ
-                    </Button>
-                  )
-                )}
-                {order.status === "executed" && order.executedInvoiceId && (
-                  <span className="text-xs text-muted-foreground">✓ فاتورة صادرة</span>
-                )}
-              </TableCell>
+              {canExecute && (
+                <TableCell>
+                  {order.status === "pending" && (
+                    order.orderType === "pharmacy" ? (
+                      <PharmacyDrugPopup
+                        order={order}
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1 border-green-300 text-green-700"
+                            data-testid={`button-pharmacy-popup-${order.id}`}
+                          >
+                            <Pill className="h-3 w-3" />
+                            صرف
+                          </Button>
+                        }
+                      />
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1 border-blue-300 text-blue-700"
+                        onClick={() => onExecute(order)}
+                        disabled={isExecuting}
+                        data-testid={`button-execute-${order.id}`}
+                      >
+                        {isExecuting ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3 w-3" />
+                        )}
+                        تنفيذ
+                      </Button>
+                    )
+                  )}
+                  {order.status === "executed" && order.executedInvoiceId && (
+                    <span className="text-xs text-muted-foreground" data-testid={`text-executed-${order.id}`}>فاتورة صادرة</span>
+                  )}
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>

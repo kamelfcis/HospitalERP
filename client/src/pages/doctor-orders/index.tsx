@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { useClinicOrders } from "./hooks/useClinicOrders";
+import { useOrderPermissions } from "./hooks/useOrderPermissions";
 import { OrdersFilterBar } from "./components/OrdersFilterBar";
 import { OrdersTable } from "./components/OrdersTable";
 import { ExecuteConfirmDialog } from "./components/ExecuteConfirmDialog";
@@ -8,6 +9,7 @@ import type { ClinicOrder } from "./types";
 
 export default function DoctorOrders() {
   const [confirmOrder, setConfirmOrder] = useState<ClinicOrder | null>(null);
+  const { canExecute } = useOrderPermissions();
 
   const {
     orders,
@@ -38,7 +40,7 @@ export default function DoctorOrders() {
     <div className="p-4 space-y-4 max-w-6xl mx-auto" dir="rtl">
       <div className="flex items-center gap-3">
         <ClipboardList className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-lg font-bold">أوامر الطبيب</h1>
+        <h1 className="text-lg font-bold" data-testid="text-page-title">أوامر الطبيب</h1>
       </div>
 
       <OrdersFilterBar
@@ -56,14 +58,17 @@ export default function DoctorOrders() {
         isLoading={isLoading}
         onExecute={handleExecute}
         isExecuting={executeMutation.isPending}
+        canExecute={canExecute}
       />
 
-      <ExecuteConfirmDialog
-        order={confirmOrder}
-        onClose={() => setConfirmOrder(null)}
-        onConfirm={handleConfirmExecute}
-        isPending={executeMutation.isPending}
-      />
+      {canExecute && (
+        <ExecuteConfirmDialog
+          order={confirmOrder}
+          onClose={() => setConfirmOrder(null)}
+          onConfirm={handleConfirmExecute}
+          isPending={executeMutation.isPending}
+        />
+      )}
     </div>
   );
 }

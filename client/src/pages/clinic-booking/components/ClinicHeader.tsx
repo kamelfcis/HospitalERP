@@ -1,7 +1,7 @@
-import { useAuth } from "@/hooks/use-auth";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
+import { useClinicPermissions } from "../hooks/useClinicPermissions";
 import type { ClinicClinic } from "../types";
 
 interface Props {
@@ -12,9 +12,7 @@ interface Props {
 }
 
 export function ClinicHeader({ clinics, selectedClinicId, onSelect, onManage }: Props) {
-  const { hasPermission } = useAuth();
-  const isAdmin = hasPermission("clinic.view_all");
-  const canManage = hasPermission("clinic.manage");
+  const { isAdmin, canManage } = useClinicPermissions();
   const selected = clinics.find((c) => c.id === selectedClinicId);
 
   if (!isAdmin && selected) {

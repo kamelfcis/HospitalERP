@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@/hooks/use-auth";
+import { useClinicPermissions } from "../hooks/useClinicPermissions";
 import type { ClinicClinic, ClinicAppointment } from "../types";
 
 interface Props {
@@ -54,8 +54,8 @@ function ClinicCard({ clinic, date, onSelect }: { clinic: ClinicClinic; date: st
 }
 
 export function AdminSummaryCards({ clinics, selectedDate, onSelect }: Props) {
-  const { hasPermission } = useAuth();
-  if (!hasPermission("clinic.view_all")) return null;
+  const { isAdmin } = useClinicPermissions();
+  if (!isAdmin) return null;
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
