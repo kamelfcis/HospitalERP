@@ -7,7 +7,8 @@ export function useDeptServices(departmentId: string | undefined) {
       if (!departmentId) return [];
       const res = await fetch(`/api/services?departmentId=${departmentId}&active=true`);
       if (!res.ok) return [];
-      return res.json();
+      const json = await res.json();
+      return Array.isArray(json) ? json : (json.data || []);
     },
     enabled: !!departmentId,
     staleTime: 0,
@@ -31,6 +32,15 @@ export function useServiceConsumables(serviceId: string | undefined) {
 export function useUserTreasury() {
   return useQuery<any>({
     queryKey: ["/api/treasuries/mine"],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/treasuries/mine");
+        if (!res.ok) return null;
+        return res.json();
+      } catch {
+        return null;
+      }
+    },
     staleTime: 0,
   });
 }

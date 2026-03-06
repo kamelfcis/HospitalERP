@@ -45,7 +45,8 @@ export function ServicesGrid({ services, selectedLines, onChange, isLoading }: P
     onChange(updated);
   };
 
-  const availableServices = services.filter(
+  const safeServices = Array.isArray(services) ? services : [];
+  const availableServices = safeServices.filter(
     (s: any) => !selectedLines.some(l => l.serviceId === s.id)
   );
 
