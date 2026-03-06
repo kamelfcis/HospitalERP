@@ -575,7 +575,7 @@ export interface IStorage {
 
   // الكشف والروشتة
   getConsultationByAppointment(appointmentId: string): Promise<any | null>;
-  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string }[] }): Promise<any>;
+  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string }[] }): Promise<any>;
 
   // الأدوية المفضلة
   getDoctorFavoriteDrugs(doctorId: string): Promise<any[]>;
@@ -9186,7 +9186,13 @@ export class DatabaseStorage implements IStorage {
     }
     const consultation = consRows.rows[0] as any;
     const drugRows = await db.execute(sql`
-      SELECT * FROM clinic_consultation_drugs WHERE consultation_id = ${consultation.id} ORDER BY line_no
+      SELECT d.*,
+             i.major_unit_name, i.medium_unit_name, i.minor_unit_name,
+             i.major_to_minor, i.medium_to_minor, i.major_to_medium,
+             i.sale_price_current
+      FROM clinic_consultation_drugs d
+      LEFT JOIN items i ON i.id = d.item_id
+      WHERE d.consultation_id = ${consultation.id} ORDER BY d.line_no
     `);
     const orderRows = await db.execute(sql`
       SELECT * FROM clinic_orders WHERE consultation_id = ${consultation.id} AND order_type = 'service' ORDER BY created_at
@@ -9196,7 +9202,7 @@ export class DatabaseStorage implements IStorage {
 
   async saveConsultation(data: {
     appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string;
-    drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string }[];
+    drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[];
     serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string }[];
   }): Promise<any> {
     const client = await pool.connect();
@@ -9230,9 +9236,9 @@ export class DatabaseStorage implements IStorage {
       await client.query(`DELETE FROM clinic_consultation_drugs WHERE consultation_id = $1`, [consultation.id]);
       for (const drug of data.drugs) {
         await client.query(`
-          INSERT INTO clinic_consultation_drugs (consultation_id, line_no, item_id, drug_name, dose, frequency, duration, notes)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-        `, [consultation.id, drug.lineNo, drug.itemId ?? null, drug.drugName, drug.dose ?? null, drug.frequency ?? null, drug.duration ?? null, drug.notes ?? null]);
+          INSERT INTO clinic_consultation_drugs (consultation_id, line_no, item_id, drug_name, dose, frequency, duration, notes, unit_level, quantity, unit_price)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        `, [consultation.id, drug.lineNo, drug.itemId ?? null, drug.drugName, drug.dose ?? null, drug.frequency ?? null, drug.duration ?? null, drug.notes ?? null, drug.unitLevel ?? 'major', drug.quantity ?? 1, drug.unitPrice ?? 0]);
       }
 
       // حذف الأوامر القديمة وإعادة إنشائها
@@ -9245,12 +9251,13 @@ export class DatabaseStorage implements IStorage {
           INSERT INTO clinic_orders
             (consultation_id, appointment_id, doctor_id, patient_name,
              order_type, target_type, target_id, target_name,
-             item_id, drug_name, dose, quantity, status)
-          VALUES ($1,$2,$3,$4,'pharmacy','pharmacy',$5,$6,$7,$8,$9,1,'pending')
+             item_id, drug_name, dose, quantity, unit_level, unit_price, status)
+          VALUES ($1,$2,$3,$4,'pharmacy','pharmacy',$5,$6,$7,$8,$9,$10,$11,$12,'pending')
         `, [
           consultation.id, data.appointmentId, appt.doctor_id, appt.patient_name,
           appt.default_pharmacy_id ?? null, appt.default_pharmacy_id ? 'الصيدلية' : null,
-          drug.itemId ?? null, drug.drugName, drug.dose ?? null
+          drug.itemId ?? null, drug.drugName, drug.dose ?? null,
+          drug.quantity ?? 1, drug.unitLevel ?? 'major', drug.unitPrice ?? 0
         ]);
       }
 
@@ -9353,12 +9360,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClinicOrder(id: string): Promise<any | null> {
-    const orders = await this.getClinicOrders({});
     const rows = await db.execute(sql`
       SELECT o.*,
              d.name AS doctor_name,
              s.name_ar AS service_name_ar, s.base_price AS service_price,
              i.name_ar AS item_name_ar,
+             i.major_unit_name, i.medium_unit_name, i.minor_unit_name,
+             i.major_to_minor, i.medium_to_minor, i.major_to_medium,
+             i.sale_price_current, i.has_expiry,
              a.appointment_date, a.patient_name AS appt_patient_name
       FROM clinic_orders o
       JOIN doctors d ON d.id = o.doctor_id

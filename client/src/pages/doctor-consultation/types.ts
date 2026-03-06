@@ -7,6 +7,16 @@ export interface ConsultationDrug {
   frequency?: string;
   duration?: string;
   notes?: string;
+  unitLevel?: string;
+  quantity?: number;
+  unitPrice?: number;
+  majorUnitName?: string | null;
+  mediumUnitName?: string | null;
+  minorUnitName?: string | null;
+  majorToMinor?: string | null;
+  mediumToMinor?: string | null;
+  majorToMedium?: string | null;
+  salePriceCurrent?: string | null;
 }
 
 export interface ServiceOrder {

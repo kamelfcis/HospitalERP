@@ -1740,6 +1740,9 @@ export const clinicConsultationDrugs = pgTable("clinic_consultation_drugs", {
   frequency:      text("frequency"),
   duration:       text("duration"),
   notes:          text("notes"),
+  unitLevel:      varchar("unit_level").default("major"),
+  quantity:       decimal("quantity", { precision: 10, scale: 3 }).default("1"),
+  unitPrice:      decimal("unit_price", { precision: 10, scale: 3 }).default("0"),
 });
 
 export const clinicDoctorFavoriteDrugs = pgTable("clinic_doctor_favorite_drugs", {
@@ -1769,6 +1772,8 @@ export const clinicOrders = pgTable("clinic_orders", {
   drugName:          text("drug_name"),
   dose:              text("dose"),
   quantity:          decimal("quantity", { precision: 10, scale: 3 }),
+  unitLevel:         varchar("unit_level").default("major"),
+  unitPrice:         decimal("unit_price", { precision: 10, scale: 3 }),
   status:            varchar("status").notNull().default("pending"),
   executedInvoiceId: varchar("executed_invoice_id"),
   executedBy:        varchar("executed_by"),

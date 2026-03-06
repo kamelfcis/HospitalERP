@@ -157,32 +157,55 @@ export default function SalesInvoices() {
         const res = await fetch(`/api/clinic-orders/${clinicOrderId}`);
         if (!res.ok) return;
         const order = await res.json();
-        // ضبط الصيدلية إذا كانت محددة
         const wId = pharmacyIdParam || order.targetId || "";
         if (wId) form.setWarehouseId(wId);
-        // استخدام itemId البديل أو الأصلي من الأمر
         const itemIdToAdd = altItemIdParam || order.itemId;
         if (itemIdToAdd) {
-          // إنشاء كائن item مبسط — addItemToLines يقبل any ويجلب التسعير بنفسه
-          const minimalItem = {
-            id: itemIdToAdd,
-            nameAr: order.drugName || "",
-            nameEn: null,
-            itemCode: "",
-            category: "drug",
-            salePriceCurrent: "0",
-            majorUnitName: null,
-            mediumUnitName: null,
-            minorUnitName: null,
-            majorToMedium: null,
-            majorToMinor: null,
-            mediumToMinor: null,
-            hasExpiry: false,
-            availableQtyMinor: "0",
-          };
-          await linesHook.addItemToLines(minimalItem);
+          let itemData: any = null;
+          try {
+            const itemRes = await fetch(`/api/items/${itemIdToAdd}`);
+            if (itemRes.ok) {
+              const fullItem = await itemRes.json();
+              itemData = {
+                id: fullItem.id,
+                nameAr: fullItem.nameAr || fullItem.name_ar || order.drugName || "",
+                nameEn: fullItem.nameEn || fullItem.name_en || null,
+                itemCode: fullItem.itemCode || fullItem.item_code || "",
+                category: fullItem.category || "drug",
+                salePriceCurrent: String(fullItem.salePriceCurrent || fullItem.sale_price_current || "0"),
+                majorUnitName: fullItem.majorUnitName || fullItem.major_unit_name || null,
+                mediumUnitName: fullItem.mediumUnitName || fullItem.medium_unit_name || null,
+                minorUnitName: fullItem.minorUnitName || fullItem.minor_unit_name || null,
+                majorToMedium: fullItem.majorToMedium || fullItem.major_to_medium || null,
+                majorToMinor: fullItem.majorToMinor || fullItem.major_to_minor || null,
+                mediumToMinor: fullItem.mediumToMinor || fullItem.medium_to_minor || null,
+                hasExpiry: fullItem.hasExpiry ?? fullItem.has_expiry ?? false,
+                availableQtyMinor: "0",
+              };
+            }
+          } catch {}
+          if (!itemData) {
+            itemData = {
+              id: itemIdToAdd,
+              nameAr: order.drugName || order.itemNameAr || "",
+              nameEn: null,
+              itemCode: "",
+              category: "drug",
+              salePriceCurrent: order.salePriceCurrent || "0",
+              majorUnitName: order.majorUnitName || null,
+              mediumUnitName: order.mediumUnitName || null,
+              minorUnitName: order.minorUnitName || null,
+              majorToMedium: order.majorToMedium || null,
+              majorToMinor: order.majorToMinor || null,
+              mediumToMinor: order.mediumToMinor || null,
+              hasExpiry: order.hasExpiry || false,
+              availableQtyMinor: "0",
+            };
+          }
+          const clinicUnit = order.unitLevel || "major";
+          const clinicQty = parseFloat(order.quantity) || 1;
+          await linesHook.addItemToLines(itemData, { qty: clinicQty, unitLevel: clinicUnit });
         }
-        // ضبط اسم العميل من اسم المريض
         if (order.patientName) form.setCustomerName(order.patientName);
         clinicPrefillDoneRef.current = true;
         navigate("/sales-invoices?id=new");
