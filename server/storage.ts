@@ -575,7 +575,7 @@ export interface IStorage {
 
   // الكشف والروشتة
   getConsultationByAppointment(appointmentId: string): Promise<any | null>;
-  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string }[] }): Promise<any>;
+  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[] }): Promise<any>;
 
   // الأدوية المفضلة
   getDoctorFavoriteDrugs(doctorId: string): Promise<any[]>;
@@ -9272,7 +9272,7 @@ export class DatabaseStorage implements IStorage {
   async saveConsultation(data: {
     appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string;
     drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[];
-    serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string }[];
+    serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[];
   }): Promise<any> {
     const client = await pool.connect();
     try {
@@ -9339,16 +9339,30 @@ export class DatabaseStorage implements IStorage {
       // أوامر الخدمات (service orders)
       for (const svc of data.serviceOrders) {
         if (!svc.serviceId && !svc.serviceNameManual) continue;
+        let orderPrice = 0;
+        if (svc.serviceId) {
+          const dpRes = await client.query(
+            `SELECT price FROM clinic_service_doctor_prices WHERE service_id = $1 AND doctor_id = $2`,
+            [svc.serviceId, appt.doctor_id]
+          );
+          if (dpRes.rows.length > 0) {
+            orderPrice = parseFloat(String(dpRes.rows[0].price));
+          } else {
+            const spRes = await client.query(`SELECT base_price FROM services WHERE id = $1`, [svc.serviceId]);
+            if (spRes.rows.length > 0) orderPrice = parseFloat(String(spRes.rows[0].base_price || 0));
+          }
+        }
         await client.query(`
           INSERT INTO clinic_orders
             (consultation_id, appointment_id, doctor_id, patient_name,
              order_type, target_type, target_id, target_name,
-             service_id, service_name_manual, status)
-          VALUES ($1,$2,$3,$4,'service','department',$5,$6,$7,$8,'pending')
+             service_id, service_name_manual, quantity, unit_price, status)
+          VALUES ($1,$2,$3,$4,'service','department',$5,$6,$7,$8,1,$9,'pending')
         `, [
           consultation.id, data.appointmentId, appt.doctor_id, appt.patient_name,
           svc.targetId ?? null, svc.targetName ?? null,
-          svc.serviceId ?? null, svc.serviceNameManual ?? null
+          svc.serviceId ?? null, svc.serviceNameManual ?? null,
+          orderPrice
         ]);
       }
 

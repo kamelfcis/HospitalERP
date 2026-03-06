@@ -34,6 +34,7 @@ export function ServicesQuadrant({ serviceOrders, onAdd, onRemove, hasConsultati
     onAdd({
       serviceId: svc.id,
       serviceNameManual: svc.nameAr,
+      unitPrice: svc.basePrice ? parseFloat(String(svc.basePrice)) : 0,
     });
     setSelectedId("");
   };
