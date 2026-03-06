@@ -967,7 +967,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async reverseJournalEntry(id: string, userId?: string | null): Promise<JournalEntry | undefined> {
+    const todayStr = new Date().toISOString().split('T')[0];
+
     return await db.transaction(async (tx) => {
+    const closedPeriod = await tx.select().from(fiscalPeriods)
+      .where(and(
+        lte(fiscalPeriods.startDate, todayStr),
+        gte(fiscalPeriods.endDate, todayStr),
+        eq(fiscalPeriods.isClosed, true)
+      ))
+      .for("update");
+    if (closedPeriod.length > 0) {
+      throw new Error(`لا يمكن تنفيذ العملية: الفترة المحاسبية "${closedPeriod[0].name}" مغلقة`);
+    }
+
+    const openPeriod = await tx.select().from(fiscalPeriods)
+      .where(and(
+        lte(fiscalPeriods.startDate, todayStr),
+        gte(fiscalPeriods.endDate, todayStr),
+        eq(fiscalPeriods.isClosed, false)
+      ));
+    const reversalPeriodId = openPeriod.length > 0 ? openPeriod[0].id : null;
+
     const lockResult = await tx.execute(sql`SELECT * FROM journal_entries WHERE id = ${id} FOR UPDATE`);
     const locked = lockResult.rows?.[0] as any;
     if (!locked || locked.status !== 'posted') {
@@ -984,10 +1005,10 @@ export class DatabaseStorage implements IStorage {
     const entryNumber = await this.getNextEntryNumber();
     const [reversalEntry] = await tx.insert(journalEntries).values({
       entryNumber,
-      entryDate: new Date().toISOString().split('T')[0],
+      entryDate: todayStr,
       description: `قيد عكسي - ${entry.description}`,
       status: 'posted',
-      periodId: entry.periodId,
+      periodId: reversalPeriodId,
       totalDebit: entry.totalCredit,
       totalCredit: entry.totalDebit,
       reference: `REV-${entry.entryNumber}`,
@@ -9894,6 +9915,7 @@ export class DatabaseStorage implements IStorage {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE');
 
       const numRes = await client.query(`SELECT COALESCE(MAX(CASE WHEN invoice_number ~ '^[0-9]+$' THEN invoice_number::int ELSE 0 END), 0) + 1 AS next_num FROM patient_invoice_headers`);
       const invoiceNumber = String(numRes.rows[0].next_num);
