@@ -554,8 +554,8 @@ export interface IStorage {
   // العيادات
   getClinics(userId: string, role: string): Promise<any[]>;
   getClinicById(id: string): Promise<any | null>;
-  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string }): Promise<any>;
-  updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; isActive: boolean }>): Promise<any>;
+  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<any>;
+  updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<any>;
   getUserClinicIds(userId: string): Promise<string[]>;
   assignUserToClinic(userId: string, clinicId: string): Promise<void>;
   removeUserFromClinic(userId: string, clinicId: string): Promise<void>;
@@ -9045,21 +9045,23 @@ export class DatabaseStorage implements IStorage {
     return (rows.rows[0] as any) ?? null;
   }
 
-  async createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string }): Promise<any> {
+  async createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<any> {
     const rows = await db.execute(sql`
-      INSERT INTO clinic_clinics (name_ar, department_id, default_pharmacy_id, consultation_service_id)
-      VALUES (${data.nameAr}, ${data.departmentId ?? null}, ${data.defaultPharmacyId ?? null}, ${data.consultationServiceId ?? null})
+      INSERT INTO clinic_clinics (name_ar, department_id, default_pharmacy_id, consultation_service_id, secretary_fee_type, secretary_fee_value)
+      VALUES (${data.nameAr}, ${data.departmentId ?? null}, ${data.defaultPharmacyId ?? null}, ${data.consultationServiceId ?? null}, ${data.secretaryFeeType ?? null}, ${data.secretaryFeeValue ?? 0})
       RETURNING *
     `);
     return rows.rows[0] as any;
   }
 
-  async updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; isActive: boolean }>): Promise<any> {
+  async updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<any> {
     const updates: any[] = [];
     if (data.nameAr !== undefined) updates.push(sql`name_ar = ${data.nameAr}`);
     if (data.departmentId !== undefined) updates.push(sql`department_id = ${data.departmentId || null}`);
     if (data.defaultPharmacyId !== undefined) updates.push(sql`default_pharmacy_id = ${data.defaultPharmacyId || null}`);
     if (data.consultationServiceId !== undefined) updates.push(sql`consultation_service_id = ${data.consultationServiceId || null}`);
+    if (data.secretaryFeeType !== undefined) updates.push(sql`secretary_fee_type = ${data.secretaryFeeType || null}`);
+    if (data.secretaryFeeValue !== undefined) updates.push(sql`secretary_fee_value = ${data.secretaryFeeValue ?? 0}`);
     if (data.isActive !== undefined) updates.push(sql`is_active = ${data.isActive}`);
     if (updates.length === 0) return this.getClinicById(id);
     const setClauses = updates.reduce((acc, clause, i) => i === 0 ? clause : sql`${acc}, ${clause}`);
@@ -9562,10 +9564,12 @@ export class DatabaseStorage implements IStorage {
         a.patient_name,
         a.status AS appointment_status,
         cl.name_ar AS clinic_name,
+        cl.secretary_fee_type,
+        cl.secretary_fee_value,
         d.name AS doctor_name,
         COALESCE(sdp_fee.price, s_fee.base_price, 0) AS consultation_fee,
         COALESCE(drugs_totals.total, 0) AS drugs_total,
-        COALESCE(services_totals.total, 0) AS services_total
+        COALESCE(services_by_dept.details, '[]'::json) AS services_by_department
       FROM clinic_appointments a
       LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
       LEFT JOIN clinic_clinics cl ON cl.id = a.clinic_id
@@ -9578,17 +9582,29 @@ export class DatabaseStorage implements IStorage {
         WHERE cd.consultation_id = c.id
       ) drugs_totals ON true
       LEFT JOIN LATERAL (
-        SELECT COALESCE(SUM(
-          CASE WHEN co.service_id IS NOT NULL THEN COALESCE(sv.base_price, 0) * COALESCE(co.quantity, 1)
-               ELSE COALESCE(co.unit_price, 0) * COALESCE(co.quantity, 1) END
-        ), 0) AS total
-        FROM clinic_orders co
-        LEFT JOIN services sv ON sv.id = co.service_id
-        WHERE co.appointment_id = a.id
-          AND co.order_type = 'service'
-          AND co.status != 'cancelled'
-          AND (cl.consultation_service_id IS NULL OR co.service_id IS DISTINCT FROM cl.consultation_service_id)
-      ) services_totals ON true
+        SELECT COALESCE(json_agg(json_build_object(
+          'departmentId', sub.department_id,
+          'departmentName', sub.dept_name,
+          'total', sub.dept_total
+        )), '[]'::json) AS details
+        FROM (
+          SELECT
+            COALESCE(dep.id, '__none__') AS department_id,
+            COALESCE(dep.name_ar, 'بدون قسم') AS dept_name,
+            SUM(
+              CASE WHEN co.service_id IS NOT NULL THEN COALESCE(co.unit_price, sv.base_price, 0) * COALESCE(co.quantity, 1)
+                   ELSE COALESCE(co.unit_price, 0) * COALESCE(co.quantity, 1) END
+            ) AS dept_total
+          FROM clinic_orders co
+          LEFT JOIN services sv ON sv.id = co.service_id
+          LEFT JOIN departments dep ON dep.id = sv.department_id
+          WHERE co.appointment_id = a.id
+            AND co.order_type = 'service'
+            AND co.status != 'cancelled'
+            AND (cl.consultation_service_id IS NULL OR co.service_id IS DISTINCT FROM cl.consultation_service_id)
+          GROUP BY dep.id, dep.name_ar
+        ) sub
+      ) services_by_dept ON true
       WHERE a.appointment_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
         AND a.status IN ('in_consultation', 'done')
         ${doctorFilter}

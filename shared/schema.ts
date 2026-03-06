@@ -1678,6 +1678,8 @@ export const clinicClinics = pgTable("clinic_clinics", {
   departmentId:     varchar("department_id"),
   defaultPharmacyId:varchar("default_pharmacy_id"),
   consultationServiceId: varchar("consultation_service_id"),
+  secretaryFeeType: varchar("secretary_fee_type", { length: 20 }),
+  secretaryFeeValue:decimal("secretary_fee_value", { precision: 10, scale: 2 }).default("0"),
   isActive:         boolean("is_active").notNull().default(true),
   createdAt:        timestamp("created_at").notNull().defaultNow(),
 });

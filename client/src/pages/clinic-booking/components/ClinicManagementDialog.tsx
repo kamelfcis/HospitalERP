@@ -26,6 +26,8 @@ interface ClinicFormData {
   departmentId?: string;
   defaultPharmacyId?: string;
   consultationServiceId?: string;
+  secretaryFeeType?: string;
+  secretaryFeeValue?: number;
 }
 
 function ClinicForm({ clinic, onSave, onCancel, isPending }: {
@@ -38,6 +40,8 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
   const [departmentId, setDepartmentId] = useState(clinic?.departmentId || "__none__");
   const [pharmacyId, setPharmacyId] = useState(clinic?.defaultPharmacyId || "__none__");
   const [consultationServiceId, setConsultationServiceId] = useState(clinic?.consultationServiceId || "__none__");
+  const [secretaryFeeType, setSecretaryFeeType] = useState(clinic?.secretaryFeeType || "__none__");
+  const [secretaryFeeValue, setSecretaryFeeValue] = useState(String(clinic?.secretaryFeeValue || "0"));
 
   const { data: departments = [] } = useQuery<Department[]>({
     queryKey: ["/api/departments"],
@@ -54,9 +58,11 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
     if (!nameAr.trim()) return;
     onSave({
       nameAr: nameAr.trim(),
-      departmentId: departmentId !== "__none__" ? departmentId : undefined,
-      defaultPharmacyId: pharmacyId !== "__none__" ? pharmacyId : undefined,
-      consultationServiceId: consultationServiceId !== "__none__" ? consultationServiceId : undefined,
+      departmentId: departmentId !== "__none__" ? departmentId : "",
+      defaultPharmacyId: pharmacyId !== "__none__" ? pharmacyId : "",
+      consultationServiceId: consultationServiceId !== "__none__" ? consultationServiceId : "",
+      secretaryFeeType: secretaryFeeType !== "__none__" ? secretaryFeeType : "",
+      secretaryFeeValue: secretaryFeeType !== "__none__" ? parseFloat(secretaryFeeValue) || 0 : 0,
     });
   };
 
@@ -118,6 +124,36 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
             ))}
           </SelectContent>
         </Select>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">نسبة السكرتارية</Label>
+          <Select value={secretaryFeeType} onValueChange={setSecretaryFeeType}>
+            <SelectTrigger className="h-8 text-xs" data-testid="select-secretary-fee-type">
+              <SelectValue placeholder="اختر نوع..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">بدون نسبة</SelectItem>
+              <SelectItem value="percentage">نسبة مئوية من الكشف</SelectItem>
+              <SelectItem value="fixed">مبلغ ثابت</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {secretaryFeeType !== "__none__" && (
+          <div className="space-y-1">
+            <Label className="text-xs">{secretaryFeeType === "percentage" ? "النسبة %" : "المبلغ (ج.م)"}</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={secretaryFeeValue}
+              onChange={(e) => setSecretaryFeeValue(e.target.value)}
+              className="h-8 text-sm"
+              placeholder={secretaryFeeType === "percentage" ? "مثال: 10" : "مثال: 50"}
+              data-testid="input-secretary-fee-value"
+            />
+          </div>
+        )}
       </div>
       <div className="flex gap-2 justify-end pt-1">
         <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={onCancel}>
