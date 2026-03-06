@@ -9,6 +9,7 @@ import type { ClinicOrder } from "./types";
 
 export default function DoctorOrders() {
   const [confirmOrder, setConfirmOrder] = useState<ClinicOrder | null>(null);
+  const [departmentFilter, setDepartmentFilter] = useState("all");
   const { canExecute } = useOrderPermissions();
 
   const {
@@ -23,6 +24,10 @@ export default function DoctorOrders() {
   } = useClinicOrders();
 
   const pendingCount = orders.filter((o) => o.status === "pending").length;
+
+  const filteredOrders = departmentFilter === "all"
+    ? orders
+    : orders.filter((o) => o.targetName === departmentFilter);
 
   const handleExecute = (order: ClinicOrder) => {
     if (order.orderType === "service") {
@@ -46,15 +51,18 @@ export default function DoctorOrders() {
       <OrdersFilterBar
         statusFilter={statusFilter}
         typeFilter={typeFilter}
+        departmentFilter={departmentFilter}
         onStatusChange={setStatusFilter}
         onTypeChange={setTypeFilter}
+        onDepartmentChange={setDepartmentFilter}
         onRefresh={refetch}
-        totalCount={orders.length}
+        totalCount={filteredOrders.length}
         pendingCount={pendingCount}
+        allOrders={orders}
       />
 
       <OrdersTable
-        orders={orders}
+        orders={filteredOrders}
         isLoading={isLoading}
         onExecute={handleExecute}
         isExecuting={executeMutation.isPending}
