@@ -589,8 +589,8 @@ export interface IStorage {
   executeClinicOrder(orderId: string, userId: string): Promise<{ invoiceId: string }>;
   cancelClinicOrder(orderId: string): Promise<void>;
 
-  // كشف حساب الطبيب
-  getDoctorStatement(doctorId: string, dateFrom: string, dateTo: string): Promise<any[]>;
+  // كشف حساب الطبيب - عيادات
+  getClinicDoctorStatement(doctorId: string, dateFrom: string, dateTo: string): Promise<any[]>;
 }
 
 function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
@@ -9439,7 +9439,7 @@ export class DatabaseStorage implements IStorage {
     await db.execute(sql`UPDATE clinic_orders SET status = 'cancelled' WHERE id = ${orderId} AND status = 'pending'`);
   }
 
-  async getDoctorStatement(doctorId: string, dateFrom: string, dateTo: string): Promise<any[]> {
+  async getClinicDoctorStatement(doctorId: string, dateFrom: string, dateTo: string): Promise<any[]> {
     const rows = await db.execute(sql`
       SELECT
         a.id AS appointment_id,
@@ -9447,18 +9447,15 @@ export class DatabaseStorage implements IStorage {
         a.turn_number,
         a.patient_name,
         a.status AS appointment_status,
-        o.id AS order_id,
-        o.order_type,
-        o.status AS order_status,
-        COALESCE(o.service_name_manual, s.name_ar) AS service_name,
-        COALESCE(s.base_price::text, '0') AS service_price,
-        o.executed_invoice_id,
-        o.executed_at
+        c.chief_complaint,
+        c.diagnosis,
+        cl.name_ar AS clinic_name
       FROM clinic_appointments a
-      LEFT JOIN clinic_orders o ON o.appointment_id = a.id AND o.order_type = 'service' AND o.status = 'executed'
-      LEFT JOIN services s ON s.id = o.service_id
+      LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
+      LEFT JOIN clinic_clinics cl ON cl.id = a.clinic_id
       WHERE a.doctor_id = ${doctorId}
         AND a.appointment_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
+        AND a.status IN ('in_consultation', 'done')
       ORDER BY a.appointment_date DESC, a.turn_number
     `);
     return rows.rows as any[];

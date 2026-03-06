@@ -4,7 +4,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { useDoctorStatement } from "../hooks/useDoctorStatement";
-import { formatNumber } from "@/lib/formatters";
 
 interface Props {
   doctorId?: string;
@@ -12,11 +11,6 @@ interface Props {
 
 export function DoctorStatementTab({ doctorId }: Props) {
   const { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useDoctorStatement(doctorId);
-
-  const totalRevenue = rows.reduce((sum, r) => {
-    if ((r.orderStatus || r.order_status) === "executed") return sum + parseFloat(r.servicePrice || r.service_price || "0");
-    return sum;
-  }, 0);
 
   return (
     <div className="space-y-3">
@@ -30,8 +24,8 @@ export function DoctorStatementTab({ doctorId }: Props) {
           <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-36 h-8 text-sm" data-testid="input-statement-to" />
         </div>
         {rows.length > 0 && (
-          <Badge variant="outline" className="mr-auto text-green-700 bg-green-50 border-green-200">
-            إجمالي: {formatNumber(totalRevenue)} ج.م
+          <Badge variant="outline" className="mr-auto text-blue-700 bg-blue-50 border-blue-200">
+            عدد الكشوفات: {rows.length}
           </Badge>
         )}
       </div>
@@ -41,35 +35,33 @@ export function DoctorStatementTab({ doctorId }: Props) {
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : rows.length === 0 ? (
-        <div className="text-center text-muted-foreground py-8 text-sm">لا توجد بيانات في هذه الفترة</div>
+        <div className="text-center text-muted-foreground py-8 text-sm">لا توجد كشوفات في هذه الفترة</div>
       ) : (
         <div className="rounded-md border overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40">
+                <TableHead className="text-right w-12">الدور</TableHead>
                 <TableHead className="text-right">التاريخ</TableHead>
                 <TableHead className="text-right">المريض</TableHead>
-                <TableHead className="text-right">الخدمة</TableHead>
-                <TableHead className="text-right">السعر</TableHead>
-                <TableHead className="text-right">الحالة</TableHead>
+                <TableHead className="text-right">العيادة</TableHead>
+                <TableHead className="text-right">التشخيص</TableHead>
+                <TableHead className="text-right w-24">الحالة</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => (
                 <TableRow key={i} data-testid={`statement-row-${i}`}>
-                  <TableCell className="text-sm" dir="ltr">{row.appointmentDate || row.appointment_date}</TableCell>
-                  <TableCell className="text-sm">{row.patientName || row.patient_name}</TableCell>
-                  <TableCell className="text-sm">{row.serviceName || row.service_name || "—"}</TableCell>
-                  <TableCell className="text-sm" dir="ltr">
-                    {(row.servicePrice || row.service_price) ? formatNumber(parseFloat(row.servicePrice || row.service_price)) : "—"}
-                  </TableCell>
+                  <TableCell className="text-sm font-bold text-center">{row.turnNumber}</TableCell>
+                  <TableCell className="text-sm" dir="ltr">{row.appointmentDate}</TableCell>
+                  <TableCell className="text-sm font-medium">{row.patientName}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{row.clinicName || "—"}</TableCell>
+                  <TableCell className="text-sm truncate max-w-[200px]">{row.diagnosis || "—"}</TableCell>
                   <TableCell>
-                    {(row.orderStatus || row.order_status) === "executed" ? (
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">منفذ</Badge>
-                    ) : (row.orderStatus || row.order_status) === "pending" ? (
-                      <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 text-xs">معلق</Badge>
+                    {row.appointmentStatus === "done" ? (
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">انتهى</Badge>
                     ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">جاري</Badge>
                     )}
                   </TableCell>
                 </TableRow>

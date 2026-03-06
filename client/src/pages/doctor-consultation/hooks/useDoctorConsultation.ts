@@ -139,6 +139,33 @@ export function useDoctorConsultation(appointmentId: string) {
     saveMutation.mutate(form);
   }, [saveMutation, form]);
 
+  const finishConsultation = useCallback(async () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setIsSaving(true);
+    try {
+      await apiRequest("POST", "/api/clinic-consultations", {
+        appointmentId: form.appointmentId,
+        chiefComplaint: form.chiefComplaint,
+        diagnosis: form.diagnosis,
+        notes: form.notes,
+        drugs: form.drugs,
+        serviceOrders: form.serviceOrders,
+      });
+      await apiRequest("PATCH", `/api/clinic-appointments/${appointmentId}/status`, { status: "done" });
+      setIsDirty(false);
+      setIsSaving(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-consultations", appointmentId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-clinics"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-doctor-statement"] });
+      return true;
+    } catch (err: any) {
+      setIsSaving(false);
+      toast({ variant: "destructive", title: "خطأ في إنهاء الكشف", description: err.message });
+      return false;
+    }
+  }, [form, appointmentId, toast]);
+
   return {
     form,
     isLoading,
@@ -151,5 +178,6 @@ export function useDoctorConsultation(appointmentId: string) {
     addServiceOrder,
     removeServiceOrder,
     saveNow,
+    finishConsultation,
   };
 }

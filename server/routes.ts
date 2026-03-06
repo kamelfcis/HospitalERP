@@ -5257,8 +5257,12 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.patch("/api/clinic-appointments/:id/status", requireAuth, checkPermission("clinic.book"), async (req, res) => {
+  app.patch("/api/clinic-appointments/:id/status", requireAuth, async (req, res) => {
     try {
+      const perms = await storage.getUserEffectivePermissions(req.session.userId!);
+      if (!perms.includes("clinic.book") && !perms.includes("doctor.consultation")) {
+        return res.status(403).json({ message: "غير مصرح" });
+      }
       const { status } = req.body;
       const validStatuses = ['waiting', 'in_consultation', 'done', 'cancelled'];
       if (!validStatuses.includes(status)) return res.status(400).json({ message: "حالة غير صحيحة" });
@@ -5429,7 +5433,7 @@ export async function registerRoutes(
 
       const from = (req.query.from as string) || new Date().toISOString().slice(0, 7) + '-01';
       const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
-      const rows = await storage.getDoctorStatement(doctorId, from, to);
+      const rows = await storage.getClinicDoctorStatement(doctorId, from, to);
       res.json(snakeToCamel(rows));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

@@ -1,8 +1,9 @@
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Save, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
+import { Printer, Save, ArrowRight, Loader2, CheckCircle2, CheckCheck } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { useDoctorConsultation } from "./hooks/useDoctorConsultation";
 import { useFavoriteDrugs } from "./hooks/useFavoriteDrugs";
 import { ComplaintQuadrant } from "./components/ComplaintQuadrant";
@@ -15,6 +16,8 @@ import { PrintPrescription } from "./components/PrintPrescription";
 export default function DoctorConsultation() {
   const params = useParams<{ id: string }>();
   const appointmentId = params.id;
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
 
   const {
     form,
@@ -28,6 +31,7 @@ export default function DoctorConsultation() {
     addServiceOrder,
     removeServiceOrder,
     saveNow,
+    finishConsultation,
   } = useDoctorConsultation(appointmentId);
 
   const {
@@ -49,6 +53,14 @@ export default function DoctorConsultation() {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleFinish = async () => {
+    const ok = await finishConsultation();
+    if (ok) {
+      toast({ title: "تم إنهاء الكشف بنجاح" });
+      navigate("/clinic-booking");
+    }
   };
 
   return (
@@ -90,6 +102,10 @@ export default function DoctorConsultation() {
           <Button size="sm" variant="outline" className="gap-1 h-8" onClick={handlePrint} data-testid="button-print-prescription">
             <Printer className="h-3 w-3" />
             طباعة الروشتة
+          </Button>
+          <Button size="sm" className="gap-1 h-8 bg-green-600 hover:bg-green-700 text-white" onClick={handleFinish} disabled={isSaving} data-testid="button-finish-consultation">
+            <CheckCheck className="h-3 w-3" />
+            إنهاء الكشف
           </Button>
         </div>
       </div>
