@@ -251,16 +251,24 @@ export async function registerRoutes(
     };
   }
 
-  // Seed default role permissions if empty
+  // Seed default role permissions — add any missing permissions per role
   (async () => {
     try {
-      const existingPerms = await storage.getRolePermissions("admin");
-      if (existingPerms.length === 0) {
-        for (const [role, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
-          await storage.setRolePermissions(role, perms);
+      let seeded = false;
+      for (const [role, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+        const existing = await storage.getRolePermissions(role);
+        const existingSet = new Set(existing.map(p => p.permission));
+        const missing = perms.filter(p => !existingSet.has(p));
+        if (missing.length > 0) {
+          for (const perm of missing) {
+            try {
+              await pool.query(`INSERT INTO role_permissions (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [role, perm]);
+            } catch {}
+          }
+          seeded = true;
         }
-        console.log("Seeded default role permissions");
       }
+      if (seeded) console.log("Synced role permissions with defaults");
     } catch (e) {
       console.error("Failed to seed role permissions:", e);
     }
