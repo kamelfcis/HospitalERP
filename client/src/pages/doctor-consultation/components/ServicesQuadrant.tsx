@@ -92,10 +92,15 @@ export function ServicesQuadrant({ serviceOrders, onAdd, onRemove, hasConsultati
                 }`}
                 data-testid={`service-order-${i}`}
               >
-                <span className={`text-xs truncate ${isConsultation ? "text-green-800" : "text-blue-800"}`}>
+                <span className={`text-xs truncate flex items-center gap-1 ${isConsultation ? "text-green-800" : "text-blue-800"}`}>
                   {svc.serviceNameManual || svc.serviceId}
+                  {svc.unitPrice != null && parseFloat(String(svc.unitPrice)) > 0 && (
+                    <span className="font-semibold whitespace-nowrap">
+                      ({parseFloat(String(svc.unitPrice)).toFixed(2)} ج.م)
+                    </span>
+                  )}
                   {isConsultation && (
-                    <Badge variant="outline" className="mr-1 text-[10px] px-1 py-0 border-green-300 text-green-700">
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700">
                       <Lock className="h-2.5 w-2.5 ml-0.5" />
                       كشف
                     </Badge>

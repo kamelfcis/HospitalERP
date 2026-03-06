@@ -27,6 +27,7 @@ export interface ServiceOrder {
   targetName?: string;
   status?: string;
   isConsultationService?: boolean;
+  unitPrice?: string | number | null;
 }
 
 export interface Consultation {
