@@ -99,6 +99,17 @@ export const PERMISSIONS = {
   USERS_CREATE: "users.create",
   USERS_EDIT: "users.edit",
   USERS_DELETE: "users.delete",
+
+  // ── موديول العيادات الخارجية ──────────────────────────────────────────
+  CLINIC_VIEW_ALL:       "clinic.view_all",       // admin/owner: كل العيادات
+  CLINIC_VIEW_OWN:       "clinic.view_own",        // موظف استقبال: عيادته فقط
+  CLINIC_BOOK:           "clinic.book",             // حجز موعد
+  CLINIC_MANAGE:         "clinic.manage",           // إدارة العيادات والجداول
+  DOCTOR_CONSULTATION:   "doctor.consultation",     // كتابة كشف وروشتة
+  DOCTOR_VIEW_STATEMENT: "doctor.view_statement",   // الطبيب يرى كشف حسابه
+  DOCTOR_ORDERS_VIEW:    "doctor_orders.view",      // قسم يرى أوامره
+  DOCTOR_ORDERS_EXECUTE: "doctor_orders.execute",   // تنفيذ أمر → فاتورة
+  PHARMACY_DRUG_ORDERS:  "clinic.pharmacy_orders",  // الصيدلاني يرى أوامر الأدوية
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -115,6 +126,7 @@ export const ROLE_LABELS: Record<string, string> = {
   cashier: "كاشير",
   department_admin: "إداري قسم",
   reception: "استقبال",
+  doctor: "طبيب",
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
@@ -151,6 +163,14 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.USERS_CREATE,
     PERMISSIONS.USERS_EDIT,
     PERMISSIONS.USERS_DELETE,
+    PERMISSIONS.CLINIC_VIEW_ALL,
+    PERMISSIONS.CLINIC_BOOK,
+    PERMISSIONS.CLINIC_MANAGE,
+    PERMISSIONS.DOCTOR_CONSULTATION,
+    PERMISSIONS.DOCTOR_VIEW_STATEMENT,
+    PERMISSIONS.DOCTOR_ORDERS_VIEW,
+    PERMISSIONS.DOCTOR_ORDERS_EXECUTE,
+    PERMISSIONS.PHARMACY_DRUG_ORDERS,
   ],
 
   admin: Object.values(PERMISSIONS),
@@ -226,6 +246,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.PATIENT_INVOICES_EDIT,
     PERMISSIONS.PATIENT_INVOICES_FINALIZE,
     PERMISSIONS.WAREHOUSES_VIEW,
+    PERMISSIONS.PHARMACY_DRUG_ORDERS,
   ],
 
   pharmacy_assistant: [
@@ -269,6 +290,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.PATIENTS_VIEW,
     PERMISSIONS.SERVICES_VIEW,
     PERMISSIONS.ITEMS_VIEW,
+    PERMISSIONS.DOCTOR_ORDERS_VIEW,
+    PERMISSIONS.DOCTOR_ORDERS_EXECUTE,
   ],
 
   reception: [
@@ -282,6 +305,19 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.ADMISSIONS_VIEW,
     PERMISSIONS.ADMISSIONS_CREATE,
     PERMISSIONS.ADMISSIONS_MANAGE,
+    PERMISSIONS.CLINIC_VIEW_OWN,
+    PERMISSIONS.CLINIC_BOOK,
+  ],
+
+  doctor: [
+    PERMISSIONS.DASHBOARD_VIEW,
+    PERMISSIONS.PATIENTS_VIEW,
+    PERMISSIONS.DOCTORS_VIEW,
+    PERMISSIONS.ADMISSIONS_VIEW,
+    PERMISSIONS.SERVICES_VIEW,
+    PERMISSIONS.ITEMS_VIEW,
+    PERMISSIONS.DOCTOR_CONSULTATION,
+    PERMISSIONS.DOCTOR_VIEW_STATEMENT,
   ],
 };
 
@@ -475,6 +511,20 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.USERS_CREATE, label: "إنشاء" },
       { key: PERMISSIONS.USERS_EDIT, label: "تعديل" },
       { key: PERMISSIONS.USERS_DELETE, label: "حذف" },
+    ],
+  },
+  {
+    label: "العيادات الخارجية",
+    permissions: [
+      { key: PERMISSIONS.CLINIC_VIEW_ALL,       label: "عرض كل العيادات" },
+      { key: PERMISSIONS.CLINIC_VIEW_OWN,        label: "عرض عيادته" },
+      { key: PERMISSIONS.CLINIC_BOOK,            label: "حجز مواعيد" },
+      { key: PERMISSIONS.CLINIC_MANAGE,          label: "إدارة العيادات" },
+      { key: PERMISSIONS.DOCTOR_CONSULTATION,    label: "كتابة كشف وروشتة" },
+      { key: PERMISSIONS.DOCTOR_VIEW_STATEMENT,  label: "كشف حساب الطبيب" },
+      { key: PERMISSIONS.DOCTOR_ORDERS_VIEW,     label: "عرض الأوامر الطبية" },
+      { key: PERMISSIONS.DOCTOR_ORDERS_EXECUTE,  label: "تنفيذ الأوامر" },
+      { key: PERMISSIONS.PHARMACY_DRUG_ORDERS,   label: "أوامر الأدوية للصيدلية" },
     ],
   },
 ];

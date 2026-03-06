@@ -49,6 +49,9 @@ import SystemSettings from "@/pages/SystemSettings";
 import SurgeryTypes from "@/pages/SurgeryTypes";
 import TreasuriesPage from "@/pages/treasuries/TreasuriesPage";
 import AnnouncementsPage from "@/pages/announcements/AnnouncementsPage";
+import ClinicBooking from "@/pages/clinic-booking";
+import DoctorConsultation from "@/pages/doctor-consultation";
+import DoctorOrders from "@/pages/doctor-orders";
 import NotFound from "@/pages/not-found";
 
 function RequirePermission({ permission, children }: { permission: string; children: React.ReactNode }) {
@@ -115,6 +118,9 @@ function Router() {
         <Route path="/treasuries">{() => <G p="settings.account_mappings"><TreasuriesPage /></G>}</Route>
         <Route path="/users">{() => <G p="users.view"><UsersManagement /></G>}</Route>
         <Route path="/announcements">{() => <G p="settings.account_mappings"><AnnouncementsPage /></G>}</Route>
+        <Route path="/clinic-booking">{() => <G p="clinic.view_own"><ClinicBooking /></G>}</Route>
+        <Route path="/doctor-consultation/:id">{() => <G p="doctor.consultation"><DoctorConsultation /></G>}</Route>
+        <Route path="/doctor-orders">{() => <G p="doctor_orders.view"><DoctorOrders /></G>}</Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

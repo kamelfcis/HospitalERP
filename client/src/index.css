@@ -800,4 +800,24 @@
     size: A4;
     margin: 15mm 10mm;
   }
+
+  /* روشتة طبية */
+  .prescription-print-only {
+    display: block !important;
+  }
+
+  /* إيصال دور العيادة */
+  .turn-receipt-print-only {
+    display: block !important;
+  }
+}
+
+/* روشتة طبية — مخفية على الشاشة */
+.prescription-print-only {
+  display: none;
+}
+
+/* إيصال دور العيادة — مخفي على الشاشة */
+.turn-receipt-print-only {
+  display: none;
 }

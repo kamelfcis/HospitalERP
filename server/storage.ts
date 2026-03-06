@@ -549,6 +549,48 @@ export interface IStorage {
   searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]>;
   getSaleInvoiceForReturn(invoiceId: string): Promise<any | null>;
   createSalesReturn(data: { originalInvoiceId: string; warehouseId: string; returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[]; discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string }): Promise<any>;
+
+  // ── موديول العيادات الخارجية ──────────────────────────────────────────
+  // العيادات
+  getClinics(userId: string, role: string): Promise<any[]>;
+  getClinicById(id: string): Promise<any | null>;
+  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string }): Promise<any>;
+  updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; isActive: boolean }>): Promise<any>;
+  getUserClinicIds(userId: string): Promise<string[]>;
+  assignUserToClinic(userId: string, clinicId: string): Promise<void>;
+  removeUserFromClinic(userId: string, clinicId: string): Promise<void>;
+
+  // جداول الأطباء
+  getDoctorSchedules(clinicId: string): Promise<any[]>;
+  upsertDoctorSchedule(data: { clinicId: string; doctorId: string; weekday?: number | null; startTime?: string; endTime?: string; maxAppointments?: number }): Promise<any>;
+
+  // الحجوزات
+  getClinicAppointments(clinicId: string, date: string): Promise<any[]>;
+  createAppointment(data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string }): Promise<any>;
+  updateAppointmentStatus(id: string, status: string): Promise<void>;
+
+  // الربط بالمستخدم/الطبيب
+  getUserDoctorId(userId: string): Promise<string | null>;
+  assignUserToDoctor(userId: string, doctorId: string): Promise<void>;
+
+  // الكشف والروشتة
+  getConsultationByAppointment(appointmentId: string): Promise<any | null>;
+  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string }[] }): Promise<any>;
+
+  // الأدوية المفضلة
+  getDoctorFavoriteDrugs(doctorId: string): Promise<any[]>;
+  addFavoriteDrug(data: { doctorId: string; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<any>;
+  removeFavoriteDrug(id: string): Promise<void>;
+  getFrequentDrugsNotInFavorites(doctorId: string, minCount?: number): Promise<any[]>;
+
+  // الأوامر الطبية
+  getClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<any[]>;
+  getClinicOrder(id: string): Promise<any | null>;
+  executeClinicOrder(orderId: string, userId: string): Promise<{ invoiceId: string }>;
+  cancelClinicOrder(orderId: string): Promise<void>;
+
+  // كشف حساب الطبيب
+  getDoctorStatement(doctorId: string, dateFrom: string, dateTo: string): Promise<any[]>;
 }
 
 function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
@@ -8948,6 +8990,478 @@ export class DatabaseStorage implements IStorage {
       WHERE receiver_id = ${userId} AND read_at IS NULL
     `);
     return (rows.rows[0] as any)?.cnt ?? 0;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // موديول العيادات الخارجية
+  // ══════════════════════════════════════════════════════════════════════
+
+  async getClinics(userId: string, role: string): Promise<any[]> {
+    const isAdmin = role === 'admin' || role === 'owner';
+    if (isAdmin) {
+      const rows = await db.execute(sql`
+        SELECT c.*, d.name_ar AS department_name,
+               w.name_ar AS pharmacy_name
+        FROM clinic_clinics c
+        LEFT JOIN departments d ON d.id = c.department_id
+        LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
+        ORDER BY c.name_ar
+      `);
+      return rows.rows as any[];
+    }
+    const rows = await db.execute(sql`
+      SELECT c.*, d.name_ar AS department_name,
+             w.name_ar AS pharmacy_name
+      FROM clinic_clinics c
+      LEFT JOIN departments d ON d.id = c.department_id
+      LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
+      JOIN clinic_user_clinic_assignments a ON a.clinic_id = c.id AND a.user_id = ${userId}
+      ORDER BY c.name_ar
+    `);
+    return rows.rows as any[];
+  }
+
+  async getClinicById(id: string): Promise<any | null> {
+    const rows = await db.execute(sql`
+      SELECT c.*, d.name_ar AS department_name,
+             w.name_ar AS pharmacy_name
+      FROM clinic_clinics c
+      LEFT JOIN departments d ON d.id = c.department_id
+      LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
+      WHERE c.id = ${id}
+    `);
+    return (rows.rows[0] as any) ?? null;
+  }
+
+  async createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string }): Promise<any> {
+    const rows = await db.execute(sql`
+      INSERT INTO clinic_clinics (name_ar, department_id, default_pharmacy_id)
+      VALUES (${data.nameAr}, ${data.departmentId ?? null}, ${data.defaultPharmacyId ?? null})
+      RETURNING *
+    `);
+    return rows.rows[0] as any;
+  }
+
+  async updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; isActive: boolean }>): Promise<any> {
+    const sets: string[] = [];
+    if (data.nameAr !== undefined) sets.push(`name_ar = '${data.nameAr.replace(/'/g,"''")}'`);
+    if (data.departmentId !== undefined) sets.push(`department_id = ${data.departmentId ? `'${data.departmentId}'` : 'NULL'}`);
+    if (data.defaultPharmacyId !== undefined) sets.push(`default_pharmacy_id = ${data.defaultPharmacyId ? `'${data.defaultPharmacyId}'` : 'NULL'}`);
+    if (data.isActive !== undefined) sets.push(`is_active = ${data.isActive}`);
+    if (sets.length === 0) return this.getClinicById(id);
+    const rows = await db.execute(sql.raw(`UPDATE clinic_clinics SET ${sets.join(', ')} WHERE id = '${id}' RETURNING *`));
+    return rows.rows[0] as any;
+  }
+
+  async getUserClinicIds(userId: string): Promise<string[]> {
+    const rows = await db.execute(sql`
+      SELECT clinic_id FROM clinic_user_clinic_assignments WHERE user_id = ${userId}
+    `);
+    return (rows.rows as any[]).map(r => r.clinic_id);
+  }
+
+  async assignUserToClinic(userId: string, clinicId: string): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO clinic_user_clinic_assignments (user_id, clinic_id)
+      VALUES (${userId}, ${clinicId})
+      ON CONFLICT (user_id, clinic_id) DO NOTHING
+    `);
+  }
+
+  async removeUserFromClinic(userId: string, clinicId: string): Promise<void> {
+    await db.execute(sql`
+      DELETE FROM clinic_user_clinic_assignments WHERE user_id = ${userId} AND clinic_id = ${clinicId}
+    `);
+  }
+
+  async getDoctorSchedules(clinicId: string): Promise<any[]> {
+    const rows = await db.execute(sql`
+      SELECT s.*, d.name_ar AS doctor_name, d.specialty
+      FROM clinic_doctor_schedules s
+      JOIN doctors d ON d.id = s.doctor_id
+      WHERE s.clinic_id = ${clinicId}
+      ORDER BY s.weekday NULLS LAST, s.start_time
+    `);
+    return rows.rows as any[];
+  }
+
+  async upsertDoctorSchedule(data: { clinicId: string; doctorId: string; weekday?: number | null; startTime?: string; endTime?: string; maxAppointments?: number }): Promise<any> {
+    const rows = await db.execute(sql`
+      INSERT INTO clinic_doctor_schedules (clinic_id, doctor_id, weekday, start_time, end_time, max_appointments)
+      VALUES (${data.clinicId}, ${data.doctorId}, ${data.weekday ?? null}, ${data.startTime ?? null}, ${data.endTime ?? null}, ${data.maxAppointments ?? 20})
+      ON CONFLICT DO NOTHING
+      RETURNING *
+    `);
+    return rows.rows[0] as any;
+  }
+
+  async getClinicAppointments(clinicId: string, date: string): Promise<any[]> {
+    const rows = await db.execute(sql`
+      SELECT a.*,
+             d.name_ar AS doctor_name, d.specialty AS doctor_specialty,
+             p.file_number AS patient_file_number
+      FROM clinic_appointments a
+      JOIN doctors d ON d.id = a.doctor_id
+      LEFT JOIN patients p ON p.id = a.patient_id
+      WHERE a.clinic_id = ${clinicId} AND a.appointment_date = ${date}::date
+      ORDER BY a.turn_number
+    `);
+    return rows.rows as any[];
+  }
+
+  async createAppointment(data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string }): Promise<any> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const turnRes = await client.query(`
+        SELECT COALESCE(MAX(turn_number), 0) + 1 AS next_turn
+        FROM clinic_appointments
+        WHERE clinic_id = $1 AND appointment_date = $2::date
+      `, [data.clinicId, data.appointmentDate]);
+      const turnNumber = turnRes.rows[0].next_turn;
+      const ins = await client.query(`
+        INSERT INTO clinic_appointments
+          (clinic_id, doctor_id, patient_id, patient_name, patient_phone,
+           appointment_date, appointment_time, turn_number, notes, created_by)
+        VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10)
+        RETURNING *
+      `, [
+        data.clinicId, data.doctorId, data.patientId ?? null, data.patientName,
+        data.patientPhone ?? null, data.appointmentDate, data.appointmentTime ?? null,
+        turnNumber, data.notes ?? null, data.createdBy ?? null
+      ]);
+      await client.query('COMMIT');
+      return ins.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateAppointmentStatus(id: string, status: string): Promise<void> {
+    await db.execute(sql`UPDATE clinic_appointments SET status = ${status} WHERE id = ${id}`);
+  }
+
+  async getUserDoctorId(userId: string): Promise<string | null> {
+    const rows = await db.execute(sql`
+      SELECT doctor_id FROM clinic_user_doctor_assignments WHERE user_id = ${userId}
+    `);
+    return (rows.rows[0] as any)?.doctor_id ?? null;
+  }
+
+  async assignUserToDoctor(userId: string, doctorId: string): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO clinic_user_doctor_assignments (user_id, doctor_id)
+      VALUES (${userId}, ${doctorId})
+      ON CONFLICT (user_id) DO UPDATE SET doctor_id = EXCLUDED.doctor_id
+    `);
+  }
+
+  async getConsultationByAppointment(appointmentId: string): Promise<any | null> {
+    const consRows = await db.execute(sql`
+      SELECT c.*,
+             a.patient_name, a.patient_phone, a.appointment_date, a.appointment_time,
+             a.turn_number, a.status AS appointment_status,
+             d.name_ar AS doctor_name, d.specialty AS doctor_specialty,
+             cl.name_ar AS clinic_name, cl.default_pharmacy_id
+      FROM clinic_consultations c
+      JOIN clinic_appointments a ON a.id = c.appointment_id
+      JOIN doctors d ON d.id = a.doctor_id
+      JOIN clinic_clinics cl ON cl.id = a.clinic_id
+      WHERE c.appointment_id = ${appointmentId}
+    `);
+    if (!consRows.rows.length) {
+      const apptRows = await db.execute(sql`
+        SELECT a.*,
+               d.name_ar AS doctor_name, d.specialty AS doctor_specialty,
+               cl.name_ar AS clinic_name, cl.default_pharmacy_id
+        FROM clinic_appointments a
+        JOIN doctors d ON d.id = a.doctor_id
+        JOIN clinic_clinics cl ON cl.id = a.clinic_id
+        WHERE a.id = ${appointmentId}
+      `);
+      return apptRows.rows.length ? { ...apptRows.rows[0], id: null, drugs: [], serviceOrders: [] } : null;
+    }
+    const consultation = consRows.rows[0] as any;
+    const drugRows = await db.execute(sql`
+      SELECT * FROM clinic_consultation_drugs WHERE consultation_id = ${consultation.id} ORDER BY line_no
+    `);
+    const orderRows = await db.execute(sql`
+      SELECT * FROM clinic_orders WHERE consultation_id = ${consultation.id} AND order_type = 'service' ORDER BY created_at
+    `);
+    return { ...consultation, drugs: drugRows.rows, serviceOrders: orderRows.rows };
+  }
+
+  async saveConsultation(data: {
+    appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string;
+    drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string }[];
+    serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string }[];
+  }): Promise<any> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // جلب بيانات الموعد
+      const apptRes = await client.query(
+        `SELECT a.*, d.name_ar AS doctor_name, cl.default_pharmacy_id FROM clinic_appointments a
+         JOIN doctors d ON d.id = a.doctor_id
+         JOIN clinic_clinics cl ON cl.id = a.clinic_id
+         WHERE a.id = $1`, [data.appointmentId]
+      );
+      const appt = apptRes.rows[0];
+      if (!appt) throw new Error("الموعد غير موجود");
+
+      // upsert الكشف
+      const consRes = await client.query(`
+        INSERT INTO clinic_consultations (appointment_id, chief_complaint, diagnosis, notes, created_by, updated_at)
+        VALUES ($1, $2, $3, $4, $5, now())
+        ON CONFLICT (appointment_id) DO UPDATE
+          SET chief_complaint = EXCLUDED.chief_complaint,
+              diagnosis = EXCLUDED.diagnosis,
+              notes = EXCLUDED.notes,
+              updated_at = now()
+        RETURNING *
+      `, [data.appointmentId, data.chiefComplaint ?? null, data.diagnosis ?? null, data.notes ?? null, data.createdBy ?? null]);
+      const consultation = consRes.rows[0];
+
+      // حذف وإعادة إدراج الأدوية
+      await client.query(`DELETE FROM clinic_consultation_drugs WHERE consultation_id = $1`, [consultation.id]);
+      for (const drug of data.drugs) {
+        await client.query(`
+          INSERT INTO clinic_consultation_drugs (consultation_id, line_no, item_id, drug_name, dose, frequency, duration, notes)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `, [consultation.id, drug.lineNo, drug.itemId ?? null, drug.drugName, drug.dose ?? null, drug.frequency ?? null, drug.duration ?? null, drug.notes ?? null]);
+      }
+
+      // حذف الأوامر القديمة وإعادة إنشائها
+      await client.query(`DELETE FROM clinic_orders WHERE consultation_id = $1`, [consultation.id]);
+
+      // أوامر الأدوية (pharmacy orders)
+      for (const drug of data.drugs) {
+        if (!drug.itemId && !drug.drugName) continue;
+        await client.query(`
+          INSERT INTO clinic_orders
+            (consultation_id, appointment_id, doctor_id, patient_name,
+             order_type, target_type, target_id, target_name,
+             item_id, drug_name, dose, quantity, status)
+          VALUES ($1,$2,$3,$4,'pharmacy','pharmacy',$5,$6,$7,$8,$9,1,'pending')
+        `, [
+          consultation.id, data.appointmentId, appt.doctor_id, appt.patient_name,
+          appt.default_pharmacy_id ?? null, appt.default_pharmacy_id ? 'الصيدلية' : null,
+          drug.itemId ?? null, drug.drugName, drug.dose ?? null
+        ]);
+      }
+
+      // أوامر الخدمات (service orders)
+      for (const svc of data.serviceOrders) {
+        if (!svc.serviceId && !svc.serviceNameManual) continue;
+        await client.query(`
+          INSERT INTO clinic_orders
+            (consultation_id, appointment_id, doctor_id, patient_name,
+             order_type, target_type, target_id, target_name,
+             service_id, service_name_manual, status)
+          VALUES ($1,$2,$3,$4,'service','department',$5,$6,$7,$8,'pending')
+        `, [
+          consultation.id, data.appointmentId, appt.doctor_id, appt.patient_name,
+          svc.targetId ?? null, svc.targetName ?? null,
+          svc.serviceId ?? null, svc.serviceNameManual ?? null
+        ]);
+      }
+
+      // تحديث حالة الموعد إلى "in_consultation"
+      await client.query(`UPDATE clinic_appointments SET status = 'in_consultation' WHERE id = $1 AND status = 'waiting'`, [data.appointmentId]);
+
+      await client.query('COMMIT');
+      return consultation;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getDoctorFavoriteDrugs(doctorId: string): Promise<any[]> {
+    const rows = await db.execute(sql`
+      SELECT f.*, i.name_ar AS item_name_ar, i.sale_price_current
+      FROM clinic_doctor_favorite_drugs f
+      LEFT JOIN items i ON i.id = f.item_id
+      WHERE f.doctor_id = ${doctorId}
+      ORDER BY f.sort_order, f.drug_name
+    `);
+    return rows.rows as any[];
+  }
+
+  async addFavoriteDrug(data: { doctorId: string; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<any> {
+    const rows = await db.execute(sql`
+      INSERT INTO clinic_doctor_favorite_drugs (doctor_id, item_id, drug_name, default_dose, default_frequency, default_duration)
+      VALUES (${data.doctorId}, ${data.itemId ?? null}, ${data.drugName}, ${data.defaultDose ?? null}, ${data.defaultFrequency ?? null}, ${data.defaultDuration ?? null})
+      RETURNING *
+    `);
+    return rows.rows[0] as any;
+  }
+
+  async removeFavoriteDrug(id: string): Promise<void> {
+    await db.execute(sql`DELETE FROM clinic_doctor_favorite_drugs WHERE id = ${id}`);
+  }
+
+  async getFrequentDrugsNotInFavorites(doctorId: string, minCount: number = 2): Promise<any[]> {
+    const rows = await db.execute(sql`
+      SELECT cd.item_id, cd.drug_name,
+             COUNT(DISTINCT cd.consultation_id)::int AS usage_count
+      FROM clinic_consultation_drugs cd
+      JOIN clinic_consultations c ON c.id = cd.consultation_id
+      JOIN clinic_appointments a ON a.id = c.appointment_id
+      WHERE a.doctor_id = ${doctorId}
+        AND cd.item_id IS NOT NULL
+        AND cd.item_id NOT IN (
+          SELECT item_id FROM clinic_doctor_favorite_drugs
+          WHERE doctor_id = ${doctorId} AND item_id IS NOT NULL
+        )
+      GROUP BY cd.item_id, cd.drug_name
+      HAVING COUNT(DISTINCT cd.consultation_id) >= ${minCount}
+      ORDER BY usage_count DESC
+      LIMIT 20
+    `);
+    return rows.rows as any[];
+  }
+
+  async getClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<any[]> {
+    const conditions: string[] = [];
+    if (filters.targetType) conditions.push(`o.target_type = '${filters.targetType}'`);
+    if (filters.status) conditions.push(`o.status = '${filters.status}'`);
+    if (filters.targetId) conditions.push(`o.target_id = '${filters.targetId}'`);
+    if (filters.doctorId) conditions.push(`o.doctor_id = '${filters.doctorId}'`);
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const rows = await db.execute(sql.raw(`
+      SELECT o.*,
+             d.name_ar AS doctor_name, d.specialty AS doctor_specialty,
+             s.name_ar AS service_name_ar, s.base_price AS service_price,
+             i.name_ar AS item_name_ar,
+             a.appointment_date, a.appointment_time, a.turn_number
+      FROM clinic_orders o
+      JOIN doctors d ON d.id = o.doctor_id
+      JOIN clinic_appointments a ON a.id = o.appointment_id
+      LEFT JOIN services s ON s.id = o.service_id
+      LEFT JOIN items i ON i.id = o.item_id
+      ${where}
+      ORDER BY o.created_at DESC
+    `));
+    return rows.rows as any[];
+  }
+
+  async getClinicOrder(id: string): Promise<any | null> {
+    const orders = await this.getClinicOrders({});
+    const rows = await db.execute(sql`
+      SELECT o.*,
+             d.name_ar AS doctor_name,
+             s.name_ar AS service_name_ar, s.base_price AS service_price,
+             i.name_ar AS item_name_ar,
+             a.appointment_date, a.patient_name AS appt_patient_name
+      FROM clinic_orders o
+      JOIN doctors d ON d.id = o.doctor_id
+      JOIN clinic_appointments a ON a.id = o.appointment_id
+      LEFT JOIN services s ON s.id = o.service_id
+      LEFT JOIN items i ON i.id = o.item_id
+      WHERE o.id = ${id}
+    `);
+    return (rows.rows[0] as any) ?? null;
+  }
+
+  async executeClinicOrder(orderId: string, userId: string): Promise<{ invoiceId: string }> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const orderRes = await client.query(`
+        SELECT o.*, s.base_price AS service_price, s.name_ar AS service_name_ar,
+               a.patient_id, a.patient_name, a.doctor_id
+        FROM clinic_orders o
+        JOIN clinic_appointments a ON a.id = o.appointment_id
+        LEFT JOIN services s ON s.id = o.service_id
+        WHERE o.id = $1 AND o.status = 'pending'
+        FOR UPDATE
+      `, [orderId]);
+
+      if (!orderRes.rows.length) throw new Error("الأمر غير موجود أو تم تنفيذه مسبقاً");
+      const order = orderRes.rows[0];
+
+      // حساب السعر: من الخدمة أو 0
+      const unitPrice = parseFloat(order.service_price ?? '0') || 0;
+      const totalAmount = unitPrice.toFixed(2);
+
+      // إنشاء رأس فاتورة مريض
+      const invNumRes = await client.query(`SELECT COALESCE(MAX(invoice_number), 0) + 1 AS next_num FROM patient_invoice_headers`);
+      const invoiceNumber = invNumRes.rows[0].next_num;
+
+      const invRes = await client.query(`
+        INSERT INTO patient_invoice_headers
+          (invoice_number, patient_id, patient_name, admission_id,
+           doctor_id, status, invoice_date,
+           total_amount, net_amount, paid_amount, discount_amount,
+           created_by, notes)
+        VALUES ($1,$2,$3,NULL,$4,'finalized',CURRENT_DATE,$5,$5,0,0,$6,$7)
+        RETURNING id
+      `, [
+        invoiceNumber, order.patient_id ?? null, order.patient_name,
+        order.doctor_id ?? null, totalAmount, userId,
+        `تنفيذ أمر طبيب: ${order.service_name_ar ?? order.service_name_manual ?? ''}`
+      ]);
+      const invoiceId = invRes.rows[0].id;
+
+      // إضافة سطر الخدمة
+      await client.query(`
+        INSERT INTO patient_invoice_lines
+          (invoice_id, line_type, service_id, service_name, unit_price, quantity, total_price, notes)
+        VALUES ($1,'service',$2,$3,$4,1,$4,NULL)
+      `, [invoiceId, order.service_id ?? null, order.service_name_ar ?? order.service_name_manual ?? '', totalAmount]);
+
+      // تحديث حالة الأمر
+      await client.query(`
+        UPDATE clinic_orders
+        SET status = 'executed', executed_invoice_id = $1, executed_by = $2, executed_at = now()
+        WHERE id = $3
+      `, [invoiceId, userId, orderId]);
+
+      await client.query('COMMIT');
+      return { invoiceId };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async cancelClinicOrder(orderId: string): Promise<void> {
+    await db.execute(sql`UPDATE clinic_orders SET status = 'cancelled' WHERE id = ${orderId} AND status = 'pending'`);
+  }
+
+  async getDoctorStatement(doctorId: string, dateFrom: string, dateTo: string): Promise<any[]> {
+    const rows = await db.execute(sql`
+      SELECT
+        a.id AS appointment_id,
+        a.appointment_date,
+        a.turn_number,
+        a.patient_name,
+        a.status AS appointment_status,
+        o.id AS order_id,
+        o.order_type,
+        o.status AS order_status,
+        COALESCE(o.service_name_manual, s.name_ar) AS service_name,
+        COALESCE(s.base_price::text, '0') AS service_price,
+        o.executed_invoice_id,
+        o.executed_at
+      FROM clinic_appointments a
+      LEFT JOIN clinic_orders o ON o.appointment_id = a.id AND o.order_type = 'service' AND o.status = 'executed'
+      LEFT JOIN services s ON s.id = o.service_id
+      WHERE a.doctor_id = ${doctorId}
+        AND a.appointment_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
+      ORDER BY a.appointment_date DESC, a.turn_number
+    `);
+    return rows.rows as any[];
   }
 }
 

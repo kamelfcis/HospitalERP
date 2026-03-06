@@ -95,6 +95,11 @@ const mainNavItems: NavItem[] = [
   { title: "سجل الأطباء",           href: "/doctors",            icon: Stethoscope,        permission: "doctors.view" },
 ];
 
+const clinicNavItems: NavItem[] = [
+  { title: "حجز العيادات",        href: "/clinic-booking",       icon: Calendar,      permission: "clinic.view_own" },
+  { title: "أوامر الطبيب",       href: "/doctor-orders",        icon: ClipboardList, permission: "doctor_orders.view" },
+];
+
 const reportNavItems: NavItem[] = [
   { title: "ميزان المراجعة",       href: "/reports/trial-balance",    icon: Scale,    permission: "reports.trial_balance" },
   { title: "قائمة الدخل",         href: "/reports/income-statement",  icon: TrendingUp, permission: "reports.income_statement" },
@@ -206,6 +211,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           <SidebarContent>
             <ScrollArea className="flex-1">
               <NavGroup label="القائمة الرئيسية" items={mainNavItems} />
+              <NavGroup label="العيادات الخارجية" items={clinicNavItems} />
               <NavGroup label="التقارير المالية" items={reportNavItems} />
               <NavGroup label="النظام" items={systemNavItems} />
             </ScrollArea>

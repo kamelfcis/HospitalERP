@@ -5161,5 +5161,263 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ══════════════════════════════════════════════════════════════════════
+  // موديول العيادات الخارجية
+  // ══════════════════════════════════════════════════════════════════════
+
+  // العيادات — الجلب والإدارة
+  app.get("/api/clinic-clinics", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const role = req.session.role!;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      if (!perms.includes("clinic.view_all") && !perms.includes("clinic.view_own")) {
+        return res.status(403).json({ message: "لا تملك صلاحية" });
+      }
+      const clinics = await storage.getClinics(userId, role);
+      res.json(clinics);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-clinics", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const { nameAr, departmentId, defaultPharmacyId } = req.body;
+      if (!nameAr?.trim()) return res.status(400).json({ message: "اسم العيادة مطلوب" });
+      const clinic = await storage.createClinic({ nameAr: nameAr.trim(), departmentId, defaultPharmacyId });
+      res.status(201).json(clinic);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/clinic-clinics/:id", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const clinic = await storage.updateClinic(req.params.id, req.body);
+      res.json(clinic);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // جداول الأطباء
+  app.get("/api/clinic-clinics/:id/schedules", requireAuth, async (req, res) => {
+    try {
+      const schedules = await storage.getDoctorSchedules(req.params.id);
+      res.json(schedules);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-clinics/:id/schedules", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const schedule = await storage.upsertDoctorSchedule({ clinicId: req.params.id, ...req.body });
+      res.status(201).json(schedule);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // الحجوزات
+  app.get("/api/clinic-clinics/:id/appointments", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const role = req.session.role!;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      const canViewAll = perms.includes("clinic.view_all");
+      const canViewOwn = perms.includes("clinic.view_own");
+      if (!canViewAll && !canViewOwn) return res.status(403).json({ message: "لا تملك صلاحية" });
+
+      // تأكيد أن المستخدم مسموح له بهذه العيادة إذا كان view_own فقط
+      if (!canViewAll) {
+        const allowedIds = await storage.getUserClinicIds(userId);
+        if (!allowedIds.includes(req.params.id)) {
+          return res.status(403).json({ message: "غير مصرح لهذه العيادة" });
+        }
+      }
+
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      const appointments = await storage.getClinicAppointments(req.params.id, date);
+      res.json(appointments);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-clinics/:id/appointments", requireAuth, checkPermission("clinic.book"), async (req, res) => {
+    try {
+      const data = { ...req.body, clinicId: req.params.id, createdBy: req.session.userId! };
+      if (!data.patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
+      if (!data.doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
+      if (!data.appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
+      const appointment = await storage.createAppointment(data);
+      res.status(201).json(appointment);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.patch("/api/clinic-appointments/:id/status", requireAuth, checkPermission("clinic.book"), async (req, res) => {
+    try {
+      const { status } = req.body;
+      const validStatuses = ['waiting', 'in_consultation', 'done', 'cancelled'];
+      if (!validStatuses.includes(status)) return res.status(400).json({ message: "حالة غير صحيحة" });
+      await storage.updateAppointmentStatus(req.params.id, status);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ربط المستخدم بالطبيب
+  app.get("/api/clinic-my-doctor", requireAuth, async (req, res) => {
+    try {
+      const doctorId = await storage.getUserDoctorId(req.session.userId!);
+      res.json({ doctorId });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-user-doctor", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const { userId, doctorId } = req.body;
+      if (!userId || !doctorId) return res.status(400).json({ message: "userId و doctorId مطلوبان" });
+      await storage.assignUserToDoctor(userId, doctorId);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-user-clinic", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const { userId, clinicId } = req.body;
+      if (!userId || !clinicId) return res.status(400).json({ message: "userId و clinicId مطلوبان" });
+      await storage.assignUserToClinic(userId, clinicId);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // الكشف والروشتة
+  app.get("/api/clinic-consultations/:appointmentId", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
+    try {
+      const data = await storage.getConsultationByAppointment(req.params.appointmentId);
+      if (!data) return res.status(404).json({ message: "الموعد غير موجود" });
+      res.json(data);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-consultations", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
+    try {
+      const { appointmentId, chiefComplaint, diagnosis, notes, drugs, serviceOrders } = req.body;
+      if (!appointmentId) return res.status(400).json({ message: "appointmentId مطلوب" });
+      const result = await storage.saveConsultation({
+        appointmentId,
+        chiefComplaint, diagnosis, notes,
+        createdBy: req.session.userId!,
+        drugs: drugs || [],
+        serviceOrders: serviceOrders || [],
+      });
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // الأدوية المفضلة
+  app.get("/api/clinic-favorite-drugs", requireAuth, async (req, res) => {
+    try {
+      const doctorId = await storage.getUserDoctorId(req.session.userId!);
+      if (!doctorId) return res.status(404).json({ message: "لم يتم ربط حسابك بطبيب" });
+      const favorites = await storage.getDoctorFavoriteDrugs(doctorId);
+      res.json(favorites);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-favorite-drugs", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
+    try {
+      const doctorId = await storage.getUserDoctorId(req.session.userId!);
+      if (!doctorId) return res.status(404).json({ message: "لم يتم ربط حسابك بطبيب" });
+      const { itemId, drugName, defaultDose, defaultFrequency, defaultDuration } = req.body;
+      if (!drugName?.trim()) return res.status(400).json({ message: "اسم الدواء مطلوب" });
+      const fav = await storage.addFavoriteDrug({ doctorId, itemId: itemId || null, drugName: drugName.trim(), defaultDose, defaultFrequency, defaultDuration });
+      res.status(201).json(fav);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/clinic-favorite-drugs/:id", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
+    try {
+      await storage.removeFavoriteDrug(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // الأدوية الأكثر استخداماً (للاقتراح الذكي)
+  app.get("/api/clinic-frequent-drugs", requireAuth, async (req, res) => {
+    try {
+      const doctorId = await storage.getUserDoctorId(req.session.userId!);
+      if (!doctorId) return res.json([]);
+      const minCount = parseInt(req.query.minCount as string) || 2;
+      const drugs = await storage.getFrequentDrugsNotInFavorites(doctorId, minCount);
+      res.json(drugs);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // الأوامر الطبية
+  app.get("/api/clinic-orders", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const role = req.session.role!;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      const canViewOrders = perms.includes("doctor_orders.view");
+      const canViewPharmacy = perms.includes("clinic.pharmacy_orders");
+      const isAdmin = role === 'admin' || role === 'owner';
+
+      if (!canViewOrders && !canViewPharmacy && !isAdmin) {
+        return res.status(403).json({ message: "لا تملك صلاحية" });
+      }
+
+      const filters: any = {};
+
+      // الصيدلاني يرى أوامر الصيدلية فقط
+      if (canViewPharmacy && !isAdmin && !canViewOrders) {
+        filters.targetType = 'pharmacy';
+        // فلتر بالصيدلية المرتبطة بالمستخدم إن وجدت
+        const userRow = await db.execute(sql`SELECT pharmacy_id FROM users WHERE id = ${userId}`);
+        const pharmacyId = (userRow.rows[0] as any)?.pharmacy_id;
+        if (pharmacyId) filters.targetId = pharmacyId;
+      }
+
+      if (req.query.targetType) filters.targetType = req.query.targetType as string;
+      if (req.query.status) filters.status = req.query.status as string;
+      if (req.query.targetId) filters.targetId = req.query.targetId as string;
+
+      const orders = await storage.getClinicOrders(filters);
+      res.json(orders);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.get("/api/clinic-orders/:id", requireAuth, async (req, res) => {
+    try {
+      const order = await storage.getClinicOrder(req.params.id);
+      if (!order) return res.status(404).json({ message: "الأمر غير موجود" });
+      res.json(order);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-orders/:id/execute", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
+    try {
+      const result = await storage.executeClinicOrder(req.params.id, req.session.userId!);
+      res.json(result);
+    } catch (e: any) { res.status(400).json({ message: e.message }); }
+  });
+
+  app.post("/api/clinic-orders/:id/cancel", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
+    try {
+      await storage.cancelClinicOrder(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // كشف حساب الطبيب
+  app.get("/api/clinic-doctor-statement", requireAuth, checkPermission("doctor.view_statement"), async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      let doctorId = req.query.doctorId as string;
+
+      // الطبيب يرى كشفه فقط، الأدمن يمكنه تحديد طبيب
+      if (!doctorId) {
+        doctorId = (await storage.getUserDoctorId(userId)) || '';
+      }
+      if (!doctorId) return res.status(400).json({ message: "doctorId مطلوب" });
+
+      const from = (req.query.from as string) || new Date().toISOString().slice(0, 7) + '-01';
+      const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
+      const rows = await storage.getDoctorStatement(doctorId, from, to);
+      res.json(rows);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   return httpServer;
 }

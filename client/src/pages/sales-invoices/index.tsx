@@ -129,6 +129,69 @@ export default function SalesInvoices() {
     }
   }, [editId, isDraft]);
 
+  // ── prefill صيدلانى من أمر عيادة (?clinicOrderId) ────────────────────────
+  const clinicOrderId = params.get("clinicOrderId");
+  const pharmacyIdParam = params.get("pharmacyId");
+  const altItemIdParam = params.get("altItemId");
+  const clinicPrefillDoneRef = useRef(false);
+
+  useEffect(() => {
+    if (!clinicOrderId) return;
+    // إذا لم نكن في وضع المحرر → وجّه لفاتورة جديدة مع الحفاظ على الباراميترات
+    if (!editId) {
+      const newParams = new URLSearchParams();
+      newParams.set("id", "new");
+      newParams.set("clinicOrderId", clinicOrderId);
+      if (pharmacyIdParam) newParams.set("pharmacyId", pharmacyIdParam);
+      if (altItemIdParam) newParams.set("altItemId", altItemIdParam);
+      navigate(`/sales-invoices?${newParams.toString()}`);
+      return;
+    }
+    if (editId !== "new" || clinicPrefillDoneRef.current) return;
+  }, [clinicOrderId, editId, navigate, pharmacyIdParam, altItemIdParam]);
+
+  useEffect(() => {
+    if (!clinicOrderId || editId !== "new" || clinicPrefillDoneRef.current) return;
+    const doFetch = async () => {
+      try {
+        const res = await fetch(`/api/clinic-orders/${clinicOrderId}`);
+        if (!res.ok) return;
+        const order = await res.json();
+        // ضبط الصيدلية إذا كانت محددة
+        const wId = pharmacyIdParam || order.targetId || "";
+        if (wId) form.setWarehouseId(wId);
+        // استخدام itemId البديل أو الأصلي من الأمر
+        const itemIdToAdd = altItemIdParam || order.itemId;
+        if (itemIdToAdd) {
+          // إنشاء كائن item مبسط — addItemToLines يقبل any ويجلب التسعير بنفسه
+          const minimalItem = {
+            id: itemIdToAdd,
+            nameAr: order.drugName || "",
+            nameEn: null,
+            itemCode: "",
+            category: "drug",
+            salePriceCurrent: "0",
+            majorUnitName: null,
+            mediumUnitName: null,
+            minorUnitName: null,
+            majorToMedium: null,
+            majorToMinor: null,
+            mediumToMinor: null,
+            hasExpiry: false,
+            availableQtyMinor: "0",
+          };
+          await linesHook.addItemToLines(minimalItem);
+        }
+        // ضبط اسم العميل من اسم المريض
+        if (order.patientName) form.setCustomerName(order.patientName);
+        clinicPrefillDoneRef.current = true;
+        navigate("/sales-invoices?id=new");
+      } catch (_) {}
+    };
+    const timer = setTimeout(doFetch, 400);
+    return () => clearTimeout(timer);
+  }, [clinicOrderId, editId, pharmacyIdParam, altItemIdParam]);
+
   // ── F9 للإنهاء ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!editId || !isDraft) return;
