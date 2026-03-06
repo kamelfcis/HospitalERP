@@ -9099,7 +9099,7 @@ export class DatabaseStorage implements IStorage {
     const rows = await db.execute(sql`
       SELECT a.*,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
-             p.file_number AS patient_file_number
+             p.national_id AS patient_file_number
       FROM clinic_appointments a
       JOIN doctors d ON d.id = a.doctor_id
       LEFT JOIN patients p ON p.id = a.patient_id
