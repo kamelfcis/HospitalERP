@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { ClipboardList } from "lucide-react";
 import { useClinicOrders } from "./hooks/useClinicOrders";
 import { useOrderPermissions } from "./hooks/useOrderPermissions";
@@ -8,6 +9,7 @@ import { ExecuteConfirmDialog } from "./components/ExecuteConfirmDialog";
 import type { ClinicOrder } from "./types";
 
 export default function DoctorOrders() {
+  const [, navigate] = useLocation();
   const [confirmOrder, setConfirmOrder] = useState<ClinicOrder | null>(null);
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const { canExecute } = useOrderPermissions();
@@ -31,7 +33,17 @@ export default function DoctorOrders() {
 
   const handleExecute = (order: ClinicOrder) => {
     if (order.orderType === "service") {
-      setConfirmOrder(order);
+      const deptCode = order.departmentCode || "LAB";
+      const params = new URLSearchParams();
+      params.set("orderId", order.id);
+      params.set("patientName", order.apptPatientName || order.patientName || "");
+      if (order.serviceId) params.set("serviceId", order.serviceId);
+      if (order.serviceNameAr || order.serviceNameManual) params.set("serviceName", order.serviceNameAr || order.serviceNameManual || "");
+      if (order.servicePrice) params.set("servicePrice", order.servicePrice);
+      if (order.doctorId) params.set("doctorId", order.doctorId);
+      if (order.doctorName) params.set("doctorName", order.doctorName);
+      navigate(`/dept-services/${deptCode}?${params.toString()}`);
+      return;
     }
   };
 

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,32 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [duplicateWarning, setDuplicateWarning] = useState<any[]>([]);
+  const [clinicOrderIds, setClinicOrderIds] = useState<string[]>([]);
+  const prefillDone = useRef(false);
+
+  useEffect(() => {
+    if (prefillDone.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const pName = params.get("patientName");
+    if (!pName) return;
+    prefillDone.current = true;
+    setPatientName(pName);
+    const oId = params.get("orderId");
+    if (oId) setClinicOrderIds([oId]);
+    const dId = params.get("doctorId");
+    if (dId) setDoctorId(dId);
+    const sId = params.get("serviceId");
+    const sName = params.get("serviceName");
+    const sPrice = params.get("servicePrice");
+    if (sId && sName) {
+      setServiceLines([{
+        serviceId: sId,
+        serviceName: sName,
+        quantity: 1,
+        unitPrice: parseFloat(sPrice || "0"),
+      }]);
+    }
+  }, []);
 
   const treasury = treasuryData && !Array.isArray(treasuryData) ? treasuryData : (Array.isArray(treasuryData) ? treasuryData[0] : null);
   const selectedDoctor = doctors.find((d: any) => d.id === doctorId);
@@ -52,6 +78,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
         contractName: orderType === "contract" ? contractName : undefined,
         treasuryId: orderType === "cash" && treasury ? treasury.id : undefined,
         services: serviceLines, discountPercent, notes: notes || undefined,
+        clinicOrderIds: clinicOrderIds.length ? clinicOrderIds : undefined,
       };
       const res = await apiRequest("POST", "/api/dept-service-orders", body);
       return res.json();
@@ -59,6 +86,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
     onSuccess: (data) => {
       toast({ title: "تم الحفظ بنجاح", description: `فاتورة رقم ${data.invoiceNumber}` });
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] });
       resetForm();
     },
     onError: (err: any) => {
@@ -98,7 +126,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
     setPatientName(""); setPatientPhone(""); setPatientSearch("");
     setDoctorId(""); setOrderType("cash"); setContractName("");
     setNotes(""); setDiscountPercent(0); setServiceLines([]);
-    setDuplicateWarning([]);
+    setDuplicateWarning([]); setClinicOrderIds([]);
   };
 
   const handlePatientSearchChange = (val: string) => {

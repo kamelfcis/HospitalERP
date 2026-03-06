@@ -9542,9 +9542,12 @@ export class DatabaseStorage implements IStorage {
       SELECT o.*,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
              s.name_ar AS service_name_ar, s.base_price AS service_price,
+             s.department_id AS service_department_id,
              i.name_ar AS item_name_ar,
              a.appointment_date, a.appointment_time, a.turn_number,
-             COALESCE(o.target_name, dep.name_ar) AS resolved_target_name
+             a.patient_name AS appt_patient_name,
+             COALESCE(o.target_name, dep.name_ar) AS resolved_target_name,
+             dep.code AS department_code
       FROM clinic_orders o
       JOIN doctors d ON d.id = o.doctor_id
       JOIN clinic_appointments a ON a.id = o.appointment_id

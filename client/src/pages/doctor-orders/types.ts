@@ -5,12 +5,17 @@ export interface ClinicOrder {
   doctorId: string;
   doctorName?: string;
   patientName: string;
+  apptPatientName?: string;
   orderType: "service" | "pharmacy";
   targetType: "department" | "pharmacy";
   targetId?: string | null;
   targetName?: string | null;
   serviceId?: string | null;
+  serviceNameAr?: string | null;
   serviceNameManual?: string | null;
+  servicePrice?: string | null;
+  serviceDepartmentId?: string | null;
+  departmentCode?: string | null;
   itemId?: string | null;
   drugName?: string | null;
   dose?: string | null;
