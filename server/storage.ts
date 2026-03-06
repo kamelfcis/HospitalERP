@@ -9774,8 +9774,8 @@ export class DatabaseStorage implements IStorage {
     try {
       await client.query('BEGIN');
 
-      const numRes = await client.query(`SELECT COALESCE(MAX(invoice_number), 0) + 1 AS next_num FROM patient_invoice_headers`);
-      const invoiceNumber = numRes.rows[0].next_num;
+      const numRes = await client.query(`SELECT COALESCE(MAX(invoice_number::int), 0) + 1 AS next_num FROM patient_invoice_headers`);
+      const invoiceNumber = String(numRes.rows[0].next_num);
 
       const totalAmount = data.services.reduce((sum, s) => sum + s.quantity * s.unitPrice, 0);
       const discountAmount = data.discountAmount ?? (data.discountPercent ? totalAmount * data.discountPercent / 100 : 0);
