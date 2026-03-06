@@ -7,6 +7,9 @@ import type { Consultation, ConsultationDrug, ServiceOrder } from "../types";
 export function useDoctorConsultation(appointmentId: string) {
   const { toast } = useToast();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingInFlightRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const finishingRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -38,26 +41,47 @@ export function useDoctorConsultation(appointmentId: string) {
   }, [consultation, appointmentId]);
 
   const saveMutation = useMutation({
-    mutationFn: (data: Consultation) =>
-      apiRequest("POST", "/api/clinic-consultations", {
+    mutationFn: (data: Consultation) => {
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      savingInFlightRef.current = true;
+      return apiRequest("POST", "/api/clinic-consultations", {
         appointmentId: data.appointmentId,
         chiefComplaint: data.chiefComplaint,
         diagnosis: data.diagnosis,
         notes: data.notes,
         drugs: data.drugs,
         serviceOrders: data.serviceOrders,
-      }).then((r) => r.json()),
+      }, controller.signal).then((r) => r.json());
+    },
     onSuccess: () => {
+      savingInFlightRef.current = false;
+      if (finishingRef.current) return;
       setIsDirty(false);
       setIsSaving(false);
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-consultations", appointmentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] });
     },
     onError: (err: any) => {
+      savingInFlightRef.current = false;
+      if (finishingRef.current) return;
+      if (err?.name === "AbortError") return;
       setIsSaving(false);
       toast({ variant: "destructive", title: "خطأ في الحفظ", description: err.message });
     },
   });
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty || savingInFlightRef.current) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   const debouncedSave = useCallback((data: Consultation) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -141,6 +165,9 @@ export function useDoctorConsultation(appointmentId: string) {
 
   const finishConsultation = useCallback(async () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    finishingRef.current = true;
+    savingInFlightRef.current = false;
     setIsSaving(true);
     try {
       await apiRequest("POST", "/api/clinic-consultations", {
@@ -164,7 +191,7 @@ export function useDoctorConsultation(appointmentId: string) {
       toast({ variant: "destructive", title: "خطأ في إنهاء الكشف", description: err.message });
       return false;
     }
-  }, [form, appointmentId, toast]);
+  }, [form, appointmentId, toast, saveMutation]);
 
   return {
     form,

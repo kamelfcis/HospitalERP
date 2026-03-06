@@ -7581,7 +7581,21 @@ export class DatabaseStorage implements IStorage {
           const rateStr = String(parseFloat(seg.rate_per_day) || 0);
           let linesInserted = 0;
 
-          for (const { key: bucketKey, desc: description } of bucketEntries) {
+          const transferCheckResult = await tx.execute(sql`
+            SELECT source_id FROM patient_invoice_lines
+            WHERE header_id = ${seg.invoice_id}
+              AND source_type = 'STAY_ENGINE'
+              AND source_id LIKE ${'transfer:' + seg.invoice_id + ':' + seg.id + ':%'}
+              AND is_void = false
+            LIMIT 1
+          `);
+          const hasTransferLine = (transferCheckResult.rows?.length || 0) > 0;
+
+          for (let bi = 0; bi < bucketEntries.length; bi++) {
+            const { key: bucketKey, desc: description } = bucketEntries[bi];
+
+            if (bi === 0 && hasTransferLine) continue;
+
             const sourceId = `${seg.invoice_id}:${seg.id}:${bucketKey}`;
 
             // Idempotent UPSERT — ON CONFLICT with the partial unique index
