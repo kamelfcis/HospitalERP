@@ -18,7 +18,11 @@ export function ServicesQuadrant({ serviceOrders, onAdd, onRemove }: Props) {
 
   const { data: services = [] } = useQuery<Service[]>({
     queryKey: ["/api/services"],
-    queryFn: () => apiRequest("GET", "/api/services").then((r) => r.json()),
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/services");
+      const json = await res.json();
+      return Array.isArray(json) ? json : (json.data ?? json.services ?? []);
+    },
   });
 
   const handleAdd = () => {
