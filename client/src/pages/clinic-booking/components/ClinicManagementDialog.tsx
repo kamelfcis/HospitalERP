@@ -27,8 +27,8 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
   isPending: boolean;
 }) {
   const [nameAr, setNameAr] = useState(clinic?.nameAr || "");
-  const [departmentId, setDepartmentId] = useState(clinic?.departmentId || "");
-  const [pharmacyId, setPharmacyId] = useState(clinic?.defaultPharmacyId || "");
+  const [departmentId, setDepartmentId] = useState(clinic?.departmentId || "__none__");
+  const [pharmacyId, setPharmacyId] = useState(clinic?.defaultPharmacyId || "__none__");
 
   const { data: departments = [] } = useQuery<Department[]>({
     queryKey: ["/api/departments"],
@@ -42,8 +42,8 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
     if (!nameAr.trim()) return;
     onSave({
       nameAr: nameAr.trim(),
-      departmentId: departmentId || undefined,
-      defaultPharmacyId: pharmacyId || undefined,
+      departmentId: departmentId !== "__none__" ? departmentId : undefined,
+      defaultPharmacyId: pharmacyId !== "__none__" ? pharmacyId : undefined,
     });
   };
 
@@ -68,7 +68,7 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
               <SelectValue placeholder="اختر قسم..." />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">بدون قسم</SelectItem>
+              <SelectItem value="__none__">بدون قسم</SelectItem>
               {departments.map((d) => (
                 <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
               ))}
@@ -82,7 +82,7 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
               <SelectValue placeholder="اختر صيدلية..." />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">بدون صيدلية</SelectItem>
+              <SelectItem value="__none__">بدون صيدلية</SelectItem>
               {warehouses.map((w) => (
                 <SelectItem key={w.id} value={w.id}>{w.name_ar || w.name || w.id}</SelectItem>
               ))}
