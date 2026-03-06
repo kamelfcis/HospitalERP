@@ -13,7 +13,7 @@ import { Plus, Pencil, Check, X, Loader2 } from "lucide-react";
 import type { ClinicClinic } from "../types";
 
 interface Department { id: string; nameAr: string; }
-interface Warehouse { id: string; name_ar?: string; name?: string; }
+interface Warehouse { id: string; nameAr: string; }
 
 interface Props {
   open: boolean;
@@ -84,7 +84,7 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
             <SelectContent>
               <SelectItem value="__none__">بدون صيدلية</SelectItem>
               {warehouses.map((w) => (
-                <SelectItem key={w.id} value={w.id}>{w.name_ar || w.name || w.id}</SelectItem>
+                <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
               ))}
             </SelectContent>
           </Select>
