@@ -48,6 +48,7 @@ export interface Consultation {
   doctorSpecialty?: string;
   clinicName?: string;
   defaultPharmacyId?: string | null;
+  consultationServiceId?: string | null;
 }
 
 export interface FavoriteDrug {

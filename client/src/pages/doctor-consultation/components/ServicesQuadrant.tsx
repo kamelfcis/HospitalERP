@@ -4,17 +4,19 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Plus, Lock } from "lucide-react";
+import { Trash2, Plus, Lock, AlertTriangle } from "lucide-react";
 import { QuadrantCard } from "./QuadrantCard";
 import type { ServiceOrder, Service } from "../types";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Props {
   serviceOrders: ServiceOrder[];
   onAdd: (svc: ServiceOrder) => void;
   onRemove: (idx: number) => void;
+  hasConsultationServiceConfig?: boolean;
 }
 
-export function ServicesQuadrant({ serviceOrders, onAdd, onRemove }: Props) {
+export function ServicesQuadrant({ serviceOrders, onAdd, onRemove, hasConsultationServiceConfig }: Props) {
   const [selectedId, setSelectedId] = useState("");
 
   const { data: services = [] } = useQuery<Service[]>({
@@ -62,6 +64,15 @@ export function ServicesQuadrant({ serviceOrders, onAdd, onRemove }: Props) {
           <Plus className="h-3 w-3" />
         </Button>
       </div>
+
+      {hasConsultationServiceConfig === false && (
+        <Alert variant="destructive" className="mb-2 py-1.5 px-2">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          <AlertDescription className="text-[11px] leading-tight">
+            لم يتم ربط خدمة كشف بهذه العيادة. اذهب لإعدادات العيادة واختر "خدمة الكشف" حتى تظهر تلقائياً.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {serviceOrders.length === 0 ? (
         <div className="text-center text-muted-foreground text-xs py-4">

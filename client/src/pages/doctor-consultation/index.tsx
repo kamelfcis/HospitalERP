@@ -141,6 +141,7 @@ export default function DoctorConsultation() {
           serviceOrders={form.serviceOrders}
           onAdd={addServiceOrder}
           onRemove={removeServiceOrder}
+          hasConsultationServiceConfig={!!form.consultationServiceId}
         />
       </div>
 
