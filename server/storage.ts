@@ -9076,7 +9076,7 @@ export class DatabaseStorage implements IStorage {
 
   async getDoctorSchedules(clinicId: string): Promise<any[]> {
     const rows = await db.execute(sql`
-      SELECT s.*, d.name_ar AS doctor_name, d.specialty
+      SELECT s.*, d.name AS doctor_name, d.specialty
       FROM clinic_doctor_schedules s
       JOIN doctors d ON d.id = s.doctor_id
       WHERE s.clinic_id = ${clinicId}
@@ -9098,7 +9098,7 @@ export class DatabaseStorage implements IStorage {
   async getClinicAppointments(clinicId: string, date: string): Promise<any[]> {
     const rows = await db.execute(sql`
       SELECT a.*,
-             d.name_ar AS doctor_name, d.specialty AS doctor_specialty,
+             d.name AS doctor_name, d.specialty AS doctor_specialty,
              p.file_number AS patient_file_number
       FROM clinic_appointments a
       JOIN doctors d ON d.id = a.doctor_id
@@ -9164,7 +9164,7 @@ export class DatabaseStorage implements IStorage {
       SELECT c.*,
              a.patient_name, a.patient_phone, a.appointment_date, a.appointment_time,
              a.turn_number, a.status AS appointment_status,
-             d.name_ar AS doctor_name, d.specialty AS doctor_specialty,
+             d.name AS doctor_name, d.specialty AS doctor_specialty,
              cl.name_ar AS clinic_name, cl.default_pharmacy_id
       FROM clinic_consultations c
       JOIN clinic_appointments a ON a.id = c.appointment_id
@@ -9175,7 +9175,7 @@ export class DatabaseStorage implements IStorage {
     if (!consRows.rows.length) {
       const apptRows = await db.execute(sql`
         SELECT a.*,
-               d.name_ar AS doctor_name, d.specialty AS doctor_specialty,
+               d.name AS doctor_name, d.specialty AS doctor_specialty,
                cl.name_ar AS clinic_name, cl.default_pharmacy_id
         FROM clinic_appointments a
         JOIN doctors d ON d.id = a.doctor_id
@@ -9205,7 +9205,7 @@ export class DatabaseStorage implements IStorage {
 
       // جلب بيانات الموعد
       const apptRes = await client.query(
-        `SELECT a.*, d.name_ar AS doctor_name, cl.default_pharmacy_id FROM clinic_appointments a
+        `SELECT a.*, d.name AS doctor_name, cl.default_pharmacy_id FROM clinic_appointments a
          JOIN doctors d ON d.id = a.doctor_id
          JOIN clinic_clinics cl ON cl.id = a.clinic_id
          WHERE a.id = $1`, [data.appointmentId]
@@ -9337,7 +9337,7 @@ export class DatabaseStorage implements IStorage {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = await db.execute(sql.raw(`
       SELECT o.*,
-             d.name_ar AS doctor_name, d.specialty AS doctor_specialty,
+             d.name AS doctor_name, d.specialty AS doctor_specialty,
              s.name_ar AS service_name_ar, s.base_price AS service_price,
              i.name_ar AS item_name_ar,
              a.appointment_date, a.appointment_time, a.turn_number
@@ -9356,7 +9356,7 @@ export class DatabaseStorage implements IStorage {
     const orders = await this.getClinicOrders({});
     const rows = await db.execute(sql`
       SELECT o.*,
-             d.name_ar AS doctor_name,
+             d.name AS doctor_name,
              s.name_ar AS service_name_ar, s.base_price AS service_price,
              i.name_ar AS item_name_ar,
              a.appointment_date, a.patient_name AS appt_patient_name

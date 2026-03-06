@@ -11,8 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 
 interface Doctor {
   id: string;
-  nameAr: string;
-  specialty?: string;
+  name: string;
+  specialty?: string | null;
 }
 
 interface Props {
@@ -48,8 +48,8 @@ export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, i
     enabled: open,
   });
 
-  const doctors = schedules.length > 0
-    ? schedules.map((s: any) => ({ id: s.doctor_id, nameAr: s.doctor_name }))
+  const doctors: Doctor[] = schedules.length > 0
+    ? schedules.map((s: any) => ({ id: s.doctorId, name: s.doctorName, specialty: null }))
     : allDoctors;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,7 +64,7 @@ export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, i
         patientPhone: patientPhone.trim() || undefined,
         appointmentDate, appointmentTime: appointmentTime || undefined,
       });
-      toast({ title: `تم الحجز — الدور: ${result.turn_number}` });
+      toast({ title: `تم الحجز — الدور: ${result.turnNumber}` });
       setPatientName(""); setPatientPhone(""); setDoctorId(""); setAppointmentTime("");
       onClose();
     } catch (err: any) {
@@ -107,9 +107,9 @@ export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, i
                 <SelectValue placeholder="اختر الطبيب..." />
               </SelectTrigger>
               <SelectContent>
-                {doctors.map((d: any) => (
-                  <SelectItem key={d.id || d.doctor_id} value={d.id || d.doctor_id}>
-                    {d.nameAr || d.doctor_name}
+                {doctors.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}{d.specialty ? ` — ${d.specialty}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
