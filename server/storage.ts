@@ -567,6 +567,7 @@ export interface IStorage {
   // الحجوزات
   getClinicAppointments(clinicId: string, date: string): Promise<any[]>;
   createAppointment(data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string }): Promise<any>;
+  getAppointmentClinicId(appointmentId: string): Promise<string | null>;
   updateAppointmentStatus(id: string, status: string): Promise<void>;
 
   // الربط بالمستخدم/الطبيب
@@ -9154,6 +9155,11 @@ export class DatabaseStorage implements IStorage {
     } finally {
       client.release();
     }
+  }
+
+  async getAppointmentClinicId(appointmentId: string): Promise<string | null> {
+    const rows = await db.execute(sql`SELECT clinic_id FROM clinic_appointments WHERE id = ${appointmentId}`);
+    return (rows.rows[0] as any)?.clinic_id ?? null;
   }
 
   async updateAppointmentStatus(id: string, status: string): Promise<void> {

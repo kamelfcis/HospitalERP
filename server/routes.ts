@@ -5210,6 +5210,14 @@ export async function registerRoutes(
   // جداول الأطباء
   app.get("/api/clinic-clinics/:id/schedules", requireAuth, async (req, res) => {
     try {
+      const userId = req.session.userId!;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      if (!perms.includes("clinic.view_all")) {
+        const allowedIds = await storage.getUserClinicIds(userId);
+        if (!allowedIds.includes(req.params.id)) {
+          return res.status(403).json({ message: "غير مصرح لهذه العيادة" });
+        }
+      }
       const schedules = await storage.getDoctorSchedules(req.params.id);
       res.json(snakeToCamel(schedules));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -5248,7 +5256,15 @@ export async function registerRoutes(
 
   app.post("/api/clinic-clinics/:id/appointments", requireAuth, checkPermission("clinic.book"), async (req, res) => {
     try {
-      const data = { ...req.body, clinicId: req.params.id, createdBy: req.session.userId! };
+      const userId = req.session.userId!;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      if (!perms.includes("clinic.view_all")) {
+        const allowedIds = await storage.getUserClinicIds(userId);
+        if (!allowedIds.includes(req.params.id)) {
+          return res.status(403).json({ message: "غير مصرح لك بالحجز في هذه العيادة" });
+        }
+      }
+      const data = { ...req.body, clinicId: req.params.id, createdBy: userId };
       if (!data.patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       if (!data.doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
       if (!data.appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
@@ -5259,9 +5275,19 @@ export async function registerRoutes(
 
   app.patch("/api/clinic-appointments/:id/status", requireAuth, async (req, res) => {
     try {
-      const perms = await storage.getUserEffectivePermissions(req.session.userId!);
+      const userId = req.session.userId!;
+      const perms = await storage.getUserEffectivePermissions(userId);
       if (!perms.includes("clinic.book") && !perms.includes("doctor.consultation")) {
         return res.status(403).json({ message: "غير مصرح" });
+      }
+      if (!perms.includes("clinic.view_all")) {
+        const clinicId = await storage.getAppointmentClinicId(req.params.id);
+        if (clinicId) {
+          const allowedIds = await storage.getUserClinicIds(userId);
+          if (!allowedIds.includes(clinicId)) {
+            return res.status(403).json({ message: "غير مصرح لك بالتعامل مع هذا الموعد" });
+          }
+        }
       }
       const { status } = req.body;
       const validStatuses = ['waiting', 'in_consultation', 'done', 'cancelled'];
@@ -5300,6 +5326,17 @@ export async function registerRoutes(
   // الكشف والروشتة
   app.get("/api/clinic-consultations/:appointmentId", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
     try {
+      const userId = req.session.userId!;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      if (!perms.includes("clinic.view_all")) {
+        const clinicId = await storage.getAppointmentClinicId(req.params.appointmentId);
+        if (clinicId) {
+          const allowedIds = await storage.getUserClinicIds(userId);
+          if (!allowedIds.includes(clinicId)) {
+            return res.status(403).json({ message: "غير مصرح لك بالوصول لهذا الكشف" });
+          }
+        }
+      }
       const data = await storage.getConsultationByAppointment(req.params.appointmentId);
       if (!data) return res.status(404).json({ message: "الموعد غير موجود" });
       const camelData = snakeToCamel(data);
@@ -5313,10 +5350,21 @@ export async function registerRoutes(
     try {
       const { appointmentId, chiefComplaint, diagnosis, notes, drugs, serviceOrders } = req.body;
       if (!appointmentId) return res.status(400).json({ message: "appointmentId مطلوب" });
+      const userId = req.session.userId!;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      if (!perms.includes("clinic.view_all")) {
+        const clinicId = await storage.getAppointmentClinicId(appointmentId);
+        if (clinicId) {
+          const allowedIds = await storage.getUserClinicIds(userId);
+          if (!allowedIds.includes(clinicId)) {
+            return res.status(403).json({ message: "غير مصرح لك بالكشف في هذه العيادة" });
+          }
+        }
+      }
       const result = await storage.saveConsultation({
         appointmentId,
         chiefComplaint, diagnosis, notes,
-        createdBy: req.session.userId!,
+        createdBy: userId,
         drugs: drugs || [],
         serviceOrders: serviceOrders || [],
       });
