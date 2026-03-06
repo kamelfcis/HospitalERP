@@ -45,20 +45,41 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
     if (!pName) return;
     prefillDone.current = true;
     setPatientName(pName);
-    const oId = params.get("orderId");
-    if (oId) setClinicOrderIds([oId]);
+
+    const multiIds = params.get("clinicOrderIds");
+    const singleId = params.get("orderId");
+    if (multiIds) {
+      setClinicOrderIds(multiIds.split(",").filter(Boolean));
+    } else if (singleId) {
+      setClinicOrderIds([singleId]);
+    }
+
     const dId = params.get("doctorId");
     if (dId) setDoctorId(dId);
-    const sId = params.get("serviceId");
-    const sName = params.get("serviceName");
-    const sPrice = params.get("servicePrice");
-    if (sId && sName) {
-      setServiceLines([{
-        serviceId: sId,
-        serviceName: sName,
-        quantity: 1,
-        unitPrice: parseFloat(sPrice || "0"),
-      }]);
+
+    const servicesJson = params.get("services");
+    if (servicesJson) {
+      try {
+        const parsed = JSON.parse(servicesJson) as Array<{ serviceId: string; serviceName: string; unitPrice: string }>;
+        setServiceLines(parsed.map(s => ({
+          serviceId: s.serviceId,
+          serviceName: s.serviceName,
+          quantity: 1,
+          unitPrice: parseFloat(s.unitPrice || "0"),
+        })));
+      } catch {}
+    } else {
+      const sId = params.get("serviceId");
+      const sName = params.get("serviceName");
+      const sPrice = params.get("servicePrice");
+      if (sId && sName) {
+        setServiceLines([{
+          serviceId: sId,
+          serviceName: sName,
+          quantity: 1,
+          unitPrice: parseFloat(sPrice || "0"),
+        }]);
+      }
     }
   }, []);
 

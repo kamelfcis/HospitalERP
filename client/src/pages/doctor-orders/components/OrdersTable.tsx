@@ -2,9 +2,10 @@ import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle2, Loader2, Pill, Beaker } from "lucide-react";
+import { Loader2, Pill, Beaker } from "lucide-react";
 import { TargetBadge } from "./TargetBadge";
 import { PharmacyGroupPopup } from "./PharmacyGroupPopup";
+import { ServiceGroupPopup } from "./ServiceGroupPopup";
 import type { ClinicOrder } from "../types";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -27,66 +28,65 @@ interface Props {
   canExecute: boolean;
 }
 
-interface DisplayRow {
-  type: "service";
-  order: ClinicOrder;
-  group?: undefined;
+interface GroupData {
+  consultationId: string;
+  orders: ClinicOrder[];
+  patientName: string;
+  doctorName: string;
+  appointmentDate?: string;
+  targetType: string;
+  targetName?: string | null;
+  targetId?: string | null;
+  groupStatus: "pending" | "executed" | "mixed";
 }
-interface DisplayGroup {
-  type: "pharmacy-group";
-  order?: undefined;
-  group: {
-    consultationId: string;
-    orders: ClinicOrder[];
-    patientName: string;
-    doctorName: string;
-    appointmentDate?: string;
-    targetType: string;
-    targetName?: string | null;
-    targetId?: string | null;
-    groupStatus: "pending" | "executed" | "mixed";
-  };
-}
-type DisplayItem = DisplayRow | DisplayGroup;
+
+type DisplayItem =
+  | { type: "pharmacy-group"; group: GroupData }
+  | { type: "service-group"; group: GroupData };
 
 export function OrdersTable({ orders, isLoading, onExecute, isExecuting, canExecute }: Props) {
   const displayItems = useMemo<DisplayItem[]>(() => {
     const serviceOrders = orders.filter(o => o.orderType === "service");
     const pharmacyOrders = orders.filter(o => o.orderType === "pharmacy");
 
-    const groups = new Map<string, ClinicOrder[]>();
-    for (const po of pharmacyOrders) {
-      const key = po.consultationId || po.id;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(po);
-    }
+    const buildGroups = (list: ClinicOrder[], type: "pharmacy-group" | "service-group") => {
+      const groups = new Map<string, ClinicOrder[]>();
+      for (const o of list) {
+        const key = o.consultationId || o.id;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(o);
+      }
+      const items: DisplayItem[] = [];
+      for (const [consultationId, grpOrders] of groups) {
+        const first = grpOrders[0];
+        const allExecuted = grpOrders.every(o => o.status === "executed");
+        const allPending = grpOrders.every(o => o.status === "pending");
+        items.push({
+          type,
+          group: {
+            consultationId,
+            orders: grpOrders,
+            patientName: first.apptPatientName || first.patientName,
+            doctorName: first.doctorName || "",
+            appointmentDate: first.appointmentDate || undefined,
+            targetType: first.targetType,
+            targetName: first.targetName,
+            targetId: first.targetId,
+            groupStatus: allExecuted ? "executed" : allPending ? "pending" : "mixed",
+          },
+        });
+      }
+      return items;
+    };
 
-    const items: DisplayItem[] = [];
-    for (const so of serviceOrders) {
-      items.push({ type: "service", order: so });
-    }
-    for (const [consultationId, grpOrders] of groups) {
-      const first = grpOrders[0];
-      const allExecuted = grpOrders.every(o => o.status === "executed");
-      const allPending = grpOrders.every(o => o.status === "pending");
-      items.push({
-        type: "pharmacy-group",
-        group: {
-          consultationId,
-          orders: grpOrders,
-          patientName: first.apptPatientName || first.patientName,
-          doctorName: first.doctorName || "",
-          appointmentDate: first.appointmentDate || undefined,
-          targetType: first.targetType,
-          targetName: first.targetName,
-          targetId: first.targetId,
-          groupStatus: allExecuted ? "executed" : allPending ? "pending" : "mixed",
-        },
-      });
-    }
+    const items: DisplayItem[] = [
+      ...buildGroups(serviceOrders, "service-group"),
+      ...buildGroups(pharmacyOrders, "pharmacy-group"),
+    ];
+
     items.sort((a, b) => {
-      const aDate = (a.type === "service" ? a.order.createdAt : a.group.orders[0].createdAt) || "";
-      const bDate = (b.type === "service" ? b.order.createdAt : b.group.orders[0].createdAt) || "";
+      const aDate = a.group.orders[0].createdAt || "";
+      const bDate = b.group.orders[0].createdAt || "";
       return bDate.localeCompare(aDate);
     });
     return items;
@@ -123,82 +123,31 @@ export function OrdersTable({ orders, isLoading, onExecute, isExecuting, canExec
         </TableHeader>
         <TableBody>
           {displayItems.map((item) => {
-            if (item.type === "service") {
-              const order = item.order;
-              return (
-                <TableRow
-                  key={order.id}
-                  data-testid={`order-row-${order.id}`}
-                  className="bg-blue-50/30 hover:bg-blue-50/60"
-                >
-                  <TableCell>
-                    <Beaker className="h-4 w-4 text-blue-600" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm font-medium">{order.patientName}</div>
-                    {order.doctorName && (
-                      <div className="text-xs text-muted-foreground">{order.doctorName}</div>
-                    )}
-                    {order.appointmentDate && (
-                      <div className="text-xs text-muted-foreground" dir="ltr">{order.appointmentDate}</div>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{order.serviceNameManual || order.serviceNameAr || order.serviceId}</span>
-                  </TableCell>
-                  <TableCell>
-                    <TargetBadge targetType={order.targetType} targetName={order.targetName} />
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={`text-xs ${STATUS_CLASSES[order.status] || ""}`}>
-                      {STATUS_LABELS[order.status] || order.status}
-                    </Badge>
-                  </TableCell>
-                  {canExecute && (
-                    <TableCell>
-                      {order.status === "pending" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs gap-1 border-blue-300 text-blue-700"
-                          onClick={() => onExecute(order)}
-                          disabled={isExecuting}
-                          data-testid={`button-execute-${order.id}`}
-                        >
-                          {isExecuting ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <CheckCircle2 className="h-3 w-3" />
-                          )}
-                          تنفيذ
-                        </Button>
-                      )}
-                      {order.status === "executed" && order.executedInvoiceId && (
-                        <span className="text-xs text-muted-foreground" data-testid={`text-executed-${order.id}`}>فاتورة صادرة</span>
-                      )}
-                    </TableCell>
-                  )}
-                </TableRow>
-              );
-            }
-
             const g = item.group;
             const pendingOrders = g.orders.filter(o => o.status === "pending");
-            const drugNames = g.orders.map(o => o.drugName).filter(Boolean);
             const statusLabel = g.groupStatus === "executed" ? "منفذ" : g.groupStatus === "pending" ? "معلق" : "جزئي";
             const statusClass = g.groupStatus === "executed" ? STATUS_CLASSES.executed : g.groupStatus === "pending" ? STATUS_CLASSES.pending : "bg-amber-50 text-amber-700 border-amber-200";
+            const isPharmacy = item.type === "pharmacy-group";
+            const Icon = isPharmacy ? Pill : Beaker;
+            const colorScheme = isPharmacy
+              ? { bg: "bg-green-50/30 hover:bg-green-50/60", icon: "text-green-600", badge: "bg-green-100 text-green-700", btnBorder: "border-green-300 text-green-700" }
+              : { bg: "bg-blue-50/30 hover:bg-blue-50/60", icon: "text-blue-600", badge: "bg-blue-100 text-blue-700", btnBorder: "border-blue-300 text-blue-700" };
+
+            const names = isPharmacy
+              ? g.orders.map(o => o.drugName).filter(Boolean)
+              : g.orders.map(o => o.serviceNameAr || o.serviceNameManual).filter(Boolean);
 
             return (
               <TableRow
-                key={`pharm-group-${g.consultationId}`}
+                key={`${item.type}-${g.consultationId}`}
                 data-testid={`order-group-${g.consultationId}`}
-                className="bg-green-50/30 hover:bg-green-50/60"
+                className={colorScheme.bg}
               >
                 <TableCell>
                   <div className="flex items-center gap-0.5">
-                    <Pill className="h-4 w-4 text-green-600" />
+                    <Icon className={`h-4 w-4 ${colorScheme.icon}`} />
                     {g.orders.length > 1 && (
-                      <span className="text-[10px] font-bold text-green-700 bg-green-100 rounded-full w-4 h-4 flex items-center justify-center">
+                      <span className={`text-[10px] font-bold ${colorScheme.badge} rounded-full w-4 h-4 flex items-center justify-center`}>
                         {g.orders.length}
                       </span>
                     )}
@@ -215,10 +164,10 @@ export function OrdersTable({ orders, isLoading, onExecute, isExecuting, canExec
                 </TableCell>
                 <TableCell>
                   <div className="space-y-0.5">
-                    {drugNames.map((name, i) => (
+                    {names.map((name, i) => (
                       <div key={i} className="text-xs">
                         <span className="font-medium">{name}</span>
-                        {g.orders[i]?.dose && (
+                        {isPharmacy && g.orders[i]?.dose && (
                           <span className="text-muted-foreground mr-1">({g.orders[i].dose})</span>
                         )}
                         {g.orders[i]?.status === "executed" && (
@@ -239,7 +188,7 @@ export function OrdersTable({ orders, isLoading, onExecute, isExecuting, canExec
                 </TableCell>
                 {canExecute && (
                   <TableCell>
-                    {pendingOrders.length > 0 && (
+                    {pendingOrders.length > 0 && isPharmacy && (
                       <PharmacyGroupPopup
                         orders={g.orders}
                         pendingOrders={pendingOrders}
@@ -248,7 +197,7 @@ export function OrdersTable({ orders, isLoading, onExecute, isExecuting, canExec
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 text-xs gap-1 border-green-300 text-green-700"
+                            className={`h-7 text-xs gap-1 ${colorScheme.btnBorder}`}
                             data-testid={`button-pharmacy-group-${g.consultationId}`}
                           >
                             <Pill className="h-3 w-3" />
@@ -257,8 +206,41 @@ export function OrdersTable({ orders, isLoading, onExecute, isExecuting, canExec
                         }
                       />
                     )}
+                    {pendingOrders.length > 0 && !isPharmacy && g.orders.length === 1 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className={`h-7 text-xs gap-1 ${colorScheme.btnBorder}`}
+                        onClick={() => onExecute(pendingOrders[0])}
+                        disabled={isExecuting}
+                        data-testid={`button-execute-${g.orders[0].id}`}
+                      >
+                        <Beaker className="h-3 w-3" />
+                        تنفيذ
+                      </Button>
+                    )}
+                    {pendingOrders.length > 0 && !isPharmacy && g.orders.length > 1 && (
+                      <ServiceGroupPopup
+                        orders={g.orders}
+                        pendingOrders={pendingOrders}
+                        patientName={g.patientName}
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className={`h-7 text-xs gap-1 ${colorScheme.btnBorder}`}
+                            data-testid={`button-service-group-${g.consultationId}`}
+                          >
+                            <Beaker className="h-3 w-3" />
+                            تنفيذ ({pendingOrders.length})
+                          </Button>
+                        }
+                      />
+                    )}
                     {pendingOrders.length === 0 && (
-                      <span className="text-xs text-green-600">تم الصرف</span>
+                      <span className={`text-xs ${isPharmacy ? "text-green-600" : "text-blue-600"}`}>
+                        {isPharmacy ? "تم الصرف" : "تم التنفيذ"}
+                      </span>
                     )}
                   </TableCell>
                 )}

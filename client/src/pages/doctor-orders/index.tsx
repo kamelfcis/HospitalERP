@@ -35,13 +35,16 @@ export default function DoctorOrders() {
     if (order.orderType === "service") {
       const deptCode = order.departmentCode || "LAB";
       const params = new URLSearchParams();
-      params.set("orderId", order.id);
+      params.set("clinicOrderIds", order.id);
       params.set("patientName", order.apptPatientName || order.patientName || "");
-      if (order.serviceId) params.set("serviceId", order.serviceId);
-      if (order.serviceNameAr || order.serviceNameManual) params.set("serviceName", order.serviceNameAr || order.serviceNameManual || "");
-      if (order.servicePrice) params.set("servicePrice", order.servicePrice);
       if (order.doctorId) params.set("doctorId", order.doctorId);
       if (order.doctorName) params.set("doctorName", order.doctorName);
+      const servicesJson = [{
+        serviceId: order.serviceId,
+        serviceName: order.serviceNameAr || order.serviceNameManual || "",
+        unitPrice: order.servicePrice || "0",
+      }];
+      params.set("services", JSON.stringify(servicesJson));
       navigate(`/dept-services/${deptCode}?${params.toString()}`);
       return;
     }
