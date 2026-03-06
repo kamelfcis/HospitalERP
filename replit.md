@@ -34,7 +34,14 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
   - `hospital.ts` — Bed board, cashier, drawers, pharmacy, room management, treasuries, stay engine
   - `system.ts` — System settings, announcements, chat
   - `clinic.ts` — Outpatient clinic module, dept-service orders
-- **`server/storage/index.ts`** — Data access layer (IStorage interface + DatabaseStorage class) with TABLE OF CONTENTS for navigation
+- **`server/storage/`** — Data access layer, split by domain:
+  - `index.ts` — Barrel file: IStorage interface, DatabaseStorage class skeleton, prototype augmentation from domain files, `storage` singleton export
+  - `users-storage.ts` — Users, RBAC, permissions, user-department/warehouse assignments, chat
+  - `finance-storage.ts` — Accounts, cost centers, fiscal periods, journal entries, templates, audit log, reports, account mappings, auto journal generation
+  - `inventory-storage.ts` — Items, form types, departments, lots, FEFO, barcodes, warehouses, store transfers, suppliers, receiving, purchase invoices
+  - `invoicing-storage.ts` — Services, service consumables, price lists, bulk adjustments, sales invoices, patient invoices, sales returns, computeInvoiceTotals
+  - `hospital-storage.ts` — Pharmacies, cashier, drawer passwords, print tracking, patients, doctors, admissions, stay engine, surgery types, bed board, doctor transfers/settlements, treasuries
+  - `clinic-storage.ts` — Outpatient clinic module: clinics, schedules, appointments, consultations, prescriptions, orders, doctor statements, dept-service orders
 - **`server/route-helpers.ts`** — asyncHandler, auditLog, validateBody utilities
 - **`server/finance-helpers.ts`** — roundMoney, roundQty, parseMoney utilities
 

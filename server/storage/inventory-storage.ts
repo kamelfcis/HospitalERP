@@ -1,0 +1,2711 @@
+/*
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  Inventory Storage Methods — عمليات المخزون
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  يحتوي هذا الملف على جميع عمليات المخزون المستخرجة من الملف الرئيسي.
+ *  This file contains all inventory-related storage methods extracted from the main file.
+ *
+ *  SECTIONS — الأقسام:
+ *  ─────────────────────────────────────
+ *  Items                          | الأصناف
+ *  Item Form Types                | أشكال الأصناف
+ *  Item UOMs                      | وحدات القياس
+ *  Purchase & Sales Transactions  | معاملات الشراء والبيع
+ *  Departments                    | الأقسام
+ *  Item Department Prices         | أسعار الأقسام
+ *  Inventory Lots                 | دفعات المخزون
+ *  FEFO Preview                   | معاينة FEFO
+ *  Item Barcodes                  | باركود الأصناف
+ *  Warehouses                     | المخازن
+ *  User Departments/Warehouses    | أقسام/مخازن المستخدمين
+ *  Cashier Scope                  | نطاق الكاشير
+ *  Store Transfers                | تحويلات المخازن
+ *  Suppliers                      | الموردون
+ *  Receiving (GRN)                | استلام البضاعة
+ *  Purchase Invoices              | فواتير المشتريات
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+import { db, pool } from "../db";
+import { eq, desc, and, gte, lte, sql, or, like, ilike, asc, isNull, isNotNull, inArray } from "drizzle-orm";
+import {
+  items,
+  itemFormTypes,
+  itemUoms,
+  purchaseTransactions,
+  salesTransactions,
+  departments,
+  itemDepartmentPrices,
+  inventoryLots,
+  inventoryLotMovements,
+  itemBarcodes,
+  warehouses,
+  userDepartments,
+  userWarehouses,
+  storeTransfers,
+  transferLines,
+  transferLineAllocations,
+  suppliers,
+  receivingHeaders,
+  receivingLines,
+  purchaseInvoiceHeaders,
+  purchaseInvoiceLines,
+  journalEntries,
+  journalLines,
+  fiscalPeriods,
+  accountMappings,
+  type Item,
+  type InsertItem,
+  type ItemFormType,
+  type InsertItemFormType,
+  type ItemUom,
+  type InsertItemUom,
+  type ItemWithFormType,
+  type PurchaseTransaction,
+  type Department,
+  type InsertDepartment,
+  type ItemDepartmentPrice,
+  type InsertItemDepartmentPrice,
+  type ItemDepartmentPriceWithDepartment,
+  type InventoryLot,
+  type InsertInventoryLot,
+  type InventoryLotMovement,
+  type InsertInventoryLotMovement,
+  type ItemBarcode,
+  type InsertItemBarcode,
+  type Warehouse,
+  type InsertWarehouse,
+  type StoreTransfer,
+  type InsertStoreTransfer,
+  type StoreTransferWithDetails,
+  type TransferLine,
+  type InsertTransferLine,
+  type TransferLineAllocation,
+  type InsertTransferLineAllocation,
+  type TransferLineWithItem,
+  type Supplier,
+  type InsertSupplier,
+  type ReceivingHeader,
+  type InsertReceivingHeader,
+  type ReceivingHeaderWithDetails,
+  type ReceivingLine,
+  type InsertReceivingLine,
+  type ReceivingLineWithItem,
+  type AccountMapping,
+  type JournalEntry,
+  type InsertJournalLine,
+} from "@shared/schema";
+import type { DatabaseStorage } from "./index";
+import { roundMoney, roundQty, parseMoney } from "../finance-helpers";
+
+function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
+  if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
+    return enteredPrice / parseFloat(item.majorToMinor);
+  }
+  if (unitLevel === 'medium' && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
+    return enteredPrice / parseFloat(item.mediumToMinor);
+  }
+  return enteredPrice;
+}
+
+const methods = {
+  // Items
+  async getItems(this: DatabaseStorage, params: { page?: number; limit?: number; search?: string; category?: string; isToxic?: boolean; formTypeId?: string; isActive?: boolean; minPrice?: number; maxPrice?: number }): Promise<{ items: Item[]; total: number }> {
+    const { page = 1, limit = 20, search, category, isToxic, formTypeId, isActive, minPrice, maxPrice } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions: any[] = [];
+
+    if (search) {
+      const searchPattern = `%${search}%`;
+      conditions.push(
+        or(
+          ilike(items.nameAr, searchPattern),
+          ilike(items.nameEn, searchPattern),
+          ilike(items.itemCode, searchPattern)
+        )
+      );
+    }
+
+    if (category) {
+      conditions.push(eq(items.category, category as any));
+    }
+
+    if (isToxic !== undefined) {
+      conditions.push(eq(items.isToxic, isToxic));
+    }
+
+    if (formTypeId) {
+      conditions.push(eq(items.formTypeId, formTypeId));
+    }
+
+    if (isActive !== undefined) {
+      conditions.push(eq(items.isActive, isActive));
+    }
+
+    if (minPrice !== undefined) {
+      conditions.push(gte(items.salePriceCurrent, String(minPrice)));
+    }
+
+    if (maxPrice !== undefined) {
+      conditions.push(lte(items.salePriceCurrent, String(maxPrice)));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)` })
+      .from(items)
+      .where(whereClause);
+
+    const itemsList = await db.select()
+      .from(items)
+      .where(whereClause)
+      .orderBy(asc(items.itemCode))
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      items: itemsList,
+      total: countResult?.count || 0,
+    };
+  },
+
+  async getItem(this: DatabaseStorage, id: string): Promise<ItemWithFormType | undefined> {
+    const [item] = await db.select().from(items).where(eq(items.id, id));
+    if (!item) return undefined;
+
+    let formType: ItemFormType | undefined;
+    if (item.formTypeId) {
+      const [ft] = await db.select().from(itemFormTypes).where(eq(itemFormTypes.id, item.formTypeId));
+      formType = ft;
+    }
+
+    return { ...item, formType };
+  },
+
+  async getItemsByIds(this: DatabaseStorage, ids: string[]): Promise<Map<string, Item>> {
+    const map = new Map<string, Item>();
+    if (ids.length === 0) return map;
+    const results = await db.select().from(items).where(sql`${items.id} IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`);
+    for (const item of results) {
+      map.set(item.id, item);
+    }
+    return map;
+  },
+
+  async createItem(this: DatabaseStorage, item: InsertItem): Promise<Item> {
+    const [newItem] = await db.insert(items).values(item).returning();
+    return newItem;
+  },
+
+  async updateItem(this: DatabaseStorage, id: string, item: Partial<InsertItem>): Promise<Item | undefined> {
+    const [updated] = await db.update(items)
+      .set({ ...item, updatedAt: new Date() })
+      .where(eq(items.id, id))
+      .returning();
+    return updated;
+  },
+
+  async deleteItem(this: DatabaseStorage, id: string): Promise<boolean> {
+    await db.delete(items).where(eq(items.id, id));
+    return true;
+  },
+
+  async checkItemUniqueness(this: DatabaseStorage, code?: string, nameAr?: string, nameEn?: string, excludeId?: string): Promise<{ codeUnique: boolean; nameArUnique: boolean; nameEnUnique: boolean }> {
+    let codeUnique = true;
+    let nameArUnique = true;
+    let nameEnUnique = true;
+
+    if (code) {
+      const trimmed = code.trim();
+      const conditions: any[] = [sql`LOWER(TRIM(${items.itemCode})) = LOWER(${trimmed})`];
+      if (excludeId) conditions.push(sql`${items.id} != ${excludeId}`);
+      const [result] = await db.select({ count: sql<number>`count(*)` }).from(items).where(and(...conditions));
+      codeUnique = Number(result.count) === 0;
+    }
+
+    if (nameAr) {
+      const trimmed = nameAr.trim();
+      const conditions: any[] = [sql`LOWER(TRIM(${items.nameAr})) = LOWER(${trimmed})`];
+      if (excludeId) conditions.push(sql`${items.id} != ${excludeId}`);
+      const [result] = await db.select({ count: sql<number>`count(*)` }).from(items).where(and(...conditions));
+      nameArUnique = Number(result.count) === 0;
+    }
+
+    if (nameEn) {
+      const trimmed = nameEn.trim();
+      const conditions: any[] = [sql`LOWER(TRIM(${items.nameEn})) = LOWER(${trimmed})`];
+      if (excludeId) conditions.push(sql`${items.id} != ${excludeId}`);
+      const [result] = await db.select({ count: sql<number>`count(*)` }).from(items).where(and(...conditions));
+      nameEnUnique = Number(result.count) === 0;
+    }
+
+    return { codeUnique, nameArUnique, nameEnUnique };
+  },
+
+  // Item Form Types
+  async getItemFormTypes(this: DatabaseStorage): Promise<ItemFormType[]> {
+    return db.select().from(itemFormTypes).orderBy(asc(itemFormTypes.sortOrder));
+  },
+
+  async createItemFormType(this: DatabaseStorage, formType: InsertItemFormType): Promise<ItemFormType> {
+    const [newFormType] = await db.insert(itemFormTypes).values(formType).returning();
+    return newFormType;
+  },
+
+  async getItemUoms(this: DatabaseStorage): Promise<ItemUom[]> {
+    return await db.select().from(itemUoms).where(eq(itemUoms.isActive, true)).orderBy(asc(itemUoms.nameAr));
+  },
+
+  async createItemUom(this: DatabaseStorage, data: InsertItemUom): Promise<ItemUom> {
+    const [uom] = await db.insert(itemUoms).values(data).returning();
+    return uom;
+  },
+
+  // Purchase & Sales Transactions
+  async getLastPurchases(this: DatabaseStorage, itemId: string, limit: number = 5): Promise<PurchaseTransaction[]> {
+    return db.select()
+      .from(purchaseTransactions)
+      .where(eq(purchaseTransactions.itemId, itemId))
+      .orderBy(desc(purchaseTransactions.txDate))
+      .limit(limit);
+  },
+
+  async getAverageSales(this: DatabaseStorage, itemId: string, startDate: string, endDate: string): Promise<{ avgPrice: string; totalQty: string; invoiceCount: number }> {
+    const [result] = await db.select({
+      avgPrice: sql<string>`COALESCE(AVG(${salesTransactions.salePrice}::numeric), 0)::text`,
+      totalQty: sql<string>`COALESCE(SUM(${salesTransactions.qty}::numeric), 0)::text`,
+      invoiceCount: sql<number>`COUNT(*)::int`,
+    })
+    .from(salesTransactions)
+    .where(and(
+      eq(salesTransactions.itemId, itemId),
+      gte(salesTransactions.txDate, startDate),
+      lte(salesTransactions.txDate, endDate)
+    ));
+
+    return {
+      avgPrice: result?.avgPrice || "0",
+      totalQty: result?.totalQty || "0",
+      invoiceCount: result?.invoiceCount || 0,
+    };
+  },
+
+  // Departments
+  async getDepartments(this: DatabaseStorage): Promise<Department[]> {
+    return db.select().from(departments).orderBy(asc(departments.code));
+  },
+
+  async getDepartment(this: DatabaseStorage, id: string): Promise<Department | undefined> {
+    const [dept] = await db.select().from(departments).where(eq(departments.id, id));
+    return dept;
+  },
+
+  async createDepartment(this: DatabaseStorage, dept: InsertDepartment): Promise<Department> {
+    const [newDept] = await db.insert(departments).values(dept).returning();
+    return newDept;
+  },
+
+  async updateDepartment(this: DatabaseStorage, id: string, dept: Partial<InsertDepartment>): Promise<Department | undefined> {
+    const [updated] = await db.update(departments)
+      .set(dept)
+      .where(eq(departments.id, id))
+      .returning();
+    return updated;
+  },
+
+  async deleteDepartment(this: DatabaseStorage, id: string): Promise<boolean> {
+    await db.delete(departments).where(eq(departments.id, id));
+    return true;
+  },
+
+  // Item Department Prices
+  async getItemDepartmentPrices(this: DatabaseStorage, itemId: string): Promise<ItemDepartmentPriceWithDepartment[]> {
+    const prices = await db.select()
+      .from(itemDepartmentPrices)
+      .where(eq(itemDepartmentPrices.itemId, itemId))
+      .orderBy(asc(itemDepartmentPrices.createdAt));
+
+    const result: ItemDepartmentPriceWithDepartment[] = [];
+    for (const price of prices) {
+      const [dept] = await db.select().from(departments).where(eq(departments.id, price.departmentId));
+      result.push({
+        ...price,
+        department: dept,
+      });
+    }
+    return result;
+  },
+
+  async createItemDepartmentPrice(this: DatabaseStorage, price: InsertItemDepartmentPrice): Promise<ItemDepartmentPrice> {
+    const [newPrice] = await db.insert(itemDepartmentPrices).values(price).returning();
+    return newPrice;
+  },
+
+  async updateItemDepartmentPrice(this: DatabaseStorage, id: string, price: Partial<InsertItemDepartmentPrice>): Promise<ItemDepartmentPrice | undefined> {
+    const [updated] = await db.update(itemDepartmentPrices)
+      .set({ ...price, updatedAt: new Date() })
+      .where(eq(itemDepartmentPrices.id, id))
+      .returning();
+    return updated;
+  },
+
+  async deleteItemDepartmentPrice(this: DatabaseStorage, id: string): Promise<boolean> {
+    await db.delete(itemDepartmentPrices).where(eq(itemDepartmentPrices.id, id));
+    return true;
+  },
+
+  async getItemPriceForDepartment(this: DatabaseStorage, itemId: string, departmentId: string): Promise<string | null> {
+    const [deptPrice] = await db.select()
+      .from(itemDepartmentPrices)
+      .where(and(
+        eq(itemDepartmentPrices.itemId, itemId),
+        eq(itemDepartmentPrices.departmentId, departmentId)
+      ));
+
+    if (deptPrice && parseFloat(deptPrice.salePrice) > 0) {
+      return deptPrice.salePrice;
+    }
+
+    return null;
+  },
+
+  // Inventory Lots
+  async getLots(this: DatabaseStorage, itemId: string): Promise<InventoryLot[]> {
+    return db.select().from(inventoryLots)
+      .where(and(eq(inventoryLots.itemId, itemId), eq(inventoryLots.isActive, true)))
+      .orderBy(asc(inventoryLots.expiryDate));
+  },
+
+  async getLot(this: DatabaseStorage, lotId: string): Promise<InventoryLot | undefined> {
+    const [lot] = await db.select().from(inventoryLots).where(eq(inventoryLots.id, lotId));
+    return lot;
+  },
+
+  async createLot(this: DatabaseStorage, lot: InsertInventoryLot): Promise<InventoryLot> {
+    const [newLot] = await db.insert(inventoryLots).values(lot).returning();
+    await db.insert(inventoryLotMovements).values({
+      lotId: newLot.id,
+      txType: "in" as const,
+      qtyChangeInMinor: lot.qtyInMinor || "0",
+      unitCost: lot.purchasePrice || "0",
+      referenceType: "initial",
+      txDate: new Date(),
+    } as any);
+    return newLot;
+  },
+
+  // FEFO Preview
+  async getFefoPreview(this: DatabaseStorage, itemId: string, requiredQty: number, asOfDate: string): Promise<any> {
+    const lots = await db.select().from(inventoryLots)
+      .where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.isActive, true),
+        sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+        or(
+          sql`${inventoryLots.expiryDate} IS NULL`,
+          sql`${inventoryLots.expiryDate} >= ${asOfDate}`
+        )
+      ))
+      .orderBy(asc(inventoryLots.expiryDate));
+
+    const allocations: any[] = [];
+    let remaining = requiredQty;
+
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const available = parseFloat(lot.qtyInMinor);
+      const allocated = Math.min(available, remaining);
+      allocations.push({
+        lotId: lot.id,
+        expiryDate: lot.expiryDate,
+        availableQty: available.toFixed(4),
+        allocatedQty: allocated.toFixed(4),
+      });
+      remaining -= allocated;
+    }
+
+    return {
+      allocations,
+      fulfilled: remaining <= 0,
+      shortfall: remaining > 0 ? remaining.toFixed(4) : "0",
+    };
+  },
+
+  // Item Barcodes
+  async getItemBarcodes(this: DatabaseStorage, itemId: string): Promise<ItemBarcode[]> {
+    return db.select().from(itemBarcodes)
+      .where(eq(itemBarcodes.itemId, itemId))
+      .orderBy(desc(itemBarcodes.createdAt));
+  },
+
+  async createItemBarcode(this: DatabaseStorage, barcode: InsertItemBarcode): Promise<ItemBarcode> {
+    const normalized = { ...barcode, barcodeValue: barcode.barcodeValue.trim() };
+    const [newBarcode] = await db.insert(itemBarcodes).values(normalized).returning();
+    return newBarcode;
+  },
+
+  async deactivateBarcode(this: DatabaseStorage, barcodeId: string): Promise<ItemBarcode | undefined> {
+    const [updated] = await db.update(itemBarcodes)
+      .set({ isActive: false })
+      .where(eq(itemBarcodes.id, barcodeId))
+      .returning();
+    return updated;
+  },
+
+  async resolveBarcode(this: DatabaseStorage, barcodeValue: string): Promise<{ found: boolean; itemId?: string; itemCode?: string; nameAr?: string }> {
+    const normalized = barcodeValue.trim();
+    const [barcode] = await db.select().from(itemBarcodes)
+      .where(and(eq(itemBarcodes.barcodeValue, normalized), eq(itemBarcodes.isActive, true)));
+    
+    if (barcode) {
+      const [item] = await db.select({ id: items.id, itemCode: items.itemCode, nameAr: items.nameAr })
+        .from(items).where(eq(items.id, barcode.itemId));
+      if (item) {
+        return { found: true, itemId: item.id, itemCode: item.itemCode, nameAr: item.nameAr };
+      }
+    }
+
+    const [item] = await db.select({ id: items.id, itemCode: items.itemCode, nameAr: items.nameAr })
+      .from(items).where(eq(items.itemCode, normalized));
+    if (item) {
+      return { found: true, itemId: item.id, itemCode: item.itemCode, nameAr: item.nameAr };
+    }
+
+    return { found: false };
+  },
+
+  // Warehouses
+  async getWarehouses(this: DatabaseStorage): Promise<Warehouse[]> {
+    return db.select().from(warehouses)
+      .orderBy(asc(warehouses.warehouseCode));
+  },
+
+  async getWarehouse(this: DatabaseStorage, id: string): Promise<Warehouse | undefined> {
+    const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, id));
+    return wh;
+  },
+
+  async createWarehouse(this: DatabaseStorage, wh: InsertWarehouse): Promise<Warehouse> {
+    const [newWh] = await db.insert(warehouses).values(wh).returning();
+    return newWh;
+  },
+
+  async updateWarehouse(this: DatabaseStorage, id: string, wh: Partial<InsertWarehouse>): Promise<Warehouse | undefined> {
+    const [updated] = await db.update(warehouses)
+      .set(wh)
+      .where(eq(warehouses.id, id))
+      .returning();
+    return updated;
+  },
+
+  async deleteWarehouse(this: DatabaseStorage, id: string): Promise<boolean> {
+    await db.delete(warehouses).where(eq(warehouses.id, id));
+    return true;
+  },
+
+  // Store Transfers
+  async getTransfers(this: DatabaseStorage): Promise<StoreTransferWithDetails[]> {
+    const transfers = await db.select().from(storeTransfers)
+      .where(sql`${storeTransfers.status} != 'cancelled'`)
+      .orderBy(desc(storeTransfers.createdAt))
+      .limit(100);
+
+    const result: StoreTransferWithDetails[] = [];
+    for (const t of transfers) {
+      const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
+      const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
+      const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, t.id));
+      const linesWithItems: TransferLineWithItem[] = [];
+      for (const line of lines) {
+        const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+        linesWithItems.push({ ...line, item });
+      }
+      result.push({ ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems });
+    }
+    return result;
+  },
+
+  async getTransfer(this: DatabaseStorage, id: string): Promise<StoreTransferWithDetails | undefined> {
+    const [t] = await db.select().from(storeTransfers).where(eq(storeTransfers.id, id));
+    if (!t) return undefined;
+    const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
+    const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
+    const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, t.id));
+    const linesWithItems: TransferLineWithItem[] = [];
+    for (const line of lines) {
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      linesWithItems.push({ ...line, item });
+    }
+    return { ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems };
+  },
+
+  async createDraftTransfer(this: DatabaseStorage, header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer> {
+    return await db.transaction(async (tx) => {
+      const [maxNum] = await tx.select({ max: sql<number>`COALESCE(MAX(${storeTransfers.transferNumber}), 0)` }).from(storeTransfers);
+      const nextNumber = (maxNum?.max || 0) + 1;
+
+      const [transfer] = await tx.insert(storeTransfers).values({
+        ...header,
+        transferNumber: nextNumber,
+        status: "draft" as const,
+      }).returning();
+
+      for (const line of lines) {
+        await tx.insert(transferLines).values({
+          transferId: transfer.id,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel as any,
+          qtyEntered: line.qtyEntered,
+          qtyInMinor: line.qtyInMinor,
+          selectedExpiryDate: line.selectedExpiryDate || null,
+          selectedExpiryMonth: line.expiryMonth || null,
+          selectedExpiryYear: line.expiryYear || null,
+          availableAtSaveMinor: line.availableAtSaveMinor || null,
+          notes: line.notes || null,
+        });
+      }
+
+      return transfer;
+    });
+  },
+
+  async updateDraftTransfer(this: DatabaseStorage, transferId: string, header: any, lines: any[]): Promise<StoreTransfer> {
+    return await db.transaction(async (tx) => {
+      await tx.update(storeTransfers).set({
+        transferDate: header.transferDate,
+        sourceWarehouseId: header.sourceWarehouseId,
+        destinationWarehouseId: header.destinationWarehouseId,
+        notes: header.notes || null,
+      }).where(eq(storeTransfers.id, transferId));
+
+      await tx.delete(transferLines).where(eq(transferLines.transferId, transferId));
+
+      for (const line of lines) {
+        await tx.insert(transferLines).values({
+          transferId,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel as any,
+          qtyEntered: line.qtyEntered,
+          qtyInMinor: line.qtyInMinor,
+          selectedExpiryDate: line.selectedExpiryDate || null,
+          selectedExpiryMonth: line.expiryMonth || null,
+          selectedExpiryYear: line.expiryYear || null,
+          availableAtSaveMinor: line.availableAtSaveMinor || null,
+          notes: line.notes || null,
+        });
+      }
+
+      const [updated] = await tx.select().from(storeTransfers).where(eq(storeTransfers.id, transferId));
+      return updated;
+    });
+  },
+
+  /*
+   * postTransfer — ترحيل تحويل مخزني
+   * ──────────────────────────────────
+   * ينقل الكميات من المخزن المصدر إلى المخزن الوجهة:
+   * 1. قفل التحويل (FOR UPDATE) ومنع الترحيل المزدوج
+   * 2. لكل سطر: قفل دفعات المخزون في المصدر (FEFO) وخصم الكميات
+   * 3. إضافة (أو تحديث) دفعات المخزون في الوجهة بنفس بيانات الصلاحية
+   * 4. تسجيل حركة المخزون وتحديث الحالة إلى "posted"
+   *
+   * ⚠️ تحذير: لا تعدل ترتيب الـ FOR UPDATE — يمنع deadlocks
+   */
+  async postTransfer(this: DatabaseStorage, transferId: string): Promise<StoreTransfer> {
+    return await db.transaction(async (tx) => {
+    const [transfer] = await tx.select().from(storeTransfers).where(eq(storeTransfers.id, transferId)).for("update");
+    if (!transfer) throw new Error("التحويل غير موجود");
+    if (transfer.status !== "draft") throw new Error("لا يمكن ترحيل تحويل غير مسودة");
+    if (transfer.sourceWarehouseId === transfer.destinationWarehouseId) throw new Error("مخزن المصدر والوجهة يجب أن يكونا مختلفين");
+
+    const lines = await tx.select().from(transferLines).where(eq(transferLines.transferId, transferId));
+    if (lines.length === 0) throw new Error("لا توجد سطور في التحويل");
+      for (const line of lines) {
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        if (!item) throw new Error(`الصنف غير موجود: ${line.itemId}`);
+        if (item.category === "service") throw new Error(`الخدمات لا يمكن تحويلها: ${item.nameAr}`);
+
+        const requiredQty = parseFloat(line.qtyInMinor);
+        if (requiredQty <= 0) throw new Error(`الكمية يجب أن تكون أكبر من صفر: ${item.nameAr}`);
+
+        let remaining = requiredQty;
+        const allocations: { lotId: string; expiryDate: string | null; expiryMonth: number | null; expiryYear: number | null; allocatedQty: number; unitCost: string; lotSalePrice: string }[] = [];
+
+        if (item.hasExpiry && line.selectedExpiryMonth && line.selectedExpiryYear) {
+          const selMonth = line.selectedExpiryMonth;
+          const selYear = line.selectedExpiryYear;
+          const selectedLots = await tx.select().from(inventoryLots)
+            .where(and(
+              eq(inventoryLots.itemId, line.itemId),
+              eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
+              eq(inventoryLots.isActive, true),
+              sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+              eq(inventoryLots.expiryMonth, selMonth),
+              eq(inventoryLots.expiryYear, selYear)
+            ))
+            .orderBy(asc(inventoryLots.receivedDate))
+            .for("update");
+
+          for (const lot of selectedLots) {
+            if (remaining <= 0) break;
+            const available = parseFloat(lot.qtyInMinor);
+            const allocated = Math.min(available, remaining);
+            allocations.push({
+              lotId: lot.id,
+              expiryDate: lot.expiryDate,
+              expiryMonth: lot.expiryMonth,
+              expiryYear: lot.expiryYear,
+              allocatedQty: allocated,
+              unitCost: lot.purchasePrice,
+              lotSalePrice: lot.salePrice || "0",
+            });
+            remaining -= allocated;
+          }
+        } else if (item.hasExpiry && line.selectedExpiryDate) {
+          const selectedLots = await tx.select().from(inventoryLots)
+            .where(and(
+              eq(inventoryLots.itemId, line.itemId),
+              eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
+              eq(inventoryLots.isActive, true),
+              sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+              sql`${inventoryLots.expiryDate} = ${line.selectedExpiryDate}`
+            ))
+            .orderBy(asc(inventoryLots.receivedDate))
+            .for("update");
+
+          for (const lot of selectedLots) {
+            if (remaining <= 0) break;
+            const available = parseFloat(lot.qtyInMinor);
+            const allocated = Math.min(available, remaining);
+            allocations.push({
+              lotId: lot.id,
+              expiryDate: lot.expiryDate,
+              expiryMonth: lot.expiryMonth,
+              expiryYear: lot.expiryYear,
+              allocatedQty: allocated,
+              unitCost: lot.purchasePrice,
+              lotSalePrice: lot.salePrice || "0",
+            });
+            remaining -= allocated;
+          }
+        }
+
+        if (remaining > 0) {
+          const transferDateParsed = new Date(transfer.transferDate);
+          const tMonth = transferDateParsed.getMonth() + 1;
+          const tYear = transferDateParsed.getFullYear();
+
+          const expiryCondition = item.hasExpiry
+            ? and(
+                sql`${inventoryLots.expiryMonth} IS NOT NULL`,
+                sql`${inventoryLots.expiryYear} IS NOT NULL`,
+                sql`(${inventoryLots.expiryYear} > ${tYear} OR (${inventoryLots.expiryYear} = ${tYear} AND ${inventoryLots.expiryMonth} >= ${tMonth}))`
+              )
+            : and(
+                sql`${inventoryLots.expiryMonth} IS NULL`,
+                sql`${inventoryLots.expiryYear} IS NULL`
+              );
+
+          const alreadyUsedLotIds = allocations.map(a => a.lotId);
+
+          const fefoLots = await tx.select().from(inventoryLots)
+            .where(and(
+              eq(inventoryLots.itemId, line.itemId),
+              eq(inventoryLots.warehouseId, transfer.sourceWarehouseId),
+              eq(inventoryLots.isActive, true),
+              sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+              expiryCondition,
+              ...(alreadyUsedLotIds.length > 0
+                ? [sql`${inventoryLots.id} NOT IN (${sql.join(alreadyUsedLotIds.map(id => sql`${id}`), sql`, `)})`]
+                : [])
+            ))
+            .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth), asc(inventoryLots.receivedDate))
+            .for("update");
+
+          for (const lot of fefoLots) {
+            if (remaining <= 0) break;
+            const available = parseFloat(lot.qtyInMinor);
+            const allocated = Math.min(available, remaining);
+            allocations.push({
+              lotId: lot.id,
+              expiryDate: lot.expiryDate,
+              expiryMonth: lot.expiryMonth,
+              expiryYear: lot.expiryYear,
+              allocatedQty: allocated,
+              unitCost: lot.purchasePrice,
+              lotSalePrice: lot.salePrice || "0",
+            });
+            remaining -= allocated;
+          }
+        }
+
+        if (remaining > 0) {
+          throw new Error(`الكمية غير متاحة للصنف: ${item.nameAr} - المطلوب: ${requiredQty} - المتاح: ${(requiredQty - remaining).toFixed(0)} (بالوحدة الصغرى)`);
+        }
+
+        for (const alloc of allocations) {
+          await tx.execute(sql`
+            UPDATE inventory_lots 
+            SET qty_in_minor = qty_in_minor::numeric - ${alloc.allocatedQty.toFixed(4)}::numeric,
+                updated_at = NOW()
+            WHERE id = ${alloc.lotId}
+          `);
+
+          await tx.insert(inventoryLotMovements).values({
+            lotId: alloc.lotId,
+            warehouseId: transfer.sourceWarehouseId,
+            txType: "out" as const,
+            txDate: new Date(),
+            qtyChangeInMinor: (-alloc.allocatedQty).toFixed(4),
+            unitCost: alloc.unitCost,
+            referenceType: "transfer",
+            referenceId: transfer.id,
+          } as any);
+
+          const expiryMatchConditions = [];
+          if (alloc.expiryDate) {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryDate} = ${alloc.expiryDate}`);
+          } else {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryDate} IS NULL`);
+          }
+          if (alloc.expiryMonth != null) {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryMonth} = ${alloc.expiryMonth}`);
+          } else {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryMonth} IS NULL`);
+          }
+          if (alloc.expiryYear != null) {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryYear} = ${alloc.expiryYear}`);
+          } else {
+            expiryMatchConditions.push(sql`${inventoryLots.expiryYear} IS NULL`);
+          }
+
+          const existingDestLots = await tx.select().from(inventoryLots)
+            .where(and(
+              eq(inventoryLots.itemId, line.itemId),
+              eq(inventoryLots.warehouseId, transfer.destinationWarehouseId),
+              eq(inventoryLots.isActive, true),
+              ...expiryMatchConditions,
+              sql`${inventoryLots.purchasePrice}::numeric = ${alloc.unitCost}::numeric`
+            ));
+
+          let destLotId: string;
+
+          if (existingDestLots.length > 0) {
+            destLotId = existingDestLots[0].id;
+            const allocSalePrice = parseFloat(alloc.lotSalePrice || "0");
+            const existingSalePrice = parseFloat(existingDestLots[0].salePrice || "0");
+            const destSalePrice = allocSalePrice > 0 ? alloc.lotSalePrice : (existingSalePrice > 0 ? existingDestLots[0].salePrice : "0");
+            await tx.execute(sql`
+              UPDATE inventory_lots 
+              SET qty_in_minor = qty_in_minor::numeric + ${alloc.allocatedQty.toFixed(4)}::numeric,
+                  sale_price = ${destSalePrice},
+                  updated_at = NOW()
+              WHERE id = ${destLotId}
+            `);
+          } else {
+            const [newLot] = await tx.insert(inventoryLots).values({
+              itemId: line.itemId,
+              warehouseId: transfer.destinationWarehouseId,
+              expiryDate: item.hasExpiry ? (alloc.expiryDate || null) : null,
+              expiryMonth: item.hasExpiry ? (alloc.expiryMonth || null) : null,
+              expiryYear: item.hasExpiry ? (alloc.expiryYear || null) : null,
+              receivedDate: transfer.transferDate,
+              purchasePrice: alloc.unitCost,
+              salePrice: alloc.lotSalePrice || "0",
+              qtyInMinor: alloc.allocatedQty.toFixed(4),
+              isActive: true,
+            }).returning();
+            destLotId = newLot.id;
+          }
+
+          await tx.insert(inventoryLotMovements).values({
+            lotId: destLotId,
+            warehouseId: transfer.destinationWarehouseId,
+            txType: "in" as const,
+            txDate: new Date(),
+            qtyChangeInMinor: alloc.allocatedQty.toFixed(4),
+            unitCost: alloc.unitCost,
+            referenceType: "transfer",
+            referenceId: transfer.id,
+          } as any);
+
+          await tx.insert(transferLineAllocations).values({
+            lineId: line.id,
+            sourceLotId: alloc.lotId,
+            expiryDate: alloc.expiryDate || null,
+            qtyOutInMinor: alloc.allocatedQty.toFixed(4),
+            purchasePrice: alloc.unitCost,
+            destinationLotId: destLotId,
+          });
+        }
+      }
+
+      const allAllocations = await tx.select().from(transferLineAllocations)
+        .innerJoin(transferLines, eq(transferLineAllocations.lineId, transferLines.id))
+        .where(eq(transferLines.transferId, transferId));
+      
+      let totalCost = 0;
+      for (const row of allAllocations) {
+        const qty = parseFloat(row.transfer_line_allocations.qtyOutInMinor);
+        const cost = parseFloat(row.transfer_line_allocations.purchasePrice);
+        totalCost += qty * cost;
+      }
+
+      const [updated] = await tx.update(storeTransfers)
+        .set({ status: "executed" as const, executedAt: new Date() })
+        .where(eq(storeTransfers.id, transferId))
+        .returning();
+
+      if (totalCost > 0) {
+        (this as any).generateWarehouseTransferJournal(
+          transferId, transfer, totalCost
+        ).catch((err: any) => console.error("Auto journal for warehouse transfer failed:", err));
+      }
+
+      return updated;
+    });
+  },
+
+  async deleteTransfer(this: DatabaseStorage, id: string, reason?: string): Promise<boolean> {
+    const [t] = await db.select().from(storeTransfers).where(eq(storeTransfers.id, id));
+    if (!t) return false;
+    if (t.status !== "draft") throw new Error("لا يمكن إلغاء تحويل مُرحّل");
+    await db.update(storeTransfers).set({
+      status: "cancelled" as any,
+      notes: reason ? `[ملغي] ${reason}` : (t.notes ? `[ملغي] ${t.notes}` : "[ملغي]"),
+    }).where(eq(storeTransfers.id, id));
+    return true;
+  },
+
+  async getWarehouseFefoPreview(this: DatabaseStorage, itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any> {
+    const [item] = await db.select().from(items).where(eq(items.id, itemId));
+
+    const asOf = new Date(asOfDate);
+    const asOfMonth = asOf.getMonth() + 1;
+    const asOfYear = asOf.getFullYear();
+
+    const expiryCondition = item && item.hasExpiry
+      ? and(
+          sql`${inventoryLots.expiryMonth} IS NOT NULL`,
+          sql`${inventoryLots.expiryYear} IS NOT NULL`,
+          sql`(${inventoryLots.expiryYear} > ${asOfYear} OR (${inventoryLots.expiryYear} = ${asOfYear} AND ${inventoryLots.expiryMonth} >= ${asOfMonth}))`
+        )
+      : sql`${inventoryLots.expiryMonth} IS NULL`;
+
+    const lots = await db.select().from(inventoryLots)
+      .where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.warehouseId, warehouseId),
+        eq(inventoryLots.isActive, true),
+        sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+        expiryCondition
+      ))
+      .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth), asc(inventoryLots.receivedDate));
+
+    const allocations: any[] = [];
+    let remaining = requiredQty;
+
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const available = parseFloat(lot.qtyInMinor);
+      const allocated = Math.min(available, remaining);
+      allocations.push({
+        lotId: lot.id,
+        expiryDate: lot.expiryDate,
+        expiryMonth: lot.expiryMonth,
+        expiryYear: lot.expiryYear,
+        receivedDate: lot.receivedDate,
+        availableQty: available.toFixed(4),
+        allocatedQty: allocated.toFixed(4),
+        unitCost: lot.purchasePrice,
+        lotSalePrice: lot.salePrice || "0",
+      });
+      remaining -= allocated;
+    }
+
+    return {
+      allocations,
+      fulfilled: remaining <= 0,
+      shortfall: remaining > 0 ? remaining.toFixed(4) : "0",
+    };
+  },
+
+  async getItemAvailability(this: DatabaseStorage, itemId: string, warehouseId: string): Promise<string> {
+    const [result] = await db.select({
+      total: sql<string>`COALESCE(SUM(${inventoryLots.qtyInMinor}::numeric), 0)::text`
+    })
+      .from(inventoryLots)
+      .where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.warehouseId, warehouseId),
+        eq(inventoryLots.isActive, true),
+        sql`${inventoryLots.qtyInMinor}::numeric > 0`
+      ));
+    return result?.total || "0";
+  },
+
+  async getExpiryOptions(this: DatabaseStorage, itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; expiryMonth: number | null; expiryYear: number | null; qtyAvailableMinor: string; lotSalePrice?: string}[]> {
+    const [item] = await db.select().from(items).where(eq(items.id, itemId));
+    if (!item || !item.hasExpiry) return [];
+    
+    const asOf = new Date(asOfDate);
+    const asOfMonth = asOf.getMonth() + 1;
+    const asOfYear = asOf.getFullYear();
+
+    const results = await db.select({
+      expiryMonth: inventoryLots.expiryMonth,
+      expiryYear: inventoryLots.expiryYear,
+      qtyAvailableMinor: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+      minSalePrice: sql<string>`MIN(${inventoryLots.salePrice})::text`,
+      maxSalePrice: sql<string>`MAX(${inventoryLots.salePrice})::text`,
+    })
+      .from(inventoryLots)
+      .where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.warehouseId, warehouseId),
+        eq(inventoryLots.isActive, true),
+        sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+        sql`${inventoryLots.expiryMonth} IS NOT NULL`,
+        sql`${inventoryLots.expiryYear} IS NOT NULL`,
+        sql`(${inventoryLots.expiryYear} > ${asOfYear} OR (${inventoryLots.expiryYear} = ${asOfYear} AND ${inventoryLots.expiryMonth} >= ${asOfMonth}))`
+      ))
+      .groupBy(inventoryLots.expiryMonth, inventoryLots.expiryYear)
+      .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth));
+
+    return results.filter(r => r.expiryMonth !== null && r.expiryYear !== null).map(r => ({
+      expiryDate: `${r.expiryYear}-${String(r.expiryMonth).padStart(2, '0')}-01`,
+      expiryMonth: r.expiryMonth,
+      expiryYear: r.expiryYear,
+      qtyAvailableMinor: r.qtyAvailableMinor,
+      lotSalePrice: r.minSalePrice || undefined,
+    }));
+  },
+
+  async getItemAvailabilitySummary(this: DatabaseStorage, itemId: string, asOfDate: string, excludeExpired: boolean): Promise<{warehouseId: string; warehouseNameAr: string; qtyMinor: string; majorUnitName: string | null; majorToMinor: string | null}[]> {
+    const [item] = await db.select({ hasExpiry: items.hasExpiry, majorUnitName: items.majorUnitName, majorToMinor: items.majorToMinor }).from(items).where(eq(items.id, itemId));
+    if (!item) return [];
+
+    const conditions: any[] = [
+      eq(inventoryLots.itemId, itemId),
+      eq(inventoryLots.isActive, true),
+      sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+    ];
+
+    if (excludeExpired && item.hasExpiry) {
+      const asOf = new Date(asOfDate);
+      const asOfMonth = asOf.getMonth() + 1;
+      const asOfYear = asOf.getFullYear();
+      conditions.push(
+        sql`(${inventoryLots.expiryMonth} IS NULL OR ${inventoryLots.expiryYear} > ${asOfYear} OR (${inventoryLots.expiryYear} = ${asOfYear} AND ${inventoryLots.expiryMonth} >= ${asOfMonth}))`
+      );
+    }
+
+    const results = await db.select({
+      warehouseId: inventoryLots.warehouseId,
+      warehouseNameAr: warehouses.nameAr,
+      qtyMinor: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+    })
+      .from(inventoryLots)
+      .innerJoin(warehouses, and(eq(warehouses.id, inventoryLots.warehouseId), eq(warehouses.isActive, true)))
+      .where(and(...conditions))
+      .groupBy(inventoryLots.warehouseId, warehouses.nameAr)
+      .orderBy(warehouses.nameAr);
+
+    return results.filter(r => r.warehouseId !== null).map(r => ({
+      warehouseId: r.warehouseId!,
+      warehouseNameAr: r.warehouseNameAr,
+      qtyMinor: r.qtyMinor,
+      majorUnitName: item.majorUnitName,
+      majorToMinor: item.majorToMinor,
+    }));
+  },
+
+  async searchItemsAdvanced(this: DatabaseStorage, params: {
+    mode: 'AR' | 'EN' | 'CODE' | 'BARCODE';
+    query: string;
+    warehouseId: string;
+    page: number;
+    pageSize: number;
+    includeZeroStock: boolean;
+    drugsOnly: boolean;
+    excludeServices?: boolean;
+    minPrice?: number;
+    maxPrice?: number;
+  }): Promise<{items: any[]; total: number}> {
+    const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly, excludeServices, minPrice, maxPrice } = params;
+    const offset = (page - 1) * pageSize;
+
+    const buildPattern = (q: string) => {
+      if (!q.includes('%')) return `%${q}%`;
+      let p = q;
+      if (!p.startsWith('%')) p = `%${p}`;
+      if (!p.endsWith('%')) p = `${p}%`;
+      return p;
+    };
+
+    let searchCondition: any;
+    let joinBarcode = false;
+
+    switch (mode) {
+      case 'AR':
+        searchCondition = ilike(items.nameAr, buildPattern(query));
+        break;
+      case 'EN':
+        searchCondition = ilike(sql`COALESCE(${items.nameEn}, '')`, buildPattern(query));
+        break;
+      case 'CODE':
+        searchCondition = ilike(items.itemCode, buildPattern(query));
+        break;
+      case 'BARCODE':
+        joinBarcode = true;
+        searchCondition = ilike(itemBarcodes.barcodeValue, buildPattern(query));
+        break;
+      default:
+        searchCondition = ilike(items.nameAr, buildPattern(query));
+    }
+
+    const conditions: any[] = [eq(items.isActive, true), searchCondition];
+    if (drugsOnly) {
+      conditions.push(eq(items.category, 'drug'));
+    }
+    if (excludeServices) {
+      conditions.push(sql`${items.category} != 'service'`);
+    }
+    if (minPrice !== undefined) {
+      conditions.push(sql`${items.salePriceCurrent}::numeric >= ${minPrice}`);
+    }
+    if (maxPrice !== undefined) {
+      conditions.push(sql`${items.salePriceCurrent}::numeric <= ${maxPrice}`);
+    }
+
+    const itemIdRef = sql.raw(`"items"."id"`);
+    const availQtySql = sql<string>`COALESCE((
+      SELECT SUM(il.qty_in_minor::numeric)::text
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+    ), '0')`;
+
+    const nearestExpirySql = sql<string>`(
+      SELECT MIN(il.expiry_date)::text
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+        AND il.expiry_date IS NOT NULL
+        AND il.expiry_date >= CURRENT_DATE
+    )`;
+
+    const nearestExpiryMonthSql = sql<number>`(
+      SELECT il.expiry_month
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+        AND il.expiry_month IS NOT NULL
+        AND il.expiry_year IS NOT NULL
+        AND (il.expiry_year > EXTRACT(YEAR FROM CURRENT_DATE)::int OR (il.expiry_year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND il.expiry_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))
+      ORDER BY il.expiry_year ASC, il.expiry_month ASC
+      LIMIT 1
+    )`;
+
+    const nearestExpiryYearSql = sql<number>`(
+      SELECT il.expiry_year
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+        AND il.expiry_month IS NOT NULL
+        AND il.expiry_year IS NOT NULL
+        AND (il.expiry_year > EXTRACT(YEAR FROM CURRENT_DATE)::int OR (il.expiry_year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND il.expiry_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))
+      ORDER BY il.expiry_year ASC, il.expiry_month ASC
+      LIMIT 1
+    )`;
+
+    const nearestExpiryQtySql = sql<string>`(
+      SELECT SUM(il.qty_in_minor::numeric)::text
+      FROM inventory_lots il
+      WHERE il.item_id = ${itemIdRef}
+        AND il.warehouse_id = ${warehouseId}
+        AND il.is_active = true
+        AND il.qty_in_minor::numeric > 0
+        AND il.expiry_date = (
+          SELECT MIN(il2.expiry_date)
+          FROM inventory_lots il2
+          WHERE il2.item_id = ${itemIdRef}
+            AND il2.warehouse_id = ${warehouseId}
+            AND il2.is_active = true
+            AND il2.qty_in_minor::numeric > 0
+            AND il2.expiry_date IS NOT NULL
+            AND il2.expiry_date >= CURRENT_DATE
+        )
+    )`;
+
+    if (joinBarcode) {
+      const baseQuery = db.select({
+        id: items.id,
+        itemCode: items.itemCode,
+        nameAr: items.nameAr,
+        nameEn: items.nameEn,
+        hasExpiry: items.hasExpiry,
+        category: items.category,
+        majorUnitName: items.majorUnitName,
+        minorUnitName: items.minorUnitName,
+        majorToMinor: items.majorToMinor,
+        majorToMedium: items.majorToMedium,
+        mediumUnitName: items.mediumUnitName,
+        mediumToMinor: items.mediumToMinor,
+        salePriceCurrent: items.salePriceCurrent,
+        availableQtyMinor: availQtySql,
+        nearestExpiryDate: nearestExpirySql,
+        nearestExpiryMonth: nearestExpiryMonthSql,
+        nearestExpiryYear: nearestExpiryYearSql,
+        nearestExpiryQtyMinor: nearestExpiryQtySql,
+      })
+        .from(items)
+        .innerJoin(itemBarcodes, and(eq(itemBarcodes.itemId, items.id), eq(itemBarcodes.isActive, true)))
+        .where(and(...conditions))
+        .groupBy(items.id);
+
+      if (!includeZeroStock) {
+        const allResults = await baseQuery.orderBy(asc(items.itemCode));
+        const filtered = allResults.filter(r => parseFloat(r.availableQtyMinor) > 0);
+        const total = filtered.length;
+        const paged = filtered.slice(offset, offset + pageSize);
+        return { items: paged, total };
+      }
+
+      const countResult = await db.select({ count: sql<number>`COUNT(DISTINCT ${items.id})` })
+        .from(items)
+        .innerJoin(itemBarcodes, and(eq(itemBarcodes.itemId, items.id), eq(itemBarcodes.isActive, true)))
+        .where(and(...conditions));
+
+      const total = countResult[0]?.count || 0;
+      const results = await baseQuery.orderBy(asc(items.itemCode)).limit(pageSize).offset(offset);
+      return { items: results, total };
+    }
+
+    if (!includeZeroStock) {
+      const allResults = await db.select({
+        id: items.id,
+        itemCode: items.itemCode,
+        nameAr: items.nameAr,
+        nameEn: items.nameEn,
+        hasExpiry: items.hasExpiry,
+        category: items.category,
+        majorUnitName: items.majorUnitName,
+        minorUnitName: items.minorUnitName,
+        majorToMinor: items.majorToMinor,
+        majorToMedium: items.majorToMedium,
+        mediumUnitName: items.mediumUnitName,
+        mediumToMinor: items.mediumToMinor,
+        salePriceCurrent: items.salePriceCurrent,
+        availableQtyMinor: availQtySql,
+        nearestExpiryDate: nearestExpirySql,
+        nearestExpiryMonth: nearestExpiryMonthSql,
+        nearestExpiryYear: nearestExpiryYearSql,
+        nearestExpiryQtyMinor: nearestExpiryQtySql,
+      })
+        .from(items)
+        .where(and(...conditions))
+        .orderBy(asc(items.itemCode));
+
+      const filtered = allResults.filter(r => parseFloat(r.availableQtyMinor) > 0);
+      const total = filtered.length;
+      const paged = filtered.slice(offset, offset + pageSize);
+      return { items: paged, total };
+    }
+
+    const [countResult] = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(items)
+      .where(and(...conditions));
+
+    const total = countResult?.count || 0;
+
+    const results = await db.select({
+      id: items.id,
+      itemCode: items.itemCode,
+      nameAr: items.nameAr,
+      nameEn: items.nameEn,
+      hasExpiry: items.hasExpiry,
+      category: items.category,
+      majorUnitName: items.majorUnitName,
+      minorUnitName: items.minorUnitName,
+      majorToMinor: items.majorToMinor,
+      majorToMedium: items.majorToMedium,
+      mediumUnitName: items.mediumUnitName,
+      mediumToMinor: items.mediumToMinor,
+      salePriceCurrent: items.salePriceCurrent,
+      availableQtyMinor: availQtySql,
+      nearestExpiryDate: nearestExpirySql,
+      nearestExpiryMonth: nearestExpiryMonthSql,
+      nearestExpiryYear: nearestExpiryYearSql,
+      nearestExpiryQtyMinor: nearestExpiryQtySql,
+    })
+      .from(items)
+      .where(and(...conditions))
+      .orderBy(asc(items.itemCode))
+      .limit(pageSize)
+      .offset(offset);
+
+    return { items: results, total };
+  },
+
+  async searchItemsByPattern(this: DatabaseStorage, query: string, limit: number): Promise<any[]> {
+    const buildPattern = (q: string) => {
+      if (!q.includes('%')) return `%${q}%`;
+      let p = q;
+      if (!p.startsWith('%')) p = `%${p}`;
+      if (!p.endsWith('%')) p = `${p}%`;
+      return p;
+    };
+
+    const pattern = buildPattern(query);
+    const searchCondition = or(
+      ilike(items.nameAr, pattern),
+      ilike(sql`COALESCE(${items.nameEn}, '')`, pattern),
+      ilike(items.itemCode, pattern)
+    );
+
+    const results = await db.select({
+      id: items.id,
+      itemCode: items.itemCode,
+      nameAr: items.nameAr,
+      nameEn: items.nameEn,
+      hasExpiry: items.hasExpiry,
+      category: items.category,
+      majorUnitName: items.majorUnitName,
+      minorUnitName: items.minorUnitName,
+      majorToMinor: items.majorToMinor,
+      majorToMedium: items.majorToMedium,
+      mediumUnitName: items.mediumUnitName,
+      mediumToMinor: items.mediumToMinor,
+      salePriceCurrent: items.salePriceCurrent,
+      purchasePriceLast: items.purchasePriceLast,
+    })
+      .from(items)
+      .where(and(eq(items.isActive, true), searchCondition))
+      .orderBy(asc(items.itemCode))
+      .limit(limit);
+
+    return results;
+  },
+
+  async getTransfersFiltered(this: DatabaseStorage, params: {
+    fromDate?: string;
+    toDate?: string;
+    sourceWarehouseId?: string;
+    destWarehouseId?: string;
+    status?: string;
+    search?: string;
+    page: number;
+    pageSize: number;
+    includeCancelled?: boolean;
+  }): Promise<{data: StoreTransferWithDetails[]; total: number}> {
+    const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize, includeCancelled } = params;
+    const offset = (page - 1) * pageSize;
+
+    const conditions: any[] = [];
+
+    if (fromDate) {
+      conditions.push(gte(storeTransfers.transferDate, fromDate));
+    }
+    if (toDate) {
+      conditions.push(lte(storeTransfers.transferDate, toDate));
+    }
+    if (sourceWarehouseId) {
+      conditions.push(eq(storeTransfers.sourceWarehouseId, sourceWarehouseId));
+    }
+    if (destWarehouseId) {
+      conditions.push(eq(storeTransfers.destinationWarehouseId, destWarehouseId));
+    }
+    if (status) {
+      conditions.push(eq(storeTransfers.status, status as any));
+    } else if (!includeCancelled) {
+      conditions.push(sql`${storeTransfers.status} != 'cancelled'`);
+    }
+    if (search && search.trim()) {
+      const searchTerm = search.trim().replace(/^TRF-/i, '');
+      const numericSearch = parseInt(searchTerm, 10);
+      if (!isNaN(numericSearch)) {
+        conditions.push(eq(storeTransfers.transferNumber, numericSearch));
+      } else {
+        const matchingItemIds = await db.select({ id: items.id })
+          .from(items)
+          .where(or(
+            ilike(items.nameAr, `%${searchTerm}%`),
+            ilike(items.itemCode, `%${searchTerm}%`)
+          ));
+
+        if (matchingItemIds.length > 0) {
+          const transferIdsWithItem = await db.selectDistinct({ transferId: transferLines.transferId })
+            .from(transferLines)
+            .where(sql`${transferLines.itemId} IN (${sql.join(matchingItemIds.map(i => sql`${i.id}`), sql`, `)})`);
+
+          if (transferIdsWithItem.length > 0) {
+            conditions.push(sql`${storeTransfers.id} IN (${sql.join(transferIdsWithItem.map(t => sql`${t.transferId}`), sql`, `)})`);
+          } else {
+            return { data: [], total: 0 };
+          }
+        } else {
+          return { data: [], total: 0 };
+        }
+      }
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(storeTransfers)
+      .where(whereClause);
+
+    const total = countResult?.count || 0;
+
+    const transfers = await db.select().from(storeTransfers)
+      .where(whereClause)
+      .orderBy(desc(storeTransfers.createdAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    const result: StoreTransferWithDetails[] = [];
+    for (const t of transfers) {
+      const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
+      const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
+      const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, t.id));
+      const linesWithItems: TransferLineWithItem[] = [];
+      for (const line of lines) {
+        const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+        linesWithItems.push({ ...line, item });
+      }
+      result.push({ ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems });
+    }
+
+    return { data: result, total };
+  },
+
+  async searchItemsForTransfer(this: DatabaseStorage, query: string, warehouseId: string, limit: number = 10): Promise<any[]> {
+    const searchTerms = query.trim().split('%').filter(Boolean);
+
+    let conditions: any[] = [eq(items.isActive, true)];
+
+    if (searchTerms.length > 1) {
+      const nameConditions = searchTerms.map(term =>
+        ilike(items.nameAr, `%${term}%`)
+      );
+      conditions.push(and(...nameConditions));
+    } else if (searchTerms.length === 1) {
+      const term = searchTerms[0];
+      conditions.push(
+        or(
+          ilike(items.itemCode, `%${term}%`),
+          ilike(items.nameAr, `%${term}%`),
+          ilike(items.nameEn || '', `%${term}%`)
+        )
+      );
+    }
+
+    const results = await db.select().from(items)
+      .where(and(...conditions))
+      .orderBy(asc(items.itemCode))
+      .limit(limit);
+
+    const enriched = [];
+    for (const item of results) {
+      const avail = await this.getItemAvailability(item.id, warehouseId);
+      enriched.push({
+        ...item,
+        availableQtyMinor: avail,
+      });
+    }
+    return enriched;
+  },
+
+  async seedPilotTest(this: DatabaseStorage): Promise<{ warehouses: any[]; items: any[]; lots: any[] }> {
+    const today = new Date();
+    const formatDate = (d: Date) => d.toISOString().split('T')[0];
+    const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+
+    return await db.transaction(async (tx) => {
+      const warehouseDefs = [
+        { warehouseCode: "WH-PH-IN", nameAr: "صيدلية داخلية" },
+        { warehouseCode: "WH-OR", nameAr: "مخزن العمليات" },
+      ];
+
+      const createdWarehouses: any[] = [];
+      for (const whDef of warehouseDefs) {
+        const [existing] = await tx.select().from(warehouses).where(eq(warehouses.warehouseCode, whDef.warehouseCode));
+        if (existing) {
+          createdWarehouses.push(existing);
+        } else {
+          const [inserted] = await tx.insert(warehouses).values(whDef).returning();
+          createdWarehouses.push(inserted);
+        }
+      }
+
+      const whPhIn = createdWarehouses.find(w => w.warehouseCode === "WH-PH-IN")!;
+
+      const itemDefs = [
+        {
+          itemCode: "TEST-DRUG-1",
+          category: "drug" as const,
+          hasExpiry: true,
+          nameAr: "باراسيتامول 500mg تجريبي",
+          majorUnitName: "علبة",
+          minorUnitName: "شريط",
+          majorToMinor: "10",
+          purchasePriceLast: "100",
+          salePriceCurrent: "150",
+        },
+        {
+          itemCode: "TEST-DRUG-2",
+          category: "drug" as const,
+          hasExpiry: true,
+          nameAr: "أموكسيسيلين 250mg تجريبي",
+          majorUnitName: "علبة",
+          minorUnitName: "قرص",
+          majorToMinor: "20",
+          purchasePriceLast: "200",
+          salePriceCurrent: "300",
+        },
+        {
+          itemCode: "TEST-SUP-1",
+          category: "supply" as const,
+          hasExpiry: false,
+          nameAr: "قفازات طبية تجريبي",
+          majorUnitName: "علبة",
+          minorUnitName: "قطعة",
+          majorToMinor: "50",
+          purchasePriceLast: "30",
+          salePriceCurrent: "45",
+        },
+      ];
+
+      const createdItems: any[] = [];
+      for (const itemDef of itemDefs) {
+        const [existing] = await tx.select().from(items).where(eq(items.itemCode, itemDef.itemCode));
+        if (existing) {
+          createdItems.push(existing);
+        } else {
+          const [inserted] = await tx.insert(items).values(itemDef).returning();
+          createdItems.push(inserted);
+        }
+      }
+
+      const drug1 = createdItems.find(i => i.itemCode === "TEST-DRUG-1")!;
+      const drug2 = createdItems.find(i => i.itemCode === "TEST-DRUG-2")!;
+      const sup1 = createdItems.find(i => i.itemCode === "TEST-SUP-1")!;
+
+      const lotDefs = [
+        {
+          itemId: drug1.id,
+          warehouseId: whPhIn.id,
+          expiryDate: formatDate(addDays(today, 30)),
+          receivedDate: formatDate(addDays(today, -5)),
+          purchasePrice: "100.0000",
+          qtyInMinor: "50.0000",
+          label: "TEST-DRUG-1 LotA",
+        },
+        {
+          itemId: drug1.id,
+          warehouseId: whPhIn.id,
+          expiryDate: formatDate(addDays(today, 90)),
+          receivedDate: formatDate(addDays(today, -3)),
+          purchasePrice: "105.0000",
+          qtyInMinor: "100.0000",
+          label: "TEST-DRUG-1 LotB",
+        },
+        {
+          itemId: drug1.id,
+          warehouseId: whPhIn.id,
+          expiryDate: formatDate(addDays(today, -10)),
+          receivedDate: formatDate(addDays(today, -60)),
+          purchasePrice: "95.0000",
+          qtyInMinor: "200.0000",
+          label: "TEST-DRUG-1 LotExpired",
+        },
+        {
+          itemId: drug2.id,
+          warehouseId: whPhIn.id,
+          expiryDate: formatDate(addDays(today, 60)),
+          receivedDate: formatDate(addDays(today, -7)),
+          purchasePrice: "200.0000",
+          qtyInMinor: "40.0000",
+          label: "TEST-DRUG-2 Lot1",
+        },
+        {
+          itemId: sup1.id,
+          warehouseId: whPhIn.id,
+          expiryDate: null as string | null,
+          receivedDate: formatDate(addDays(today, -10)),
+          purchasePrice: "30.0000",
+          qtyInMinor: "500.0000",
+          label: "TEST-SUP-1 Lot1",
+        },
+      ];
+
+      const createdLots: any[] = [];
+      for (const lotDef of lotDefs) {
+        const { label, ...lotData } = lotDef;
+
+        const expiryCondition = lotData.expiryDate === null
+          ? sql`${inventoryLots.expiryDate} IS NULL`
+          : eq(inventoryLots.expiryDate, lotData.expiryDate);
+
+        const [existing] = await tx.select().from(inventoryLots).where(
+          and(
+            eq(inventoryLots.itemId, lotData.itemId),
+            eq(inventoryLots.warehouseId, lotData.warehouseId),
+            expiryCondition,
+            eq(inventoryLots.purchasePrice, lotData.purchasePrice),
+          )
+        );
+
+        if (existing) {
+          const [updated] = await tx.update(inventoryLots)
+            .set({ qtyInMinor: lotData.qtyInMinor })
+            .where(eq(inventoryLots.id, existing.id))
+            .returning();
+          createdLots.push({ ...updated, label });
+        } else {
+          const [inserted] = await tx.insert(inventoryLots).values(lotData).returning();
+          createdLots.push({ ...inserted, label });
+        }
+      }
+
+      return {
+        warehouses: createdWarehouses.map(w => ({ id: w.id, warehouseCode: w.warehouseCode, nameAr: w.nameAr })),
+        items: createdItems.map(i => ({ id: i.id, itemCode: i.itemCode, nameAr: i.nameAr })),
+        lots: createdLots.map(l => ({ id: l.id, label: l.label, itemId: l.itemId, warehouseId: l.warehouseId, expiryDate: l.expiryDate, qtyInMinor: l.qtyInMinor })),
+      };
+    });
+  },
+
+  // ===== SUPPLIERS =====
+  async getSuppliers(this: DatabaseStorage, params: { search?: string; page: number; pageSize: number }): Promise<{ suppliers: Supplier[]; total: number }> {
+    const { search, page = 1, pageSize = 50 } = params;
+    const offset = (page - 1) * pageSize;
+    const conditions: any[] = [eq(suppliers.isActive, true)];
+    if (search) {
+      const pattern = `%${search}%`;
+      conditions.push(or(
+        ilike(suppliers.nameAr, pattern),
+        ilike(suppliers.code, pattern),
+        ilike(suppliers.phone, pattern),
+        ilike(suppliers.taxId, pattern)
+      ));
+    }
+    const where = conditions.length > 1 ? and(...conditions) : conditions[0];
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(suppliers).where(where);
+    const results = await db.select().from(suppliers).where(where).orderBy(suppliers.nameAr).limit(pageSize).offset(offset);
+    return { suppliers: results, total: Number(countResult.count) };
+  },
+
+  async searchSuppliers(this: DatabaseStorage, q: string, limit: number = 20): Promise<Pick<Supplier, 'id' | 'code' | 'nameAr' | 'nameEn' | 'phone'>[]> {
+    const trimmed = q.trim();
+    if (!trimmed) return [];
+    const isNumericLike = /^\d+$/.test(trimmed);
+    let results;
+    if (isNumericLike) {
+      results = await db.select({
+        id: suppliers.id, code: suppliers.code, nameAr: suppliers.nameAr, nameEn: suppliers.nameEn, phone: suppliers.phone,
+      }).from(suppliers).where(and(eq(suppliers.isActive, true), or(
+        eq(suppliers.code, trimmed),
+        ilike(suppliers.code, `${trimmed}%`),
+        ilike(suppliers.phone, `%${trimmed}%`),
+      ))).orderBy(sql`CASE WHEN ${suppliers.code} = ${trimmed} THEN 0 ELSE 1 END`, suppliers.code).limit(limit);
+    } else {
+      const pattern = `%${trimmed}%`;
+      results = await db.select({
+        id: suppliers.id, code: suppliers.code, nameAr: suppliers.nameAr, nameEn: suppliers.nameEn, phone: suppliers.phone,
+      }).from(suppliers).where(and(eq(suppliers.isActive, true), or(
+        ilike(suppliers.nameAr, pattern),
+        ilike(suppliers.nameEn, pattern),
+        ilike(suppliers.code, pattern),
+        ilike(suppliers.phone, pattern),
+        ilike(suppliers.taxId, pattern),
+      ))).orderBy(suppliers.nameAr).limit(limit);
+    }
+    return results;
+  },
+
+  async getSupplier(this: DatabaseStorage, id: string): Promise<Supplier | undefined> {
+    const [s] = await db.select().from(suppliers).where(eq(suppliers.id, id));
+    return s;
+  },
+
+  async createSupplier(this: DatabaseStorage, supplier: InsertSupplier): Promise<Supplier> {
+    const [s] = await db.insert(suppliers).values(supplier).returning();
+    return s;
+  },
+
+  async updateSupplier(this: DatabaseStorage, id: string, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined> {
+    const [s] = await db.update(suppliers).set(supplier).where(eq(suppliers.id, id)).returning();
+    return s;
+  },
+
+  // ===== RECEIVING =====
+  async getReceivings(this: DatabaseStorage, params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number; includeCancelled?: boolean }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }> {
+    const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page = 1, pageSize = 50, includeCancelled } = params;
+    const offset = (page - 1) * pageSize;
+    const conditions: any[] = [];
+    if (supplierId) conditions.push(eq(receivingHeaders.supplierId, supplierId));
+    if (warehouseId) conditions.push(eq(receivingHeaders.warehouseId, warehouseId));
+    if (status) {
+      conditions.push(eq(receivingHeaders.status, status as any));
+    } else if (!includeCancelled) {
+      conditions.push(sql`${receivingHeaders.status} != 'cancelled'`);
+    }
+    if (statusFilter && statusFilter !== 'ALL') {
+      if (statusFilter === 'DRAFT') {
+        conditions.push(eq(receivingHeaders.status, 'draft' as any));
+      } else if (statusFilter === 'POSTED') {
+        conditions.push(eq(receivingHeaders.status, 'posted_qty_only' as any));
+        conditions.push(isNull(receivingHeaders.convertedToInvoiceId));
+      } else if (statusFilter === 'CONVERTED') {
+        conditions.push(isNotNull(receivingHeaders.convertedToInvoiceId));
+      } else if (statusFilter === 'CORRECTED') {
+        conditions.push(eq(receivingHeaders.correctionStatus, 'corrected'));
+      }
+    }
+    if (fromDate) conditions.push(gte(receivingHeaders.receiveDate, fromDate));
+    if (toDate) conditions.push(lte(receivingHeaders.receiveDate, toDate));
+    if (search) {
+      const searchStripped = search.replace(/^RCV-/i, '').trim();
+      conditions.push(or(
+        ilike(receivingHeaders.supplierInvoiceNo, `%${search}%`),
+        sql`${receivingHeaders.receivingNumber}::text ILIKE ${`%${searchStripped}%`}`,
+        sql`EXISTS (SELECT 1 FROM suppliers WHERE suppliers.id = ${receivingHeaders.supplierId} AND (suppliers.name_ar ILIKE ${`%${search}%`} OR suppliers.name_en ILIKE ${`%${search}%`}))`
+      ));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(receivingHeaders).where(where);
+    const headers = await db.select().from(receivingHeaders).where(where).orderBy(desc(receivingHeaders.receiveDate), desc(receivingHeaders.receivingNumber)).limit(pageSize).offset(offset);
+    
+    const data: ReceivingHeaderWithDetails[] = [];
+    for (const h of headers) {
+      const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
+      const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
+      const lines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, h.id));
+      const linesWithItems: ReceivingLineWithItem[] = [];
+      for (const line of lines) {
+        const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+        linesWithItems.push({ ...line, item });
+      }
+      data.push({ ...h, supplier: sup, warehouse: wh, lines: linesWithItems });
+    }
+    return { data, total: Number(countResult.count) };
+  },
+
+  async getReceiving(this: DatabaseStorage, id: string): Promise<ReceivingHeaderWithDetails | undefined> {
+    const [h] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
+    if (!h) return undefined;
+    const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
+    const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
+    const lines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, h.id));
+    const linesWithItems: ReceivingLineWithItem[] = [];
+    for (const line of lines) {
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      linesWithItems.push({ ...line, item });
+    }
+    return { ...h, supplier: sup, warehouse: wh, lines: linesWithItems };
+  },
+
+  async getNextReceivingNumber(this: DatabaseStorage): Promise<number> {
+    const [result] = await db.select({ max: sql<number>`COALESCE(MAX(receiving_number), 0)` }).from(receivingHeaders);
+    return (result?.max || 0) + 1;
+  },
+
+  async checkSupplierInvoiceUnique(this: DatabaseStorage, supplierId: string, supplierInvoiceNo: string, excludeId?: string): Promise<boolean> {
+    const conditions = [eq(receivingHeaders.supplierId, supplierId), eq(receivingHeaders.supplierInvoiceNo, supplierInvoiceNo)];
+    if (excludeId) {
+      conditions.push(sql`${receivingHeaders.id} != ${excludeId}`);
+    }
+    const [result] = await db.select({ count: sql<number>`count(*)` }).from(receivingHeaders).where(and(...conditions));
+    return Number(result.count) === 0;
+  },
+
+  async saveDraftReceiving(this: DatabaseStorage, header: InsertReceivingHeader, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; purchasePrice: string; lineTotal: string; batchNumber?: string; expiryDate?: string; expiryMonth?: number; expiryYear?: number; salePrice?: string; salePriceHint?: string; notes?: string; isRejected?: boolean; rejectionReason?: string; bonusQty?: string; bonusQtyInMinor?: string }[], existingId?: string): Promise<ReceivingHeader> {
+    return await db.transaction(async (tx) => {
+      let header_result: ReceivingHeader;
+      if (existingId) {
+        const [existing] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, existingId));
+        if (!existing || existing.status !== 'draft') throw new Error('لا يمكن تعديل مستند مُرحّل');
+        
+        await tx.update(receivingHeaders).set({
+          ...header,
+          updatedAt: new Date(),
+        }).where(eq(receivingHeaders.id, existingId));
+        
+        await tx.delete(receivingLines).where(eq(receivingLines.receivingId, existingId));
+        [header_result] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, existingId));
+      } else {
+        const nextNum = await this.getNextReceivingNumber();
+        [header_result] = await tx.insert(receivingHeaders).values({
+          ...header,
+          receivingNumber: nextNum,
+        } as any).returning();
+      }
+      
+      let totalQty = 0;
+      let totalCost = 0;
+      
+      for (const line of lines) {
+        const lt = parseFloat(line.lineTotal) || 0;
+        const qty = parseFloat(line.qtyInMinor) || 0;
+        totalQty += qty;
+        totalCost += lt;
+        
+        let resolvedUnitLevel = line.unitLevel;
+        if (!resolvedUnitLevel || resolvedUnitLevel.trim() === '') {
+          const [lineItem] = await tx.select().from(items).where(eq(items.id, line.itemId));
+          resolvedUnitLevel = lineItem?.majorUnitName ? 'major' : 'minor';
+        }
+        
+        await tx.insert(receivingLines).values({
+          receivingId: header_result.id,
+          itemId: line.itemId,
+          unitLevel: resolvedUnitLevel as any,
+          qtyEntered: line.qtyEntered,
+          qtyInMinor: line.qtyInMinor,
+          purchasePrice: line.purchasePrice,
+          lineTotal: line.lineTotal,
+          batchNumber: line.batchNumber || null,
+          expiryDate: line.expiryDate || null,
+          expiryMonth: line.expiryMonth || null,
+          expiryYear: line.expiryYear || null,
+          salePrice: line.salePrice || null,
+          salePriceHint: line.salePriceHint || null,
+          notes: line.notes || null,
+          isRejected: line.isRejected || false,
+          rejectionReason: line.rejectionReason || null,
+          bonusQty: line.bonusQty || "0",
+          bonusQtyInMinor: line.bonusQtyInMinor || "0",
+        });
+      }
+      
+      await tx.update(receivingHeaders).set({
+        totalQty: totalQty.toFixed(4),
+        totalCost: roundMoney(totalCost),
+      }).where(eq(receivingHeaders.id, header_result.id));
+      
+      [header_result] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, header_result.id));
+      return header_result;
+    });
+  },
+
+  async postReceiving(this: DatabaseStorage, id: string): Promise<ReceivingHeader> {
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${id} FOR UPDATE`);
+      const header = lockResult.rows?.[0] as any;
+      if (!header) throw new Error('المستند غير موجود');
+      if (header.status === 'posted' || header.status === 'posted_qty_only') return header;
+      
+      if (!header.supplier_id) throw new Error('المورد مطلوب');
+      if (!header.supplier_invoice_no?.trim()) throw new Error('رقم فاتورة المورد مطلوب');
+      if (!header.warehouse_id) throw new Error('المستودع مطلوب');
+      
+      const [supplier] = await tx.select().from(suppliers).where(eq(suppliers.id, header.supplier_id));
+      const supplierName = supplier?.nameAr || supplier?.nameEn || null;
+
+      const lines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
+      const activeLines = lines.filter(l => !l.isRejected);
+      if (activeLines.length === 0) throw new Error('لا توجد أصناف للترحيل');
+      
+      for (const line of activeLines) {
+        const qtyMinor = parseFloat(line.qtyInMinor) + parseFloat(line.bonusQtyInMinor || "0");
+        if (qtyMinor <= 0) continue;
+        
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        if (!item) continue;
+        
+        if (item.hasExpiry && (!line.expiryMonth || !line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية (شهر/سنة)`);
+        if (!item.hasExpiry && (line.expiryMonth || line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);
+        
+        const costPerMinor = convertPriceToMinorUnit(parseFloat(line.purchasePrice), line.unitLevel || 'minor', item);
+        const costPerMinorStr = costPerMinor.toFixed(4);
+        
+        const lotConditions = [
+          eq(inventoryLots.itemId, line.itemId),
+          eq(inventoryLots.warehouseId, header.warehouse_id),
+        ];
+        if (line.expiryMonth && line.expiryYear) {
+          lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
+          lotConditions.push(eq(inventoryLots.expiryYear, line.expiryYear));
+        } else {
+          lotConditions.push(sql`${inventoryLots.expiryMonth} IS NULL`);
+        }
+        
+        const existingLots = await tx.select().from(inventoryLots).where(and(...lotConditions));
+        let lotId: string;
+        
+        const lotSalePrice = line.salePrice || "0";
+        
+        if (existingLots.length > 0) {
+          const lot = existingLots[0];
+          const newQty = parseFloat(lot.qtyInMinor) + qtyMinor;
+          await tx.update(inventoryLots).set({ 
+            qtyInMinor: newQty.toFixed(4),
+            purchasePrice: costPerMinorStr,
+            salePrice: lotSalePrice,
+            updatedAt: new Date(),
+          }).where(eq(inventoryLots.id, lot.id));
+          lotId = lot.id;
+        } else {
+          const [newLot] = await tx.insert(inventoryLots).values({
+            itemId: line.itemId,
+            warehouseId: header.warehouse_id,
+            expiryDate: line.expiryDate || null,
+            expiryMonth: line.expiryMonth || null,
+            expiryYear: line.expiryYear || null,
+            receivedDate: header.receive_date,
+            purchasePrice: costPerMinorStr,
+            salePrice: lotSalePrice,
+            qtyInMinor: qtyMinor.toFixed(4),
+          }).returning();
+          lotId = newLot.id;
+        }
+        
+        await tx.insert(inventoryLotMovements).values({
+          lotId,
+          warehouseId: header.warehouse_id,
+          txType: 'in',
+          qtyChangeInMinor: qtyMinor.toFixed(4),
+          unitCost: costPerMinorStr,
+          referenceType: 'receiving',
+          referenceId: header.id,
+        });
+
+        const purchaseQty = parseFloat(line.qtyEntered || line.qtyInMinor);
+        const purchaseTotal = (parseFloat(line.qtyInMinor) * costPerMinor).toFixed(2);
+        await tx.insert(purchaseTransactions).values({
+          itemId: line.itemId,
+          txDate: header.receive_date,
+          supplierName,
+          qty: line.qtyEntered || line.qtyInMinor,
+          unitLevel: line.unitLevel || 'minor',
+          purchasePrice: line.purchasePrice,
+          salePriceSnapshot: line.salePrice || null,
+          total: purchaseTotal,
+        });
+        
+        const updateFields: any = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
+        if (line.salePrice) updateFields.salePriceCurrent = line.salePrice;
+        await tx.update(items).set(updateFields).where(eq(items.id, line.itemId));
+      }
+      
+      const [posted] = await tx.update(receivingHeaders).set({
+        status: 'posted_qty_only',
+        postedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(receivingHeaders.id, id)).returning();
+      
+      return posted;
+    });
+
+    const recvResult = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
+    const recvHeader = recvResult[0] as any;
+    if (recvHeader) {
+      const recvLines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
+      const activeRecvLines = recvLines.filter(l => !l.isRejected);
+      const totalCost = activeRecvLines.reduce((sum, l) => sum + parseFloat(l.lineTotal || "0"), 0);
+      
+      if (totalCost > 0) {
+        this.generateJournalEntry({
+          sourceType: "receiving",
+          sourceDocumentId: id,
+          reference: `RCV-${recvHeader.receivingNumber}`,
+          description: `قيد استلام مورد رقم ${recvHeader.receivingNumber}`,
+          entryDate: recvHeader.receiveDate,
+          lines: [
+            { lineType: "inventory", amount: String(totalCost) },
+            { lineType: "payables", amount: String(totalCost) },
+          ],
+        }).catch(err => console.error("Auto journal for receiving failed:", err));
+      }
+    }
+
+    return (await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id)))[0];
+  },
+
+  async deleteReceiving(this: DatabaseStorage, id: string, reason?: string): Promise<boolean> {
+    const [header] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
+    if (!header) return false;
+    if (header.status === 'posted' || header.status === 'posted_qty_only') throw new Error('لا يمكن إلغاء مستند مُرحّل');
+    await db.update(receivingHeaders).set({
+      status: "cancelled" as any,
+      notes: reason ? `[ملغي] ${reason}` : (header.notes ? `[ملغي] ${header.notes}` : "[ملغي]"),
+    }).where(eq(receivingHeaders.id, id));
+    return true;
+  },
+
+  async getItemHints(this: DatabaseStorage, itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }> {
+    const lastReceivingLine = await db.select({
+      purchasePrice: receivingLines.purchasePrice,
+      salePrice: receivingLines.salePrice,
+      salePriceHint: receivingLines.salePriceHint,
+    })
+    .from(receivingLines)
+    .innerJoin(receivingHeaders, eq(receivingLines.receivingId, receivingHeaders.id))
+    .where(and(
+      eq(receivingLines.itemId, itemId),
+      or(eq(receivingHeaders.status, 'posted'), eq(receivingHeaders.status, 'posted_qty_only')),
+      eq(receivingLines.isRejected, false),
+    ))
+    .orderBy(desc(receivingHeaders.postedAt))
+    .limit(1);
+    
+    const [item] = await db.select().from(items).where(eq(items.id, itemId));
+    
+    let onHandMinor = "0";
+    if (warehouseId) {
+      const [onHandResult] = await db.select({
+        total: sql<string>`COALESCE(SUM(${inventoryLots.qtyInMinor}::numeric), 0)::text`
+      }).from(inventoryLots).where(and(
+        eq(inventoryLots.itemId, itemId),
+        eq(inventoryLots.warehouseId, warehouseId),
+        eq(inventoryLots.isActive, true),
+      ));
+      onHandMinor = onHandResult?.total || "0";
+    }
+    
+    const lastLine = lastReceivingLine[0];
+    return {
+      lastPurchasePrice: lastLine?.purchasePrice || item?.purchasePriceLast || null,
+      lastSalePrice: lastLine?.salePrice || lastLine?.salePriceHint || null,
+      currentSalePrice: item?.salePriceCurrent || "0",
+      onHandMinor,
+    };
+  },
+
+  async getItemWarehouseStats(this: DatabaseStorage, itemId: string): Promise<{ warehouseId: string; warehouseName: string; warehouseCode: string; qtyMinor: string; expiryBreakdown: { expiryMonth: number | null; expiryYear: number | null; qty: string }[] }[]> {
+    const warehouseTotals = await db.select({
+      warehouseId: inventoryLots.warehouseId,
+      warehouseName: warehouses.nameAr,
+      warehouseCode: warehouses.warehouseCode,
+      qtyMinor: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+    })
+    .from(inventoryLots)
+    .innerJoin(warehouses, eq(warehouses.id, inventoryLots.warehouseId))
+    .where(and(
+      eq(inventoryLots.itemId, itemId),
+      eq(inventoryLots.isActive, true),
+      sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+    ))
+    .groupBy(inventoryLots.warehouseId, warehouses.nameAr, warehouses.warehouseCode)
+    .orderBy(warehouses.nameAr);
+
+    const expiryBreakdowns = await db.select({
+      warehouseId: inventoryLots.warehouseId,
+      expiryMonth: inventoryLots.expiryMonth,
+      expiryYear: inventoryLots.expiryYear,
+      qty: sql<string>`SUM(${inventoryLots.qtyInMinor}::numeric)::text`,
+    })
+    .from(inventoryLots)
+    .where(and(
+      eq(inventoryLots.itemId, itemId),
+      eq(inventoryLots.isActive, true),
+      sql`${inventoryLots.qtyInMinor}::numeric > 0`,
+    ))
+    .groupBy(inventoryLots.warehouseId, inventoryLots.expiryMonth, inventoryLots.expiryYear)
+    .orderBy(inventoryLots.expiryYear, inventoryLots.expiryMonth);
+
+    return warehouseTotals.filter(w => w.warehouseId !== null).map(w => ({
+      warehouseId: w.warehouseId!,
+      warehouseName: w.warehouseName,
+      warehouseCode: w.warehouseCode,
+      qtyMinor: w.qtyMinor,
+      expiryBreakdown: expiryBreakdowns
+        .filter(e => e.warehouseId === w.warehouseId)
+        .map(e => ({
+          expiryMonth: e.expiryMonth,
+          expiryYear: e.expiryYear,
+          qty: e.qty,
+        })),
+    }));
+  },
+
+  // ===== PURCHASE INVOICES =====
+  async convertReceivingToInvoice(this: DatabaseStorage, receivingId: string): Promise<any> {
+    return await db.transaction(async (tx) => {
+      const [receiving] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, receivingId));
+      if (!receiving) throw new Error("إذن الاستلام غير موجود");
+      if (receiving.status === "draft") throw new Error("يجب ترحيل إذن الاستلام أولاً");
+      if (receiving.convertedToInvoiceId) {
+        const existingInvoice = await this.getPurchaseInvoice(receiving.convertedToInvoiceId);
+        if (existingInvoice) return existingInvoice;
+      }
+
+      const lines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, receivingId));
+      const nextNum = await this.getNextPurchaseInvoiceNumber();
+
+      const [invoice] = await tx.insert(purchaseInvoiceHeaders).values({
+        invoiceNumber: nextNum,
+        supplierId: receiving.supplierId,
+        supplierInvoiceNo: receiving.supplierInvoiceNo,
+        warehouseId: receiving.warehouseId,
+        receivingId: receiving.id,
+        invoiceDate: receiving.receiveDate,
+        notes: null,
+      } as any).returning();
+
+      for (const line of lines) {
+        if (line.isRejected) continue;
+
+        const salePrice     = parseFloat(String(line.salePrice     || "0")) || 0;
+        const purchasePrice = parseFloat(String(line.purchasePrice  || "0")) || 0;
+        const qty           = parseFloat(String(line.qtyEntered     || "0")) || 0;
+
+        const discountVal = salePrice > 0 ? Math.max(0, salePrice - purchasePrice) : 0;
+        const discountPct = salePrice > 0 ? +((discountVal / salePrice) * 100).toFixed(4) : 0;
+
+        const valueBeforeVat = +(qty * purchasePrice).toFixed(2);
+
+        await tx.insert(purchaseInvoiceLines).values({
+          invoiceId:        invoice.id,
+          receivingLineId:  line.id,
+          itemId:           line.itemId,
+          unitLevel:        line.unitLevel,
+          qty:              line.qtyEntered,
+          bonusQty:         line.bonusQty || "0",
+          sellingPrice:     line.salePrice || "0",
+          purchasePrice:    line.purchasePrice || "0",
+          lineDiscountPct:  String(discountPct),
+          lineDiscountValue:String(discountVal.toFixed(2)),
+          vatRate:          "0",
+          valueBeforeVat:   String(valueBeforeVat),
+          vatAmount:        "0",
+          valueAfterVat:    String(valueBeforeVat),
+          batchNumber:      line.batchNumber,
+          expiryMonth:      line.expiryMonth,
+          expiryYear:       line.expiryYear,
+        } as any);
+      }
+
+      await tx.update(receivingHeaders).set({
+        convertedToInvoiceId: invoice.id,
+        convertedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(receivingHeaders.id, receivingId));
+
+      return invoice;
+    });
+  },
+
+  async getNextPurchaseInvoiceNumber(this: DatabaseStorage): Promise<number> {
+    const [result] = await db.select({ max: sql<number>`COALESCE(MAX(invoice_number), 0)` }).from(purchaseInvoiceHeaders);
+    return (result?.max || 0) + 1;
+  },
+
+  async getPurchaseInvoices(this: DatabaseStorage, filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}> {
+    const conditions: any[] = [];
+    if (filters.supplierId) conditions.push(eq(purchaseInvoiceHeaders.supplierId, filters.supplierId));
+    if (filters.status && filters.status !== "all") {
+      conditions.push(eq(purchaseInvoiceHeaders.status, filters.status as any));
+    } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
+      conditions.push(sql`${purchaseInvoiceHeaders.status} != 'cancelled'`);
+    }
+    if (filters.dateFrom) conditions.push(sql`${purchaseInvoiceHeaders.invoiceDate} >= ${filters.dateFrom}`);
+    if (filters.dateTo) conditions.push(sql`${purchaseInvoiceHeaders.invoiceDate} <= ${filters.dateTo}`);
+
+    const page = filters.page || 1;
+    const pageSize = filters.pageSize || 20;
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(purchaseInvoiceHeaders).where(whereClause);
+
+    const headers = await db.select().from(purchaseInvoiceHeaders)
+      .where(whereClause)
+      .orderBy(desc(purchaseInvoiceHeaders.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+
+    const data = [];
+    for (const h of headers) {
+      const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
+      const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
+      data.push({ ...h, supplier: sup, warehouse: wh });
+    }
+
+    return { data, total: Number(countResult.count) };
+  },
+
+  async getPurchaseInvoice(this: DatabaseStorage, id: string): Promise<any> {
+    const [h] = await db.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+    if (!h) return undefined;
+    const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
+    const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
+    const lines = await db.select().from(purchaseInvoiceLines).where(eq(purchaseInvoiceLines.invoiceId, h.id));
+    const linesWithItems = [];
+    for (const line of lines) {
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      linesWithItems.push({ ...line, item });
+    }
+    let receiving = undefined;
+    if (h.receivingId) {
+      const [r] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, h.receivingId));
+      receiving = r;
+    }
+    return { ...h, supplier: sup, warehouse: wh, receiving, lines: linesWithItems };
+  },
+
+  async savePurchaseInvoice(this: DatabaseStorage, invoiceId: string, lines: any[], headerUpdates?: any): Promise<any> {
+    return await db.transaction(async (tx) => {
+      const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, invoiceId));
+      if (!invoice) throw new Error("الفاتورة غير موجودة");
+      if (invoice.status !== "draft") throw new Error("لا يمكن تعديل فاتورة معتمدة");
+
+      await tx.delete(purchaseInvoiceLines).where(eq(purchaseInvoiceLines.invoiceId, invoiceId));
+
+      let totalBeforeVat = 0;
+      let totalVat = 0;
+      let totalLineDiscounts = 0;
+
+      for (const line of lines) {
+        const qty = parseFloat(line.qty) || 0;
+        const bonusQty = parseFloat(line.bonusQty) || 0;
+        const purchasePrice = parseFloat(line.purchasePrice) || 0;
+        const lineDiscountPct = parseFloat(line.lineDiscountPct) || 0;
+        const vatRate = parseFloat(line.vatRate) || 0;
+
+        const valueBeforeVat = qty * purchasePrice;
+        const sellingPrice = parseFloat(line.sellingPrice || "0");
+        const lineDiscountValue = line.lineDiscountValue !== undefined
+          ? parseFloat(line.lineDiscountValue) || 0
+          : (sellingPrice > 0 ? +(sellingPrice * (lineDiscountPct / 100)).toFixed(2) : 0);
+        const vatBase = (qty + bonusQty) * purchasePrice;
+        const vatAmount = vatBase * (vatRate / 100);
+        const valueAfterVat = valueBeforeVat + vatAmount;
+
+        totalBeforeVat += valueBeforeVat;
+        totalVat += vatAmount;
+        totalLineDiscounts += lineDiscountValue * qty;
+
+        await tx.insert(purchaseInvoiceLines).values({
+          invoiceId,
+          receivingLineId: line.receivingLineId || null,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel,
+          qty: String(qty),
+          bonusQty: String(bonusQty),
+          sellingPrice: line.sellingPrice || "0",
+          purchasePrice: String(purchasePrice),
+          lineDiscountPct: String(lineDiscountPct),
+          lineDiscountValue: String(lineDiscountValue.toFixed(2)),
+          vatRate: String(vatRate),
+          valueBeforeVat: String(valueBeforeVat.toFixed(2)),
+          vatAmount: String(vatAmount.toFixed(2)),
+          valueAfterVat: String(valueAfterVat.toFixed(2)),
+          batchNumber: line.batchNumber || null,
+          expiryMonth: line.expiryMonth || null,
+          expiryYear: line.expiryYear || null,
+        } as any);
+      }
+
+      const discountType = headerUpdates?.discountType || invoice.discountType || "percent";
+      const discountValue = parseFloat(headerUpdates?.discountValue || invoice.discountValue) || 0;
+      let invoiceDiscount = 0;
+      if (discountType === "percent") {
+        invoiceDiscount = totalBeforeVat * (discountValue / 100);
+      } else {
+        invoiceDiscount = discountValue;
+      }
+
+      const totalAfterVat = totalBeforeVat + totalVat;
+      const netPayable = totalAfterVat - invoiceDiscount;
+
+      const updateSet: any = {
+        totalBeforeVat: String(totalBeforeVat.toFixed(2)),
+        totalVat: String(totalVat.toFixed(2)),
+        totalAfterVat: String(totalAfterVat.toFixed(2)),
+        totalLineDiscounts: String(totalLineDiscounts.toFixed(2)),
+        netPayable: String(netPayable.toFixed(2)),
+        updatedAt: new Date(),
+      };
+      if (headerUpdates?.discountType) updateSet.discountType = headerUpdates.discountType;
+      if (headerUpdates?.discountValue !== undefined) updateSet.discountValue = String(headerUpdates.discountValue);
+      if (headerUpdates?.notes !== undefined) updateSet.notes = headerUpdates.notes;
+      if (headerUpdates?.invoiceDate) updateSet.invoiceDate = headerUpdates.invoiceDate;
+
+      await tx.update(purchaseInvoiceHeaders).set(updateSet).where(eq(purchaseInvoiceHeaders.id, invoiceId));
+
+      const [updated] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, invoiceId));
+      return updated;
+    });
+  },
+
+  async approvePurchaseInvoice(this: DatabaseStorage, id: string): Promise<any> {
+    const result = await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM purchase_invoice_headers WHERE id = ${id} FOR UPDATE`);
+      const locked = lockResult.rows?.[0] as any;
+      if (!locked) throw new Error("الفاتورة غير موجودة");
+      if (locked.status !== "draft") throw new Error("الفاتورة معتمدة مسبقاً");
+      const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+      if (!invoice) throw new Error("الفاتورة غير موجودة");
+
+      await tx.update(purchaseInvoiceHeaders).set({
+        status: "approved_costed",
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(purchaseInvoiceHeaders.id, id));
+
+      const [updated] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+      return updated;
+    });
+
+    if (result) {
+      (this as any).generatePurchaseInvoiceJournal(id, result).catch((err: any) => 
+        console.error("Auto journal for purchase invoice failed:", err)
+      );
+    }
+
+    return result;
+  },
+
+  async generatePurchaseInvoiceJournal(this: DatabaseStorage, invoiceId: string, invoice: any): Promise<JournalEntry | null> {
+    const existingEntries = await db.select().from(journalEntries)
+      .where(and(
+        eq(journalEntries.sourceType, "purchase_invoice"),
+        eq(journalEntries.sourceDocumentId, invoiceId)
+      ));
+    if (existingEntries.length > 0) return existingEntries[0];
+
+    const totalBeforeVat = parseFloat(invoice.totalBeforeVat || "0");
+    const totalVat = parseFloat(invoice.totalVat || "0");
+    const totalAfterVat = parseFloat(invoice.totalAfterVat || "0");
+    const netPayable = parseFloat(invoice.netPayable || "0");
+    const headerDiscount = totalAfterVat - netPayable;
+
+    if (totalBeforeVat <= 0 && netPayable <= 0) return null;
+
+    const mappings = await this.getMappingsForTransaction("purchase_invoice");
+    if (mappings.length === 0) return null;
+
+    const mappingMap = new Map<string, AccountMapping>();
+    for (const m of mappings) {
+      mappingMap.set(m.lineType, m);
+    }
+
+    const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, invoice.supplierId));
+    const supplierType = supplier?.supplierType || "drugs";
+    const payablesLineType = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
+
+    const journalLineData: InsertJournalLine[] = [];
+    const desc = `قيد فاتورة مشتريات رقم ${invoice.invoiceNumber}`;
+
+    const inventoryMapping = mappingMap.get("inventory");
+    if (inventoryMapping?.debitAccountId && totalBeforeVat > 0) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: inventoryMapping.debitAccountId,
+        debit: String(totalBeforeVat.toFixed(2)),
+        credit: "0",
+        description: "مخزون - فاتورة مشتريات",
+      });
+    }
+
+    const vatMapping = mappingMap.get("vat_input");
+    if (vatMapping?.debitAccountId && totalVat > 0) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: vatMapping.debitAccountId,
+        debit: String(totalVat.toFixed(2)),
+        credit: "0",
+        description: "ضريبة قيمة مضافة - مدخلات",
+      });
+    }
+
+    const discountMapping = mappingMap.get("discount_earned");
+    if (discountMapping?.creditAccountId && headerDiscount > 0.001) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: discountMapping.creditAccountId,
+        debit: "0",
+        credit: String(headerDiscount.toFixed(2)),
+        description: "خصم مكتسب",
+      });
+    }
+
+    const payablesMapping = mappingMap.get(payablesLineType) || mappingMap.get("payables");
+    if (payablesMapping?.creditAccountId && netPayable > 0) {
+      journalLineData.push({
+        journalEntryId: "",
+        lineNumber: 0,
+        accountId: payablesMapping.creditAccountId,
+        debit: "0",
+        credit: String(netPayable.toFixed(2)),
+        description: supplierType === "consumables" ? "موردين مستلزمات" : "موردين أدوية",
+      });
+    }
+
+    if (journalLineData.length === 0) return null;
+
+    const totalDebits = journalLineData.reduce((s, l) => s + parseFloat(l.debit || "0"), 0);
+    const totalCredits = journalLineData.reduce((s, l) => s + parseFloat(l.credit || "0"), 0);
+    const diff = Math.abs(totalDebits - totalCredits);
+
+    if (diff > 0.01) {
+      console.error(`Purchase invoice journal unbalanced: debits=${totalDebits}, credits=${totalCredits}, diff=${diff}`);
+      return null;
+    }
+
+    return db.transaction(async (tx) => {
+      const [period] = await tx.select().from(fiscalPeriods)
+        .where(and(
+          lte(fiscalPeriods.startDate, invoice.invoiceDate),
+          gte(fiscalPeriods.endDate, invoice.invoiceDate),
+          eq(fiscalPeriods.isClosed, false)
+        ))
+        .limit(1);
+
+      const entryNumber = await this.getNextEntryNumber();
+
+      const [entry] = await tx.insert(journalEntries).values({
+        entryNumber,
+        entryDate: invoice.invoiceDate,
+        reference: `PUR-${invoice.invoiceNumber}`,
+        description: desc,
+        status: "draft",
+        periodId: period?.id || null,
+        sourceType: "purchase_invoice",
+        sourceDocumentId: invoiceId,
+        totalDebit: String(totalDebits.toFixed(2)),
+        totalCredit: String(totalCredits.toFixed(2)),
+      }).returning();
+
+      const linesWithEntryId = journalLineData.map((l, idx) => ({
+        ...l,
+        journalEntryId: entry.id,
+        lineNumber: idx + 1,
+      }));
+
+      await tx.insert(journalLines).values(linesWithEntryId);
+      return entry;
+    });
+  },
+
+  async generateWarehouseTransferJournal(
+    this: DatabaseStorage, transferId: string, transfer: any, totalCost: number
+  ): Promise<JournalEntry | null> {
+    const existingEntries = await db.select().from(journalEntries)
+      .where(and(
+        eq(journalEntries.sourceType, "warehouse_transfer"),
+        eq(journalEntries.sourceDocumentId, transferId)
+      ));
+    if (existingEntries.length > 0) return existingEntries[0];
+
+    const [sourceWh] = await db.select().from(warehouses)
+      .where(eq(warehouses.id, transfer.sourceWarehouseId));
+    const [destWh] = await db.select().from(warehouses)
+      .where(eq(warehouses.id, transfer.destinationWarehouseId));
+
+    if (!sourceWh?.glAccountId || !destWh?.glAccountId) {
+      console.error("Warehouse transfer journal skipped: warehouses missing GL accounts");
+      return null;
+    }
+
+    if (sourceWh.glAccountId === destWh.glAccountId) {
+      console.log("Warehouse transfer journal skipped: same GL account for both warehouses");
+      return null;
+    }
+
+    const journalLineData: InsertJournalLine[] = [
+      {
+        journalEntryId: "",
+        lineNumber: 1,
+        accountId: destWh.glAccountId,
+        debit: String(totalCost.toFixed(2)),
+        credit: "0",
+        description: `تحويل إلى ${destWh.nameAr}`,
+      },
+      {
+        journalEntryId: "",
+        lineNumber: 2,
+        accountId: sourceWh.glAccountId,
+        debit: "0",
+        credit: String(totalCost.toFixed(2)),
+        description: `تحويل من ${sourceWh.nameAr}`,
+      },
+    ];
+
+    return db.transaction(async (tx) => {
+      const [period] = await tx.select().from(fiscalPeriods)
+        .where(and(
+          lte(fiscalPeriods.startDate, transfer.transferDate),
+          gte(fiscalPeriods.endDate, transfer.transferDate),
+          eq(fiscalPeriods.isClosed, false)
+        ))
+        .limit(1);
+
+      const entryNumber = await this.getNextEntryNumber();
+
+      const [entry] = await tx.insert(journalEntries).values({
+        entryNumber,
+        entryDate: transfer.transferDate,
+        reference: `TRF-${transfer.transferNumber}`,
+        description: `قيد تحويل مخزني رقم ${transfer.transferNumber} من ${sourceWh.nameAr} إلى ${destWh.nameAr}`,
+        status: "draft",
+        periodId: period?.id || null,
+        sourceType: "warehouse_transfer",
+        sourceDocumentId: transferId,
+        totalDebit: String(totalCost.toFixed(2)),
+        totalCredit: String(totalCost.toFixed(2)),
+      }).returning();
+
+      const linesWithEntryId = journalLineData.map((l, idx) => ({
+        ...l,
+        journalEntryId: entry.id,
+        lineNumber: idx + 1,
+      }));
+
+      await tx.insert(journalLines).values(linesWithEntryId);
+      return entry;
+    });
+  },
+
+  async createReceivingCorrection(this: DatabaseStorage, originalId: string): Promise<ReceivingHeader> {
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
+      const original = lockResult.rows?.[0] as any;
+      if (!original) throw new Error('المستند غير موجود');
+      if (original.status !== 'posted_qty_only') throw new Error('يمكن تصحيح المستندات المرحّلة فقط');
+      if (original.correction_status === 'corrected') throw new Error('تم تصحيح هذا المستند مسبقاً');
+      if (original.converted_to_invoice_id) {
+        const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, original.converted_to_invoice_id));
+        if (invoice && invoice.status !== 'draft') {
+          throw new Error('لا يمكن تصحيح إذن استلام محوّل لفاتورة معتمدة');
+        }
+      }
+
+      const [maxNum] = await tx.select({ max: sql<number>`COALESCE(MAX(receiving_number), 0)` }).from(receivingHeaders);
+      const nextNum = (maxNum?.max || 0) + 1;
+
+      const [newHeader] = await tx.insert(receivingHeaders).values({
+        receivingNumber: nextNum,
+        supplierId: original.supplier_id,
+        supplierInvoiceNo: `${original.supplier_invoice_no || 'N/A'}-COR-${nextNum}`,
+        warehouseId: original.warehouse_id,
+        receiveDate: original.receive_date,
+        notes: original.notes ? `تصحيح للإذن رقم ${original.receiving_number} - ${original.notes}` : `تصحيح للإذن رقم ${original.receiving_number}`,
+        status: 'draft',
+        correctionOfId: originalId,
+        correctionStatus: 'correction',
+      }).returning();
+
+      const originalLines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, originalId));
+      let totalQty = 0;
+      let totalCost = 0;
+
+      for (const line of originalLines) {
+        await tx.insert(receivingLines).values({
+          receivingId: newHeader.id,
+          itemId: line.itemId,
+          unitLevel: line.unitLevel,
+          qtyEntered: line.qtyEntered,
+          qtyInMinor: line.qtyInMinor,
+          bonusQty: line.bonusQty,
+          bonusQtyInMinor: line.bonusQtyInMinor,
+          purchasePrice: line.purchasePrice,
+          lineTotal: line.lineTotal,
+          batchNumber: line.batchNumber,
+          expiryDate: line.expiryDate,
+          expiryMonth: line.expiryMonth,
+          expiryYear: line.expiryYear,
+          salePrice: line.salePrice,
+          salePriceHint: line.salePriceHint,
+          notes: line.notes,
+          isRejected: line.isRejected,
+          rejectionReason: line.rejectionReason,
+        });
+        if (!line.isRejected) {
+          totalQty += parseFloat(line.qtyInMinor as string) || 0;
+          totalCost += parseFloat(line.lineTotal as string) || 0;
+        }
+      }
+
+      await tx.update(receivingHeaders).set({
+        totalQty: totalQty.toFixed(4),
+        totalCost: roundMoney(totalCost),
+      }).where(eq(receivingHeaders.id, newHeader.id));
+
+      await tx.update(receivingHeaders).set({
+        correctedById: newHeader.id,
+        correctionStatus: 'corrected',
+        updatedAt: new Date(),
+      }).where(eq(receivingHeaders.id, originalId));
+
+      const [result] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, newHeader.id));
+      return result;
+    });
+  },
+
+  async postReceivingCorrection(this: DatabaseStorage, correctionId: string): Promise<ReceivingHeader> {
+    return await db.transaction(async (tx) => {
+      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${correctionId} FOR UPDATE`);
+      const correction = lockResult.rows?.[0] as any;
+      if (!correction) throw new Error('المستند غير موجود');
+      if (correction.status !== 'draft') throw new Error('لا يمكن ترحيل مستند غير مسودة');
+      if (correction.correction_status !== 'correction') throw new Error('هذا المستند ليس مستند تصحيح');
+
+      const originalId = correction.correction_of_id;
+      if (!originalId) throw new Error('لا يوجد مستند أصلي للتصحيح');
+
+      const [corrSupplier] = correction.supplier_id
+        ? await tx.select().from(suppliers).where(eq(suppliers.id, correction.supplier_id))
+        : [null];
+      const corrSupplierName = corrSupplier?.nameAr || corrSupplier?.nameEn || null;
+
+      const origLockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
+      const original = origLockResult.rows?.[0] as any;
+      if (!original) throw new Error('المستند الأصلي غير موجود');
+
+      const originalMovements = await tx.select().from(inventoryLotMovements)
+        .where(and(
+          eq(inventoryLotMovements.referenceType, 'receiving'),
+          eq(inventoryLotMovements.referenceId, originalId),
+        ));
+
+      for (const mov of originalMovements) {
+        const qtyToReverse = parseFloat(mov.qtyChangeInMinor as string);
+        if (qtyToReverse <= 0) continue;
+
+        const [lot] = await tx.select().from(inventoryLots).where(eq(inventoryLots.id, mov.lotId));
+        if (!lot) continue;
+
+        const currentQty = parseFloat(lot.qtyInMinor as string);
+        if (currentQty < qtyToReverse) {
+          const [item] = await tx.select().from(items).where(eq(items.id, lot.itemId));
+          throw new Error(`لا يمكن التصحيح: الصنف "${item?.nameAr || ''}" سيصبح رصيده سالباً في المستودع (المتاح: ${currentQty.toFixed(2)}, المطلوب عكسه: ${qtyToReverse.toFixed(2)})`);
+        }
+
+        const newQty = currentQty - qtyToReverse;
+        await tx.update(inventoryLots).set({ 
+          qtyInMinor: newQty.toFixed(4),
+          updatedAt: new Date(),
+        }).where(eq(inventoryLots.id, mov.lotId));
+
+        await tx.insert(inventoryLotMovements).values({
+          lotId: mov.lotId,
+          warehouseId: mov.warehouseId,
+          txType: 'out',
+          qtyChangeInMinor: (-qtyToReverse).toFixed(4),
+          unitCost: mov.unitCost,
+          referenceType: 'receiving_correction_reversal',
+          referenceId: correctionId,
+        });
+      }
+
+      const correctionLines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, correctionId));
+      const activeLines = correctionLines.filter(l => !l.isRejected);
+
+      for (const line of activeLines) {
+        const qtyMinor = parseFloat(line.qtyInMinor as string) + parseFloat(line.bonusQtyInMinor as string || "0");
+        if (qtyMinor <= 0) continue;
+
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        if (!item) continue;
+
+        const costPerMinor = convertPriceToMinorUnit(parseFloat(line.purchasePrice as string), (line as any).unitLevel || 'minor', item);
+        const costPerMinorStr = costPerMinor.toFixed(4);
+
+        const lotConditions = [
+          eq(inventoryLots.itemId, line.itemId),
+          eq(inventoryLots.warehouseId, correction.warehouse_id),
+        ];
+        if (line.expiryMonth && line.expiryYear) {
+          lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
+          lotConditions.push(eq(inventoryLots.expiryYear, line.expiryYear));
+        } else {
+          lotConditions.push(sql`${inventoryLots.expiryMonth} IS NULL`);
+        }
+
+        const existingLots = await tx.select().from(inventoryLots).where(and(...lotConditions));
+        let lotId: string;
+
+        const corrLotSalePrice = line.salePrice || "0";
+        
+        if (existingLots.length > 0) {
+          const lot = existingLots[0];
+          const newQty = parseFloat(lot.qtyInMinor as string) + qtyMinor;
+          await tx.update(inventoryLots).set({ 
+            qtyInMinor: newQty.toFixed(4),
+            purchasePrice: costPerMinorStr,
+            salePrice: corrLotSalePrice,
+            updatedAt: new Date(),
+          }).where(eq(inventoryLots.id, lot.id));
+          lotId = lot.id;
+        } else {
+          const [newLot] = await tx.insert(inventoryLots).values({
+            itemId: line.itemId,
+            warehouseId: correction.warehouse_id,
+            expiryDate: line.expiryDate || null,
+            expiryMonth: line.expiryMonth || null,
+            expiryYear: line.expiryYear || null,
+            receivedDate: correction.receive_date,
+            purchasePrice: costPerMinorStr,
+            salePrice: corrLotSalePrice,
+            qtyInMinor: qtyMinor.toFixed(4),
+          }).returning();
+          lotId = newLot.id;
+        }
+
+        await tx.insert(inventoryLotMovements).values({
+          lotId,
+          warehouseId: correction.warehouse_id,
+          txType: 'in',
+          qtyChangeInMinor: qtyMinor.toFixed(4),
+          unitCost: costPerMinorStr,
+          referenceType: 'receiving_correction',
+          referenceId: correctionId,
+        });
+
+        const corrPurchaseTotal = (parseFloat(line.qtyInMinor as string) * costPerMinor).toFixed(2);
+        await tx.insert(purchaseTransactions).values({
+          itemId: line.itemId,
+          txDate: correction.receive_date,
+          supplierName: corrSupplierName,
+          qty: (line as any).qtyEntered || line.qtyInMinor as string,
+          unitLevel: (line as any).unitLevel || 'minor',
+          purchasePrice: line.purchasePrice as string,
+          salePriceSnapshot: line.salePrice || null,
+          total: corrPurchaseTotal,
+        });
+
+        const updateFields: any = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
+        if (line.salePrice) updateFields.salePriceCurrent = line.salePrice;
+        await tx.update(items).set(updateFields).where(eq(items.id, line.itemId));
+      }
+
+      const [posted] = await tx.update(receivingHeaders).set({
+        status: 'posted_qty_only',
+        postedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(receivingHeaders.id, correctionId)).returning();
+
+      return posted;
+    });
+  },
+
+  async deletePurchaseInvoice(this: DatabaseStorage, id: string, reason?: string): Promise<boolean> {
+    const [invoice] = await db.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+    if (!invoice) return false;
+    if (invoice.status !== "draft") throw new Error("لا يمكن إلغاء فاتورة معتمدة ومُسعّرة");
+    await db.update(purchaseInvoiceHeaders).set({
+      status: "cancelled" as any,
+      notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
+    }).where(eq(purchaseInvoiceHeaders.id, id));
+    return true;
+  },
+};
+
+export default methods;
