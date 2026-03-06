@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Trash2, Plus, Lock } from "lucide-react";
 import { QuadrantCard } from "./QuadrantCard";
 import type { ServiceOrder, Service } from "../types";
 
@@ -68,26 +69,41 @@ export function ServicesQuadrant({ serviceOrders, onAdd, onRemove }: Props) {
         </div>
       ) : (
         <div className="space-y-1">
-          {serviceOrders.map((svc, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between rounded border px-2 py-1 text-sm bg-blue-50/50 border-blue-100"
-              data-testid={`service-order-${i}`}
-            >
-              <span className="text-blue-800 text-xs truncate">
-                {svc.serviceNameManual || svc.serviceId}
-              </span>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-5 w-5 text-destructive hover:text-destructive shrink-0"
-                onClick={() => onRemove(i)}
-                data-testid={`button-remove-service-${i}`}
+          {serviceOrders.map((svc, i) => {
+            const isConsultation = svc.isConsultationService;
+            return (
+              <div
+                key={i}
+                className={`flex items-center justify-between rounded border px-2 py-1 text-sm ${
+                  isConsultation
+                    ? "bg-green-50/70 border-green-200"
+                    : "bg-blue-50/50 border-blue-100"
+                }`}
+                data-testid={`service-order-${i}`}
               >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </div>
-          ))}
+                <span className={`text-xs truncate ${isConsultation ? "text-green-800" : "text-blue-800"}`}>
+                  {svc.serviceNameManual || svc.serviceId}
+                  {isConsultation && (
+                    <Badge variant="outline" className="mr-1 text-[10px] px-1 py-0 border-green-300 text-green-700">
+                      <Lock className="h-2.5 w-2.5 ml-0.5" />
+                      كشف
+                    </Badge>
+                  )}
+                </span>
+                {!isConsultation && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-5 w-5 text-destructive hover:text-destructive shrink-0"
+                    onClick={() => onRemove(i)}
+                    data-testid={`button-remove-service-${i}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </QuadrantCard>

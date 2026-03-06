@@ -26,6 +26,7 @@ export interface ServiceOrder {
   targetId?: string;
   targetName?: string;
   status?: string;
+  isConsultationService?: boolean;
 }
 
 export interface Consultation {
