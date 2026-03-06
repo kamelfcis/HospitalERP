@@ -5165,6 +5165,18 @@ export async function registerRoutes(
   // موديول العيادات الخارجية
   // ══════════════════════════════════════════════════════════════════════
 
+  function snakeToCamel(obj: any): any {
+    if (Array.isArray(obj)) return obj.map(snakeToCamel);
+    if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
+    if (obj instanceof Date) return obj;
+    const result: any = {};
+    for (const key of Object.keys(obj)) {
+      const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      result[camelKey] = obj[key];
+    }
+    return result;
+  }
+
   // العيادات — الجلب والإدارة
   app.get("/api/clinic-clinics", requireAuth, async (req, res) => {
     try {
@@ -5175,7 +5187,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "لا تملك صلاحية" });
       }
       const clinics = await storage.getClinics(userId, role);
-      res.json(clinics);
+      res.json(snakeToCamel(clinics));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5184,14 +5196,14 @@ export async function registerRoutes(
       const { nameAr, departmentId, defaultPharmacyId } = req.body;
       if (!nameAr?.trim()) return res.status(400).json({ message: "اسم العيادة مطلوب" });
       const clinic = await storage.createClinic({ nameAr: nameAr.trim(), departmentId, defaultPharmacyId });
-      res.status(201).json(clinic);
+      res.status(201).json(snakeToCamel(clinic));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.patch("/api/clinic-clinics/:id", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
       const clinic = await storage.updateClinic(req.params.id, req.body);
-      res.json(clinic);
+      res.json(snakeToCamel(clinic));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5199,14 +5211,14 @@ export async function registerRoutes(
   app.get("/api/clinic-clinics/:id/schedules", requireAuth, async (req, res) => {
     try {
       const schedules = await storage.getDoctorSchedules(req.params.id);
-      res.json(schedules);
+      res.json(snakeToCamel(schedules));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/clinic-clinics/:id/schedules", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
       const schedule = await storage.upsertDoctorSchedule({ clinicId: req.params.id, ...req.body });
-      res.status(201).json(schedule);
+      res.status(201).json(snakeToCamel(schedule));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5230,7 +5242,7 @@ export async function registerRoutes(
 
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
       const appointments = await storage.getClinicAppointments(req.params.id, date);
-      res.json(appointments);
+      res.json(snakeToCamel(appointments));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5241,7 +5253,7 @@ export async function registerRoutes(
       if (!data.doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
       if (!data.appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
       const appointment = await storage.createAppointment(data);
-      res.status(201).json(appointment);
+      res.status(201).json(snakeToCamel(appointment));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5286,7 +5298,10 @@ export async function registerRoutes(
     try {
       const data = await storage.getConsultationByAppointment(req.params.appointmentId);
       if (!data) return res.status(404).json({ message: "الموعد غير موجود" });
-      res.json(data);
+      const camelData = snakeToCamel(data);
+      if (camelData.drugs) camelData.drugs = snakeToCamel(camelData.drugs);
+      if (camelData.serviceOrders) camelData.serviceOrders = snakeToCamel(camelData.serviceOrders);
+      res.json(camelData);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5301,7 +5316,7 @@ export async function registerRoutes(
         drugs: drugs || [],
         serviceOrders: serviceOrders || [],
       });
-      res.json(result);
+      res.json(snakeToCamel(result));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5311,7 +5326,7 @@ export async function registerRoutes(
       const doctorId = await storage.getUserDoctorId(req.session.userId!);
       if (!doctorId) return res.status(404).json({ message: "لم يتم ربط حسابك بطبيب" });
       const favorites = await storage.getDoctorFavoriteDrugs(doctorId);
-      res.json(favorites);
+      res.json(snakeToCamel(favorites));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5322,7 +5337,7 @@ export async function registerRoutes(
       const { itemId, drugName, defaultDose, defaultFrequency, defaultDuration } = req.body;
       if (!drugName?.trim()) return res.status(400).json({ message: "اسم الدواء مطلوب" });
       const fav = await storage.addFavoriteDrug({ doctorId, itemId: itemId || null, drugName: drugName.trim(), defaultDose, defaultFrequency, defaultDuration });
-      res.status(201).json(fav);
+      res.status(201).json(snakeToCamel(fav));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5340,7 +5355,7 @@ export async function registerRoutes(
       if (!doctorId) return res.json([]);
       const minCount = parseInt(req.query.minCount as string) || 2;
       const drugs = await storage.getFrequentDrugsNotInFavorites(doctorId, minCount);
-      res.json(drugs);
+      res.json(snakeToCamel(drugs));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5374,7 +5389,7 @@ export async function registerRoutes(
       if (req.query.targetId) filters.targetId = req.query.targetId as string;
 
       const orders = await storage.getClinicOrders(filters);
-      res.json(orders);
+      res.json(snakeToCamel(orders));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
@@ -5382,14 +5397,14 @@ export async function registerRoutes(
     try {
       const order = await storage.getClinicOrder(req.params.id);
       if (!order) return res.status(404).json({ message: "الأمر غير موجود" });
-      res.json(order);
+      res.json(snakeToCamel(order));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/clinic-orders/:id/execute", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
     try {
       const result = await storage.executeClinicOrder(req.params.id, req.session.userId!);
-      res.json(result);
+      res.json(snakeToCamel(result));
     } catch (e: any) { res.status(400).json({ message: e.message }); }
   });
 
@@ -5415,7 +5430,7 @@ export async function registerRoutes(
       const from = (req.query.from as string) || new Date().toISOString().slice(0, 7) + '-01';
       const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
       const rows = await storage.getDoctorStatement(doctorId, from, to);
-      res.json(rows);
+      res.json(snakeToCamel(rows));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

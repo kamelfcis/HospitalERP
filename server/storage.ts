@@ -9049,8 +9049,8 @@ export class DatabaseStorage implements IStorage {
     if (data.defaultPharmacyId !== undefined) sets.push(`default_pharmacy_id = ${data.defaultPharmacyId ? `'${data.defaultPharmacyId}'` : 'NULL'}`);
     if (data.isActive !== undefined) sets.push(`is_active = ${data.isActive}`);
     if (sets.length === 0) return this.getClinicById(id);
-    const rows = await db.execute(sql.raw(`UPDATE clinic_clinics SET ${sets.join(', ')} WHERE id = '${id}' RETURNING *`));
-    return rows.rows[0] as any;
+    await db.execute(sql.raw(`UPDATE clinic_clinics SET ${sets.join(', ')} WHERE id = '${id}'`));
+    return this.getClinicById(id);
   }
 
   async getUserClinicIds(userId: string): Promise<string[]> {
