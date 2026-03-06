@@ -5323,6 +5323,22 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  app.get("/api/clinic-user-clinic/:userId", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const clinicIds = await storage.getUserClinicIds(req.params.userId);
+      res.json(clinicIds);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.delete("/api/clinic-user-clinic", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
+    try {
+      const { userId, clinicId } = req.body;
+      if (!userId || !clinicId) return res.status(400).json({ message: "userId و clinicId مطلوبان" });
+      await storage.removeUserFromClinic(userId, clinicId);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   // الكشف والروشتة
   app.get("/api/clinic-consultations/:appointmentId", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
     try {

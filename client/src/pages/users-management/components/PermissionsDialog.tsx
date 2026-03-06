@@ -7,13 +7,131 @@ import { Button }     from "@/components/ui/button";
 import { Badge }      from "@/components/ui/badge";
 import { Checkbox }   from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2 }    from "lucide-react";
+import { Loader2, X, Plus } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_LABELS, PERMISSION_GROUPS, DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
 
 interface PermissionsDialogProps {
   userId:       string | null;
   open:         boolean;
   onOpenChange: (v: boolean) => void;
+}
+
+interface ClinicOption {
+  id: string;
+  nameAr: string;
+  isActive: boolean;
+}
+
+function ClinicAssignmentsSection({ userId }: { userId: string }) {
+  const { toast } = useToast();
+  const [selectedClinicId, setSelectedClinicId] = useState("");
+
+  const { data: allClinics = [] } = useQuery<ClinicOption[]>({
+    queryKey: ["/api/clinic-clinics"],
+    staleTime: 0,
+  });
+
+  const { data: assignedClinicIds = [], isLoading } = useQuery<string[]>({
+    queryKey: ["/api/clinic-user-clinic", userId],
+    queryFn: () => apiRequest("GET", `/api/clinic-user-clinic/${userId}`).then((r) => r.json()),
+    enabled: !!userId,
+    staleTime: 0,
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: (clinicId: string) =>
+      apiRequest("POST", "/api/clinic-user-clinic", { userId, clinicId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-user-clinic", userId] });
+      setSelectedClinicId("");
+      toast({ title: "تم تعيين العيادة" });
+    },
+    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (clinicId: string) =>
+      apiRequest("DELETE", "/api/clinic-user-clinic", { userId, clinicId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clinic-user-clinic", userId] });
+      toast({ title: "تم إلغاء تعيين العيادة" });
+    },
+    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+  });
+
+  const unassignedClinics = allClinics.filter(
+    (c) => c.isActive && !assignedClinicIds.includes(c.id)
+  );
+
+  const assignedClinics = allClinics.filter((c) => assignedClinicIds.includes(c.id));
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-2">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Select value={selectedClinicId} onValueChange={setSelectedClinicId}>
+          <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-assign-clinic">
+            <SelectValue placeholder="اختر عيادة لتعيينها..." />
+          </SelectTrigger>
+          <SelectContent>
+            {unassignedClinics.length === 0 ? (
+              <SelectItem value="__none__" disabled>لا توجد عيادات متاحة</SelectItem>
+            ) : (
+              unassignedClinics.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.nameAr}</SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+        <Button
+          size="sm"
+          className="h-8 text-xs gap-1"
+          disabled={!selectedClinicId || selectedClinicId === "__none__" || assignMutation.isPending}
+          onClick={() => assignMutation.mutate(selectedClinicId)}
+          data-testid="button-assign-clinic"
+        >
+          {assignMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+          تعيين
+        </Button>
+      </div>
+
+      {assignedClinics.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-2">
+          لم يتم تعيين أي عيادة — المستخدم لن يرى أي عيادة (إلا إذا كان أدمن)
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {assignedClinics.map((c) => (
+            <Badge
+              key={c.id}
+              variant="outline"
+              className="text-xs gap-1 bg-blue-50 text-blue-700 border-blue-200 pr-1"
+              data-testid={`badge-assigned-clinic-${c.id}`}
+            >
+              {c.nameAr}
+              <button
+                type="button"
+                className="hover:bg-blue-200 rounded-full p-0.5 transition-colors"
+                onClick={() => removeMutation.mutate(c.id)}
+                disabled={removeMutation.isPending}
+                data-testid={`button-remove-clinic-${c.id}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function PermissionsDialog({ userId, open, onOpenChange }: PermissionsDialogProps) {
@@ -127,6 +245,16 @@ export function PermissionsDialog({ userId, open, onOpenChange }: PermissionsDia
                 </div>
               </div>
             ))}
+
+            {userId && (
+              <div>
+                <p className="font-medium text-sm mb-1">تعيين العيادات</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  حدد العيادات التي يمكن لهذا المستخدم العمل عليها (الأدمن يرى كل العيادات تلقائيًا)
+                </p>
+                <ClinicAssignmentsSection userId={userId} />
+              </div>
+            )}
           </div>
         </ScrollArea>
 
