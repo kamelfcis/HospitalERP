@@ -9774,7 +9774,7 @@ export class DatabaseStorage implements IStorage {
     try {
       await client.query('BEGIN');
 
-      const numRes = await client.query(`SELECT COALESCE(MAX(invoice_number::int), 0) + 1 AS next_num FROM patient_invoice_headers`);
+      const numRes = await client.query(`SELECT COALESCE(MAX(CASE WHEN invoice_number ~ '^[0-9]+$' THEN invoice_number::int ELSE 0 END), 0) + 1 AS next_num FROM patient_invoice_headers`);
       const invoiceNumber = String(numRes.rows[0].next_num);
 
       const totalAmount = data.services.reduce((sum, s) => sum + s.quantity * s.unitPrice, 0);
