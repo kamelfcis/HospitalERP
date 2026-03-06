@@ -30,11 +30,12 @@ export function useDoctorConsultation(appointmentId: string) {
     if (consultation) {
       setForm({
         ...consultation,
+        appointmentId,
         drugs: consultation.drugs || [],
         serviceOrders: consultation.serviceOrders || [],
       });
     }
-  }, [consultation]);
+  }, [consultation, appointmentId]);
 
   const saveMutation = useMutation({
     mutationFn: (data: Consultation) =>
