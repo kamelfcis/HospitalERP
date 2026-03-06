@@ -6,11 +6,15 @@ import { Loader2 } from "lucide-react";
 import { useDoctorStatement } from "../hooks/useDoctorStatement";
 import { formatNumber } from "@/lib/formatters";
 
-export function DoctorStatementTab() {
-  const { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useDoctorStatement();
+interface Props {
+  doctorId?: string;
+}
+
+export function DoctorStatementTab({ doctorId }: Props) {
+  const { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo } = useDoctorStatement(doctorId);
 
   const totalRevenue = rows.reduce((sum, r) => {
-    if (r.order_status === "executed") return sum + parseFloat(r.service_price || "0");
+    if ((r.orderStatus || r.order_status) === "executed") return sum + parseFloat(r.servicePrice || r.service_price || "0");
     return sum;
   }, 0);
 
@@ -53,16 +57,16 @@ export function DoctorStatementTab() {
             <TableBody>
               {rows.map((row, i) => (
                 <TableRow key={i} data-testid={`statement-row-${i}`}>
-                  <TableCell className="text-sm" dir="ltr">{row.appointment_date}</TableCell>
-                  <TableCell className="text-sm">{row.patient_name}</TableCell>
-                  <TableCell className="text-sm">{row.service_name || "—"}</TableCell>
+                  <TableCell className="text-sm" dir="ltr">{row.appointmentDate || row.appointment_date}</TableCell>
+                  <TableCell className="text-sm">{row.patientName || row.patient_name}</TableCell>
+                  <TableCell className="text-sm">{row.serviceName || row.service_name || "—"}</TableCell>
                   <TableCell className="text-sm" dir="ltr">
-                    {row.service_price ? formatNumber(parseFloat(row.service_price)) : "—"}
+                    {(row.servicePrice || row.service_price) ? formatNumber(parseFloat(row.servicePrice || row.service_price)) : "—"}
                   </TableCell>
                   <TableCell>
-                    {row.order_status === "executed" ? (
+                    {(row.orderStatus || row.order_status) === "executed" ? (
                       <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">منفذ</Badge>
-                    ) : row.order_status === "pending" ? (
+                    ) : (row.orderStatus || row.order_status) === "pending" ? (
                       <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 text-xs">معلق</Badge>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>

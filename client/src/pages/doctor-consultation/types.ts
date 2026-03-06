@@ -32,6 +32,7 @@ export interface Consultation {
   appointmentTime?: string;
   turnNumber?: number;
   appointmentStatus?: string;
+  doctorId?: string;
   doctorName?: string;
   doctorSpecialty?: string;
   clinicName?: string;

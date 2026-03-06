@@ -139,7 +139,7 @@ export default function DoctorConsultation() {
             <p className="text-xs text-muted-foreground">البيانات تُحفظ تلقائياً أثناء الكتابة</p>
           </TabsContent>
           <TabsContent value="statement" className="mt-2">
-            <DoctorStatementTab />
+            <DoctorStatementTab doctorId={form.doctorId} />
           </TabsContent>
         </Tabs>
       </div>
