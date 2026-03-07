@@ -394,11 +394,15 @@ export default function AccountMappings() {
               <span className="text-xs leading-relaxed">
                 حساب المخزون لكل مستودع يُحدَّد مباشرةً في{" "}
                 <strong>إعدادات المستودع → حقل "حساب المخزون"</strong>
-                {" "}(gl_account_id) — ولا يمر عبر جدول ربط الحسابات هنا.
+                {" "}— ولا يمر عبر جدول ربط الحسابات هنا.
                 <br />
-                عند الترحيل: <strong>مدين ← حساب مخزن الوجهة</strong> /
-                {" "}<strong>دائن ← حساب مخزن المصدر</strong>.
-                {" "}القيمة = تكلفة الدفعات المحوّلة (لا يُعاد احتساب الأسعار أو الضريبة).
+                <strong>سياسة التحكم المحاسبي:</strong>
+                <ul className="mt-1 space-y-0.5 list-none">
+                  <li>• كلا المستودعين <strong>بدون</strong> حساب GL → التحويل يكتمل بدون قيد (مقبول)</li>
+                  <li>• أحدهما فقط له حساب GL → <strong className="text-red-700">يُوقَف الترحيل</strong> (إعداد ناقص)</li>
+                  <li>• كلاهما له حساب GL → قيد إلزامي — <strong className="text-red-700">يُوقَف إذا لا توجد فترة مفتوحة</strong></li>
+                </ul>
+                القيد: <strong>مدين ← مخزن الوجهة</strong> / <strong>دائن ← مخزن المصدر</strong> بقيمة تكلفة الدفعات.
               </span>
             </div>
           </div>

@@ -406,12 +406,17 @@ const methods = {
         .where(eq(storeTransfers.id, transferId))
         .returning();
 
-      // ── Step 6: قيد محاسبي ذري داخل نفس الـ tx ──────────────────────────
-      // سياسة: Dr مخزن الوجهة / Cr مخزن المصدر — القيمة = تكلفة الدفعات المحوّلة
-      // لا يُعاد احتساب سعر الصنف أو الضريبة أو رصيد المورد
+      // ── Step 6: قيد محاسبي ذري — سياسة التحكم المحاسبي ─────────────────────
+      //
+      // قاعدة التتبع المالي:
+      //   كلاهما بدون GL  → تخطي (مستودعات غير مُتابَعة محاسبياً — ليس تقصيراً)
+      //   أحدهما فقط      → إيقاف ROLLBACK (إعداد ناقص أو غير متسق — يجب تصحيحه)
+      //   كلاهما لهما GL  → إلزامي: الفترة المحاسبية المفتوحة مطلوبة — إلا إيقاف ROLLBACK
+      //
+      // الإيقاف يُلغي كل عمليات المخزون في نفس المعاملة (Rollback كامل)
+      // مما يضمن عدم تحريك مخزون بدون قيد محاسبي مقابل في المستودعات المُتابَعة.
       if (totalCost > 0) {
         // Idempotency — unique index على (sourceType, sourceDocumentId) يمنع التكرار في DB
-        // لكن نتحقق مسبقاً لتفادي خطأ unique violation داخل الـ tx
         const [existingJournal] = await tx.select({ id: journalEntries.id })
           .from(journalEntries)
           .where(and(
@@ -423,21 +428,36 @@ const methods = {
         if (existingJournal) {
           console.log(`[GL] Transfer journal already exists for transfer ${transferId}, skipping.`);
         } else {
-          // اقرأ GL account من جدول warehouses مباشرةً
           const [srcWh] = await tx.select({ glAccountId: warehouses.glAccountId, nameAr: warehouses.nameAr })
             .from(warehouses).where(eq(warehouses.id, transfer.sourceWarehouseId));
           const [destWh] = await tx.select({ glAccountId: warehouses.glAccountId, nameAr: warehouses.nameAr })
             .from(warehouses).where(eq(warehouses.id, transfer.destinationWarehouseId));
 
-          if (!srcWh?.glAccountId || !destWh?.glAccountId) {
+          const srcHasGL  = !!srcWh?.glAccountId;
+          const destHasGL = !!destWh?.glAccountId;
+
+          if (!srcHasGL && !destHasGL) {
+            // ── كلاهما غير مُتابَع ─────────────────────────────────────────
+            // مستودعات بدون حساب GL — تخطي بدون خطأ (تحويل داخلي غير مُحاسَب)
             console.log(
-              `[GL] Transfer journal SKIPPED — GL account not configured. ` +
-              `src=${srcWh?.nameAr ?? transfer.sourceWarehouseId} (${srcWh?.glAccountId ?? "—"}), ` +
-              `dest=${destWh?.nameAr ?? transfer.destinationWarehouseId} (${destWh?.glAccountId ?? "—"}). ` +
-              `Configure via: إعدادات المستودع → حساب المخزون.`
+              `[GL] Transfer journal SKIPPED — neither warehouse is financially tracked. ` +
+              `(${srcWh?.nameAr ?? transfer.sourceWarehouseId} → ${destWh?.nameAr ?? transfer.destinationWarehouseId}). ` +
+              `Assign GL accounts in Warehouse settings to enable financial tracking.`
+            );
+          } else if (srcHasGL !== destHasGL) {
+            // ── إعداد ناقص → إيقاف ────────────────────────────────────────
+            // أحد المستودعين فقط مُتتبَّع — حالة غير متسقة تسبب خللاً في الميزانية
+            const missingWh   = !srcHasGL ? srcWh?.nameAr  : destWh?.nameAr;
+            const configuredWh= srcHasGL  ? srcWh?.nameAr  : destWh?.nameAr;
+            throw new Error(
+              `لا يمكن ترحيل التحويل: المستودع "${missingWh}" ليس له حساب مخزون GL، ` +
+              `في حين أن "${configuredWh}" مُتابَع محاسبياً. ` +
+              `هذا الإعداد ناقص ويسبب خللاً في ميزان المراجعة. ` +
+              `الحل: أضف حساب GL للمستودع "${missingWh}" من إعدادات المستودعات، ` +
+              `أو أزل حساب GL من "${configuredWh}" إذا لم يكن مطلوباً.`
             );
           } else {
-            // فترة محاسبية مفتوحة لتاريخ التحويل
+            // ── كلاهما مُتابَع → القيد إلزامي ────────────────────────────
             const [period] = await tx.select({ id: fiscalPeriods.id })
               .from(fiscalPeriods)
               .where(and(
@@ -448,45 +468,50 @@ const methods = {
               .limit(1);
 
             if (!period) {
-              console.log(`[GL] Transfer journal SKIPPED — no open fiscal period for date ${transfer.transferDate}.`);
-            } else {
-              const entryNumber = await this.getNextEntryNumber();
-              const amount = totalCost.toFixed(2);
-              const desc = `قيد تحويل مخزني ${transfer.transferNumber} — من ${srcWh.nameAr} إلى ${destWh.nameAr}`;
-
-              const [entry] = await tx.insert(journalEntries).values({
-                entryNumber,
-                entryDate:        transfer.transferDate,
-                periodId:         period.id,
-                description:      desc,
-                sourceType:       "warehouse_transfer",
-                sourceDocumentId: transferId,
-                status:           "posted" as const,
-                totalDebit:       amount,
-                totalCredit:      amount,
-              }).returning();
-
-              await tx.insert(journalLines).values([
-                {
-                  journalEntryId: entry.id,
-                  lineNumber:     1,
-                  accountId:      destWh.glAccountId,
-                  debit:          amount,
-                  credit:         "0.00",
-                  description:    `تحويل وارد — ${destWh.nameAr}`,
-                },
-                {
-                  journalEntryId: entry.id,
-                  lineNumber:     2,
-                  accountId:      srcWh.glAccountId,
-                  debit:          "0.00",
-                  credit:         amount,
-                  description:    `تحويل صادر — ${srcWh.nameAr}`,
-                },
-              ]);
-
-              console.log(`[GL] Transfer journal posted: #${entryNumber}, amount=${amount}, Dr=${destWh.nameAr}, Cr=${srcWh.nameAr}`);
+              // فترة مغلقة أو غير موجودة → إيقاف
+              throw new Error(
+                `لا يمكن ترحيل التحويل: كلا المستودعين (${srcWh.nameAr} و${destWh.nameAr}) ` +
+                `مُتابَعان محاسبياً، لكن لا توجد فترة محاسبية مفتوحة لتاريخ التحويل (${transfer.transferDate}). ` +
+                `افتح فترة محاسبية لهذا التاريخ أو غيّر تاريخ التحويل إلى فترة مفتوحة.`
+              );
             }
+
+            const entryNumber = await this.getNextEntryNumber();
+            const amount = totalCost.toFixed(2);
+            const desc   = `قيد تحويل مخزني ${transfer.transferNumber} — من ${srcWh.nameAr} إلى ${destWh.nameAr}`;
+
+            const [entry] = await tx.insert(journalEntries).values({
+              entryNumber,
+              entryDate:        transfer.transferDate,
+              periodId:         period.id,
+              description:      desc,
+              sourceType:       "warehouse_transfer",
+              sourceDocumentId: transferId,
+              status:           "posted" as const,
+              totalDebit:       amount,
+              totalCredit:      amount,
+            }).returning();
+
+            await tx.insert(journalLines).values([
+              {
+                journalEntryId: entry.id,
+                lineNumber:     1,
+                accountId:      destWh.glAccountId!,
+                debit:          amount,
+                credit:         "0.00",
+                description:    `تحويل وارد — ${destWh.nameAr}`,
+              },
+              {
+                journalEntryId: entry.id,
+                lineNumber:     2,
+                accountId:      srcWh.glAccountId!,
+                debit:          "0.00",
+                credit:         amount,
+                description:    `تحويل صادر — ${srcWh.nameAr}`,
+              },
+            ]);
+
+            console.log(`[GL] Transfer journal posted: #${entryNumber}, amount=${amount}, Dr=${destWh.nameAr}, Cr=${srcWh.nameAr}`);
           }
         }
       }
