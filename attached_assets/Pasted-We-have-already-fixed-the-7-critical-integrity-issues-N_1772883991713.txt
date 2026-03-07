@@ -1,0 +1,194 @@
+We have already fixed the 7 critical integrity issues. 
+
+Now perform a SECOND-PHASE HARDENING PASS focused on the remaining risks identified in the audit report.
+
+IMPORTANT:
+Do NOT change business behavior unless required for data safety.
+Do NOT break existing APIs.
+Preserve current outputs.
+Prefer small, safe refactors over large rewrites.
+
+Your goal is to eliminate or reduce the remaining structural risks.
+
+========================
+TARGET AREAS
+========================
+
+1) INVENTORY TRANSACTION SAFETY
+Files:
+- server/storage/transfers-storage.ts
+
+Problem:
+Multiple stock mutations occur outside database transactions.
+
+Risk:
+Partial stock movement (stock deducted from one location but not added to another).
+
+Tasks:
+- Wrap every multi-step stock mutation in a single database transaction.
+- Ensure deduction + addition + logs occur atomically.
+- Prevent negative stock during concurrent operations.
+- Add clear comments explaining transaction boundaries.
+
+Output:
+List all mutations that were outside transactions and show how they were fixed.
+
+
+========================
+2) CLINIC STORAGE TRANSACTION COVERAGE
+Files:
+- server/storage/clinic-storage.ts
+
+Problem:
+Many multi-step mutations occur without transaction protection.
+
+Risk:
+Patient data inconsistencies or partial updates.
+
+Tasks:
+- Identify every mutation affecting more than one table.
+- Wrap them in transactions.
+- Ensure failure triggers full rollback.
+
+Output:
+List each mutation converted to transaction-safe logic.
+
+
+========================
+3) JOURNAL DUPLICATE HARD PROTECTION
+Files:
+- database schema / finance schema
+
+Problem:
+Duplicate journal entries for the same source document are currently prevented only by logic.
+
+Task:
+Add a database-level constraint.
+
+Add:
+
+UNIQUE (sourceType, sourceDocumentId)
+
+in journal_entries table.
+
+Requirements:
+- Ensure compatibility with existing data.
+- Add migration if required.
+- Ensure reverse or adjustment entries are still allowed.
+
+
+========================
+4) FINE-GRAINED RBAC AUTHORIZATION
+Files:
+- invoicing routes
+- inventory routes
+
+Problem:
+Global authentication is active but many write routes lack explicit permission checks.
+
+Tasks:
+- Audit all routes performing write operations (POST / PUT / PATCH / DELETE).
+- Add checkPermission middleware where appropriate.
+
+Create a clear permission structure such as:
+
+invoice.create
+invoice.update
+invoice.finalize
+invoice.reverse
+inventory.transfer
+inventory.adjust
+inventory.receive
+
+Output:
+Generate a ROUTE → PERMISSION matrix.
+
+
+========================
+5) ENTRY NUMBER GENERATION IMPROVEMENT
+Files:
+- finance-storage.ts
+
+Problem:
+Entry number generation currently uses MAX + advisory lock.
+
+Task:
+Replace with PostgreSQL SEQUENCE if possible.
+
+Requirements:
+- Maintain sequential numbering.
+- Ensure no duplicates under concurrency.
+- Ensure compatibility with existing entry numbers.
+
+
+========================
+6) CODE ORGANIZATION IMPROVEMENTS
+Large files identified:
+
+- transfers-storage.ts (~1187 lines)
+- invoicing.ts (~1400 lines)
+- inventory.ts (~1400 lines)
+
+Tasks:
+- Split large files into logical modules.
+Example:
+
+inventory/
+  inventory-transfers.ts
+  inventory-adjustments.ts
+  inventory-receipts.ts
+
+- Preserve existing exports and routes.
+
+
+========================
+7) TYPE SAFETY IMPROVEMENT
+Problem:
+Multiple financial areas use "any".
+
+Tasks:
+- Replace unsafe "any" types with explicit interfaces.
+- Especially in finance-storage.ts and transfers-storage.ts.
+
+Goal:
+Prevent silent runtime errors in financial logic.
+
+
+========================
+OUTPUT FORMAT
+========================
+
+SECTION A — Changes Implemented
+List each fix with:
+- file
+- function
+- what was unsafe before
+- what was changed
+
+SECTION B — Transaction Safety Verification
+Confirm that:
+- stock transfers are atomic
+- clinic mutations are atomic
+
+SECTION C — RBAC Authorization Matrix
+Table of:
+
+Route → Permission → Protected (Yes/No)
+
+SECTION D — Schema Changes
+List new constraints or sequences added.
+
+SECTION E — Remaining Risks
+After this phase, identify the remaining top 10 technical risks.
+
+SECTION F — Updated System Score
+Provide updated scores for:
+
+Data integrity
+Concurrency safety
+Security
+Maintainability
+Performance
+Production readiness
+
+And give the new overall maturity percentage.
