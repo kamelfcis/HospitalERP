@@ -227,7 +227,7 @@ export interface IStorage {
     search?: string;
   }): Promise<{ data: JournalEntry[]; total: number }>;
   getJournalEntry(id: string): Promise<JournalEntryWithLines | undefined>;
-  getNextEntryNumber(): Promise<number>;
+  getNextEntryNumber(queryCtx?: any): Promise<number>;
   createJournalEntry(entry: InsertJournalEntry, lines: InsertJournalLine[]): Promise<JournalEntry>;
   updateJournalEntry(id: string, entry: Partial<InsertJournalEntry>, lines?: InsertJournalLine[]): Promise<JournalEntry | undefined>;
   postJournalEntry(id: string, userId: string | null): Promise<JournalEntry | undefined>;
@@ -672,7 +672,7 @@ export interface DatabaseStorage extends IStorage {
   completeSalesJournalsWithCash(invoiceIds: string[], cashGlAccountId: string | null, pharmacyId: string): Promise<void>;
   generatePurchaseInvoiceJournal(invoiceId: string, invoice: PurchaseInvoiceHeader): Promise<JournalEntry | null>;
   getMappingsForTransaction(sourceType: string, warehouseId: string | null): Promise<AccountMapping[]>;
-  getNextEntryNumber(): Promise<number>;
+  getNextEntryNumber(queryCtx?: any): Promise<number>;
   getNextSalesInvoiceNumber(): Promise<number>;
 }
 

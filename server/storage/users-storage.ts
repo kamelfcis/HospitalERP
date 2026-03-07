@@ -34,6 +34,21 @@ import type {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 
+// ── Permission Cache ──────────────────────────────────────────────────────────
+// تخزين مؤقت لصلاحيات المستخدمين لتقليل استعلامات قاعدة البيانات
+// TTL: 60 ثانية — يُلغى عند تعديل صلاحيات أي دور أو مستخدم
+const _permCache = new Map<string, { perms: string[]; expiresAt: number }>();
+const PERM_CACHE_TTL_MS = 60_000;
+
+function clearPermissionCacheForUser(userId: string): void {
+  _permCache.delete(userId);
+}
+
+function clearAllPermissionCache(): void {
+  _permCache.clear();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const methods = {
   async getUser(this: DatabaseStorage, id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
@@ -65,6 +80,9 @@ const methods = {
   },
 
   async getUserEffectivePermissions(this: DatabaseStorage, userId: string): Promise<string[]> {
+    const cached = _permCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) return cached.perms;
+
     const user = await this.getUser(userId);
     if (!user) return [];
 
@@ -81,7 +99,9 @@ const methods = {
       }
     }
 
-    return Array.from(rolePermSet);
+    const perms = Array.from(rolePermSet);
+    _permCache.set(userId, { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS });
+    return perms;
   },
 
   async getRolePermissions(this: DatabaseStorage, role: string): Promise<RolePermission[]> {
@@ -99,6 +119,8 @@ const methods = {
         );
       }
     });
+    // تعديل دور يؤثر على جميع المستخدمين بهذا الدور — امسح الـ cache كله
+    clearAllPermissionCache();
   },
 
   async getUserPermissions(this: DatabaseStorage, userId: string): Promise<UserPermission[]> {
@@ -114,6 +136,8 @@ const methods = {
         );
       }
     });
+    // تعديل صلاحيات مستخدم بعينه — امسح cache هذا المستخدم فقط
+    clearPermissionCacheForUser(userId);
   },
 
   async getUserDepartments(this: DatabaseStorage, userId: string): Promise<Department[]> {

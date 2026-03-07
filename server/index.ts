@@ -59,6 +59,19 @@ app.use(
 
 app.use(slowRequestLogger(1000));
 
+// ── Global API Auth Guard ─────────────────────────────────────────────────────
+// يحمي جميع مسارات /api تلقائياً — بدلاً من إضافة requireAuth لكل route بشكل يدوي
+// المسارات العامة (بدون مصادقة): تسجيل الدخول / الخروج / فحص الجلسة
+const API_PUBLIC_PATHS = ["/auth/login", "/auth/logout", "/auth/me"];
+app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+  if (API_PUBLIC_PATHS.includes(req.path)) return next();
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "يجب تسجيل الدخول" });
+  }
+  next();
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
