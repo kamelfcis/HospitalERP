@@ -268,10 +268,12 @@ const methods = {
 
   async postReceiving(this: DatabaseStorage, id: string): Promise<ReceivingHeader> {
     return await db.transaction(async (tx) => {
-      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${id} FOR UPDATE`);
-      const header = lockResult.rows?.[0] as ReceivingHeader | undefined;
+      // Acquire row lock first (FOR UPDATE not natively supported in Drizzle query builder)
+      await tx.execute(sql`SELECT id FROM receiving_headers WHERE id = ${id} FOR UPDATE`);
+      // Read with ORM inside the same transaction so fields are properly camelCased
+      const [header] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
       if (!header) throw new Error('المستند غير موجود');
-      if (header.status === 'posted' || header.status === 'posted_qty_only') return header;
+      if (header.status === 'posted' || header.status === 'posted_qty_only' || header.status === 'posted_costed') return header;
       
       if (!header.supplierId) throw new Error('المورد مطلوب');
       if (!header.supplierInvoiceNo?.trim()) throw new Error('رقم فاتورة المورد مطلوب');

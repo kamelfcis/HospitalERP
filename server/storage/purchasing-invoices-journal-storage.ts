@@ -230,10 +230,11 @@ const journalMethods = {
 
   async createReceivingCorrection(this: any, originalId: string): Promise<ReceivingHeader> {
     return await db.transaction(async (tx) => {
-      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
-      const original = lockResult.rows?.[0] as ReceivingHeader | undefined;
+      // Acquire row lock, then read with ORM for proper camelCase field names
+      await tx.execute(sql`SELECT id FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
+      const [original] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, originalId));
       if (!original) throw new Error('المستند غير موجود');
-      if (original.status !== 'posted_qty_only') throw new Error('يمكن تصحيح المستندات المرحّلة فقط');
+      if (original.status !== 'posted_qty_only' && original.status !== 'posted_costed') throw new Error('يمكن تصحيح المستندات المرحّلة فقط');
       if (original.correctionStatus === 'corrected') throw new Error('تم تصحيح هذا المستند مسبقاً');
       if (original.convertedToInvoiceId) {
         const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, original.convertedToInvoiceId));
@@ -306,8 +307,9 @@ const journalMethods = {
 
   async postReceivingCorrection(this: any, correctionId: string): Promise<ReceivingHeader> {
     return await db.transaction(async (tx) => {
-      const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${correctionId} FOR UPDATE`);
-      const correction = lockResult.rows?.[0] as ReceivingHeader | undefined;
+      // Acquire row lock, then read with ORM for proper camelCase field names
+      await tx.execute(sql`SELECT id FROM receiving_headers WHERE id = ${correctionId} FOR UPDATE`);
+      const [correction] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, correctionId));
       if (!correction) throw new Error('المستند غير موجود');
       if (correction.status !== 'draft') throw new Error('لا يمكن ترحيل مستند غير مسودة');
       if (correction.correctionStatus !== 'correction') throw new Error('هذا المستند ليس مستند تصحيح');
@@ -315,8 +317,9 @@ const journalMethods = {
       const originalId = correction.correctionOfId;
       if (!originalId) throw new Error('لا يوجد مستند أصلي للتصحيح');
 
-      const origLockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
-      const original = origLockResult.rows?.[0] as ReceivingHeader | undefined;
+      // Lock the original too, then verify it exists
+      await tx.execute(sql`SELECT id FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
+      const [original] = await tx.select().from(receivingHeaders).where(eq(receivingHeaders.id, originalId));
       if (!original) throw new Error('المستند الأصلي غير موجود');
 
       const originalMovements = await tx.select().from(inventoryLotMovements)

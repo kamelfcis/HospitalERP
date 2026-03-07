@@ -240,7 +240,7 @@ export function registerPurchasingRoutes(app: Express) {
     try {
       const receiving = await storage.getReceiving(req.params.id as string);
       if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
-      if (receiving.status === 'posted' || receiving.status === 'posted_qty_only') {
+      if (receiving.status === 'posted' || receiving.status === 'posted_qty_only' || receiving.status === 'posted_costed') {
         return res.status(409).json({ message: "المستند مُرحّل بالفعل", code: "ALREADY_POSTED" });
       }
 
