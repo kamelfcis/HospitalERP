@@ -1,0 +1,156 @@
+I want you to perform a STRICT, DEEP, and HONEST engineering audit of this entire system.
+
+IMPORTANT:
+- Do NOT flatter.
+- Do NOT give a generic summary.
+- Do NOT hide weaknesses.
+- I want a tough technical review as if you are a senior software architect, code reviewer, security reviewer, and maintainability auditor combined.
+- I am NOT a programmer, so after every technical finding, explain it in simple human language.
+- I want you to prioritize truth, risk detection, and practical action over politeness.
+
+YOUR GOAL:
+Evaluate this system from these angles:
+
+1) Code organization
+2) Architecture quality
+3) Readability for human developers
+4) Maintainability
+5) Hidden technical debt
+6) Dangerous code patterns
+7) Future risks if development continues on the same path
+8) Parts that are too complex, fragile, duplicated, unclear, or risky
+9) Security and data integrity risks
+10) Performance and scaling risks
+11) Transaction safety and concurrency risks
+12) Areas that will become expensive/difficult to modify later
+13) Files/modules/components that need refactoring most urgently
+14) Overall system maturity
+
+I want a FULL REVIEW of the current codebase, not a shallow scan.
+
+AUDIT METHOD:
+Review the actual codebase, folder structure, naming, responsibilities, coupling, large files, repeated logic, risky queries, weak validation, error handling, transaction boundaries, duplicated business rules, weak typing, dead code, overly complex components, magic values, unclear state management, weak API design, missing abstractions, weak permissions handling, and fragile integrations.
+
+Also identify:
+- God files / mega files
+- Overloaded components
+- Repeated logic that should be centralized
+- Inconsistent naming
+- Mixed concerns in same file
+- UI/business logic coupling
+- Database logic risks
+- Race condition risks
+- Missing idempotency protections
+- Incomplete validation
+- Error handling weaknesses
+- Areas where future bugs are highly likely
+- Areas where human developers will struggle to understand the code
+- Areas where the code is working now but dangerous long-term
+
+VERY IMPORTANT:
+I want you to rank weaknesses from MOST CRITICAL to LEAST CRITICAL.
+
+For each weakness, provide ALL of the following:
+
+1) Rank number
+2) Title of problem
+3) Severity: Critical / High / Medium / Low
+4) Confidence: High / Medium / Low
+5) Where it exists exactly (file names, modules, functions, components)
+6) Why it is dangerous
+7) What can happen in the future if left unresolved
+8) A simple explanation for a non-programmer
+9) Recommended fix
+10) Estimated effort: Small / Medium / Large
+11) Whether it should be fixed now, soon, or later
+
+I want blunt honesty.
+
+OUTPUT FORMAT:
+
+SECTION A — EXECUTIVE SUMMARY
+- Overall impression of the system
+- Main strengths
+- Main weaknesses
+- Whether the system is safe to continue building on in its current form
+- Whether the current direction is sustainable or risky
+
+SECTION B — SCORECARD
+Give a score from 0 to 10 for each:
+- Folder / module organization
+- Code readability
+- Maintainability
+- Architecture
+- Security safety
+- Data integrity safety
+- Transaction/concurrency safety
+- Refactor readiness
+- Performance/scalability readiness
+- Human developer friendliness
+- Production readiness
+
+Then give:
+- Overall weighted score out of 100
+- Overall maturity percentage of the system as it stands today
+
+SECTION C — CRITICAL ISSUES RANKED
+List weaknesses from strongest/most dangerous to الأقل.
+I want at least the top 10 issues if they exist.
+
+SECTION D — FILES / MODULES THAT NEED ATTENTION MOST
+Create a ranked list of the worst files/modules/components in the codebase.
+For each one mention:
+- Why it is problematic
+- What type of issue it has
+- Why it is hard for humans
+- What should happen to it (split / refactor / rewrite partially / centralize logic / add guards / etc.)
+
+SECTION E — FUTURE RISK ANALYSIS
+Tell me clearly:
+- What parts are likely to break as the system grows
+- What parts will become expensive to maintain
+- What parts may create accounting / billing / inventory / transaction errors later
+- What parts could create silent bugs
+- What parts are too dependent on individual developers understanding hidden behavior
+
+SECTION F — REFACTOR PRIORITY ROADMAP
+Give me a practical roadmap in phases:
+Phase 1 = urgent now
+Phase 2 = important next
+Phase 3 = improvement later
+
+For each phase:
+- Goals
+- Target files/modules
+- Why this phase matters
+- Expected benefit
+- Risk reduction achieved
+
+SECTION G — NON-PROGRAMMER EXPLANATION
+Explain the whole situation to me as a business owner / accountant, not as a software engineer:
+- Is the system organized or messy?
+- Is it safe or risky?
+- Is it easy or hard for a new developer to continue?
+- If I hire a programmer later, will they understand it quickly or struggle?
+- What are the top 5 things I should worry about?
+
+STRICT RULES:
+- Do not say “everything looks good” unless you can prove it.
+- Do not avoid criticism.
+- Do not give vague advice.
+- Do not just mention general best practices.
+- Tie every finding to real code.
+- If something is good, mention why specifically.
+- If something is risky, mention the exact future consequence.
+- Prefer concrete evidence over opinions.
+
+FINAL VERDICT:
+At the very end, give me:
+1) A strict final verdict in one paragraph
+2) The overall percentage evaluation of the system as of today
+3) Whether you recommend:
+   - Continue building as-is
+   - Continue but refactor critical parts first
+   - Pause and restructure before continuing
+
+And be decisive.
