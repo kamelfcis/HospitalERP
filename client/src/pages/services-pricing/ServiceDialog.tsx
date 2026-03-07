@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useRevenueAccounts } from "@/hooks/useAccounts";
+import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Loader2, Trash2, UserPlus } from "lucide-react";
 import { serviceTypeLabels } from "@shared/schema";
 import type {
-  ServiceWithDepartment, Department, Account, CostCenter, Warehouse, Item, ServiceConsumableWithItem,
+  ServiceWithDepartment, Department, CostCenter, Warehouse, Item, ServiceConsumableWithItem,
 } from "@shared/schema";
 
 // ─── 1. ثوابت ─────────────────────────────────────────────────────────────────
@@ -73,10 +75,10 @@ export default function ServiceDialog({
   const [consumableResults, setConsumableResults] = useState<Item[]>([]);
   const [searchingItems, setSearchingItems] = useState(false);
 
-  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"], staleTime: 0 });
-  const { data: warehouses }  = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"], staleTime: 0 });
-  const { data: accounts }    = useQuery<Account[]>({ queryKey: ["/api/accounts?pageSize=5000"], staleTime: 0 });
-  const { data: costCenters } = useQuery<CostCenter[]>({ queryKey: ["/api/cost-centers"], staleTime: 0 });
+  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
+  const { data: warehouses }  = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
+  const { data: revenueAccounts } = useRevenueAccounts();
+  const { data: costCenters } = useQuery<CostCenter[]>({ queryKey: ["/api/cost-centers"] });
 
   // تحميل مستهلكات الخدمة عند فتح التعديل
   useEffect(() => {
@@ -225,16 +227,13 @@ export default function ServiceDialog({
 
           <div className="space-y-1">
             <Label>حساب الإيراد *</Label>
-            <Select value={form.revenueAccountId} onValueChange={v => set("revenueAccountId", v)}>
-              <SelectTrigger data-testid="select-trigger-service-revenue-account">
-                <SelectValue placeholder="اختر الحساب" />
-              </SelectTrigger>
-              <SelectContent>
-                {(accounts || []).filter(a => a.accountType === "revenue").map(a => (
-                  <SelectItem key={a.id} value={a.id}>{a.code} - {a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AccountSearchSelect
+              accounts={revenueAccounts || []}
+              value={form.revenueAccountId}
+              onChange={v => set("revenueAccountId", v)}
+              placeholder="ابحث عن حساب الإيراد..."
+              data-testid="select-service-revenue-account"
+            />
           </div>
 
           <div className="space-y-1">
