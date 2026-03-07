@@ -1197,8 +1197,10 @@ const methods = {
     }
 
     // 2. Account mappings for this warehouse
-    const mappings = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId);
-    const map = new Map(mappings.map((m) => [m.lineType, m]));
+    const mappings: AccountMapping[] = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId);
+    const map = new Map<string, AccountMapping>(
+      mappings.map((m) => [m.lineType, m] as [string, AccountMapping]),
+    );
 
     // Critical: receivables — the only hard throw in the journal generator
     if (!map.get("receivables")?.debitAccountId) {

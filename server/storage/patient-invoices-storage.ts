@@ -586,7 +586,7 @@ const methods = {
           invoiceDate: invoiceDate,
           patientName: patient.name,
           patientPhone: patient.phone || null,
-          patientType: patientType || "cash",
+          patientType: (patientType || "cash") as "contract" | "cash",
           departmentId: departmentId || null,
           warehouseId: warehouseId || null,
           doctorName: doctorName || null,

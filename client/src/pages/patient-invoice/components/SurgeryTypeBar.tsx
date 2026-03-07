@@ -44,12 +44,12 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
   });
 
   // Fetch surgery type details if one is linked
-  const { data: currentSurgery } = useQuery<SurgeryType>({
-    queryKey: ["/api/surgery-types", (admission as any)?.surgeryTypeId],
+  const { data: currentSurgery } = useQuery<SurgeryType | null>({
+    queryKey: ["/api/surgery-types", admission?.surgeryTypeId],
     queryFn: () => fetch(`/api/surgery-types?search=`, { credentials: "include" })
       .then(r => r.json())
-      .then((list: SurgeryType[]) => list.find(s => s.id === (admission as any)?.surgeryTypeId) ?? null),
-    enabled: !!(admission as any)?.surgeryTypeId,
+      .then((list: SurgeryType[]) => list.find(s => s.id === admission?.surgeryTypeId) ?? null),
+    enabled: !!admission?.surgeryTypeId,
   });
 
   // Search for surgery types
