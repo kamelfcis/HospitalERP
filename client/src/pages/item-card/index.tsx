@@ -165,7 +165,7 @@ export default function ItemCard() {
         setIsEditing(false);
       }
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
@@ -181,7 +181,7 @@ export default function ItemCard() {
       setNewFormTypeName("");
       toast({ title: "تم إضافة نوع الشكل بنجاح" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
@@ -197,7 +197,7 @@ export default function ItemCard() {
       setSelectedDeptPrice(null);
       toast({ title: "تم إضافة سعر القسم بنجاح" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
@@ -213,7 +213,7 @@ export default function ItemCard() {
       setSelectedDeptPrice(null);
       toast({ title: "تم تحديث سعر القسم بنجاح" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
@@ -226,7 +226,7 @@ export default function ItemCard() {
       refetchDeptPrices();
       toast({ title: "تم حذف سعر القسم" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
@@ -243,7 +243,7 @@ export default function ItemCard() {
       setNewBarcodeType("EAN-13");
       toast({ title: "تم إضافة الباركود بنجاح" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       const msg = error.message || "";
       if (msg.includes("409") || msg.includes("مسجل")) {
         toast({ title: "خطأ", description: "هذا الباركود مسجل بالفعل لصنف آخر", variant: "destructive" });
@@ -261,7 +261,7 @@ export default function ItemCard() {
       refetchBarcodes();
       toast({ title: "تم حذف الباركود" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
@@ -275,7 +275,7 @@ export default function ItemCard() {
       queryClient.invalidateQueries({ queryKey: ["/api/items", itemId] });
       toast({ title: data.hasExpiry ? "تم تفعيل الصلاحية" : "تم إلغاء الصلاحية" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       const msg = error.message || "";
       if (msg.includes("409")) {
         toast({ title: "خطأ", description: "لا يمكن إلغاء الصلاحية: يوجد دفعات نشطة بصلاحية", variant: "destructive" });
@@ -297,7 +297,7 @@ export default function ItemCard() {
       setNewUomNameEn("");
       toast({ title: "تم إضافة وحدة القياس بنجاح" });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });

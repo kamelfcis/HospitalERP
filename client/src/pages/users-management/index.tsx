@@ -46,7 +46,7 @@ export default function UsersManagement() {
       setShowDialog(false);
       toast({ title: "تم إنشاء المستخدم بنجاح" });
     },
-    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
@@ -59,7 +59,7 @@ export default function UsersManagement() {
       setShowDialog(false);
       toast({ title: "تم تحديث المستخدم بنجاح" });
     },
-    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -68,7 +68,7 @@ export default function UsersManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       toast({ title: "تم حذف المستخدم" });
     },
-    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
   async function saveScopeForUser(userId: string) {

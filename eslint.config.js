@@ -15,6 +15,7 @@ export default [
       "@typescript-eslint": tsPlugin,
     },
     rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
       "no-restricted-syntax": [
         "error",
         {
@@ -85,6 +86,7 @@ export default [
       "@typescript-eslint": tsPlugin,
     },
     rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
       "no-restricted-syntax": [
         "error",
         {

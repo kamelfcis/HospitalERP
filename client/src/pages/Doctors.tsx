@@ -51,7 +51,7 @@ function DoctorFormDialog({
       toast({ title: doctor ? "تم تحديث الطبيب" : "تم إضافة الطبيب" });
       onClose();
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
+    onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
 
   return (
@@ -117,7 +117,7 @@ export default function Doctors() {
       queryClient.invalidateQueries({ queryKey: ["/api/doctors"] });
       toast({ title: "تم حذف الطبيب" });
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
+    onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
 
   const filtered = balances.filter(d =>

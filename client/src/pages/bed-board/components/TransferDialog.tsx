@@ -158,7 +158,7 @@ export function TransferDialog({ open, sourceBed, onClose }: Props) {
       });
       handleClose();
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({
         variant: "destructive",
         title: "فشل التحويل",

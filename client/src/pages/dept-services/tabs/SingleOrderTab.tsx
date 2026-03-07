@@ -111,7 +111,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-doctor-statement"] });
       resetForm();
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ", description: err.message, variant: "destructive" });
     },
   });

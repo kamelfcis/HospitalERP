@@ -87,7 +87,7 @@ export function useReceivingMutations({
       onSaveDraftSuccess(id, num);
       queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ في حفظ المسودة", description: err.message, variant: "destructive" });
     },
   });
@@ -112,7 +112,7 @@ export function useReceivingMutations({
       onDismissConfirm();
       queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ في ترحيل إذن الاستلام", description: err.message, variant: "destructive" });
       onDismissConfirm();
     },
@@ -125,7 +125,7 @@ export function useReceivingMutations({
       toast({ title: "تم حذف إذن الاستلام" });
       queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ في حذف إذن الاستلام", description: err.message, variant: "destructive" });
     },
   });
@@ -139,7 +139,7 @@ export function useReceivingMutations({
       queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
       onConvertSuccess(invoice.id);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ في التحويل", description: err.message, variant: "destructive" });
     },
   });
@@ -153,7 +153,7 @@ export function useReceivingMutations({
       queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
       onCorrectSuccess(newReceiving.id);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ في إنشاء التصحيح", description: err.message, variant: "destructive" });
     },
   });

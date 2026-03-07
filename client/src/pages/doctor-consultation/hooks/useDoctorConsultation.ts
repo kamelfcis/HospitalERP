@@ -63,7 +63,7 @@ export function useDoctorConsultation(appointmentId: string) {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-consultations", appointmentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       savingInFlightRef.current = false;
       if (finishingRef.current) return;
       if (err?.name === "AbortError") return;

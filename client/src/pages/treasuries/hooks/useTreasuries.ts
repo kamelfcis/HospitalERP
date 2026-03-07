@@ -50,7 +50,7 @@ export function useTreasuries() {
       invalidate();
       toast({ title: "تم إنشاء الخزنة بنجاح" });
     },
-    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   const updateMut = useMutation({
@@ -63,7 +63,7 @@ export function useTreasuries() {
       invalidate();
       toast({ title: "تم تحديث الخزنة" });
     },
-    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   const deleteMut = useMutation({
@@ -75,7 +75,7 @@ export function useTreasuries() {
       invalidate();
       toast({ title: "تم حذف الخزنة" });
     },
-    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   // ── Password mutations ─────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ export function useTreasuries() {
       queryClient.invalidateQueries({ queryKey: KEYS.summary });
       toast({ title: "تم تعيين كلمة السر بنجاح" });
     },
-    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   const removePasswordMut = useMutation({
@@ -102,7 +102,7 @@ export function useTreasuries() {
       queryClient.invalidateQueries({ queryKey: KEYS.summary });
       toast({ title: "تم إزالة كلمة السر" });
     },
-    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   // ── User assignment mutations ──────────────────────────────────────────────
@@ -116,7 +116,7 @@ export function useTreasuries() {
       queryClient.invalidateQueries({ queryKey: KEYS.userTreasuries });
       toast({ title: "تم تعيين الخزنة للمستخدم" });
     },
-    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   const removeAssignMut = useMutation({
@@ -128,7 +128,7 @@ export function useTreasuries() {
       queryClient.invalidateQueries({ queryKey: KEYS.userTreasuries });
       toast({ title: "تم إلغاء تعيين الخزنة" });
     },
-    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   return {

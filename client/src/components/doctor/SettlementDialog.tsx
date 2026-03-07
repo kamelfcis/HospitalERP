@@ -114,7 +114,7 @@ export function SettlementDialog({
       queryClient.invalidateQueries({ queryKey: ["/api/doctor-statement"] });
       handleClose();
     },
-    onError: (err: any) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
+    onError: (err: Error) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
   });
 
   function handleClose() {

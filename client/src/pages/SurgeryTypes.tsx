@@ -119,7 +119,7 @@ function SurgeryTypeDialog({ open, editing, onClose }: SurgeryTypeDialogProps) {
       toast({ title: editing ? "تم التعديل" : "تم الإضافة" });
       onClose();
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
+    onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
 
   return (
@@ -214,14 +214,14 @@ export default function SurgeryTypesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/surgery-category-prices"] });
       toast({ title: "تم حفظ السعر" });
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
+    onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
 
   const toggleActiveMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       apiRequest("PUT", `/api/surgery-types/${id}`, { isActive }).then(r => r.json()),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/surgery-types"] }),
-    onError: (e: any) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
+    onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
 
   const deleteMutation = useMutation({
@@ -230,7 +230,7 @@ export default function SurgeryTypesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/surgery-types"] });
       toast({ title: "تم الحذف" });
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
+    onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
 
   const displayed = types.filter(t => {

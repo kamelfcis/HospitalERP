@@ -90,7 +90,7 @@ export function BatchTab({ departmentId, departmentName }: Props) {
       toast({ title: "تم الحفظ", description: `${successCount} فاتورة من ${data.results.length} تم إنشاؤها بنجاح` });
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ", description: err.message, variant: "destructive" });
     },
   });

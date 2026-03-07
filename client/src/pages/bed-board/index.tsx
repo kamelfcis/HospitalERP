@@ -90,7 +90,7 @@ export default function BedBoard() {
       const label = vars.status === "EMPTY" ? "فارغ / نظيف" : "صيانة";
       toast({ title: "تم التحديث", description: `حالة السرير: ${label}` });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ variant: "destructive", title: "خطأ", description: err.message || "فشل التحديث" });
     },
   });

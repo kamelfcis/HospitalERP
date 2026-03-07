@@ -29,7 +29,7 @@ export function useTransferCreation(
       toast({ title: "تم إنشاء إذن التحويل", description: `رقم التحويل: ${data.transferNumber}` });
       navigate("/store-transfers");
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ", description: err.message, variant: "destructive" });
     },
   });

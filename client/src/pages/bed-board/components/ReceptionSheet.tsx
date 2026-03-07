@@ -153,7 +153,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
       toast({ title: "تم الاستقبال", description: desc });
       handleClose();
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ variant: "destructive", title: "خطأ", description: err.message || "فشل الاستقبال" });
     },
   });

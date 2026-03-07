@@ -186,7 +186,7 @@ export function ClinicManagementDialog({ open, onClose }: Props) {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-clinics"] });
       setShowForm(false);
     },
-    onError: (err: any) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
+    onError: (err: Error) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
   });
 
   const updateMutation = useMutation({
@@ -198,7 +198,7 @@ export function ClinicManagementDialog({ open, onClose }: Props) {
       setEditingClinic(undefined);
       setShowForm(false);
     },
-    onError: (err: any) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
+    onError: (err: Error) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
   });
 
   const handleSave = (data: ClinicFormData) => {

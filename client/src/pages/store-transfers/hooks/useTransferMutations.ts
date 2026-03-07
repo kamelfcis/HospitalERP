@@ -46,7 +46,7 @@ export function useTransferMutations(state: FormState, onSuccess: () => void) {
       onSuccess();
       queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ في حفظ المسودة", description: error.message, variant: "destructive" });
     },
   });
@@ -73,7 +73,7 @@ export function useTransferMutations(state: FormState, onSuccess: () => void) {
       onSuccess();
       queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ في ترحيل التحويل", description: error.message, variant: "destructive" });
     },
   });
@@ -84,7 +84,7 @@ export function useTransferMutations(state: FormState, onSuccess: () => void) {
       toast({ title: "تم ترحيل التحويل بنجاح" });
       queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ في ترحيل التحويل", description: error.message, variant: "destructive" });
     },
   });
@@ -95,7 +95,7 @@ export function useTransferMutations(state: FormState, onSuccess: () => void) {
       toast({ title: "تم حذف التحويل" });
       queryClient.invalidateQueries({ queryKey: ["/api/transfers"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ في حذف التحويل", description: error.message, variant: "destructive" });
     },
   });

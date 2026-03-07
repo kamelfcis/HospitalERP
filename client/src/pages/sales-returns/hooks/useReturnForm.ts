@@ -139,7 +139,7 @@ export function useReturnForm() {
       qc.invalidateQueries({ queryKey: ["/api/sales-returns"] });
       clearInvoice();
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ", description: err.message || "حدث خطأ أثناء التسجيل", variant: "destructive" });
     },
   });

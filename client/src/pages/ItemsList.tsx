@@ -91,7 +91,7 @@ export default function ItemsList() {
       toast({ title: "تم حذف الصنف بنجاح" });
       setDeleteItemId(null);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });

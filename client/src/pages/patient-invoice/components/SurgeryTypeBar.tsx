@@ -70,7 +70,7 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
       // Reload the full invoice so OR_ROOM line updates in the grid immediately
       onInvoiceReload?.();
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
+    onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
 
   if (!admissionId) return null;

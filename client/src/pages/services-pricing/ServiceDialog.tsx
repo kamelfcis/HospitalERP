@@ -427,7 +427,7 @@ function DoctorPricingSection({ serviceId }: { serviceId: string }) {
       setPrice("");
       toast({ title: "تم تخصيص السعر" });
     },
-    onError: (err: any) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
+    onError: (err: Error) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
   });
 
   const deleteMutation = useMutation({

@@ -57,7 +57,7 @@ export function useDoctorTransfer({ invoiceId, invoiceStatus, netAmount }: Optio
       setDtClientRequestId("");
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", invoiceId, "transfers"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ variant: "destructive", title: "خطأ في التحويل", description: error.message });
     },
   });

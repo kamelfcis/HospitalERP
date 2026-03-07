@@ -53,7 +53,7 @@ function DoctorAssignmentSection({ userId }: { userId: string }) {
       setSelectedDoctorId("");
       toast({ title: "تم ربط المستخدم بالطبيب" });
     },
-    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
   const removeMutation = useMutation({
@@ -63,7 +63,7 @@ function DoctorAssignmentSection({ userId }: { userId: string }) {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-user-doctor", userId] });
       toast({ title: "تم إلغاء ربط الطبيب" });
     },
-    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
   if (isLoading) {
@@ -147,7 +147,7 @@ function ClinicAssignmentsSection({ userId }: { userId: string }) {
       setSelectedClinicId("");
       toast({ title: "تم تعيين العيادة" });
     },
-    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
   const removeMutation = useMutation({
@@ -157,7 +157,7 @@ function ClinicAssignmentsSection({ userId }: { userId: string }) {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-user-clinic", userId] });
       toast({ title: "تم إلغاء تعيين العيادة" });
     },
-    onError: (err: any) => toast({ title: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
   const unassignedClinics = allClinics.filter(
@@ -267,7 +267,7 @@ export function PermissionsDialog({ userId, open, onOpenChange }: PermissionsDia
       toast({ title: "تم حفظ الصلاحيات" });
       onOpenChange(false);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: err.message, variant: "destructive" });
     },
   });

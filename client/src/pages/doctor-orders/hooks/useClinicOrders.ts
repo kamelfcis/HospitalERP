@@ -30,7 +30,7 @@ export function useClinicOrders() {
       toast({ title: "تم تنفيذ الأمر بنجاح", description: `رقم الفاتورة: ${data.invoiceNumber}` });
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ variant: "destructive", title: "خطأ في التنفيذ", description: err.message });
     },
   });

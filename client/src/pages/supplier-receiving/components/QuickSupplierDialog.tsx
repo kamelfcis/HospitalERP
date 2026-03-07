@@ -47,7 +47,7 @@ export function QuickSupplierDialog({ open, onClose, onSupplierCreated, supplier
       setCode(""); setNameAr(""); setPhone(""); setType("drugs");
       onClose();
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "خطأ", description: err.message || "فشل إضافة المورد", variant: "destructive" });
     },
   });

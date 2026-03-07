@@ -25,7 +25,7 @@ export function useFavoriteDrugs(clinicId?: string | null) {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-frequent-drugs"] });
       toast({ title: "تم إضافة الدواء للمفضلة" });
     },
-    onError: (e: any) => {
+    onError: (e: Error) => {
       toast({ variant: "destructive", title: "تعذر إضافة المفضلة", description: e.message });
     },
   });
@@ -37,7 +37,7 @@ export function useFavoriteDrugs(clinicId?: string | null) {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-favorite-drugs"] });
       toast({ title: "تم إزالة الدواء من المفضلة" });
     },
-    onError: (e: any) => {
+    onError: (e: Error) => {
       toast({ variant: "destructive", title: "تعذر إزالة المفضلة", description: e.message });
     },
   });

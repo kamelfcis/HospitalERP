@@ -45,7 +45,7 @@ export function HeaderDiscountDialog({
       toast({ title: "تم تطبيق الخصم بنجاح" });
       onOpenChange(false);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: err.message, variant: "destructive" });
     },
   });
@@ -63,7 +63,7 @@ export function HeaderDiscountDialog({
       toast({ title: "تم إزالة الخصم" });
       onOpenChange(false);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: err.message, variant: "destructive" });
     },
   });

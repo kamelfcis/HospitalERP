@@ -33,7 +33,7 @@ export default function SystemSettings() {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
       toast({ title: "تم الحفظ", description: "تم تحديث الإعداد بنجاح" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ variant: "destructive", title: "خطأ", description: err.message });
     },
   });
