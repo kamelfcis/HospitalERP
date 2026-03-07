@@ -151,8 +151,9 @@ app.use((req, res, next) => {
       if (result.segmentsProcessed > 0 || result.linesUpserted > 0) {
         log(`[STAY_ENGINE] tick: ${result.segmentsProcessed} segments, ${result.linesUpserted} lines upserted`);
       }
-    } catch (err: any) {
-      console.error("[STAY_ENGINE] tick error:", err.message);
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      console.error("[STAY_ENGINE] tick error:", _em);
     }
   };
   setTimeout(runStayTick, 5000);
@@ -162,11 +163,12 @@ app.use((req, res, next) => {
   const runJournalRetry = async () => {
     try {
       const result = await storage.retryFailedJournals();
-      if (result.attempted > 0) {
-        log(`[JOURNAL_RETRY] attempted=${result.attempted} succeeded=${result.succeeded} failed=${result.failed}`);
+      if (result.total > 0) {
+        log(`[JOURNAL_RETRY] attempted=${result.total} succeeded=${result.succeeded} failed=${result.failed}`);
       }
-    } catch (err: any) {
-      console.error("[JOURNAL_RETRY] tick error:", err.message);
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      console.error("[JOURNAL_RETRY] tick error:", _em);
     }
   };
   setTimeout(runJournalRetry, 15000);

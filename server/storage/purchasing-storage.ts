@@ -24,6 +24,10 @@ import {
   type AccountMapping,
   type JournalEntry,
   type InsertJournalLine,
+  type PurchaseInvoiceHeader,
+  type PurchaseInvoiceLine,
+  type PurchaseInvoiceWithDetails,
+  type PurchaseInvoiceLineWithItem,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney } from "../finance-helpers";
@@ -42,7 +46,7 @@ const methods = {
   async getSuppliers(this: DatabaseStorage, params: { search?: string; page: number; pageSize: number }): Promise<{ suppliers: Supplier[]; total: number }> {
     const { search, page = 1, pageSize = 50 } = params;
     const offset = (page - 1) * pageSize;
-    const conditions: any[] = [eq(suppliers.isActive, true)];
+    const conditions = [eq(suppliers.isActive, true)];
     if (search) {
       const pattern = `%${search}%`;
       conditions.push(or(
@@ -50,9 +54,9 @@ const methods = {
         ilike(suppliers.code, pattern),
         ilike(suppliers.phone, pattern),
         ilike(suppliers.taxId, pattern)
-      ));
+      )!);
     }
-    const where = conditions.length > 1 ? and(...conditions) : conditions[0];
+    const where = and(...conditions)!;
     const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(suppliers).where(where);
     const results = await db.select().from(suppliers).where(where).orderBy(suppliers.nameAr).limit(pageSize).offset(offset);
     return { suppliers: results, total: Number(countResult.count) };
@@ -103,19 +107,19 @@ const methods = {
   async getReceivings(this: DatabaseStorage, params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number; includeCancelled?: boolean }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }> {
     const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page = 1, pageSize = 50, includeCancelled } = params;
     const offset = (page - 1) * pageSize;
-    const conditions: any[] = [];
+    const conditions = [];
     if (supplierId) conditions.push(eq(receivingHeaders.supplierId, supplierId));
     if (warehouseId) conditions.push(eq(receivingHeaders.warehouseId, warehouseId));
     if (status) {
-      conditions.push(eq(receivingHeaders.status, status as any));
+      conditions.push(eq(receivingHeaders.status, status as "draft" | "posted" | "posted_qty_only" | "cancelled"));
     } else if (!includeCancelled) {
       conditions.push(sql`${receivingHeaders.status} != 'cancelled'`);
     }
     if (statusFilter && statusFilter !== 'ALL') {
       if (statusFilter === 'DRAFT') {
-        conditions.push(eq(receivingHeaders.status, 'draft' as any));
+        conditions.push(eq(receivingHeaders.status, 'draft'));
       } else if (statusFilter === 'POSTED') {
-        conditions.push(eq(receivingHeaders.status, 'posted_qty_only' as any));
+        conditions.push(eq(receivingHeaders.status, 'posted_qty_only'));
         conditions.push(isNull(receivingHeaders.convertedToInvoiceId));
       } else if (statusFilter === 'CONVERTED') {
         conditions.push(isNotNull(receivingHeaders.convertedToInvoiceId));
@@ -199,7 +203,7 @@ const methods = {
         [header_result] = await tx.insert(receivingHeaders).values({
           ...header,
           receivingNumber: nextNum,
-        } as any).returning();
+        } as Omit<ReceivingHeader, "id" | "createdAt" | "updatedAt">).returning();
       }
       
       let totalQty = 0;
@@ -220,7 +224,7 @@ const methods = {
         await tx.insert(receivingLines).values({
           receivingId: header_result.id,
           itemId: line.itemId,
-          unitLevel: resolvedUnitLevel as any,
+          unitLevel: resolvedUnitLevel as "major" | "medium" | "minor",
           qtyEntered: line.qtyEntered,
           qtyInMinor: line.qtyInMinor,
           purchasePrice: line.purchasePrice,
@@ -252,15 +256,15 @@ const methods = {
   async postReceiving(this: DatabaseStorage, id: string): Promise<ReceivingHeader> {
     return await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${id} FOR UPDATE`);
-      const header = lockResult.rows?.[0] as any;
+      const header = lockResult.rows?.[0] as ReceivingHeader | undefined;
       if (!header) throw new Error('المستند غير موجود');
       if (header.status === 'posted' || header.status === 'posted_qty_only') return header;
       
-      if (!header.supplier_id) throw new Error('المورد مطلوب');
-      if (!header.supplier_invoice_no?.trim()) throw new Error('رقم فاتورة المورد مطلوب');
-      if (!header.warehouse_id) throw new Error('المستودع مطلوب');
+      if (!header.supplierId) throw new Error('المورد مطلوب');
+      if (!header.supplierInvoiceNo?.trim()) throw new Error('رقم فاتورة المورد مطلوب');
+      if (!header.warehouseId) throw new Error('المستودع مطلوب');
       
-      const [supplier] = await tx.select().from(suppliers).where(eq(suppliers.id, header.supplier_id));
+      const [supplier] = await tx.select().from(suppliers).where(eq(suppliers.id, header.supplierId));
       const supplierName = supplier?.nameAr || supplier?.nameEn || null;
 
       const lines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
@@ -282,7 +286,7 @@ const methods = {
         
         const lotConditions = [
           eq(inventoryLots.itemId, line.itemId),
-          eq(inventoryLots.warehouseId, header.warehouse_id),
+          eq(inventoryLots.warehouseId, header.warehouseId),
         ];
         if (line.expiryMonth && line.expiryYear) {
           lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
@@ -309,11 +313,11 @@ const methods = {
         } else {
           const [newLot] = await tx.insert(inventoryLots).values({
             itemId: line.itemId,
-            warehouseId: header.warehouse_id,
+            warehouseId: header.warehouseId,
             expiryDate: line.expiryDate || null,
             expiryMonth: line.expiryMonth || null,
             expiryYear: line.expiryYear || null,
-            receivedDate: header.receive_date,
+            receivedDate: header.receiveDate,
             purchasePrice: costPerMinorStr,
             salePrice: lotSalePrice,
             qtyInMinor: qtyMinor.toFixed(4),
@@ -323,7 +327,7 @@ const methods = {
         
         await tx.insert(inventoryLotMovements).values({
           lotId,
-          warehouseId: header.warehouse_id,
+          warehouseId: header.warehouseId,
           txType: 'in',
           qtyChangeInMinor: qtyMinor.toFixed(4),
           unitCost: costPerMinorStr,
@@ -335,7 +339,7 @@ const methods = {
         const purchaseTotal = (parseFloat(line.qtyInMinor) * costPerMinor).toFixed(2);
         await tx.insert(purchaseTransactions).values({
           itemId: line.itemId,
-          txDate: header.receive_date,
+          txDate: header.receiveDate,
           supplierName,
           qty: line.qtyEntered || line.qtyInMinor,
           unitLevel: line.unitLevel || 'minor',
@@ -344,7 +348,7 @@ const methods = {
           total: purchaseTotal,
         });
         
-        const updateFields: any = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
+        const updateFields: Partial<typeof items.$inferSelect> = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
         if (line.salePrice) updateFields.salePriceCurrent = line.salePrice;
         await tx.update(items).set(updateFields).where(eq(items.id, line.itemId));
       }
@@ -359,7 +363,7 @@ const methods = {
     });
 
     const recvResult = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
-    const recvHeader = recvResult[0] as any;
+    const recvHeader = recvResult[0];
     if (recvHeader) {
       const recvLines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
       const activeRecvLines = recvLines.filter(l => !l.isRejected);
@@ -376,7 +380,7 @@ const methods = {
             { lineType: "inventory", amount: String(totalCost) },
             { lineType: "payables", amount: String(totalCost) },
           ],
-        }).catch((err: any) => console.error("Auto journal for receiving failed:", err));
+        }).catch((err: unknown) => console.error("Auto journal for purchase invoice failed:", err instanceof Error ? err.message : String(err)));
       }
     }
 
@@ -551,11 +555,11 @@ const methods = {
     return (result?.max || 0) + 1;
   },
 
-  async getPurchaseInvoices(this: DatabaseStorage, filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}> {
-    const conditions: any[] = [];
+  async getPurchaseInvoices(this: DatabaseStorage, filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: PurchaseInvoiceWithDetails[]; total: number}> {
+    const conditions = [];
     if (filters.supplierId) conditions.push(eq(purchaseInvoiceHeaders.supplierId, filters.supplierId));
     if (filters.status && filters.status !== "all") {
-      conditions.push(eq(purchaseInvoiceHeaders.status, filters.status as any));
+      conditions.push(eq(purchaseInvoiceHeaders.status, filters.status as "draft" | "approved_costed" | "cancelled"));
     } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
       conditions.push(sql`${purchaseInvoiceHeaders.status} != 'cancelled'`);
     }
@@ -575,7 +579,7 @@ const methods = {
       .limit(pageSize)
       .offset((page - 1) * pageSize);
 
-    const data = [];
+    const data: PurchaseInvoiceWithDetails[] = [];
     for (const h of headers) {
       const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
       const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
@@ -585,18 +589,18 @@ const methods = {
     return { data, total: Number(countResult.count) };
   },
 
-  async getPurchaseInvoice(this: DatabaseStorage, id: string): Promise<any> {
+  async getPurchaseInvoice(this: DatabaseStorage, id: string): Promise<PurchaseInvoiceWithDetails | undefined> {
     const [h] = await db.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
     if (!h) return undefined;
     const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
     const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
     const lines = await db.select().from(purchaseInvoiceLines).where(eq(purchaseInvoiceLines.invoiceId, h.id));
-    const linesWithItems = [];
+    const linesWithItems: PurchaseInvoiceLineWithItem[] = [];
     for (const line of lines) {
       const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
       linesWithItems.push({ ...line, item });
     }
-    let receiving = undefined;
+    let receiving: ReceivingHeader | undefined = undefined;
     if (h.receivingId) {
       const [r] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, h.receivingId));
       receiving = r;
@@ -604,7 +608,7 @@ const methods = {
     return { ...h, supplier: sup, warehouse: wh, receiving, lines: linesWithItems };
   },
 
-  async savePurchaseInvoice(this: DatabaseStorage, invoiceId: string, lines: any[], headerUpdates?: any): Promise<any> {
+  async savePurchaseInvoice(this: DatabaseStorage, invoiceId: string, lines: Partial<PurchaseInvoiceLine>[], headerUpdates?: Partial<PurchaseInvoiceHeader>): Promise<PurchaseInvoiceHeader> {
     return await db.transaction(async (tx) => {
       const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, invoiceId));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
@@ -617,11 +621,11 @@ const methods = {
       let totalLineDiscounts = 0;
 
       for (const line of lines) {
-        const qty = parseFloat(line.qty) || 0;
-        const bonusQty = parseFloat(line.bonusQty) || 0;
-        const purchasePrice = parseFloat(line.purchasePrice) || 0;
-        const lineDiscountPct = parseFloat(line.lineDiscountPct) || 0;
-        const vatRate = parseFloat(line.vatRate) || 0;
+        const qty = parseFloat(line.qty || "0") || 0;
+        const bonusQty = parseFloat(line.bonusQty || "0") || 0;
+        const purchasePrice = parseFloat(line.purchasePrice || "0") || 0;
+        const lineDiscountPct = parseFloat(line.lineDiscountPct || "0") || 0;
+        const vatRate = parseFloat(line.vatRate || "0") || 0;
 
         const valueBeforeVat = qty * purchasePrice;
         const sellingPrice = parseFloat(line.sellingPrice || "0");
@@ -630,17 +634,18 @@ const methods = {
           : (sellingPrice > 0 ? +(sellingPrice * (lineDiscountPct / 100)).toFixed(2) : 0);
         const vatBase = (qty + bonusQty) * purchasePrice;
         const vatAmount = vatBase * (vatRate / 100);
-        const valueAfterVat = valueBeforeVat + vatAmount;
+        // const valueAfterVat = valueBeforeVat + vatAmount;
 
         totalBeforeVat += valueBeforeVat;
         totalVat += vatAmount;
         totalLineDiscounts += lineDiscountValue * qty;
 
         await tx.insert(purchaseInvoiceLines).values({
+          ...line,
           invoiceId,
           receivingLineId: line.receivingLineId || null,
-          itemId: line.itemId,
-          unitLevel: line.unitLevel,
+          itemId: line.itemId!,
+          unitLevel: line.unitLevel || 'major',
           qty: String(qty),
           bonusQty: String(bonusQty),
           sellingPrice: line.sellingPrice || "0",
@@ -650,15 +655,15 @@ const methods = {
           vatRate: String(vatRate),
           valueBeforeVat: String(valueBeforeVat.toFixed(2)),
           vatAmount: String(vatAmount.toFixed(2)),
-          valueAfterVat: String(valueAfterVat.toFixed(2)),
+          valueAfterVat: String((valueBeforeVat + vatAmount).toFixed(2)),
           batchNumber: line.batchNumber || null,
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
-        } as any);
+        } as PurchaseInvoiceLine);
       }
 
       const discountType = headerUpdates?.discountType || invoice.discountType || "percent";
-      const discountValue = parseFloat(headerUpdates?.discountValue || invoice.discountValue) || 0;
+      const discountValue = parseFloat(headerUpdates?.discountValue || invoice.discountValue || "0") || 0;
       let invoiceDiscount = 0;
       if (discountType === "percent") {
         invoiceDiscount = totalBeforeVat * (discountValue / 100);
@@ -669,7 +674,7 @@ const methods = {
       const totalAfterVat = totalBeforeVat + totalVat;
       const netPayable = totalAfterVat - invoiceDiscount;
 
-      const updateSet: any = {
+      const updateSet: Partial<PurchaseInvoiceHeader> = {
         totalBeforeVat: String(totalBeforeVat.toFixed(2)),
         totalVat: String(totalVat.toFixed(2)),
         totalAfterVat: String(totalAfterVat.toFixed(2)),
@@ -689,10 +694,10 @@ const methods = {
     });
   },
 
-  async approvePurchaseInvoice(this: DatabaseStorage, id: string): Promise<any> {
+  async approvePurchaseInvoice(this: DatabaseStorage, id: string): Promise<PurchaseInvoiceHeader> {
     const result = await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM purchase_invoice_headers WHERE id = ${id} FOR UPDATE`);
-      const locked = lockResult.rows?.[0] as any;
+      const locked = lockResult.rows?.[0] as PurchaseInvoiceHeader | undefined;
       if (!locked) throw new Error("الفاتورة غير موجودة");
       if (locked.status !== "draft") throw new Error("الفاتورة معتمدة مسبقاً");
       const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
@@ -709,7 +714,7 @@ const methods = {
     });
 
     if (result) {
-      (this as any).generatePurchaseInvoiceJournal(id, result).catch((err: any) => 
+      this.generatePurchaseInvoiceJournal(id, result).catch((err: unknown) => 
         console.error("Auto journal for purchase invoice failed:", err)
       );
     }
@@ -717,7 +722,7 @@ const methods = {
     return result;
   },
 
-  async generatePurchaseInvoiceJournal(this: DatabaseStorage, invoiceId: string, invoice: any): Promise<JournalEntry | null> {
+  async generatePurchaseInvoiceJournal(this: DatabaseStorage, invoiceId: string, invoice: PurchaseInvoiceHeader): Promise<JournalEntry | null> {
     const existingEntries = await db.select().from(journalEntries)
       .where(and(
         eq(journalEntries.sourceType, "purchase_invoice"),
@@ -733,7 +738,7 @@ const methods = {
 
     if (totalBeforeVat <= 0 && netPayable <= 0) return null;
 
-    const mappings = await this.getMappingsForTransaction("purchase_invoice");
+    const mappings = await this.getMappingsForTransaction("purchase_invoice", null);
     if (mappings.length === 0) return null;
 
     const mappingMap = new Map<string, AccountMapping>();
@@ -845,12 +850,12 @@ const methods = {
   async createReceivingCorrection(this: DatabaseStorage, originalId: string): Promise<ReceivingHeader> {
     return await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
-      const original = lockResult.rows?.[0] as any;
+      const original = lockResult.rows?.[0] as ReceivingHeader | undefined;
       if (!original) throw new Error('المستند غير موجود');
       if (original.status !== 'posted_qty_only') throw new Error('يمكن تصحيح المستندات المرحّلة فقط');
-      if (original.correction_status === 'corrected') throw new Error('تم تصحيح هذا المستند مسبقاً');
-      if (original.converted_to_invoice_id) {
-        const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, original.converted_to_invoice_id));
+      if (original.correctionStatus === 'corrected') throw new Error('تم تصحيح هذا المستند مسبقاً');
+      if (original.convertedToInvoiceId) {
+        const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, original.convertedToInvoiceId));
         if (invoice && invoice.status !== 'draft') {
           throw new Error('لا يمكن تصحيح إذن استلام محوّل لفاتورة معتمدة');
         }
@@ -861,15 +866,15 @@ const methods = {
 
       const [newHeader] = await tx.insert(receivingHeaders).values({
         receivingNumber: nextNum,
-        supplierId: original.supplier_id,
-        supplierInvoiceNo: `${original.supplier_invoice_no || 'N/A'}-COR-${nextNum}`,
-        warehouseId: original.warehouse_id,
-        receiveDate: original.receive_date,
-        notes: original.notes ? `تصحيح للإذن رقم ${original.receiving_number} - ${original.notes}` : `تصحيح للإذن رقم ${original.receiving_number}`,
+        supplierId: original.supplierId,
+        supplierInvoiceNo: `${original.supplierInvoiceNo || 'N/A'}-COR-${nextNum}`,
+        warehouseId: original.warehouseId,
+        receiveDate: original.receiveDate,
+        notes: original.notes ? `تصحيح للإذن رقم ${original.receivingNumber} - ${original.notes}` : `تصحيح للإذن رقم ${original.receivingNumber}`,
         status: 'draft',
         correctionOfId: originalId,
         correctionStatus: 'correction',
-      }).returning();
+      } as ReceivingHeader).returning();
 
       const originalLines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, originalId));
       let totalQty = 0;
@@ -921,21 +926,21 @@ const methods = {
   async postReceivingCorrection(this: DatabaseStorage, correctionId: string): Promise<ReceivingHeader> {
     return await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${correctionId} FOR UPDATE`);
-      const correction = lockResult.rows?.[0] as any;
+      const correction = lockResult.rows?.[0] as ReceivingHeader | undefined;
       if (!correction) throw new Error('المستند غير موجود');
       if (correction.status !== 'draft') throw new Error('لا يمكن ترحيل مستند غير مسودة');
-      if (correction.correction_status !== 'correction') throw new Error('هذا المستند ليس مستند تصحيح');
+      if (correction.correctionStatus !== 'correction') throw new Error('هذا المستند ليس مستند تصحيح');
 
-      const originalId = correction.correction_of_id;
+      const originalId = correction.correctionOfId;
       if (!originalId) throw new Error('لا يوجد مستند أصلي للتصحيح');
 
-      const [corrSupplier] = correction.supplier_id
-        ? await tx.select().from(suppliers).where(eq(suppliers.id, correction.supplier_id))
+      const [corrSupplier] = correction.supplierId
+        ? await tx.select().from(suppliers).where(eq(suppliers.id, correction.supplierId))
         : [null];
       const corrSupplierName = corrSupplier?.nameAr || corrSupplier?.nameEn || null;
 
       const origLockResult = await tx.execute(sql`SELECT * FROM receiving_headers WHERE id = ${originalId} FOR UPDATE`);
-      const original = origLockResult.rows?.[0] as any;
+      const original = origLockResult.rows?.[0] as ReceivingHeader | undefined;
       if (!original) throw new Error('المستند الأصلي غير موجود');
 
       const originalMovements = await tx.select().from(inventoryLotMovements)
@@ -984,12 +989,12 @@ const methods = {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
 
-        const costPerMinor = convertPriceToMinorUnit(parseFloat(line.purchasePrice as string), (line as any).unitLevel || 'minor', item);
+        const costPerMinor = convertPriceToMinorUnit(parseFloat(line.purchasePrice as string), line.unitLevel || 'minor', item);
         const costPerMinorStr = costPerMinor.toFixed(4);
 
         const lotConditions = [
           eq(inventoryLots.itemId, line.itemId),
-          eq(inventoryLots.warehouseId, correction.warehouse_id),
+          eq(inventoryLots.warehouseId, correction.warehouseId),
         ];
         if (line.expiryMonth && line.expiryYear) {
           lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
@@ -1016,11 +1021,11 @@ const methods = {
         } else {
           const [newLot] = await tx.insert(inventoryLots).values({
             itemId: line.itemId,
-            warehouseId: correction.warehouse_id,
+            warehouseId: correction.warehouseId,
             expiryDate: line.expiryDate || null,
             expiryMonth: line.expiryMonth || null,
             expiryYear: line.expiryYear || null,
-            receivedDate: correction.receive_date,
+            receivedDate: correction.receiveDate,
             purchasePrice: costPerMinorStr,
             salePrice: corrLotSalePrice,
             qtyInMinor: qtyMinor.toFixed(4),
@@ -1030,7 +1035,7 @@ const methods = {
 
         await tx.insert(inventoryLotMovements).values({
           lotId,
-          warehouseId: correction.warehouse_id,
+          warehouseId: correction.warehouseId,
           txType: 'in',
           qtyChangeInMinor: qtyMinor.toFixed(4),
           unitCost: costPerMinorStr,
@@ -1041,16 +1046,16 @@ const methods = {
         const corrPurchaseTotal = (parseFloat(line.qtyInMinor as string) * costPerMinor).toFixed(2);
         await tx.insert(purchaseTransactions).values({
           itemId: line.itemId,
-          txDate: correction.receive_date,
+          txDate: correction.receiveDate,
           supplierName: corrSupplierName,
-          qty: (line as any).qtyEntered || line.qtyInMinor as string,
-          unitLevel: (line as any).unitLevel || 'minor',
+          qty: line.qtyEntered || (line.qtyInMinor as string),
+          unitLevel: line.unitLevel || 'minor',
           purchasePrice: line.purchasePrice as string,
           salePriceSnapshot: line.salePrice || null,
           total: corrPurchaseTotal,
         });
 
-        const updateFields: any = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
+        const updateFields: Partial<typeof items.$inferSelect> = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
         if (line.salePrice) updateFields.salePriceCurrent = line.salePrice;
         await tx.update(items).set(updateFields).where(eq(items.id, line.itemId));
       }
@@ -1070,7 +1075,7 @@ const methods = {
     if (!invoice) return false;
     if (invoice.status !== "draft") throw new Error("لا يمكن إلغاء فاتورة معتمدة ومُسعّرة");
     await db.update(purchaseInvoiceHeaders).set({
-      status: "cancelled" as any,
+      status: "cancelled",
       notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
     }).where(eq(purchaseInvoiceHeaders.id, id));
     return true;

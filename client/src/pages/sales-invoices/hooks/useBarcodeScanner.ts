@@ -85,8 +85,8 @@ export function useBarcodeScanner({
       await addItemToLines(items[0]);
       onScanComplete?.();
 
-    } catch (err: any) {
-      if (!["resolve_failed", "search_failed"].includes(err.message)) {
+    } catch (err: unknown) {
+      if (!["resolve_failed", "search_failed"].includes((err as Error).message)) {
         toast({ title: "خطأ في قراءة الباركود", variant: "destructive" });
       }
     } finally {

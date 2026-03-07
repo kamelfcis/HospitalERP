@@ -107,7 +107,7 @@ export default function JournalEntryForm() {
   }, [existingEntry, accounts]);
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => apiRequest("POST", "/api/journal-entries", data),
+    mutationFn: async (data: Partial<JournalEntryWithLines>) => apiRequest("POST", "/api/journal-entries", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/journal-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
@@ -120,7 +120,7 @@ export default function JournalEntryForm() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: any) => apiRequest("PATCH", `/api/journal-entries/${params.id}`, data),
+    mutationFn: async (data: Partial<JournalEntryWithLines>) => apiRequest("PATCH", `/api/journal-entries/${params.id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/journal-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
@@ -133,7 +133,7 @@ export default function JournalEntryForm() {
   });
 
   const saveTemplateMutation = useMutation({
-    mutationFn: async (data: any) => apiRequest("POST", "/api/templates", data),
+    mutationFn: async (data: Partial<JournalTemplate>) => apiRequest("POST", "/api/templates", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
       toast({ title: "تم حفظ النموذج بنجاح" });
@@ -171,7 +171,7 @@ export default function JournalEntryForm() {
       description: templateDescription.trim() || null,
       isActive: true,
       lines: templateLines,
-    });
+    } as unknown as Parameters<typeof saveTemplateMutation.mutate>[0]);
   };
 
   const loadTemplate = async (templateId: string) => {
@@ -199,8 +199,9 @@ export default function JournalEntryForm() {
       } else {
         toast({ title: "تنبيه", description: "النموذج لا يحتوي على سطور", variant: "destructive" });
       }
-    } catch (error: any) {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     }
   };
 
@@ -371,9 +372,9 @@ export default function JournalEntryForm() {
       lines: validLines,
     };
     if (isEditing) {
-      updateMutation.mutate(entryData);
+      updateMutation.mutate(entryData as unknown as Parameters<typeof updateMutation.mutate>[0]);
     } else {
-      createMutation.mutate({ ...entryData, postAfterSave: andPost });
+      createMutation.mutate({ ...entryData, postAfterSave: andPost } as unknown as Parameters<typeof createMutation.mutate>[0]);
     }
   };
 

@@ -2,11 +2,13 @@
  * types.ts — الـ types والـ helpers المشتركة لشاشة استلام الموردين
  */
 
+import { ItemLike } from "@/lib/invoice-lines";
+
 // ── نوع سطر الاستلام المحلي ───────────────────────────────────────────────
 export interface ReceivingLineLocal {
   id: string;
   itemId: string;
-  item: any;
+  item: ItemLike | null;
   unitLevel: string;
   qtyEntered: number;
   qtyInMinor: number;
@@ -34,29 +36,29 @@ export interface LineError {
 }
 
 // ── حسابات الوحدات ────────────────────────────────────────────────────────
-export function getEffectiveMediumToMinor(item: any): number {
-  const m2m = parseFloat(item?.mediumToMinor);
+export function getEffectiveMediumToMinor(item: ItemLike | null | undefined): number {
+  const m2m = parseFloat(String(item?.mediumToMinor));
   if (m2m > 0) return m2m;
-  const maj2min = parseFloat(item?.majorToMinor) || 1;
-  const maj2med = parseFloat(item?.majorToMedium) || 1;
+  const maj2min = parseFloat(String(item?.majorToMinor)) || 1;
+  const maj2med = parseFloat(String(item?.majorToMedium)) || 1;
   return maj2min / maj2med;
 }
 
-export function calculateQtyInMinor(qtyEntered: number, unitLevel: string, item: any): number {
-  if (unitLevel === "major") return qtyEntered * (parseFloat(item?.majorToMinor) || 1);
+export function calculateQtyInMinor(qtyEntered: number, unitLevel: string, item: ItemLike | null | undefined): number {
+  if (unitLevel === "major") return qtyEntered * (parseFloat(String(item?.majorToMinor)) || 1);
   if (unitLevel === "medium") return qtyEntered * getEffectiveMediumToMinor(item);
   return qtyEntered;
 }
 
-export function getDefaultUnitLevel(item: any): string {
-  if (item.majorUnitName) return "major";
+export function getDefaultUnitLevel(item: ItemLike | null | undefined): string {
+  if (item?.majorUnitName) return "major";
   return "minor";
 }
 
-export function getUnitName(item: any, unitLevel: string): string {
-  if (unitLevel === "major") return item.majorUnitName || "وحدة كبرى";
-  if (unitLevel === "medium") return item.mediumUnitName || "وحدة وسطى";
-  return item.minorUnitName || "وحدة صغرى";
+export function getUnitName(item: ItemLike | null | undefined, unitLevel: string): string {
+  if (unitLevel === "major") return item?.majorUnitName || "وحدة كبرى";
+  if (unitLevel === "medium") return item?.mediumUnitName || "وحدة وسطى";
+  return item?.minorUnitName || "وحدة صغرى";
 }
 
 // ── بناء payload الـ API (مرة واحدة بدل تكرار) ────────────────────────────

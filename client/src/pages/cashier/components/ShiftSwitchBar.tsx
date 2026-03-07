@@ -1,7 +1,7 @@
 import { Plus, Building2, FlaskConical, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CashierShift } from "../hooks/useCashierShift";
+import { CashierShift } from "../types";
 
 interface ShiftSwitchBarProps {
   allOpenShifts: CashierShift[];

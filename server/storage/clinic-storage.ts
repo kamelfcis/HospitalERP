@@ -20,7 +20,7 @@ import { sql } from "drizzle-orm";
 import type { DatabaseStorage, DeptServiceOrderInput, DeptServiceBatchInput } from "./index";
 
 const methods = {
-  async getClinics(this: DatabaseStorage, userId: string, role: string): Promise<any[]> {
+  async getClinics(this: DatabaseStorage, userId: string, role: string): Promise<Array<Record<string, unknown>>> {
     const isAdmin = role === 'admin' || role === 'owner';
     if (isAdmin) {
       const rows = await db.execute(sql`
@@ -33,7 +33,7 @@ const methods = {
         LEFT JOIN services sv ON sv.id = c.consultation_service_id
         ORDER BY c.name_ar
       `);
-      return rows.rows as any[];
+      return rows.rows as Array<Record<string, unknown>>;
     }
     const rows = await db.execute(sql`
       SELECT c.*, d.name_ar AS department_name,
@@ -46,10 +46,10 @@ const methods = {
       JOIN clinic_user_clinic_assignments a ON a.clinic_id = c.id AND a.user_id = ${userId}
       ORDER BY c.name_ar
     `);
-    return rows.rows as any[];
+    return rows.rows as Array<Record<string, unknown>>;
   },
 
-  async getClinicById(this: DatabaseStorage, id: string): Promise<any | null> {
+  async getClinicById(this: DatabaseStorage, id: string): Promise<Record<string, unknown> | null> {
     const rows = await db.execute(sql`
       SELECT c.*, d.name_ar AS department_name,
              w.name_ar AS pharmacy_name,
@@ -60,20 +60,20 @@ const methods = {
       LEFT JOIN services sv ON sv.id = c.consultation_service_id
       WHERE c.id = ${id}
     `);
-    return (rows.rows[0] as any) ?? null;
+    return (rows.rows[0] as Record<string, unknown>) ?? null;
   },
 
-  async createClinic(this: DatabaseStorage, data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<any> {
+  async createClinic(this: DatabaseStorage, data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<Record<string, unknown>> {
     const rows = await db.execute(sql`
       INSERT INTO clinic_clinics (name_ar, department_id, default_pharmacy_id, consultation_service_id, secretary_fee_type, secretary_fee_value)
       VALUES (${data.nameAr}, ${data.departmentId ?? null}, ${data.defaultPharmacyId ?? null}, ${data.consultationServiceId ?? null}, ${data.secretaryFeeType ?? null}, ${data.secretaryFeeValue ?? 0})
       RETURNING *
     `);
-    return rows.rows[0] as any;
+    return rows.rows[0] as Record<string, unknown>;
   },
 
-  async updateClinic(this: DatabaseStorage, id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<any> {
-    const updates: any[] = [];
+  async updateClinic(this: DatabaseStorage, id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<Record<string, unknown> | null> {
+    const updates = [];
     if (data.nameAr !== undefined) updates.push(sql`name_ar = ${data.nameAr}`);
     if (data.departmentId !== undefined) updates.push(sql`department_id = ${data.departmentId || null}`);
     if (data.defaultPharmacyId !== undefined) updates.push(sql`default_pharmacy_id = ${data.defaultPharmacyId || null}`);
@@ -91,7 +91,7 @@ const methods = {
     const rows = await db.execute(sql`
       SELECT clinic_id FROM clinic_user_clinic_assignments WHERE user_id = ${userId}
     `);
-    return (rows.rows as any[]).map(r => r.clinic_id);
+    return (rows.rows as Array<{ clinic_id: string }>).map(r => r.clinic_id);
   },
 
   async assignUserToClinic(this: DatabaseStorage, userId: string, clinicId: string): Promise<void> {
@@ -108,7 +108,7 @@ const methods = {
     `);
   },
 
-  async getDoctorSchedules(this: DatabaseStorage, clinicId: string): Promise<any[]> {
+  async getDoctorSchedules(this: DatabaseStorage, clinicId: string): Promise<Array<Record<string, unknown>>> {
     const rows = await db.execute(sql`
       SELECT s.*, d.name AS doctor_name, d.specialty
       FROM clinic_doctor_schedules s
@@ -116,20 +116,20 @@ const methods = {
       WHERE s.clinic_id = ${clinicId}
       ORDER BY s.weekday NULLS LAST, s.start_time
     `);
-    return rows.rows as any[];
+    return rows.rows as Array<Record<string, unknown>>;
   },
 
-  async upsertDoctorSchedule(this: DatabaseStorage, data: { clinicId: string; doctorId: string; weekday?: number | null; startTime?: string; endTime?: string; maxAppointments?: number }): Promise<any> {
+  async upsertDoctorSchedule(this: DatabaseStorage, data: { clinicId: string; doctorId: string; weekday?: number | null; startTime?: string; endTime?: string; maxAppointments?: number }): Promise<Record<string, unknown>> {
     const rows = await db.execute(sql`
       INSERT INTO clinic_doctor_schedules (clinic_id, doctor_id, weekday, start_time, end_time, max_appointments)
       VALUES (${data.clinicId}, ${data.doctorId}, ${data.weekday ?? null}, ${data.startTime ?? null}, ${data.endTime ?? null}, ${data.maxAppointments ?? 20})
       ON CONFLICT DO NOTHING
       RETURNING *
     `);
-    return rows.rows[0] as any;
+    return rows.rows[0] as Record<string, unknown>;
   },
 
-  async getClinicAppointments(this: DatabaseStorage, clinicId: string, date: string): Promise<any[]> {
+  async getClinicAppointments(this: DatabaseStorage, clinicId: string, date: string): Promise<Array<Record<string, unknown>>> {
     const rows = await db.execute(sql`
       SELECT a.*,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
@@ -140,7 +140,7 @@ const methods = {
       WHERE a.clinic_id = ${clinicId} AND a.appointment_date = ${date}::date
       ORDER BY a.turn_number
     `);
-    return rows.rows as any[];
+    return rows.rows as Array<Record<string, unknown>>;
   },
 
   async createAppointment(this: DatabaseStorage, data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string }): Promise<any> {
@@ -176,7 +176,7 @@ const methods = {
 
   async getAppointmentClinicId(this: DatabaseStorage, appointmentId: string): Promise<string | null> {
     const rows = await db.execute(sql`SELECT clinic_id FROM clinic_appointments WHERE id = ${appointmentId}`);
-    return (rows.rows[0] as any)?.clinic_id ?? null;
+    return (rows.rows[0] as { clinic_id: string } | undefined)?.clinic_id ?? null;
   },
 
   async updateAppointmentStatus(this: DatabaseStorage, id: string, status: string): Promise<void> {
@@ -187,7 +187,7 @@ const methods = {
     const rows = await db.execute(sql`
       SELECT doctor_id FROM clinic_user_doctor_assignments WHERE user_id = ${userId}
     `);
-    return (rows.rows[0] as any)?.doctor_id ?? null;
+    return (rows.rows[0] as { doctor_id: string } | undefined)?.doctor_id ?? null;
   },
 
   async assignUserToDoctor(this: DatabaseStorage, userId: string, doctorId: string): Promise<void> {
@@ -204,10 +204,10 @@ const methods = {
 
   async getUserAssignedDoctorId(this: DatabaseStorage, userId: string): Promise<string | null> {
     const rows = await db.execute(sql`SELECT doctor_id FROM clinic_user_doctor_assignments WHERE user_id = ${userId}`);
-    return (rows.rows[0] as any)?.doctor_id ?? null;
+    return (rows.rows[0] as { doctor_id: string } | undefined)?.doctor_id ?? null;
   },
 
-  async getConsultationByAppointment(this: DatabaseStorage, appointmentId: string): Promise<any | null> {
+  async getConsultationByAppointment(this: DatabaseStorage, appointmentId: string): Promise<Record<string, unknown> | null> {
     const consRows = await db.execute(sql`
       SELECT c.*,
              a.patient_name, a.patient_phone, a.appointment_date, a.appointment_time,
@@ -233,8 +233,8 @@ const methods = {
         WHERE a.id = ${appointmentId}
       `);
       if (!apptRows.rows.length) return null;
-      const appt = apptRows.rows[0] as any;
-      const preloadedServiceOrders: any[] = [];
+      const appt = apptRows.rows[0] as Record<string, unknown>;
+      const preloadedServiceOrders: Array<Record<string, unknown>> = [];
       if (appt.consultation_service_id) {
         const svcRows = await db.execute(sql`
           SELECT s.id, s.name_ar,
@@ -245,7 +245,7 @@ const methods = {
           WHERE s.id = ${appt.consultation_service_id}
         `);
         if (svcRows.rows.length) {
-          const svc = svcRows.rows[0] as any;
+          const svc = svcRows.rows[0] as { id: string, name_ar: string, unit_price: string };
           preloadedServiceOrders.push({
             service_id: svc.id,
             service_name_manual: svc.name_ar,
@@ -258,7 +258,7 @@ const methods = {
       }
       return { ...appt, id: null, drugs: [], serviceOrders: preloadedServiceOrders };
     }
-    const consultation = consRows.rows[0] as any;
+    const consultation = consRows.rows[0] as Record<string, unknown>;
     const drugRows = await db.execute(sql`
       SELECT d.*,
              i.major_unit_name, i.medium_unit_name, i.minor_unit_name,
@@ -276,18 +276,18 @@ const methods = {
       FROM clinic_orders o
       WHERE o.consultation_id = ${consultation.id} AND o.order_type = 'service' ORDER BY o.created_at
     `);
-    const serviceOrders = [...orderRows.rows] as any[];
-    if (clinicServiceId && !serviceOrders.some((o: any) => o.service_id === clinicServiceId)) {
+    const serviceOrders = [...orderRows.rows] as Array<Record<string, unknown>>;
+    if (clinicServiceId && !serviceOrders.some((o: Record<string, unknown>) => o.service_id === clinicServiceId)) {
       const svcRows = await db.execute(sql`
         SELECT s.id, s.name_ar,
                COALESCE(sdp.price, s.base_price) AS unit_price
         FROM services s
         LEFT JOIN clinic_service_doctor_prices sdp
-          ON sdp.service_id = s.id AND sdp.doctor_id = ${consultation.doctor_id || (consultation as any).doctor_id}
+          ON sdp.service_id = s.id AND sdp.doctor_id = ${consultation.doctor_id}
         WHERE s.id = ${clinicServiceId}
       `);
       if (svcRows.rows.length) {
-        const svc = svcRows.rows[0] as any;
+        const svc = svcRows.rows[0] as { id: string, name_ar: string, unit_price: string };
         serviceOrders.unshift({
           service_id: svc.id,
           service_name_manual: svc.name_ar,
@@ -432,7 +432,7 @@ const methods = {
     }
   },
 
-  async getDoctorFavoriteDrugs(this: DatabaseStorage, doctorId: string, clinicId?: string | null): Promise<any[]> {
+  async getDoctorFavoriteDrugs(this: DatabaseStorage, doctorId: string, clinicId?: string | null): Promise<Array<Record<string, unknown>>> {
     const rows = await db.execute(sql`
       SELECT f.*, i.name_ar AS item_name_ar, i.sale_price_current
       FROM clinic_doctor_favorite_drugs f
@@ -441,16 +441,16 @@ const methods = {
         AND (f.clinic_id IS NULL OR f.clinic_id = ${clinicId ?? null})
       ORDER BY f.sort_order, f.drug_name
     `);
-    return rows.rows as any[];
+    return rows.rows as Array<Record<string, unknown>>;
   },
 
-  async addFavoriteDrug(this: DatabaseStorage, data: { doctorId: string; clinicId?: string | null; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<any> {
+  async addFavoriteDrug(this: DatabaseStorage, data: { doctorId: string; clinicId?: string | null; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<Record<string, unknown>> {
     const rows = await db.execute(sql`
       INSERT INTO clinic_doctor_favorite_drugs (doctor_id, clinic_id, item_id, drug_name, default_dose, default_frequency, default_duration)
       VALUES (${data.doctorId}, ${data.clinicId ?? null}, ${data.itemId ?? null}, ${data.drugName}, ${data.defaultDose ?? null}, ${data.defaultFrequency ?? null}, ${data.defaultDuration ?? null})
       RETURNING *
     `);
-    return rows.rows[0] as any;
+    return rows.rows[0] as Record<string, unknown>;
   },
 
   async removeFavoriteDrug(this: DatabaseStorage, id: string, doctorId?: string): Promise<void> {
@@ -461,7 +461,7 @@ const methods = {
     }
   },
 
-  async getFrequentDrugsNotInFavorites(this: DatabaseStorage, doctorId: string, minCount: number = 2, clinicId?: string | null): Promise<any[]> {
+  async getFrequentDrugsNotInFavorites(this: DatabaseStorage, doctorId: string, minCount: number = 2, clinicId?: string | null): Promise<Array<Record<string, unknown>>> {
     const rows = await db.execute(sql`
       SELECT cd.item_id, cd.drug_name,
              COUNT(DISTINCT cd.consultation_id)::int AS usage_count
@@ -482,10 +482,10 @@ const methods = {
       ORDER BY usage_count DESC
       LIMIT 20
     `);
-    return rows.rows as any[];
+    return rows.rows as Array<Record<string, unknown>>;
   },
 
-  async getClinicOrders(this: DatabaseStorage, filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<any[]> {
+  async getClinicOrders(this: DatabaseStorage, filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<Array<Record<string, unknown>>> {
     const conditions: string[] = [
       `(cl.consultation_service_id IS NULL OR o.service_id IS DISTINCT FROM cl.consultation_service_id)`,
     ];
@@ -515,13 +515,13 @@ const methods = {
       ${where}
       ORDER BY o.created_at DESC
     `));
-    return (rows.rows as any[]).map((r) => ({
+    return (rows.rows as Array<Record<string, unknown>>).map((r) => ({
       ...r,
-      target_name: r.resolved_target_name ?? r.target_name,
+      target_name: (r.resolved_target_name as string) ?? (r.target_name as string),
     }));
   },
 
-  async getClinicOrder(this: DatabaseStorage, id: string): Promise<any | null> {
+  async getClinicOrder(this: DatabaseStorage, id: string): Promise<Record<string, unknown> | null> {
     const rows = await db.execute(sql`
       SELECT o.*,
              d.name AS doctor_name,
@@ -538,7 +538,7 @@ const methods = {
       LEFT JOIN items i ON i.id = o.item_id
       WHERE o.id = ${id}
     `);
-    return (rows.rows[0] as any) ?? null;
+    return (rows.rows[0] as Record<string, unknown>) ?? null;
   },
 
   async executeClinicOrder(this: DatabaseStorage, orderId: string, userId: string): Promise<{ invoiceId: string }> {
@@ -557,9 +557,9 @@ const methods = {
       `, [orderId]);
 
       if (!orderRes.rows.length) throw new Error("الأمر غير موجود أو تم تنفيذه مسبقاً");
-      const order = orderRes.rows[0];
+      const order = orderRes.rows[0] as Record<string, unknown>;
 
-      const unitPrice = parseFloat(order.unit_price ?? '0') || parseFloat(order.service_price ?? '0') || 0;
+      const unitPrice = parseFloat((order.unit_price as string) ?? '0') || parseFloat((order.service_price as string) ?? '0') || 0;
       const totalAmount = unitPrice.toFixed(2);
 
       const invNumRes = await client.query(`SELECT COALESCE(MAX(invoice_number), 0) + 1 AS next_num FROM patient_invoice_headers`);
@@ -576,7 +576,7 @@ const methods = {
       `, [
         invoiceNumber, order.patient_id ?? null, order.patient_name,
         order.doctor_id ?? null, totalAmount, userId,
-        `تنفيذ أمر طبيب: ${order.service_name_ar ?? order.service_name_manual ?? ''}`
+        `تنفيذ أمر طبيب: ${(order.service_name_ar as string) ?? (order.service_name_manual as string) ?? ''}`
       ]);
       const invoiceId = invRes.rows[0].id;
 
@@ -584,7 +584,7 @@ const methods = {
         INSERT INTO patient_invoice_lines
           (invoice_id, line_type, service_id, service_name, unit_price, quantity, total_price, notes)
         VALUES ($1,'service',$2,$3,$4,1,$4,NULL)
-      `, [invoiceId, order.service_id ?? null, order.service_name_ar ?? order.service_name_manual ?? '', totalAmount]);
+      `, [invoiceId, order.service_id ?? null, (order.service_name_ar as string) ?? (order.service_name_manual as string) ?? '', totalAmount]);
 
       await client.query(`
         UPDATE clinic_orders
@@ -594,7 +594,7 @@ const methods = {
 
       await client.query('COMMIT');
       return { invoiceId };
-    } catch (err) {
+    } catch (err: unknown) {
       await client.query('ROLLBACK');
       throw err;
     } finally {
@@ -606,7 +606,7 @@ const methods = {
     await db.execute(sql`UPDATE clinic_orders SET status = 'cancelled' WHERE id = ${orderId} AND status = 'pending'`);
   },
 
-  async getClinicDoctorStatement(this: DatabaseStorage, doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<any[]> {
+  async getClinicDoctorStatement(this: DatabaseStorage, doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<Array<Record<string, unknown>>> {
     const doctorFilter = doctorId ? sql`AND a.doctor_id = ${doctorId}` : sql``;
     const clinicFilter = clinicId ? sql`AND a.clinic_id = ${clinicId}` : sql``;
     const rows = await db.execute(sql`
@@ -683,10 +683,10 @@ const methods = {
         ${clinicFilter}
       ORDER BY a.appointment_date DESC, a.turn_number
     `);
-    return rows.rows as any[];
+    return rows.rows as Array<Record<string, unknown>>;
   },
 
-  async getServiceDoctorPrices(this: DatabaseStorage, serviceId: string): Promise<any[]> {
+  async getServiceDoctorPrices(this: DatabaseStorage, serviceId: string): Promise<Array<Record<string, unknown>>> {
     const rows = await db.execute(sql`
       SELECT sdp.*, d.name AS doctor_name, d.specialty
       FROM clinic_service_doctor_prices sdp
@@ -694,17 +694,17 @@ const methods = {
       WHERE sdp.service_id = ${serviceId}
       ORDER BY d.name
     `);
-    return rows.rows as any[];
+    return rows.rows as Array<Record<string, unknown>>;
   },
 
-  async upsertServiceDoctorPrice(this: DatabaseStorage, serviceId: string, doctorId: string, price: number): Promise<any> {
+  async upsertServiceDoctorPrice(this: DatabaseStorage, serviceId: string, doctorId: string, price: number): Promise<Record<string, unknown>> {
     const rows = await db.execute(sql`
       INSERT INTO clinic_service_doctor_prices (service_id, doctor_id, price)
       VALUES (${serviceId}, ${doctorId}, ${price})
       ON CONFLICT (service_id, doctor_id) DO UPDATE SET price = EXCLUDED.price
       RETURNING *
     `);
-    return rows.rows[0] as any;
+    return rows.rows[0] as Record<string, unknown>;
   },
 
   async deleteServiceDoctorPrice(this: DatabaseStorage, id: string): Promise<void> {
@@ -716,7 +716,7 @@ const methods = {
       SELECT price FROM clinic_service_doctor_prices
       WHERE service_id = ${serviceId} AND doctor_id = ${doctorId}
     `);
-    if (rows.rows.length > 0) return parseFloat(String((rows.rows[0] as any).price));
+    if (rows.rows.length > 0) return parseFloat(String((rows.rows[0] as { price: string }).price));
     return null;
   },
 
@@ -792,13 +792,13 @@ const methods = {
             WHERE sc.service_id = $1
           `, [svc.serviceId]);
 
-          for (const cons of consumRes.rows) {
-            const consumeQty = parseFloat(cons.consume_qty) * svc.quantity;
+          for (const cons of consumRes.rows as Array<Record<string, unknown>>) {
+            const consumeQty = parseFloat(cons.consume_qty as string) * svc.quantity;
             let qtyInMinor: number;
             if (cons.unit_level === 'major') {
-              qtyInMinor = consumeQty * parseFloat(cons.major_to_minor || '1');
+              qtyInMinor = consumeQty * parseFloat(cons.major_to_minor as string || '1');
             } else if (cons.unit_level === 'medium') {
-              qtyInMinor = consumeQty * parseFloat(cons.medium_to_minor || '1');
+              qtyInMinor = consumeQty * parseFloat(cons.medium_to_minor as string || '1');
             } else {
               qtyInMinor = consumeQty;
             }
@@ -813,9 +813,9 @@ const methods = {
             `, [cons.item_id, warehouseId, tYear, tMonth]);
 
             let remaining = qtyInMinor;
-            for (const lot of lotsRes.rows) {
+            for (const lot of lotsRes.rows as Array<Record<string, unknown>>) {
               if (remaining <= 0) break;
-              const available = parseFloat(lot.qty_in_minor);
+              const available = parseFloat(lot.qty_in_minor as string);
               const deducted = Math.min(available, remaining);
 
               await client.query(`
@@ -854,8 +854,8 @@ const methods = {
       }), data.userId]);
 
       await client.query('COMMIT');
-      return { invoiceId, invoiceNumber };
-    } catch (err) {
+      return { invoiceId, invoiceNumber: parseInt(invoiceNumber) };
+    } catch (err: unknown) {
       await client.query('ROLLBACK');
       throw err;
     } finally {
@@ -883,8 +883,9 @@ const methods = {
           userId: data.userId,
         });
         results.push({ patientName: patient.patientName, invoiceId: result.invoiceId, invoiceNumber: result.invoiceNumber });
-      } catch (err: any) {
-        results.push({ patientName: patient.patientName, error: err.message });
+      } catch (err: unknown) {
+        const _em = err instanceof Error ? err.message : String(err);
+        results.push({ patientName: patient.patientName, error: _em });
       }
     }
     return { results };

@@ -31,8 +31,9 @@ export function registerFinanceRoutes(app: Express) {
     try {
       const accounts = await storage.getAccounts();
       res.json(accounts);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -40,10 +41,10 @@ export function registerFinanceRoutes(app: Express) {
     try {
       const accountsList = await storage.getAccounts();
       
-      const excelData = accountsList.map(account => ({
+      const excelData = accountsList.map((account: any) => ({
         "كود الحساب": account.code,
         "اسم الحساب": account.name,
-        "تصنيف الحساب": accountTypeMapEnglishToArabic[account.accountType] || account.accountType,
+        "تصنيف الحساب": (accountTypeMapEnglishToArabic as any)[account.accountType] || account.accountType,
         "يتطلب مركز تكلفة": account.requiresCostCenter ? "نعم" : "لا",
         "قائمة العرض": getDisplayList(account.accountType),
         "الرصيد الافتتاحي": parseFloat(account.openingBalance),
@@ -59,20 +60,22 @@ export function registerFinanceRoutes(app: Express) {
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", "attachment; filename=accounts.xlsx");
       res.send(buffer);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/accounts/:id", async (req, res) => {
     try {
-      const account = await storage.getAccount(req.params.id);
+      const account = await storage.getAccount(req.params.id as string);
       if (!account) {
         return res.status(404).json({ message: "الحساب غير موجود" });
       }
       res.json(account);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -82,62 +85,62 @@ export function registerFinanceRoutes(app: Express) {
       const account = await storage.createAccount(validated);
       auditLog({
         tableName: "accounts",
-        recordId: account.id,
+        recordId: account.id as string,
         action: "create",
         newValues: validated,
-        userId: req.session?.userId,
+        userId: req.session?.userId as string,
       }).catch(err => console.error("[Audit] account create:", err));
       res.status(201).json(account);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.patch("/api/accounts/:id", requireAuth, checkPermission(PERMISSIONS.ACCOUNTS_EDIT), async (req, res) => {
     try {
       const validated = insertAccountSchema.partial().parse(req.body);
-      const oldAccount = await storage.getAccount(req.params.id);
-      const account = await storage.updateAccount(req.params.id, validated);
+      const oldAccount = await storage.getAccount(req.params.id as string);
+      const account = await storage.updateAccount(req.params.id as string, validated);
       if (!account) {
         return res.status(404).json({ message: "الحساب غير موجود" });
       }
       auditLog({
         tableName: "accounts",
-        recordId: req.params.id,
+        recordId: req.params.id as string,
         action: "update",
         oldValues: oldAccount,
         newValues: validated,
-        userId: req.session?.userId,
+        userId: req.session?.userId as string,
       }).catch(err => console.error("[Audit] account update:", err));
       res.json(account);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.delete("/api/accounts/:id", requireAuth, checkPermission(PERMISSIONS.ACCOUNTS_DELETE), async (req, res) => {
     try {
-      const deletedAccount = await storage.getAccount(req.params.id);
-      await storage.deleteAccount(req.params.id);
+      const deletedAccount = await storage.getAccount(req.params.id as string);
+      await storage.deleteAccount(req.params.id as string);
       auditLog({
         tableName: "accounts",
-        recordId: req.params.id,
+        recordId: req.params.id as string,
         action: "delete",
         oldValues: deletedAccount,
-        userId: req.session?.userId,
+        userId: req.session?.userId as string,
       }).catch(err => console.error("[Audit] account delete:", err));
       res.status(204).send();
     } catch (error: any) {
-      if (error.message?.includes("violates foreign key constraint") || error.code === "23503") {
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("violates foreign key constraint") || error.code === "23503") {
         res.status(409).json({ message: "لا يمكن حذف هذا الحساب لوجود حسابات فرعية أو قيود مرتبطة به." });
       } else {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
     }
   });
@@ -147,8 +150,9 @@ export function registerFinanceRoutes(app: Express) {
     try {
       const costCenters = await storage.getCostCenters();
       res.json(costCenters);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -156,7 +160,7 @@ export function registerFinanceRoutes(app: Express) {
     try {
       const costCentersList = await storage.getCostCenters();
       
-      const excelData = costCentersList.map(cc => ({
+      const excelData = costCentersList.map((cc: any) => ({
         "الكود": cc.code,
         "الاسم": cc.name,
         "النوع": cc.type || "",
@@ -172,20 +176,22 @@ export function registerFinanceRoutes(app: Express) {
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", "attachment; filename=cost-centers.xlsx");
       res.send(buffer);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/cost-centers/:id", async (req, res) => {
     try {
-      const costCenter = await storage.getCostCenter(req.params.id);
+      const costCenter = await storage.getCostCenter(req.params.id as string);
       if (!costCenter) {
         return res.status(404).json({ message: "مركز التكلفة غير موجود" });
       }
       res.json(costCenter);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -196,37 +202,37 @@ export function registerFinanceRoutes(app: Express) {
       res.status(201).json(costCenter);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.patch("/api/cost-centers/:id", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_EDIT), async (req, res) => {
     try {
       const validated = insertCostCenterSchema.partial().parse(req.body);
-      const costCenter = await storage.updateCostCenter(req.params.id, validated);
+      const costCenter = await storage.updateCostCenter(req.params.id as string, validated);
       if (!costCenter) {
         return res.status(404).json({ message: "مركز التكلفة غير موجود" });
       }
       res.json(costCenter);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.delete("/api/cost-centers/:id", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_DELETE), async (req, res) => {
     try {
-      await storage.deleteCostCenter(req.params.id);
+      await storage.deleteCostCenter(req.params.id as string);
       res.status(204).send();
     } catch (error: any) {
-      if (error.message?.includes("violates foreign key constraint") || error.code === "23503") {
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("violates foreign key constraint") || error.code === "23503") {
         res.status(409).json({ message: "لا يمكن حذف مركز التكلفة لوجود مراكز فرعية أو قيود مرتبطة به." });
       } else {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
     }
   });
@@ -236,8 +242,9 @@ export function registerFinanceRoutes(app: Express) {
     try {
       const periods = await storage.getFiscalPeriods();
       res.json(periods);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -248,47 +255,49 @@ export function registerFinanceRoutes(app: Express) {
       res.status(201).json(period);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.post("/api/fiscal-periods/:id/close", requireAuth, checkPermission(PERMISSIONS.FISCAL_PERIODS_MANAGE), async (req, res) => {
     try {
-      const period = await storage.closeFiscalPeriod(req.params.id, req.session.userId || null);
+      const period = await storage.closeFiscalPeriod(req.params.id as string, req.session.userId || null);
       if (!period) {
         return res.status(404).json({ message: "الفترة غير موجودة" });
       }
       auditLog({
         tableName: "fiscal_periods",
-        recordId: req.params.id,
+        recordId: req.params.id as string,
         action: "close",
         newValues: { name: period.name },
-        userId: req.session.userId,
+        userId: req.session.userId as string,
       }).catch(err => console.error("[Audit] fiscal period close:", err));
       res.json(period);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.post("/api/fiscal-periods/:id/reopen", requireAuth, checkPermission(PERMISSIONS.FISCAL_PERIODS_MANAGE), async (req, res) => {
     try {
-      const period = await storage.reopenFiscalPeriod(req.params.id);
+      const period = await storage.reopenFiscalPeriod(req.params.id as string);
       if (!period) {
         return res.status(404).json({ message: "الفترة غير موجودة" });
       }
       auditLog({
         tableName: "fiscal_periods",
-        recordId: req.params.id,
+        recordId: req.params.id as string,
         action: "reopen",
         newValues: { name: period.name },
-        userId: req.session.userId,
+        userId: req.session.userId as string,
       }).catch(err => console.error("[Audit] fiscal period reopen:", err));
       res.json(period);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -309,20 +318,22 @@ export function registerFinanceRoutes(app: Express) {
         data: addFormattedNumbers(result.data, "journal_entry"),
         total: result.total,
       });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/journal-entries/:id", async (req, res) => {
     try {
-      const entry = await storage.getJournalEntry(req.params.id);
+      const entry = await storage.getJournalEntry(req.params.id as string);
       if (!entry) {
         return res.status(404).json({ message: "القيد غير موجود" });
       }
       res.json(addFormattedNumber(entry, "journal_entry"));
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -340,7 +351,7 @@ export function registerFinanceRoutes(app: Express) {
 
       const allAccounts = await storage.getAccounts();
       for (const line of lines) {
-        const account = allAccounts.find(a => a.id === line.accountId);
+        const account = allAccounts.find((a: any) => a.id === line.accountId);
         if (account?.requiresCostCenter && !line.costCenterId) {
           return res.status(400).json({ 
             message: `الحساب "${account.name}" يتطلب تحديد مركز تكلفة` 
@@ -375,9 +386,9 @@ export function registerFinanceRoutes(app: Express) {
       res.status(201).json(entry);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -386,7 +397,7 @@ export function registerFinanceRoutes(app: Express) {
       const validated = journalEntryUpdateSchema.parse(req.body);
       const { lines, ...entryData } = validated;
       
-      const existingEntry = await storage.getJournalEntry(req.params.id);
+      const existingEntry = await storage.getJournalEntry(req.params.id as string);
       if (!existingEntry) {
         return res.status(404).json({ message: "القيد غير موجود" });
       }
@@ -417,7 +428,7 @@ export function registerFinanceRoutes(app: Express) {
 
         const allAccounts = await storage.getAccounts();
         for (const line of lines) {
-          const account = allAccounts.find(a => a.id === line.accountId);
+          const account = allAccounts.find((a: any) => a.id === line.accountId);
           if (account?.requiresCostCenter && !line.costCenterId) {
             return res.status(400).json({ 
               message: `الحساب "${account.name}" يتطلب تحديد مركز تكلفة` 
@@ -432,26 +443,26 @@ export function registerFinanceRoutes(app: Express) {
           ...line,
           debit: parseFloat(String(line.debit) || "0").toFixed(2),
           credit: parseFloat(String(line.credit) || "0").toFixed(2),
-          journalEntryId: req.params.id,
+          journalEntryId: req.params.id as string,
         }));
       }
 
-      const entry = await storage.updateJournalEntry(req.params.id, updateData, formattedLines);
+      const entry = await storage.updateJournalEntry(req.params.id as string, updateData, formattedLines);
       if (!entry) {
         return res.status(400).json({ message: "لا يمكن تعديل القيد. قد يكون مُرحّلاً أو غير موجود" });
       }
       res.json(entry);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.post("/api/journal-entries/:id/post", requireAuth, checkPermission(PERMISSIONS.JOURNAL_POST), async (req, res) => {
     try {
-      const existingEntry = await storage.getJournalEntry(req.params.id);
+      const existingEntry = await storage.getJournalEntry(req.params.id as string);
       if (!existingEntry) {
         return res.status(404).json({ message: "القيد غير موجود" });
       }
@@ -468,47 +479,50 @@ export function registerFinanceRoutes(app: Express) {
         }
       }
 
-      const entry = await storage.postJournalEntry(req.params.id, null);
+      const entry = await storage.postJournalEntry(req.params.id as string, null);
       if (!entry) {
         return res.status(409).json({ message: "القيد مُرحّل بالفعل", code: "ALREADY_POSTED" });
       }
-      await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
+      await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id as string, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(entry);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
-      res.status(500).json({ message: error.message });
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.post("/api/journal-entries/:id/reverse", requireAuth, checkPermission(PERMISSIONS.JOURNAL_REVERSE), async (req, res) => {
     try {
-      const existingEntry = await storage.getJournalEntry(req.params.id);
+      const existingEntry = await storage.getJournalEntry(req.params.id as string);
       if (!existingEntry) return res.status(404).json({ message: "القيد غير موجود" });
       if (existingEntry.status !== 'posted') return res.status(409).json({ message: "لا يمكن عكس قيد غير مُرحّل" });
 
       await storage.assertPeriodOpen(existingEntry.entryDate);
 
-      const entry = await storage.reverseJournalEntry(req.params.id, null);
+      const entry = await storage.reverseJournalEntry(req.params.id as string, null);
       if (!entry) {
         return res.status(400).json({ message: "لا يمكن إلغاء القيد" });
       }
-      await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id, action: "reverse", oldValues: JSON.stringify({ status: "posted" }), newValues: JSON.stringify({ status: "reversed" }) });
+      await storage.createAuditLog({ tableName: "journal_entries", recordId: req.params.id as string, action: "reverse", oldValues: JSON.stringify({ status: "posted" }), newValues: JSON.stringify({ status: "reversed" }) });
       res.json(entry);
     } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
-      res.status(500).json({ message: error.message });
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.delete("/api/journal-entries/:id", requireAuth, checkPermission(PERMISSIONS.JOURNAL_EDIT), async (req, res) => {
     try {
-      const result = await storage.deleteJournalEntry(req.params.id);
+      const result = await storage.deleteJournalEntry(req.params.id as string);
       if (!result) {
         return res.status(400).json({ message: "لا يمكن حذف القيد. قد يكون مُرحّلاً" });
       }
       res.status(204).send();
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -521,8 +535,9 @@ export function registerFinanceRoutes(app: Express) {
       }
       const posted = await storage.batchPostJournalEntries(ids, userId || "system");
       res.json({ posted, total: ids.length });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -531,20 +546,22 @@ export function registerFinanceRoutes(app: Express) {
     try {
       const templates = await storage.getTemplates();
       res.json(templates);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/templates/:id", async (req, res) => {
     try {
-      const template = await storage.getTemplateWithLines(req.params.id);
+      const template = await storage.getTemplateWithLines(req.params.id as string);
       if (!template) {
         return res.status(404).json({ message: "النموذج غير موجود" });
       }
       res.json(template);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -571,9 +588,9 @@ export function registerFinanceRoutes(app: Express) {
       }
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -584,7 +601,7 @@ export function registerFinanceRoutes(app: Express) {
       
       if (lines && Array.isArray(lines)) {
         const validatedLines = lines.map((line: any, index: number) => ({
-          templateId: req.params.id,
+          templateId: req.params.id as string,
           lineNumber: index + 1,
           accountId: line.accountId,
           costCenterId: line.costCenterId || null,
@@ -592,13 +609,13 @@ export function registerFinanceRoutes(app: Express) {
           debitPercent: line.debit || line.debitPercent || null,
           creditPercent: line.credit || line.creditPercent || null,
         }));
-        const template = await storage.updateTemplateWithLines(req.params.id, validated, validatedLines);
+        const template = await storage.updateTemplateWithLines(req.params.id as string, validated, validatedLines);
         if (!template) {
           return res.status(404).json({ message: "النموذج غير موجود" });
         }
         res.json(template);
       } else {
-        const template = await storage.updateTemplate(req.params.id, validated);
+        const template = await storage.updateTemplate(req.params.id as string, validated);
         if (!template) {
           return res.status(404).json({ message: "النموذج غير موجود" });
         }
@@ -606,18 +623,19 @@ export function registerFinanceRoutes(app: Express) {
       }
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.delete("/api/templates/:id", async (req, res) => {
     try {
-      await storage.deleteTemplate(req.params.id);
+      await storage.deleteTemplate(req.params.id as string);
       res.status(204).send();
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -640,8 +658,9 @@ export function registerFinanceRoutes(app: Express) {
         dateTo: dateTo || undefined,
       });
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -651,8 +670,9 @@ export function registerFinanceRoutes(app: Express) {
       const asOfDate = (req.query.asOfDate as string) || new Date().toISOString().split('T')[0];
       const report = await storage.getTrialBalance(asOfDate);
       res.json(report);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -664,8 +684,9 @@ export function registerFinanceRoutes(app: Express) {
       const endDate = (req.query.endDate as string) || today.toISOString().split('T')[0];
       const report = await storage.getIncomeStatement(startDate, endDate);
       res.json(report);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -674,8 +695,9 @@ export function registerFinanceRoutes(app: Express) {
       const asOfDate = (req.query.asOfDate as string) || new Date().toISOString().split('T')[0];
       const report = await storage.getBalanceSheet(asOfDate);
       res.json(report);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -688,8 +710,9 @@ export function registerFinanceRoutes(app: Express) {
       const costCenterId = req.query.costCenterId as string | undefined;
       const report = await storage.getCostCenterReport(startDate, endDate, costCenterId);
       res.json(report);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -705,8 +728,9 @@ export function registerFinanceRoutes(app: Express) {
       const endDate = (req.query.endDate as string) || today.toISOString().split('T')[0];
       const report = await storage.getAccountLedger(accountId, startDate, endDate);
       res.json(report);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -727,7 +751,7 @@ export function registerFinanceRoutes(app: Express) {
       }
 
       const existingAccounts = await storage.getAccounts();
-      const existingCodes = new Set(existingAccounts.map(a => a.code));
+      const existingCodes = new Set(existingAccounts.map((a: any) => a.code));
 
       let imported = 0;
       let skipped = 0;
@@ -834,8 +858,9 @@ export function registerFinanceRoutes(app: Express) {
           });
           imported++;
           existingCodes.add(code);
-        } catch (err: any) {
-          errors.push(`خطأ في إضافة الحساب ${code}: ${err.message}`);
+        } catch (err: unknown) {
+          const _em = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
+          errors.push(`خطأ في إضافة الحساب ${code}: ${_em}`);
           skipped++;
         }
       }
@@ -846,8 +871,9 @@ export function registerFinanceRoutes(app: Express) {
         skipped,
         errors: errors.slice(0, 10)
       });
-    } catch (error: any) {
-      res.status(500).json({ message: `خطأ في معالجة الملف: ${error.message}` });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: `خطأ في معالجة الملف: ${_em}` });
     }
   });
 
@@ -868,7 +894,7 @@ export function registerFinanceRoutes(app: Express) {
       }
 
       const existingCostCenters = await storage.getCostCenters();
-      const existingCodes = new Set(existingCostCenters.map(cc => cc.code));
+      const existingCodes = new Set(existingCostCenters.map((cc: any) => cc.code));
 
       let imported = 0;
       let skipped = 0;
@@ -901,8 +927,9 @@ export function registerFinanceRoutes(app: Express) {
           });
           imported++;
           existingCodes.add(code);
-        } catch (err: any) {
-          errors.push(`خطأ في إضافة مركز التكلفة ${code}: ${err.message}`);
+        } catch (err: unknown) {
+          const _em = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
+          errors.push(`خطأ في إضافة مركز التكلفة ${code}: ${_em}`);
           skipped++;
         }
       }
@@ -913,8 +940,9 @@ export function registerFinanceRoutes(app: Express) {
         skipped,
         errors: errors.slice(0, 10)
       });
-    } catch (error: any) {
-      res.status(500).json({ message: `خطأ في معالجة الملف: ${error.message}` });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: `خطأ في معالجة الملف: ${_em}` });
     }
   });
 
@@ -924,18 +952,20 @@ export function registerFinanceRoutes(app: Express) {
       const { transactionType } = req.query;
       const mappings = await storage.getAccountMappings(transactionType as string | undefined);
       res.json(mappings);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/account-mappings/:id", async (req, res) => {
     try {
-      const mapping = await storage.getAccountMapping(req.params.id);
+      const mapping = await storage.getAccountMapping(req.params.id as string);
       if (!mapping) return res.status(404).json({ message: "الإعداد غير موجود" });
       res.json(mapping);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -949,17 +979,19 @@ export function registerFinanceRoutes(app: Express) {
         transactionType, lineType, debitAccountId, creditAccountId, description, isActive, warehouseId: warehouseId || null
       });
       res.json(mapping);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.delete("/api/account-mappings/:id", async (req, res) => {
     try {
-      await storage.deleteAccountMapping(req.params.id);
+      await storage.deleteAccountMapping(req.params.id as string);
       res.json({ success: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -975,8 +1007,9 @@ export function registerFinanceRoutes(app: Express) {
         results.push(result);
       }
       res.json(results);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 }

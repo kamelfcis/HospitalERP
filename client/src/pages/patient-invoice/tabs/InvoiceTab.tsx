@@ -41,7 +41,7 @@ interface InvoiceTabProps {
   setPatientPhone: (v: string) => void;
   patientSearch: string;
   setPatientSearch: (v: string) => void;
-  patientResults: any[];
+  patientResults: Record<string, unknown>[];
   searchingPatients: boolean;
   showPatientDropdown: boolean;
   setShowPatientDropdown: (v: boolean) => void;
@@ -65,7 +65,7 @@ interface InvoiceTabProps {
 
   warehouseId: string;
   setWarehouseId: (v: string) => void;
-  warehouses: any[] | undefined;
+  warehouses: Record<string, unknown>[] | undefined;
 
   admissionId: string;
   setAdmissionId: (v: string) => void;
@@ -102,9 +102,9 @@ interface InvoiceTabProps {
   serviceDropdownRef: React.RefObject<HTMLDivElement>;
   pendingQtyRef: React.MutableRefObject<Map<string, string>>;
 
-  addServiceLine: (svc: any) => void;
-  addItemLine: (item: any, type: "drug" | "consumable" | "equipment") => void;
-  updateLine: (tempId: string, field: string, value: any) => void;
+  addServiceLine: (svc: Service) => void;
+  addItemLine: (item: Item, type: "drug" | "consumable" | "equipment") => void;
+  updateLine: (tempId: string, field: string, value: unknown) => void;
   removeLine: (tempId: string) => void;
   handleQtyConfirm: (tempId: string) => void;
   handleUnitLevelChange: (tempId: string, level: "major" | "medium" | "minor") => void;
@@ -112,7 +112,7 @@ interface InvoiceTabProps {
 
   payments: PaymentLocal[];
   addPayment: () => void;
-  updatePayment: (tempId: string, field: string, value: any) => void;
+  updatePayment: (tempId: string, field: string, value: unknown) => void;
   removePayment: (tempId: string) => void;
 
   totals: Totals;

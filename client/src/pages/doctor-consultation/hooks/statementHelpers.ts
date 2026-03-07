@@ -21,12 +21,22 @@ export interface ExecSummary {
   executedOrders: number;
 }
 
+export interface StatementRow {
+  totalOrders?: number | string;
+  executedOrders?: number | string;
+  consultationFee?: number | string;
+  drugsTotal?: number | string;
+  secretaryFeeType?: string | null;
+  secretaryFeeValue?: string | number | null;
+  servicesByDepartment?: string | any[];
+}
+
 export function fmt(val: any): string {
   const n = parseFloat(String(val || 0));
   return n.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function parseDeptServices(raw: any): DeptTotal[] {
+export function parseDeptServices(raw: string | any[] | undefined | null): DeptTotal[] {
   try {
     if (!raw) return [];
     const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -51,7 +61,7 @@ export function calcSecretaryFee(consultationFee: number, feeType?: string | nul
   return 0;
 }
 
-export function filterRows(rows: any[], execFilter: string): any[] {
+export function filterRows(rows: StatementRow[], execFilter: string): StatementRow[] {
   if (execFilter === "all") return rows;
   return rows.filter((r) => {
     const total = parseInt(String(r.totalOrders || 0));
@@ -62,7 +72,7 @@ export function filterRows(rows: any[], execFilter: string): any[] {
   });
 }
 
-export function collectDeptNames(rows: any[]): DeptInfo[] {
+export function collectDeptNames(rows: StatementRow[]): DeptInfo[] {
   const deptSet = new Map<string, string>();
   rows.forEach((r) => {
     const depts = parseDeptServices(r.servicesByDepartment);
@@ -71,7 +81,7 @@ export function collectDeptNames(rows: any[]): DeptInfo[] {
   return Array.from(deptSet.entries()).map(([id, name]) => ({ id, name }));
 }
 
-export function computeTotals(rows: any[], deptNames: DeptInfo[]): StatementTotals {
+export function computeTotals(rows: StatementRow[], deptNames: DeptInfo[]): StatementTotals {
   let consultationFee = 0;
   let drugsTotal = 0;
   let secretaryTotal = 0;
@@ -91,7 +101,7 @@ export function computeTotals(rows: any[], deptNames: DeptInfo[]): StatementTota
   return { consultationFee, drugsTotal, secretaryTotal, deptTotals };
 }
 
-export function computeExecSummary(rows: any[]): ExecSummary {
+export function computeExecSummary(rows: StatementRow[]): ExecSummary {
   let totalOrders = 0;
   let executedOrders = 0;
   rows.forEach((r) => {

@@ -235,8 +235,8 @@ export function useTransferForm() {
         return;
       }
 
-      const qtyInMinor = calculateQtyInMinor(qtyEntered, line.unitLevel, line.item);
-      const totalAvail = parseFloat(line.item?.availableQtyMinor || "0");
+      const qtyInMinor = calculateQtyInMinor(Number(qtyEntered), line.unitLevel, line.item);
+      const totalAvail = parseFloat(String(line.item?.availableQtyMinor || "0"));
       if (qtyInMinor > totalAvail) {
         toast({
           title: "الكمية غير متاحة",
@@ -277,7 +277,7 @@ export function useTransferForm() {
           const convertMinorToDisplay = (minorQty: number): number => {
             let displayQty = minorQty;
             if (line.unitLevel === "major") {
-              displayQty = minorQty / (parseFloat(line.item.majorToMinor) || 1);
+              displayQty = minorQty / (parseFloat(String(line.item?.majorToMinor || "0")) || 1);
             } else if (line.unitLevel === "medium") {
               displayQty = minorQty / getEffectiveMediumToMinor(line.item);
             }
@@ -454,7 +454,7 @@ export function useTransferForm() {
 
           const convertMinorToDisplay = (minorQty: number): number => {
             let displayQty = minorQty;
-            if (newUnitLevel === "major") displayQty = minorQty / (parseFloat(line.item.majorToMinor) || 1);
+            if (newUnitLevel === "major") displayQty = minorQty / (parseFloat(String(line.item?.majorToMinor || "0")) || 1);
             else if (newUnitLevel === "medium") displayQty = minorQty / getEffectiveMediumToMinor(line.item);
             const rounded = Math.round(displayQty * 10000) / 10000;
             if (Math.abs(rounded - Math.round(rounded)) < 0.005) return Math.round(rounded);
@@ -497,7 +497,7 @@ export function useTransferForm() {
           setFefoLoadingIndex(null);
         }
       } else {
-        const qtyInMinor = calculateQtyInMinor(line.qtyEntered, newUnitLevel, line.item);
+        const qtyInMinor = calculateQtyInMinor(Number(line.qtyEntered), newUnitLevel, line.item);
         setFormLines((prev) => {
           const copy = [...prev];
           copy[index] = { ...copy[index], unitLevel: newUnitLevel, qtyInMinor };

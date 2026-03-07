@@ -80,11 +80,11 @@ export function validateBody<T>(schema: ZodSchema<T>, req: Request): T {
 }
 
 export function requireParam(req: Request, name: string): string {
-  const value = req.params[name];
+  const value = req.params[name] as string | string[];
   if (!value) {
     throw new Error(`المعامل "${name}" مطلوب`);
   }
-  return value;
+  return value as string;
 }
 
 export function getQueryFlag(req: Request, name: string, defaultValue = false): boolean {

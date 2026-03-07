@@ -37,12 +37,12 @@ const methods = {
       );
     });
     return db.select().from(patients)
-      .where(and(eq(patients.isActive, true), ...conditions.filter(Boolean) as any))
+      .where(and(eq(patients.isActive, true), ...conditions.filter(Boolean)))
       .orderBy(asc(patients.fullName))
       .limit(50);
   },
 
-  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<any[]> {
+  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<Record<string, unknown>[]> {
     const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
 
     const invConds: string[] = ["pih.status != 'cancelled'"];

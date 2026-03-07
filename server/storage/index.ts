@@ -132,6 +132,8 @@ import {
   type Treasury,
   type InsertTreasury,
   type TreasuryTransaction,
+  type InsertSalesInvoiceLine,
+  type PurchaseInvoiceHeader,
 } from "@shared/schema";
 
 export interface DeptServiceOrderInput {
@@ -210,7 +212,7 @@ export interface IStorage {
   getCurrentPeriod(): Promise<FiscalPeriod | undefined>;
   assertPeriodOpen(dateStr: string): Promise<void>;
   createFiscalPeriod(period: InsertFiscalPeriod): Promise<FiscalPeriod>;
-  closeFiscalPeriod(id: string, userId: string): Promise<FiscalPeriod | undefined>;
+  closeFiscalPeriod(id: string, userId: string | null): Promise<FiscalPeriod | undefined>;
   reopenFiscalPeriod(id: string): Promise<FiscalPeriod | undefined>;
   
   // Journal Entries
@@ -228,8 +230,8 @@ export interface IStorage {
   getNextEntryNumber(): Promise<number>;
   createJournalEntry(entry: InsertJournalEntry, lines: InsertJournalLine[]): Promise<JournalEntry>;
   updateJournalEntry(id: string, entry: Partial<InsertJournalEntry>, lines?: InsertJournalLine[]): Promise<JournalEntry | undefined>;
-  postJournalEntry(id: string, userId: string): Promise<JournalEntry | undefined>;
-  reverseJournalEntry(id: string, userId: string): Promise<JournalEntry | undefined>;
+  postJournalEntry(id: string, userId: string | null): Promise<JournalEntry | undefined>;
+  reverseJournalEntry(id: string, userId: string | null): Promise<JournalEntry | undefined>;
   deleteJournalEntry(id: string): Promise<boolean>;
   
   // Journal Templates
@@ -249,12 +251,12 @@ export interface IStorage {
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
   
   // Reports
-  getDashboardStats(): Promise<any>;
-  getTrialBalance(asOfDate: string): Promise<any>;
-  getIncomeStatement(startDate: string, endDate: string): Promise<any>;
-  getBalanceSheet(asOfDate: string): Promise<any>;
-  getCostCenterReport(startDate: string, endDate: string, costCenterId?: string): Promise<any>;
-  getAccountLedger(accountId: string, startDate: string, endDate: string): Promise<any>;
+  getDashboardStats(): Promise<Record<string, unknown>>;
+  getTrialBalance(asOfDate: string): Promise<Record<string, unknown>>;
+  getIncomeStatement(startDate: string, endDate: string): Promise<Record<string, unknown>>;
+  getBalanceSheet(asOfDate: string): Promise<Record<string, unknown>>;
+  getCostCenterReport(startDate: string, endDate: string, costCenterId?: string): Promise<Record<string, unknown>>;
+  getAccountLedger(accountId: string, startDate: string, endDate: string): Promise<Record<string, unknown>>;
 
   // Items
   getItems(params: { page?: number; limit?: number; search?: string; category?: string; isToxic?: boolean; formTypeId?: string; isActive?: boolean; minPrice?: number; maxPrice?: number }): Promise<{ items: Item[]; total: number }>;
@@ -338,12 +340,12 @@ export interface IStorage {
   }): Promise<{data: StoreTransferWithDetails[]; total: number}>;
   getTransfer(id: string): Promise<StoreTransferWithDetails | undefined>;
   createDraftTransfer(header: InsertStoreTransfer, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer>;
-  updateDraftTransfer(transferId: string, header: any, lines: any[]): Promise<StoreTransfer>;
+  updateDraftTransfer(transferId: string, header: Partial<InsertStoreTransfer>, lines: { itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }[]): Promise<StoreTransfer>;
   postTransfer(transferId: string): Promise<StoreTransfer>;
   deleteTransfer(id: string, reason?: string): Promise<boolean>;
-  getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any>;
+  getWarehouseFefoPreview(itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<Record<string, unknown>>;
   getItemAvailability(itemId: string, warehouseId: string): Promise<string>;
-  searchItemsForTransfer(query: string, warehouseId: string, limit?: number): Promise<any[]>;
+  searchItemsForTransfer(query: string, warehouseId: string, limit?: number): Promise<Record<string, unknown>[]>;
   getExpiryOptions(itemId: string, warehouseId: string, asOfDate: string): Promise<{expiryDate: string; expiryMonth: number | null; expiryYear: number | null; qtyAvailableMinor: string; lotSalePrice?: string}[]>;
   searchItemsAdvanced(params: {
     mode: 'AR' | 'EN' | 'CODE' | 'BARCODE';
@@ -356,12 +358,12 @@ export interface IStorage {
     excludeServices?: boolean;
     minPrice?: number;
     maxPrice?: number;
-  }): Promise<{items: any[]; total: number}>;
+  }): Promise<{items: Record<string, unknown>[]; total: number}>;
 
-  searchItemsByPattern(query: string, limit: number): Promise<any[]>;
+  searchItemsByPattern(query: string, limit: number): Promise<Record<string, unknown>[]>;
 
   // Pilot Test Seed
-  seedPilotTest(): Promise<{ warehouses: any[]; items: any[]; lots: any[] }>;
+  seedPilotTest(): Promise<{ warehouses: Record<string, unknown>[]; items: Record<string, unknown>[]; lots: Record<string, unknown>[] }>;
 
   // Suppliers
   getSuppliers(params: { search?: string; page: number; pageSize: number }): Promise<{ suppliers: Supplier[]; total: number }>;
@@ -381,12 +383,12 @@ export interface IStorage {
   getItemHints(itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }>;
   getItemWarehouseStats(itemId: string): Promise<{ warehouseId: string; warehouseName: string; warehouseCode: string; qtyMinor: string; expiryBreakdown: { expiryMonth: number | null; expiryYear: number | null; qty: string }[] }[]>;
 
-  convertReceivingToInvoice(receivingId: string): Promise<any>;
+  convertReceivingToInvoice(receivingId: string): Promise<Record<string, unknown>>;
   getNextPurchaseInvoiceNumber(): Promise<number>;
-  getPurchaseInvoices(filters: any & { includeCancelled?: boolean }): Promise<{data: any[]; total: number}>;
-  getPurchaseInvoice(id: string): Promise<any>;
-  savePurchaseInvoice(invoiceId: string, lines: any[], headerUpdates?: any): Promise<any>;
-  approvePurchaseInvoice(id: string): Promise<any>;
+  getPurchaseInvoices(filters: Record<string, unknown> & { includeCancelled?: boolean }): Promise<{data: Record<string, unknown>[]; total: number}>;
+  getPurchaseInvoice(id: string): Promise<Record<string, unknown>>;
+  savePurchaseInvoice(invoiceId: string, lines: Record<string, unknown>[], headerUpdates?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  approvePurchaseInvoice(id: string): Promise<Record<string, unknown>>;
   deletePurchaseInvoice(id: string, reason?: string): Promise<boolean>;
 
   // Service Consumables
@@ -395,27 +397,27 @@ export interface IStorage {
 
   // Sales Invoices
   getNextSalesInvoiceNumber(): Promise<number>;
-  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}>;
+  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: Record<string, unknown>[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}>;
   getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined>;
-  createSalesInvoice(header: any, lines: any[]): Promise<SalesInvoiceHeader>;
-  updateSalesInvoice(id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader>;
+  createSalesInvoice(header: Record<string, unknown>, lines: Record<string, unknown>[]): Promise<SalesInvoiceHeader>;
+  updateSalesInvoice(id: string, header: Record<string, unknown>, lines: Record<string, unknown>[]): Promise<SalesInvoiceHeader>;
   finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader>;
   deleteSalesInvoice(id: string, reason?: string): Promise<boolean>;
 
   // Patient Invoices
   getNextPatientInvoiceNumber(): Promise<number>;
   getNextPaymentRefNumber(offset?: number): Promise<string>;
-  getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}>;
+  getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: Record<string, unknown>[]; total: number}>;
   getPatientInvoice(id: string): Promise<PatientInvoiceWithDetails | undefined>;
-  createPatientInvoice(header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader>;
-  updatePatientInvoice(id: string, header: any, lines: any[], payments: any[], expectedVersion?: number): Promise<PatientInvoiceHeader>;
+  createPatientInvoice(header: Record<string, unknown>, lines: Record<string, unknown>[], payments: Record<string, unknown>[]): Promise<PatientInvoiceHeader>;
+  updatePatientInvoice(id: string, header: Record<string, unknown>, lines: Record<string, unknown>[], payments: Record<string, unknown>[], expectedVersion?: number): Promise<PatientInvoiceHeader>;
   finalizePatientInvoice(id: string, expectedVersion?: number): Promise<PatientInvoiceHeader>;
   buildPatientInvoiceGLLines(header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string }[];
   deletePatientInvoice(id: string, reason?: string): Promise<boolean>;
   distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]>;
   distributePatientInvoiceDirect(data: {
     patients: { name: string; phone?: string }[];
-    lines: any[];
+    lines: Record<string, unknown>[];
     invoiceDate: string;
     departmentId?: string | null;
     warehouseId?: string | null;
@@ -438,31 +440,33 @@ export interface IStorage {
   getDrawersWithPasswordStatus(): Promise<{ glAccountId: string; hasPassword: boolean; code: string; name: string }[]>;
 
   // Cashier
-  openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<any>;
-  getActiveShift(cashierId: string, unitType: string, unitId: string): Promise<any>;
-  getMyOpenShift(cashierId: string): Promise<any | null>;
-  getMyOpenShifts(cashierId: string): Promise<any[]>;
+  openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<Record<string, unknown>>;
+  getActiveShift(cashierId: string, unitType: string, unitId: string): Promise<Record<string, unknown>>;
+  getMyOpenShift(cashierId: string): Promise<Record<string, unknown> | null>;
+  getMyOpenShifts(cashierId: string): Promise<Record<string, unknown>[]>;
   getUserCashierGlAccount(userId: string): Promise<{ glAccountId: string; code: string; name: string; hasPassword: boolean } | null>;
-  getShiftById(shiftId: string): Promise<any>;
-  closeCashierShift(shiftId: string, closingCash: string): Promise<any>;
-  validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; otherShift: any; reasonCode: string }>;
-  getPendingSalesInvoices(unitType: string, unitId: string, search?: string): Promise<any[]>;
-  getPendingReturnInvoices(unitType: string, unitId: string, search?: string): Promise<any[]>;
-  getSalesInvoiceDetails(invoiceId: string): Promise<any>;
-  collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string, paymentDate?: string): Promise<any>;
-  refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string, paymentDate?: string): Promise<any>;
-  getShiftTotals(shiftId: string): Promise<any>;
+  getShiftById(shiftId: string): Promise<import("@shared/schema").CashierShift | null>;
+  closeCashierShift(shiftId: string, closingCash: string): Promise<Record<string, unknown>>;
+  validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; otherShift: Record<string, unknown> | null; reasonCode: string }>;
+    getPendingDocCountForUnit(shift: import("@shared/schema").CashierShift): Promise<number>;
+    findOtherOpenShiftForUnit(currentShiftId: string, shift: import("@shared/schema").CashierShift): Promise<import("@shared/schema").CashierShift | null>;
+  getPendingSalesInvoices(unitType: string, unitId: string, search?: string): Promise<Record<string, unknown>[]>;
+  getPendingReturnInvoices(unitType: string, unitId: string, search?: string): Promise<Record<string, unknown>[]>;
+  getSalesInvoiceDetails(invoiceId: string): Promise<Record<string, unknown>>;
+  collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string, paymentDate?: string): Promise<Record<string, unknown>>;
+  refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string, paymentDate?: string): Promise<Record<string, unknown>>;
+  getShiftTotals(shiftId: string): Promise<{ totalCollected: string; totalRefunded: string; collectCount: number; refundCount: number; openingCash: string; netCash: string }>;
   getNextCashierReceiptNumber(): Promise<number>;
   getNextCashierRefundReceiptNumber(): Promise<number>;
-  markReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<any>;
-  markRefundReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<any>;
-  getCashierReceipt(receiptId: string): Promise<any>;
-  getCashierRefundReceipt(receiptId: string): Promise<any>;
+  markReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<Record<string, unknown>>;
+  markRefundReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<Record<string, unknown>>;
+  getCashierReceipt(receiptId: string): Promise<Record<string, unknown>>;
+  getCashierRefundReceipt(receiptId: string): Promise<Record<string, unknown>>;
 
   // Patients
   getPatients(): Promise<Patient[]>;
   searchPatients(search: string): Promise<Patient[]>;
-  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<any[]>;
+  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<Record<string, unknown>[]>;
   getPatient(id: string): Promise<Patient | undefined>;
   createPatient(data: InsertPatient): Promise<Patient>;
   updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient>;
@@ -476,7 +480,7 @@ export interface IStorage {
   updateDoctor(id: string, data: Partial<InsertDoctor>): Promise<Doctor>;
   deleteDoctor(id: string): Promise<boolean>;
   getDoctorBalances(): Promise<{ id: string; name: string; specialty: string | null; totalTransferred: string; totalSettled: string; remaining: string }[]>;
-  getDoctorStatement(params: { doctorName: string; dateFrom?: string; dateTo?: string }): Promise<any[]>;
+  getDoctorStatement(params: { doctorName: string; dateFrom?: string; dateTo?: string }): Promise<Record<string, unknown>[]>;
 
   // Admissions
   getAdmissions(filters?: { status?: string; search?: string }): Promise<Admission[]>;
@@ -558,27 +562,27 @@ export interface IStorage {
   getChatUnreadCount(userId: string): Promise<number>;
 
   // Sales Returns
-  searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]>;
-  getSaleInvoiceForReturn(invoiceId: string): Promise<any | null>;
-  createSalesReturn(data: { originalInvoiceId: string; warehouseId: string; returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[]; discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string }): Promise<any>;
+  searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<Record<string, unknown>[]>;
+  getSaleInvoiceForReturn(invoiceId: string): Promise<Record<string, unknown> | null>;
+  createSalesReturn(data: { originalInvoiceId: string; warehouseId: string; returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[]; discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string }): Promise<Record<string, unknown>>;
 
   // ── موديول العيادات الخارجية ──────────────────────────────────────────
   // العيادات
-  getClinics(userId: string, role: string): Promise<any[]>;
-  getClinicById(id: string): Promise<any | null>;
-  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<any>;
-  updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<any>;
+  getClinics(userId: string, role: string): Promise<Record<string, unknown>[]>;
+  getClinicById(id: string): Promise<Record<string, unknown> | null>;
+  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<Record<string, unknown>>;
+  updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<Record<string, unknown>>;
   getUserClinicIds(userId: string): Promise<string[]>;
   assignUserToClinic(userId: string, clinicId: string): Promise<void>;
   removeUserFromClinic(userId: string, clinicId: string): Promise<void>;
 
   // جداول الأطباء
-  getDoctorSchedules(clinicId: string): Promise<any[]>;
-  upsertDoctorSchedule(data: { clinicId: string; doctorId: string; weekday?: number | null; startTime?: string; endTime?: string; maxAppointments?: number }): Promise<any>;
+  getDoctorSchedules(clinicId: string): Promise<Record<string, unknown>[]>;
+  upsertDoctorSchedule(data: { clinicId: string; doctorId: string; weekday?: number | null; startTime?: string; endTime?: string; maxAppointments?: number }): Promise<Record<string, unknown>>;
 
   // الحجوزات
-  getClinicAppointments(clinicId: string, date: string): Promise<any[]>;
-  createAppointment(data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string }): Promise<any>;
+  getClinicAppointments(clinicId: string, date: string): Promise<Record<string, unknown>[]>;
+  createAppointment(data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string }): Promise<Record<string, unknown>>;
   getAppointmentClinicId(appointmentId: string): Promise<string | null>;
   updateAppointmentStatus(id: string, status: string): Promise<void>;
 
@@ -589,27 +593,27 @@ export interface IStorage {
   getUserAssignedDoctorId(userId: string): Promise<string | null>;
 
   // الكشف والروشتة
-  getConsultationByAppointment(appointmentId: string): Promise<any | null>;
-  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[] }): Promise<any>;
+  getConsultationByAppointment(appointmentId: string): Promise<Record<string, unknown> | null>;
+  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[] }): Promise<Record<string, unknown>>;
 
   // الأدوية المفضلة
-  getDoctorFavoriteDrugs(doctorId: string, clinicId?: string | null): Promise<any[]>;
-  addFavoriteDrug(data: { doctorId: string; clinicId?: string | null; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<any>;
+  getDoctorFavoriteDrugs(doctorId: string, clinicId?: string | null): Promise<Record<string, unknown>[]>;
+  addFavoriteDrug(data: { doctorId: string; clinicId?: string | null; itemId?: string | null; drugName: string; defaultDose?: string; defaultFrequency?: string; defaultDuration?: string }): Promise<Record<string, unknown>>;
   removeFavoriteDrug(id: string, doctorId?: string): Promise<void>;
-  getFrequentDrugsNotInFavorites(doctorId: string, minCount?: number, clinicId?: string | null): Promise<any[]>;
+  getFrequentDrugsNotInFavorites(doctorId: string, minCount?: number, clinicId?: string | null): Promise<Record<string, unknown>[]>;
 
   // الأوامر الطبية
-  getClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<any[]>;
-  getClinicOrder(id: string): Promise<any | null>;
+  getClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<Record<string, unknown>[]>;
+  getClinicOrder(id: string): Promise<Record<string, unknown> | null>;
   executeClinicOrder(orderId: string, userId: string): Promise<{ invoiceId: string }>;
   cancelClinicOrder(orderId: string): Promise<void>;
 
   // كشف حساب الطبيب - عيادات
-  getClinicDoctorStatement(doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<any[]>;
+  getClinicDoctorStatement(doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<Record<string, unknown>[]>;
 
   // تسعير خدمات حسب الطبيب
-  getServiceDoctorPrices(serviceId: string): Promise<any[]>;
-  upsertServiceDoctorPrice(serviceId: string, doctorId: string, price: number): Promise<any>;
+  getServiceDoctorPrices(serviceId: string): Promise<Record<string, unknown>[]>;
+  upsertServiceDoctorPrice(serviceId: string, doctorId: string, price: number): Promise<Record<string, unknown>>;
   deleteServiceDoctorPrice(id: string): Promise<void>;
   getDoctorServicePrice(serviceId: string, doctorId: string): Promise<number | null>;
 
@@ -618,7 +622,7 @@ export interface IStorage {
   checkDeptServiceDuplicate(patientName: string, serviceIds: string[], date: string): Promise<Array<{ serviceName: string; invoiceNumber: number }>>;
 
   // Services
-  getServices(departmentId?: string): Promise<ServiceWithDepartment[]>;
+  getServices(params: { search?: string; departmentId?: string; category?: string; active?: string; page?: number; pageSize?: number }): Promise<{ data: ServiceWithDepartment[]; total: number }>;
   createService(service: InsertService): Promise<Service>;
   updateService(id: string, service: Partial<InsertService>): Promise<Service | undefined>;
   getServiceCategories(): Promise<string[]>;
@@ -629,13 +633,13 @@ export interface IStorage {
   updatePriceList(id: string, data: Partial<InsertPriceList>): Promise<PriceList | undefined>;
 
   // Price List Items
-  getPriceListItems(priceListId: string): Promise<PriceListItemWithService[]>;
+  getPriceListItems(priceListId: string, params?: { search?: string; departmentId?: string; category?: string; page?: number; pageSize?: number }): Promise<{ data: PriceListItemWithService[]; total: number }>;
   upsertPriceListItems(priceListId: string, items: { serviceId: string; price: string }[]): Promise<PriceListItem[]>;
   copyPriceList(sourcePriceListId: string, newName: string): Promise<PriceList>;
 
   // Bulk Adjustment
-  bulkAdjustPreview(filters: any): Promise<any[]>;
-  bulkAdjustApply(filters: any, adjustmentType: string, adjustmentValue: number, userId: string): Promise<number>;
+  bulkAdjustPreview(priceListId: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
+  bulkAdjustApply(priceListId: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
 
   // Sales invoice journal helpers
   regenerateJournalForInvoice(invoiceId: string): Promise<JournalEntry | null>;
@@ -643,16 +647,33 @@ export interface IStorage {
   checkJournalReadiness(invoiceId: string): Promise<{ ready: boolean; critical: string[]; warnings: string[] }>;
 
   // Receiving corrections
-  createReceivingCorrection(receivingId: string, corrections: any[]): Promise<any>;
-  postReceivingCorrection(correctionId: string): Promise<any>;
-  getItemAvailabilitySummary(itemId: string): Promise<any>;
+  createReceivingCorrection(receivingId: string, corrections?: Record<string, unknown>[]): Promise<Record<string, unknown>>;
+  postReceivingCorrection(correctionId: string): Promise<Record<string, unknown>>;
+  getItemAvailabilitySummary(itemId: string, asOfDate?: string, excludeExpired?: boolean): Promise<Record<string, unknown>>;
+  [key: string]: unknown;
 }
 
 import { roundMoney, roundQty, parseMoney } from "../finance-helpers";
 export { roundMoney, roundQty };
 
-export class DatabaseStorage implements IStorage {
-  [key: string]: any;
+export class DatabaseStorage {}
+// Interface merging: tells TypeScript that DatabaseStorage instances have all IStorage methods
+// (actual implementations are merged onto the prototype via Object.assign below)
+export interface DatabaseStorage extends IStorage {
+  // Internal helper methods (not in IStorage — implemented in domain files)
+  computeInvoiceTotals(lines: Record<string, unknown>[], payments: Record<string, unknown>[]): { totalAmount: string; discountAmount: string; netAmount: string; paidAmount: string };
+  _buildBulkAdjustQuery(priceListId: string, params: { mode: "PCT" | "FIXED"; direction: "INCREASE" | "DECREASE"; value: number; departmentId?: string; category?: string; createMissingFromBasePrice?: boolean }): { newPriceExpr: string; filterWhere: string };
+  allocateStockInTx(tx: unknown, params: { operationType: string; referenceType: string; referenceId: string; warehouseId: string; lines: Array<{ lineIdx: number; itemId: string; qtyMinor: number; hasExpiry: boolean; expiryMonth?: number | null; expiryYear?: number | null }>; createdBy?: string }): Promise<{ movementHeaderId: string; lineResults: Array<{ lineIdx: number; itemId: string; totalCost: number }> }>;
+  expandLinesFEFO(tx: unknown, warehouseId: string, rawLines: Partial<InsertSalesInvoiceLine>[]): Promise<Partial<InsertSalesInvoiceLine>[]>;
+  buildSalesJournalLines(invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number, queryCtx?: unknown): Promise<{ journalLineData: InsertJournalLine[]; totalDebits: number; totalCredits: number } | null>;
+  insertJournalEntry(tx: unknown, invoiceId: string, invoice: SalesInvoiceHeader, journalLineData: InsertJournalLine[], totalDebits: number, totalCredits: number): Promise<JournalEntry>;
+  generateSalesInvoiceJournalInTx(tx: unknown, invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number): Promise<JournalEntry | null>;
+  generateSalesInvoiceJournal(invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number): Promise<JournalEntry | null>;
+  completeSalesJournalsWithCash(invoiceIds: string[], cashGlAccountId: string | null, pharmacyId: string): Promise<void>;
+  generatePurchaseInvoiceJournal(invoiceId: string, invoice: PurchaseInvoiceHeader): Promise<JournalEntry | null>;
+  getMappingsForTransaction(sourceType: string, warehouseId: string | null): Promise<AccountMapping[]>;
+  getNextEntryNumber(): Promise<number>;
+  getNextSalesInvoiceNumber(): Promise<number>;
 }
 
 import usersMethods from "./users-storage";

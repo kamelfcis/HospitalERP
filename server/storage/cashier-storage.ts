@@ -351,7 +351,8 @@ const methods = {
     return (result?.maxNum || 0) + 1;
   },
 
-  async collectInvoices(this: DatabaseStorage, shiftId: string, invoiceIds: string[], collectedBy: string, paymentDate?: string): Promise<any> {
+  async collectInvoices(this: DatabaseStorage, shiftId: string, invoiceIds: string[], collectedBy: string, paymentDate?: string): Promise<{ receipts: Record<string, unknown>[]; totalCollected: string; count: number }> {
+    const self = this;
     return await db.transaction(async (tx) => {
       const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
       if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
@@ -407,15 +408,16 @@ const methods = {
 
       const result = { receipts, totalCollected: totalCollected.toFixed(2), count: receipts.length };
 
-      this.completeSalesJournalsWithCash(
+      self.completeSalesJournalsWithCash(
         invoiceIds, shift.glAccountId || null, shift.pharmacyId || ""
-      ).catch((err: any) => console.error("Auto journal completion for cashier collection failed:", err));
+      ).catch((err: unknown) => console.error("Auto journal completion for cashier collection failed:", err));
 
       return result;
     });
   },
 
-  async refundInvoices(this: DatabaseStorage, shiftId: string, invoiceIds: string[], refundedBy: string, paymentDate?: string): Promise<any> {
+  async refundInvoices(this: DatabaseStorage, shiftId: string, invoiceIds: string[], refundedBy: string, paymentDate?: string): Promise<{ receipts: Record<string, unknown>[]; totalRefunded: string; count: number }> {
+    const self = this;
     return await db.transaction(async (tx) => {
       const [shift] = await tx.select().from(cashierShifts).where(eq(cashierShifts.id, shiftId));
       if (!shift || shift.status !== "open") throw new Error("الوردية غير مفتوحة");
@@ -497,15 +499,15 @@ const methods = {
 
       const result = { receipts, totalRefunded: totalRefunded.toFixed(2), count: receipts.length };
 
-      this.completeSalesJournalsWithCash(
+      self.completeSalesJournalsWithCash(
         invoiceIds, shift.glAccountId || null, shift.pharmacyId || ""
-      ).catch((err: any) => console.error("Auto journal completion for cashier refund failed:", err));
+      ).catch((err: unknown) => console.error("Auto journal completion for cashier refund failed:", err));
 
       return result;
     });
   },
 
-  async getShiftTotals(this: DatabaseStorage, shiftId: string): Promise<any> {
+  async getShiftTotals(this: DatabaseStorage, shiftId: string): Promise<{ totalCollected: string; totalRefunded: string; collectCount: number; refundCount: number; openingCash: string; netCash: string }> {
     const [collectResult] = await db.select({
       total: sql<string>`COALESCE(SUM(amount), 0)`,
       count: sql<number>`COUNT(*)`,

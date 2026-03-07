@@ -30,8 +30,9 @@ export default function Login() {
     setIsSubmitting(true);
     try {
       await login(username, password);
-    } catch (error: any) {
-      toast({ title: error.message || "فشل تسجيل الدخول", variant: "destructive" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      toast({ title: _em || "فشل تسجيل الدخول", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

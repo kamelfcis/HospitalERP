@@ -190,19 +190,19 @@ export function ReceivingRegistry({
                       <td className="py-1 px-2">
                         <div className="flex items-center gap-1">
                           <StatusBadge status={r.status} />
-                          {(r as any).convertedToInvoiceId && (
+                          {r.convertedToInvoiceId && (
                             <Badge variant="default" className="text-[9px] bg-blue-600 no-default-hover-elevate no-default-active-elevate">تم التحويل</Badge>
                           )}
-                          {(r as any).correctionStatus === "corrected" && (
+                          {r.correctionStatus === "corrected" && (
                             <Badge variant="default" className="text-[9px] bg-orange-600 no-default-hover-elevate no-default-active-elevate">مُصحَّح</Badge>
                           )}
-                          {(r as any).correctionStatus === "correction" && (
+                          {r.correctionStatus === "correction" && (
                             <Badge variant="default" className="text-[9px] bg-purple-600 no-default-hover-elevate no-default-active-elevate">تصحيح</Badge>
                           )}
                         </div>
                       </td>
                       <td className="py-1 px-2 font-mono">
-                        {parseFloat((r as any).totalCost || "0").toFixed(2)}
+                        {parseFloat(r.totalCost || "0").toFixed(2)}
                       </td>
                       <td className="py-1 px-2">
                         <div className="flex items-center gap-1">
@@ -216,14 +216,14 @@ export function ReceivingRegistry({
                               حذف
                             </Button>
                           )}
-                          {r.status === "posted_qty_only" && !(r as any).convertedToInvoiceId && (
+                          {r.status === "posted_qty_only" && !r.convertedToInvoiceId && (
                             <Button variant="outline" size="sm" disabled={convertPending}
                               onClick={() => onConvert(r.id)} data-testid={`button-convert-${r.id}`}>
                               {convertPending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                               تحويل إلى فاتورة
                             </Button>
                           )}
-                          {r.status === "posted_qty_only" && (r as any).correctionStatus !== "corrected" && (
+                          {r.status === "posted_qty_only" && r.correctionStatus !== "corrected" && (
                             <Button variant="outline" size="sm" disabled={correctPending}
                               onClick={() => onCorrect(r.id)} data-testid={`button-correct-${r.id}`}>
                               {correctPending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}

@@ -42,8 +42,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const data = await storage.getBedBoard();
       res.json(data);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -51,8 +52,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const data = await storage.getAvailableBeds();
       res.json(data);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -61,7 +63,7 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const { patientName, patientPhone, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       const result = await storage.admitPatientToBed({
-        bedId: req.params.id,
+        bedId: req.params.id as string,
         patientName: patientName.trim(),
         patientPhone: patientPhone || undefined,
         departmentId: departmentId || undefined,
@@ -74,9 +76,10 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       });
       broadcastBedBoardUpdate();
       res.status(201).json(result);
-    } catch (error: any) {
-      const code = error.message?.includes("غير فارغ") ? 409 : 400;
-      res.status(code).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const code = _em?.includes("غير فارغ") ? 409 : 400;
+      res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -85,49 +88,50 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const { targetBedId, newServiceId, newInvoiceId } = req.body;
       if (!targetBedId) return res.status(400).json({ message: "targetBedId مطلوب" });
       const result = await storage.transferPatientBed({
-        sourceBedId: req.params.id,
+        sourceBedId: req.params.id as string,
         targetBedId,
         newServiceId: newServiceId || undefined,
         newInvoiceId: newInvoiceId || undefined,
       });
       broadcastBedBoardUpdate();
       res.json(result);
-    } catch (error: any) {
-      const code = error.message?.includes("غير موجود") ? 404 : 409;
-      res.status(code).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const code = _em?.includes("غير موجود") ? 404 : 409;
+      res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.post("/api/beds/:id/discharge", async (req, res) => {
     try {
       const { force } = req.body || {};
-      const bedId = req.params.id;
+      const bedId = req.params.id as string;
 
       if (force) {
         const FORCE_ROLES = ["owner", "admin", "accounts_manager"];
-        const sessionRole = (req.session as any)?.role;
-        if (!sessionRole || !FORCE_ROLES.includes(sessionRole)) {
-          return res.status(403).json({
-            message: "ليس لديك صلاحية تجاوز شرط الخروج",
-            code: "FORBIDDEN",
-          });
-        }
+      const sessionRole = (req.session as { role?: string })?.role;
+      if (!sessionRole || !FORCE_ROLES.includes(sessionRole)) {
+        return res.status(403).json({
+          message: "ليس لديك صلاحية تجاوز شرط الخروج",
+          code: "FORBIDDEN",
+        });
       }
+    }
 
-      const bedRes = await db.execute(sql`
-        SELECT b.current_admission_id FROM beds b WHERE b.id = ${bedId}
-      `);
-      const bedRow = bedRes.rows[0] as any;
-      if (!bedRow) return res.status(404).json({ message: "السرير غير موجود" });
-      if (!bedRow.current_admission_id) return res.status(409).json({ message: "لا يوجد مريض في هذا السرير" });
+    const bedRes = await db.execute(sql`
+      SELECT b.current_admission_id FROM beds b WHERE b.id = ${bedId}
+    `);
+    const bedRow = bedRes.rows[0] as { current_admission_id: string | null } | undefined;
+    if (!bedRow) return res.status(404).json({ message: "السرير غير موجود" });
+    if (!bedRow.current_admission_id) return res.status(409).json({ message: "لا يوجد مريض في هذا السرير" });
 
-      const invRes = await db.execute(sql`
-        SELECT id, status, net_amount, paid_amount
-        FROM patient_invoice_headers
-        WHERE admission_id = ${bedRow.current_admission_id}
-        ORDER BY created_at DESC LIMIT 1
-      `);
-      const inv = invRes.rows[0] as any;
+    const invRes = await db.execute(sql`
+      SELECT id, status, net_amount, paid_amount
+      FROM patient_invoice_headers
+      WHERE admission_id = ${bedRow.current_admission_id}
+      ORDER BY created_at DESC LIMIT 1
+    `);
+    const inv = invRes.rows[0] as { status: string; net_amount: string; paid_amount: string } | undefined;
 
       if (!inv) {
         if (!force) {
@@ -148,9 +152,10 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const result = await storage.dischargeFromBed(bedId);
       broadcastBedBoardUpdate();
       res.json(result);
-    } catch (error: any) {
-      const code = error.message?.includes("غير موجود") ? 404 : 409;
-      res.status(code).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const code = _em?.includes("غير موجود") ? 404 : 409;
+      res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -159,12 +164,13 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const { status } = req.body;
       const ALLOWED = ["EMPTY", "NEEDS_CLEANING", "MAINTENANCE"];
       if (!ALLOWED.includes(status)) return res.status(400).json({ message: "حالة غير صالحة" });
-      const bed = await storage.setBedStatus(req.params.id, status);
+      const bed = await storage.setBedStatus(req.params.id as string, status);
       broadcastBedBoardUpdate();
       res.json(bed);
-    } catch (error: any) {
-      const code = error.message?.includes("مشغول") ? 409 : 400;
-      res.status(code).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const code = _em?.includes("مشغول") ? 409 : 400;
+      res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -172,10 +178,11 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
 
   app.get("/api/admissions/:id/segments", async (req, res) => {
     try {
-      const segments = await storage.getStaySegments(req.params.id);
+      const segments = await storage.getStaySegments(req.params.id as string);
       res.json(segments);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -184,25 +191,27 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const { serviceId, invoiceId, notes } = req.body;
       if (!invoiceId) return res.status(400).json({ message: "invoiceId مطلوب" });
       const seg = await storage.openStaySegment({
-        admissionId: req.params.id,
+        admissionId: req.params.id as string,
         serviceId: serviceId || undefined,
         invoiceId,
         notes: notes || undefined,
       });
       res.status(201).json(seg);
-    } catch (error: any) {
-      const code = error.message?.includes("نشط") ? 409 : 400;
-      res.status(code).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const code = _em?.includes("نشط") ? 409 : 400;
+      res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.post("/api/admissions/:id/segments/:segmentId/close", async (req, res) => {
     try {
-      const seg = await storage.closeStaySegment(req.params.segmentId);
+      const seg = await storage.closeStaySegment(req.params.segmentId as string);
       res.json(seg);
-    } catch (error: any) {
-      const code = error.message?.includes("مغلق") ? 409 : 400;
-      res.status(code).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const code = _em?.includes("مغلق") ? 409 : 400;
+      res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -212,16 +221,17 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       if (!oldSegmentId) return res.status(400).json({ message: "oldSegmentId مطلوب" });
       if (!newInvoiceId) return res.status(400).json({ message: "newInvoiceId مطلوب" });
       const seg = await storage.transferStaySegment({
-        admissionId: req.params.id,
+        admissionId: req.params.id as string,
         oldSegmentId,
         newServiceId: newServiceId || undefined,
         newInvoiceId,
         notes: notes || undefined,
       });
       res.status(201).json(seg);
-    } catch (error: any) {
-      const code = error.message?.includes("غير موجود") || error.message?.includes("غير نشط") ? 404 : 400;
-      res.status(code).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const code = _em?.includes("غير موجود") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("غير نشط") ? 404 : 400;
+      res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -229,8 +239,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const result = await storage.accrueStayLines();
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -240,18 +251,20 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const list = await storage.getPharmacies();
       res.json(list);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/pharmacies/:id", async (req, res) => {
     try {
-      const pharmacy = await storage.getPharmacy(req.params.id);
+      const pharmacy = await storage.getPharmacy(req.params.id as string);
       if (!pharmacy) return res.status(404).json({ message: "الصيدلية غير موجودة" });
       res.json(pharmacy);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -259,8 +272,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const pharmacy = await storage.createPharmacy(req.body);
       res.json(pharmacy);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -303,8 +317,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const drawers = await storage.getDrawersWithPasswordStatus();
       res.json(drawers);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -316,8 +331,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const hash = await bcrypt.hash(password, 10);
       await storage.setDrawerPassword(glAccountId, hash);
       res.json({ success: true, message: "تم تعيين كلمة السر بنجاح" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -332,18 +348,20 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const valid = await bcrypt.compare(password || "", hash);
       if (!valid) return res.status(401).json({ message: "كلمة السر غير صحيحة" });
       res.json({ valid: true, hasPassword: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.delete("/api/drawer-passwords/:glAccountId", async (req, res) => {
     try {
-      const removed = await storage.removeDrawerPassword(req.params.glAccountId);
+      const removed = await storage.removeDrawerPassword(req.params.glAccountId as string);
       if (!removed) return res.status(404).json({ message: "لا توجد كلمة سر لهذه الخزنة" });
       res.json({ success: true, message: "تم إزالة كلمة السر" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -351,10 +369,10 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
 
   app.get("/api/cashier/units", async (req, res) => {
     try {
-      const userId = (req.session as any).userId;
+      const userId = (req.session as { userId?: string }).userId;
       const [pharms, depts] = await Promise.all([storage.getPharmacies(), storage.getDepartments()]);
-      const activePharms = pharms.filter((p: any) => p.isActive);
-      const activeDepts = depts.filter((d: any) => d.isActive);
+      const activePharms = pharms.filter((p) => p.isActive);
+      const activeDepts = depts.filter((d) => d.isActive);
 
       if (!userId) return res.json({ pharmacies: activePharms, departments: activeDepts });
 
@@ -364,12 +382,13 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       }
 
       res.json({
-        pharmacies: activePharms.filter((p: any) => scope.allowedPharmacyIds.includes(p.id)),
-        departments: activeDepts.filter((d: any) => scope.allowedDepartmentIds.includes(d.id)),
+        pharmacies: activePharms.filter((p) => scope.allowedPharmacyIds.includes(p.id)),
+        departments: activeDepts.filter((d) => scope.allowedDepartmentIds.includes(d.id)),
         isFullAccess: false,
       });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -377,36 +396,39 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const rows = await db.execute(sql`SELECT id, username, full_name AS "fullName" FROM users WHERE is_active = true ORDER BY full_name`);
       res.json(rows.rows);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/cashier/my-open-shift", async (req, res) => {
     try {
-      const cashierId = (req.session as any).userId;
+      const cashierId = (req.session as { userId?: string }).userId;
       if (!cashierId) return res.json(null);
       const shift = await storage.getMyOpenShift(cashierId);
       res.json(shift || null);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/cashier/my-cashier-gl-account", async (req, res) => {
     try {
-      const userId = (req.session as any).userId;
+      const userId = (req.session as { userId?: string }).userId;
       if (!userId) return res.json(null);
       const account = await storage.getUserCashierGlAccount(userId);
       res.json(account || null);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.post("/api/cashier/shift/open", async (req, res) => {
     try {
-      const cashierId = (req.session as any).userId;
+      const cashierId = (req.session as { userId?: string }).userId;
       if (!cashierId) return res.status(401).json({ message: "يجب تسجيل الدخول" });
 
       const { openingCash, unitType, pharmacyId, departmentId, drawerPassword } = req.body;
@@ -438,41 +460,45 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
 
       const shift = await storage.openCashierShift(cashierId, cashierName, openingCash || "0", unitType, pharmacyId, departmentId, userGlAccount.glAccountId);
       res.json(shift);
-    } catch (error: any) {
-      if (error.message?.includes("مفتوحة")) return res.status(409).json({ message: error.message });
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("مفتوحة")) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.get("/api/cashier/shift/active", async (req, res) => {
     try {
-      const cashierId = (req.session as any).userId || "cashier-1";
+      const cashierId = (req.session as { userId?: string }).userId || "cashier-1";
       const unitType = (req.query.unitType as string) || "pharmacy";
       const unitId = req.query.unitId as string;
       if (!unitId) return res.json(null);
       const shift = await storage.getActiveShift(cashierId, unitType, unitId);
       res.json(shift);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/cashier/my-shifts", async (req, res) => {
     try {
-      const cashierId = (req.session as any).userId || "cashier-1";
+      const cashierId = (req.session as { userId?: string }).userId || "cashier-1";
       const shifts = await storage.getMyOpenShifts(cashierId);
       res.json(shifts);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/cashier/shift/:shiftId/validate-close", async (req, res) => {
     try {
-      const result = await storage.validateShiftClose(req.params.shiftId);
+      const result = await storage.validateShiftClose(req.params.shiftId as string);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -480,20 +506,22 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const { closingCash } = req.body;
       if (closingCash === undefined) return res.status(400).json({ message: "المبلغ النقدي الفعلي مطلوب" });
-      const shift = await storage.closeCashierShift(req.params.shiftId, closingCash);
+      const shift = await storage.closeCashierShift(req.params.shiftId as string, closingCash);
       res.json(shift);
-    } catch (error: any) {
-      if (error.message?.includes("معلق") || error.message?.includes("مغلق")) return res.status(409).json({ message: error.message });
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("معلق") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("مغلق")) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.get("/api/cashier/shift/:shiftId/totals", async (req, res) => {
     try {
-      const totals = await storage.getShiftTotals(req.params.shiftId);
+      const totals = await storage.getShiftTotals(req.params.shiftId as string);
       res.json(totals);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -505,8 +533,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const search = req.query.search as string | undefined;
       const invoices = await storage.getPendingSalesInvoices(unitType, unitId, search);
       res.json(invoices);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -518,18 +547,20 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       const search = req.query.search as string | undefined;
       const invoices = await storage.getPendingReturnInvoices(unitType, unitId, search);
       res.json(invoices);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/cashier/invoice/:id/details", async (req, res) => {
     try {
-      const details = await storage.getSalesInvoiceDetails(req.params.id);
+      const details = await storage.getSalesInvoiceDetails(req.params.id as string);
       if (!details) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       res.json(details);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -549,12 +580,13 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         broadcastToPharmacy(shift.pharmacyId, "invoice_collected", { invoiceIds });
       }
       res.json(result);
-    } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
-      if (error.message?.includes("محصّلة") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
-        return res.status(409).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("محصّلة") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("مفتوحة") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("نهائي")) {
+        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -574,13 +606,14 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         broadcastToPharmacy(shift.pharmacyId, "invoice_refunded", { invoiceIds });
       }
       res.json(result);
-    } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
-      if (error.message?.includes("رصيد الخزنة غير كافٍ")) return res.status(422).json({ message: error.message });
-      if (error.message?.includes("مصروف") || error.message?.includes("مفتوحة") || error.message?.includes("نهائي")) {
-        return res.status(409).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("رصيد الخزنة غير كافٍ")) return res.status(422).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("مصروف") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("مفتوحة") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("نهائي")) {
+        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -588,12 +621,13 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const { printedBy, reprintReason } = req.body;
       if (!printedBy) return res.status(400).json({ message: "اسم الطابع مطلوب" });
-      const receipt = await storage.markReceiptPrinted(req.params.id, printedBy, reprintReason);
+      const receipt = await storage.markReceiptPrinted(req.params.id as string, printedBy, reprintReason);
       res.json(receipt);
-    } catch (error: any) {
-      if (error.message?.includes("مطبوع مسبقاً")) return res.status(409).json({ message: error.message });
-      if (error.message?.includes("غير موجود")) return res.status(404).json({ message: error.message });
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("مطبوع مسبقاً")) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("غير موجود")) return res.status(404).json({ message: (error instanceof Error ? error.message : String(error)) });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -601,32 +635,35 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const { printedBy, reprintReason } = req.body;
       if (!printedBy) return res.status(400).json({ message: "اسم الطابع مطلوب" });
-      const receipt = await storage.markRefundReceiptPrinted(req.params.id, printedBy, reprintReason);
+      const receipt = await storage.markRefundReceiptPrinted(req.params.id as string, printedBy, reprintReason);
       res.json(receipt);
-    } catch (error: any) {
-      if (error.message?.includes("مطبوع مسبقاً")) return res.status(409).json({ message: error.message });
-      if (error.message?.includes("غير موجود")) return res.status(404).json({ message: error.message });
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("مطبوع مسبقاً")) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("غير موجود")) return res.status(404).json({ message: (error instanceof Error ? error.message : String(error)) });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.get("/api/cashier/receipts/:id", async (req, res) => {
     try {
-      const receipt = await storage.getCashierReceipt(req.params.id);
+      const receipt = await storage.getCashierReceipt(req.params.id as string);
       if (!receipt) return res.status(404).json({ message: "الإيصال غير موجود" });
       res.json(receipt);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/cashier/refund-receipts/:id", async (req, res) => {
     try {
-      const receipt = await storage.getCashierRefundReceipt(req.params.id);
+      const receipt = await storage.getCashierRefundReceipt(req.params.id as string);
       if (!receipt) return res.status(404).json({ message: "إيصال المرتجع غير موجود" });
       res.json(receipt);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -643,13 +680,17 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         LEFT JOIN services s ON s.id = r.service_id
         ORDER BY f.sort_order, r.sort_order
       `);
-      res.json(result.rows.map((r: any) => ({
-        id: r.id, nameAr: r.name_ar, roomNumber: r.room_number,
-        serviceId: r.service_id || null, floorId: r.floor_id, floorNameAr: r.floor_name_ar,
-        serviceNameAr: r.service_name_ar || null, servicePrice: r.service_price || null,
-      })));
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      res.json(result.rows.map((r: any) => {
+        const row = r as Record<string, unknown>;
+        return {
+          id: row.id, nameAr: row.name_ar, roomNumber: row.room_number,
+          serviceId: row.service_id || null, floorId: row.floor_id, floorNameAr: row.floor_name_ar,
+          serviceNameAr: row.service_name_ar || null, servicePrice: row.service_price || null,
+        };
+      }));
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -660,8 +701,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         UPDATE rooms SET service_id = ${serviceId || null} WHERE id = ${req.params.id}
       `);
       res.json({ ok: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -678,12 +720,16 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         GROUP BY f.id
         ORDER BY f.sort_order, f.name_ar
       `);
-      res.json(result.rows.map((r: any) => ({
-        id: r.id, nameAr: r.name_ar, sortOrder: r.sort_order,
-        roomCount: r.room_count, bedCount: r.bed_count,
-      })));
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      res.json(result.rows.map((r: any) => {
+        const row = r as Record<string, unknown>;
+        return {
+          id: row.id, nameAr: row.name_ar, sortOrder: row.sort_order,
+          roomCount: row.room_count, bedCount: row.bed_count,
+        };
+      }));
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -695,8 +741,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         nameAr, sortOrder: sortOrder ?? 0,
       }).returning();
       res.json(result[0]);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -706,11 +753,12 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       if (!nameAr) return res.status(400).json({ message: "اسم الدور مطلوب" });
       const result = await db.update(floors).set({
         nameAr, sortOrder: sortOrder ?? 0,
-      }).where(eq(floors.id, req.params.id)).returning();
+      }).where(eq(floors.id, req.params.id as string)).returning();
       if (result.length === 0) return res.status(404).json({ message: "الدور غير موجود" });
       res.json(result[0]);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -725,10 +773,11 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       if (occupiedBeds.rows.length > 0) {
         return res.status(400).json({ message: "لا يمكن حذف الدور: يوجد أسرّة مشغولة" });
       }
-      await db.delete(floors).where(eq(floors.id, req.params.id));
+      await db.delete(floors).where(eq(floors.id, req.params.id as string));
       res.json({ ok: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -742,8 +791,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         floorId, nameAr, roomNumber: roomNumber || null, serviceId: serviceId || null,
       }).returning();
       res.json(result[0]);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -756,8 +806,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         service_id = ${serviceId || null} WHERE id = ${req.params.id}
       `);
       res.json({ ok: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -771,10 +822,11 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       if (occupiedBeds.rows.length > 0) {
         return res.status(400).json({ message: "لا يمكن حذف الغرفة: يوجد أسرّة مشغولة" });
       }
-      await db.delete(rooms).where(eq(rooms.id, req.params.id));
+      await db.delete(rooms).where(eq(rooms.id, req.params.id as string));
       res.json({ ok: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -788,8 +840,9 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
         roomId, bedNumber, status: "EMPTY",
       }).returning();
       res.json(result[0]);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -797,13 +850,15 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const bedRes = await db.execute(sql`SELECT status FROM beds WHERE id = ${req.params.id}`);
       if (bedRes.rows.length === 0) return res.status(404).json({ message: "السرير غير موجود" });
-      if ((bedRes.rows[0] as any).status === "OCCUPIED") {
+      const bed = bedRes.rows[0] as { status: string };
+      if (bed.status === "OCCUPIED") {
         return res.status(400).json({ message: "لا يمكن حذف سرير مشغول" });
       }
-      await db.delete(beds).where(eq(beds.id, req.params.id));
+      await db.delete(beds).where(eq(beds.id, req.params.id as string));
       res.json({ ok: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -813,14 +868,20 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
     try {
       const list = await storage.getTreasuries();
       res.json(list);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.get("/api/treasuries/summary", requireAuth, async (req, res) => {
     try {
       const list = await storage.getTreasuriesSummary();
       res.json(list);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.post("/api/treasuries", requireAuth, async (req, res) => {
@@ -829,45 +890,63 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       if (!name || !glAccountId) return res.status(400).json({ message: "الاسم والحساب مطلوبان" });
       const row = await storage.createTreasury({ name, glAccountId, isActive: isActive ?? true, notes });
       res.status(201).json(row);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.patch("/api/treasuries/:id", requireAuth, async (req, res) => {
     try {
       const { name, glAccountId, isActive, notes } = req.body;
-      const row = await storage.updateTreasury(req.params.id, { name, glAccountId, isActive, notes });
+      const row = await storage.updateTreasury(req.params.id as string, { name, glAccountId, isActive, notes });
       res.json(row);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.delete("/api/treasuries/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteTreasury(req.params.id);
+      await storage.deleteTreasury(req.params.id as string);
       res.json({ ok: true });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.get("/api/treasuries/mine", requireAuth, async (req, res) => {
     try {
-      const user = (req as any).user;
+      const user = (req as unknown as { user: { id: string } }).user;
       const treasury = await storage.getUserTreasury(user.id);
       res.json(treasury);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.get("/api/treasuries/:id/statement", requireAuth, async (req, res) => {
     try {
       const { dateFrom, dateTo } = req.query as Record<string, string>;
-      const stmt = await storage.getTreasuryStatement({ treasuryId: req.params.id, dateFrom, dateTo });
+      const stmt = await storage.getTreasuryStatement({ treasuryId: req.params.id as string, dateFrom, dateTo });
       res.json(stmt);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.get("/api/user-treasuries", requireAuth, async (req, res) => {
     try {
       const list = await storage.getAllUserTreasuries();
       res.json(list);
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.post("/api/user-treasuries", requireAuth, async (req, res) => {
@@ -876,13 +955,19 @@ export function registerHospitalRoutes(app: Express, httpServer: Server) {
       if (!userId || !treasuryId) return res.status(400).json({ message: "userId و treasuryId مطلوبان" });
       await storage.assignUserTreasury(userId, treasuryId);
       res.json({ ok: true });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 
   app.delete("/api/user-treasuries/:userId", requireAuth, async (req, res) => {
     try {
-      await storage.removeUserTreasury(req.params.userId);
+      await storage.removeUserTreasury(req.params.userId as string);
       res.json({ ok: true });
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
   });
 }

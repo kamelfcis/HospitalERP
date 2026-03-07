@@ -23,9 +23,12 @@ import type {
   JournalEntry,
   InsertJournalLine,
   AccountMapping,
+  InsertSalesInvoiceHeader,
+  InsertSalesInvoiceLine,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney } from "../finance-helpers";
+type DrizzleTransaction = Parameters<Parameters<(typeof db)["transaction"]>[0]>[0];
 
 const methods = {
 
@@ -34,8 +37,8 @@ const methods = {
     return (result?.max || 0) + 1;
   },
 
-  async getSalesInvoices(this: DatabaseStorage, filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}> {
-    const conditions: any[] = [];
+  async getSalesInvoices(this: DatabaseStorage, filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: (SalesInvoiceHeader & { warehouse?: { nameAr: string }, pharmacistName: string | null, itemCount: number })[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}> {
+    const conditions: Array<any> = [];
     if (filters.status && filters.status !== "all") {
       conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
     } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
@@ -108,22 +111,22 @@ const methods = {
       .orderBy(asc(salesInvoiceLines.lineNo));
     const linesWithItems: SalesInvoiceLineWithItem[] = [];
     for (const line of lines) {
-      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId!));
       linesWithItems.push({ ...line, item });
     }
     return { ...h, warehouse: wh, lines: linesWithItems };
   },
 
-  async expandLinesFEFO(this: DatabaseStorage, tx: any, warehouseId: string, rawLines: any[]): Promise<any[]> {
-    const expanded: any[] = [];
+  async expandLinesFEFO(this: DatabaseStorage, tx: DrizzleTransaction, warehouseId: string, rawLines: Partial<InsertSalesInvoiceLine>[]): Promise<Partial<InsertSalesInvoiceLine>[]> {
+    const expanded: Partial<InsertSalesInvoiceLine>[] = [];
     for (const line of rawLines) {
-      const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+      const [item] = await tx.select().from(items).where(eq(items.id, line.itemId!));
       if (!item || !item.hasExpiry || line.expiryMonth || line.expiryYear) {
         expanded.push(line);
         continue;
       }
 
-      let totalMinor = parseFloat(line.qty) || 0;
+      let totalMinor = parseFloat(line.qty || "0") || 0;
       if (line.unitLevel === "major" || !line.unitLevel) {
         totalMinor *= parseFloat(item.majorToMinor || "1") || 1;
       } else if (line.unitLevel === "medium") {
@@ -134,7 +137,7 @@ const methods = {
 
       const lots = await tx.select().from(inventoryLots)
         .where(and(
-          eq(inventoryLots.itemId, line.itemId),
+          eq(inventoryLots.itemId, line.itemId!),
           eq(inventoryLots.warehouseId, warehouseId),
           eq(inventoryLots.isActive, true),
           sql`${inventoryLots.qtyInMinor}::numeric > 0`
@@ -169,20 +172,20 @@ const methods = {
     return expanded;
   },
 
-  async createSalesInvoice(this: DatabaseStorage, header: any, lines: any[]): Promise<SalesInvoiceHeader> {
+  async createSalesInvoice(this: DatabaseStorage, header: InsertSalesInvoiceHeader, lines: Partial<InsertSalesInvoiceLine>[]): Promise<SalesInvoiceHeader> {
     return await db.transaction(async (tx) => {
       const nextNum = await this.getNextSalesInvoiceNumber();
 
-      const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId, lines);
+      const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId!, lines);
 
       let subtotal = 0;
-      const processedLines: { line: any; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number }[] = [];
+      const processedLines: { line: Partial<InsertSalesInvoiceLine>; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number }[] = [];
 
       for (const line of expandedLines) {
-        const qty = parseFloat(line.qty) || 0;
-        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        const qty = parseFloat(line.qty || "0") || 0;
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId!));
 
-        let salePrice = parseFloat(line.salePrice) || 0;
+        let salePrice = parseFloat(line.salePrice || "0") || 0;
         if (item) {
           const masterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
           const majorToMedium = parseFloat(item.majorToMedium || "0") || 0;
@@ -228,8 +231,8 @@ const methods = {
         processedLines.push({ line, qty, salePrice, qtyInMinor, lineTotal });
       }
 
-      const discountPercent = parseFloat(header.discountPercent) || 0;
-      const discountValue = parseFloat(header.discountValue) || 0;
+      const discountPercent = parseFloat(header.discountPercent || "0") || 0;
+      const discountValue = parseFloat(header.discountValue || "0") || 0;
       const discountType = header.discountType || "percent";
       let actualDiscount = 0;
       if (discountType === "percent") {
@@ -266,8 +269,7 @@ const methods = {
       for (let i = 0; i < processedLines.length; i++) {
         const { line, qty, salePrice, qtyInMinor, lineTotal } = processedLines[i];
 
-        await tx.insert(salesInvoiceLines).values({
-          invoiceId: invoice.id,
+        await tx.insert(salesInvoiceLines).values({ invoiceId: invoice.id,
           lineNo: i + 1,
           itemId: line.itemId,
           unitLevel: line.unitLevel || "major",
@@ -277,15 +279,14 @@ const methods = {
           lineTotal: roundMoney(lineTotal),
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
-          lotId: line.lotId || null,
-        });
+          lotId: line.lotId || null, } as unknown as import("@shared/schema").InsertSalesInvoiceLine);
       }
 
       return invoice;
     });
   },
 
-  async updateSalesInvoice(this: DatabaseStorage, id: string, header: any, lines: any[]): Promise<SalesInvoiceHeader> {
+  async updateSalesInvoice(this: DatabaseStorage, id: string, header: Partial<InsertSalesInvoiceHeader>, lines: Partial<InsertSalesInvoiceLine>[]): Promise<SalesInvoiceHeader> {
     return await db.transaction(async (tx) => {
       const [invoice] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
@@ -293,16 +294,16 @@ const methods = {
 
       await tx.delete(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
 
-      const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId || invoice.warehouseId, lines);
+      const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId ?? invoice.warehouseId, lines);
 
       let subtotal = 0;
-      const processedLines: { line: any; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number }[] = [];
+      const processedLines: { line: Partial<InsertSalesInvoiceLine>; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number }[] = [];
 
       for (const line of expandedLines) {
-        const qty = parseFloat(line.qty) || 0;
-        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        const qty = parseFloat(line.qty || "0") || 0;
+        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId!));
 
-        let salePrice = parseFloat(line.salePrice) || 0;
+        let salePrice = parseFloat(line.salePrice || "0") || 0;
         if (item) {
           const masterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
           const majorToMedium = parseFloat(item.majorToMedium || "0") || 0;
@@ -351,8 +352,7 @@ const methods = {
       for (let i = 0; i < processedLines.length; i++) {
         const { line, qty, salePrice, qtyInMinor, lineTotal } = processedLines[i];
 
-        await tx.insert(salesInvoiceLines).values({
-          invoiceId: id,
+        await tx.insert(salesInvoiceLines).values({ invoiceId: id,
           lineNo: i + 1,
           itemId: line.itemId,
           unitLevel: line.unitLevel || "major",
@@ -362,12 +362,11 @@ const methods = {
           lineTotal: roundMoney(lineTotal),
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
-          lotId: line.lotId || null,
-        });
+          lotId: line.lotId || null, } as unknown as import("@shared/schema").InsertSalesInvoiceLine);
       }
 
-      const discountPercent = parseFloat(header.discountPercent) || 0;
-      const discountValue = parseFloat(header.discountValue) || 0;
+      const discountPercent = parseFloat(header.discountPercent || "0") || 0;
+      const discountValue = parseFloat(header.discountValue || "0") || 0;
       const discountType = header.discountType || invoice.discountType || "percent";
       let actualDiscount = 0;
       if (discountType === "percent") {
@@ -430,16 +429,16 @@ const methods = {
       sql`SELECT id FROM stock_movement_headers WHERE reference_type = ${referenceType} AND reference_id = ${referenceId} LIMIT 1`
     );
     if (existingResult.rows?.length > 0) {
-      const movementHeaderId = (existingResult.rows[0] as any).id as string;
+      const movementHeaderId = (existingResult.rows[0] as Record<string, unknown>).id as string;
       const allocRows = await tx.execute(
         sql`SELECT alloc_key, cost_allocated FROM stock_movement_allocations WHERE movement_header_id = ${movementHeaderId}`
       );
       const lineResults: Array<{ lineIdx: number; itemId: string; totalCost: number }> = lines.map(l => ({
         lineIdx: l.lineIdx,
         itemId: l.itemId,
-        totalCost: allocRows.rows
-          .filter((r: any) => r.alloc_key.startsWith(`line:${l.lineIdx}:`))
-          .reduce((s: number, r: any) => s + parseFloat(r.cost_allocated), 0),
+        totalCost: (allocRows.rows as Array<Record<string, unknown>>)
+          .filter((r) => (r.alloc_key as string).startsWith(`line:${l.lineIdx}:`))
+          .reduce((s, r) => s + parseFloat(r.cost_allocated as string), 0),
       }));
       return { movementHeaderId, lineResults };
     }
@@ -609,7 +608,7 @@ const methods = {
         const line = lines[li];
         let item = itemMap[line.itemId];
         if (!item) {
-          const [fetched] = await tx.select().from(items).where(eq(items.id, line.itemId));
+          const [fetched] = await tx.select().from(items).where(eq(items.id, line.itemId!));
           if (!fetched) throw new Error(`الصنف غير موجود: ${line.itemId}`);
           item = fetched;
           itemMap[line.itemId] = item;
@@ -716,7 +715,7 @@ const methods = {
     let cogsDrugs = 0, cogsSupplies = 0, revenueDrugs = 0, revenueSupplies = 0;
     
     for (const line of lines) {
-      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
+      const [item] = await db.select().from(items).where(eq(items.id, line.itemId!));
       if (!item) continue;
       const lineRevenue = parseFloat(line.lineTotal);
       if (item.category === "service") {
@@ -734,7 +733,7 @@ const methods = {
       for (const mov of movements) {
         const [lot] = await db.select().from(inventoryLots).where(eq(inventoryLots.id, mov.lotId));
         if (lot && lot.itemId === line.itemId) {
-          lineCost += Math.abs(parseFloat(mov.qtyChangeInMinor)) * parseFloat(mov.unitCost);
+          lineCost += Math.abs(parseFloat(mov.qtyChangeInMinor || "0")) * parseFloat(mov.unitCost || "0");
         }
       }
       
@@ -760,10 +759,10 @@ const methods = {
         }).where(eq(salesInvoiceHeaders.id, invoiceId));
       }
       return entry;
-    } catch (err: any) {
+    } catch (err: unknown) {
       await db.update(salesInvoiceHeaders).set({
         journalStatus: "failed",
-        journalError: err.message,
+        journalError: (err instanceof Error ? (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)) : String(err)),
         journalRetries: sql`COALESCE(journal_retries, 0) + 1`,
       }).where(eq(salesInvoiceHeaders.id, invoiceId));
       throw err;
@@ -808,9 +807,9 @@ const methods = {
             console.error(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - could not generate journal (null result)`);
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         failed++;
-        console.error(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - still failing: ${err.message}`);
+        console.error(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - still failing: ${(err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err))}`);
       }
     }
 
@@ -819,7 +818,7 @@ const methods = {
 
   async buildSalesJournalLines(
     this: DatabaseStorage,
-    invoiceId: string, invoice: any, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number,
+    invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number,
     queryCtx: any = db
   ): Promise<{ journalLineData: InsertJournalLine[], totalDebits: number, totalCredits: number } | null> {
     const existingEntries = await queryCtx.select().from(journalEntries)
@@ -988,7 +987,7 @@ const methods = {
     }
 
     const vatMapping = mappingMap.get("vat_output");
-    const vatAmount = parseFloat(invoice.vatAmount || invoice.totalVat || "0");
+    const vatAmount = 0;
     if (vatMapping?.creditAccountId && vatAmount > 0.001) {
       journalLineData.push({
         journalEntryId: "",
@@ -1026,7 +1025,7 @@ const methods = {
 
   async insertJournalEntry(
     this: DatabaseStorage,
-    tx: any, invoiceId: string, invoice: any,
+    tx: any, invoiceId: string, invoice: SalesInvoiceHeader,
     journalLineData: InsertJournalLine[], totalDebits: number, totalCredits: number
   ): Promise<JournalEntry> {
     const [period] = await tx.select().from(fiscalPeriods)
@@ -1064,7 +1063,7 @@ const methods = {
 
   async generateSalesInvoiceJournalInTx(
     this: DatabaseStorage,
-    tx: any, invoiceId: string, invoice: any,
+    tx: any, invoiceId: string, invoice: SalesInvoiceHeader,
     cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
   ): Promise<JournalEntry | null> {
     console.log(`[Journal] Starting generateSalesInvoiceJournalInTx for invoice ${invoiceId}`);
@@ -1075,7 +1074,7 @@ const methods = {
 
   async generateSalesInvoiceJournal(
     this: DatabaseStorage,
-    invoiceId: string, invoice: any, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
+    invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
   ): Promise<JournalEntry | null> {
     console.log(`[Journal] Starting generateSalesInvoiceJournal for invoice ${invoiceId}`);
     const result = await this.buildSalesJournalLines(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
@@ -1091,7 +1090,7 @@ const methods = {
   ): Promise<void> {
     let cashAccountId = cashGlAccountId;
     if (!cashAccountId) {
-      const cashMappings = await this.getMappingsForTransaction("cashier_collection");
+      const cashMappings = await this.getMappingsForTransaction("cashier_collection", null);
       const cashMapping = cashMappings.find(m => m.lineType === "cash");
       if (cashMapping?.debitAccountId) {
         cashAccountId = cashMapping.debitAccountId;
@@ -1109,7 +1108,7 @@ const methods = {
       }).from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
 
       const invoiceReceivableIds = new Set<string>();
-      const mappings = await this.getMappingsForTransaction("sales_invoice", invoice?.warehouseId || undefined);
+      const mappings = await this.getMappingsForTransaction("sales_invoice", invoice?.warehouseId ?? null);
       for (const m of mappings) {
         if (m.lineType === "receivables" && m.debitAccountId) {
           invoiceReceivableIds.add(m.debitAccountId);

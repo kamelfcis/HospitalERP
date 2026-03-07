@@ -33,6 +33,11 @@ import {
   Tag,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Floor, Room, Bed } from "@shared/schema";
+
+type BedWithPatient = Bed & { patientName?: string };
+type RoomWithBeds = Room & { beds: BedWithPatient[] };
+type FloorWithRooms = Floor & { rooms: RoomWithBeds[] };
 
 interface FloorRow {
   id: string;
@@ -79,7 +84,7 @@ export default function RoomManagement() {
     queryKey: ["/api/rooms"],
   });
 
-  const { data: bedBoardData } = useQuery<any[]>({
+  const { data: bedBoardData } = useQuery<FloorWithRooms[]>({
     queryKey: ["/api/bed-board"],
   });
 
@@ -97,13 +102,13 @@ export default function RoomManagement() {
   };
 
   const createFloor = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/floors", data),
+    mutationFn: (data: Partial<Floor>) => apiRequest("POST", "/api/floors", data),
     onSuccess: () => { invalidateAll(); toast({ title: "تم إضافة الدور بنجاح" }); closeDialog(); },
     onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   const updateFloor = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => apiRequest("PUT", `/api/floors/${id}`, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<Floor> }) => apiRequest("PUT", `/api/floors/${id}`, data),
     onSuccess: () => { invalidateAll(); toast({ title: "تم تحديث الدور" }); closeDialog(); },
     onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
@@ -115,13 +120,13 @@ export default function RoomManagement() {
   });
 
   const createRoom = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/rooms", data),
+    mutationFn: (data: Partial<Room>) => apiRequest("POST", "/api/rooms", data),
     onSuccess: () => { invalidateAll(); toast({ title: "تم إضافة الغرفة بنجاح" }); closeDialog(); },
     onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   const updateRoom = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => apiRequest("PUT", `/api/rooms/${id}`, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<Room> }) => apiRequest("PUT", `/api/rooms/${id}`, data),
     onSuccess: () => { invalidateAll(); toast({ title: "تم تحديث الغرفة" }); closeDialog(); },
     onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
@@ -133,7 +138,7 @@ export default function RoomManagement() {
   });
 
   const createBed = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/beds", data),
+    mutationFn: (data: Partial<Bed>) => apiRequest("POST", "/api/beds", data),
     onSuccess: () => { invalidateAll(); toast({ title: "تم إضافة السرير بنجاح" }); closeDialog(); },
     onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
@@ -385,7 +390,7 @@ export default function RoomManagement() {
                           {isRoomExpanded && beds.length > 0 && (
                             <div className="px-3 pb-2">
                               <div className="flex flex-wrap gap-1.5">
-                                {beds.map((bed: any) => {
+                                {beds.map((bed) => {
                                   const statusStyles: Record<string, string> = {
                                     EMPTY: "border-green-300 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400 dark:border-green-700",
                                     OCCUPIED: "border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-700",

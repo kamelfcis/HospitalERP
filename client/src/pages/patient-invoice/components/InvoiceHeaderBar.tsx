@@ -24,7 +24,7 @@ interface InvoiceHeaderBarProps {
   setPatientPhone: (v: string) => void;
   patientSearch: string;
   setPatientSearch: (v: string) => void;
-  patientResults: any[];
+  patientResults: Record<string, unknown>[];
   searchingPatients: boolean;
   showPatientDropdown: boolean;
   setShowPatientDropdown: (v: boolean) => void;
@@ -35,7 +35,7 @@ interface InvoiceHeaderBarProps {
   setDoctorName: (v: string) => void;
   doctorSearch: string;
   setDoctorSearch: (v: string) => void;
-  doctorResults: any[];
+  doctorResults: Record<string, unknown>[];
   searchingDoctors: boolean;
   showDoctorDropdown: boolean;
   setShowDoctorDropdown: (v: boolean) => void;
@@ -48,7 +48,7 @@ interface InvoiceHeaderBarProps {
 
   warehouseId: string;
   setWarehouseId: (v: string) => void;
-  warehouses: any[] | undefined;
+  warehouses: Record<string, unknown>[] | undefined;
 
   admissionId: string;
   setAdmissionId: (v: string) => void;
@@ -149,7 +149,7 @@ export function InvoiceHeaderBar({
             show={showPatientDropdown}
             setShow={setShowPatientDropdown}
             loading={searchingPatients}
-            items={patientResults.map((p) => ({
+            items={patientResults.map((p: any) => ({
               id: p.id,
               primary: p.fullName,
               secondary: `${p.phone || ""}${p.age ? ` | ${p.age} سنة` : ""}`,
@@ -225,7 +225,7 @@ export function InvoiceHeaderBar({
             </SelectTrigger>
             <SelectContent>
               {(warehouses || []).filter((w: any) => w.isActive).map((w: any) => (
-                <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
+                <SelectItem key={w.id} value={String(w.id)}>{String(w.nameAr)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -254,10 +254,10 @@ export function InvoiceHeaderBar({
             show={showDoctorDropdown}
             setShow={setShowDoctorDropdown}
             loading={searchingDoctors}
-            items={doctorResults.map((d) => ({
-              id: d.id,
-              primary: d.name,
-              secondary: d.specialty || undefined,
+            items={doctorResults.map((d: any) => ({
+              id: String(d.id),
+              primary: String(d.name),
+              secondary: d.specialty ? String(d.specialty) : undefined,
               raw: d,
             }))}
             onSelect={(item) => {

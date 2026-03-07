@@ -54,9 +54,9 @@ export default function PatientInvoice() {
     invoiceDate:      form.invoiceDate,
     departmentId:     form.departmentId,
     setItemSearch:    search.setItemSearch,
-    setItemResults:   search.setItemResults,
+    setItemResults:   (v) => search.setItemResults(v as unknown as Parameters<typeof search.setItemResults>[0]),
     setServiceSearch: search.setServiceSearch,
-    setServiceResults: search.setServiceResults,
+    setServiceResults: (v) => search.setServiceResults(v as unknown as Parameters<typeof search.setServiceResults>[0]),
     addingItemRef:    search.addingItemRef,
     itemSearchRef:    search.itemSearchRef,
   });
@@ -202,8 +202,9 @@ export default function PatientInvoice() {
 
       setMainTab("invoice");
       setSubTab("services");
-    } catch (error: any) {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     }
   }, [toast, form, lm, payments]);
 
@@ -388,7 +389,7 @@ export default function PatientInvoice() {
         <TabsContent value="admission" className="mt-2">
           <AdmissionsTab
             admSelectedAdmission={admSelectedAdmission}
-            setAdmSelectedAdmission={setAdmSelectedAdmission}
+            setAdmSelectedAdmission={(a) => setAdmSelectedAdmission(a)}
             admDetail={admDetail}
             admDischargeMutation={admDischargeMutation}
             admConsolidateMutation={admConsolidateMutation}

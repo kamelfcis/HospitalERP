@@ -17,7 +17,7 @@ const originalQuery = originalPool.query.bind(originalPool);
 (originalPool as any).query = function () {
   const args = arguments;
   const start = performance.now();
-  const result = originalQuery.apply(originalPool, args as any);
+  const result: unknown = originalQuery.apply(originalPool, args as any);
   if (result && typeof (result as any).then === 'function') {
     return (result as any).then((res: any) => {
       const duration = performance.now() - start;

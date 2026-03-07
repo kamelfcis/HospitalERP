@@ -85,14 +85,16 @@ const methods = {
   },
 
   async getRolePermissions(this: DatabaseStorage, role: string): Promise<RolePermission[]> {
-    return db.select().from(rolePermissions).where(eq(rolePermissions.role, role));
+    type RolePermRole = "admin" | "accountant" | "pharmacist" | "cashier" | "doctor" | "nurse" | "receptionist" | "warehouse" | "viewer" | "lab" | "radiology" | "it";
+    return db.select().from(rolePermissions).where(eq(rolePermissions.role, role as RolePermRole));
   },
 
   async setRolePermissions(this: DatabaseStorage, role: string, permissions: string[]): Promise<void> {
-    await db.delete(rolePermissions).where(eq(rolePermissions.role, role));
+    type RolePermRole = "admin" | "accountant" | "pharmacist" | "cashier" | "doctor" | "nurse" | "receptionist" | "warehouse" | "viewer" | "lab" | "radiology" | "it";
+    await db.delete(rolePermissions).where(eq(rolePermissions.role, role as RolePermRole));
     if (permissions.length > 0) {
       await db.insert(rolePermissions).values(
-        permissions.map(permission => ({ role: role as any, permission }))
+        permissions.map(permission => ({ role: role as RolePermRole, permission }))
       );
     }
   },
@@ -148,7 +150,7 @@ const methods = {
     const user = await this.getUser(userId);
     if (!user) return { isFullAccess: false, allowedPharmacyIds: [], allowedDepartmentIds: [] };
 
-    if (user.role === "admin" || user.role === "owner") {
+    if (user.role === "admin" || (user.role as string) === "owner") {
       return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [] };
     }
 

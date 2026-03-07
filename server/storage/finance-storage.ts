@@ -995,7 +995,7 @@ const methods = {
         return existing[0];
       }
 
-      const mappings = await this.getMappingsForTransaction(params.sourceType);
+      const mappings = await this.getMappingsForTransaction(params.sourceType, null);
       if (mappings.length === 0) {
         console.log(`[GL] SKIPPED: No account mappings configured for transaction type "${params.sourceType}". Configure mappings at /account-mappings to enable automatic GL posting.`);
         return null;

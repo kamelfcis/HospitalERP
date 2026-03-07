@@ -203,8 +203,9 @@ export default function ChartOfAccounts() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       toast({ title: "تم تصدير الحسابات بنجاح" });
-    } catch (error: any) {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     } finally {
       setIsExporting(false);
     }
@@ -233,8 +234,9 @@ export default function ChartOfAccounts() {
       queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       toast({ title: "تم الاستيراد", description: result.message });
-    } catch (error: any) {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) {

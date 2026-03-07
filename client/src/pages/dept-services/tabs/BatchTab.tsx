@@ -10,10 +10,17 @@ import { ServicesGrid, type ServiceLine } from "../components/ServicesGrid";
 import { ConsumablesPanel } from "../components/ConsumablesPanel";
 import { useDeptServices, useDoctors, usePatientSearch, useUserTreasury } from "../hooks/useDeptServices";
 import { Save, Loader2, Plus, Trash2, Users, CheckCircle2, XCircle } from "lucide-react";
+import type { Patient } from "@shared/schema";
 
 interface PatientEntry {
   patientName: string;
   patientPhone: string;
+}
+
+interface BatchResult {
+  patientName: string;
+  error?: string;
+  invoiceNumber?: string;
 }
 
 interface Props {
@@ -33,7 +40,7 @@ export function BatchTab({ departmentId, departmentName }: Props) {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [patients, setPatients] = useState<PatientEntry[]>([{ patientName: "", patientPhone: "" }]);
-  const [batchResults, setBatchResults] = useState<any[] | null>(null);
+  const [batchResults, setBatchResults] = useState<BatchResult[] | null>(null);
 
   const [patientSearchIdx, setPatientSearchIdx] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -63,9 +70,9 @@ export function BatchTab({ departmentId, departmentName }: Props) {
     }
   };
 
-  const selectSearchResult = (idx: number, p: any) => {
+  const selectSearchResult = (idx: number, p: Patient) => {
     const updated = [...patients];
-    updated[idx] = { patientName: p.nameAr || p.name_ar || p.name || "", patientPhone: p.phone || p.mobile || "" };
+    updated[idx] = { patientName: p.fullName || "", patientPhone: p.phone || "" };
     setPatients(updated);
     setPatientSearchIdx(null); setSearchTerm("");
   };
@@ -84,10 +91,10 @@ export function BatchTab({ departmentId, departmentName }: Props) {
       });
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { results: BatchResult[] }) => {
       setBatchResults(data.results);
-      const successCount = data.results.filter((r: any) => !r.error).length;
-      toast({ title: "تم الحفظ", description: `${successCount} فاتورة من ${data.results.length} تم إنشاؤها بنجاح` });
+      const successCount = data.results.filter((r) => !r.error).length;
+      toast({ title: "تم الحفظ", description: `${successCount} فاتورة من ${data.results.length} تم إنشؤها بنجاح` });
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
     },
     onError: (err: Error) => {
@@ -206,9 +213,9 @@ export function BatchTab({ departmentId, departmentName }: Props) {
                     />
                     {patientSearchIdx === idx && searchResults.length > 0 && (
                       <div className="absolute z-50 top-full mt-1 right-2 left-2 border rounded-lg bg-background shadow-lg max-h-36 overflow-auto">
-                        {searchResults.map((sr: any) => (
+                        {searchResults.map((sr) => (
                           <button key={sr.id} type="button" className="w-full text-right px-3 py-1.5 hover:bg-muted text-sm" onMouseDown={() => selectSearchResult(idx, sr)}>
-                            {sr.nameAr || sr.name_ar || sr.name} {sr.phone ? `- ${sr.phone}` : ""}
+                            {sr.fullName} {sr.phone ? `- ${sr.phone}` : ""}
                           </button>
                         ))}
                       </div>
@@ -232,7 +239,7 @@ export function BatchTab({ departmentId, departmentName }: Props) {
       {batchResults && (
         <div className="border rounded-lg p-3 space-y-1 text-sm">
           <h3 className="font-semibold text-xs">نتائج الحفظ</h3>
-          {batchResults.map((r: any, i: number) => (
+          {batchResults.map((r, i) => (
             <div key={i} className="flex items-center gap-2 text-xs">
               {r.error ? <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" /> : <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />}
               <span>{r.patientName}</span>

@@ -119,8 +119,9 @@ export function registerMonitoringRoutes(app: Express): void {
   app.get("/api/ops/slow-requests", (req: Request, res: Response) => {
     try {
       res.json(getSlowRequests());
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -128,8 +129,9 @@ export function registerMonitoringRoutes(app: Express): void {
   app.get("/api/ops/slow-queries", (req: Request, res: Response) => {
     try {
       res.json(getSlowQueries());
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -138,8 +140,9 @@ export function registerMonitoringRoutes(app: Express): void {
     try {
       clearSlowLogs();
       res.json({ message: "Logs cleared successfully" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -152,8 +155,9 @@ export function registerMonitoringRoutes(app: Express): void {
       }
       const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
       res.json(data);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -174,8 +178,9 @@ export function registerMonitoringRoutes(app: Express): void {
         },
         timestamp: new Date().toISOString(),
       });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 }

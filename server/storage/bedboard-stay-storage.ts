@@ -18,6 +18,7 @@ import {
   type Bed,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
+import type { InsertAdmission, InsertPatientInvoiceHeader } from "@shared/schema";
 
 const methods = {
 
@@ -25,7 +26,7 @@ const methods = {
     const result = await db.execute(
       sql`SELECT * FROM stay_segments WHERE admission_id = ${admissionId} ORDER BY started_at ASC`
     );
-    return result.rows as any[];
+    return result.rows as unknown as StaySegment[];
   },
 
   async openStaySegment(this: DatabaseStorage, params: {
@@ -36,7 +37,7 @@ const methods = {
   }): Promise<StaySegment> {
     return await db.transaction(async (tx) => {
       const admResult = await tx.execute(sql`SELECT * FROM admissions WHERE id = ${params.admissionId} FOR UPDATE`);
-      const admission = admResult.rows?.[0] as any;
+      const admission = admResult.rows?.[0] as Record<string, unknown> | undefined;
       if (!admission) throw new Error("الإقامة غير موجودة");
       if (admission.status !== "active") throw new Error("الإقامة غير نشطة");
 
@@ -52,7 +53,7 @@ const methods = {
         const svcResult = await tx.execute(
           sql`SELECT base_price FROM services WHERE id = ${params.serviceId} AND is_active = true LIMIT 1`
         );
-        ratePerDay = String((svcResult.rows[0] as any)?.base_price ?? "0");
+        ratePerDay = String((svcResult.rows[0] as Record<string, unknown>)?.base_price ?? "0");
       }
 
       const [seg] = await tx.insert(staySegments).values({
@@ -73,7 +74,7 @@ const methods = {
       const lockResult = await tx.execute(
         sql`SELECT * FROM stay_segments WHERE id = ${segmentId} FOR UPDATE`
       );
-      const seg = lockResult.rows?.[0] as any;
+      const seg = lockResult.rows?.[0] as Record<string, unknown> | undefined;
       if (!seg) throw new Error("القطاع غير موجود");
       if (seg.status === "CLOSED") throw new Error("القطاع مغلق بالفعل");
 
@@ -96,14 +97,14 @@ const methods = {
       const admResult = await tx.execute(
         sql`SELECT * FROM admissions WHERE id = ${params.admissionId} FOR UPDATE`
       );
-      const admission = admResult.rows?.[0] as any;
+      const admission = admResult.rows?.[0] as Record<string, unknown> | undefined;
       if (!admission) throw new Error("الإقامة غير موجودة");
       if (admission.status !== "active") throw new Error("الإقامة غير نشطة");
 
       const segResult = await tx.execute(
         sql`SELECT * FROM stay_segments WHERE id = ${params.oldSegmentId} AND admission_id = ${params.admissionId} FOR UPDATE`
       );
-      const oldSeg = segResult.rows?.[0] as any;
+      const oldSeg = segResult.rows?.[0] as Record<string, unknown> | undefined;
       if (!oldSeg) throw new Error("القطاع المصدر غير موجود");
       if (oldSeg.status !== "ACTIVE") throw new Error("القطاع المصدر ليس نشطاً");
 
@@ -117,7 +118,7 @@ const methods = {
         const svcResult = await tx.execute(
           sql`SELECT base_price FROM services WHERE id = ${params.newServiceId} AND is_active = true LIMIT 1`
         );
-        ratePerDay = String((svcResult.rows[0] as any)?.base_price ?? "0");
+        ratePerDay = String((svcResult.rows[0] as Record<string, unknown>)?.base_price ?? "0");
       }
 
       const [newSeg] = await tx.insert(staySegments).values({
@@ -142,7 +143,15 @@ const methods = {
       LEFT JOIN services srv ON s.service_id = srv.id
       WHERE s.status = 'ACTIVE'
     `);
-    const segments = activeResult.rows as any[];
+    const segments = activeResult.rows as unknown as Array<{
+      id: string;
+      admission_id: string;
+      invoice_id: string;
+      service_id: string | null;
+      started_at: string;
+      rate_per_day: string;
+      service_name_ar: string;
+    }>;
     let totalLinesUpserted = 0;
 
     for (const seg of segments) {
@@ -223,15 +232,15 @@ const methods = {
 
           if (linesInserted > 0) {
             const dbLines = await tx.select().from(patientInvoiceLines)
-              .where(and(eq(patientInvoiceLines.headerId, seg.invoice_id), eq(patientInvoiceLines.isVoid, false)));
+              .where(and(eq(patientInvoiceLines.headerId, (seg.invoice_id as string)), eq(patientInvoiceLines.isVoid, false)));
             const dbPayments = await tx.select().from(patientInvoicePayments)
-              .where(eq(patientInvoicePayments.headerId, seg.invoice_id));
-            const totals = this.computeInvoiceTotals(dbLines, dbPayments);
+              .where(eq(patientInvoicePayments.headerId, (seg.invoice_id as string)));
+            const totals = this.computeInvoiceTotals(dbLines as unknown as Record<string, unknown>[], dbPayments as unknown as Record<string, unknown>[]);
 
             await tx.update(patientInvoiceHeaders).set({
               ...totals,
               updatedAt: new Date(),
-            }).where(eq(patientInvoiceHeaders.id, seg.invoice_id));
+            }).where(eq(patientInvoiceHeaders.id, (seg.invoice_id as string)));
 
             await tx.insert(auditLog).values({
               tableName: "patient_invoice_headers",
@@ -245,8 +254,9 @@ const methods = {
 
           totalLinesUpserted += linesInserted;
         });
-      } catch (err: any) {
-        console.error(`[STAY_ENGINE] Segment ${seg.id} accrual failed:`, err.message);
+      } catch (err: unknown) {
+        const _em = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
+        console.error(`[STAY_ENGINE] Segment ${seg.id} accrual failed:`, _em);
       }
     }
 
@@ -298,7 +308,7 @@ const methods = {
       const hdrRes = await tx.execute(
         sql`SELECT * FROM patient_invoice_headers WHERE id = ${invoiceId} FOR UPDATE`
       );
-      const hdr = hdrRes.rows[0] as any;
+      const hdr = hdrRes.rows[0] as Record<string, unknown>;
       if (!hdr) throw new Error("الفاتورة غير موجودة");
       if (hdr.status === "finalized") throw new Error("لا يمكن تعديل فاتورة نهائية");
 
@@ -314,10 +324,10 @@ const methods = {
               WHERE st.id = ${surgeryTypeId} AND st.is_active = true
               LIMIT 1`
         );
-        const st = stRes.rows[0] as any;
+        const st = stRes.rows[0] as Record<string, unknown>;
         if (!st) throw new Error("نوع العملية غير موجود أو غير نشط");
 
-        const price = parseFloat(st.price || "0");
+        const price = parseFloat((st.price as string | null) || "0");
         const desc = `فتح غرفة عمليات — ${st.name_ar}`;
 
         await tx.execute(
@@ -345,9 +355,9 @@ const methods = {
       );
       let total = 0;
       let disc = 0;
-      for (const l of linesRes.rows as any[]) {
-        const gross = parseFloat(l.unit_price) * parseFloat(l.quantity);
-        const d = gross * parseFloat(l.discount_percent || "0") / 100;
+      for (const l of linesRes.rows as Array<Record<string, unknown>>) {
+        const gross = parseFloat(l.unit_price as string) * parseFloat(l.quantity as string);
+        const d = gross * parseFloat((l.discount_percent as string | null) || "0") / 100;
         total += gross; disc += d;
       }
       const net = Math.round((total - disc) * 100) / 100;
@@ -380,16 +390,16 @@ const methods = {
     `);
 
     const floorsMap = new Map<string, any>();
-    for (const row of result.rows as any[]) {
-      if (!floorsMap.has(row.floor_id)) {
-        floorsMap.set(row.floor_id, {
+    for (const row of result.rows as Array<Record<string, unknown>>) {
+      if (!floorsMap.has(row.floor_id as string)) {
+        floorsMap.set(row.floor_id as string, {
           id: row.floor_id, nameAr: row.floor_name_ar, sortOrder: row.floor_sort,
           rooms: new Map<string, any>(),
         });
       }
-      const floor = floorsMap.get(row.floor_id);
-      if (!floor.rooms.has(row.room_id)) {
-        floor.rooms.set(row.room_id, {
+      const floor = floorsMap.get(row.floor_id as string);
+      if (!floor.rooms.has(row.room_id as string)) {
+        floor.rooms.set(row.room_id as string, {
           id: row.room_id, nameAr: row.room_name_ar, roomNumber: row.room_number,
           serviceId: row.room_service_id || null,
           serviceNameAr: row.room_service_name_ar || null,
@@ -397,7 +407,7 @@ const methods = {
           sortOrder: row.room_sort, beds: [],
         });
       }
-      floor.rooms.get(row.room_id).beds.push({
+      floor.rooms.get(row.room_id as string).beds.push({
         id: row.bed_id, bedNumber: row.bed_number, status: row.status,
         currentAdmissionId: row.current_admission_id,
         patientName: row.patient_name || undefined,
@@ -429,7 +439,7 @@ const methods = {
       WHERE b.status = 'EMPTY'
       ORDER BY f.sort_order, r.sort_order, b.bed_number
     `);
-    return result.rows.map((row: any) => ({
+    return result.rows.map((row: Record<string, unknown>) => ({
       id: row.id,
       bedNumber: row.bed_number,
       status: row.status,
@@ -452,12 +462,12 @@ const methods = {
   }) {
     const result = await db.transaction(async (tx) => {
       const bedRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.bedId} FOR UPDATE`);
-      const bed = bedRes.rows[0] as any;
+      const bed = bedRes.rows[0] as Record<string, unknown>;
       if (!bed) throw new Error("السرير غير موجود");
       if (bed.status !== "EMPTY") throw new Error("السرير غير فارغ — يرجى اختيار سرير آخر");
 
       const cntRes = await tx.execute(sql`SELECT COUNT(*) AS cnt FROM admissions`);
-      const seq = parseInt((cntRes.rows[0] as any)?.cnt || "0") + 1;
+      const seq = parseInt((cntRes.rows[0] as Record<string, unknown>)?.cnt as string | undefined ?? "0") + 1;
       const admissionNumber = `ADM-${String(seq).padStart(6, "0")}`;
 
       const existingPatient = await tx.execute(
@@ -479,7 +489,7 @@ const methods = {
       } else if (params.patientPhone) {
         await tx.execute(sql`
           UPDATE patients SET phone = ${params.patientPhone}
-          WHERE id = ${(existingPatient.rows[0] as any).id}
+          WHERE id = ${(existingPatient.rows[0] as Record<string, unknown>).id as string}
         `);
       }
 
@@ -490,27 +500,27 @@ const methods = {
         admissionDate: new Date().toISOString().split("T")[0] as unknown as Date,
         doctorName: params.doctorName || null,
         notes: params.notes || null,
-        status: "active" as any,
-        paymentType: (params.paymentType === "contract" ? "contract" : "CASH") as any,
+        status: "active" as "active",
+        paymentType: (params.paymentType === "contract" ? "contract" : "CASH") as "contract" | "CASH",
         insuranceCompany: params.insuranceCompany || null,
         surgeryTypeId: params.surgeryTypeId || null,
-      } as any).returning();
+      } as unknown as InsertAdmission).returning();
 
       let warehouseId: string | null = null;
       if (params.departmentId) {
         const whRes = await tx.execute(
           sql`SELECT id FROM warehouses WHERE department_id = ${params.departmentId} LIMIT 1`
         );
-        warehouseId = (whRes.rows[0] as any)?.id || null;
+        warehouseId = ((whRes.rows[0] as Record<string, unknown>)?.id as string | null | undefined) || null;
       }
       if (!warehouseId) {
         const whRes = await tx.execute(sql`SELECT id FROM warehouses ORDER BY created_at LIMIT 1`);
-        warehouseId = (whRes.rows[0] as any)?.id || null;
+        warehouseId = ((whRes.rows[0] as Record<string, unknown>)?.id as string | null | undefined) || null;
       }
       if (!warehouseId) throw new Error("لا يوجد مخزن متاح — يرجى إنشاء مخزن أولاً");
 
       const invCntRes = await tx.execute(sql`SELECT COUNT(*) AS cnt FROM patient_invoice_headers`);
-      const invSeq = parseInt((invCntRes.rows[0] as any)?.cnt || "0") + 1;
+      const invSeq = parseInt((invCntRes.rows[0] as Record<string, unknown>)?.cnt as string | undefined ?? "0") + 1;
       const invoiceNumber = `PI-${String(invSeq).padStart(6, "0")}`;
 
       const [invoice] = await tx.insert(patientInvoiceHeaders).values({
@@ -521,16 +531,16 @@ const methods = {
         warehouseId,
         departmentId: params.departmentId || null,
         doctorName: params.doctorName || null,
-        patientType: (params.paymentType === "contract" ? "contract" : "cash") as any,
+        patientType: (params.paymentType === "contract" ? "contract" : "cash") as "contract" | "cash",
         contractName: params.paymentType === "contract" ? (params.insuranceCompany || null) : null,
-        status: "draft" as any,
+        status: "draft" as "draft",
         invoiceDate: new Date().toISOString().split("T")[0] as unknown as Date,
         totalAmount: "0",
         discountAmount: "0",
         netAmount: "0",
         paidAmount: "0",
         version: 1,
-      }).returning();
+      } as unknown as import("@shared/schema").InsertPatientInvoiceHeader).returning();
 
       const roomRes = await tx.execute(
         sql`SELECT r.service_id, COALESCE(s.base_price, '0') AS base_price, COALESCE(s.name_ar, 'إقامة') AS service_name_ar
@@ -538,10 +548,10 @@ const methods = {
             LEFT JOIN services s ON s.id = r.service_id
             WHERE b.id = ${params.bedId} LIMIT 1`
       );
-      const roomRow = roomRes.rows[0] as any;
-      const effectiveServiceId: string | null = params.serviceId || roomRow?.service_id || null;
+      const roomRow = roomRes.rows[0] as Record<string, unknown>;
+      const effectiveServiceId: string | null = params.serviceId || (roomRow?.service_id as string | null | undefined) || null;
       const ratePerDay = params.serviceId
-        ? String(((await tx.execute(sql`SELECT base_price FROM services WHERE id = ${params.serviceId} LIMIT 1`)).rows[0] as any)?.base_price ?? "0")
+        ? String(((await tx.execute(sql`SELECT base_price FROM services WHERE id = ${params.serviceId} LIMIT 1`)).rows[0] as Record<string, unknown>)?.base_price ?? "0")
         : String(roomRow?.base_price ?? "0");
       const serviceNameAr: string = String(roomRow?.service_name_ar ?? "إقامة");
 
@@ -575,10 +585,10 @@ const methods = {
         `);
 
         const allLines1 = await tx.select().from(patientInvoiceLines)
-          .where(and(eq(patientInvoiceLines.headerId, invoice.id), eq(patientInvoiceLines.isVoid, false)));
-        const totals1 = this.computeInvoiceTotals(allLines1, []);
+          .where(and(eq(patientInvoiceLines.headerId, invoice.id as string), eq(patientInvoiceLines.isVoid, false)));
+        const totals1 = this.computeInvoiceTotals(allLines1 as unknown as Record<string, unknown>[], []);
         await tx.update(patientInvoiceHeaders).set({ ...totals1, updatedAt: new Date() })
-          .where(eq(patientInvoiceHeaders.id, invoice.id));
+          .where(eq(patientInvoiceHeaders.id, invoice.id as string));
       }
 
       if (params.surgeryTypeId) {
@@ -589,9 +599,9 @@ const methods = {
               WHERE st.id = ${params.surgeryTypeId} AND st.is_active = true
               LIMIT 1`
         );
-        const st = stRes.rows[0] as any;
+        const st = stRes.rows[0] as Record<string, unknown>;
         if (st) {
-          const orPrice = String(parseFloat(st.price || "0"));
+          const orPrice = String(parseFloat((st.price as string | null) || "0"));
           const orDesc = `فتح غرفة عمليات — ${st.name_ar}`;
           const orSourceId = `or_room:${invoice.id}:${params.surgeryTypeId}`;
           await tx.execute(sql`
@@ -606,10 +616,10 @@ const methods = {
             DO NOTHING
           `);
           const allLines2 = await tx.select().from(patientInvoiceLines)
-            .where(and(eq(patientInvoiceLines.headerId, invoice.id), eq(patientInvoiceLines.isVoid, false)));
-          const totals2 = this.computeInvoiceTotals(allLines2, []);
+            .where(and(eq(patientInvoiceLines.headerId, invoice.id as string), eq(patientInvoiceLines.isVoid, false)));
+          const totals2 = this.computeInvoiceTotals(allLines2 as unknown as Record<string, unknown>[], []);
           await tx.update(patientInvoiceHeaders).set({ ...totals2, updatedAt: new Date() })
-            .where(eq(patientInvoiceHeaders.id, invoice.id));
+            .where(eq(patientInvoiceHeaders.id, invoice.id as string));
         }
       }
 
@@ -644,16 +654,16 @@ const methods = {
       await tx.execute(sql`SELECT id FROM beds WHERE id IN (${id1}, ${id2}) FOR UPDATE`);
 
       const srcRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.sourceBedId}`);
-      const src = srcRes.rows[0] as any;
+      const src = srcRes.rows[0] as Record<string, unknown>;
       if (!src) throw new Error("سرير المصدر غير موجود");
       if (src.status !== "OCCUPIED") throw new Error("لا يوجد مريض في سرير المصدر");
 
       const tgtRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.targetBedId}`);
-      const tgt = tgtRes.rows[0] as any;
+      const tgt = tgtRes.rows[0] as Record<string, unknown>;
       if (!tgt) throw new Error("السرير الهدف غير موجود");
       if (tgt.status !== "EMPTY") throw new Error("السرير الهدف غير فارغ — اختر سريراً آخر");
 
-      const admissionId = src.current_admission_id;
+      const admissionId = src.current_admission_id as string;
 
       const tgtRoomRes = await tx.execute(sql`
         SELECT r.service_id,
@@ -665,15 +675,15 @@ const methods = {
         WHERE b.id = ${params.targetBedId}
         LIMIT 1
       `);
-      const tgtRoom = tgtRoomRes.rows[0] as any;
+      const tgtRoom = tgtRoomRes.rows[0] as Record<string, unknown>;
 
       const effectiveServiceId: string | null =
-        params.newServiceId || tgtRoom?.service_id || null;
+        params.newServiceId || (tgtRoom?.service_id as string | null | undefined) || null;
       const ratePerDay = effectiveServiceId
         ? params.newServiceId
           ? String(((await tx.execute(
               sql`SELECT base_price FROM services WHERE id = ${params.newServiceId} AND is_active = true LIMIT 1`
-            )).rows[0] as any)?.base_price ?? "0")
+            )).rows[0] as Record<string, unknown>)?.base_price ?? "0")
           : String(tgtRoom?.base_price ?? "0")
         : "0";
       const serviceNameAr: string = String(tgtRoom?.service_name_ar ?? "إقامة");
@@ -683,14 +693,14 @@ const methods = {
             WHERE admission_id = ${admissionId} AND status = 'ACTIVE'
             LIMIT 1`
       );
-      const activeSeg = activeSegRes.rows[0] as any;
+      const activeSeg = activeSegRes.rows[0] as Record<string, unknown>;
 
-      let invoiceId: string | null = activeSeg?.invoice_id || params.newInvoiceId || null;
+      let invoiceId: string | null = (activeSeg?.invoice_id as string | null | undefined) || params.newInvoiceId || null;
 
       if (activeSeg) {
         await tx.update(staySegments)
           .set({ status: "CLOSED", endedAt: new Date() })
-          .where(eq(staySegments.id, activeSeg.id));
+          .where(eq(staySegments.id, activeSeg.id as string));
       }
 
       let newSegId: string | undefined;
@@ -698,7 +708,7 @@ const methods = {
         const [seg] = await tx.insert(staySegments).values({
           admissionId,
           serviceId: effectiveServiceId,
-          invoiceId,
+          invoiceId: invoiceId!,
           startedAt: new Date(),
           status: "ACTIVE",
           ratePerDay,
@@ -714,7 +724,7 @@ const methods = {
                 AND source_type = 'STAY_ENGINE'
                 AND is_void = false`
         );
-        const existingCount = parseInt((lineCountRes.rows[0] as any)?.cnt || "0");
+        const existingCount = parseInt((lineCountRes.rows[0] as Record<string, unknown>)?.cnt as string | undefined ?? "0");
         const lineDesc = `${serviceNameAr} — إقامة إضافية (تحويل)`;
 
         await tx.execute(sql`
@@ -739,7 +749,7 @@ const methods = {
             eq(patientInvoiceLines.headerId, invoiceId),
             eq(patientInvoiceLines.isVoid, false),
           ));
-        const totals = this.computeInvoiceTotals(allLines, []);
+        const totals = this.computeInvoiceTotals(allLines as unknown as Record<string, unknown>[], []);
         await tx.update(patientInvoiceHeaders)
           .set({ ...totals, updatedAt: new Date() })
           .where(eq(patientInvoiceHeaders.id, invoiceId));
@@ -751,11 +761,7 @@ const methods = {
         updatedAt: new Date(),
       }).where(eq(beds.id, params.sourceBedId)).returning();
 
-      const [updatedTgt] = await tx.update(beds).set({
-        status: "OCCUPIED",
-        currentAdmissionId: admissionId,
-        updatedAt: new Date(),
-      }).where(eq(beds.id, params.targetBedId)).returning();
+      const [updatedTgt] = await tx.update(beds).set({ status: "OCCUPIED", currentAdmissionId: admissionId, updatedAt: new Date() }).where(eq(beds.id, params.targetBedId)).returning();
 
       await tx.insert(auditLog).values({
         tableName: "beds",
@@ -789,23 +795,23 @@ const methods = {
   async dischargeFromBed(this: DatabaseStorage, bedId: string) {
     const result = await db.transaction(async (tx) => {
       const bedRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${bedId} FOR UPDATE`);
-      const bed = bedRes.rows[0] as any;
+      const bed = bedRes.rows[0] as Record<string, unknown>;
       if (!bed) throw new Error("السرير غير موجود");
       if (bed.status !== "OCCUPIED") throw new Error("لا يوجد مريض في هذا السرير");
 
-      const admissionId = bed.current_admission_id;
+      const admissionId = bed.current_admission_id as string;
 
       const segRes = await tx.execute(
         sql`SELECT id FROM stay_segments WHERE admission_id = ${admissionId} AND status = 'ACTIVE' FOR UPDATE`
       );
-      for (const seg of segRes.rows as any[]) {
+      for (const seg of segRes.rows as Array<Record<string, unknown>>) {
         await tx.update(staySegments).set({ status: "CLOSED", endedAt: new Date() })
-          .where(eq(staySegments.id, seg.id));
+          .where(eq(staySegments.id, seg.id as string));
       }
 
       await tx.update(admissions).set({
-        status: "discharged" as any,
-        dischargeDate: new Date().toISOString().split("T")[0] as unknown as Date,
+        status: "discharged" as "discharged",
+        dischargeDate: new Date().toISOString().split("T")[0],
         updatedAt: new Date(),
       }).where(eq(admissions.id, admissionId));
 
@@ -832,7 +838,7 @@ const methods = {
   async setBedStatus(this: DatabaseStorage, bedId: string, status: string) {
     return await db.transaction(async (tx) => {
       const bedRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${bedId} FOR UPDATE`);
-      const bed = bedRes.rows[0] as any;
+      const bed = bedRes.rows[0] as Record<string, unknown>;
       if (!bed) throw new Error("السرير غير موجود");
       if (bed.status === "OCCUPIED" && status !== "OCCUPIED") {
         throw new Error("لا يمكن تغيير حالة سرير مشغول");

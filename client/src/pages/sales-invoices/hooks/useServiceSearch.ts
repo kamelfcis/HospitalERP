@@ -94,8 +94,9 @@ export function useServiceSearch(
       if (addedCount > 0) {
         toast({ title: `تمت إضافة مستهلكات: ${serviceName}`, description: `تم إضافة ${addedCount} صنف` });
       }
-    } catch (err: any) {
-      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     } finally {
       setAddingServiceId(null);
     }

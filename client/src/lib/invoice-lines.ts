@@ -15,13 +15,31 @@
 // أسماء الوحدات
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function getUnitName(item: any, unitLevel: string): string {
+export interface ItemLike {
+    majorUnitName?: string | null;
+    mediumUnitName?: string | null;
+    minorUnitName?: string | null;
+    majorToMedium?: number | string | null;
+    majorToMinor?: number | string | null;
+    mediumToMinor?: number | string | null;
+    // Additional fields used by transfer and receiving pages
+    nameAr?: string | null;
+    nameEn?: string | null;
+    itemCode?: string | null;
+    hasExpiry?: boolean | null;
+    hasBatch?: boolean | null;
+    availableQtyMinor?: string | number | null;
+    salePriceCurrent?: string | number | null;
+    purchasePriceLast?: string | number | null;
+  }
+
+export function getUnitName(item: ItemLike | null | undefined, unitLevel: string): string {
   if (unitLevel === "major")  return item?.majorUnitName  || "وحدة كبرى";
   if (unitLevel === "medium") return item?.mediumUnitName || "وحدة وسطى";
   return item?.minorUnitName || "وحدة صغرى";
 }
 
-export function getUnitOptions(item: any): { value: string; label: string }[] {
+export function getUnitOptions(item: ItemLike | null | undefined): { value: string; label: string }[] {
   const opts: { value: string; label: string }[] = [];
   if (item?.majorUnitName)  opts.push({ value: "major",  label: item.majorUnitName });
   if (item?.mediumUnitName) opts.push({ value: "medium", label: item.mediumUnitName });
@@ -44,7 +62,7 @@ export function getUnitOptions(item: any): { value: string; label: string }[] {
  *   getEffectiveMediumToMinor → (1||1) / (3||1) = 1/3
  *   هذا صحيح لأن الـ qty مخزّن بالعلبة.
  */
-export function getEffectiveMediumToMinor(item: any): number {
+export function getEffectiveMediumToMinor(item: ItemLike | null | undefined): number {
   const m2m = parseFloat(String(item?.mediumToMinor));
   if (m2m > 0) return m2m;
   const maj2min = parseFloat(String(item?.majorToMinor)) || 1;
@@ -62,7 +80,7 @@ export function getEffectiveMediumToMinor(item: any): number {
  * تحذير: لا تُضف fallback إلى majorToMedium داخل هذه الدالة — يكسر عرض
  * الكميات للأصناف المخزّنة بالعلبة.
  */
-export function calculateQtyInMinor(qty: number, unitLevel: string, item: any): number {
+export function calculateQtyInMinor(qty: number, unitLevel: string, item: ItemLike | null | undefined): number {
   if (!item) return qty;
   if (unitLevel === "minor")  return qty;
   if (unitLevel === "medium") return qty * getEffectiveMediumToMinor(item);
@@ -73,7 +91,7 @@ export function calculateQtyInMinor(qty: number, unitLevel: string, item: any): 
  * تحويل كمية بالوحدات الصغرى → وحدة العرض المطلوبة.
  * يُستخدم لعرض نتائج توزيع FEFO بالوحدة التي اختارها المستخدم.
  */
-export function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: any): number {
+export function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: ItemLike | null | undefined): number {
   let displayQty = allocMinor;
   if (unitLevel === "major") {
     displayQty = allocMinor / (parseFloat(String(item?.majorToMinor)) || 1);
@@ -96,7 +114,7 @@ export function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, 
  * baseSalePrice دائماً = سعر الوحدة الكبرى.
  * نقسم للوصول لسعر الوحدات الأصغر.
  */
-export function computeUnitPriceRaw(baseSalePrice: number, unitLevel: string, item: any): number {
+export function computeUnitPriceRaw(baseSalePrice: number, unitLevel: string, item: ItemLike | null | undefined): number {
   if (!item || !baseSalePrice) return baseSalePrice || 0;
   if (unitLevel === "major" || !unitLevel) return baseSalePrice;
 
@@ -119,7 +137,7 @@ export function computeUnitPriceRaw(baseSalePrice: number, unitLevel: string, it
 }
 
 /** السعر المقرَّب للعرض (سعر الوحدة المختارة) */
-export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: any): number {
+export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: ItemLike | null | undefined): number {
   return +computeUnitPriceRaw(baseSalePrice, unitLevel, item).toFixed(2);
 }
 
@@ -129,7 +147,7 @@ export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: strin
  * مثال: 3 شرائط × (500÷3) = 500.00 (صحيح)
  *        وليس  3 × 166.67  = 500.01 (خطأ تقريب)
  */
-export function computeLineTotal(qty: number, baseSalePrice: number, unitLevel: string, item: any): number {
+export function computeLineTotal(qty: number, baseSalePrice: number, unitLevel: string, item: ItemLike | null | undefined): number {
   const rawPrice = computeUnitPriceRaw(baseSalePrice, unitLevel, item);
   return +(qty * rawPrice).toFixed(2);
 }
@@ -138,7 +156,7 @@ export function computeLineTotal(qty: number, baseSalePrice: number, unitLevel: 
 // عرض الرصيد المتاح
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function formatAvailability(availQtyMinor: string, unitLevel: string, item: any): string {
+export function formatAvailability(availQtyMinor: string, unitLevel: string, item: ItemLike | null | undefined): string {
   const minorQty = parseFloat(availQtyMinor);
   if (isNaN(minorQty)) return "0";
 

@@ -157,8 +157,9 @@ export default function CostCenters() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       toast({ title: "تم تصدير مراكز التكلفة بنجاح" });
-    } catch (error: any) {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     } finally {
       setIsExporting(false);
     }
@@ -187,8 +188,9 @@ export default function CostCenters() {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-centers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       toast({ title: "تم الاستيراد", description: result.message });
-    } catch (error: any) {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) {

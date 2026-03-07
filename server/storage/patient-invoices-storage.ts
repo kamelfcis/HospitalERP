@@ -12,6 +12,11 @@ import {
 import type {
   PatientInvoiceHeader,
   PatientInvoiceWithDetails,
+  InsertPatientInvoiceHeader,
+  InsertPatientInvoiceLine,
+  InsertPatientInvoicePayment,
+  PatientInvoiceLine,
+  PatientInvoicePayment,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney, parseMoney } from "../finance-helpers";
@@ -29,14 +34,14 @@ const methods = {
       FROM patient_invoice_payments
       WHERE reference_number LIKE 'RCP-%'
     `);
-    const maxNum = parseInt((result.rows[0] as any).max_num || "0") || 0;
+    const maxNum = parseInt(((result.rows[0] as Record<string, unknown>).max_num as string | null | undefined) || "0") || 0;
     return `RCP-${String(maxNum + 1 + offset).padStart(6, "0")}`;
   },
 
-  async getPatientInvoices(this: DatabaseStorage, filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: any[]; total: number}> {
-    const conditions: any[] = [];
+  async getPatientInvoices(this: DatabaseStorage, filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: PatientInvoiceWithDetails[]; total: number}> {
+    const conditions: ReturnType<typeof eq>[] = [];
     if (filters.status && filters.status !== "all") {
-      conditions.push(eq(patientInvoiceHeaders.status, filters.status as any));
+      conditions.push(eq(patientInvoiceHeaders.status, filters.status as "draft" | "finalized" | "cancelled"));
     } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
       conditions.push(sql`${patientInvoiceHeaders.status} != 'cancelled'`);
     }
@@ -64,7 +69,7 @@ const methods = {
       .offset((page - 1) * pageSize);
 
     return {
-      data: data.map(r => ({ ...r.header, department: r.department })),
+      data: data.map(r => ({ ...r.header, department: r.department })) as unknown as PatientInvoiceWithDetails[],
       total,
     };
   },
@@ -104,23 +109,22 @@ const methods = {
     };
   },
 
-  async createPatientInvoice(this: DatabaseStorage, header: any, lines: any[], payments: any[]): Promise<PatientInvoiceHeader> {
+  async createPatientInvoice(this: DatabaseStorage, header: Partial<InsertPatientInvoiceHeader>, lines: Partial<InsertPatientInvoiceLine>[], payments: Partial<InsertPatientInvoicePayment>[]): Promise<PatientInvoiceHeader> {
     return await db.transaction(async (tx) => {
-      const [created] = await tx.insert(patientInvoiceHeaders).values({ ...header, version: 1 }).returning();
+      const [created] = await tx.insert(patientInvoiceHeaders).values({ ...header, version: 1 } as InsertPatientInvoiceHeader).returning();
 
       if (lines.length > 0) {
         await tx.insert(patientInvoiceLines).values(
-          lines.map((l: any, i: number) => ({ ...l, headerId: created.id, sortOrder: i }))
+          lines.map((l, i) => ({ ...l, headerId: created.id, sortOrder: i }) as unknown as import("@shared/schema").InsertPatientInvoiceLine)
         );
       }
 
       if (payments.length > 0) {
         await tx.insert(patientInvoicePayments).values(
-          payments.map((p: any) => ({ ...p, headerId: created.id }))
-        );
+          payments.map((p) => ({ ...p, headerId: created.id }) as unknown as import("@shared/schema").InsertPatientInvoicePayment));
       }
 
-      const totals = this.computeInvoiceTotals(lines, payments);
+      const totals = this.computeInvoiceTotals(lines as unknown as Record<string, unknown>[], payments as unknown as Record<string, unknown>[]);
       await tx.update(patientInvoiceHeaders).set(totals).where(eq(patientInvoiceHeaders.id, created.id));
 
       const [result] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, created.id));
@@ -128,10 +132,10 @@ const methods = {
     });
   },
 
-  async updatePatientInvoice(this: DatabaseStorage, id: string, header: any, lines: any[], payments: any[], expectedVersion?: number): Promise<PatientInvoiceHeader> {
+  async updatePatientInvoice(this: DatabaseStorage, id: string, header: Partial<InsertPatientInvoiceHeader>, lines: Partial<InsertPatientInvoiceLine>[], payments: Partial<InsertPatientInvoicePayment>[], expectedVersion?: number): Promise<PatientInvoiceHeader> {
     return await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
-      const existing = lockResult.rows?.[0] as any;
+      const existing = lockResult.rows?.[0] as Record<string, unknown>;
       if (!existing) throw new Error("فاتورة المريض غير موجودة");
       if (existing.status !== "draft") throw new Error("لا يمكن تعديل فاتورة نهائية");
 
@@ -139,7 +143,7 @@ const methods = {
         throw new Error("تم تعديل الفاتورة من مستخدم آخر – يرجى إعادة تحميل الصفحة");
       }
 
-      const newVersion = (existing.version || 1) + 1;
+      const newVersion = ((existing.version as number | null | undefined) || 1) + 1;
 
       const oldLines = await tx.select().from(patientInvoiceLines)
         .where(eq(patientInvoiceLines.headerId, id));
@@ -147,19 +151,17 @@ const methods = {
       await tx.delete(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, id));
       if (lines.length > 0) {
         await tx.insert(patientInvoiceLines).values(
-          lines.map((l: any, i: number) => ({ ...l, headerId: id, sortOrder: i }))
-        );
+          lines.map((l, i) => ({ ...l, headerId: id, sortOrder: i }) as unknown as import("@shared/schema").InsertPatientInvoiceLine));
       }
 
       await tx.delete(patientInvoicePayments).where(eq(patientInvoicePayments.headerId, id));
       if (payments.length > 0) {
         await tx.insert(patientInvoicePayments).values(
-          payments.map((p: any) => ({ ...p, headerId: id }))
-        );
+          payments.map((p) => ({ ...p, headerId: id }) as unknown as import("@shared/schema").InsertPatientInvoicePayment));
       }
 
-      const totals = this.computeInvoiceTotals(lines, payments);
-      const existingHeaderDiscount = parseMoney(existing.header_discount_amount || "0");
+      const totals = this.computeInvoiceTotals(lines as unknown as Record<string, unknown>[], payments as unknown as Record<string, unknown>[]);
+      const existingHeaderDiscount = parseMoney((existing as Record<string, unknown>).header_discount_amount as string | null | undefined ?? "0");
       const adjustedNetAmount = roundMoney(parseMoney(totals.netAmount) - existingHeaderDiscount);
       await tx.update(patientInvoiceHeaders).set({
         ...header,
@@ -169,10 +171,10 @@ const methods = {
         updatedAt: new Date(),
       }).where(eq(patientInvoiceHeaders.id, id));
 
-      const oldStayLines = oldLines.filter((l: any) => l.sourceType === "STAY_ENGINE");
-      const newStayLines = lines.filter((l: any) => l.sourceType === "STAY_ENGINE");
+      const oldStayLines = oldLines.filter((l) => l.sourceType === "STAY_ENGINE");
+      const newStayLines = lines.filter((l) => l.sourceType === "STAY_ENGINE");
       for (const ns of newStayLines) {
-        const match = oldStayLines.find((os: any) => os.sourceId === ns.sourceId);
+        const match = oldStayLines.find((os) => os.sourceId === ns.sourceId);
         if (match && (String(match.quantity) !== String(ns.quantity) || String(match.unitPrice) !== String(ns.unitPrice) || String(match.totalPrice) !== String(ns.totalPrice))) {
           await tx.insert(auditLog).values({
             tableName: "patient_invoice_lines",
@@ -185,7 +187,7 @@ const methods = {
         }
       }
       for (const os of oldStayLines) {
-        if (!newStayLines.find((ns: any) => ns.sourceId === os.sourceId)) {
+        if (!newStayLines.find((ns) => ns.sourceId === os.sourceId)) {
           await tx.insert(auditLog).values({
             tableName: "patient_invoice_lines",
             recordId: id,
@@ -205,7 +207,7 @@ const methods = {
   async finalizePatientInvoice(this: DatabaseStorage, id: string, expectedVersion?: number): Promise<PatientInvoiceHeader> {
     const result = await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
-      const locked = lockResult.rows?.[0] as any;
+      const locked = lockResult.rows?.[0] as Record<string, unknown>;
       if (!locked) throw new Error("فاتورة المريض غير موجودة");
       if (locked.status !== "draft") throw new Error("الفاتورة ليست مسودة");
 
@@ -229,7 +231,7 @@ const methods = {
             sql`SELECT id, name_ar, has_expiry, major_to_medium, major_to_minor, medium_to_minor FROM items WHERE id IN (${sql.join(invItemIds.map(i => sql`${i}`), sql`, `)})`
           );
           const invItemMap: Record<string, any> = {};
-          for (const row of invItemRows.rows as any[]) invItemMap[row.id] = row;
+          for (const row of invItemRows.rows as Array<Record<string, unknown>>) invItemMap[row.id as string] = row;
 
           const now = new Date();
           const currentMonth = now.getMonth() + 1;
@@ -289,8 +291,8 @@ const methods = {
         }
       }
 
-      const recomputedTotals = this.computeInvoiceTotals(dbLines, dbPayments);
-      const newVersion = (locked.version || 1) + 1;
+      const recomputedTotals = this.computeInvoiceTotals(dbLines as unknown as Record<string, unknown>[], dbPayments as unknown as Record<string, unknown>[]);
+      const newVersion = ((locked as Record<string, unknown>).version as number || 1) + 1;
 
       const [updated] = await tx.update(patientInvoiceHeaders).set({
         ...recomputedTotals,
@@ -313,12 +315,12 @@ const methods = {
   async deletePatientInvoice(this: DatabaseStorage, id: string, reason?: string): Promise<boolean> {
     return await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
-      const invoice = lockResult.rows?.[0] as any;
+      const invoice = lockResult.rows?.[0] as Record<string, unknown>;
       if (!invoice) throw new Error("فاتورة المريض غير موجودة");
       if (invoice.status !== "draft") throw new Error("لا يمكن إلغاء فاتورة نهائية");
       await tx.update(patientInvoiceHeaders).set({
-        status: "cancelled" as any,
-        version: (invoice.version || 1) + 1,
+        status: "cancelled" as "cancelled",
+        version: ((invoice as Record<string, unknown>).version as number | null | undefined || 1) + 1,
         notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
       }).where(eq(patientInvoiceHeaders.id, id));
       return true;
@@ -328,7 +330,7 @@ const methods = {
   async distributePatientInvoice(this: DatabaseStorage, sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]> {
     return await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${sourceId} FOR UPDATE`);
-      const source = lockResult.rows?.[0] as any;
+      const source = lockResult.rows?.[0] as Record<string, unknown>;
       if (!source) throw new Error("فاتورة المصدر غير موجودة");
       if (source.status !== "draft") throw new Error("لا يمكن توزيع فاتورة نهائية");
 
@@ -391,7 +393,7 @@ const methods = {
 
       await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
       const maxNumResult = await tx.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM patient_invoice_headers`);
-      const baseNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
+      const baseNum = (parseInt(String((maxNumResult.rows[0] as Record<string, unknown>)?.max_num || "0")) || 0) + 1;
 
       const createdInvoices: PatientInvoiceHeader[] = [];
       const allocatedSoFar: Record<number, number> = {};
@@ -417,12 +419,12 @@ const methods = {
           netAmount: "0",
           paidAmount: "0",
           version: 1,
-        }).returning();
+        } as unknown as InsertPatientInvoiceHeader).returning();
 
-        const newLines: any[] = [];
+        const newLines: Partial<InsertPatientInvoiceLine>[] = [];
 
         for (let li = 0; li < convertedLines.length; li++) {
-          const cl = convertedLines[li];
+          const cl = convertedLines[li] as PatientInvoiceLine & { serviceType?: string; distUnitLevel: string; distQty: number; distUnitPrice: number };
           const totalQty = cl.distQty;
 
           if (!allocatedSoFar[li]) allocatedSoFar[li] = 0;
@@ -476,8 +478,8 @@ const methods = {
         }
 
         if (newLines.length > 0) {
-          await tx.insert(patientInvoiceLines).values(newLines);
-          const totals = this.computeInvoiceTotals(newLines, []);
+          await tx.insert(patientInvoiceLines).values(newLines as unknown as import("@shared/schema").InsertPatientInvoiceLine[]);
+          const totals = this.computeInvoiceTotals(newLines as unknown as Record<string, unknown>[], []);
           await tx.update(patientInvoiceHeaders).set({
             totalAmount: totals.totalAmount,
             discountAmount: totals.discountAmount,
@@ -503,7 +505,7 @@ const methods = {
 
   async distributePatientInvoiceDirect(this: DatabaseStorage, data: {
     patients: { name: string; phone?: string }[];
-    lines: any[];
+    lines: PatientInvoiceLine[];
     invoiceDate: string;
     departmentId?: string | null;
     warehouseId?: string | null;
@@ -518,7 +520,7 @@ const methods = {
     return await db.transaction(async (tx) => {
       const numPatients = patients.length;
 
-      const itemIds = Array.from(new Set(sourceLines.filter((l: any) => l.itemId).map((l: any) => l.itemId)));
+      const itemIds = Array.from(new Set(sourceLines.filter((l) => l.itemId).map((l) => l.itemId)));
       const itemMap: Record<string, any> = {};
       if (itemIds.length > 0) {
         const fetchedItems = await tx.select().from(items).where(
@@ -529,7 +531,7 @@ const methods = {
         }
       }
 
-      const convertedLines = sourceLines.map((line: any) => {
+      const convertedLines = sourceLines.map((line) => {
         const origQty = parseFloat(line.quantity);
         const origUnitPrice = parseFloat(line.unitPrice);
         const origLevel = line.unitLevel || "minor";
@@ -572,7 +574,7 @@ const methods = {
 
       await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
       const maxNumResult = await tx.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM patient_invoice_headers`);
-      const baseNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
+      const baseNum = (parseInt(String((maxNumResult.rows[0] as Record<string, unknown>)?.max_num || "0")) || 0) + 1;
 
       const createdInvoices: PatientInvoiceHeader[] = [];
       const allocatedSoFar: Record<number, number> = {};
@@ -598,17 +600,17 @@ const methods = {
           netAmount: "0",
           paidAmount: "0",
           version: 1,
-        }).returning();
+        } as unknown as InsertPatientInvoiceHeader).returning();
 
-        const newLines: any[] = [];
+        const newLines: Partial<InsertPatientInvoiceLine>[] = [];
 
         const DIRECT_SOURCE_TYPES = new Set(["STAY_ENGINE", "OR_ROOM"]);
         const DIRECT_SERVICE_TYPES = new Set(["ACCOMMODATION", "OPERATING_ROOM"]);
-        const isDirectLine = (cl: any) =>
-          DIRECT_SOURCE_TYPES.has(cl.sourceType) || DIRECT_SERVICE_TYPES.has(cl.serviceType);
+        const isDirectLine = (cl: PatientInvoiceLine & { serviceType?: string }) =>
+          DIRECT_SOURCE_TYPES.has(cl.sourceType ?? "") || DIRECT_SERVICE_TYPES.has(cl.serviceType ?? "");
 
         for (let li = 0; li < convertedLines.length; li++) {
-          const cl = convertedLines[li];
+          const cl = convertedLines[li] as PatientInvoiceLine & { serviceType?: string; distUnitLevel: string; distQty: number; distUnitPrice: number };
           const totalQty = cl.distQty;
 
           let share: number;
@@ -668,8 +670,8 @@ const methods = {
         }
 
         if (newLines.length > 0) {
-          await tx.insert(patientInvoiceLines).values(newLines);
-          const totals = this.computeInvoiceTotals(newLines, []);
+          await tx.insert(patientInvoiceLines).values(newLines as unknown as import("@shared/schema").InsertPatientInvoiceLine[]);
+          const totals = this.computeInvoiceTotals(newLines as unknown as Record<string, unknown>[], []);
           await tx.update(patientInvoiceHeaders).set({
             totalAmount: totals.totalAmount,
             discountAmount: totals.discountAmount,
@@ -693,17 +695,17 @@ const methods = {
     if (params.itemBarcode) {
       const item = await db.execute(sql`SELECT item_id FROM item_barcodes WHERE barcode_value = ${params.itemBarcode} AND is_active = true LIMIT 1`);
       if (!item.rows.length) return [];
-      resolvedItemId = (item.rows[0] as any).item_id;
+      resolvedItemId = (item.rows[0] as Record<string, unknown>).item_id as string;
     } else if (params.itemCode) {
       const item = await db.execute(sql`SELECT id FROM items WHERE item_code = ${params.itemCode} LIMIT 1`);
       if (!item.rows.length) return [];
-      resolvedItemId = (item.rows[0] as any).id;
+      resolvedItemId = (item.rows[0] as Record<string, unknown>).id as string;
     } else if (params.itemId) {
       resolvedItemId = params.itemId;
     }
 
     let whereExtra = "";
-    const vals: any[] = [];
+    const vals: (string | number)[] = [];
     let idx = 1;
 
     if (params.invoiceNumber) {
@@ -758,7 +760,7 @@ const methods = {
       WHERE h.id = ${invoiceId} AND h.is_return = false AND h.status = 'finalized'
     `);
     if (!hdr.rows.length) return null;
-    const header = hdr.rows[0] as any;
+    const header = hdr.rows[0] as Record<string, unknown>;
 
     const lines = await db.execute(sql`
       SELECT l.id, l.line_no AS "lineNo", l.item_id AS "itemId",
@@ -798,7 +800,7 @@ const methods = {
         SELECT id, invoice_date, warehouse_id, customer_type, customer_name, contract_company, pharmacy_id, status, is_return
         FROM sales_invoice_headers WHERE id = ${data.originalInvoiceId} FOR UPDATE
       `);
-      const orig = origHeader.rows[0] as any;
+      const orig = origHeader.rows[0] as Record<string, unknown>;
       if (!orig) throw new Error("الفاتورة الأصلية غير موجودة");
       if (orig.is_return) throw new Error("لا يمكن إرجاع فاتورة مرتجع");
       if (orig.status !== "finalized") throw new Error("الفاتورة الأصلية غير مرحّلة");
@@ -816,9 +818,9 @@ const methods = {
                ), 0)::numeric AS "previouslyReturnedMinor"
         FROM sales_invoice_lines l WHERE l.invoice_id = ${data.originalInvoiceId}
       `);
-      const origLineMap = new Map<string, any>();
-      for (const ol of origLines.rows as any[]) {
-        origLineMap.set(ol.id, ol);
+      const origLineMap = new Map<string, Record<string, unknown>>();
+      for (const ol of origLines.rows as Array<Record<string, unknown>>) {
+        origLineMap.set(ol.id as string, ol);
       }
 
       const validatedLines: typeof data.returnLines = [];
@@ -827,21 +829,21 @@ const methods = {
         if (!origLine) throw new Error(`السطر ${rl.originalLineId} لا ينتمي للفاتورة الأصلية`);
         if (origLine.item_id !== rl.itemId) throw new Error(`الصنف لا يتطابق مع السطر الأصلي`);
 
-        const availMinor = parseFloat(origLine.qty_in_minor) - parseFloat(origLine.previouslyReturnedMinor);
+        const availMinor = parseFloat(origLine.qty_in_minor as string) - parseFloat(origLine.previouslyReturnedMinor as string);
         let returnMinor = parseFloat(rl.qtyInMinor);
         if (returnMinor <= 0) continue;
         if (returnMinor > availMinor) returnMinor = availMinor;
         if (returnMinor <= 0) continue;
 
-        const pricePerMinor = parseFloat(origLine.line_total) / (parseFloat(origLine.qty_in_minor) || 1);
+        const pricePerMinor = parseFloat(origLine.line_total as string) / (parseFloat(origLine.qty_in_minor as string) || 1);
         const lineTotal = Math.round(returnMinor * pricePerMinor * 100) / 100;
 
         validatedLines.push({
           ...rl,
           qtyInMinor: String(returnMinor),
-          salePrice: origLine.sale_price,
+          salePrice: origLine.sale_price as string,
           lineTotal: lineTotal.toFixed(2),
-          lotId: origLine.lot_id,
+          lotId: origLine.lot_id as string | null,
         });
       }
 
@@ -856,7 +858,7 @@ const methods = {
       const nextNumResult = await tx.execute(sql`
         SELECT COALESCE(MAX(invoice_number), 0) + 1 AS "nextNum" FROM sales_invoice_headers
       `);
-      const nextInvoiceNumber = (nextNumResult.rows[0] as any).nextNum;
+      const nextInvoiceNumber = (nextNumResult.rows[0] as Record<string, unknown>).nextNum;
 
       const hdr = await tx.execute(sql`
         INSERT INTO sales_invoice_headers
@@ -872,8 +874,8 @@ const methods = {
            ${data.notes || null}, ${data.createdBy}, true, ${data.originalInvoiceId}, now(), ${data.createdBy})
         RETURNING id, invoice_number AS "invoiceNumber"
       `);
-      const returnId = (hdr.rows[0] as any).id;
-      const returnNumber = (hdr.rows[0] as any).invoiceNumber;
+      const returnId = (hdr.rows[0] as Record<string, unknown>).id;
+      const returnNumber = (hdr.rows[0] as Record<string, unknown>).invoiceNumber;
 
       for (let i = 0; i < validatedLines.length; i++) {
         const rl = validatedLines[i];

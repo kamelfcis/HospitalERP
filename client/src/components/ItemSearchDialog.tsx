@@ -2,10 +2,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Plus, X } from "lucide-react";
+import type { ItemLike } from "@/lib/invoice-lines";
 
 export interface ItemSearchDialogColumn {
   header: string;
-  render: (item: any) => React.ReactNode;
+  render: (item: ItemLike & { id: string; itemCode: string; nameAr: string }) => React.ReactNode;
 }
 
 interface Props {
@@ -17,10 +18,10 @@ interface Props {
   setSearchMode: (v: string) => void;
   searchQuery: string;
   onSearchQueryChange: (v: string) => void;
-  searchResults: any[];
+  searchResults: Array<ItemLike & { id: string; itemCode: string; nameAr: string }>;
   searchLoading: boolean;
   searchInputRef: React.RefObject<HTMLInputElement>;
-  onAddItem: (item: any) => void;
+  onAddItem: (item: ItemLike & { id: string; itemCode: string; nameAr: string }) => void;
   extraColumn?: ItemSearchDialogColumn;
   extraFilters?: React.ReactNode;
 }
@@ -89,7 +90,7 @@ export function ItemSearchDialog({
               </tr>
             </thead>
             <tbody>
-              {searchResults.map((item: any) => (
+              {searchResults.map((item) => (
                 <tr key={item.id} className="peachtree-grid-row" data-testid={`row-search-${item.id}`}>
                   <td className="text-center font-mono">{item.itemCode}</td>
                   <td className="font-semibold">{item.nameAr}</td>

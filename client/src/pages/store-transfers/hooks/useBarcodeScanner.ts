@@ -60,8 +60,9 @@ export function useBarcodeScanner({ sourceWarehouseId, setFormLines, qtyInputRef
           const inp = qtyInputRefs.current.get(newLineId);
           if (inp) { inp.focus(); inp.select(); }
         }, 100);
-      } catch (err: any) {
-        toast({ title: "خطأ", description: err.message, variant: "destructive" });
+      } catch (err: unknown) {
+        const _em = err instanceof Error ? err.message : String(err);
+        toast({ title: "خطأ", description: _em, variant: "destructive" });
       } finally {
         setBarcodeLoading(false);
         setBarcodeInput("");

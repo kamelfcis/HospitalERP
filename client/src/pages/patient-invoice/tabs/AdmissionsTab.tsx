@@ -22,9 +22,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BedDouble, LogOut, Layers, FileText, Printer, Search, ChevronRight, CalendarDays } from "lucide-react";
 import { formatCurrency, formatDateShort, formatDateTime } from "@/lib/formatters";
-import type { Admission, Department } from "@shared/schema";
+import type { Admission, Department, PatientInvoiceHeader } from "@shared/schema";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+interface AdmissionWithLatestInvoice extends Admission {
+  patientName: string;
+  latestInvoiceNumber?: string | null;
+  latestInvoiceStatus?: string | null;
+  latestInvoiceDeptName?: string | null;
+  totalNetAmount?: string | number | null;
+  totalPaidAmount?: string | number | null;
+  totalTransferredAmount?: string | number | null;
+}
 
 /** حالات الإقامة: label + CSS classes للـ Badge */
 const ADMISSION_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
@@ -65,9 +75,9 @@ function InvoiceStatusBadge({ status }: { status?: string | null }) {
 
 interface AdmissionsTabProps {
   // ── الإقامة المختارة (وضع التفاصيل) ──────────────────
-  admSelectedAdmission: Admission | null;
-  setAdmSelectedAdmission: (a: Admission | null) => void;
-  admDetail: Admission | undefined;
+  admSelectedAdmission: AdmissionWithLatestInvoice | null;
+  setAdmSelectedAdmission: (a: AdmissionWithLatestInvoice | null) => void;
+  admDetail: AdmissionWithLatestInvoice | undefined;
 
   // ── العمليات على الإقامة ──────────────────────────────
   admDischargeMutation:    { mutate: (id: string) => void; isPending: boolean };
@@ -75,7 +85,7 @@ interface AdmissionsTabProps {
 
   // ── فواتير الإقامة (وضع التفاصيل) ────────────────────
   admInvoicesLoading: boolean;
-  admInvoices: any[] | undefined;
+  admInvoices: PatientInvoiceHeader[] | undefined;
 
   // ── تقرير الطباعة ─────────────────────────────────────
   admPrintDeptId: string;
@@ -83,13 +93,13 @@ interface AdmissionsTabProps {
   departments: Department[] | undefined;
   admReportLoading: boolean;
   admReportData: any;
-  admInvoicesByDepartment: Record<string, any[]>;
+  admInvoicesByDepartment: Record<string, PatientInvoiceHeader[]>;
   admTotalAllInvoices: number;
-  admFilteredPrintInvoices: Record<string, any[]>;
+  admFilteredPrintInvoices: Record<string, PatientInvoiceHeader[]>;
   admPrintRef: React.RefObject<HTMLDivElement>;
 
   // ── قائمة الإقامات (وضع القائمة) ─────────────────────
-  admAllAdmissions: any[] | undefined;
+  admAllAdmissions: AdmissionWithLatestInvoice[] | undefined;
   admListLoading: boolean;
 
   // ── فلاتر القائمة ──────────────────────────────────────
@@ -215,7 +225,7 @@ export function AdmissionsTab({
 // ─── Sub-component: AdmissionList (وضع القائمة) ───────────────────────────────
 
 interface AdmissionListProps {
-  rows: any[] | undefined;
+  rows: AdmissionWithLatestInvoice[] | undefined;
   loading: boolean;
   searchQuery: string;
   onSearchChange: (v: string) => void;
@@ -228,7 +238,7 @@ interface AdmissionListProps {
   onDateFromChange: (v: string) => void;
   dateTo: string;
   onDateToChange: (v: string) => void;
-  onSelect: (a: any) => void;
+  onSelect: (a: AdmissionWithLatestInvoice) => void;
 }
 
 function AdmissionList({
@@ -243,9 +253,9 @@ function AdmissionList({
   // ── حساب الإجماليات للسطر السفلي ──
   const totals = (rows ?? []).reduce(
     (acc, a) => ({
-      net:          acc.net          + parseFloat(a.totalNetAmount         ?? "0"),
-      paid:         acc.paid         + parseFloat(a.totalPaidAmount        ?? "0"),
-      transferred:  acc.transferred  + parseFloat(a.totalTransferredAmount ?? "0"),
+      net:          acc.net          + parseFloat(String(a.totalNetAmount         ?? "0")),
+      paid:         acc.paid         + parseFloat(String(a.totalPaidAmount        ?? "0")),
+      transferred:  acc.transferred  + parseFloat(String(a.totalTransferredAmount ?? "0")),
     }),
     { net: 0, paid: 0, transferred: 0 }
   );
@@ -363,7 +373,7 @@ function AdmissionList({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rows.map((a: any) => (
+                  rows.map((a: AdmissionWithLatestInvoice) => (
                     <AdmissionRow key={a.id} row={a} onSelect={onSelect} />
                   ))
                 )}
@@ -399,10 +409,10 @@ function AdmissionList({
 
 // ─── Sub-component: AdmissionRow (صف في الجدول) ──────────────────────────────
 
-function AdmissionRow({ row: a, onSelect }: { row: any; onSelect: (a: any) => void }) {
-  const netAmount  = parseFloat(a.totalNetAmount  ?? "0");
-  const paidAmount = parseFloat(a.totalPaidAmount ?? "0");
-  const transferred = parseFloat(a.totalTransferredAmount ?? "0");
+function AdmissionRow({ row: a, onSelect }: { row: AdmissionWithLatestInvoice; onSelect: (a: AdmissionWithLatestInvoice) => void }) {
+  const netAmount  = parseFloat(String(a.totalNetAmount  ?? "0"));
+  const paidAmount = parseFloat(String(a.totalPaidAmount ?? "0"));
+  const transferred = parseFloat(String(a.totalTransferredAmount ?? "0"));
 
   return (
     <TableRow
@@ -480,20 +490,20 @@ function AdmissionRow({ row: a, onSelect }: { row: any; onSelect: (a: any) => vo
 // ─── Sub-component: AdmissionDetail (وضع التفاصيل) ───────────────────────────
 
 interface AdmissionDetailProps {
-  adm: any;
+  adm: AdmissionWithLatestInvoice;
   onBack: () => void;
   admDischargeMutation:   { mutate: (id: string) => void; isPending: boolean };
   admConsolidateMutation: { mutate: (id: string) => void; isPending: boolean };
   admInvoicesLoading: boolean;
-  admInvoices: any[] | undefined;
+  admInvoices: PatientInvoiceHeader[] | undefined;
   admPrintDeptId: string;
   setAdmPrintDeptId: (v: string) => void;
   departments: Department[] | undefined;
   admReportLoading: boolean;
   admReportData: any;
-  admInvoicesByDepartment: Record<string, any[]>;
+  admInvoicesByDepartment: Record<string, PatientInvoiceHeader[]>;
   admTotalAllInvoices: number;
-  admFilteredPrintInvoices: Record<string, any[]>;
+  admFilteredPrintInvoices: Record<string, PatientInvoiceHeader[]>;
   admPrintRef: React.RefObject<HTMLDivElement>;
   admGetStatusBadgeClass: (s: string) => string;
   admStatusLabels: Record<string, string>;
@@ -629,12 +639,12 @@ function AdmissionDetail({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {admInvoices.map((inv: any) => (
+                  {admInvoices.map((inv: PatientInvoiceHeader) => (
                     <TableRow key={inv.id} data-testid={`row-adm-invoice-${inv.id}`}>
                       <TableCell className="text-xs">{inv.invoiceNumber}</TableCell>
-                      <TableCell className="text-xs">{inv.departmentName || "—"}</TableCell>
+                      <TableCell className="text-xs">{(inv as PatientInvoiceHeader & { departmentName?: string }).departmentName || "—"}</TableCell>
                       <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
-                      <TableCell className="text-xs">{formatCurrency(inv.netAmount || inv.totalAmount)}</TableCell>
+                      <TableCell className="text-xs">{formatCurrency(parseFloat(String(inv.netAmount || inv.totalAmount)))}</TableCell>
                       <TableCell>
                         <InvoiceStatusBadge status={inv.status} />
                       </TableCell>
@@ -695,11 +705,11 @@ function AdmissionDetail({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(invs as any[]).map((inv: any) => (
+                      {(invs as PatientInvoiceHeader[]).map((inv: PatientInvoiceHeader) => (
                         <TableRow key={inv.id}>
                           <TableCell className="text-xs">{inv.invoiceNumber}</TableCell>
                           <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
-                          <TableCell className="text-xs">{formatCurrency(inv.netAmount || inv.totalAmount)}</TableCell>
+                          <TableCell className="text-xs">{formatCurrency(parseFloat(String(inv.netAmount || inv.totalAmount)))}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -707,8 +717,8 @@ function AdmissionDetail({
                   <p className="text-xs font-medium text-left">
                     إجمالي القسم:{" "}
                     {formatCurrency(
-                      (invs as any[]).reduce(
-                        (s, inv) => s + parseFloat(inv.netAmount || inv.totalAmount || "0"), 0
+                      (invs as PatientInvoiceHeader[]).reduce(
+                        (s, inv) => s + parseFloat(String(inv.netAmount || inv.totalAmount || "0")), 0
                       )
                     )}
                   </p>

@@ -73,8 +73,8 @@ export function useSupplierSearch(
         setSupplierDropdownOpen(true);
         setSupplierHighlightIdx(-1);
       }
-    } catch (err: any) {
-      if (err.name !== "AbortError") setSupplierResults([]);
+    } catch (err: unknown) {
+      if ((err as Error).name !== "AbortError") setSupplierResults([]);
     } finally {
       setSupplierSearchLoading(false);
     }

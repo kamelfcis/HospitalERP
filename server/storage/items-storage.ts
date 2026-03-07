@@ -54,7 +54,7 @@ const methods = {
     }
 
     if (category) {
-      conditions.push(eq(items.category, category as any));
+      conditions.push(eq(items.category, category as "drug" | "supply" | "service"));
     }
 
     if (isToxic !== undefined) {

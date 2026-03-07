@@ -32,9 +32,9 @@ interface LineGridProps {
   serviceSearchRef: React.RefObject<HTMLInputElement>;
   serviceDropdownRef: React.RefObject<HTMLDivElement>;
   pendingQtyRef: React.MutableRefObject<Map<string, string>>;
-  addServiceLine: (svc: any) => void;
-  addItemLine: (item: any, type: "drug" | "consumable" | "equipment") => void;
-  updateLine: (tempId: string, field: string, value: any) => void;
+  addServiceLine: (svc: Service) => void;
+  addItemLine: (item: Item, type: "drug" | "consumable" | "equipment") => void;
+  updateLine: (tempId: string, field: string, value: unknown) => void;
   removeLine: (tempId: string) => void;
   handleQtyConfirm: (tempId: string) => void;
   handleUnitLevelChange: (tempId: string, level: "major" | "medium" | "minor") => void;
@@ -141,10 +141,10 @@ export function LineGrid({
               show={serviceResults.length > 0}
               setShow={(v) => { if (!v) setServiceResults([]); }}
               loading={false}
-              items={serviceResults.map((svc: any) => ({
+              items={serviceResults.map((svc: Service) => ({
                 id: svc.id,
                 primary: svc.nameAr || svc.code,
-                secondary: formatNumber(svc.basePrice),
+                secondary: formatNumber(parseFloat(String(svc.basePrice))),
                 raw: svc,
               }))}
               onSelect={(si) => addServiceLine(si.raw)}

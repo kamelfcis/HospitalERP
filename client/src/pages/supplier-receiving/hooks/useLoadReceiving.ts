@@ -45,9 +45,9 @@ export function useLoadReceiving({
       form.setFormNotes(receiving.notes || "");
       form.setFormStatus(receiving.status);
       form.setFormReceivingNumber(receiving.receivingNumber);
-      form.setFormCorrectionStatus((receiving as any).correctionStatus || null);
-      form.setFormCorrectionOfId((receiving as any).correctionOfId || null);
-      form.setFormConvertedToInvoiceId((receiving as any).convertedToInvoiceId || null);
+      form.setFormCorrectionStatus((receiving as Record<string, unknown>).correctionStatus as string | null || null);
+      form.setFormCorrectionOfId((receiving as Record<string, unknown>).correctionOfId as string | null || null);
+      form.setFormConvertedToInvoiceId((receiving as Record<string, unknown>).convertedToInvoiceId as string | null || null);
 
       if (receiving.supplier) {
         supplierSearch.setSelectedSupplier(receiving.supplier);
@@ -57,7 +57,7 @@ export function useLoadReceiving({
       }
 
       // ── بناء سطور التحميل ─────────────────────────────────────────────────
-      const loadedLines: ReceivingLineLocal[] = (receiving.lines || []).map((line: any) => {
+      const loadedLines: ReceivingLineLocal[] = (receiving.lines || []).map((line) => {
         const sp = line.salePrice ? parseFloat(line.salePrice as string) : 0;
         const pp = parseFloat(line.purchasePrice as string) || 0;
         return {
@@ -135,8 +135,9 @@ export function useLoadReceiving({
       resetAutoSave();
       setActiveTab("form");
 
-    } catch (err: any) {
-      toast({ title: "خطأ في تحميل إذن الاستلام", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      toast({ title: "خطأ في تحميل إذن الاستلام", description: _em, variant: "destructive" });
     }
   }, [form, lines, supplierSearch, resetAutoSave, setActiveTab, toast]);
 

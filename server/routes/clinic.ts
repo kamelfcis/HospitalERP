@@ -7,14 +7,15 @@ import {
   checkPermission,
 } from "./_shared";
 
-function snakeToCamel(obj: any): any {
+function snakeToCamel(obj: unknown): any {
   if (Array.isArray(obj)) return obj.map(snakeToCamel);
   if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
   if (obj instanceof Date) return obj;
-  const result: any = {};
-  for (const key of Object.keys(obj)) {
+  const result: Record<string, unknown> = {};
+  const record = obj as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
     const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-    result[camelKey] = obj[key];
+    result[camelKey] = record[key];
   }
   return result;
 }
@@ -45,7 +46,7 @@ export function registerClinicRoutes(app: Express) {
 
   app.patch("/api/clinic-clinics/:id", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
-      const clinic = await storage.updateClinic(req.params.id, req.body);
+      const clinic = await storage.updateClinic(req.params.id as string, req.body);
       res.json(snakeToCamel(clinic));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -56,18 +57,18 @@ export function registerClinicRoutes(app: Express) {
       const perms = await storage.getUserEffectivePermissions(userId);
       if (!perms.includes("clinic.view_all")) {
         const allowedIds = await storage.getUserClinicIds(userId);
-        if (!allowedIds.includes(req.params.id)) {
+        if (!allowedIds.includes(req.params.id as string)) {
           return res.status(403).json({ message: "غير مصرح لهذه العيادة" });
         }
       }
-      const schedules = await storage.getDoctorSchedules(req.params.id);
+      const schedules = await storage.getDoctorSchedules(req.params.id as string);
       res.json(snakeToCamel(schedules));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/clinic-clinics/:id/schedules", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
-      const schedule = await storage.upsertDoctorSchedule({ clinicId: req.params.id, ...req.body });
+      const schedule = await storage.upsertDoctorSchedule({ clinicId: req.params.id as string, ...req.body });
       res.status(201).json(snakeToCamel(schedule));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -83,13 +84,13 @@ export function registerClinicRoutes(app: Express) {
 
       if (!canViewAll) {
         const allowedIds = await storage.getUserClinicIds(userId);
-        if (!allowedIds.includes(req.params.id)) {
+        if (!allowedIds.includes(req.params.id as string)) {
           return res.status(403).json({ message: "غير مصرح لهذه العيادة" });
         }
       }
 
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
-      const appointments = await storage.getClinicAppointments(req.params.id, date);
+      const appointments = await storage.getClinicAppointments(req.params.id as string, date);
       res.json(snakeToCamel(appointments));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -100,11 +101,11 @@ export function registerClinicRoutes(app: Express) {
       const perms = await storage.getUserEffectivePermissions(userId);
       if (!perms.includes("clinic.view_all")) {
         const allowedIds = await storage.getUserClinicIds(userId);
-        if (!allowedIds.includes(req.params.id)) {
+        if (!allowedIds.includes(req.params.id as string)) {
           return res.status(403).json({ message: "غير مصرح لك بالحجز في هذه العيادة" });
         }
       }
-      const data = { ...req.body, clinicId: req.params.id, createdBy: userId };
+      const data = { ...req.body, clinicId: req.params.id as string, createdBy: userId };
       if (!data.patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       if (!data.doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
       if (!data.appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
@@ -121,7 +122,7 @@ export function registerClinicRoutes(app: Express) {
         return res.status(403).json({ message: "غير مصرح" });
       }
       if (!perms.includes("clinic.view_all")) {
-        const clinicId = await storage.getAppointmentClinicId(req.params.id);
+        const clinicId = await storage.getAppointmentClinicId(req.params.id as string);
         if (clinicId) {
           const allowedIds = await storage.getUserClinicIds(userId);
           if (!allowedIds.includes(clinicId)) {
@@ -132,7 +133,7 @@ export function registerClinicRoutes(app: Express) {
       const { status } = req.body;
       const validStatuses = ['waiting', 'in_consultation', 'done', 'cancelled'];
       if (!validStatuses.includes(status)) return res.status(400).json({ message: "حالة غير صحيحة" });
-      await storage.updateAppointmentStatus(req.params.id, status);
+      await storage.updateAppointmentStatus(req.params.id as string, status);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -146,7 +147,7 @@ export function registerClinicRoutes(app: Express) {
 
   app.get("/api/clinic-user-doctor/:userId", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
-      const doctorId = await storage.getUserAssignedDoctorId(req.params.userId);
+      const doctorId = await storage.getUserAssignedDoctorId(req.params.userId as string);
       res.json({ doctorId });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -162,7 +163,7 @@ export function registerClinicRoutes(app: Express) {
 
   app.delete("/api/clinic-user-doctor/:userId", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
-      await storage.removeUserDoctorAssignment(req.params.userId);
+      await storage.removeUserDoctorAssignment(req.params.userId as string);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -178,7 +179,7 @@ export function registerClinicRoutes(app: Express) {
 
   app.get("/api/clinic-user-clinic/:userId", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
-      const clinicIds = await storage.getUserClinicIds(req.params.userId);
+      const clinicIds = await storage.getUserClinicIds(req.params.userId as string);
       res.json(clinicIds);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -197,7 +198,7 @@ export function registerClinicRoutes(app: Express) {
       const userId = req.session.userId!;
       const perms = await storage.getUserEffectivePermissions(userId);
       if (!perms.includes("clinic.view_all")) {
-        const clinicId = await storage.getAppointmentClinicId(req.params.appointmentId);
+        const clinicId = await storage.getAppointmentClinicId(req.params.appointmentId as string);
         if (clinicId) {
           const allowedIds = await storage.getUserClinicIds(userId);
           if (!allowedIds.includes(clinicId)) {
@@ -205,7 +206,7 @@ export function registerClinicRoutes(app: Express) {
           }
         }
       }
-      const data = await storage.getConsultationByAppointment(req.params.appointmentId);
+      const data = await storage.getConsultationByAppointment(req.params.appointmentId as string);
       if (!data) return res.status(404).json({ message: "الموعد غير موجود" });
       const camelData = snakeToCamel(data);
       if (camelData.drugs) camelData.drugs = snakeToCamel(camelData.drugs);
@@ -265,7 +266,7 @@ export function registerClinicRoutes(app: Express) {
     try {
       const doctorId = await storage.getUserDoctorId(req.session.userId!);
       if (!doctorId) return res.status(404).json({ message: "لم يتم ربط حسابك بطبيب" });
-      await storage.removeFavoriteDrug(req.params.id, doctorId);
+      await storage.removeFavoriteDrug(req.params.id as string, doctorId);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -294,18 +295,18 @@ export function registerClinicRoutes(app: Express) {
         return res.status(403).json({ message: "لا تملك صلاحية" });
       }
 
-      const filters: any = {};
+      const filters: Record<string, string> = {};
 
       if (canViewPharmacy && !isAdmin && !canViewOrders) {
         filters.targetType = 'pharmacy';
         const userRow = await db.execute(sql`SELECT pharmacy_id FROM users WHERE id = ${userId}`);
-        const pharmacyId = (userRow.rows[0] as any)?.pharmacy_id;
+        const pharmacyId = (userRow.rows[0] as { pharmacy_id: string | null } | undefined)?.pharmacy_id;
         if (pharmacyId) filters.targetId = pharmacyId;
       }
 
-      if (req.query.targetType) filters.targetType = req.query.targetType as string;
-      if (req.query.status) filters.status = req.query.status as string;
-      if (req.query.targetId) filters.targetId = req.query.targetId as string;
+      if (req.query.targetType as string) filters.targetType = req.query.targetType as string;
+      if (req.query.status as string) filters.status = req.query.status as string;
+      if (req.query.targetId as string) filters.targetId = req.query.targetId as string;
 
       const orders = await storage.getClinicOrders(filters);
       res.json(snakeToCamel(orders));
@@ -317,7 +318,7 @@ export function registerClinicRoutes(app: Express) {
       const perms = await storage.getUserEffectivePermissions(req.session.userId!);
       const canView = perms.includes("doctor_orders.view") || perms.includes("clinic.pharmacy_orders") || perms.includes("dept_services.create");
       if (!canView) return res.status(403).json({ message: "لا تملك صلاحية لهذا الإجراء" });
-      const order = await storage.getClinicOrder(req.params.id);
+      const order = await storage.getClinicOrder(req.params.id as string);
       if (!order) return res.status(404).json({ message: "الأمر غير موجود" });
       res.json(snakeToCamel(order));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -325,21 +326,21 @@ export function registerClinicRoutes(app: Express) {
 
   app.post("/api/clinic-orders/:id/execute", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
     try {
-      const result = await storage.executeClinicOrder(req.params.id, req.session.userId!);
+      const result = await storage.executeClinicOrder(req.params.id as string, req.session.userId!);
       res.json(snakeToCamel(result));
     } catch (e: any) { res.status(400).json({ message: e.message }); }
   });
 
   app.post("/api/clinic-orders/:id/cancel", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
     try {
-      await storage.cancelClinicOrder(req.params.id);
+      await storage.cancelClinicOrder(req.params.id as string);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.get("/api/clinic-service-doctor-prices/:serviceId", requireAuth, async (req, res) => {
     try {
-      const rows = await storage.getServiceDoctorPrices(req.params.serviceId);
+      const rows = await storage.getServiceDoctorPrices(req.params.serviceId as string);
       res.json(snakeToCamel(rows));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -355,7 +356,7 @@ export function registerClinicRoutes(app: Express) {
 
   app.delete("/api/clinic-service-doctor-prices/:id", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
-      await storage.deleteServiceDoctorPrice(req.params.id);
+      await storage.deleteServiceDoctorPrice(req.params.id as string);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

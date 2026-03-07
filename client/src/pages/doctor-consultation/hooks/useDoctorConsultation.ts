@@ -186,9 +186,9 @@ export function useDoctorConsultation(appointmentId: string) {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-clinics"] });
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-doctor-statement"] });
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsSaving(false);
-      toast({ variant: "destructive", title: "خطأ في إنهاء الكشف", description: err.message });
+      toast({ variant: "destructive", title: "خطأ في إنهاء الكشف", description: (err as Error).message });
       return false;
     }
   }, [form, appointmentId, toast, saveMutation]);

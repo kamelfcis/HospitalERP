@@ -276,7 +276,14 @@ export const stockMovementAllocations = pgTable("stock_movement_allocations", {
 // Insert schemas
 export const insertItemFormTypeSchema = createInsertSchema(itemFormTypes).omit({ id: true, createdAt: true });
 export const insertItemUomSchema = createInsertSchema(itemUoms).omit({ id: true, createdAt: true });
-export const insertItemSchema = createInsertSchema(items).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertItemSchema = createInsertSchema(items, {
+  majorUnitName: z.string().nullable(),
+  mediumUnitName: z.string().nullable(),
+  minorUnitName: z.string().nullable(),
+  majorToMedium: z.string().nullable(),
+  majorToMinor: z.string().nullable(),
+  mediumToMinor: z.string().nullable(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPurchaseTransactionSchema = createInsertSchema(purchaseTransactions).omit({ id: true, createdAt: true });
 export const insertSalesTransactionSchema = createInsertSchema(salesTransactions).omit({ id: true, createdAt: true });
 export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });

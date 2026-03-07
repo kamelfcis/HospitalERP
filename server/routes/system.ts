@@ -22,8 +22,9 @@ export function registerSystemRoutes(app: Express) {
       const rows = await db.select().from(systemSettings).where(eq(systemSettings.key, "login_background"));
       if (rows.length === 0 || !rows[0].value) return res.status(404).json({ message: "لا توجد صورة" });
       res.json({ image: rows[0].value });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -38,8 +39,9 @@ export function registerSystemRoutes(app: Express) {
       }
       await setSetting("login_background", image);
       res.json({ success: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -49,8 +51,9 @@ export function registerSystemRoutes(app: Express) {
       const result: Record<string, string> = {};
       for (const row of rows) result[row.key] = row.value;
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -60,11 +63,12 @@ export function registerSystemRoutes(app: Express) {
       const { value } = req.body;
       if (typeof value !== "string") return res.status(400).json({ message: "قيمة غير صالحة" });
       const ALLOWED_KEYS = ["stay_billing_mode"];
-      if (!ALLOWED_KEYS.includes(key)) return res.status(400).json({ message: "مفتاح إعداد غير مسموح" });
-      await setSetting(key, value);
+      if (!ALLOWED_KEYS.includes(key as string)) return res.status(400).json({ message: "مفتاح إعداد غير مسموح" });
+      await setSetting(key as string, value);
       res.json({ key, value });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -149,7 +153,7 @@ export function registerSystemRoutes(app: Express) {
 
   app.get("/api/chat/messages/:otherUserId", requireAuth, async (req, res) => {
     try {
-      const { otherUserId } = req.params;
+      const otherUserId = req.params.otherUserId as string;
       const me = req.session.userId!;
       await storage.markChatRead(otherUserId, me);
       const msgs = await storage.getChatConversation(me, otherUserId);
@@ -171,7 +175,7 @@ export function registerSystemRoutes(app: Express) {
 
   app.post("/api/chat/messages/read/:senderId", requireAuth, async (req, res) => {
     try {
-      await storage.markChatRead(req.params.senderId, req.session.userId!);
+      await storage.markChatRead(req.params.senderId as string, req.session.userId!);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

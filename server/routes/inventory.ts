@@ -53,8 +53,9 @@ export function registerInventoryRoutes(app: Express) {
         maxPrice,
       });
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -70,39 +71,41 @@ export function registerInventoryRoutes(app: Express) {
         limit ? parseInt(limit as string) : 10
       );
       res.json(results);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/items/search", async (req, res) => {
     try {
-      const { warehouseId, mode, q, limit, page, pageSize, includeZeroStock, drugsOnly, excludeServices, minPrice, maxPrice } = req.query;
+      const { warehouseId, mode, q, limit, page, pageSize, includeZeroStock, drugsOnly, excludeServices, minPrice, maxPrice } = req.query as Record<string, string | undefined>;
       if (!q) {
         return res.status(400).json({ message: "q مطلوب" });
       }
       if (warehouseId) {
         const result = await storage.searchItemsAdvanced({
-          mode: (mode as string || 'AR') as 'AR' | 'EN' | 'CODE' | 'BARCODE',
-          query: q as string,
-          warehouseId: warehouseId as string,
-          page: parseInt(page as string) || 1,
-          pageSize: parseInt(pageSize as string || limit as string) || 50,
+          mode: (mode || 'AR') as 'AR' | 'EN' | 'CODE' | 'BARCODE',
+          query: q,
+          warehouseId,
+          page: parseInt(page || "1") || 1,
+          pageSize: parseInt(pageSize || limit || "50") || 50,
           includeZeroStock: includeZeroStock === 'true',
           drugsOnly: drugsOnly === 'true',
           excludeServices: excludeServices === 'true',
-          minPrice: minPrice ? parseFloat(minPrice as string) : undefined,
-          maxPrice: maxPrice ? parseFloat(maxPrice as string) : undefined,
+          minPrice: minPrice ? parseFloat(minPrice) : undefined,
+          maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
         });
         res.json(result);
       } else {
-        const searchLimit = parseInt(limit as string || pageSize as string) || 15;
-        const searchQuery = (q as string).replace(/%/g, '%');
+        const searchLimit = parseInt(limit || pageSize || "15") || 15;
+        const searchQuery = q.replace(/%/g, '%');
         const items = await storage.searchItemsByPattern(searchQuery, searchLimit);
         res.json(items);
       }
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -113,10 +116,11 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(400).json({ message: "warehouseId مطلوب" });
       }
       const date = (asOfDate as string) || new Date().toISOString().split("T")[0];
-      const options = await storage.getExpiryOptions(req.params.itemId, warehouseId as string, date);
+      const options = await storage.getExpiryOptions(req.params.itemId as string, warehouseId as string, date);
       res.json(options);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -125,10 +129,11 @@ export function registerInventoryRoutes(app: Express) {
       const { asOfDate, excludeExpired } = req.query;
       const date = (asOfDate as string) || new Date().toISOString().split("T")[0];
       const exclude = excludeExpired !== "0";
-      const summary = await storage.getItemAvailabilitySummary(req.params.itemId, date, exclude);
+      const summary = await storage.getItemAvailabilitySummary(req.params.itemId as string, date, exclude);
       res.json(summary);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -138,10 +143,11 @@ export function registerInventoryRoutes(app: Express) {
       if (!warehouseId) {
         return res.status(400).json({ message: "warehouseId مطلوب" });
       }
-      const qty = await storage.getItemAvailability(req.params.itemId, warehouseId as string);
+      const qty = await storage.getItemAvailability(req.params.itemId as string, warehouseId as string);
       res.json({ availableQtyMinor: qty });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -150,20 +156,22 @@ export function registerInventoryRoutes(app: Express) {
       const { code, nameAr, nameEn, excludeId } = req.query as { code?: string; nameAr?: string; nameEn?: string; excludeId?: string };
       const result = await storage.checkItemUniqueness(code, nameAr, nameEn, excludeId);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/items/:id", async (req, res) => {
     try {
-      const item = await storage.getItem(req.params.id);
+      const item = await storage.getItem(req.params.id as string);
       if (!item) {
         return res.status(404).json({ message: "الصنف غير موجود" });
       }
       res.json(item);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -207,7 +215,7 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(400).json({ message: errors.join("، ") });
       }
 
-      const uniqueness = await storage.checkItemUniqueness(parsed.itemCode, parsed.nameAr, parsed.nameEn);
+      const uniqueness = await storage.checkItemUniqueness(parsed.itemCode ?? undefined, parsed.nameAr ?? undefined, parsed.nameEn ?? undefined);
       const uniqueErrors: string[] = [];
       if (!uniqueness.codeUnique) uniqueErrors.push("كود الصنف مسجل بالفعل");
       if (!uniqueness.nameArUnique) uniqueErrors.push("الاسم العربي مسجل بالفعل");
@@ -219,28 +227,29 @@ export function registerInventoryRoutes(app: Express) {
 
       if (parsed.category === "service") {
         parsed.hasExpiry = false;
-        parsed.majorUnitName = null as any;
-        parsed.mediumUnitName = null as any;
-        parsed.minorUnitName = null as any;
-        parsed.majorToMedium = null as any;
-        parsed.majorToMinor = null as any;
-        parsed.mediumToMinor = null as any;
+        parsed.majorUnitName = null;
+        parsed.mediumUnitName = null;
+        parsed.minorUnitName = null;
+        parsed.majorToMedium = null;
+        parsed.majorToMinor = null;
+        parsed.mediumToMinor = null;
       } else if (parsed.category === "drug" && parsed.hasExpiry === undefined) {
         parsed.hasExpiry = true;
       }
       if (!parsed.mediumUnitName?.trim()) {
-        parsed.mediumUnitName = null as any;
-        parsed.majorToMedium = null as any;
+        parsed.mediumUnitName = null;
+        parsed.majorToMedium = null;
       }
       if (!parsed.minorUnitName?.trim()) {
-        parsed.minorUnitName = null as any;
-        parsed.majorToMinor = null as any;
-        parsed.mediumToMinor = null as any;
+        parsed.minorUnitName = null;
+        parsed.majorToMinor = null;
+        parsed.mediumToMinor = null;
       }
       const item = await storage.createItem(parsed);
       res.status(201).json(item);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(400).json({ message: _em });
     }
   });
 
@@ -249,7 +258,7 @@ export function registerInventoryRoutes(app: Express) {
       const parsed = insertItemSchema.partial().parse(req.body);
 
       if (parsed.itemCode || parsed.nameAr || parsed.nameEn) {
-        const uniqueness = await storage.checkItemUniqueness(parsed.itemCode, parsed.nameAr, parsed.nameEn, req.params.id);
+        const uniqueness = await storage.checkItemUniqueness(parsed.itemCode ?? undefined, parsed.nameAr ?? undefined, parsed.nameEn ?? undefined, req.params.id as string);
         const uniqueErrors: string[] = [];
         if (parsed.itemCode && !uniqueness.codeUnique) uniqueErrors.push("كود الصنف مسجل بالفعل");
         if (parsed.nameAr && !uniqueness.nameArUnique) uniqueErrors.push("الاسم العربي مسجل بالفعل");
@@ -260,32 +269,33 @@ export function registerInventoryRoutes(app: Express) {
       }
 
       if (parsed.mediumUnitName !== undefined && !parsed.mediumUnitName?.trim()) {
-        parsed.mediumUnitName = null as any;
-        parsed.majorToMedium = null as any;
+        parsed.mediumUnitName = null;
+        parsed.majorToMedium = null;
       }
       if (parsed.minorUnitName !== undefined && !parsed.minorUnitName?.trim()) {
-        parsed.minorUnitName = null as any;
-        parsed.majorToMinor = null as any;
-        parsed.mediumToMinor = null as any;
+        parsed.minorUnitName = null;
+        parsed.majorToMinor = null;
+        parsed.mediumToMinor = null;
       }
 
-      const item = await storage.updateItem(req.params.id, parsed);
+      const item = await storage.updateItem(req.params.id as string, parsed);
       if (!item) return res.status(404).json({ message: "الصنف غير موجود" });
       res.json(item);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(400).json({ message: _em });
     }
   });
 
   app.delete("/api/items/:id", requireAuth, checkPermission(PERMISSIONS.ITEMS_DELETE), async (req, res) => {
     try {
-      await storage.deleteItem(req.params.id);
+      await storage.deleteItem(req.params.id as string);
       res.status(204).send();
-    } catch (error: any) {
-      if (error.message?.includes("violates foreign key constraint") || error.code === "23503") {
+    } catch (error: unknown) {
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("violates foreign key constraint") || (error as { code?: string }).code === "23503") {
         res.status(409).json({ message: "لا يمكن حذف هذا الصنف لوجود حركات مرتبطة به. يمكنك إلغاء تفعيله بدلاً من ذلك." });
       } else {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
     }
   });
@@ -295,8 +305,9 @@ export function registerInventoryRoutes(app: Express) {
     try {
       const formTypes = await storage.getItemFormTypes();
       res.json(formTypes);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -305,11 +316,11 @@ export function registerInventoryRoutes(app: Express) {
       const validated = insertItemFormTypeSchema.parse(req.body);
       const formType = await storage.createItemFormType(validated);
       res.status(201).json(formType);
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -318,8 +329,9 @@ export function registerInventoryRoutes(app: Express) {
     try {
       const uoms = await storage.getItemUoms();
       res.json(uoms);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -328,11 +340,11 @@ export function registerInventoryRoutes(app: Express) {
       const parsed = insertItemUomSchema.parse(req.body);
       const uom = await storage.createItemUom(parsed);
       res.status(201).json(uom);
-    } catch (error: any) {
-      if (error.code === '23505') {
+    } catch (error: unknown) {
+      if ((error as { code?: string }).code === '23505') {
         res.status(409).json({ message: "كود الوحدة مسجل بالفعل" });
       } else {
-        res.status(400).json({ message: error.message });
+        res.status(400).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
     }
   });
@@ -341,10 +353,11 @@ export function registerInventoryRoutes(app: Express) {
   app.get("/api/items/:id/last-purchases", async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 5;
-      const purchases = await storage.getLastPurchases(req.params.id, limit);
+      const purchases = await storage.getLastPurchases(req.params.id as string, limit);
       res.json(purchases);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -355,10 +368,11 @@ export function registerInventoryRoutes(app: Express) {
       const startDate = (req.query.startDate as string) || firstDayOfMonth.toISOString().split('T')[0];
       const endDate = (req.query.endDate as string) || today.toISOString().split('T')[0];
 
-      const result = await storage.getAverageSales(req.params.id, startDate, endDate);
+      const result = await storage.getAverageSales(req.params.id as string, startDate, endDate);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -367,20 +381,22 @@ export function registerInventoryRoutes(app: Express) {
     try {
       const departments = await storage.getDepartments();
       res.json(departments);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/departments/:id", async (req, res) => {
     try {
-      const department = await storage.getDepartment(req.params.id);
+      const department = await storage.getDepartment(req.params.id as string);
       if (!department) {
         return res.status(404).json({ message: "القسم غير موجود" });
       }
       res.json(department);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -389,40 +405,44 @@ export function registerInventoryRoutes(app: Express) {
       const parsed = insertDepartmentSchema.parse(req.body);
       const department = await storage.createDepartment(parsed);
       res.status(201).json(department);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(400).json({ message: _em });
     }
   });
 
   app.put("/api/departments/:id", async (req, res) => {
     try {
       const parsed = insertDepartmentSchema.partial().parse(req.body);
-      const department = await storage.updateDepartment(req.params.id, parsed);
+      const department = await storage.updateDepartment(req.params.id as string, parsed);
       if (!department) {
         return res.status(404).json({ message: "القسم غير موجود" });
       }
       res.json(department);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(400).json({ message: _em });
     }
   });
 
   app.delete("/api/departments/:id", async (req, res) => {
     try {
-      await storage.deleteDepartment(req.params.id);
+      await storage.deleteDepartment(req.params.id as string);
       res.status(204).send();
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   // ===== ITEM DEPARTMENT PRICES =====
   app.get("/api/items/:id/department-prices", async (req, res) => {
     try {
-      const prices = await storage.getItemDepartmentPrices(req.params.id);
+      const prices = await storage.getItemDepartmentPrices(req.params.id as string);
       res.json(prices);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -430,34 +450,37 @@ export function registerInventoryRoutes(app: Express) {
     try {
       const parsed = insertItemDepartmentPriceSchema.parse({
         ...req.body,
-        itemId: req.params.id,
+        itemId: req.params.id as string,
       });
       const price = await storage.createItemDepartmentPrice(parsed);
       res.status(201).json(price);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(400).json({ message: _em });
     }
   });
 
   app.put("/api/item-department-prices/:id", async (req, res) => {
     try {
       const parsed = insertItemDepartmentPriceSchema.partial().parse(req.body);
-      const price = await storage.updateItemDepartmentPrice(req.params.id, parsed);
+      const price = await storage.updateItemDepartmentPrice(req.params.id as string, parsed);
       if (!price) {
         return res.status(404).json({ message: "السعر غير موجود" });
       }
       res.json(price);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(400).json({ message: _em });
     }
   });
 
   app.delete("/api/item-department-prices/:id", async (req, res) => {
     try {
-      await storage.deleteItemDepartmentPrice(req.params.id);
+      await storage.deleteItemDepartmentPrice(req.params.id as string);
       res.status(204).send();
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -489,8 +512,9 @@ export function registerInventoryRoutes(app: Express) {
       }
       const item = await storage.getItem(itemId as string);
       res.json({ price: item?.salePriceCurrent || "0", source: "item" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -501,7 +525,7 @@ export function registerInventoryRoutes(app: Express) {
       if (typeof hasExpiry !== "boolean") {
         return res.status(400).json({ message: "قيمة hasExpiry يجب أن تكون true أو false" });
       }
-      const item = await storage.getItem(req.params.id);
+      const item = await storage.getItem(req.params.id as string);
       if (!item) {
         return res.status(404).json({ message: "الصنف غير موجود" });
       }
@@ -509,26 +533,28 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(400).json({ message: "الخدمات لا يمكن أن يكون لها تاريخ صلاحية" });
       }
       if (!hasExpiry && item.hasExpiry) {
-        const lots = await storage.getLots(req.params.id);
+        const lots = await storage.getLots(req.params.id as string);
         const activeLotWithExpiry = lots.find(l => l.expiryDate && parseFloat(l.qtyInMinor) > 0);
         if (activeLotWithExpiry) {
           return res.status(409).json({ message: "لا يمكن إلغاء الصلاحية: يوجد دفعات نشطة بصلاحية ورصيد أكبر من صفر" });
         }
       }
-      const updated = await storage.updateItem(req.params.id, { hasExpiry });
+      const updated = await storage.updateItem(req.params.id as string, { hasExpiry });
       res.json(updated);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   // ===== INVENTORY LOTS =====
   app.get("/api/items/:id/lots", async (req, res) => {
     try {
-      const lots = await storage.getLots(req.params.id);
+      const lots = await storage.getLots(req.params.id as string);
       res.json(lots);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -564,11 +590,11 @@ export function registerInventoryRoutes(app: Express) {
       }
       const lot = await storage.createLot(validated);
       res.status(201).json(lot);
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -586,18 +612,20 @@ export function registerInventoryRoutes(app: Express) {
         date
       );
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   // ===== ITEM BARCODES =====
   app.get("/api/items/:id/barcodes", async (req, res) => {
     try {
-      const barcodes = await storage.getItemBarcodes(req.params.id);
+      const barcodes = await storage.getItemBarcodes(req.params.id as string);
       res.json(barcodes);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -612,29 +640,30 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(400).json({ message: "الباركود يجب أن يحتوي على أرقام وحروف إنجليزية فقط" });
       }
       const barcode = await storage.createItemBarcode({
-        itemId: req.params.id,
+        itemId: req.params.id as string,
         barcodeValue: normalized,
         barcodeType: barcodeType || null,
         isActive: true,
       });
       res.status(201).json(barcode);
-    } catch (error: any) {
-      if (error.code === "23505" || error.message?.includes("unique") || error.message?.includes("duplicate")) {
+    } catch (error: unknown) {
+      if ((error as { code?: string }).code === "23505" || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("unique") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("duplicate")) {
         return res.status(409).json({ message: "هذا الباركود مسجل بالفعل لصنف آخر" });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.delete("/api/barcodes/:id", async (req, res) => {
     try {
-      const barcode = await storage.deactivateBarcode(req.params.id);
+      const barcode = await storage.deactivateBarcode(req.params.id as string);
       if (!barcode) {
         return res.status(404).json({ message: "الباركود غير موجود" });
       }
       res.json(barcode);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -646,8 +675,9 @@ export function registerInventoryRoutes(app: Express) {
       }
       const result = await storage.resolveBarcode(value as string);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -672,8 +702,9 @@ export function registerInventoryRoutes(app: Express) {
 
       const whs = await storage.getWarehouses();
       res.json(whs);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -682,11 +713,11 @@ export function registerInventoryRoutes(app: Express) {
       const validated = insertWarehouseSchema.parse(req.body);
       const wh = await storage.createWarehouse(validated);
       res.status(201).json(wh);
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -700,23 +731,24 @@ export function registerInventoryRoutes(app: Express) {
       if (departmentId !== undefined) updateData.departmentId = departmentId;
       if (pharmacyId !== undefined) updateData.pharmacyId = pharmacyId;
       if (isActive !== undefined) updateData.isActive = isActive;
-      const wh = await storage.updateWarehouse(req.params.id, updateData);
+      const wh = await storage.updateWarehouse(req.params.id as string, updateData);
       if (!wh) return res.status(404).json({ message: "المخزن غير موجود" });
       res.json(wh);
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.delete("/api/warehouses/:id", async (req, res) => {
     try {
-      await storage.deleteWarehouse(req.params.id);
+      await storage.deleteWarehouse(req.params.id as string);
       res.json({ success: true });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -725,8 +757,9 @@ export function registerInventoryRoutes(app: Express) {
     try {
       const result = await storage.seedPilotTest();
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -752,20 +785,22 @@ export function registerInventoryRoutes(app: Express) {
 
       const transfers = await storage.getTransfers();
       res.json(addFormattedNumbers(transfers, "transfer", "transferNumber"));
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/transfers/:id", async (req, res) => {
     try {
-      const transfer = await storage.getTransfer(req.params.id);
+      const transfer = await storage.getTransfer(req.params.id as string);
       if (!transfer) {
         return res.status(404).json({ message: "التحويل غير موجود" });
       }
       res.json(addFormattedNumber(transfer, "transfer", "transferNumber"));
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -787,8 +822,9 @@ export function registerInventoryRoutes(app: Express) {
         date
       );
       res.json(preview);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -813,8 +849,9 @@ export function registerInventoryRoutes(app: Express) {
         const transfer = await storage.createDraftTransfer(safeHeader, safeLines);
         return res.status(201).json({ id: transfer.id, transferNumber: transfer.transferNumber });
       }
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -835,47 +872,49 @@ export function registerInventoryRoutes(app: Express) {
       const header = { transferDate, sourceWarehouseId, destinationWarehouseId, notes: notes || null };
       const transfer = await storage.createDraftTransfer(header, lines);
       res.status(201).json(transfer);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.post("/api/transfers/:id/post", async (req, res) => {
     try {
-      const existing = await storage.getTransfer(req.params.id);
+      const existing = await storage.getTransfer(req.params.id as string);
       if (!existing) return res.status(404).json({ message: "التحويل غير موجود" });
       if (existing.status !== "draft") return res.status(409).json({ message: "التحويل مُرحّل بالفعل", code: "ALREADY_POSTED" });
 
       await storage.assertPeriodOpen(existing.transferDate);
 
-      const transfer = await storage.postTransfer(req.params.id);
-      await storage.createAuditLog({ tableName: "store_transfers", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
+      const transfer = await storage.postTransfer(req.params.id as string);
+      await storage.createAuditLog({ tableName: "store_transfers", recordId: req.params.id as string, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(transfer);
-    } catch (error: any) {
-      if (error.message.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
-      if (error.message.includes("غير مسودة") || error.message.includes("مُرحّل بالفعل")) {
-        return res.status(409).json({ message: error.message, code: "ALREADY_POSTED" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if ((error instanceof Error ? error.message : String(error)).includes("غير مسودة") || (error instanceof Error ? error.message : String(error)).includes("مُرحّل بالفعل")) {
+        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)), code: "ALREADY_POSTED" });
       }
-      if (error.message.includes("غير كافية") || error.message.includes("مختلفين") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("مطلوب")) {
-        return res.status(400).json({ message: error.message });
+      if ((error instanceof Error ? error.message : String(error)).includes("غير كافية") || (error instanceof Error ? error.message : String(error)).includes("مختلفين") || (error instanceof Error ? error.message : String(error)).includes("لا يمكن") || (error instanceof Error ? error.message : String(error)).includes("غير موجود") || (error instanceof Error ? error.message : String(error)).includes("مطلوب")) {
+        return res.status(400).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.delete("/api/transfers/:id", async (req, res) => {
     try {
       const reason = req.body?.reason as string | undefined;
-      const deleted = await storage.deleteTransfer(req.params.id, reason);
+      const deleted = await storage.deleteTransfer(req.params.id as string, reason);
       if (!deleted) {
         return res.status(404).json({ message: "التحويل غير موجود" });
       }
       res.json({ success: true });
-    } catch (error: any) {
-      if (error.message.includes("مُرحّل") || error.message.includes("لا يمكن حذف")) {
-        return res.status(409).json({ message: error.message, code: "DOCUMENT_POSTED" });
+    } catch (error: unknown) {
+      if ((error instanceof Error ? error.message : String(error)).includes("مُرحّل") || (error instanceof Error ? error.message : String(error)).includes("لا يمكن حذف")) {
+        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)), code: "DOCUMENT_POSTED" });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -972,8 +1011,9 @@ export function registerInventoryRoutes(app: Express) {
       `);
 
       res.json(result.rows);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -987,8 +1027,9 @@ export function registerInventoryRoutes(app: Express) {
         pageSize: parseInt(pageSize as string) || 50,
       });
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -998,18 +1039,20 @@ export function registerInventoryRoutes(app: Express) {
       const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
       const results = await storage.searchSuppliers(q, limit);
       res.json(results);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/suppliers/:id", async (req, res) => {
     try {
-      const supplier = await storage.getSupplier(req.params.id);
+      const supplier = await storage.getSupplier(req.params.id as string);
       if (!supplier) return res.status(404).json({ message: "المورد غير موجود" });
       res.json(supplier);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -1018,25 +1061,26 @@ export function registerInventoryRoutes(app: Express) {
       const validated = insertSupplierSchema.parse(req.body);
       const supplier = await storage.createSupplier(validated);
       res.status(201).json(supplier);
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "بيانات غير صالحة", errors: error.errors });
+        return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
-      if (error.message?.includes('unique') || error.code === '23505') {
+      if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes('unique') || (error as { code?: string }).code === '23505') {
         return res.status(409).json({ message: "كود المورد مُستخدم بالفعل" });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.patch("/api/suppliers/:id", async (req, res) => {
     try {
       const validated = insertSupplierSchema.partial().parse(req.body);
-      const supplier = await storage.updateSupplier(req.params.id, validated);
+      const supplier = await storage.updateSupplier(req.params.id as string, validated);
       if (!supplier) return res.status(404).json({ message: "المورد غير موجود" });
       res.json(supplier);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -1057,8 +1101,9 @@ export function registerInventoryRoutes(app: Express) {
         includeCancelled: includeCancelled === 'true',
       });
       res.json({ ...result, data: addFormattedNumbers(result.data || [], "receiving", "receivingNumber") });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -1072,18 +1117,20 @@ export function registerInventoryRoutes(app: Express) {
         excludeId as string | undefined
       );
       res.json({ isUnique });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/receivings/:id", async (req, res) => {
     try {
-      const receiving = await storage.getReceiving(req.params.id);
+      const receiving = await storage.getReceiving(req.params.id as string);
       if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
       res.json(addFormattedNumber(receiving, "receiving", "receivingNumber"));
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -1129,8 +1176,9 @@ export function registerInventoryRoutes(app: Express) {
         const result = await storage.saveDraftReceiving(safeHeader, safeLines);
         return res.status(201).json(result);
       }
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -1156,8 +1204,9 @@ export function registerInventoryRoutes(app: Express) {
       
       const result = await storage.saveDraftReceiving(header, lines);
       res.status(201).json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -1166,13 +1215,13 @@ export function registerInventoryRoutes(app: Express) {
       const { header, lines } = req.body;
       if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
       
-      const existing = await storage.getReceiving(req.params.id);
+      const existing = await storage.getReceiving(req.params.id as string);
       if (!existing) return res.status(404).json({ message: "المستند غير موجود" });
       if (existing.status !== "draft") {
         return res.status(409).json({ message: "لا يمكن تعديل مستند مُرحّل", code: "DOCUMENT_POSTED" });
       }
       
-      const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo, req.params.id);
+      const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo, req.params.id as string);
       if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
       
       const lineErrors = await validateReceivingLines(lines);
@@ -1183,16 +1232,17 @@ export function registerInventoryRoutes(app: Express) {
         });
       }
       
-      const result = await storage.saveDraftReceiving(header, lines, req.params.id);
+      const result = await storage.saveDraftReceiving(header, lines, req.params.id as string);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.post("/api/receivings/:id/post", async (req, res) => {
     try {
-      const receiving = await storage.getReceiving(req.params.id);
+      const receiving = await storage.getReceiving(req.params.id as string);
       if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
       if (receiving.status === 'posted' || receiving.status === 'posted_qty_only') {
         return res.status(409).json({ message: "المستند مُرحّل بالفعل", code: "ALREADY_POSTED" });
@@ -1211,57 +1261,58 @@ export function registerInventoryRoutes(app: Express) {
       }
       let result;
       if (receiving.correctionStatus === 'correction') {
-        result = await storage.postReceivingCorrection(req.params.id);
+        result = await storage.postReceivingCorrection(req.params.id as string);
       } else {
-        result = await storage.postReceiving(req.params.id);
+        result = await storage.postReceiving(req.params.id as string);
       }
-      await storage.createAuditLog({ tableName: "receiving_headers", recordId: req.params.id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
+      await storage.createAuditLog({ tableName: "receiving_headers", recordId: req.params.id as string, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
       res.json(result);
-    } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
-      if (error.message.includes("مطلوب") || error.message.includes("لا توجد") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("سالباً")) {
-        return res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if ((error instanceof Error ? error.message : String(error)).includes("مطلوب") || (error instanceof Error ? error.message : String(error)).includes("لا توجد") || (error instanceof Error ? error.message : String(error)).includes("لا يمكن") || (error instanceof Error ? error.message : String(error)).includes("غير موجود") || (error instanceof Error ? error.message : String(error)).includes("سالباً")) {
+        return res.status(400).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.post("/api/receivings/:id/correct", async (req, res) => {
     try {
-      const result = await storage.createReceivingCorrection(req.params.id);
+      const result = await storage.createReceivingCorrection(req.params.id as string);
       res.status(201).json(result);
-    } catch (error: any) {
-      if (error.message.includes("مسبقاً") || error.message.includes("فقط") || error.message.includes("لا يمكن") || error.message.includes("غير موجود") || error.message.includes("معتمدة")) {
-        return res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      if ((error instanceof Error ? error.message : String(error)).includes("مسبقاً") || (error instanceof Error ? error.message : String(error)).includes("فقط") || (error instanceof Error ? error.message : String(error)).includes("لا يمكن") || (error instanceof Error ? error.message : String(error)).includes("غير موجود") || (error instanceof Error ? error.message : String(error)).includes("معتمدة")) {
+        return res.status(400).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.delete("/api/receivings/:id", async (req, res) => {
     try {
       const reason = req.body?.reason as string | undefined;
-      const deleted = await storage.deleteReceiving(req.params.id, reason);
+      const deleted = await storage.deleteReceiving(req.params.id as string, reason);
       if (!deleted) return res.status(404).json({ message: "المستند غير موجود" });
       res.json({ success: true });
-    } catch (error: any) {
-      if (error.message.includes("لا يمكن حذف") || error.message.includes("مُرحّل")) {
-        return res.status(409).json({ message: error.message, code: "DOCUMENT_POSTED" });
+    } catch (error: unknown) {
+      if ((error instanceof Error ? error.message : String(error)).includes("لا يمكن حذف") || (error instanceof Error ? error.message : String(error)).includes("مُرحّل")) {
+        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)), code: "DOCUMENT_POSTED" });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   // ===== CONVERT RECEIVING TO PURCHASE INVOICE =====
   app.post("/api/receivings/:id/convert-to-invoice", async (req, res) => {
     try {
-      const invoice = await storage.convertReceivingToInvoice(req.params.id);
+      const invoice = await storage.convertReceivingToInvoice(req.params.id as string);
       res.status(201).json(invoice);
-    } catch (error: any) {
-      if (error.message.includes("مسبقاً") || error.message.includes("أولاً") || error.message.includes("غير موجود")) {
-        return res.status(400).json({ message: error.message });
+    } catch (error: unknown) {
+      if ((error instanceof Error ? error.message : String(error)).includes("مسبقاً") || (error instanceof Error ? error.message : String(error)).includes("أولاً") || (error instanceof Error ? error.message : String(error)).includes("غير موجود")) {
+        return res.status(400).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
@@ -1279,18 +1330,20 @@ export function registerInventoryRoutes(app: Express) {
         includeCancelled: includeCancelled === 'true',
       });
       res.json({ ...result, data: addFormattedNumbers(result.data || [], "purchase_invoice", "invoiceNumber") });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/purchase-invoices/:id", async (req, res) => {
     try {
-      const invoice = await storage.getPurchaseInvoice(req.params.id);
+      const invoice = await storage.getPurchaseInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       res.json(addFormattedNumber(invoice, "purchase_invoice", "invoiceNumber"));
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
@@ -1330,21 +1383,22 @@ export function registerInventoryRoutes(app: Express) {
 
   app.post("/api/purchase-invoices/:id/auto-save", async (req, res) => {
     try {
-      const invoice = await storage.getPurchaseInvoice(req.params.id);
+      const invoice = await storage.getPurchaseInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       if (invoice.status !== "draft") return res.status(409).json({ message: "لا يمكن تعديل فاتورة معتمدة" });
       const { lines, ...headerUpdates } = req.body;
       const safeLines = Array.isArray(lines) ? lines : [];
-      const result = await storage.savePurchaseInvoice(req.params.id, safeLines, headerUpdates);
+      const result = await storage.savePurchaseInvoice(req.params.id as string, safeLines, headerUpdates);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.patch("/api/purchase-invoices/:id", async (req, res) => {
     try {
-      const invoice = await storage.getPurchaseInvoice(req.params.id);
+      const invoice = await storage.getPurchaseInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       if (invoice.status !== "draft") {
         return res.status(409).json({ message: "لا يمكن تعديل فاتورة معتمدة ومُسعّرة", code: "INVOICE_APPROVED" });
@@ -1354,72 +1408,76 @@ export function registerInventoryRoutes(app: Express) {
       if (discountErrors.length > 0) {
         return res.status(400).json({ message: "أخطاء في بيانات الخصم", lineErrors: discountErrors });
       }
-      const result = await storage.savePurchaseInvoice(req.params.id, lines, headerUpdates);
+      const result = await storage.savePurchaseInvoice(req.params.id as string, lines, headerUpdates);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.delete("/api/purchase-invoices/:id", async (req, res) => {
     try {
       const reason = req.body?.reason as string | undefined;
-      const deleted = await storage.deletePurchaseInvoice(req.params.id, reason);
+      const deleted = await storage.deletePurchaseInvoice(req.params.id as string, reason);
       if (!deleted) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       res.json({ success: true });
-    } catch (error: any) {
-      if (error.message.includes("لا يمكن حذف")) {
-        return res.status(409).json({ message: error.message, code: "INVOICE_APPROVED" });
+    } catch (error: unknown) {
+      if ((error instanceof Error ? error.message : String(error)).includes("لا يمكن حذف")) {
+        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)), code: "INVOICE_APPROVED" });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.post("/api/purchase-invoices/:id/approve", async (req, res) => {
     try {
-      const invoice = await storage.getPurchaseInvoice(req.params.id);
+      const invoice = await storage.getPurchaseInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       if (invoice.status !== "draft") return res.status(409).json({ message: "الفاتورة معتمدة بالفعل", code: "ALREADY_APPROVED" });
 
-      await storage.assertPeriodOpen(invoice.invoiceDate);
+      await storage.assertPeriodOpen(invoice.invoiceDate as string);
 
       if (invoice.lines && Array.isArray(invoice.lines)) {
-        const discountErrors = validateInvoiceLineDiscounts(invoice.lines);
+        const discountErrors = validateInvoiceLineDiscounts(invoice.lines as Array<Record<string, unknown>>);
         if (discountErrors.length > 0) {
           return res.status(400).json({ message: "أخطاء في بيانات الخصم - لا يمكن الاعتماد", lineErrors: discountErrors });
         }
       }
-      const result = await storage.approvePurchaseInvoice(req.params.id);
-      await storage.createAuditLog({ tableName: "purchase_invoice_headers", recordId: req.params.id, action: "approve", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "approved" }) });
+      const result = await storage.approvePurchaseInvoice(req.params.id as string);
+      await storage.createAuditLog({ tableName: "purchase_invoice_headers", recordId: req.params.id as string, action: "approve", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "approved" }) });
       res.json(result);
-    } catch (error: any) {
-      if (error.message?.includes("الفترة المحاسبية")) return res.status(403).json({ message: error.message });
-      if (error.message.includes("معتمدة")) {
-        return res.status(409).json({ message: error.message, code: "ALREADY_APPROVED" });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (_em?.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if ((error instanceof Error ? error.message : String(error)).includes("معتمدة")) {
+        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)), code: "ALREADY_APPROVED" });
       }
-      if (error.message.includes("غير موجودة")) {
-        return res.status(404).json({ message: error.message });
+      if ((error instanceof Error ? error.message : String(error)).includes("غير موجودة")) {
+        return res.status(404).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
 
   app.get("/api/items/:itemId/hints", async (req, res) => {
     try {
       const { supplierId, warehouseId } = req.query;
-      const hints = await storage.getItemHints(req.params.itemId, (supplierId as string) || "", (warehouseId as string) || "");
+      const hints = await storage.getItemHints(req.params.itemId as string, (supplierId as string) || "", (warehouseId as string) || "");
       res.json(hints);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 
   app.get("/api/items/:itemId/warehouse-stats", async (req, res) => {
     try {
-      const stats = await storage.getItemWarehouseStats(req.params.itemId);
+      const stats = await storage.getItemWarehouseStats(req.params.itemId as string);
       res.json(stats);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
     }
   });
 

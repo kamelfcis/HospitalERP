@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Search } from "lucide-react";
+import { Trash2, Search } from "lucide-react";
+import type { Service } from "@shared/schema";
 
 export interface ServiceLine {
   serviceId: string;
@@ -11,36 +12,36 @@ export interface ServiceLine {
 }
 
 interface Props {
-  services: any[];
+  services: Service[];
   selectedLines: ServiceLine[];
   onChange: (lines: ServiceLine[]) => void;
   isLoading?: boolean;
 }
 
-export function ServicesGrid({ services, selectedLines, onChange, isLoading }: Props) {
+export function ServicesGrid({ services, selectedLines, onChange }: Props) {
   const [searchText, setSearchText] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const safeServices = Array.isArray(services) ? services : [];
   const available = safeServices.filter(
-    (s: any) => !selectedLines.some(l => l.serviceId === s.id)
+    (s) => !selectedLines.some(l => l.serviceId === s.id)
   );
   const filtered = searchText.trim()
-    ? available.filter((s: any) => {
-        const name = (s.nameAr || s.name_ar || s.name || "").toLowerCase();
+    ? available.filter((s) => {
+        const name = (s.nameAr || "").toLowerCase();
         const code = (s.code || "").toLowerCase();
         const q = searchText.toLowerCase();
         return name.includes(q) || code.includes(q);
       })
     : available;
 
-  const addService = (svc: any) => {
+  const addService = (svc: Service) => {
     onChange([...selectedLines, {
       serviceId: svc.id,
-      serviceName: svc.nameAr || svc.name_ar || svc.name || "",
+      serviceName: svc.nameAr || "",
       quantity: 1,
-      unitPrice: parseFloat(String(svc.basePrice || svc.base_price || 0)),
+      unitPrice: parseFloat(String(svc.basePrice || 0)),
     }]);
     setSearchText("");
     setShowDropdown(false);

@@ -39,7 +39,7 @@ export default function UsersManagement() {
   const { data: cashierAccounts = [] }  = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({ queryKey: ["/api/drawer-passwords"] });
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => (await apiRequest("POST", "/api/users", data)).json(),
+    mutationFn: async (data: Partial<UserData>) => (await apiRequest("POST", "/api/users", data)).json(),
     onSuccess: async (newUser) => {
       await saveScopeForUser(newUser.id);
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
@@ -50,7 +50,7 @@ export default function UsersManagement() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) =>
+    mutationFn: async ({ id, data }: { id: string; data: Partial<UserData> }) =>
       (await apiRequest("PATCH", `/api/users/${id}`, data)).json(),
     onSuccess: async (_, { id }) => {
       await saveScopeForUser(id);
@@ -125,7 +125,7 @@ export default function UsersManagement() {
   }
 
   function handleSave() {
-    const payload: any = {
+    const payload: Partial<UserData> = {
       username:           formData.username,
       fullName:           formData.fullName,
       role:               formData.role,
@@ -136,14 +136,14 @@ export default function UsersManagement() {
     };
 
     if (editingUser) {
-      if (formData.password) payload.password = formData.password;
+      if (formData.password) (payload as any).password = formData.password;
       updateMutation.mutate({ id: editingUser.id, data: payload });
     } else {
       if (!formData.password) {
         toast({ title: "يرجى إدخال كلمة المرور", variant: "destructive" });
         return;
       }
-      payload.password = formData.password;
+      (payload as any).password = formData.password;
       createMutation.mutate(payload);
     }
   }

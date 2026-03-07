@@ -27,19 +27,19 @@ import { roundMoney, parseMoney } from "../finance-helpers";
 
 const methods = {
 
-  computeInvoiceTotals(this: DatabaseStorage, lines: any[], payments: any[]): { totalAmount: string; discountAmount: string; netAmount: string; paidAmount: string } {
+  computeInvoiceTotals(this: DatabaseStorage, lines: Record<string, unknown>[], payments: Record<string, unknown>[]): { totalAmount: string; discountAmount: string; netAmount: string; paidAmount: string } {
     let totalAmount = 0;
     let discountAmount = 0;
     for (const line of lines) {
-      const qty = parseMoney(line.quantity);
-      const unitPrice = parseMoney(line.unitPrice);
+      const qty = parseMoney(line.quantity as string);
+      const unitPrice = parseMoney(line.unitPrice as string);
       const lineTotal = qty * unitPrice;
-      const lineDiscount = parseMoney(line.discountAmount);
+      const lineDiscount = parseMoney(line.discountAmount as string);
       totalAmount += lineTotal;
       discountAmount += lineDiscount;
     }
     const netAmount = totalAmount - discountAmount;
-    const paidAmount = payments.reduce((sum: number, p: any) => sum + parseMoney(p.amount), 0);
+    const paidAmount = payments.reduce((sum: number, p: Record<string, unknown>) => sum + parseMoney(p.amount as string), 0);
     return {
       totalAmount: roundMoney(totalAmount),
       discountAmount: roundMoney(discountAmount),
@@ -303,13 +303,13 @@ const methods = {
       LIMIT 20
     `));
 
-    const rows = result.rows as any[];
-    const affectedCount = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
-    const preview = rows.map((r: any) => ({
-      serviceCode: r.service_code,
-      serviceNameAr: r.service_name_ar,
-      oldPrice: r.old_price,
-      newPrice: r.new_price,
+    const rows = result.rows as Array<Record<string, unknown>>;
+    const affectedCount = rows.length > 0 ? parseInt(rows[0].total_count as string) : 0;
+    const preview = rows.map((r: Record<string, unknown>) => ({
+      serviceCode: r.service_code as string,
+      serviceNameAr: r.service_name_ar as string,
+      oldPrice: r.old_price as string,
+      newPrice: r.new_price as string,
     }));
 
     return { affectedCount, preview };
@@ -337,7 +337,7 @@ const methods = {
         ) sub WHERE sub.new_price < 0
       `));
 
-      const negCount = parseInt((negativeCheck.rows as any[])[0].cnt);
+      const negCount = parseInt((negativeCheck.rows as Array<Record<string, unknown>>)[0].cnt as string);
       if (negCount > 0) {
         throw new Error(`التعديل سيؤدي إلى أسعار سالبة لـ ${negCount} خدمة. يُرجى تقليل القيمة.`);
       }

@@ -1,3 +1,5 @@
+import type { ItemLike } from "@/lib/invoice-lines";
+
 export interface LineLocal {
   tempId: string;
   lineType: "service" | "drug" | "consumable" | "equipment";
@@ -17,7 +19,7 @@ export interface LineLocal {
   sortOrder: number;
   serviceType: string;
   unitLevel: "major" | "medium" | "minor";
-  item?: any;
+  item?: ItemLike | null;
   lotId: string | null;
   expiryMonth: number | null;
   expiryYear: number | null;

@@ -37,7 +37,7 @@ export function DischargeDialog({ open, bed, onClose }: Props) {
       toast({ title: "تم تسجيل الخروج", description: "تم خروج المريض وتحديث حالة السرير" });
       handleClose();
     },
-    onError: (err: Error) => {
+    onError: (err: Error & { code?: string }) => {
       const code = err?.code;
       const msg = err?.message || "فشل تسجيل الخروج";
       if (code === "NO_INVOICE" || code === "INVOICE_NOT_FINALIZED") {

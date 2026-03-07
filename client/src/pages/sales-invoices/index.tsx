@@ -166,7 +166,7 @@ export default function SalesInvoices() {
     if (editId !== "new" || clinicPrefillDoneRef.current) return;
   }, [hasClinicParam, editId, navigate, pharmacyIdParam, altItemIdParam]);
 
-  const pendingClinicItemsRef = useRef<any[]>([]);
+  const pendingClinicItemsRef = useRef<Array<{ itemData: any; qty: number; unitLevel: string }>>([]);
 
   useEffect(() => {
     if (!hasClinicParam || editId !== "new" || clinicPrefillDoneRef.current) return;
@@ -186,7 +186,7 @@ export default function SalesInvoices() {
           form.setCustomerName(firstOrder.apptPatientName || firstOrder.patientName);
         }
 
-        const itemsToAdd: any[] = [];
+        const itemsToAdd: Array<{ itemData: any; qty: number; unitLevel: string }> = [];
         for (const order of allOrders) {
           const itemIdToAdd = (allOrders.length === 1 && altItemIdParam) ? altItemIdParam : order.itemId;
           if (!itemIdToAdd) continue;
@@ -280,8 +280,9 @@ export default function SalesInvoices() {
       toast({ title: "تم تحميل البيانات التجريبية", description: `${data.items.length} أصناف + مخزون تجريبي` });
       queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/warehouses"] });
-    } catch (err: any) {
-      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     } finally { setSeedLoading(false); }
   };
 
@@ -302,8 +303,9 @@ export default function SalesInvoices() {
       toast({ title: "تم إنشاء فاتورة اختبار", description: `فاتورة #${invoice.invoiceNumber}` });
       queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
       navigate(`/sales-invoices?id=${invoice.id}`);
-    } catch (err: any) {
-      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     } finally { setQuickTestLoading(false); }
   };
 

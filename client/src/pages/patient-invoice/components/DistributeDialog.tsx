@@ -316,10 +316,10 @@ export function DistributeDialog({ open, onClose, lines, invoiceContext, onSucce
       // أغلق النوافذ الزيادة (مريض لم تُنشأ له فاتورة بسبب نقص الكميات)
       preOpenedWindows.slice(newInvoices.length).forEach(win => win?.close());
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       // أغلق كل النوافذ المفتوحة في حالة الخطأ
       preOpenedWindows.forEach(win => win?.close());
-      toast({ title: "خطأ في التوزيع", description: error.message, variant: "destructive" });
+      toast({ title: "خطأ في التوزيع", description: (error as Error).message, variant: "destructive" });
     } finally {
       setLoading(false);
     }

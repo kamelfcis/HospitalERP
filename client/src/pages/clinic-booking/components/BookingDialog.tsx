@@ -67,8 +67,9 @@ export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, i
       toast({ title: `تم الحجز — الدور: ${result.turnNumber}` });
       setPatientName(""); setPatientPhone(""); setDoctorId(""); setAppointmentTime("");
       onClose();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: err.message || "خطأ في الحجز" });
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      toast({ variant: "destructive", title: _em || "خطأ في الحجز" });
     }
   };
 

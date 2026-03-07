@@ -77,7 +77,8 @@ export function InvoiceRegistry({
   const pharmacistSummary = useMemo(() => {
     const map = new Map<string, { name: string; count: number; subtotal: number; discountValue: number; netTotal: number; itemCount: number }>();
     for (const inv of invoices) {
-      const name = (inv as any).pharmacistName || "—";
+      const row = inv as SalesInvoiceWithDetails & { pharmacistName?: string; itemCount?: number };
+      const name = row.pharmacistName || "—";
       const key = name;
       const existing = map.get(key);
       if (existing) {
@@ -85,7 +86,7 @@ export function InvoiceRegistry({
         existing.subtotal += parseFloat(String(inv.subtotal)) || 0;
         existing.discountValue += parseFloat(String(inv.discountValue)) || 0;
         existing.netTotal += parseFloat(String(inv.netTotal)) || 0;
-        existing.itemCount += (inv as any).itemCount || 0;
+        existing.itemCount += row.itemCount || 0;
       } else {
         map.set(key, {
           name,
@@ -93,7 +94,7 @@ export function InvoiceRegistry({
           subtotal: parseFloat(String(inv.subtotal)) || 0,
           discountValue: parseFloat(String(inv.discountValue)) || 0,
           netTotal: parseFloat(String(inv.netTotal)) || 0,
-          itemCount: (inv as any).itemCount || 0,
+          itemCount: row.itemCount || 0,
         });
       }
     }
@@ -243,46 +244,49 @@ export function InvoiceRegistry({
               </tr>
             </thead>
             <tbody>
-              {invoices.map((inv, i) => (
-                <tr
-                  key={inv.id}
-                  className="peachtree-grid-row cursor-pointer"
-                  onClick={() => onOpenInvoice(inv.id)}
-                  data-testid={`row-invoice-${inv.id}`}
-                >
-                  <td className="text-center">{(page - 1) * pageSize + i + 1}</td>
-                  <td className="text-center font-mono">{inv.invoiceNumber}</td>
-                  <td className="text-center">{formatDateShort(inv.invoiceDate)}</td>
-                  <td className="text-right">{(inv as any).pharmacistName || "—"}</td>
-                  <td className="text-center">{customerTypeLabels[inv.customerType] || inv.customerType}</td>
-                  <td>{inv.customerName || "—"}</td>
-                  <td>{(inv as any).warehouse?.nameAr || warehouseName(inv.warehouseId)}</td>
-                  <td className="text-center font-medium">{(inv as any).itemCount ?? 0}</td>
-                  <td className="text-center peachtree-amount">{formatNumber(inv.subtotal)}</td>
-                  <td className="text-center peachtree-amount">{formatNumber(inv.discountValue)}</td>
-                  <td className="text-center peachtree-amount font-bold">{formatNumber(inv.netTotal)}</td>
-                  <td className="text-center">{statusBadge(inv.status)}</td>
-                  <td className="text-center" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-center gap-1">
-                      {inv.status === "draft" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onDeleteClick(inv.id)}
-                          disabled={deletePending}
-                          data-testid={`button-delete-${inv.id}`}
-                        >
-                          {deletePending && deleteVariables === inv.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3 w-3 text-destructive" />
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {invoices.map((inv, i) => {
+                const row = inv as SalesInvoiceWithDetails & { pharmacistName?: string; itemCount?: number; warehouse?: Warehouse };
+                return (
+                  <tr
+                    key={inv.id}
+                    className="peachtree-grid-row cursor-pointer"
+                    onClick={() => onOpenInvoice(inv.id)}
+                    data-testid={`row-invoice-${inv.id}`}
+                  >
+                    <td className="text-center">{(page - 1) * pageSize + i + 1}</td>
+                    <td className="text-center font-mono">{inv.invoiceNumber}</td>
+                    <td className="text-center">{formatDateShort(inv.invoiceDate)}</td>
+                    <td className="text-right">{row.pharmacistName || "—"}</td>
+                    <td className="text-center">{customerTypeLabels[inv.customerType] || inv.customerType}</td>
+                    <td>{inv.customerName || "—"}</td>
+                    <td>{row.warehouse?.nameAr || warehouseName(inv.warehouseId)}</td>
+                    <td className="text-center font-medium">{row.itemCount ?? 0}</td>
+                    <td className="text-center peachtree-amount">{formatNumber(inv.subtotal)}</td>
+                    <td className="text-center peachtree-amount">{formatNumber(inv.discountValue)}</td>
+                    <td className="text-center peachtree-amount font-bold">{formatNumber(inv.netTotal)}</td>
+                    <td className="text-center">{statusBadge(inv.status)}</td>
+                    <td className="text-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-1">
+                        {inv.status === "draft" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onDeleteClick(inv.id)}
+                            disabled={deletePending}
+                            data-testid={`button-delete-${inv.id}`}
+                          >
+                            {deletePending && deleteVariables === inv.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {invoices.length === 0 && (
                 <tr>

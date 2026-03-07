@@ -10,25 +10,28 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useDebounce } from "./useDebounce";
 import { PAYMENT_TYPES } from "./types";
 import type { AdmissionSectionProps, DoctorOption } from "./types";
+import type { Floor, Room, Bed, SurgeryType } from "@shared/schema";
+
+type BedBoardFloor = Floor & { rooms: (Room & { beds: Bed[] })[] };
 
 export default function AdmissionSection({ open, values, setters }: AdmissionSectionProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const { data: bedBoard = [] } = useQuery<any[]>({
+  const { data: bedBoard = [] } = useQuery<BedBoardFloor[]>({
     queryKey: ["/api/bed-board"],
     enabled: open,
   });
 
   const floors = useMemo(() =>
-    bedBoard.map((f: any) => ({ id: f.id, nameAr: f.nameAr, rooms: f.rooms ?? [] })),
+    bedBoard.map((f) => ({ id: f.id, nameAr: f.nameAr, rooms: f.rooms ?? [] })),
     [bedBoard],
   );
 
   const rooms = useMemo(() => {
     const floor = floors.find(f => f.id === values.selectedFloor);
     if (!floor) return [];
-    return (floor.rooms ?? []).filter((r: any) =>
-      (r.beds ?? []).some((b: any) => b.status === "EMPTY"),
+    return (floor.rooms ?? []).filter((r) =>
+      (r.beds ?? []).some((b) => b.status === "EMPTY"),
     );
   }, [floors, values.selectedFloor]);
 
@@ -37,7 +40,7 @@ export default function AdmissionSection({ open, values, setters }: AdmissionSec
     for (const f of bedBoard) {
       for (const r of (f.rooms ?? [])) {
         if (r.id === values.selectedRoom) {
-          return (r.beds ?? []).filter((b: any) => b.status === "EMPTY");
+          return (r.beds ?? []).filter((b) => b.status === "EMPTY");
         }
       }
     }
@@ -53,7 +56,7 @@ export default function AdmissionSection({ open, values, setters }: AdmissionSec
   });
 
   const debouncedSurgery = useDebounce(values.surgerySearch, 300);
-  const { data: surgeryTypes = [] } = useQuery<any[]>({
+  const { data: surgeryTypes = [] } = useQuery<SurgeryType[]>({
     queryKey: ["/api/surgery-types", debouncedSurgery],
     queryFn: async () => {
       const q = debouncedSurgery.trim()
@@ -225,7 +228,7 @@ export default function AdmissionSection({ open, values, setters }: AdmissionSec
             />
             {values.surgerySearch && !values.selectedSurgery && surgeryTypes.length > 0 && (
               <div className="border rounded bg-background shadow-sm max-h-28 overflow-y-auto">
-                {surgeryTypes.map((s: any) => (
+                {surgeryTypes.map((s) => (
                   <button
                     key={s.id}
                     type="button"

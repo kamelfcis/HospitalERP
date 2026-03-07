@@ -50,8 +50,9 @@ export function useSetup(onDataLoaded: (items: PrepItem[]) => void) {
         onDataLoaded(result.data);
         setQueried(true);
       }
-    } catch (err: any) {
-      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
     }
   }, [queryEnabled, refetch, toast, onDataLoaded]);
 

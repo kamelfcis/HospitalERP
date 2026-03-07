@@ -10,10 +10,16 @@ import { ServicesGrid, type ServiceLine } from "../components/ServicesGrid";
 import { ConsumablesPanel } from "../components/ConsumablesPanel";
 import { useDeptServices, useDoctors, usePatientSearch, useUserTreasury } from "../hooks/useDeptServices";
 import { Save, Loader2, AlertTriangle } from "lucide-react";
+import type { Patient, Doctor, Service } from "@shared/schema";
 
 interface Props {
   departmentId: string;
   departmentName: string;
+}
+
+interface DuplicateWarning {
+  serviceName: string;
+  invoiceNumber: string;
 }
 
 export function SingleOrderTab({ departmentId, departmentName }: Props) {
@@ -34,7 +40,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
   const [notes, setNotes] = useState("");
   const [discountPercent, setDiscountPercent] = useState(0);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
-  const [duplicateWarning, setDuplicateWarning] = useState<any[]>([]);
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning[]>([]);
   const [clinicOrderIds, setClinicOrderIds] = useState<string[]>([]);
   const prefillDone = useRef(false);
 
@@ -84,7 +90,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
   }, []);
 
   const treasury = treasuryData && !Array.isArray(treasuryData) ? treasuryData : (Array.isArray(treasuryData) ? treasuryData[0] : null);
-  const selectedDoctor = doctors.find((d: any) => d.id === doctorId);
+  const selectedDoctor = doctors.find((d) => d.id === doctorId);
 
   const subtotal = serviceLines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
   const discountAmount = subtotal * discountPercent / 100;
@@ -104,7 +110,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
       const res = await apiRequest("POST", "/api/dept-service-orders", body);
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { invoiceNumber: string }) => {
       toast({ title: "تم الحفظ بنجاح", description: `فاتورة رقم ${data.invoiceNumber}` });
       queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] });
@@ -117,7 +123,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
   });
 
   const checkDuplicateMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<DuplicateWarning[]> => {
       const res = await apiRequest("POST", "/api/dept-service-orders/check-duplicate", {
         patientName, serviceIds: serviceLines.map(l => l.serviceId),
         date: new Date().toISOString().slice(0, 10),
@@ -156,9 +162,9 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
     setShowPatientDropdown(val.length >= 2);
   };
 
-  const selectPatient = (p: any) => {
-    setPatientName(p.nameAr || p.name_ar || p.name || "");
-    setPatientPhone(p.phone || p.mobile || "");
+  const selectPatient = (p: Patient) => {
+    setPatientName(p.fullName || "");
+    setPatientPhone(p.phone || "");
     setPatientSearch(""); setShowPatientDropdown(false);
   };
 

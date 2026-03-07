@@ -18,6 +18,8 @@ import {
   type TransferLineWithItem,
   type InsertJournalLine,
   type JournalEntry,
+  type Warehouse,
+  type TransferLine,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 
@@ -87,7 +89,7 @@ const methods = {
     });
   },
 
-  async updateDraftTransfer(this: DatabaseStorage, transferId: string, header: any, lines: any[]): Promise<StoreTransfer> {
+  async updateDraftTransfer(this: DatabaseStorage, transferId: string, header: Partial<InsertStoreTransfer>, lines: Array<{ itemId: string; unitLevel: string; qtyEntered: string; qtyInMinor: string; selectedExpiryDate?: string; expiryMonth?: number; expiryYear?: number; availableAtSaveMinor?: string; notes?: string }>): Promise<StoreTransfer> {
     return await db.transaction(async (tx) => {
       await tx.update(storeTransfers).set({
         transferDate: header.transferDate,
@@ -384,7 +386,7 @@ const methods = {
     return true;
   },
 
-  async getWarehouseFefoPreview(this: DatabaseStorage, itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<any> {
+  async getWarehouseFefoPreview(this: DatabaseStorage, itemId: string, warehouseId: string, requiredQty: number, asOfDate: string): Promise<{ allocations: any[]; fulfilled: boolean; shortfall: string }> {
     const [item] = await db.select().from(items).where(eq(items.id, itemId));
 
     const asOf = new Date(asOfDate);
@@ -409,7 +411,17 @@ const methods = {
       ))
       .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth), asc(inventoryLots.receivedDate));
 
-    const allocations: any[] = [];
+    const allocations: Array<{
+      lotId: string;
+      expiryDate: string | null;
+      expiryMonth: number | null;
+      expiryYear: number | null;
+      receivedDate: string;
+      availableQty: string;
+      allocatedQty: string;
+      unitCost: string;
+      lotSalePrice: string;
+    }> = [];
     let remaining = requiredQty;
 
     for (const lot of lots) {
@@ -538,7 +550,7 @@ const methods = {
     excludeServices?: boolean;
     minPrice?: number;
     maxPrice?: number;
-  }): Promise<{items: any[]; total: number}> {
+  }): Promise<{items: Array<any>; total: number}> {
     const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly, excludeServices, minPrice, maxPrice } = params;
     const offset = (page - 1) * pageSize;
 
@@ -571,7 +583,7 @@ const methods = {
         searchCondition = ilike(items.nameAr, buildPattern(query));
     }
 
-    const conditions: any[] = [eq(items.isActive, true), searchCondition];
+    const conditions: Array<any> = [eq(items.isActive, true), searchCondition];
     if (drugsOnly) {
       conditions.push(eq(items.category, 'drug'));
     }
@@ -817,7 +829,7 @@ const methods = {
     const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize, includeCancelled } = params;
     const offset = (page - 1) * pageSize;
 
-    const conditions: any[] = [];
+    const conditions: Array<any> = [];
 
     if (fromDate) {
       conditions.push(gte(storeTransfers.transferDate, fromDate));
@@ -898,7 +910,7 @@ const methods = {
   async searchItemsForTransfer(this: DatabaseStorage, query: string, warehouseId: string, limit: number = 10): Promise<any[]> {
     const searchTerms = query.trim().split('%').filter(Boolean);
 
-    let conditions: any[] = [eq(items.isActive, true)];
+    const conditions: Array<any> = [eq(items.isActive, true)];
 
     if (searchTerms.length > 1) {
       const nameConditions = searchTerms.map(term =>
@@ -932,7 +944,7 @@ const methods = {
     return enriched;
   },
 
-  async seedPilotTest(this: DatabaseStorage): Promise<{ warehouses: any[]; items: any[]; lots: any[] }> {
+  async seedPilotTest(this: DatabaseStorage): Promise<{ warehouses: { id: string; warehouseCode: string; nameAr: string }[]; items: Record<string, unknown>[]; lots: Record<string, unknown>[] }> {
     const today = new Date();
     const formatDate = (d: Date) => d.toISOString().split('T')[0];
     const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
@@ -943,7 +955,7 @@ const methods = {
         { warehouseCode: "WH-OR", nameAr: "مخزن العمليات" },
       ];
 
-      const createdWarehouses: any[] = [];
+      const createdWarehouses: Warehouse[] = [];
       for (const whDef of warehouseDefs) {
         const [existing] = await tx.select().from(warehouses).where(eq(warehouses.warehouseCode, whDef.warehouseCode));
         if (existing) {
@@ -1093,7 +1105,7 @@ const methods = {
   },
 
   async generateWarehouseTransferJournal(
-    this: DatabaseStorage, transferId: string, transfer: any, totalCost: number
+    this: DatabaseStorage, transferId: string, transfer: StoreTransfer, totalCost: number
   ): Promise<JournalEntry | null> {
     const existingEntries = await db.select().from(journalEntries)
       .where(and(
