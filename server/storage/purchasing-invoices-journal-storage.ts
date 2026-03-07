@@ -122,6 +122,16 @@ async function generatePurchaseInvoiceJournalInTx(
   const journalLineData: InsertJournalLine[] = [];
   const descriptionText = `قيد فاتورة مشتريات رقم ${invoice.invoiceNumber}`;
 
+  // ── سياسة خصم الأسطر (موثّقة) ─────────────────────────────────────────
+  // totalBeforeVat = SUM(qty × purchasePrice) حيث purchasePrice = السعر النهائي المتفق عليه
+  // lineDiscountValue = فرق تسعير (سعر البيع − سعر الشراء) — آلية تسعير فقط، لا تؤثر على القيد
+  // الخصم الوحيد الذي يُرحَّل كبند منفصل هو الخصم الرأسي على إجمالي الفاتورة (headerDiscount)
+  // القيد المطلوب:
+  //   Dr Inventory  = totalBeforeVat   (qty × سعر الشراء النهائي)
+  //   Dr VAT Input  = totalVat
+  //   Cr Disc.Earned= headerDiscount   (الخصم الرأسي فقط)
+  //   Cr Payables   = netPayable
+
   // inventory — REQUIRED (always present in a purchase)
   const inventoryMapping = mappingMap.get("inventory");
   if (!inventoryMapping?.debitAccountId) {

@@ -58,11 +58,18 @@ export function useInvoiceDiscount(lines: InvoiceLineLocal[]) {
   }, [lines]);
 
   // ── ملخص الفاتورة ────────────────────────────────────────────────────────
+  //
+  // سياسة خصم الأسطر:
+  //   lineDiscountValue هو آلية تسعير فقط (فرق بين سعر البيع وسعر الشراء النهائي).
+  //   لا يُرحَّل في القيد كخصم مستقل — سعر الشراء النهائي هو القيمة المعتمدة.
+  //   totalLineDiscounts = مجموع (lineDiscountValue × qty) = إجمالي فرق التسعير
+  //   (معلومات عرض فقط — لا تؤثر على أي رصيد محاسبي)
   const summary = useMemo(() => {
     const totalBeforeVat              = lines.reduce((s, l) => s + l.valueBeforeVat, 0);
     const totalVatBeforeDiscount      = lines.reduce((s, l) => s + l.vatAmount, 0);
     const totalAfterVatBeforeDiscount = totalBeforeVat + totalVatBeforeDiscount;
-    const totalLineDiscounts          = lines.reduce((s, l) => s + l.lineDiscountValue, 0);
+    // فرق التسعير الإجمالي: (lineDiscountValue هو قيمة وحدة) × qty لكل سطر
+    const totalLineDiscounts          = lines.reduce((s, l) => s + l.lineDiscountValue * l.qty, 0);
     let invoiceDiscountAmount         = Math.min(invoiceDiscountVal, totalAfterVatBeforeDiscount);
     if (invoiceDiscountAmount < 0) invoiceDiscountAmount = 0;
     const netPayable = +(totalAfterVatBeforeDiscount - invoiceDiscountAmount).toFixed(2);

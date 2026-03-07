@@ -95,6 +95,10 @@ const coreMethods = {
         const lineDiscountPct = parseFloat(line.lineDiscountPct || "0") || 0;
         const vatRate = parseFloat(line.vatRate || "0") || 0;
 
+        // سياسة خصم الأسطر:
+        //   purchasePrice = سعر الشراء النهائي المتفق عليه مع المورد (بعد أي خصم سطر)
+        //   lineDiscountValue = آلية تسعير فقط (فرق بين سعر البيع وسعر الشراء) — لا يُطرح هنا
+        //   valueBeforeVat = qty × purchasePrice هي القيمة المحاسبية المعتمدة دائماً
         const valueBeforeVat = qty * purchasePrice;
         const sellingPrice = parseFloat(line.sellingPrice || "0");
         const lineDiscountValue = line.lineDiscountValue !== undefined
@@ -103,9 +107,9 @@ const coreMethods = {
         const vatBase = (qty + bonusQty) * purchasePrice;
         const vatAmount = vatBase * (vatRate / 100);
 
-        totalBeforeVat += valueBeforeVat;
-        totalVat += vatAmount;
-        totalLineDiscounts += lineDiscountValue * qty;
+        totalBeforeVat    += valueBeforeVat;
+        totalVat          += vatAmount;
+        totalLineDiscounts += lineDiscountValue * qty;   // فرق التسعير الإجمالي — للعرض فقط
 
         await tx.insert(purchaseInvoiceLines).values({
           ...line,

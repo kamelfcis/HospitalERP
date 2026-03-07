@@ -32,13 +32,18 @@ export interface InvoiceLineLocal {
 }
 
 // ── إعادة حساب مجاميع السطر ─────────────────────────────────────────────
+// سياسة خصم الأسطر:
+//   purchasePrice  = سعر الشراء النهائي (المصدر المحاسبي الوحيد)
+//   lineDiscountValue = sellingPrice × lineDiscountPct% = فرق التسعير للوحدة (عرض فقط)
+//   valueBeforeVat = qty × purchasePrice — القيمة المُرحَّلة في قيد المخزون
+//   لا يُطرح lineDiscountValue من valueBeforeVat، ولا يُنشأ له سطر قيد مستقل
 export function recalcLine(line: InvoiceLineLocal): InvoiceLineLocal {
   const { qty, bonusQty, purchasePrice, sellingPrice, lineDiscountPct, vatRate } = line;
-  const valueBeforeVat    = +(qty * purchasePrice).toFixed(2);
+  const valueBeforeVat    = +(qty * purchasePrice).toFixed(2);          // القيمة المحاسبية
   const vatBase           = +((qty + bonusQty) * purchasePrice).toFixed(2);
   const vatAmount         = +(vatBase * (vatRate / 100)).toFixed(2);
   const valueAfterVat     = +(valueBeforeVat + vatAmount).toFixed(2);
-  const lineDiscountValue = +(sellingPrice * (lineDiscountPct / 100)).toFixed(2);
+  const lineDiscountValue = +(sellingPrice * (lineDiscountPct / 100)).toFixed(2); // فرق تسعير/وحدة
   return { ...line, valueBeforeVat, vatAmount, valueAfterVat, lineDiscountValue };
 }
 
