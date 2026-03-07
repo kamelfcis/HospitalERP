@@ -549,7 +549,7 @@ export interface IStorage {
     lines: { lineType: string; amount: string }[];
     periodId?: string;
   }): Promise<JournalEntry | null>;
-  batchPostJournalEntries(ids: string[], userId: string): Promise<number>;
+  batchPostJournalEntries(ids: string[], userId: string): Promise<{ posted: number; errors: string[] }>;
 
   // Chat
   getChatUsers(currentUserId: string): Promise<{ id: string; fullName: string; role: string; unreadCount: number; lastMessage: string | null; lastMessageAt: Date | null }[]>;

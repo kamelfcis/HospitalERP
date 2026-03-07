@@ -254,22 +254,29 @@ const methods = {
     });
   },
 
-  async batchPostJournalEntries(this: DatabaseStorage, ids: string[], userId: string): Promise<number> {
+  async batchPostJournalEntries(this: DatabaseStorage, ids: string[], userId: string): Promise<{ posted: number; errors: string[] }> {
     let posted = 0;
+    const errors: string[] = [];
     for (const id of ids) {
       try {
         const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
-        if (!entry || entry.status !== 'draft') continue;
+        if (!entry || entry.status !== 'draft') {
+          errors.push(`القيد ${entry?.entryNumber ?? id}: ليس في حالة مسودة`);
+          continue;
+        }
         await this.assertPeriodOpen(entry.entryDate);
         const result = await this.postJournalEntry(id, userId);
         if (result) {
           await this.createAuditLog({ tableName: "journal_entries", recordId: id, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
           posted++;
+        } else {
+          errors.push(`القيد ${entry.entryNumber}: فشل الترحيل (قد يكون رُحِّل مسبقاً)`);
         }
       } catch (e) {
+        errors.push(e instanceof Error ? e.message : String(e));
       }
     }
-    return posted;
+    return { posted, errors };
   },
 };
 

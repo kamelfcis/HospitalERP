@@ -245,8 +245,8 @@ export function registerJournalEntriesRoutes(app: Express) {
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ message: "يجب تحديد قيود للترحيل" });
       }
-      const posted = await storage.batchPostJournalEntries(ids, userId || "system");
-      res.json({ posted, total: ids.length });
+      const result = await storage.batchPostJournalEntries(ids, userId || "system");
+      res.json({ posted: result.posted, total: ids.length, errors: result.errors });
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
       res.status(500).json({ message: _em });

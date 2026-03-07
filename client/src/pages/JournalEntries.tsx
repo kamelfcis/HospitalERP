@@ -126,8 +126,24 @@ export default function JournalEntries() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/journal-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-      toast({ title: `تم ترحيل ${data.posted} قيد من ${data.total}` });
       setSelectedIds(new Set());
+      const errors: string[] = data.errors || [];
+      if (data.posted === 0 && errors.length > 0) {
+        const firstError = errors[0];
+        toast({
+          title: `لم يُرحَّل أي قيد (${data.total} محدد)`,
+          description: firstError + (errors.length > 1 ? ` — و${errors.length - 1} سبب آخر` : ""),
+          variant: "destructive",
+        });
+      } else if (errors.length > 0) {
+        toast({
+          title: `تم ترحيل ${data.posted} قيد — فشل ${errors.length}`,
+          description: errors[0] + (errors.length > 1 ? ` — و${errors.length - 1} آخر` : ""),
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `تم ترحيل ${data.posted} قيد بنجاح` });
+      }
     },
     onError: (error: Error) => {
       toast({ title: "خطأ في الترحيل الجماعي", description: error.message, variant: "destructive" });
