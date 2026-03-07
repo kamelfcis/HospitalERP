@@ -36,8 +36,7 @@ export function registerSystemRoutes(app: Express) {
       if (typeof image !== "string" || !image.startsWith("data:image/")) {
         return res.status(400).json({ message: "صورة غير صالحة" });
       }
-      await db.insert(systemSettings).values({ key: "login_background", value: image, updatedAt: new Date() })
-        .onConflictDoUpdate({ target: systemSettings.key, set: { value: image, updatedAt: new Date() } });
+      await setSetting("login_background", image);
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
