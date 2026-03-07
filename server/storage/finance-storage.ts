@@ -294,28 +294,30 @@ const methods = {
   },
 
   async updateJournalEntry(this: DatabaseStorage, id: string, entry: Partial<InsertJournalEntry>, lines?: InsertJournalLine[]): Promise<JournalEntry | undefined> {
-    const [existing] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
-    if (!existing || existing.status !== 'draft') {
-      return undefined;
-    }
-
-    const [updated] = await db.update(journalEntries)
-      .set({ ...entry, updatedAt: new Date() })
-      .where(eq(journalEntries.id, id))
-      .returning();
-
-    if (lines && lines.length > 0) {
-      await db.delete(journalLines).where(eq(journalLines.journalEntryId, id));
-      
-      for (const line of lines) {
-        await db.insert(journalLines).values({
-          ...line,
-          journalEntryId: id,
-        });
+    return await db.transaction(async (tx) => {
+      // قفل الصف لمنع التعديل المتزامن
+      const lockResult = await tx.execute(sql`SELECT id, status FROM journal_entries WHERE id = ${id} FOR UPDATE`);
+      const existing = lockResult.rows?.[0] as { id: string; status: string } | undefined;
+      if (!existing || existing.status !== 'draft') {
+        return undefined;
       }
-    }
 
-    return updated;
+      const [updated] = await tx.update(journalEntries)
+        .set({ ...entry, updatedAt: new Date() })
+        .where(and(eq(journalEntries.id, id), eq(journalEntries.status, 'draft')))
+        .returning();
+
+      if (lines && lines.length > 0) {
+        // حذف السطور القديمة وإدراج الجديدة في نفس الـ transaction
+        // لو فشل الإدراج: الحذف يُلغى تلقائياً ويرجع القيد لحالته
+        await tx.delete(journalLines).where(eq(journalLines.journalEntryId, id));
+        await tx.insert(journalLines).values(
+          lines.map((line) => ({ ...line, journalEntryId: id }))
+        );
+      }
+
+      return updated;
+    });
   },
 
   async postJournalEntry(this: DatabaseStorage, id: string, userId?: string | null): Promise<JournalEntry | undefined> {
