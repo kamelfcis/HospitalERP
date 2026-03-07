@@ -1,0 +1,129 @@
+I need you to inspect the REAL logic of the Account Mappings / Posting Setup screen and explain exactly how automatic journal lines are determined.
+
+Business context:
+- I found that an automatic journal entry is being generated, but it is incomplete.
+- I need to understand the exact posting logic behind the Account Mappings screen.
+- In some cases, the system seems to generate automatic entries based only on screen/transaction type and warehouse.
+- I need to know whether this design is missing dimensions such as supplier type, item type, tax, discount, cost center, branch, payment method, etc.
+
+Your task is to inspect the actual codebase, database schema, APIs, services, and UI related to:
+- Finance → Account Mappings
+- automatic journal generation for purchasing
+- transaction type / screen-based posting rules
+- warehouse-based account selection
+- journal line creation logic
+
+Please answer these exact questions from the REAL code:
+
+1) Posting setup design
+- What is the exact table structure of account_mappings?
+- What fields determine mapping selection?
+- Is mapping selected by:
+  - transaction_type only?
+  - transaction_type + warehouse?
+  - transaction_type + supplierType?
+  - transaction_type + item category?
+  - transaction_type + line type?
+  - any other dimensions?
+- Which fields are mandatory and which are optional?
+
+2) UI logic of Account Mappings screen
+- What fields does the screen allow the user to configure?
+- Does the screen let the user define:
+  - debit account
+  - credit account
+  - warehouse
+  - transaction type
+  - line type
+  - supplier type
+  - item type
+  - tax line
+  - discount line
+  - cost center behavior
+- What dimensions are NOT supported in the current UI?
+
+3) Mapping resolution logic
+- In code, how does the system choose which mapping row to use when generating a journal?
+- What is the matching priority/order?
+For example:
+  transaction_type → warehouse → supplierType → fallback
+- Is there fallback logic?
+- Can one missing mapping cause partial journal generation?
+- Can the system generate some lines and skip others silently?
+
+4) Purchase journal case
+Please inspect the purchase invoice journal generation specifically and explain:
+- which exact line types it expects
+- which exact mappings must exist
+- which line types are currently generated:
+  - inventory_drugs
+  - inventory_consumables
+  - vat_input
+  - discount_earned
+  - payables_drugs
+  - payables_consumables
+  - others if any
+- why a journal may be incomplete even though posting succeeded
+
+5) Incomplete journal risk analysis
+I need you to identify:
+- can the journal be created with only some lines present?
+- are missing mappings ignored or do they throw?
+- can warehouse-only mapping produce incomplete accounting?
+- is there any case where item mix or supplierType causes part of the entry to be missing?
+- is tax/discount posting conditional and therefore absent in some cases?
+- are cost centers ignored even if journal_lines has cost_center_id?
+
+6) Trace the exact source of the incomplete entry
+Please inspect one real generated purchase journal and explain:
+- why each line was generated
+- why any missing line was not generated
+- which mapping row was used for each line
+- which expected mapping row was missing or bypassed
+
+7) Design assessment
+Based on the actual implementation, tell me whether the current posting setup is:
+- too simple
+- missing required dimensions
+- prone to incomplete entries
+- acceptable for current phase
+- what must be improved first
+
+8) Output format
+Return your answer in EXACTLY this structure:
+
+A. Executive Summary
+
+B. Account Mappings Table Design
+- columns / purpose / required dimensions
+
+C. Account Mappings Screen Logic
+- fields configurable in UI
+- fields not supported in UI
+
+D. Journal Mapping Resolution Logic
+- exact matching order
+- fallback behavior
+- partial posting risks
+
+E. Purchase Invoice Posting Analysis
+- expected line types
+- mappings used
+- why entry may become incomplete
+
+F. Root Cause of Incomplete Automatic Entry
+- exact cause from current code
+
+G. What Is Missing in Current Posting Setup Design
+- missing dimensions
+- missing validations
+- missing UI options
+
+H. Recommended Fix Direction
+- in implementation priority order
+
+Important rules:
+- Do NOT give a generic ERP explanation.
+- Inspect the actual code and mention actual files, functions, tables, routes, and columns.
+- If something is missing, write exactly: "Not found in current codebase".
+- Be explicit about whether the current screen logic is based only on screen/transaction + warehouse, or whether more dimensions are actually used.
