@@ -49,6 +49,7 @@ export const warehouseUpdateSchema = z.object({
   nameAr: z.string().min(1).optional(),
   departmentId: z.string().optional().nullable(),
   pharmacyId: z.string().optional().nullable(),
+  glAccountId: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
