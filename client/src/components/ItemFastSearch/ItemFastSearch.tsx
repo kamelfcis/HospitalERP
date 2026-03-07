@@ -51,11 +51,13 @@ export function ItemFastSearch({
   const [batchItemId,  setBatchItemId]  = useState<string | null>(null);
   const [batchMode,    setBatchMode]    = useState(false);
 
-  const searchRef    = useRef<HTMLInputElement>(null);
-  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rowRefs      = useRef<(HTMLTableRowElement | null)[]>([]);
-  const abortRef     = useRef<AbortController | null>(null);
-  const batchAbortRef= useRef<AbortController | null>(null);
+  const searchRef      = useRef<HTMLInputElement>(null);
+  const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rowRefs        = useRef<(HTMLTableRowElement | null)[]>([]);
+  const abortRef       = useRef<AbortController | null>(null);
+  const batchAbortRef  = useRef<AbortController | null>(null);
+  // لمنع تعارض الكيبورد مع الماوس: نتجاهل onMouseEnter لـ 400ms بعد آخر ضغط سهم
+  const lastKeyboardAt = useRef<number>(0);
 
   // ── إعادة ضبط الدُفعات ──────────────────────────────────────────────────
   const resetBatches = useCallback(() => {
@@ -163,20 +165,22 @@ export function ItemFastSearch({
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      lastKeyboardAt.current = Date.now();
       setHighlighted(h => {
         const next = Math.min(h + 1, items.length - 1);
         rowRefs.current[next]?.scrollIntoView({ block: "nearest" });
         return next;
       });
-      resetBatches();
+      if (batchMode) resetBatches();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
+      lastKeyboardAt.current = Date.now();
       setHighlighted(h => {
         const prev = Math.max(h - 1, 0);
         rowRefs.current[prev]?.scrollIntoView({ block: "nearest" });
         return prev;
       });
-      resetBatches();
+      if (batchMode) resetBatches();
     } else if (e.key === "Enter") {
       e.preventDefault();
       const item = items[highlighted];
@@ -359,7 +363,10 @@ export function ItemFastSearch({
                         else loadBatches(item);
                       }}
                       onMouseEnter={() => {
-                        if (!isHl) { setHighlighted(idx); if (batchMode) resetBatches(); }
+                        // لا تتدخل لو لوحة الدُفعات مفتوحة أو الكيبورد استُخدم منذ أقل من 400ms
+                        if (batchMode) return;
+                        if (Date.now() - lastKeyboardAt.current < 400) return;
+                        if (!isHl) setHighlighted(idx);
                       }}
                       data-testid={`row-fast-search-${item.id}`}
                     >
