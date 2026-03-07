@@ -11,4 +11,6 @@
  */
 
 export { default as transfersCoreMethods } from "./transfers-core-storage";
-export { default as transfersUtilsMethods } from "./transfers-utils-storage";
+export { transfersInventoryMethods } from "./transfers-inventory-storage";
+export { transfersSearchMethods } from "./transfers-search-storage";
+export { transfersLogisticsMethods } from "./transfers-logistics-storage";

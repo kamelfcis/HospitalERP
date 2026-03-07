@@ -12,3 +12,4 @@
 
 export { default as financeAccountsMethods } from "./finance-accounts-storage";
 export { default as financeReportsMethods } from "./finance-reports-storage";
+export { default as financeJournalMethods } from "./finance-journal-storage";

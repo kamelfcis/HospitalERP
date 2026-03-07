@@ -11,4 +11,4 @@
  */
 
 export { default as purchasingReceivingsMethods } from "./purchasing-receivings-storage";
-export { default as purchasingInvoicesMethods } from "./purchasing-invoices-storage";
+export { purchasingInvoicesMethods, purchasingInvoicesJournalMethods } from "./purchasing-invoices-storage";

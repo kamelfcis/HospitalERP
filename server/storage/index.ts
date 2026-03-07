@@ -674,10 +674,15 @@ export interface DatabaseStorage extends IStorage {
 }
 
 import usersMethods from "./users-storage";
-import { financeAccountsMethods, financeReportsMethods } from "./finance-storage";
+import { financeAccountsMethods, financeReportsMethods, financeJournalMethods } from "./finance-storage";
 import itemsMethods from "./items-storage";
-import { transfersCoreMethods, transfersUtilsMethods } from "./transfers-storage";
-import { purchasingReceivingsMethods, purchasingInvoicesMethods } from "./purchasing-storage";
+import {
+  transfersCoreMethods,
+  transfersInventoryMethods,
+  transfersSearchMethods,
+  transfersLogisticsMethods,
+} from "./transfers-storage";
+import { purchasingReceivingsMethods, purchasingInvoicesMethods, purchasingInvoicesJournalMethods } from "./purchasing-storage";
 import servicesMethods from "./services-storage";
 import { salesInvoicesCoreMethods, salesInvoicesFinalizeMethods } from "./sales-invoices-storage";
 import salesJournalMethods from "./sales-journal-storage";
@@ -693,11 +698,15 @@ Object.assign(
   usersMethods,
   financeAccountsMethods,
   financeReportsMethods,
+  financeJournalMethods,
   itemsMethods,
   transfersCoreMethods,
-  transfersUtilsMethods,
+  transfersInventoryMethods,
+  transfersSearchMethods,
+  transfersLogisticsMethods,
   purchasingReceivingsMethods,
   purchasingInvoicesMethods,
+  purchasingInvoicesJournalMethods,
   servicesMethods,
   salesInvoicesCoreMethods,
   salesInvoicesFinalizeMethods,
