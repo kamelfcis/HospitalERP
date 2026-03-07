@@ -1,0 +1,130 @@
+I want you to perform a NEW STRICT maintainability and code-quality audit of the CURRENT system state after the recent fixes.
+
+IMPORTANT:
+- Do NOT focus only on security or transactions this time.
+- I want you to focus on code weakness, code complexity, structure quality, human readability, developer handoff risk, and maintainability.
+- I want you to act like a senior software architect reviewing whether this system can be safely understood and maintained by a normal human developer after AI-generated work.
+- Be critical, strict, evidence-based, and specific.
+- Do NOT flatter.
+- Do NOT give generic advice.
+- Tie every finding to actual files, functions, modules, and patterns in the code.
+
+MY MAIN QUESTIONS:
+1) What are the current weak points in the codebase now?
+2) Where is the code fragile, overly complex, too long, too coupled, or hard to understand?
+3) Which files are dangerous not because of immediate bugs, but because humans will struggle to maintain them?
+4) If I hand this codebase to a weak or average human developer after Replit, will they understand it or struggle badly?
+5) Which parts look AI-generated but not human-friendly?
+6) Which parts are too large, mixed-responsibility, repetitive, unclear, or poorly modularized?
+7) Which parts need refactoring mainly for human clarity, not just for correctness?
+8) Where will future developers make mistakes because the code is confusing?
+9) What parts have hidden complexity that a non-expert developer may accidentally break?
+10) Is the project currently organized enough for long-term handoff to human developers?
+
+FOCUS AREAS:
+- Folder structure quality
+- Naming consistency
+- File size and file responsibility
+- Function length and complexity
+- Repetition / duplicated logic
+- Mixed concerns in same file
+- UI + business logic coupling
+- Route files that are too large
+- Storage files that do too many things
+- Components that are too big
+- Hidden dependencies between modules
+- Unclear abstractions
+- Inconsistent patterns between modules
+- Weak comments / missing explanations
+- Hard-to-follow business logic
+- Areas where AI refactors created code that works but is hard for humans to follow
+- Files that a new developer would be afraid to edit
+- Files likely to become bottlenecks for future development
+- Human onboarding difficulty
+
+VERY IMPORTANT:
+I want you to rank the problems from MOST IMPORTANT to LEAST IMPORTANT.
+
+For every issue, provide:
+1) Rank
+2) Problem title
+3) Severity: Critical / High / Medium / Low
+4) Confidence: High / Medium / Low
+5) Exact file(s)
+6) Exact function(s) or component(s) if possible
+7) Why this is a maintainability problem
+8) Why a human developer may struggle here
+9) What kind of developer will struggle most (junior / average / weak / non-domain developer)
+10) Recommended action
+11) Estimated effort: Small / Medium / Large
+12) Fix now / later / monitor
+
+I also want a dedicated section called:
+
+"HUMAN HANDOFF RISK"
+
+In this section, explain clearly:
+- Can a normal human developer take over this codebase safely?
+- Will they understand the business logic quickly or slowly?
+- Which files will confuse them the most?
+- Which areas depend too much on hidden project knowledge?
+- Which parts need documentation before handoff?
+- If I hire a new developer, where will they likely fail first?
+
+I also want another dedicated section called:
+
+"AI-GENERATED CODE SMELL CHECK"
+
+In this section, detect code that may have these problems:
+- works, but is not elegant
+- repetitive pattern duplication
+- inconsistent structure between similar modules
+- verbose but unclear implementation
+- over-engineered simple flows
+- under-explained business rules
+- code that looks generated quickly rather than designed carefully
+- code that humans can run but not confidently extend
+
+OUTPUT FORMAT:
+
+SECTION A — Executive Summary
+- Overall maintainability impression
+- Is the codebase becoming healthier or still structurally risky?
+- Is human handoff realistic today?
+
+SECTION B — Scorecard (0 to 10)
+- Readability
+- Maintainability
+- Folder organization
+- Modularity
+- Naming clarity
+- Refactor readiness
+- Human developer friendliness
+- Documentation quality
+- AI-to-human handoff readiness
+
+SECTION C — Top Weaknesses Ranked
+At least top 10 issues if they exist
+
+SECTION D — Worst Files / Modules for Humans
+Create a ranked list of the worst files/modules/components for human maintenance.
+For each:
+- why it is hard
+- what kind of complexity it has
+- whether it should be split, documented, simplified, or rewritten partially
+
+SECTION E — Human Handoff Risk
+Answer as if advising a business owner before handing the project to a programmer.
+
+SECTION F — AI-Generated Code Smell Check
+Identify patterns that look machine-produced but human-unfriendly.
+
+SECTION G — Practical Next Refactor Priorities
+Give a realistic roadmap focused on making the system easier for humans to understand and maintain.
+
+FINAL VERDICT:
+At the end give me:
+1) Can this codebase be handed over safely today? Yes / Partially / No
+2) What level of developer can handle it today? Senior / Mid-level / Junior / only domain-expert
+3) Overall maintainability percentage
+4) Top 5 actions needed before handoff
