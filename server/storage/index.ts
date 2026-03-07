@@ -227,7 +227,7 @@ export interface IStorage {
     search?: string;
   }): Promise<{ data: JournalEntry[]; total: number }>;
   getJournalEntry(id: string): Promise<JournalEntryWithLines | undefined>;
-  getNextEntryNumber(queryCtx?: any): Promise<number>;
+  getNextEntryNumber(): Promise<number>;
   createJournalEntry(entry: InsertJournalEntry, lines: InsertJournalLine[]): Promise<JournalEntry>;
   updateJournalEntry(id: string, entry: Partial<InsertJournalEntry>, lines?: InsertJournalLine[]): Promise<JournalEntry | undefined>;
   postJournalEntry(id: string, userId: string | null): Promise<JournalEntry | undefined>;
@@ -361,9 +361,6 @@ export interface IStorage {
   }): Promise<{items: Record<string, unknown>[]; total: number}>;
 
   searchItemsByPattern(query: string, limit: number): Promise<Record<string, unknown>[]>;
-
-  // Pilot Test Seed
-  seedPilotTest(): Promise<{ warehouses: Record<string, unknown>[]; items: Record<string, unknown>[]; lots: Record<string, unknown>[] }>;
 
   // Suppliers
   getSuppliers(params: { search?: string; page: number; pageSize: number }): Promise<{ suppliers: Supplier[]; total: number }>;
@@ -672,7 +669,7 @@ export interface DatabaseStorage extends IStorage {
   completeSalesJournalsWithCash(invoiceIds: string[], cashGlAccountId: string | null, pharmacyId: string): Promise<void>;
   generatePurchaseInvoiceJournal(invoiceId: string, invoice: PurchaseInvoiceHeader): Promise<JournalEntry | null>;
   getMappingsForTransaction(sourceType: string, warehouseId: string | null): Promise<AccountMapping[]>;
-  getNextEntryNumber(queryCtx?: any): Promise<number>;
+  getNextEntryNumber(): Promise<number>;
   getNextSalesInvoiceNumber(): Promise<number>;
 }
 

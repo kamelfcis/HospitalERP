@@ -32,3 +32,5 @@ const originalQuery = originalPool.query.bind(originalPool);
 export const pool = originalPool;
 
 export const db = drizzle(pool, { schema });
+
+export type DrizzleTransaction = Parameters<Parameters<(typeof db)["transaction"]>[0]>[0];

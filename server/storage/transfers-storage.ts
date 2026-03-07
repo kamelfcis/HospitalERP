@@ -120,6 +120,36 @@ const methods = {
     });
   },
 
+  /**
+   * postTransfer — ترحيل تحويل مخزني (المسار الإنتاجي المعتمد الوحيد)
+   *
+   * التسلسل الكامل داخل transaction واحدة atomically:
+   *
+   * 1. قفل سجل التحويل FOR UPDATE (منع التعديل المتزامن)
+   * 2. التحقق من الحالة (draft فقط)، تطابق المخازن، وجود السطور
+   * 3. لكل سطر:
+   *    a. جلب الصنف وفحص أنه ليس service
+   *    b. حجز دفعات المخزون (FEFO) بقفل FOR UPDATE على inventoryLots
+   *       - إذا حدد المستخدم expiryMonth/Year: أولوية للدفعة المحددة ثم FEFO
+   *       - إذا حدد selectedExpiryDate: مطابقة تاريخ محددة
+   *       - الباقي: FEFO تلقائي (أقرب انتهاء صلاحية + أقدم استلام)
+   *    c. خصم الكمية من دفعات المصدر (UPDATE qty_in_minor)
+   *    d. إضافة الكمية لدفعات الوجهة (INSERT أو UPDATE)
+   *    e. تسجيل حركات المخزون (stockMovementHeaders + stockMovementAllocations)
+   *    f. تسجيل حركة الدفعة (transferLineAllocations)
+   * 4. تحديث totalCost على كل سطر التحويل
+   * 5. تحديث حالة التحويل → "posted"
+   * 6. إنشاء القيد المحاسبي:
+   *    - فحص وجود ربط GL على كلا المخزنين (إذا ناقص: تخطي بدون خطأ)
+   *    - مدين: حساب GL مخزن الوجهة | دائن: حساب GL مخزن المصدر
+   *    - إدراج journal_entries + journal_lines داخل نفس الـ tx
+   *
+   * @throws إذا الكمية غير كافية في المصدر بعد FEFO
+   * @throws إذا التحويل ليس في حالة draft
+   *
+   * ملاحظة: generateWarehouseTransferJournal هي دالة احتياطية منفصلة
+   *         تستخدم db.transaction() منفصلة — لا تستخدمها من هنا.
+   */
   async postTransfer(this: DatabaseStorage, transferId: string): Promise<StoreTransfer> {
     return await db.transaction(async (tx) => {
     const [transfer] = await tx.select().from(storeTransfers).where(eq(storeTransfers.id, transferId)).for("update");
@@ -944,166 +974,25 @@ const methods = {
     return enriched;
   },
 
-  async seedPilotTest(this: DatabaseStorage): Promise<{ warehouses: { id: string; warehouseCode: string; nameAr: string }[]; items: Record<string, unknown>[]; lots: Record<string, unknown>[] }> {
-    const today = new Date();
-    const formatDate = (d: Date) => d.toISOString().split('T')[0];
-    const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
 
-    return await db.transaction(async (tx) => {
-      const warehouseDefs = [
-        { warehouseCode: "WH-PH-IN", nameAr: "صيدلية داخلية" },
-        { warehouseCode: "WH-OR", nameAr: "مخزن العمليات" },
-      ];
-
-      const createdWarehouses: Warehouse[] = [];
-      for (const whDef of warehouseDefs) {
-        const [existing] = await tx.select().from(warehouses).where(eq(warehouses.warehouseCode, whDef.warehouseCode));
-        if (existing) {
-          createdWarehouses.push(existing);
-        } else {
-          const [inserted] = await tx.insert(warehouses).values(whDef).returning();
-          createdWarehouses.push(inserted);
-        }
-      }
-
-      const whPhIn = createdWarehouses.find(w => w.warehouseCode === "WH-PH-IN")!;
-
-      const itemDefs = [
-        {
-          itemCode: "TEST-DRUG-1",
-          category: "drug" as const,
-          hasExpiry: true,
-          nameAr: "باراسيتامول 500mg تجريبي",
-          majorUnitName: "علبة",
-          minorUnitName: "شريط",
-          majorToMinor: "10",
-          purchasePriceLast: "100",
-          salePriceCurrent: "150",
-        },
-        {
-          itemCode: "TEST-DRUG-2",
-          category: "drug" as const,
-          hasExpiry: true,
-          nameAr: "أموكسيسيلين 250mg تجريبي",
-          majorUnitName: "علبة",
-          minorUnitName: "قرص",
-          majorToMinor: "20",
-          purchasePriceLast: "200",
-          salePriceCurrent: "300",
-        },
-        {
-          itemCode: "TEST-SUP-1",
-          category: "supply" as const,
-          hasExpiry: false,
-          nameAr: "قفازات طبية تجريبي",
-          majorUnitName: "علبة",
-          minorUnitName: "قطعة",
-          majorToMinor: "50",
-          purchasePriceLast: "30",
-          salePriceCurrent: "45",
-        },
-      ];
-
-      const createdItems: any[] = [];
-      for (const itemDef of itemDefs) {
-        const [existing] = await tx.select().from(items).where(eq(items.itemCode, itemDef.itemCode));
-        if (existing) {
-          createdItems.push(existing);
-        } else {
-          const [inserted] = await tx.insert(items).values(itemDef).returning();
-          createdItems.push(inserted);
-        }
-      }
-
-      const drug1 = createdItems.find(i => i.itemCode === "TEST-DRUG-1")!;
-      const drug2 = createdItems.find(i => i.itemCode === "TEST-DRUG-2")!;
-      const sup1 = createdItems.find(i => i.itemCode === "TEST-SUP-1")!;
-
-      const lotDefs = [
-        {
-          itemId: drug1.id,
-          warehouseId: whPhIn.id,
-          expiryDate: formatDate(addDays(today, 30)),
-          receivedDate: formatDate(addDays(today, -5)),
-          purchasePrice: "100.0000",
-          qtyInMinor: "50.0000",
-          label: "TEST-DRUG-1 LotA",
-        },
-        {
-          itemId: drug1.id,
-          warehouseId: whPhIn.id,
-          expiryDate: formatDate(addDays(today, 90)),
-          receivedDate: formatDate(addDays(today, -3)),
-          purchasePrice: "105.0000",
-          qtyInMinor: "100.0000",
-          label: "TEST-DRUG-1 LotB",
-        },
-        {
-          itemId: drug1.id,
-          warehouseId: whPhIn.id,
-          expiryDate: formatDate(addDays(today, -10)),
-          receivedDate: formatDate(addDays(today, -60)),
-          purchasePrice: "95.0000",
-          qtyInMinor: "200.0000",
-          label: "TEST-DRUG-1 LotExpired",
-        },
-        {
-          itemId: drug2.id,
-          warehouseId: whPhIn.id,
-          expiryDate: formatDate(addDays(today, 60)),
-          receivedDate: formatDate(addDays(today, -7)),
-          purchasePrice: "200.0000",
-          qtyInMinor: "40.0000",
-          label: "TEST-DRUG-2 Lot1",
-        },
-        {
-          itemId: sup1.id,
-          warehouseId: whPhIn.id,
-          expiryDate: null as string | null,
-          receivedDate: formatDate(addDays(today, -10)),
-          purchasePrice: "30.0000",
-          qtyInMinor: "500.0000",
-          label: "TEST-SUP-1 Lot1",
-        },
-      ];
-
-      const createdLots: any[] = [];
-      for (const lotDef of lotDefs) {
-        const { label, ...lotData } = lotDef;
-
-        const expiryCondition = lotData.expiryDate === null
-          ? sql`${inventoryLots.expiryDate} IS NULL`
-          : eq(inventoryLots.expiryDate, lotData.expiryDate);
-
-        const [existing] = await tx.select().from(inventoryLots).where(
-          and(
-            eq(inventoryLots.itemId, lotData.itemId),
-            eq(inventoryLots.warehouseId, lotData.warehouseId),
-            expiryCondition,
-            eq(inventoryLots.purchasePrice, lotData.purchasePrice),
-          )
-        );
-
-        if (existing) {
-          const [updated] = await tx.update(inventoryLots)
-            .set({ qtyInMinor: lotData.qtyInMinor })
-            .where(eq(inventoryLots.id, existing.id))
-            .returning();
-          createdLots.push({ ...updated, label });
-        } else {
-          const [inserted] = await tx.insert(inventoryLots).values(lotData).returning();
-          createdLots.push({ ...inserted, label });
-        }
-      }
-
-      return {
-        warehouses: createdWarehouses.map(w => ({ id: w.id, warehouseCode: w.warehouseCode, nameAr: w.nameAr })),
-        items: createdItems.map(i => ({ id: i.id, itemCode: i.itemCode, nameAr: i.nameAr })),
-        lots: createdLots.map(l => ({ id: l.id, label: l.label, itemId: l.itemId, warehouseId: l.warehouseId, expiryDate: l.expiryDate, qtyInMinor: l.qtyInMinor })),
-      };
-    });
-  },
-
+  /**
+   * generateWarehouseTransferJournal — دالة احتياطية (LEGACY FALLBACK)
+   *
+   * ⚠️ المسار الإنتاجي المعتمد: postTransfer — يُنشئ القيد داخل نفس db.transaction()
+   *
+   * هذه الدالة موجودة كـ fallback خارجي في حالتين فقط:
+   *  1. استعادة القيود لتحويلات قديمة (مرحّلة قبل تطبيق الـ GL)
+   *  2. إعادة محاولة إنشاء القيد يدوياً عبر API منفصل
+   *
+   * الفرق عن postTransfer:
+   *  - تستخدم db.transaction() مستقلة (ليست داخل transaction التحويل)
+   *  - تبدأ بـ SELECT للتحقق من وجود قيد سابق (safe retry)
+   *  - لا تعدّل المخزون — تُنشئ القيد فقط
+   *
+   * التحذيرات:
+   *  - لا تستدعها من داخل postTransfer أو أي transaction مفتوحة
+   *  - لا تحتوي على UNIQUE constraint check — تعتمد على DB UNIQUE index للحماية
+   */
   async generateWarehouseTransferJournal(
     this: DatabaseStorage, transferId: string, transfer: StoreTransfer, totalCost: number
   ): Promise<JournalEntry | null> {

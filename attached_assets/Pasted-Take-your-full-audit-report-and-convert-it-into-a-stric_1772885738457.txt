@@ -1,0 +1,87 @@
+Take your full audit report and convert it into a strict EXECUTION PLAN.
+
+I do NOT want long explanations now.
+I want a practical action summary and then immediate implementation.
+
+YOUR TASK NOW HAS 2 PARTS:
+
+========================
+PART 1 — SUMMARIZE INTO ACTION POINTS
+========================
+
+Convert the full audit into a concise ranked list of fix items.
+
+For each item, give me only:
+1) Rank
+2) Problem title
+3) Severity
+4) Exact file(s)
+5) Why it matters in one simple sentence
+6) Fix type:
+   - quick fix
+   - refactor
+   - documentation
+   - architecture improvement
+7) Effort:
+   - small
+   - medium
+   - large
+8) Priority:
+   - do now
+   - do next
+   - later
+
+Group them into:
+
+- PHASE 1 = quick wins + highest handoff risk
+- PHASE 2 = medium structural refactors
+- PHASE 3 = larger architectural improvements
+
+========================
+PART 2 — START FIXING
+========================
+
+Start implementing PHASE 1 immediately.
+
+PHASE 1 must include these items first unless you find a stronger dependency order:
+1) Move seed data out of production storage files
+2) Replace tx:any / queryCtx:any with proper Drizzle transaction/query types
+3) Introduce centralized route error wrapper instead of repeated catch boilerplate
+4) Document buildSalesJournalLines clearly step by step
+5) Document postTransfer flow clearly step by step
+6) Remove or fix misleading unused parameters like _queryCtx
+7) Identify duplicate/fallback journal generation paths and clearly mark the correct one to use
+
+IMPORTANT RULES:
+- Preserve business behavior
+- Do not break API contracts
+- Do not weaken existing security fixes
+- Keep changes safe and incremental
+- Prefer small commits
+- Test after each logical batch
+- If a large refactor is risky, stop and report before doing it
+- Do not start PHASE 2 before finishing PHASE 1 summary and fixes
+
+OUTPUT FORMAT:
+
+SECTION A — EXECUTION SUMMARY
+A short ranked action list from the audit
+
+SECTION B — PHASE PLAN
+Phase 1 / Phase 2 / Phase 3
+
+SECTION C — IMPLEMENTATION START
+Show exactly what you changed first in Phase 1:
+- files changed
+- what changed
+- why
+- risk level
+
+SECTION D — VALIDATION
+For each fix batch, tell me:
+- what was tested
+- pass/fail
+- any remaining concern
+
+Be decisive, practical, and implementation-focused.
+Start now.

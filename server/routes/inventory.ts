@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
+import { runPilotTestSeed } from "../seeds/pilot-test";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { PERMISSIONS } from "@shared/permissions";
@@ -755,7 +756,7 @@ export function registerInventoryRoutes(app: Express) {
   // ===== PILOT TEST SEED =====
   app.post("/api/seed/pilot-test", requireAuth, async (req, res) => {
     try {
-      const result = await storage.seedPilotTest();
+      const result = await runPilotTestSeed();
       res.json(result);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

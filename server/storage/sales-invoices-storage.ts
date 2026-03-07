@@ -1,4 +1,5 @@
 import { db } from "../db";
+import type { DrizzleTransaction } from "../db";
 import { eq, desc, and, sql, or, asc, gte, lte, ilike, inArray } from "drizzle-orm";
 import {
   items,
@@ -28,7 +29,6 @@ import type {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney } from "../finance-helpers";
-type DrizzleTransaction = Parameters<Parameters<(typeof db)["transaction"]>[0]>[0];
 
 const methods = {
 
@@ -436,7 +436,7 @@ const methods = {
 
   async allocateStockInTx(
     this: DatabaseStorage,
-    tx: any,
+    tx: DrizzleTransaction,
     params: {
       operationType: string;
       referenceType: string;
@@ -860,10 +860,34 @@ const methods = {
     return { attempted: failedInvoices.length, succeeded, failed };
   },
 
+  /**
+   * buildSalesJournalLines — بنّاء سطور القيد المحاسبي لفاتورة مبيعات (معيار IFRS)
+   *
+   * المسار الإنتاجي: generateSalesInvoiceJournalInTx → buildSalesJournalLines → insertJournalEntry
+   *
+   * هيكل القيد الناتج (مدين / دائن):
+   * ┌─────────────────────────────────────────────────────────────────┐
+   * │  مدين   │ المدينون (receivables)         = صافي الفاتورة        │
+   * │  مدين   │ خصم مسموح (discount_allowed)   = قيمة الخصم (إن وجد) │
+   * │  مدين   │ تكلفة أدوية (cogs_drugs)       = FIFO cost أدوية     │
+   * │  مدين   │ تكلفة مستلزمات (cogs_supplies) = FIFO cost مستلزمات  │
+   * ├─────────────────────────────────────────────────────────────────┤
+   * │  دائن   │ إيراد أدوية (revenue_drugs)    = إيراد أدوية          │
+   * │  دائن   │ إيراد مستلزمات (revenue_*)     = إيراد مستلزمات       │
+   * │  دائن   │ مخزون (inventory/warehouseGL)  = إجمالي تكلفة البضاعة│
+   * └─────────────────────────────────────────────────────────────────┘
+   *
+   * ملاحظات:
+   * - إذا وُجد قيد سابق لنفس invoiceId: تُرجع null (idempotent)
+   * - الدالة لا تُدرج القيد — تُرجع السطور فقط لـ insertJournalEntry
+   * - queryCtx: يقبل db (خارج transaction) أو DrizzleTransaction (داخل transaction)
+   * - إذا لم يُعيَّن حساب إيرادات: السطر يُحذف (تحذير في checkJournalReadiness)
+   * - throws: إذا لم يُعيَّن حساب المدينون — هذا الخطأ الوحيد الذي يوقف التنفيذ
+   */
   async buildSalesJournalLines(
     this: DatabaseStorage,
     invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number,
-    queryCtx: any = db
+    queryCtx: typeof db | DrizzleTransaction = db
   ): Promise<{ journalLineData: InsertJournalLine[], totalDebits: number, totalCredits: number } | null> {
     const existingEntries = await queryCtx.select().from(journalEntries)
       .where(and(
@@ -1058,7 +1082,7 @@ const methods = {
 
   async insertJournalEntry(
     this: DatabaseStorage,
-    tx: any, invoiceId: string, invoice: SalesInvoiceHeader,
+    tx: DrizzleTransaction, invoiceId: string, invoice: SalesInvoiceHeader,
     journalLineData: InsertJournalLine[], totalDebits: number, totalCredits: number
   ): Promise<JournalEntry> {
     const [period] = await tx.select().from(fiscalPeriods)
@@ -1096,7 +1120,7 @@ const methods = {
 
   async generateSalesInvoiceJournalInTx(
     this: DatabaseStorage,
-    tx: any, invoiceId: string, invoice: SalesInvoiceHeader,
+    tx: DrizzleTransaction, invoiceId: string, invoice: SalesInvoiceHeader,
     cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
   ): Promise<JournalEntry | null> {
     console.log(`[Journal] Starting generateSalesInvoiceJournalInTx for invoice ${invoiceId}`);

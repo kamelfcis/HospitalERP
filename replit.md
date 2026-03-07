@@ -33,7 +33,7 @@ The schema is organized into domain-specific files (`enums.ts`, `users.ts`, `fin
 - **Concurrency & Idempotency**: Utilizes `FOR UPDATE` row locks, optimistic concurrency, and idempotent conversion processes.
 - **Financial Accuracy**: Server-side recomputation of invoice totals with `HALF_UP` rounding.
 - **System Settings**: Critical settings are cached in memory.
-- **Error Handling**: Centralized Arabic error messages with specific HTTP status codes.
+- **Error Handling**: Centralized Arabic error messages with specific HTTP status codes. `handleError()` wrapper in `server/routes/_utils.ts` replaces 139+ repeated error boilerplate patterns.
 - **Printing Safety**: Implements print tracking for receipts.
 - **Inventory Strictness**: Enforces expired batch blocking and FEFO ordering.
 - **Monitoring**: Includes slow request/query logging.
@@ -50,6 +50,9 @@ The schema is organized into domain-specific files (`enums.ts`, `users.ts`, `fin
 - **Refactored Pages**: Key financial and inventory pages are refactored into modular, hook-based components.
 - **Shared Components**: `ItemSearchDialog` and `ItemFastSearch` are shared for efficient item lookup.
 - **Transfer Preparation**: A smart screen for preparing store transfers based on sales data, with bulk filtering, suggested quantities, and auto FEFO distribution.
+- **Seed Data Isolation**: Development seed functions (`runPilotTestSeed`, `runPharmacyDemoSeed`) are isolated in `server/seeds/` and called from routes directly, keeping production storage files clean.
+- **Type Safety**: `DrizzleTransaction` type exported from `server/db.ts`; used in `allocateStockInTx`, `insertJournalEntry`, `buildSalesJournalLines`, `generateSalesInvoiceJournalInTx` — replacing unsafe `tx: any`.
+- **GL Function Documentation**: `buildSalesJournalLines` and `postTransfer` have step-by-step JSDoc comments. `generateWarehouseTransferJournal` is marked as legacy fallback (not production path).
 
 ## External Dependencies
 

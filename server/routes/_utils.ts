@@ -11,8 +11,10 @@
  *   accountTypeMapArabicToEnglish — خريطة ترجمة أنواع الحسابات
  *   accountTypeMapEnglishToArabic — خريطة ترجمة عكسية
  *   getDisplayList            — أيُّ قائمة تظهر فيها (ميزانية / دخل)
+ *   handleError               — معالجة موحّدة للأخطاء في route handlers
  * ═══════════════════════════════════════════════════════════════
  */
+import type { Response } from "express";
 
 export const DOC_PREFIXES: Record<string, string> = {
   journal_entry: "JE",
@@ -53,4 +55,32 @@ export const accountTypeMapEnglishToArabic: Record<string, string> = {
 export function getDisplayList(accountType: string): string {
   if (["asset", "liability", "equity"].includes(accountType)) return "الميزانية";
   return "قائمة الدخل";
+}
+
+/**
+ * handleError — معالجة موحّدة للأخطاء في route handlers
+ *
+ * يحل محل النمط المتكرر 139+ مرة:
+ *   const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+ *   res.status(500).json({ message: _em });
+ *
+ * الاستخدام الأساسي:
+ *   catch (error) { handleError(res, error); }
+ *
+ * مع حالات HTTP مخصصة:
+ *   catch (error) { handleError(res, error, { "الفترة المحاسبية": 403, "غير موجود": 404 }); }
+ */
+export function handleError(res: Response, error: unknown, statusMap?: Record<string, number>): void {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (statusMap) {
+    for (const [keyword, status] of Object.entries(statusMap)) {
+      if (message.includes(keyword)) {
+        res.status(status).json({ message });
+        return;
+      }
+    }
+  }
+
+  res.status(500).json({ message });
 }

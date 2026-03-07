@@ -265,7 +265,7 @@ const methods = {
     return { ...entry, lines: linesWithAccounts };
   },
 
-  async getNextEntryNumber(this: DatabaseStorage, _queryCtx: any = db): Promise<number> {
+  async getNextEntryNumber(this: DatabaseStorage): Promise<number> {
     // يستخدم PostgreSQL SEQUENCE — يضمن عدم التكرار تحت التزامن بشكل مدمج في قاعدة البيانات
     // nextval() لا يتأثر بالـ rollback (gaps مقبولة في قيود المحاسبة)
     const result = await db.execute(sql`SELECT nextval('journal_entry_number_seq') AS next_num`);
@@ -274,8 +274,7 @@ const methods = {
 
   async createJournalEntry(this: DatabaseStorage, entry: InsertJournalEntry, lines: InsertJournalLine[]): Promise<JournalEntry> {
     return await db.transaction(async (tx) => {
-      // يستخدم getNextEntryNumber مع tx لضمان الـ advisory lock داخل الـ transaction
-      const entryNumber = await this.getNextEntryNumber(tx);
+      const entryNumber = await this.getNextEntryNumber();
 
       const [newEntry] = await tx.insert(journalEntries)
         .values({ ...entry, entryNumber })
@@ -371,7 +370,7 @@ const methods = {
       .set({ status: 'reversed', reversedBy: userId || null, reversedAt: new Date() })
       .where(and(eq(journalEntries.id, id), eq(journalEntries.status, 'posted')));
 
-    const entryNumber = await this.getNextEntryNumber(tx);
+    const entryNumber = await this.getNextEntryNumber();
     const [reversalEntry] = await tx.insert(journalEntries).values({
       entryNumber,
       entryDate: todayStr,
@@ -1066,7 +1065,7 @@ const methods = {
       const totalDebit = journalLineData.reduce((s, l) => s + parseMoney(l.debit), 0);
       const totalCredit = journalLineData.reduce((s, l) => s + parseMoney(l.credit), 0);
 
-      const entryNumber = await this.getNextEntryNumber(tx);
+      const entryNumber = await this.getNextEntryNumber();
 
       const [entry] = await tx.insert(journalEntries).values({
         entryNumber,
