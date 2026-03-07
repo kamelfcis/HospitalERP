@@ -45,8 +45,8 @@ export default function BedBoard() {
   const { data: board = [], isLoading, refetch } = useQuery<FloorData[]>({
     queryKey: ["/api/bed-board"],
     queryFn: () => apiRequest("GET", "/api/bed-board").then((r) => r.json()),
-    // SSE will invalidate; this is the safety-net fallback every 60 s
-    refetchInterval: 60_000,
+    // SSE will invalidate; this is the safety-net fallback every 2 min
+    refetchInterval: 120_000,
     staleTime: 10_000,
   });
 

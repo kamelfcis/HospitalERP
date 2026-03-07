@@ -18,8 +18,7 @@ export function useDoctorStatement(doctorId?: string, clinicId?: string) {
       apiRequest("GET", `/api/clinic-doctor-statement?${params.toString()}`)
         .then((r) => r.json())
         .catch(() => []),
-    refetchInterval: 15000,
-    staleTime: 0,
+    refetchInterval: 120_000,
   });
 
   return { rows, isLoading, dateFrom, dateTo, setDateFrom, setDateTo, execFilter, setExecFilter };
