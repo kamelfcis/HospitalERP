@@ -18,7 +18,6 @@ function ClinicCard({ clinic, date, onSelect }: { clinic: ClinicClinic; date: st
       apiRequest("GET", `/api/clinic-clinics/${clinic.id}/appointments?date=${date}`)
         .then((r) => r.json()),
     enabled: !!date,
-    refetchInterval: 30_000,
   });
 
   const waiting = apts.filter((a) => a.status === "waiting").length;

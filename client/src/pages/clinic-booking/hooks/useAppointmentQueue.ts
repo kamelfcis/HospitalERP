@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useSSE } from "@/hooks/useSSE";
 import type { ClinicAppointment } from "../types";
 
 export function useAppointmentQueue(clinicId: string, date: string) {
@@ -11,7 +12,11 @@ export function useAppointmentQueue(clinicId: string, date: string) {
       apiRequest("GET", `/api/clinic-clinics/${clinicId}/appointments?date=${date}`)
         .then((r) => r.json()),
     enabled: !!clinicId && !!date,
-    refetchInterval: 15_000,
+  });
+
+  // تحديث فوري عبر SSE بدلاً من polling كل 15 ثانية
+  useSSE(clinicId && date ? `/api/clinic/sse/${clinicId}` : null, {
+    appointment_changed: () => queryClient.invalidateQueries({ queryKey }),
   });
 
   const statusMutation = useMutation({

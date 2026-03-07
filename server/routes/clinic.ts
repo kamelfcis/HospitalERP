@@ -1,10 +1,14 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import {
   requireAuth,
   checkPermission,
+  clinicSseClients,
+  broadcastToClinic,
+  clinicOrdersClients,
+  broadcastClinicOrdersUpdate,
 } from "./_shared";
 
 function snakeToCamel(obj: unknown): any {
@@ -20,7 +24,59 @@ function snakeToCamel(obj: unknown): any {
   return result;
 }
 
+function sseClinicEndpoint(res: Response, clinicId: string) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  res.write(`event: connected\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+  return res;
+}
+
 export function registerClinicRoutes(app: Express) {
+
+  // ── SSE: تحديثات مواعيد العيادة لحظياً ──────────────────────────────────────
+  app.get("/api/clinic/sse/:clinicId", requireAuth, (req, res) => {
+    const clinicId = req.params.clinicId as string;
+    sseClinicEndpoint(res, clinicId);
+
+    if (!clinicSseClients.has(clinicId)) clinicSseClients.set(clinicId, new Set());
+    clinicSseClients.get(clinicId)!.add(res);
+
+    const keepAlive = setInterval(() => {
+      try { res.write(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
+    }, 15_000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      const clients = clinicSseClients.get(clinicId);
+      if (clients) {
+        clients.delete(res);
+        if (clients.size === 0) clinicSseClients.delete(clinicId);
+      }
+    });
+  });
+
+  // ── SSE: تحديثات أوامر الكلينك لحظياً ──────────────────────────────────────
+  app.get("/api/clinic-orders/sse", requireAuth, (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    res.write(`event: connected\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+    clinicOrdersClients.add(res);
+
+    const keepAlive = setInterval(() => {
+      try { res.write(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
+    }, 15_000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      clinicOrdersClients.delete(res);
+    });
+  });
 
   app.get("/api/clinic-clinics", requireAuth, async (req, res) => {
     try {
@@ -110,6 +166,7 @@ export function registerClinicRoutes(app: Express) {
       if (!data.doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
       if (!data.appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
       const appointment = await storage.createAppointment(data);
+      broadcastToClinic(req.params.id as string, "appointment_changed", { ts: Date.now() });
       res.status(201).json(snakeToCamel(appointment));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -134,6 +191,8 @@ export function registerClinicRoutes(app: Express) {
       const validStatuses = ['waiting', 'in_consultation', 'done', 'cancelled'];
       if (!validStatuses.includes(status)) return res.status(400).json({ message: "حالة غير صحيحة" });
       await storage.updateAppointmentStatus(req.params.id as string, status);
+      const clinicIdForBroadcast = await storage.getAppointmentClinicId(req.params.id as string);
+      if (clinicIdForBroadcast) broadcastToClinic(clinicIdForBroadcast, "appointment_changed", { ts: Date.now() });
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -327,6 +386,7 @@ export function registerClinicRoutes(app: Express) {
   app.post("/api/clinic-orders/:id/execute", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
     try {
       const result = await storage.executeClinicOrder(req.params.id as string, req.session.userId!);
+      broadcastClinicOrdersUpdate();
       res.json(snakeToCamel(result));
     } catch (e: any) { res.status(400).json({ message: e.message }); }
   });
@@ -334,6 +394,7 @@ export function registerClinicRoutes(app: Express) {
   app.post("/api/clinic-orders/:id/cancel", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
     try {
       await storage.cancelClinicOrder(req.params.id as string);
+      broadcastClinicOrdersUpdate();
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

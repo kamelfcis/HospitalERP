@@ -48,7 +48,7 @@ export function useCashierShift() {
       if (!res.ok) throw new Error("فشل جلب بيانات الوردية");
       return res.json();
     },
-    refetchInterval: 30000,
+    refetchInterval: 180_000,
   });
 
   // ── حساب GL للمستخدم ─────────────────────────────────────

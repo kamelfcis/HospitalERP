@@ -49,6 +49,28 @@ export function broadcastBedBoardUpdate() {
 // قناة SSE للمحادثات الداخلية — كل مستخدم له اتصال واحد
 export const chatSseClients = new Map<string, Response>();
 
+// قناة SSE للعيادات — كل عيادة لها مجموعة عملاء متصلين
+export const clinicSseClients = new Map<string, Set<Response>>();
+
+export function broadcastToClinic(clinicId: string, event: string, data: unknown) {
+  const clients = clinicSseClients.get(clinicId);
+  if (!clients) return;
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  clients.forEach((res) => {
+    try { res.write(payload); } catch { clients.delete(res); }
+  });
+}
+
+// قناة SSE عالمية لأوامر الكلينك — تُبث لكل المتصلين
+export const clinicOrdersClients = new Set<Response>();
+
+export function broadcastClinicOrdersUpdate() {
+  const payload = `event: orders_changed\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`;
+  clinicOrdersClients.forEach((res) => {
+    try { res.write(payload); } catch { clinicOrdersClients.delete(res); }
+  });
+}
+
 export function broadcastChatMessage(receiverId: string, data: any) {
   const res = chatSseClients.get(receiverId);
   if (!res) return;

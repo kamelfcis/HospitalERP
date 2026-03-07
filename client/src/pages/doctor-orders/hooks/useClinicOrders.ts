@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useSSE } from "@/hooks/useSSE";
 import type { ClinicOrder, OrderStatusFilter, OrderTypeFilter } from "../types";
 
 export function useClinicOrders() {
@@ -20,7 +21,11 @@ export function useClinicOrders() {
     queryKey: ["/api/clinic-orders", statusFilter, typeFilter, targetIdFilter],
     queryFn: () =>
       apiRequest("GET", `/api/clinic-orders${qs ? "?" + qs : ""}`).then((r) => r.json()),
-    refetchInterval: 20000,
+  });
+
+  // تحديث فوري عبر SSE بدلاً من polling كل 20 ثانية
+  useSSE("/api/clinic-orders/sse", {
+    orders_changed: () => queryClient.invalidateQueries({ queryKey: ["/api/clinic-orders"] }),
   });
 
   const executeMutation = useMutation({
