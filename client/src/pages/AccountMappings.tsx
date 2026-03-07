@@ -385,8 +385,27 @@ export default function AccountMappings() {
           </div>
         </CardHeader>
 
+        {/* ── Notice: warehouse_transfer uses glAccountId on warehouse, not account_mappings ── */}
+        {selectedTxType === "warehouse_transfer" && !isLoading && (
+          <div className="mx-6 mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-start gap-2 text-sm" data-testid="notice-warehouse-transfer">
+            <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-blue-800">
+              <span className="font-semibold block">التحويلات المخزنية — آلية ربط خاصة</span>
+              <span className="text-xs leading-relaxed">
+                حساب المخزون لكل مستودع يُحدَّد مباشرةً في{" "}
+                <strong>إعدادات المستودع → حقل "حساب المخزون"</strong>
+                {" "}(gl_account_id) — ولا يمر عبر جدول ربط الحسابات هنا.
+                <br />
+                عند الترحيل: <strong>مدين ← حساب مخزن الوجهة</strong> /
+                {" "}<strong>دائن ← حساب مخزن المصدر</strong>.
+                {" "}القيمة = تكلفة الدفعات المحوّلة (لا يُعاد احتساب الأسعار أو الضريبة).
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* ── Status bar ── */}
-        {!isLoading && (
+        {!isLoading && selectedTxType !== "warehouse_transfer" && (
           <div className={`mx-6 mb-4 rounded-lg border p-3 flex flex-wrap items-center gap-3 text-sm ${setupComplete ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`} data-testid="status-bar">
             {setupComplete ? (
               <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />

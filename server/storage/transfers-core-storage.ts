@@ -150,16 +150,16 @@ const methods = {
    *    f. تسجيل حركة الدفعة (transferLineAllocations)
    * 4. تحديث totalCost على كل سطر التحويل
    * 5. تحديث حالة التحويل → "posted"
-   * 6. إنشاء القيد المحاسبي:
-   *    - فحص وجود ربط GL على كلا المخزنين (إذا ناقص: تخطي بدون خطأ)
-   *    - مدين: حساب GL مخزن الوجهة | دائن: حساب GL مخزن المصدر
-   *    - إدراج journal_entries + journal_lines داخل نفس الـ tx
+   * 6. إنشاء القيد المحاسبي داخل نفس المعاملة (ذري):
+   *    - يقرأ gl_account_id من جدول warehouses لكل مخزن
+   *    - إذا أي مخزن ليس له GL account → تخطي بتسجيل في السجل (بدون خطأ)
+   *    - إذا لا توجد فترة محاسبية مفتوحة → تخطي بتسجيل
+   *    - مدين: gl_account_id مخزن الوجهة | دائن: gl_account_id مخزن المصدر
+   *    - sourceType = "warehouse_transfer" | status = "posted"
+   *    - idempotency: لا يُنشأ قيدان لنفس transferId (unique index)
    *
    * @throws إذا الكمية غير كافية في المصدر بعد FEFO
    * @throws إذا التحويل ليس في حالة draft
-   *
-   * ملاحظة: generateWarehouseTransferJournal هي دالة احتياطية منفصلة
-   *         تستخدم db.transaction() منفصلة — لا تستخدمها من هنا.
    */
   async postTransfer(this: DatabaseStorage, transferId: string): Promise<StoreTransfer> {
     return await db.transaction(async (tx) => {
@@ -406,10 +406,89 @@ const methods = {
         .where(eq(storeTransfers.id, transferId))
         .returning();
 
+      // ── Step 6: قيد محاسبي ذري داخل نفس الـ tx ──────────────────────────
+      // سياسة: Dr مخزن الوجهة / Cr مخزن المصدر — القيمة = تكلفة الدفعات المحوّلة
+      // لا يُعاد احتساب سعر الصنف أو الضريبة أو رصيد المورد
       if (totalCost > 0) {
-        (this as any).generateWarehouseTransferJournal(
-          transferId, transfer, totalCost
-        ).catch((err: any) => console.error("Auto journal for warehouse transfer failed:", err));
+        // Idempotency — unique index على (sourceType, sourceDocumentId) يمنع التكرار في DB
+        // لكن نتحقق مسبقاً لتفادي خطأ unique violation داخل الـ tx
+        const [existingJournal] = await tx.select({ id: journalEntries.id })
+          .from(journalEntries)
+          .where(and(
+            eq(journalEntries.sourceType, "warehouse_transfer"),
+            eq(journalEntries.sourceDocumentId, transferId)
+          ))
+          .limit(1);
+
+        if (existingJournal) {
+          console.log(`[GL] Transfer journal already exists for transfer ${transferId}, skipping.`);
+        } else {
+          // اقرأ GL account من جدول warehouses مباشرةً
+          const [srcWh] = await tx.select({ glAccountId: warehouses.glAccountId, nameAr: warehouses.nameAr })
+            .from(warehouses).where(eq(warehouses.id, transfer.sourceWarehouseId));
+          const [destWh] = await tx.select({ glAccountId: warehouses.glAccountId, nameAr: warehouses.nameAr })
+            .from(warehouses).where(eq(warehouses.id, transfer.destinationWarehouseId));
+
+          if (!srcWh?.glAccountId || !destWh?.glAccountId) {
+            console.log(
+              `[GL] Transfer journal SKIPPED — GL account not configured. ` +
+              `src=${srcWh?.nameAr ?? transfer.sourceWarehouseId} (${srcWh?.glAccountId ?? "—"}), ` +
+              `dest=${destWh?.nameAr ?? transfer.destinationWarehouseId} (${destWh?.glAccountId ?? "—"}). ` +
+              `Configure via: إعدادات المستودع → حساب المخزون.`
+            );
+          } else {
+            // فترة محاسبية مفتوحة لتاريخ التحويل
+            const [period] = await tx.select({ id: fiscalPeriods.id })
+              .from(fiscalPeriods)
+              .where(and(
+                lte(fiscalPeriods.startDate, transfer.transferDate),
+                gte(fiscalPeriods.endDate, transfer.transferDate),
+                eq(fiscalPeriods.isClosed, false)
+              ))
+              .limit(1);
+
+            if (!period) {
+              console.log(`[GL] Transfer journal SKIPPED — no open fiscal period for date ${transfer.transferDate}.`);
+            } else {
+              const entryNumber = await this.getNextEntryNumber();
+              const amount = totalCost.toFixed(2);
+              const desc = `قيد تحويل مخزني ${transfer.transferNumber} — من ${srcWh.nameAr} إلى ${destWh.nameAr}`;
+
+              const [entry] = await tx.insert(journalEntries).values({
+                entryNumber,
+                entryDate:        transfer.transferDate,
+                periodId:         period.id,
+                description:      desc,
+                sourceType:       "warehouse_transfer",
+                sourceDocumentId: transferId,
+                status:           "posted" as const,
+                totalDebit:       amount,
+                totalCredit:      amount,
+              }).returning();
+
+              await tx.insert(journalLines).values([
+                {
+                  journalEntryId: entry.id,
+                  lineNumber:     1,
+                  accountId:      destWh.glAccountId,
+                  debit:          amount,
+                  credit:         "0.00",
+                  description:    `تحويل وارد — ${destWh.nameAr}`,
+                },
+                {
+                  journalEntryId: entry.id,
+                  lineNumber:     2,
+                  accountId:      srcWh.glAccountId,
+                  debit:          "0.00",
+                  credit:         amount,
+                  description:    `تحويل صادر — ${srcWh.nameAr}`,
+                },
+              ]);
+
+              console.log(`[GL] Transfer journal posted: #${entryNumber}, amount=${amount}, Dr=${destWh.nameAr}, Cr=${srcWh.nameAr}`);
+            }
+          }
+        }
       }
 
       return updated;

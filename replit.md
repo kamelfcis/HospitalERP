@@ -41,6 +41,7 @@ The schema is organized into domain-specific files (`enums.ts`, `users.ts`, `fin
 - **Backup & Restore**: Automated scripts for backup and restore.
 - **Architectural Enforcement**: Uses route/finance helpers, custom frontend hooks, ESLint, and scaffold generators.
 - **Stay Engine Billing Modes**: Supports `hours_24` and `hotel_noon` idempotent billing.
+- **Stock Transfer Journal (Atomic)**: `postTransfer()` now generates a balanced journal entry inside the same DB transaction. Uses `warehouses.glAccountId` (set per-warehouse in warehouse settings) to resolve GL accounts. Dr = destination warehouse account, Cr = source warehouse account, Amount = FEFO lot cost. Skips gracefully (no throw) if either warehouse lacks a GL account or no open fiscal period exists. Idempotency enforced by unique index on (sourceType, sourceDocumentId). No tax, supplier, or revenue accounts involved.
 - **Invoice & Discharge Rules**: Enforces payment before finalization and finalized invoices before discharge, with RBAC bypass options.
 - **Journal Safety Net**: Sales invoice finalization attempts journal generation within the same DB transaction, with a retry mechanism for failures.
 - **HTTP Compression**: Express uses `compression` middleware.
