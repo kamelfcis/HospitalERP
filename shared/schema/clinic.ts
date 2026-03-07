@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { items } from "./inventory";
@@ -26,7 +26,11 @@ export const clinicDoctorSchedules = pgTable("clinic_doctor_schedules", {
   startTime:       text("start_time"),
   endTime:         text("end_time"),
   maxAppointments: integer("max_appointments").default(20),
-});
+}, (t) => [
+  index("idx_clinic_schedules_clinic_id").on(t.clinicId),
+  index("idx_clinic_schedules_doctor_id").on(t.doctorId),
+  index("idx_clinic_schedules_doctor_weekday").on(t.doctorId, t.weekday),
+]);
 
 export const clinicAppointments = pgTable("clinic_appointments", {
   id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -42,19 +46,31 @@ export const clinicAppointments = pgTable("clinic_appointments", {
   notes:           text("notes"),
   createdBy:       varchar("created_by"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("idx_clinic_appts_clinic_date").on(t.clinicId, t.appointmentDate),
+  index("idx_clinic_appts_clinic_date_status").on(t.clinicId, t.appointmentDate, t.status),
+  index("idx_clinic_appts_doctor_date").on(t.doctorId, t.appointmentDate),
+  index("idx_clinic_appts_patient_id").on(t.patientId),
+  index("idx_clinic_appts_status").on(t.status),
+]);
 
 export const clinicUserClinicAssignments = pgTable("clinic_user_clinic_assignments", {
   id:       varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId:   varchar("user_id").notNull(),
   clinicId: varchar("clinic_id").notNull().references(() => clinicClinics.id),
-});
+}, (t) => [
+  index("idx_clinic_user_clinic_user_id").on(t.userId),
+  uniqueIndex("idx_clinic_user_clinic_unique").on(t.userId, t.clinicId),
+]);
 
 export const clinicUserDoctorAssignments = pgTable("clinic_user_doctor_assignments", {
   id:       varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId:   varchar("user_id").notNull(),
   doctorId: varchar("doctor_id").notNull().references(() => doctors.id),
-});
+}, (t) => [
+  index("idx_clinic_user_doctor_user_id").on(t.userId),
+  uniqueIndex("idx_clinic_user_doctor_unique").on(t.userId, t.doctorId),
+]);
 
 export const clinicConsultations = pgTable("clinic_consultations", {
   id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -80,7 +96,10 @@ export const clinicConsultationDrugs = pgTable("clinic_consultation_drugs", {
   unitLevel:      varchar("unit_level").default("major"),
   quantity:       decimal("quantity", { precision: 10, scale: 3 }).default("1"),
   unitPrice:      decimal("unit_price", { precision: 10, scale: 3 }).default("0"),
-});
+}, (t) => [
+  index("idx_clinic_consult_drugs_consultation_id").on(t.consultationId),
+  index("idx_clinic_consult_drugs_item_id").on(t.itemId),
+]);
 
 export const clinicDoctorFavoriteDrugs = pgTable("clinic_doctor_favorite_drugs", {
   id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -92,7 +111,10 @@ export const clinicDoctorFavoriteDrugs = pgTable("clinic_doctor_favorite_drugs",
   defaultFrequency:text("default_frequency"),
   defaultDuration: text("default_duration"),
   sortOrder:       integer("sort_order").default(0),
-});
+}, (t) => [
+  index("idx_clinic_fav_drugs_doctor_clinic").on(t.doctorId, t.clinicId),
+  index("idx_clinic_fav_drugs_item_id").on(t.itemId),
+]);
 
 export const clinicServiceDoctorPrices = pgTable("clinic_service_doctor_prices", {
   id:         varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -100,7 +122,10 @@ export const clinicServiceDoctorPrices = pgTable("clinic_service_doctor_prices",
   doctorId:   varchar("doctor_id").notNull(),
   price:      decimal("price", { precision: 10, scale: 2 }).notNull().default("0"),
   createdAt:  timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("idx_clinic_svc_doctor_price_unique").on(t.serviceId, t.doctorId),
+  index("idx_clinic_svc_doctor_price_doctor_id").on(t.doctorId),
+]);
 
 export const clinicOrders = pgTable("clinic_orders", {
   id:                varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -125,7 +150,14 @@ export const clinicOrders = pgTable("clinic_orders", {
   executedBy:        varchar("executed_by"),
   executedAt:        timestamp("executed_at"),
   createdAt:         timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("idx_clinic_orders_appointment_id").on(t.appointmentId),
+  index("idx_clinic_orders_consultation_id").on(t.consultationId),
+  index("idx_clinic_orders_doctor_id").on(t.doctorId),
+  index("idx_clinic_orders_status").on(t.status),
+  index("idx_clinic_orders_status_type").on(t.status, t.orderType),
+  index("idx_clinic_orders_created_at").on(t.createdAt),
+]);
 
 // Insert schemas
 export const insertClinicClinicSchema = createInsertSchema(clinicClinics).omit({ id: true, createdAt: true });
