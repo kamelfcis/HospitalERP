@@ -225,12 +225,14 @@ async function generatePurchaseInvoiceJournalInTx(
   const entryNumber = (numRow?.max || 0) + 1;
 
   // Step H: Insert journal entry header + lines via tx
+  // status = "posted" directly — اعتماد الفاتورة هو حدث التفويض، لا معنى لإبقائه مسودة
   const [entry] = await tx.insert(journalEntries).values({
     entryNumber,
     entryDate:        invoice.invoiceDate,
     reference:        `PUR-${invoice.invoiceNumber}`,
     description:      descriptionText,
-    status:           "draft",
+    status:           "posted",
+    postedAt:         new Date(),
     periodId:         period.id,
     sourceType:       "purchase_invoice",
     sourceDocumentId: invoiceId,
