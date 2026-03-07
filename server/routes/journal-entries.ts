@@ -241,11 +241,12 @@ export function registerJournalEntriesRoutes(app: Express) {
   // Batch post journal entries
   app.post("/api/journal-entries/batch-post", requireAuth, checkPermission(PERMISSIONS.JOURNAL_POST), async (req, res) => {
     try {
-      const { ids, userId } = req.body;
+      const { ids } = req.body;
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ message: "يجب تحديد قيود للترحيل" });
       }
-      const result = await storage.batchPostJournalEntries(ids, userId || "system");
+      const sessionUserId: string | null = (req.session as any)?.userId || null;
+      const result = await storage.batchPostJournalEntries(ids, sessionUserId);
       res.json({ posted: result.posted, total: ids.length, errors: result.errors });
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

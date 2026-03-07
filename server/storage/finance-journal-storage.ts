@@ -254,7 +254,7 @@ const methods = {
     });
   },
 
-  async batchPostJournalEntries(this: DatabaseStorage, ids: string[], userId: string): Promise<{ posted: number; errors: string[] }> {
+  async batchPostJournalEntries(this: DatabaseStorage, ids: string[], userId: string | null): Promise<{ posted: number; errors: string[] }> {
     let posted = 0;
     const errors: string[] = [];
     for (const id of ids) {
