@@ -265,19 +265,20 @@ const methods = {
     return { ...entry, lines: linesWithAccounts };
   },
 
-  async getNextEntryNumber(this: DatabaseStorage): Promise<number> {
-    const [result] = await db.select({ max: sql<number>`COALESCE(MAX(${journalEntries.entryNumber}), 0)` })
+  async getNextEntryNumber(this: DatabaseStorage, queryCtx: any = db): Promise<number> {
+    // قفل advisory على مستوى الـ transaction لمنع الـ race condition
+    // يُطلق تلقائياً عند انتهاء الـ transaction (commit أو rollback)
+    await queryCtx.execute(sql`SELECT pg_advisory_xact_lock(771000001)`);
+    const [result] = await queryCtx
+      .select({ max: sql<number>`COALESCE(MAX(${journalEntries.entryNumber}), 0)` })
       .from(journalEntries);
     return (result?.max || 0) + 1;
   },
 
   async createJournalEntry(this: DatabaseStorage, entry: InsertJournalEntry, lines: InsertJournalLine[]): Promise<JournalEntry> {
     return await db.transaction(async (tx) => {
-      // حساب الرقم التسلسلي داخل الـ transaction لضمان التناسق
-      const [numResult] = await tx
-        .select({ max: sql<number>`COALESCE(MAX(${journalEntries.entryNumber}), 0)` })
-        .from(journalEntries);
-      const entryNumber = (numResult?.max || 0) + 1;
+      // يستخدم getNextEntryNumber مع tx لضمان الـ advisory lock داخل الـ transaction
+      const entryNumber = await this.getNextEntryNumber(tx);
 
       const [newEntry] = await tx.insert(journalEntries)
         .values({ ...entry, entryNumber })
@@ -373,7 +374,7 @@ const methods = {
       .set({ status: 'reversed', reversedBy: userId || null, reversedAt: new Date() })
       .where(and(eq(journalEntries.id, id), eq(journalEntries.status, 'posted')));
 
-    const entryNumber = await this.getNextEntryNumber();
+    const entryNumber = await this.getNextEntryNumber(tx);
     const [reversalEntry] = await tx.insert(journalEntries).values({
       entryNumber,
       entryDate: todayStr,
@@ -1068,7 +1069,7 @@ const methods = {
       const totalDebit = journalLineData.reduce((s, l) => s + parseMoney(l.debit), 0);
       const totalCredit = journalLineData.reduce((s, l) => s + parseMoney(l.credit), 0);
 
-      const entryNumber = await this.getNextEntryNumber();
+      const entryNumber = await this.getNextEntryNumber(tx);
 
       const [entry] = await tx.insert(journalEntries).values({
         entryNumber,
