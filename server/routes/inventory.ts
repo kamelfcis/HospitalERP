@@ -753,7 +753,7 @@ export function registerInventoryRoutes(app: Express) {
   });
 
   // ===== PILOT TEST SEED =====
-  app.post("/api/seed/pilot-test", async (req, res) => {
+  app.post("/api/seed/pilot-test", requireAuth, async (req, res) => {
     try {
       const result = await storage.seedPilotTest();
       res.json(result);

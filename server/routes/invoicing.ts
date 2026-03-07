@@ -241,7 +241,7 @@ export function registerInvoicingRoutes(app: Express) {
     createMissingFromBasePrice: z.boolean().optional(),
   });
 
-  app.post("/api/price-lists/:id/bulk-adjust/preview", async (req, res) => {
+  app.post("/api/price-lists/:id/bulk-adjust/preview", requireAuth, async (req, res) => {
     try {
       const validated = bulkAdjustBodySchema.parse(req.body);
       const result = await storage.bulkAdjustPreview(req.params.id as string, validated);
@@ -493,7 +493,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/seed/pharmacy-sales-demo", async (req, res) => {
+  app.post("/api/seed/pharmacy-sales-demo", requireAuth, async (req, res) => {
     if (process.env.NODE_ENV === 'production') {
       return res.status(403).json({ error: "Seed not available in production" });
     }
@@ -1272,7 +1272,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions", async (req, res) => {
+  app.post("/api/admissions", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
     try {
       const parsed = insertAdmissionSchema.parse(req.body);
       const a = await storage.createAdmission(parsed);
@@ -1283,7 +1283,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admissions/:id", async (req, res) => {
+  app.patch("/api/admissions/:id", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const parsed = insertAdmissionSchema.partial().parse(req.body);
       const a = await storage.updateAdmission(req.params.id as string, parsed);
@@ -1294,7 +1294,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions/:id/discharge", async (req, res) => {
+  app.post("/api/admissions/:id/discharge", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const a = await storage.dischargeAdmission(req.params.id as string);
       res.json(a);
@@ -1314,7 +1314,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions/:id/consolidate", async (req, res) => {
+  app.post("/api/admissions/:id/consolidate", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const consolidated = await storage.consolidateAdmissionInvoices(req.params.id as string);
       res.json(consolidated);
