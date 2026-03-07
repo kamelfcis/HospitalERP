@@ -1,0 +1,516 @@
+import { db } from "../db";
+import { eq, and, sql, or, asc, ilike } from "drizzle-orm";
+import {
+  patients,
+  doctors,
+  admissions,
+  patientInvoiceHeaders,
+  patientInvoiceLines,
+  patientInvoicePayments,
+  doctorTransfers,
+  doctorSettlementAllocations,
+  type Patient,
+  type InsertPatient,
+  type Doctor,
+  type InsertDoctor,
+  type Admission,
+  type InsertAdmission,
+  type PatientInvoiceHeader,
+} from "@shared/schema";
+import type { DatabaseStorage } from "./index";
+
+const methods = {
+
+  async getPatients(this: DatabaseStorage): Promise<Patient[]> {
+    return db.select().from(patients).where(eq(patients.isActive, true)).orderBy(asc(patients.fullName));
+  },
+
+  async searchPatients(this: DatabaseStorage, search: string): Promise<Patient[]> {
+    if (!search.trim()) return this.getPatients();
+    const tokens = search.trim().split(/\s+/).filter(Boolean);
+    const conditions = tokens.map(token => {
+      const pattern = token.includes('%') ? token : `%${token}%`;
+      return or(
+        ilike(patients.fullName, pattern),
+        ilike(patients.phone, pattern),
+        ilike(patients.nationalId, pattern),
+      );
+    });
+    return db.select().from(patients)
+      .where(and(eq(patients.isActive, true), ...conditions.filter(Boolean) as any))
+      .orderBy(asc(patients.fullName))
+      .limit(50);
+  },
+
+  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<any[]> {
+    const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
+
+    const invConds: string[] = ["pih.status != 'cancelled'"];
+    if (filters?.dateFrom) invConds.push(`pih.invoice_date >= '${filters.dateFrom}'`);
+    if (filters?.dateTo)   invConds.push(`pih.invoice_date <= '${filters.dateTo}'`);
+    if (filters?.deptId) {
+      const d = filters.deptId.replace(/'/g, "''");
+      invConds.push(
+        `(pih.department_id = '${d}' OR (pih.department_id IS NULL AND EXISTS (` +
+        `SELECT 1 FROM warehouses w WHERE w.id = pih.warehouse_id AND w.department_id = '${d}'` +
+        `)))`
+      );
+    }
+    const invFilter = invConds.join(" AND ");
+
+    const hasDateFilter = !!(filters?.dateFrom || filters?.dateTo);
+    const joinType = hasDateFilter ? "JOIN" : "LEFT JOIN";
+
+    let patientFilter = "p.is_active = true";
+    if (filters?.search?.trim()) {
+      const tokens = filters.search.trim().split(/\s+/).filter(Boolean);
+      const conds = tokens.map(t => {
+        const pat = `'%${t.replace(/'/g, "''").replace(/%/g, "\\%")}%'`;
+        return (
+          `(p.full_name ILIKE ${pat}` +
+          ` OR p.phone ILIKE ${pat}` +
+          ` OR EXISTS (` +
+            `SELECT 1 FROM patient_invoice_headers pih2` +
+            ` WHERE pih2.patient_name = p.full_name` +
+            ` AND pih2.doctor_name ILIKE ${pat}` +
+          `))`
+        );
+      });
+      patientFilter += ` AND (${conds.join(" AND ")})`;
+    }
+
+    const result = await db.execute(sql`
+      SELECT
+        p.id,
+        p.full_name,
+        p.phone,
+        p.national_id,
+        p.age,
+        p.created_at,
+        COALESCE(s.services_total, 0)      AS services_total,
+        COALESCE(s.drugs_total, 0)         AS drugs_total,
+        COALESCE(s.consumables_total, 0)   AS consumables_total,
+        COALESCE(s.or_room_total, 0)       AS or_room_total,
+        COALESCE(s.stay_total, 0)          AS stay_total,
+        COALESCE(s.services_total, 0) + COALESCE(s.drugs_total, 0) +
+          COALESCE(s.consumables_total, 0) + COALESCE(s.or_room_total, 0) +
+          COALESCE(s.stay_total, 0)        AS grand_total,
+        COALESCE(s.paid_total, 0)          AS paid_total,
+        COALESCE(s.transferred_total, 0)   AS transferred_total,
+        s.latest_invoice_id,
+        s.latest_invoice_number,
+        s.latest_invoice_status,
+        s.latest_doctor_name
+      FROM patients p
+      ${sql.raw(joinType)} (
+        SELECT
+          inv.patient_name,
+          SUM(inv.services_total)      AS services_total,
+          SUM(inv.drugs_total)         AS drugs_total,
+          SUM(inv.consumables_total)   AS consumables_total,
+          SUM(inv.or_room_total)       AS or_room_total,
+          SUM(inv.stay_total)          AS stay_total,
+          SUM(inv.paid_amount)         AS paid_total,
+          SUM(inv.transferred_total)   AS transferred_total,
+          (ARRAY_AGG(inv.id             ORDER BY inv.created_at DESC))[1] AS latest_invoice_id,
+          (ARRAY_AGG(inv.invoice_number ORDER BY inv.created_at DESC))[1] AS latest_invoice_number,
+          (ARRAY_AGG(inv.status         ORDER BY inv.created_at DESC))[1] AS latest_invoice_status,
+          (ARRAY_AGG(inv.doctor_name    ORDER BY inv.created_at DESC))[1] AS latest_doctor_name
+        FROM (
+          SELECT
+            pih.id,
+            pih.patient_name,
+            pih.created_at,
+            pih.invoice_number,
+            pih.status,
+            pih.paid_amount,
+            pih.doctor_name,
+            COALESCE((
+              SELECT SUM(dt.amount)
+              FROM doctor_transfers dt
+              WHERE dt.invoice_id = pih.id
+            ), 0) AS transferred_total,
+            SUM(CASE WHEN pil.source_type IS NULL AND pil.line_type = 'service'
+                THEN pil.total_price ELSE 0 END) AS services_total,
+            SUM(CASE WHEN pil.line_type = 'drug'
+                THEN pil.total_price ELSE 0 END) AS drugs_total,
+            SUM(CASE WHEN pil.line_type = 'consumable'
+                THEN pil.total_price ELSE 0 END) AS consumables_total,
+            SUM(CASE WHEN pil.source_type = 'OR_ROOM'
+                THEN pil.total_price ELSE 0 END) AS or_room_total,
+            SUM(CASE WHEN pil.source_type = 'STAY_ENGINE'
+                THEN pil.total_price ELSE 0 END) AS stay_total
+          FROM patient_invoice_headers pih
+          LEFT JOIN patient_invoice_lines pil
+            ON pil.header_id = pih.id AND pil.is_void = false
+          WHERE ${sql.raw(invFilter)}
+          GROUP BY pih.id, pih.patient_name, pih.created_at,
+                   pih.invoice_number, pih.status, pih.paid_amount, pih.doctor_name
+        ) inv
+        GROUP BY inv.patient_name
+      ) s ON s.patient_name = p.full_name
+      WHERE ${sql.raw(patientFilter)}
+      ORDER BY p.created_at DESC
+    `);
+    return (result.rows as any[]).map(row =>
+      Object.fromEntries(Object.entries(row).map(([k, v]) => [toCamel(k), v]))
+    );
+  },
+
+  async getPatient(this: DatabaseStorage, id: string): Promise<Patient | undefined> {
+    const [p] = await db.select().from(patients).where(eq(patients.id, id));
+    return p;
+  },
+
+  async createPatient(this: DatabaseStorage, data: InsertPatient): Promise<Patient> {
+    const [p] = await db.insert(patients).values(data).returning();
+    return p;
+  },
+
+  async updatePatient(this: DatabaseStorage, id: string, data: Partial<InsertPatient>): Promise<Patient> {
+    return db.transaction(async (tx) => {
+      const [old] = await tx.select({ fullName: patients.fullName })
+        .from(patients).where(eq(patients.id, id));
+
+      const [updated] = await tx.update(patients).set(data).where(eq(patients.id, id)).returning();
+
+      if (data.fullName && old?.fullName && data.fullName !== old.fullName) {
+        await tx.execute(sql`
+          UPDATE patient_invoice_headers
+          SET patient_name = ${data.fullName}
+          WHERE patient_name = ${old.fullName}
+        `);
+        await tx.execute(sql`
+          UPDATE admissions
+          SET patient_name = ${data.fullName}
+          WHERE patient_name = ${old.fullName}
+        `);
+      }
+
+      return updated;
+    });
+  },
+
+  async deletePatient(this: DatabaseStorage, id: string): Promise<boolean> {
+    const [patient] = await db.select({ fullName: patients.fullName }).from(patients).where(eq(patients.id, id));
+    if (!patient) throw new Error("المريض غير موجود");
+
+    const check = await db.execute(sql`
+      SELECT COALESCE(SUM(net_amount), 0) AS total
+      FROM patient_invoice_headers
+      WHERE patient_name = ${patient.fullName}
+        AND status != 'cancelled'
+    `);
+    const total = parseFloat((check.rows[0] as any)?.total ?? "0");
+    if (total > 0) {
+      throw new Error("لا يمكن حذف المريض لوجود فواتير بقيمة غير صفرية");
+    }
+
+    await db.update(patients).set({ isActive: false }).where(eq(patients.id, id));
+    return true;
+  },
+
+  async getDoctors(this: DatabaseStorage, includeInactive?: boolean): Promise<Doctor[]> {
+    if (includeInactive) {
+      return db.select().from(doctors).orderBy(asc(doctors.name));
+    }
+    return db.select().from(doctors).where(eq(doctors.isActive, true)).orderBy(asc(doctors.name));
+  },
+
+  async searchDoctors(this: DatabaseStorage, search: string): Promise<Doctor[]> {
+    if (!search.trim()) return this.getDoctors();
+    const tokens = search.trim().split(/\s+/).filter(Boolean);
+    const conditions = tokens.map(token => {
+      const pattern = token.includes('%') ? token : `%${token}%`;
+      return or(
+        ilike(doctors.name, pattern),
+        ilike(doctors.specialty, pattern),
+      );
+    });
+    return db.select().from(doctors)
+      .where(and(eq(doctors.isActive, true), ...conditions.filter(Boolean) as any))
+      .orderBy(asc(doctors.name))
+      .limit(50);
+  },
+
+  async getDoctorBalances(this: DatabaseStorage): Promise<{ id: string; name: string; specialty: string | null; totalTransferred: string; totalSettled: string; remaining: string }[]> {
+    const res = await db.execute(sql`
+      SELECT
+        d.id, d.name, d.specialty,
+        COALESCE(SUM(DISTINCT dt.amount), 0)::text                              AS total_transferred,
+        COALESCE((
+          SELECT SUM(dsa2.amount) FROM doctor_settlement_allocations dsa2
+          JOIN doctor_transfers dt2 ON dt2.id = dsa2.transfer_id
+          WHERE dt2.doctor_name = d.name
+        ), 0)::text                                                              AS total_settled,
+        (
+          COALESCE(SUM(dt.amount), 0) - COALESCE((
+            SELECT SUM(dsa2.amount) FROM doctor_settlement_allocations dsa2
+            JOIN doctor_transfers dt2 ON dt2.id = dsa2.transfer_id
+            WHERE dt2.doctor_name = d.name
+          ), 0)
+        )::text                                                                  AS remaining
+      FROM doctors d
+      LEFT JOIN doctor_transfers dt ON dt.doctor_name = d.name
+      WHERE d.is_active = true
+      GROUP BY d.id, d.name, d.specialty
+      ORDER BY d.name ASC
+    `);
+    return (res.rows as any[]).map(r => ({
+      id: r.id,
+      name: r.name,
+      specialty: r.specialty,
+      totalTransferred: r.total_transferred,
+      totalSettled: r.total_settled,
+      remaining: r.remaining,
+    }));
+  },
+
+  async getDoctorStatement(this: DatabaseStorage, params: { doctorName: string; dateFrom?: string; dateTo?: string }): Promise<any[]> {
+    const { doctorName, dateFrom, dateTo } = params;
+    const dateFromFilter = dateFrom ? sql`AND dt.transferred_at::date >= ${dateFrom}::date` : sql``;
+    const dateToFilter   = dateTo   ? sql`AND dt.transferred_at::date <= ${dateTo}::date`   : sql``;
+    const res = await db.execute(sql`
+      SELECT
+        dt.id,
+        dt.invoice_id        AS "invoiceId",
+        dt.doctor_name       AS "doctorName",
+        dt.amount::text      AS amount,
+        dt.transferred_at    AS "transferredAt",
+        dt.notes,
+        COALESCE(SUM(dsa.amount), 0)::text              AS settled,
+        (dt.amount - COALESCE(SUM(dsa.amount), 0))::text AS remaining,
+        pi.patient_name      AS "patientName",
+        pi.invoice_date      AS "invoiceDate",
+        pi.net_amount::text  AS "invoiceTotal",
+        pi.status            AS "invoiceStatus"
+      FROM doctor_transfers dt
+      LEFT JOIN doctor_settlement_allocations dsa ON dsa.transfer_id = dt.id
+      LEFT JOIN patient_invoice_headers pi ON pi.id = dt.invoice_id
+      WHERE dt.doctor_name = ${doctorName}
+      ${dateFromFilter}
+      ${dateToFilter}
+      GROUP BY dt.id, pi.id, pi.patient_name, pi.invoice_date, pi.net_amount, pi.status
+      ORDER BY dt.transferred_at DESC
+    `);
+    return res.rows as any[];
+  },
+
+  async getDoctor(this: DatabaseStorage, id: string): Promise<Doctor | undefined> {
+    const [d] = await db.select().from(doctors).where(eq(doctors.id, id));
+    return d;
+  },
+
+  async createDoctor(this: DatabaseStorage, data: InsertDoctor): Promise<Doctor> {
+    const [d] = await db.insert(doctors).values(data).returning();
+    return d;
+  },
+
+  async updateDoctor(this: DatabaseStorage, id: string, data: Partial<InsertDoctor>): Promise<Doctor> {
+    const [d] = await db.update(doctors).set(data).where(eq(doctors.id, id)).returning();
+    return d;
+  },
+
+  async deleteDoctor(this: DatabaseStorage, id: string): Promise<boolean> {
+    await db.update(doctors).set({ isActive: false }).where(eq(doctors.id, id));
+    return true;
+  },
+
+  async getAdmissions(this: DatabaseStorage, filters?: { status?: string; search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<any[]> {
+    const conds: any[] = [];
+    if (filters?.status)   conds.push(sql`a.status = ${filters.status}`);
+    if (filters?.dateFrom) conds.push(sql`a.admission_date >= ${filters.dateFrom}`);
+    if (filters?.dateTo)   conds.push(sql`a.admission_date <= ${filters.dateTo}`);
+    if (filters?.search) {
+      const s = `%${filters.search}%`;
+      conds.push(sql`(a.patient_name ILIKE ${s} OR a.admission_number ILIKE ${s} OR a.patient_phone ILIKE ${s} OR a.doctor_name ILIKE ${s})`);
+    }
+    if (filters?.deptId) {
+      conds.push(sql`inv_agg.latest_invoice_dept_id = ${filters.deptId}`);
+    }
+
+    const whereExpr = conds.length > 0
+      ? sql`WHERE ${sql.join(conds, sql` AND `)}`
+      : sql``;
+
+    const result = await db.execute(sql`
+      SELECT
+        a.*,
+        COALESCE(inv_agg.total_net_amount, 0)          AS total_net_amount,
+        COALESCE(inv_agg.total_paid_amount, 0)         AS total_paid_amount,
+        COALESCE(inv_agg.total_transferred, 0)         AS total_transferred_amount,
+        inv_agg.latest_invoice_number                   AS latest_invoice_number,
+        inv_agg.latest_invoice_id                       AS latest_invoice_id,
+        inv_agg.latest_invoice_status                   AS latest_invoice_status,
+        inv_agg.latest_invoice_dept_id                  AS latest_invoice_dept_id,
+        inv_agg.latest_invoice_dept_name                AS latest_invoice_dept_name
+      FROM admissions a
+      LEFT JOIN (
+        SELECT
+          COALESCE(pi.admission_id, a_fb.id)                                       AS eff_admission_id,
+          SUM(pi.net_amount::numeric)                                               AS total_net_amount,
+          SUM(pi.paid_amount::numeric)                                              AS total_paid_amount,
+          COALESCE(SUM(dt_agg.dt_total), 0)                                        AS total_transferred,
+          (ARRAY_AGG(pi.invoice_number ORDER BY pi.created_at DESC))[1]            AS latest_invoice_number,
+          (ARRAY_AGG(pi.id             ORDER BY pi.created_at DESC))[1]            AS latest_invoice_id,
+          (ARRAY_AGG(pi.status         ORDER BY pi.created_at DESC))[1]            AS latest_invoice_status,
+          (ARRAY_AGG(pi.department_id  ORDER BY pi.created_at DESC))[1]            AS latest_invoice_dept_id,
+          (ARRAY_AGG(d.name_ar         ORDER BY pi.created_at DESC))[1]            AS latest_invoice_dept_name
+        FROM patient_invoice_headers pi
+        LEFT JOIN departments d ON d.id = pi.department_id
+        LEFT JOIN (
+          SELECT DISTINCT ON (patient_name) id, patient_name
+          FROM admissions
+          ORDER BY patient_name, created_at DESC
+        ) a_fb ON a_fb.patient_name = pi.patient_name AND pi.admission_id IS NULL
+        LEFT JOIN (
+          SELECT invoice_id, SUM(amount::numeric) AS dt_total
+          FROM doctor_transfers
+          GROUP BY invoice_id
+        ) dt_agg ON dt_agg.invoice_id = pi.id
+        WHERE pi.status != 'cancelled'
+          AND COALESCE(pi.admission_id, a_fb.id) IS NOT NULL
+        GROUP BY COALESCE(pi.admission_id, a_fb.id)
+      ) inv_agg ON inv_agg.eff_admission_id = a.id
+      ${whereExpr}
+      ORDER BY a.created_at DESC
+    `);
+
+    const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    return (result.rows as any[]).map(row =>
+      Object.fromEntries(Object.entries(row).map(([k, v]) => [toCamel(k), v]))
+    );
+  },
+
+  async getAdmission(this: DatabaseStorage, id: string): Promise<Admission | undefined> {
+    const [a] = await db.select().from(admissions).where(eq(admissions.id, id));
+    return a;
+  },
+
+  async createAdmission(this: DatabaseStorage, data: InsertAdmission): Promise<Admission> {
+    const maxNumResult = await db.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(admission_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM admissions`);
+    const nextNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
+
+    const [a] = await db.insert(admissions).values({
+      ...data,
+      admissionNumber: data.admissionNumber || String(nextNum),
+    }).returning();
+    return a;
+  },
+
+  async updateAdmission(this: DatabaseStorage, id: string, data: Partial<InsertAdmission>): Promise<Admission> {
+    const [a] = await db.update(admissions).set({
+      ...data,
+      updatedAt: new Date(),
+    }).where(eq(admissions.id, id)).returning();
+    return a;
+  },
+
+  async dischargeAdmission(this: DatabaseStorage, id: string): Promise<Admission> {
+    const [a] = await db.update(admissions).set({
+      status: "discharged",
+      dischargeDate: new Date().toISOString().split("T")[0],
+      updatedAt: new Date(),
+    }).where(eq(admissions.id, id)).returning();
+    return a;
+  },
+
+  async getAdmissionInvoices(this: DatabaseStorage, admissionId: string): Promise<PatientInvoiceHeader[]> {
+    return await db.select().from(patientInvoiceHeaders)
+      .where(eq(patientInvoiceHeaders.admissionId, admissionId))
+      .orderBy(asc(patientInvoiceHeaders.createdAt));
+  },
+
+  async consolidateAdmissionInvoices(this: DatabaseStorage, admissionId: string): Promise<PatientInvoiceHeader> {
+    return await db.transaction(async (tx) => {
+      const [admission] = await tx.select().from(admissions).where(eq(admissions.id, admissionId));
+      if (!admission) throw new Error("الإقامة غير موجودة");
+
+      const invoices = await tx.select().from(patientInvoiceHeaders)
+        .where(and(
+          eq(patientInvoiceHeaders.admissionId, admissionId),
+          eq(patientInvoiceHeaders.isConsolidated, false),
+        ))
+        .orderBy(asc(patientInvoiceHeaders.createdAt));
+
+      if (invoices.length === 0) throw new Error("لا توجد فواتير لتجميعها");
+
+      const existingConsolidated = await tx.select().from(patientInvoiceHeaders)
+        .where(and(
+          eq(patientInvoiceHeaders.admissionId, admissionId),
+          eq(patientInvoiceHeaders.isConsolidated, true),
+        ));
+
+      if (existingConsolidated.length > 0) {
+        for (const ec of existingConsolidated) {
+          await tx.delete(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, ec.id));
+          await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, ec.id));
+        }
+      }
+
+      await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
+      const maxNumResult = await tx.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM patient_invoice_headers`);
+      const nextNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
+
+      const totalAmount = invoices.reduce((s, inv) => s + parseFloat(inv.totalAmount), 0);
+      const discountAmount = invoices.reduce((s, inv) => s + parseFloat(inv.discountAmount), 0);
+      const netAmount = invoices.reduce((s, inv) => s + parseFloat(inv.netAmount), 0);
+      const paidAmount = invoices.reduce((s, inv) => s + parseFloat(inv.paidAmount), 0);
+
+      const [consolidated] = await tx.insert(patientInvoiceHeaders).values({
+        invoiceNumber: String(nextNum),
+        invoiceDate: new Date().toISOString().split("T")[0],
+        patientName: admission.patientName,
+        patientPhone: admission.patientPhone,
+        patientType: invoices[0].patientType,
+        admissionId: admissionId,
+        isConsolidated: true,
+        sourceInvoiceIds: JSON.stringify(invoices.map(i => i.id)),
+        doctorName: admission.doctorName,
+        notes: `فاتورة مجمعة - إقامة رقم ${admission.admissionNumber}`,
+        status: "draft",
+        totalAmount: String(+totalAmount.toFixed(2)),
+        discountAmount: String(+discountAmount.toFixed(2)),
+        netAmount: String(+netAmount.toFixed(2)),
+        paidAmount: String(+paidAmount.toFixed(2)),
+      }).returning();
+
+      let sortOrder = 0;
+      for (const inv of invoices) {
+        const lines = await tx.select().from(patientInvoiceLines)
+          .where(eq(patientInvoiceLines.headerId, inv.id))
+          .orderBy(asc(patientInvoiceLines.sortOrder));
+
+        if (lines.length > 0) {
+          const newLines = lines.map(l => ({
+            headerId: consolidated.id,
+            lineType: l.lineType,
+            serviceId: l.serviceId,
+            itemId: l.itemId,
+            description: l.description,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+            discountPercent: l.discountPercent,
+            discountAmount: l.discountAmount,
+            totalPrice: l.totalPrice,
+            unitLevel: l.unitLevel,
+            lotId: l.lotId,
+            expiryMonth: l.expiryMonth,
+            expiryYear: l.expiryYear,
+            priceSource: l.priceSource,
+            doctorName: l.doctorName,
+            nurseName: l.nurseName,
+            notes: l.notes ? `[${inv.invoiceNumber}] ${l.notes}` : `[فاتورة ${inv.invoiceNumber}]`,
+            sortOrder: sortOrder++,
+          }));
+          await tx.insert(patientInvoiceLines).values(newLines);
+        }
+      }
+
+      const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, consolidated.id));
+      return finalHeader;
+    });
+  },
+};
+
+export default methods;

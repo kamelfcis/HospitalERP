@@ -11,9 +11,16 @@
  *  ────────────────────────────┼────────────────────────
  *  users-storage.ts            | المستخدمون والصلاحيات
  *  finance-storage.ts          | المحاسبة والمالية
- *  inventory-storage.ts        | المخزون والمشتريات
- *  invoicing-storage.ts        | الفوترة والمبيعات
- *  hospital-storage.ts         | عمليات المستشفى
+ *  items-storage.ts            | الأصناف والمخازن
+ *  transfers-storage.ts        | تحويلات المخازن
+ *  purchasing-storage.ts       | الموردون والمشتريات
+ *  services-storage.ts         | الخدمات وقوائم الأسعار
+ *  sales-invoices-storage.ts   | فواتير المبيعات
+ *  patient-invoices-storage.ts | فواتير المرضى والمرتجعات
+ *  cashier-storage.ts          | الكاشير وكلمات سر الأدراج
+ *  patients-doctors-storage.ts | المرضى والأطباء والإقامات
+ *  bedboard-stay-storage.ts    | لوحة الأسرة ومحرك الإقامة
+ *  treasuries-storage.ts       | تحويلات وتسويات الأطباء والخزن
  *  clinic-storage.ts           | العيادات الخارجية
  *
  *  Each domain file exports a default object of methods.
@@ -649,18 +656,32 @@ export class DatabaseStorage implements IStorage {
 
 import usersMethods from "./users-storage";
 import financeMethods from "./finance-storage";
-import inventoryMethods from "./inventory-storage";
-import invoicingMethods from "./invoicing-storage";
-import hospitalMethods from "./hospital-storage";
+import itemsMethods from "./items-storage";
+import transfersMethods from "./transfers-storage";
+import purchasingMethods from "./purchasing-storage";
+import servicesMethods from "./services-storage";
+import salesInvoicesMethods from "./sales-invoices-storage";
+import patientInvoicesMethods from "./patient-invoices-storage";
+import cashierMethods from "./cashier-storage";
+import patientsDoctorsMethods from "./patients-doctors-storage";
+import bedboardStayMethods from "./bedboard-stay-storage";
+import treasuriesMethods from "./treasuries-storage";
 import clinicMethods from "./clinic-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
   usersMethods,
   financeMethods,
-  inventoryMethods,
-  invoicingMethods,
-  hospitalMethods,
+  itemsMethods,
+  transfersMethods,
+  purchasingMethods,
+  servicesMethods,
+  salesInvoicesMethods,
+  patientInvoicesMethods,
+  cashierMethods,
+  patientsDoctorsMethods,
+  bedboardStayMethods,
+  treasuriesMethods,
   clinicMethods,
 );
 

@@ -38,9 +38,16 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
   - `index.ts` — Barrel file: IStorage interface, DatabaseStorage class skeleton, prototype augmentation from domain files, `storage` singleton export
   - `users-storage.ts` — Users, RBAC, permissions, user-department/warehouse assignments, chat
   - `finance-storage.ts` — Accounts, cost centers, fiscal periods, journal entries, templates, audit log, reports, account mappings, auto journal generation
-  - `inventory-storage.ts` — Items, form types, departments, lots, FEFO, barcodes, warehouses, store transfers, suppliers, receiving, purchase invoices
-  - `invoicing-storage.ts` — Services, service consumables, price lists, bulk adjustments, sales invoices, patient invoices, sales returns, computeInvoiceTotals
-  - `hospital-storage.ts` — Pharmacies, cashier, drawer passwords, print tracking, patients, doctors, admissions, stay engine, surgery types, bed board, doctor transfers/settlements, treasuries
+  - `items-storage.ts` — Items, form types, UOMs, departments, department prices, inventory lots, FEFO, barcodes, warehouses
+  - `transfers-storage.ts` — Store transfers, FEFO allocation, item availability, warehouse search, seed pilot test
+  - `purchasing-storage.ts` — Suppliers, receiving/GRN, purchase invoices, corrections
+  - `services-storage.ts` — Services, service consumables, price lists, bulk adjustments, computeInvoiceTotals
+  - `sales-invoices-storage.ts` — Sales invoices CRUD, FEFO stock allocation, finalization, journal generation, retry logic
+  - `patient-invoices-storage.ts` — Patient invoices, finalization, distribution, sales returns
+  - `cashier-storage.ts` — Pharmacies, drawer passwords, cashier shifts, invoice collection/refund, print tracking
+  - `patients-doctors-storage.ts` — Patients, doctors, admissions, consolidation
+  - `bedboard-stay-storage.ts` — Stay engine, surgery types, bed board (admit/transfer/discharge)
+  - `treasuries-storage.ts` — Doctor transfers/settlements, treasuries CRUD, treasury transactions
   - `clinic-storage.ts` — Outpatient clinic module: clinics, schedules, appointments, consultations, prescriptions, orders, doctor statements, dept-service orders
 - **`server/route-helpers.ts`** — asyncHandler, auditLog, validateBody utilities
 - **`server/finance-helpers.ts`** — roundMoney, roundQty, parseMoney utilities
