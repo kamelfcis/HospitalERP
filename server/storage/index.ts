@@ -679,14 +679,14 @@ import itemsMethods from "./items-storage";
 import { transfersCoreMethods, transfersUtilsMethods } from "./transfers-storage";
 import { purchasingReceivingsMethods, purchasingInvoicesMethods } from "./purchasing-storage";
 import servicesMethods from "./services-storage";
-import salesInvoicesMethods from "./sales-invoices-storage";
+import { salesInvoicesCoreMethods, salesInvoicesFinalizeMethods } from "./sales-invoices-storage";
 import salesJournalMethods from "./sales-journal-storage";
-import patientInvoicesMethods from "./patient-invoices-storage";
+import { patientInvoicesCoreMethods, patientInvoicesDistributionMethods, patientInvoicesReturnsMethods } from "./patient-invoices-storage";
 import cashierMethods from "./cashier-storage";
 import patientsDoctorsMethods from "./patients-doctors-storage";
-import bedboardStayMethods from "./bedboard-stay-storage";
+import { bedboardStaysMethods, bedboardBedsMethods } from "./bedboard-stay-storage";
 import treasuriesMethods from "./treasuries-storage";
-import clinicMethods from "./clinic-storage";
+import { clinicMasterMethods, clinicOrdersMethods } from "./clinic-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -699,14 +699,19 @@ Object.assign(
   purchasingReceivingsMethods,
   purchasingInvoicesMethods,
   servicesMethods,
-  salesInvoicesMethods,
+  salesInvoicesCoreMethods,
+  salesInvoicesFinalizeMethods,
   salesJournalMethods,
-  patientInvoicesMethods,
+  patientInvoicesCoreMethods,
+  patientInvoicesDistributionMethods,
+  patientInvoicesReturnsMethods,
   cashierMethods,
   patientsDoctorsMethods,
-  bedboardStayMethods,
+  bedboardStaysMethods,
+  bedboardBedsMethods,
   treasuriesMethods,
-  clinicMethods,
+  clinicMasterMethods,
+  clinicOrdersMethods,
 );
 
 export const storage = new DatabaseStorage();
