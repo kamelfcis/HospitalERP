@@ -31,6 +31,7 @@ The schema is organized into domain-specific files (`enums.ts`, `users.ts`, `fin
 - **ORM**: Drizzle ORM with PostgreSQL.
 - **Validation**: Zod with drizzle-zod.
 - **Concurrency & Idempotency**: Utilizes `FOR UPDATE` row locks, optimistic concurrency, and idempotent conversion processes.
+- **Raw SQL Rule**: `db.execute()` / `tx.execute()` is allowed **only** for locking (`SELECT id ... FOR UPDATE`) or queries too complex for the ORM (e.g., window functions, CTEs). **Never** cast its `.rows[0]` to a named entity type — Drizzle returns snake_case column names from raw SQL while TypeScript expects camelCase. Pattern: `await tx.execute(sql\`SELECT id FROM t WHERE id = ${id} FOR UPDATE\`); const [record] = await tx.select().from(t).where(eq(t.id, id));` — one call to lock, one ORM call to read.
 - **Financial Accuracy**: Server-side recomputation of invoice totals with `HALF_UP` rounding.
 - **System Settings**: Critical settings are cached in memory.
 - **Error Handling**: Centralized Arabic error messages with specific HTTP status codes. `handleError()` wrapper in `server/routes/_utils.ts` replaces repeated error boilerplate patterns. NOTE: only ~5 routes currently use `handleError()` — 330 raw try/catch blocks remain to be migrated.

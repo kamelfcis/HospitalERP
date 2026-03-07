@@ -184,14 +184,12 @@ const coreMethods = {
   async approvePurchaseInvoice(this: any, id: string): Promise<PurchaseInvoiceHeader> {
     return await db.transaction(async (tx) => {
       // Step 1: Lock and validate
-      const lockResult = await tx.execute(sql`SELECT * FROM purchase_invoice_headers WHERE id = ${id} FOR UPDATE`);
-      const locked = lockResult.rows?.[0] as PurchaseInvoiceHeader | undefined;
-      if (!locked) throw new Error("الفاتورة غير موجودة");
-      if (locked.status !== "draft") throw new Error("الفاتورة معتمدة مسبقاً");
-
+      // Rule: raw SQL only for the FOR UPDATE lock. Always reload through ORM for camelCase fields.
+      await tx.execute(sql`SELECT id FROM purchase_invoice_headers WHERE id = ${id} FOR UPDATE`);
       const [invoice] = await tx.select().from(purchaseInvoiceHeaders)
         .where(eq(purchaseInvoiceHeaders.id, id));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
+      if (invoice.status !== "draft") throw new Error("الفاتورة معتمدة مسبقاً");
 
       // Step 2: Lot recosting — only when invoice is linked to a receiving
       const receivingId = invoice.receivingId;
