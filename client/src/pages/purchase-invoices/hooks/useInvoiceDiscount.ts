@@ -60,10 +60,11 @@ export function useInvoiceDiscount(lines: InvoiceLineLocal[]) {
   // ── ملخص الفاتورة ────────────────────────────────────────────────────────
   //
   // سياسة خصم الأسطر:
-  //   lineDiscountValue هو آلية تسعير فقط (فرق بين سعر البيع وسعر الشراء النهائي).
-  //   لا يُرحَّل في القيد كخصم مستقل — سعر الشراء النهائي هو القيمة المعتمدة.
-  //   totalLineDiscounts = مجموع (lineDiscountValue × qty) = إجمالي فرق التسعير
-  //   (معلومات عرض فقط — لا تؤثر على أي رصيد محاسبي)
+  //   lineDiscountPct/lineDiscountValue = حقل مزدوج الدور:
+  //     (أ) تسعير ثنائي الاتجاه: discountPct ↔ purchasePrice (مشتق من sellingPrice)
+  //     (ب) تحليل: يُعرض، يُبحث، يُدرج في تقارير مقارنة الموردين وتاريخ الشراء
+  //   الحقل مُخزَّن دائماً — لكن لا يُرحَّل كسطر قيد مستقل
+  //   totalLineDiscounts = SUM(lineDiscountValue × qty) = إجمالي خصم الأسطر (للعرض والتحليل)
   const summary = useMemo(() => {
     const totalBeforeVat              = lines.reduce((s, l) => s + l.valueBeforeVat, 0);
     const totalVatBeforeDiscount      = lines.reduce((s, l) => s + l.vatAmount, 0);

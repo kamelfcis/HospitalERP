@@ -49,11 +49,11 @@ export function InvoiceTotals({
           </span>
         </div>
 
-        {/* فرق تسعير الأسطر — آلية تسعير فقط، لا يؤثر على القيد المحاسبي */}
+        {/* خصم الأسطر — حقل تحليلي: يُستخدم لمقارنة أسعار الموردين وتاريخ الشراء، لا يُرحَّل في القيد */}
         <div>
-          <span className="font-semibold block">فرق تسعير</span>
-          <span className="peachtree-amount text-sm text-muted-foreground" data-testid="text-total-line-discounts"
-            title="فرق التسعير: إجمالي الفرق بين سعر البيع وسعر الشراء على جميع الأسطر — معلومات فقط، لا يُرحَّل في القيد">
+          <span className="font-semibold block">خصم الأسطر</span>
+          <span className="peachtree-amount text-sm" data-testid="text-total-line-discounts"
+            title="إجمالي خصم الأسطر (للتحليل والمقارنة) — لا يُرحَّل كسطر قيد مستقل؛ سعر الشراء النهائي هو القيمة المحاسبية">
             {formatNumber(summary.totalLineDiscounts)}
           </span>
         </div>

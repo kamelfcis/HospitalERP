@@ -96,8 +96,11 @@ const coreMethods = {
         const vatRate = parseFloat(line.vatRate || "0") || 0;
 
         // سياسة خصم الأسطر:
-        //   purchasePrice = سعر الشراء النهائي المتفق عليه مع المورد (بعد أي خصم سطر)
-        //   lineDiscountValue = آلية تسعير فقط (فرق بين سعر البيع وسعر الشراء) — لا يُطرح هنا
+        //   purchasePrice  = سعر الشراء النهائي المتفق عليه مع المورد — المصدر المحاسبي الوحيد
+        //   lineDiscountPct/lineDiscountValue = حقل تسعير وتحليل مزدوج الدور:
+        //     (أ) تسعير: اشتقاق purchasePrice من sellingPrice والعكس
+        //     (ب) تحليل: مقارنة أسعار الموردين، تاريخ الشراء، معدل خصم المورد للصنف
+        //   الحقل يُخزَّن ويُعرض وقابل للبحث والتقرير — لكن لا يُرحَّل كسطر قيد مستقل
         //   valueBeforeVat = qty × purchasePrice هي القيمة المحاسبية المعتمدة دائماً
         const valueBeforeVat = qty * purchasePrice;
         const sellingPrice = parseFloat(line.sellingPrice || "0");

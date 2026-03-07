@@ -33,10 +33,11 @@ export interface InvoiceLineLocal {
 
 // ── إعادة حساب مجاميع السطر ─────────────────────────────────────────────
 // سياسة خصم الأسطر:
-//   purchasePrice  = سعر الشراء النهائي (المصدر المحاسبي الوحيد)
-//   lineDiscountValue = sellingPrice × lineDiscountPct% = فرق التسعير للوحدة (عرض فقط)
-//   valueBeforeVat = qty × purchasePrice — القيمة المُرحَّلة في قيد المخزون
-//   لا يُطرح lineDiscountValue من valueBeforeVat، ولا يُنشأ له سطر قيد مستقل
+//   purchasePrice  = سعر الشراء النهائي — المصدر المحاسبي الوحيد للتقييم والقيود
+//   lineDiscountPct/lineDiscountValue = حقل تسعير + تحليل (دور مزدوج):
+//     (أ) تسعير ثنائي الاتجاه: تغيير discountPct يُعيد حساب purchasePrice والعكس
+//     (ب) تحليل: مقارنة الموردين، تاريخ الشراء، معدل الخصم للصنف — يُعرض ويُبحث ويُقرَّر
+//   يُخزَّن دائماً لكن لا يُطرح من valueBeforeVat ولا يُنشأ له سطر قيد مستقل
 export function recalcLine(line: InvoiceLineLocal): InvoiceLineLocal {
   const { qty, bonusQty, purchasePrice, sellingPrice, lineDiscountPct, vatRate } = line;
   const valueBeforeVat    = +(qty * purchasePrice).toFixed(2);          // القيمة المحاسبية
