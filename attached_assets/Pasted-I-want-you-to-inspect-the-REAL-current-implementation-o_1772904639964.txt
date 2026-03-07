@@ -1,0 +1,150 @@
+I want you to inspect the REAL current implementation of purchasing / supplier / inventory-to-accounting logic in this system.
+
+Important context:
+- A full Suppliers module has NOT been built yet.
+- Right now there is only a quick button / quick action to add a supplier record.
+- I already have a detailed Chart of Accounts and Cost Centers in mind.
+- The intended future design is to have a posting setup screen where I can choose a screen / transaction type and define the journal entry lines that should be generated automatically.
+- I need you to inspect the actual current codebase as it exists today, not assume that a complete supplier or purchasing module already exists.
+
+Your task:
+Analyze the actual codebase, DB schema, APIs, services, and UI screens related to:
+- supplier quick add
+- purchase-related screens if any
+- stock receipt / item receipt / inventory increase screens if any
+- invoice / stock document conversion if any
+- accounting posting if any
+- tax / discount logic if any
+- cost center handling if any
+
+I need you to answer these questions from the REAL code:
+
+1) What currently exists today?
+Please identify whether the current codebase already contains any of the following:
+- supplier master module
+- supplier list / edit / status screens
+- purchase invoice screen
+- goods receipt / supplier receipt screen
+- receipt-to-invoice conversion flow
+- supplier payable logic
+- purchase tax logic
+- purchase discount logic
+- journal entry posting engine
+- posting setup / posting profile / account mapping screen
+If something does not exist, say exactly: "Not found in current codebase".
+
+2) Supplier implementation
+- What exactly is implemented for supplier handling today?
+- Is it only a quick-add button?
+- Where is it located in UI?
+- Which route/component/API handles it?
+- Which DB table stores supplier data?
+- Which minimum fields are currently saved?
+
+3) Purchase / stock receiving logic
+- Is there any current screen that can be used as:
+  - stock receipt
+  - goods receipt
+  - supplier receipt
+  - purchase invoice
+  - stock increase from supplier
+- If yes, explain the exact current behavior.
+- If no, say clearly that purchasing flow is not implemented yet.
+
+4) Accounting posting logic
+- Is there any accounting engine already implemented?
+- Is there any journal entry header/line design?
+- Is there any mapping between transaction type/screen and journal entry lines?
+- Is any posting logic hardcoded in backend services?
+- Are cost centers passed into accounting lines anywhere?
+- Are source document references stored for accounting traceability?
+
+5) Save/finalize/post states
+- Across current modules, inspect whether there is a reusable status pattern such as:
+  - draft
+  - saved
+  - confirmed
+  - finalized
+  - posted
+  - cancelled
+- Explain how these states work in the current codebase.
+- Identify whether any current screen already uses a reusable finalize/post pattern that could later be reused for purchasing and accounting screens.
+
+6) Screen pattern analysis
+Please inspect current screens and identify reusable UI/UX patterns relevant to future accounting integration:
+- header + lines screens
+- save / finalize screens
+- invoice-style screens
+- stock-document screens
+- lookup dialogs
+- doctor / patient / service / item selection patterns
+- reusable forms/components that could later support purchase invoice and journal entry screens
+
+7) Architecture for future accounting design
+Based on the current codebase, tell me:
+- what existing modules/patterns can be reused to build:
+  - supplier master
+  - supplier receipt
+  - purchase invoice
+  - posting setup screen
+  - journal entry screen
+- what is missing and must be built from scratch
+- whether accounting logic should be attached to finalize action, post action, or a separate posting service
+
+8) Risks in current state
+Identify design gaps such as:
+- supplier entity incomplete
+- no payable accounting
+- no purchase tax handling
+- no posting configuration
+- no traceability from source docs to accounting
+- hardcoded future risk
+- lack of reusable posting engine
+- missing distinction between operational save and accounting finalization
+
+9) Most important requirement
+Do NOT give me a generic ERP explanation.
+I want the REAL CURRENT state of THIS codebase as of today.
+
+10) Output format
+Return your answer in EXACTLY this structure:
+
+A. Executive Summary
+
+B. What Exists Today
+- module / screen / route / purpose / status
+
+C. Supplier Logic Currently Implemented
+- UI
+- route/component
+- API
+- DB table
+- saved fields
+- limitations
+
+D. Purchase / Receipt Logic Currently Implemented
+- what exists
+- what does not exist
+- any partial implementation
+
+E. Accounting / Posting Logic Currently Implemented
+- tables
+- services
+- APIs
+- UI screens
+- whether configurable or not
+
+F. Reusable Screen Patterns for Future Accounting
+- screen/pattern
+- why it can be reused
+
+G. Missing Pieces Required to Build Proper Supplier and Purchasing Accounting
+
+H. Recommended Next Design Direction
+- in practical implementation order
+
+Important rules:
+- Mention actual file names, routes, functions, components, tables, and columns wherever possible.
+- If something does not exist, write exactly: "Not found in current codebase".
+- Clearly separate current reality from future intended design.
+- Be concrete and technical.
