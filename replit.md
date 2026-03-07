@@ -53,6 +53,7 @@ The schema is organized into domain-specific files (`enums.ts`, `users.ts`, `fin
 - **Seed Data Isolation**: Development seed functions (`runPilotTestSeed`, `runPharmacyDemoSeed`) are isolated in `server/seeds/` and called from routes directly, keeping production storage files clean.
 - **Type Safety**: `DrizzleTransaction` type exported from `server/db.ts`; used in `allocateStockInTx`, `insertJournalEntry`, `buildSalesJournalLines`, `generateSalesInvoiceJournalInTx` — replacing unsafe `tx: any`.
 - **GL Function Documentation**: `buildSalesJournalLines` and `postTransfer` have step-by-step JSDoc comments. `generateWarehouseTransferJournal` is marked as legacy fallback (not production path).
+- **Lot Recosting on Invoice Approval**: `approvePurchaseInvoice()` now performs final lot recosting inside the same DB transaction. Formula: `finalCostPerMinor = (valueBeforeVat − allocatedHeaderDiscount) / totalQtyMinor`. VAT excluded from inventory cost. Lots gain `provisionalPurchasePrice`, `costingStatus`, `costedAt`, `costSourceType`, `costSourceId` fields. Receiving status advances to `posted_costed` after successful recosting. Fully idempotent.
 
 ## Refactoring Status (as of last session)
 

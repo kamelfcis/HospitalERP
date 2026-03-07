@@ -179,6 +179,8 @@ export const receivingStatusLabels: Record<string, string> = {
   draft: "مسودة",
   posted: "مُرحّل",
   posted_qty_only: "مُرحّل (كمية فقط)",
+  posted_costed: "مُرحّل ومُسعَّر",
+  cancelled: "ملغى",
 };
 
 export const correctionStatusLabels: Record<string, string> = {

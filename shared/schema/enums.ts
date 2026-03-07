@@ -66,5 +66,5 @@ export const mappingLineTypeEnum = pgEnum("mapping_line_type", [
   "other"
 ]);
 
-export const receivingStatusEnum = pgEnum("receiving_status", ["draft", "posted", "posted_qty_only", "cancelled"]);
+export const receivingStatusEnum = pgEnum("receiving_status", ["draft", "posted", "posted_qty_only", "posted_costed", "cancelled"]);
 export const purchaseInvoiceStatusEnum = pgEnum("purchase_invoice_status", ["draft", "approved_costed", "cancelled"]);

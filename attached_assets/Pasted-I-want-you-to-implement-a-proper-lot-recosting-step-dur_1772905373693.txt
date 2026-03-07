@@ -1,0 +1,68 @@
+I want you to implement a proper lot recosting step during purchase invoice approval.
+
+Current real behavior:
+- Supplier receiving post creates inventory lots with provisional cost from receiving purchase price
+- receiving status becomes posted_qty_only
+- Purchase invoice approval generates accounting journal entry
+- But inventory_lots.purchasePrice is never updated to final cost
+- This causes a mismatch between inventory lot cost and accounting inventory value
+
+I want you to refactor this purchasing flow so that invoice approval does ALL of the following safely and transactionally:
+
+1) Keep receiving post as quantity-only
+- receiving creates lots
+- provisional cost may be stored
+- status remains posted_qty_only
+
+2) On purchase invoice approval:
+- calculate final cost per line after line discount and allocated header discount
+- exclude recoverable input VAT from inventory cost
+- consider received quantity, rejected quantity, and bonus quantity correctly
+- update the related inventory lots created from the source receiving
+- store final lot cost
+- mark the lots / receiving as costed
+- then generate the accounting journal entry
+- all inside one DB transaction
+
+3) Add clear cost-status design
+Implement one of these:
+Option A:
+- inventory_lots.provisionalPurchasePrice
+- inventory_lots.finalPurchasePrice
+- inventory_lots.costingStatus
+- inventory_lots.costedAt
+- inventory_lots.costSourceType
+- inventory_lots.costSourceId
+
+If full schema expansion is too large, at minimum:
+- preserve original provisional cost somewhere traceable
+- update purchasePrice only after invoice approval
+- mark costing status clearly
+
+4) Add status improvement
+- receiving status should move from posted_qty_only to posted_costed (or costed) after successful invoice approval recosting
+- do not leave it permanently quantity-only if costing was finalized
+
+5) Safety requirements
+- must be idempotent
+- must not double-update costs if approve is called twice
+- must validate invoice-receiving relationship
+- must fail safely if lot quantities do not reconcile
+- must preserve source traceability to receivingId and purchaseInvoiceId
+- must not break existing journal generation
+
+6) Output required
+Before coding, inspect the current implementation and print:
+A. Files/functions to change
+B. Tables/fields to change
+C. Final cost formula to use
+D. Edge cases
+E. Exact implementation plan
+
+Then implement.
+
+Important:
+- Use the existing real code patterns in this codebase
+- Do not invent a generic ERP design unrelated to current code
+- Keep journal generation and lot recosting consistent
+- Preserve auditability and source traceability

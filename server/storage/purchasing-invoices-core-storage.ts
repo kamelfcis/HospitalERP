@@ -4,8 +4,11 @@ import {
   items,
   suppliers,
   receivingHeaders,
+  receivingLines,
   purchaseInvoiceHeaders,
   purchaseInvoiceLines,
+  inventoryLots,
+  inventoryLotMovements,
   warehouses,
   type PurchaseInvoiceHeader,
   type PurchaseInvoiceLine,
@@ -158,27 +161,139 @@ const coreMethods = {
     });
   },
 
+  /**
+   * Approves a purchase invoice and performs final lot recosting.
+   *
+   * Step 1 — Lock invoice and validate status
+   * Step 2 — If linked to receiving: recost inventory lots
+   *   2a — Idempotency check: skip if lots already costed by this invoice
+   *   2b — For each invoice line with receivingLineId: compute final cost per minor unit
+   *        Formula: finalCost = (valueBeforeVat − allocatedHeaderDiscount) / totalQtyMinor(incl. bonus)
+   *        VAT is excluded from inventory cost (goes to vat_input account)
+   *   2c — Update lot: purchasePrice ← final, provisionalPurchasePrice ← original
+   *   2d — Mark receiving status → posted_costed
+   * Step 3 — Set invoice status → approved_costed
+   * Step 4 — Fire journal generation (async, non-blocking)
+   */
   async approvePurchaseInvoice(this: any, id: string): Promise<PurchaseInvoiceHeader> {
     const result = await db.transaction(async (tx) => {
+      // Step 1: Lock and validate
       const lockResult = await tx.execute(sql`SELECT * FROM purchase_invoice_headers WHERE id = ${id} FOR UPDATE`);
       const locked = lockResult.rows?.[0] as PurchaseInvoiceHeader | undefined;
       if (!locked) throw new Error("الفاتورة غير موجودة");
       if (locked.status !== "draft") throw new Error("الفاتورة معتمدة مسبقاً");
-      const [invoice] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+
+      const [invoice] = await tx.select().from(purchaseInvoiceHeaders)
+        .where(eq(purchaseInvoiceHeaders.id, id));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
 
+      // Step 2: Lot recosting — only when invoice is linked to a receiving
+      const receivingId = invoice.receivingId;
+      if (receivingId) {
+        // Step 2a: Idempotency — if this invoice already costed some lots, skip entirely
+        const [alreadyCosted] = await tx.select({ id: inventoryLots.id })
+          .from(inventoryLots)
+          .where(and(
+            eq(inventoryLots.costSourceType, "purchase_invoice"),
+            eq(inventoryLots.costSourceId, id)
+          ))
+          .limit(1);
+
+        if (!alreadyCosted) {
+          // Lock receiving to prevent concurrent modifications
+          await tx.execute(sql`SELECT id FROM receiving_headers WHERE id = ${receivingId} FOR UPDATE`);
+
+          // Load all invoice lines for this invoice
+          const invLines = await tx.select().from(purchaseInvoiceLines)
+            .where(eq(purchaseInvoiceLines.invoiceId, id));
+
+          // Invoice-level totals for header discount weight calculation
+          const totalBeforeVat     = parseFloat(invoice.totalBeforeVat  || "0");
+          const totalAfterVat      = parseFloat(invoice.totalAfterVat   || "0");
+          const netPayable         = parseFloat(invoice.netPayable       || "0");
+          const headerDiscountTotal = totalAfterVat - netPayable;
+
+          // Step 2b: Recost each invoice line that has a receiving line reference
+          for (const line of invLines) {
+            if (!line.receivingLineId) continue;
+
+            // Find the lot that was created from this receiving for this item.
+            // We join through inventory_lot_movements to trace the exact receiving origin.
+            const [lotRow] = await tx
+              .select({ lot: inventoryLots })
+              .from(inventoryLots)
+              .innerJoin(
+                inventoryLotMovements,
+                and(
+                  eq(inventoryLotMovements.lotId, inventoryLots.id),
+                  eq(inventoryLotMovements.referenceType, "receiving"),
+                  eq(inventoryLotMovements.referenceId, receivingId)
+                )
+              )
+              .where(eq(inventoryLots.itemId, line.itemId))
+              .limit(1);
+
+            const lot = lotRow?.lot;
+            if (!lot) continue;
+
+            // Load receiving line to get total qty in minor unit (billable + bonus)
+            const [recvLine] = await tx.select().from(receivingLines)
+              .where(eq(receivingLines.id, line.receivingLineId));
+
+            if (!recvLine) continue;
+
+            const totalQtyMinor =
+              parseFloat(recvLine.qtyInMinor as string || "0") +
+              parseFloat(recvLine.bonusQtyInMinor as string || "0");
+
+            if (totalQtyMinor <= 0) continue;
+
+            // Step 2b formula:
+            //   allocatedHeaderDiscount = (lineValueBeforeVat / totalBeforeVat) × headerDiscountTotal
+            //   finalLineCost           = lineValueBeforeVat − allocatedHeaderDiscount
+            //   finalCostPerMinor       = finalLineCost / totalQtyMinor
+            const lineValueBeforeVat = parseFloat(line.valueBeforeVat as string || "0");
+            const allocatedDiscount  = totalBeforeVat > 0
+              ? (lineValueBeforeVat / totalBeforeVat) * headerDiscountTotal
+              : 0;
+            const finalLineCost      = lineValueBeforeVat - allocatedDiscount;
+            const finalCostPerMinor  = +(finalLineCost / totalQtyMinor).toFixed(4);
+
+            // Step 2c: Update the lot with final cost, preserving original as provisional
+            await tx.update(inventoryLots).set({
+              provisionalPurchasePrice: lot.purchasePrice,
+              purchasePrice:            String(finalCostPerMinor),
+              costingStatus:            "costed",
+              costedAt:                 new Date(),
+              costSourceType:           "purchase_invoice",
+              costSourceId:             id,
+              updatedAt:                new Date(),
+            }).where(eq(inventoryLots.id, lot.id));
+          }
+
+          // Step 2d: Mark the receiving as fully costed
+          await tx.update(receivingHeaders).set({
+            status:    "posted_costed",
+            updatedAt: new Date(),
+          }).where(eq(receivingHeaders.id, receivingId));
+        }
+      }
+
+      // Step 3: Approve the invoice
       await tx.update(purchaseInvoiceHeaders).set({
-        status: "approved_costed",
+        status:     "approved_costed",
         approvedAt: new Date(),
-        updatedAt: new Date(),
+        updatedAt:  new Date(),
       }).where(eq(purchaseInvoiceHeaders.id, id));
 
-      const [updated] = await tx.select().from(purchaseInvoiceHeaders).where(eq(purchaseInvoiceHeaders.id, id));
+      const [updated] = await tx.select().from(purchaseInvoiceHeaders)
+        .where(eq(purchaseInvoiceHeaders.id, id));
       return updated;
     });
 
+    // Step 4: Fire journal generation outside the transaction (non-blocking, has own idempotency check)
     if (result) {
-      this.generatePurchaseInvoiceJournal(id, result).catch((err: unknown) => 
+      this.generatePurchaseInvoiceJournal(id, result).catch((err: unknown) =>
         console.error("Auto journal for purchase invoice failed:", err)
       );
     }
@@ -193,8 +308,8 @@ const coreMethods = {
 
     await db.transaction(async (tx) => {
       await tx.update(purchaseInvoiceHeaders).set({
-        status: 'cancelled',
-        notes: reason ? `Cancelled: ${reason}` : 'Cancelled',
+        status:    'cancelled',
+        notes:     reason ? `Cancelled: ${reason}` : 'Cancelled',
         updatedAt: new Date()
       }).where(eq(purchaseInvoiceHeaders.id, id));
     });
