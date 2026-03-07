@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, desc, and, sql, or, asc, gte, lte, ilike } from "drizzle-orm";
+import { eq, desc, and, sql, or, asc, gte, lte, ilike, inArray } from "drizzle-orm";
 import {
   items,
   warehouses,
@@ -710,45 +710,59 @@ const methods = {
   async regenerateJournalForInvoice(this: DatabaseStorage, invoiceId: string): Promise<JournalEntry | null> {
     const [invoice] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
     if (!invoice || invoice.status !== "finalized") return null;
-    
+
     const lines = await db.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, invoiceId));
     let cogsDrugs = 0, cogsSupplies = 0, revenueDrugs = 0, revenueSupplies = 0;
-    
-    for (const line of lines) {
-      const [item] = await db.select().from(items).where(eq(items.id, line.itemId!));
-      if (!item) continue;
-      const lineRevenue = parseFloat(line.lineTotal);
-      if (item.category === "service") {
-        revenueDrugs += lineRevenue;
-        continue;
-      }
-      
-      const movements = await db.select().from(inventoryLotMovements)
+
+    if (lines.length > 0) {
+      const uniqueItemIds = Array.from(new Set(lines.map(l => l.itemId).filter((id): id is string => !!id)));
+      const allItems = uniqueItemIds.length > 0
+        ? await db.select().from(items).where(inArray(items.id, uniqueItemIds))
+        : [];
+      const itemMap = new Map(allItems.map(i => [i.id, i]));
+
+      const allMovements = await db.select().from(inventoryLotMovements)
         .where(and(
           eq(inventoryLotMovements.referenceType, "sales_invoice"),
           eq(inventoryLotMovements.referenceId, invoiceId)
         ));
-      
-      let lineCost = 0;
-      for (const mov of movements) {
-        const [lot] = await db.select().from(inventoryLots).where(eq(inventoryLots.id, mov.lotId));
-        if (lot && lot.itemId === line.itemId) {
-          lineCost += Math.abs(parseFloat(mov.qtyChangeInMinor || "0")) * parseFloat(mov.unitCost || "0");
+
+      const uniqueLotIds = Array.from(new Set(allMovements.map(m => m.lotId).filter((id): id is string => !!id)));
+      const allLots = uniqueLotIds.length > 0
+        ? await db.select().from(inventoryLots).where(inArray(inventoryLots.id, uniqueLotIds))
+        : [];
+      const lotMap = new Map(allLots.map(l => [l.id, l]));
+
+      for (const line of lines) {
+        const item = itemMap.get(line.itemId!);
+        if (!item) continue;
+        const lineRevenue = parseFloat(line.lineTotal);
+        if (item.category === "service") {
+          revenueDrugs += lineRevenue;
+          continue;
+        }
+
+        let lineCost = 0;
+        for (const mov of allMovements) {
+          const lot = lotMap.get(mov.lotId);
+          if (lot && lot.itemId === line.itemId) {
+            lineCost += Math.abs(parseFloat(mov.qtyChangeInMinor || "0")) * parseFloat(mov.unitCost || "0");
+          }
+        }
+
+        if (item.category === "drug") {
+          cogsDrugs += lineCost;
+          revenueDrugs += lineRevenue;
+        } else if (item.category === "supply") {
+          cogsSupplies += lineCost;
+          revenueSupplies += lineRevenue;
+        } else {
+          cogsDrugs += lineCost;
+          revenueDrugs += lineRevenue;
         }
       }
-      
-      if (item.category === "drug") {
-        cogsDrugs += lineCost;
-        revenueDrugs += lineRevenue;
-      } else if (item.category === "supply") {
-        cogsSupplies += lineCost;
-        revenueSupplies += lineRevenue;
-      } else {
-        cogsDrugs += lineCost;
-        revenueDrugs += lineRevenue;
-      }
     }
-    
+
     try {
       const entry = await this.generateSalesInvoiceJournal(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
       if (entry) {
@@ -762,7 +776,7 @@ const methods = {
     } catch (err: unknown) {
       await db.update(salesInvoiceHeaders).set({
         journalStatus: "failed",
-        journalError: (err instanceof Error ? (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)) : String(err)),
+        journalError: err instanceof Error ? err.message : String(err),
         journalRetries: sql`COALESCE(journal_retries, 0) + 1`,
       }).where(eq(salesInvoiceHeaders.id, invoiceId));
       throw err;
@@ -986,18 +1000,7 @@ const methods = {
       });
     }
 
-    const vatMapping = mappingMap.get("vat_output");
-    const vatAmount = 0;
-    if (vatMapping?.creditAccountId && vatAmount > 0.001) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: lineNum++,
-        accountId: vatMapping.creditAccountId,
-        debit: "0",
-        credit: String(vatAmount.toFixed(2)),
-        description: "ضريبة قيمة مضافة مخرجات",
-      });
-    }
+    // VAT: ضريبة القيمة المضافة غير مفعّلة حالياً — الربط محجوز للاستخدام المستقبلي
 
     if (hasInventoryAccount && totalCogs > 0.001) {
       journalLineData.push({
@@ -1137,7 +1140,6 @@ const methods = {
 
       if (receivablesLine) {
         const isReturn = invoice?.isReturn || false;
-        const hasDebit = parseFloat(receivablesLine.debit || "0") > 0;
         const desc = isReturn ? "نقدية مرتجع - تم الصرف" : "نقدية مبيعات - تم التحصيل";
         const entryDesc = isReturn ? "(تم صرف المرتجع)" : "(تم التحصيل)";
 
@@ -1148,6 +1150,7 @@ const methods = {
 
         await db.update(journalEntries).set({
           description: `${existingEntry.description} ${entryDesc}`,
+          status: "posted",
         }).where(eq(journalEntries.id, existingEntry.id));
       }
     }
