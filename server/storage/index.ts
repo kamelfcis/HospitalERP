@@ -674,10 +674,10 @@ export interface DatabaseStorage extends IStorage {
 }
 
 import usersMethods from "./users-storage";
-import financeMethods from "./finance-storage";
+import { financeAccountsMethods, financeReportsMethods } from "./finance-storage";
 import itemsMethods from "./items-storage";
-import transfersMethods from "./transfers-storage";
-import purchasingMethods from "./purchasing-storage";
+import { transfersCoreMethods, transfersUtilsMethods } from "./transfers-storage";
+import { purchasingReceivingsMethods, purchasingInvoicesMethods } from "./purchasing-storage";
 import servicesMethods from "./services-storage";
 import salesInvoicesMethods from "./sales-invoices-storage";
 import salesJournalMethods from "./sales-journal-storage";
@@ -691,10 +691,13 @@ import clinicMethods from "./clinic-storage";
 Object.assign(
   DatabaseStorage.prototype,
   usersMethods,
-  financeMethods,
+  financeAccountsMethods,
+  financeReportsMethods,
   itemsMethods,
-  transfersMethods,
-  purchasingMethods,
+  transfersCoreMethods,
+  transfersUtilsMethods,
+  purchasingReceivingsMethods,
+  purchasingInvoicesMethods,
   servicesMethods,
   salesInvoicesMethods,
   salesJournalMethods,
