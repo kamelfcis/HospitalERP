@@ -12,6 +12,28 @@ import {
 } from "../types";
 import type { ItemSelectedPayload } from "@/components/ItemFastSearch/types";
 
+interface RawTransferLine {
+  itemId: string;
+  item: TransferLineLocal["item"];
+  unitLevel: string;
+  qtyEntered: string | number;
+  qtyInMinor: string | number;
+  selectedExpiryDate?: string | null;
+  selectedExpiryMonth?: number | null;
+  selectedExpiryYear?: number | null;
+  availableAtSaveMinor?: string | null;
+  notes?: string | null;
+}
+
+interface TransferFefoAllocation {
+  allocatedQty: string;
+  expiryDate?: string | null;
+  expiryMonth?: number | null;
+  expiryYear?: number | null;
+  qtyAvailableMinor?: string | null;
+  lotSalePrice?: string | null;
+}
+
 export function useTransferForm() {
   const { toast } = useToast();
   const today = new Date().toISOString().split("T")[0];
@@ -85,7 +107,7 @@ export function useTransferForm() {
         setFormStatus(transfer.status);
         setFormTransferNumber(transfer.transferNumber);
 
-        const loadedLines: TransferLineLocal[] = (transfer.lines || []).map((line: any) => ({
+        const loadedLines: TransferLineLocal[] = ((transfer.lines ?? []) as RawTransferLine[]).map((line) => ({
           id: crypto.randomUUID(),
           itemId: line.itemId,
           item: line.item || null,
@@ -142,8 +164,8 @@ export function useTransferForm() {
         }
 
         onLoaded?.();
-      } catch (err: any) {
-        toast({ title: "خطأ في تحميل التحويل", description: err.message, variant: "destructive" });
+      } catch (err: unknown) {
+        toast({ title: "خطأ في تحميل التحويل", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
       }
     },
     [toast]
@@ -163,12 +185,12 @@ export function useTransferForm() {
         qtyEntered,
         qtyInMinor,
         selectedExpiryDate: batch?.expiryDate || null,
-        selectedExpiryMonth: (batch as any)?.expiryMonth || null,
-        selectedExpiryYear: (batch as any)?.expiryYear || null,
-        availableQtyMinor: (batch as any)?.qtyAvailableMinor || item.availableQtyMinor || "0",
+        selectedExpiryMonth: batch?.expiryMonth ?? null,
+        selectedExpiryYear: batch?.expiryYear ?? null,
+        availableQtyMinor: batch?.qtyAvailableMinor || item.availableQtyMinor || "0",
         notes: "",
         fefoLocked: !!batch || !item.hasExpiry,
-        lotSalePrice: (batch as any)?.lotSalePrice,
+        lotSalePrice: batch?.lotSalePrice,
       };
 
       setFormLines((prev) => [...prev, newLine]);
@@ -265,8 +287,8 @@ export function useTransferForm() {
           };
 
           const newLines: TransferLineLocal[] = preview.allocations
-            .filter((a: any) => parseFloat(a.allocatedQty) > 0)
-            .map((alloc: any) => ({
+            .filter((a: TransferFefoAllocation) => parseFloat(a.allocatedQty) > 0)
+            .map((alloc: TransferFefoAllocation) => ({
               id: crypto.randomUUID(),
               itemId: line.itemId,
               item: line.item,
@@ -289,7 +311,7 @@ export function useTransferForm() {
           });
 
           setLineExpiryOptions((prev) => {
-            const opts = preview.allocations.map((a: any) => ({
+            const opts = preview.allocations.map((a: TransferFefoAllocation) => ({
               expiryDate: a.expiryDate,
               expiryMonth: a.expiryMonth,
               expiryYear: a.expiryYear,
@@ -304,8 +326,8 @@ export function useTransferForm() {
           if (newLines.length > 1) {
             toast({ title: `تم التوزيع على ${newLines.length} دفعات (FEFO)` });
           }
-        } catch (err: any) {
-          toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+        } catch (err: unknown) {
+          toast({ title: "خطأ في توزيع الصلاحية", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
         } finally {
           setFefoLoadingIndex(null);
         }
@@ -440,8 +462,8 @@ export function useTransferForm() {
           };
 
           const newLines: TransferLineLocal[] = preview.allocations
-            .filter((a: any) => parseFloat(a.allocatedQty) > 0)
-            .map((alloc: any) => ({
+            .filter((a: TransferFefoAllocation) => parseFloat(a.allocatedQty) > 0)
+            .map((alloc: TransferFefoAllocation) => ({
               id: crypto.randomUUID(),
               itemId: line.itemId,
               item: line.item,
@@ -469,8 +491,8 @@ export function useTransferForm() {
             copy.splice(insertAt, 0, ...newLines);
             return copy;
           });
-        } catch (err: any) {
-          toast({ title: "خطأ في تغيير الوحدة", description: err.message, variant: "destructive" });
+        } catch (err: unknown) {
+          toast({ title: "خطأ في تغيير الوحدة", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
         } finally {
           setFefoLoadingIndex(null);
         }

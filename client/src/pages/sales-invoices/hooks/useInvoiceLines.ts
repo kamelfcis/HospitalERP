@@ -13,9 +13,38 @@ import {
 // أنواع مساعدة
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface InvoiceItemData {
+  id: string;
+  salePriceCurrent: string;
+  availableQtyMinor?: string | null;
+  majorUnitName?: string | null;
+  mediumUnitName?: string | null;
+  minorUnitName?: string | null;
+  majorToMedium?: string | null;
+  majorToMinor?: string | null;
+  mediumToMinor?: string | null;
+  hasExpiry?: boolean;
+}
+
+interface FefoAllocation {
+  allocatedQty: string;
+  lotId?: string | null;
+  expiryMonth?: number | string | null;
+  expiryYear?: number | string | null;
+  lotSalePrice?: string | null;
+}
+
+interface FefoExpiryOption {
+  expiryMonth?: number | null;
+  expiryYear?: number | null;
+  availableQty?: string | null;
+  lotId?: string | null;
+  lotSalePrice?: string | null;
+}
+
 interface FefoOptions {
   itemId: string;
-  itemData: any;
+  itemData: InvoiceItemData;
   warehouseId: string;
   invoiceDate: string;
   unitLevel: string;
@@ -66,8 +95,8 @@ async function runFefo(opts: FefoOptions): Promise<FefoResult> {
   const allRes = await fetch(`/api/transfer/fefo-preview?${allParams}`);
   const allPreview = allRes.ok ? await allRes.json() : { allocations: [] };
   const expiryOptions = allPreview.allocations
-    .filter((a: any) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty) > 0)
-    .map((a: any) => ({
+    .filter((a: FefoExpiryOption) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty || "0") > 0)
+    .map((a: FefoExpiryOption) => ({
       expiryMonth:      a.expiryMonth as number,
       expiryYear:       a.expiryYear  as number,
       qtyAvailableMinor: a.availableQty as string,
@@ -77,8 +106,8 @@ async function runFefo(opts: FefoOptions): Promise<FefoResult> {
 
   // 3. بنِ سطور الفاتورة من توزيع FEFO
   const lines: SalesLineLocal[] = preview.allocations
-    .filter((a: any) => parseFloat(a.allocatedQty) > 0)
-    .map((alloc: any) => {
+    .filter((a: FefoAllocation) => parseFloat(a.allocatedQty) > 0)
+    .map((alloc: FefoAllocation) => {
       const allocMinor  = parseFloat(alloc.allocatedQty);
       const displayQty  = convertMinorToDisplayQty(allocMinor, unitLevel, itemData);
       const lotPrice    = parseFloat(alloc.lotSalePrice || "0");
@@ -89,7 +118,7 @@ async function runFefo(opts: FefoOptions): Promise<FefoResult> {
       return {
         tempId:           genId(),
         itemId,
-        item:             itemData,
+        item:             itemData as unknown as SalesLineLocal["item"],
         unitLevel,
         qty:              displayQty,
         salePrice:        linePrice,
@@ -112,7 +141,7 @@ async function runFefo(opts: FefoOptions): Promise<FefoResult> {
 // دالة جلب السعر (قسم أو صنف)
 // ─────────────────────────────────────────────────────────────────────────────
 async function resolvePricing(
-  itemData: any,
+  itemData: InvoiceItemData,
   warehouseId: string,
 ): Promise<{ baseSalePrice: number; isDeptPrice: boolean; priceSource: string }> {
   let baseSalePrice = parseFloat(String(itemData.salePriceCurrent)) || 0;
@@ -187,8 +216,8 @@ export function useInvoiceLines(
       if (!res.ok) return;
       const preview = await res.json();
       const opts = preview.allocations
-        .filter((a: any) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty) > 0)
-        .map((a: any) => ({
+        .filter((a: FefoExpiryOption) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty || "0") > 0)
+        .map((a: FefoExpiryOption) => ({
           expiryMonth:       a.expiryMonth as number,
           expiryYear:        a.expiryYear  as number,
           qtyAvailableMinor: a.availableQty as string,
@@ -205,7 +234,7 @@ export function useInvoiceLines(
 
   // ── إضافة صنف للفاتورة (من البحث السريع أو الباركود) ──────────────────────
   const addItemToLines = useCallback(async (
-    itemData: any,
+    itemData: InvoiceItemData,
     overrides?: { qty?: number; unitLevel?: string },
   ) => {
     const { baseSalePrice, isDeptPrice, priceSource } = await resolvePricing(itemData, warehouseId);
@@ -245,8 +274,8 @@ export function useInvoiceLines(
           ...prev.filter((l) => l.itemId !== itemData.id),
           ...(result.lines ?? []),
         ]);
-      } catch (err: any) {
-        toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+      } catch (err: unknown) {
+        toast({ title: "خطأ في توزيع الصلاحية", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
       } finally {
         setFefoLoading(false);
       }
@@ -270,7 +299,7 @@ export function useInvoiceLines(
     setLines((prev) => [...prev, {
       tempId:           genId(),
       itemId:           itemData.id,
-      item:             itemData,
+      item:             itemData as unknown as SalesLineLocal["item"],
       unitLevel:        targetUnit,
       qty:              targetQty,
       salePrice:        computeUnitPriceFromBase(baseSalePrice, targetUnit, itemData),
@@ -343,8 +372,8 @@ export function useInvoiceLines(
           ...prev.filter((l) => l.itemId !== line.itemId),
           ...(result.lines ?? []),
         ]);
-      } catch (err: any) {
-        toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+      } catch (err: unknown) {
+        toast({ title: "خطأ في توزيع الصلاحية", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
       } finally {
         setFefoLoading(false);
       }

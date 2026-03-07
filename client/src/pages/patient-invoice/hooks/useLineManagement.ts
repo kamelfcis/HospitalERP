@@ -3,6 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import { genId } from "../utils/id";
 import type { LineLocal } from "../types";
 import {
+  type ItemUnitConfig,
   computeUnitPriceFromBase,
   calculateQtyInMinor,
   calculateQtyInSmallest,
@@ -11,6 +12,72 @@ import {
   itemHasMajorUnit,
   itemHasMediumUnit,
 } from "../utils/units";
+
+// ── Domain types ───────────────────────────────────────────────────────────────
+export interface FefoAllocation {
+  allocatedQty: string;
+  lotId?: string | null;
+  expiryMonth?: number | string | null;
+  expiryYear?: number | string | null;
+  lotSalePrice?: string | null;
+}
+
+export interface ServiceSearchResult {
+  id: string;
+  nameAr?: string | null;
+  name?: string | null;
+  code?: string | null;
+  basePrice?: string | null;
+  requiresDoctor?: boolean | null;
+  requiresNurse?: boolean | null;
+  serviceType?: string | null;
+}
+
+export interface ItemSearchResult extends ItemUnitConfig {
+  id: string;
+  nameAr?: string | null;
+  itemCode?: string | null;
+  hasExpiry?: boolean | null;
+  salePriceCurrent?: string | number | null;
+  purchasePriceLast?: string | number | null;
+}
+
+interface RawInvoiceLine {
+  lineType: string;
+  serviceId?: string | null;
+  itemId?: string | null;
+  description?: string | null;
+  doctorName?: string | null;
+  nurseName?: string | null;
+  quantity?: string | null;
+  unitPrice?: string | null;
+  discountPercent?: string | null;
+  discountAmount?: string | null;
+  totalPrice?: string | null;
+  notes?: string | null;
+  sortOrder?: number | null;
+  unitLevel?: string | null;
+  itemData?: ItemSearchResult | null;
+  priceSource?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  lotId?: string | null;
+  expiryMonth?: number | string | null;
+  expiryYear?: number | string | null;
+  service?: {
+    requiresDoctor?: boolean | null;
+    requiresNurse?: boolean | null;
+    serviceType?: string | null;
+  } | null;
+  line?: {
+    lotId?: string | null;
+    expiryMonth?: number | string | null;
+    expiryYear?: number | string | null;
+    priceSource?: string | null;
+  } | null;
+  requiresDoctor?: boolean | null;
+  requiresNurse?: boolean | null;
+}
 
 // ── Recalc helpers (internal) ──────────────────────────────────────────────────
 function recalcLine(line: LineLocal): LineLocal {
@@ -36,9 +103,9 @@ interface UseLineManagementParams {
   invoiceDate: string;
   departmentId: string;
   setItemSearch: (v: string) => void;
-  setItemResults: (v: any[]) => void;
+  setItemResults: (v: ItemSearchResult[]) => void;
   setServiceSearch: (v: string) => void;
-  setServiceResults: (v: any[]) => void;
+  setServiceResults: (v: ServiceSearchResult[]) => void;
   addingItemRef: React.MutableRefObject<Set<string>>;
   itemSearchRef: React.RefObject<HTMLInputElement>;
 }
@@ -66,39 +133,39 @@ export function useLineManagement({
   // ── Basic line ops ─────────────────────────────────────────────────────────
   const resetLines = useCallback(() => setLines([]), []);
 
-  const loadLines = useCallback((raw: any[]): LineLocal[] => {
+  const loadLines = useCallback((raw: RawInvoiceLine[]): LineLocal[] => {
     const loaded: LineLocal[] = raw.map(l => ({
       tempId: genId(),
-      lineType: l.lineType,
-      serviceId: l.serviceId,
-      itemId: l.itemId,
-      description: l.description,
+      lineType: l.lineType as LineLocal["lineType"],
+      serviceId: l.serviceId ?? null,
+      itemId: l.itemId ?? null,
+      description: l.description || "",
       doctorName: l.doctorName || "",
       nurseName: l.nurseName || "",
       requiresDoctor: l.service?.requiresDoctor ?? l.requiresDoctor ?? false,
       requiresNurse: l.service?.requiresNurse ?? l.requiresNurse ?? false,
-      quantity: parseFloat(l.quantity) || 1,
-      unitPrice: parseFloat(l.unitPrice) || 0,
-      discountPercent: parseFloat(l.discountPercent) || 0,
-      discountAmount: parseFloat(l.discountAmount) || 0,
-      totalPrice: parseFloat(l.totalPrice) || 0,
+      quantity: parseFloat(l.quantity || "0") || 1,
+      unitPrice: parseFloat(l.unitPrice || "0") || 0,
+      discountPercent: parseFloat(l.discountPercent || "0") || 0,
+      discountAmount: parseFloat(l.discountAmount || "0") || 0,
+      totalPrice: parseFloat(l.totalPrice || "0") || 0,
       notes: l.notes || "",
       sortOrder: l.sortOrder || 0,
       serviceType: l.service?.serviceType || "",
-      unitLevel: l.unitLevel || "minor",
+      unitLevel: (l.unitLevel as LineLocal["unitLevel"] | null | undefined) || "minor",
       item: l.itemData || null,
-      lotId: l.line?.lotId || l.lotId || null,
-      expiryMonth: l.line?.expiryMonth || l.expiryMonth || null,
-      expiryYear: l.line?.expiryYear || l.expiryYear || null,
+      lotId: l.line?.lotId ?? l.lotId ?? null,
+      expiryMonth: (l.line?.expiryMonth ?? l.expiryMonth) ? Number(l.line?.expiryMonth ?? l.expiryMonth) : null,
+      expiryYear: (l.line?.expiryYear ?? l.expiryYear) ? Number(l.line?.expiryYear ?? l.expiryYear) : null,
       priceSource: l.line?.priceSource || l.priceSource || "",
-      sourceType: l.sourceType || null,
-      sourceId: l.sourceId || null,
+      sourceType: l.sourceType ?? null,
+      sourceId: l.sourceId ?? null,
     }));
     setLines(loaded);
     return loaded;
   }, []);
 
-  const updateLine = useCallback((tempId: string, field: string, value: any) => {
+  const updateLine = useCallback((tempId: string, field: string, value: unknown) => {
     setLines(prev =>
       prev.map(l => {
         if (l.tempId !== tempId) return l;
@@ -121,18 +188,18 @@ export function useLineManagement({
   );
 
   // ── Add service line ───────────────────────────────────────────────────────
-  const addServiceLine = useCallback((svc: any) => {
+  const addServiceLine = useCallback((svc: ServiceSearchResult) => {
     const newLine: LineLocal = {
       tempId: genId(),
       lineType: "service",
       serviceId: svc.id,
       itemId: null,
-      description: svc.nameAr || svc.name || svc.code,
+      description: svc.nameAr || svc.name || svc.code || "",
       quantity: 1,
-      unitPrice: parseFloat(svc.basePrice) || 0,
+      unitPrice: parseFloat(svc.basePrice || "0") || 0,
       discountPercent: 0,
       discountAmount: 0,
-      totalPrice: parseFloat(svc.basePrice) || 0,
+      totalPrice: parseFloat(svc.basePrice || "0") || 0,
       doctorName: "",
       nurseName: "",
       requiresDoctor: svc.requiresDoctor ?? false,
@@ -154,7 +221,7 @@ export function useLineManagement({
   }, [setServiceSearch, setServiceResults]);
 
   // ── Add item line (with FEFO) ──────────────────────────────────────────────
-  const addItemLine = useCallback(async (item: any, lineType: "drug" | "consumable" | "equipment") => {
+  const addItemLine = useCallback(async (item: ItemSearchResult, lineType: "drug" | "consumable" | "equipment") => {
     const hasMajor  = itemHasMajorUnit(item);
     const hasMedium = itemHasMediumUnit(item);
     const defaultUnit: "major" | "medium" | "minor" = hasMajor ? "major" : hasMedium ? "medium" : "minor";
@@ -177,7 +244,7 @@ export function useLineManagement({
       lineType,
       serviceId: null,
       itemId: item.id,
-      description: item.nameAr || item.itemCode,
+      description: item.nameAr || item.itemCode || "",
       quantity: 1,
       unitPrice,
       discountPercent: 0,
@@ -257,19 +324,19 @@ export function useLineManagement({
             return;
           }
 
-          const newFefoLines: LineLocal[] = preview.allocations
-            .filter((a: any) => parseFloat(a.allocatedQty) > 0)
-            .map((alloc: any) => {
+          const newFefoLines: LineLocal[] = (preview.allocations as FefoAllocation[])
+            .filter((a) => parseFloat(a.allocatedQty) > 0)
+            .map((alloc) => {
               const allocMinor  = parseFloat(alloc.allocatedQty);
               const displayQty  = convertMinorToDisplayQty(allocMinor, defaultUnit, item);
               const lineBase    = isDeptPrice
                 ? resolvedPrice
-                : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
+                : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice!) : resolvedPrice);
               const linePrice   = computeUnitPriceFromBase(lineBase, defaultUnit, item);
               const lineTotal   = +(displayQty * linePrice).toFixed(2);
               return {
                 tempId: genId(), lineType, serviceId: null,
-                itemId: item.id, description: item.nameAr || item.itemCode,
+                itemId: item.id, description: item.nameAr || item.itemCode || "",
                 quantity: displayQty, unitPrice: linePrice,
                 discountPercent: 0, discountAmount: 0, totalPrice: lineTotal,
                 doctorName: "", nurseName: "",
@@ -287,8 +354,9 @@ export function useLineManagement({
           if (newFefoLines.length > 1) {
             toast({ title: `${item.nameAr}`, description: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
           }
-        } catch (err: any) {
-          toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          toast({ title: "خطأ في توزيع الصلاحية", description: msg, variant: "destructive" });
         } finally {
           setFefoLoading(false);
         }
@@ -348,15 +416,15 @@ export function useLineManagement({
 
         if (preview.fulfilled) {
           const isDeptPrice = line.priceSource === "department";
-          const newFefoLines: LineLocal[] = preview.allocations
-            .filter((a: any) => parseFloat(a.allocatedQty) > 0)
-            .map((alloc: any) => {
+          const newFefoLines: LineLocal[] = (preview.allocations as FefoAllocation[])
+            .filter((a) => parseFloat(a.allocatedQty) > 0)
+            .map((alloc) => {
               const allocMinor  = parseFloat(alloc.allocatedQty);
               const displayQty  = convertMinorToDisplayQty(allocMinor, newLevel, line.item);
               const lotBase     = isDeptPrice
                 ? newUnitPrice
                 : computeUnitPriceFromBase(
-                    parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : baseSalePrice,
+                    parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice!) : baseSalePrice,
                     newLevel, line.item
                   );
               const lineTotal = +(displayQty * lotBase).toFixed(2);
@@ -377,8 +445,9 @@ export function useLineManagement({
             });
           setLines(prev => [...prev.filter(l => l.itemId !== line.itemId), ...newFefoLines]);
         }
-      } catch (err: any) {
-        toast({ title: "خطأ", description: err.message, variant: "destructive" });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast({ title: "خطأ", description: msg, variant: "destructive" });
       } finally {
         setFefoLoading(false);
       }
@@ -451,14 +520,14 @@ export function useLineManagement({
 
       const ul      = line.unitLevel || "minor";
       const itemRef = line.item;
-      const newFefoLines: LineLocal[] = preview.allocations
-        .filter((a: any) => parseFloat(a.allocatedQty) > 0)
-        .map((alloc: any) => {
+      const newFefoLines: LineLocal[] = (preview.allocations as FefoAllocation[])
+        .filter((a) => parseFloat(a.allocatedQty) > 0)
+        .map((alloc) => {
           const allocMinor = parseFloat(alloc.allocatedQty);
           const displayQty = convertMinorToDisplayQty(allocMinor, ul, itemRef);
           const basePrice  = isDeptPrice
             ? resolvedPrice
-            : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice) : resolvedPrice);
+            : (parseFloat(alloc.lotSalePrice || "0") > 0 ? parseFloat(alloc.lotSalePrice!) : resolvedPrice);
           const linePrice  = computeUnitPriceFromBase(basePrice, ul, itemRef);
           const lineTotal  = +(displayQty * linePrice).toFixed(2);
           return {
@@ -482,8 +551,9 @@ export function useLineManagement({
       if (newFefoLines.length > 1) {
         toast({ title: `تم التوزيع على ${newFefoLines.length} دفعات (FEFO)` });
       }
-    } catch (err: any) {
-      toast({ title: "خطأ في توزيع الصلاحية", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: "خطأ في توزيع الصلاحية", description: msg, variant: "destructive" });
     } finally {
       setFefoLoading(false);
     }

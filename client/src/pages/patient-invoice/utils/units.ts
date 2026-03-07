@@ -1,4 +1,13 @@
-export function getEffectiveMajorToMinor(item: any): number {
+export interface ItemUnitConfig {
+  majorUnitName?: string | null;
+  mediumUnitName?: string | null;
+  minorUnitName?: string | null;
+  majorToMedium?: number | string | null;
+  majorToMinor?: number | string | null;
+  mediumToMinor?: number | string | null;
+}
+
+export function getEffectiveMajorToMinor(item: ItemUnitConfig | null | undefined): number {
   if (!item) return 1;
   const m2min = parseFloat(String(item.majorToMinor));
   if (m2min > 0) return m2min;
@@ -9,7 +18,7 @@ export function getEffectiveMajorToMinor(item: any): number {
   return 1;
 }
 
-export function getEffectiveMediumToMinor(item: any): number {
+export function getEffectiveMediumToMinor(item: ItemUnitConfig | null | undefined): number {
   if (!item) return 1;
   const m2m = parseFloat(String(item.mediumToMinor));
   if (m2m > 0) return m2m;
@@ -19,14 +28,14 @@ export function getEffectiveMediumToMinor(item: any): number {
   return 1;
 }
 
-export function getSmallestUnitLevel(item: any): "major" | "medium" | "minor" {
+export function getSmallestUnitLevel(item: ItemUnitConfig | null | undefined): "major" | "medium" | "minor" {
   if (!item) return "minor";
   if (item.minorUnitName) return "minor";
   if (item.mediumUnitName) return "medium";
   return "major";
 }
 
-export function calculateQtyInSmallest(qty: number, unitLevel: string, item: any): number {
+export function calculateQtyInSmallest(qty: number, unitLevel: string, item: ItemUnitConfig | null | undefined): number {
   if (!item) return qty;
   const smallest = getSmallestUnitLevel(item);
   if (unitLevel === smallest) return qty;
@@ -40,11 +49,11 @@ export function calculateQtyInSmallest(qty: number, unitLevel: string, item: any
   return qty;
 }
 
-export function calculateQtyInMinor(qty: number, unitLevel: string, item: any): number {
+export function calculateQtyInMinor(qty: number, unitLevel: string, item: ItemUnitConfig | null | undefined): number {
   return calculateQtyInSmallest(qty, unitLevel, item);
 }
 
-export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: any): number {
+export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: string, item: ItemUnitConfig | null | undefined): number {
   if (!item || !baseSalePrice) return baseSalePrice || 0;
   if (unitLevel === "major" || !unitLevel) return baseSalePrice;
   const majorToMedium = parseFloat(String(item.majorToMedium)) || 1;
@@ -54,7 +63,7 @@ export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: strin
   return baseSalePrice;
 }
 
-export function convertSmallestToDisplayQty(allocSmallest: number, unitLevel: string, item: any): number {
+export function convertSmallestToDisplayQty(allocSmallest: number, unitLevel: string, item: ItemUnitConfig | null | undefined): number {
   const smallest = getSmallestUnitLevel(item);
   let displayQty = allocSmallest;
   if (unitLevel === "major" && smallest !== "major") {
@@ -69,25 +78,25 @@ export function convertSmallestToDisplayQty(allocSmallest: number, unitLevel: st
   return rounded;
 }
 
-export function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: any): number {
+export function convertMinorToDisplayQty(allocMinor: number, unitLevel: string, item: ItemUnitConfig | null | undefined): number {
   return convertSmallestToDisplayQty(allocMinor, unitLevel, item);
 }
 
-export function itemHasMajorUnit(item: any): boolean {
+export function itemHasMajorUnit(item: ItemUnitConfig | null | undefined): boolean {
   if (!item) return false;
   const m2min = parseFloat(String(item.majorToMinor));
   const m2med = parseFloat(String(item.majorToMedium));
   return (m2min > 1) || (m2med > 1) || !!item.majorUnitName;
 }
 
-export function itemHasMediumUnit(item: any): boolean {
+export function itemHasMediumUnit(item: ItemUnitConfig | null | undefined): boolean {
   if (!item) return false;
   const m2med = parseFloat(String(item.majorToMedium));
   const med2min = parseFloat(String(item.mediumToMinor));
   return (m2med > 1) || (med2min > 1) || !!item.mediumUnitName;
 }
 
-export function getUnitName(item: any, unitLevel: string): string {
+export function getUnitName(item: ItemUnitConfig | null | undefined, unitLevel: string): string {
   if (!item) return "";
   if (unitLevel === "major") return item.majorUnitName || "وحدة كبرى";
   if (unitLevel === "medium") return item.mediumUnitName || "وحدة متوسطة";
