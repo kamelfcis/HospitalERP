@@ -680,6 +680,7 @@ import transfersMethods from "./transfers-storage";
 import purchasingMethods from "./purchasing-storage";
 import servicesMethods from "./services-storage";
 import salesInvoicesMethods from "./sales-invoices-storage";
+import salesJournalMethods from "./sales-journal-storage";
 import patientInvoicesMethods from "./patient-invoices-storage";
 import cashierMethods from "./cashier-storage";
 import patientsDoctorsMethods from "./patients-doctors-storage";
@@ -696,6 +697,7 @@ Object.assign(
   purchasingMethods,
   servicesMethods,
   salesInvoicesMethods,
+  salesJournalMethods,
   patientInvoicesMethods,
   cashierMethods,
   patientsDoctorsMethods,
