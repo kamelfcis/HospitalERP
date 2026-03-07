@@ -162,21 +162,27 @@ const coreMethods = {
   },
 
   /**
-   * Approves a purchase invoice and performs final lot recosting.
+   * Approves a purchase invoice atomically.
    *
-   * Step 1 — Lock invoice and validate status
-   * Step 2 — If linked to receiving: recost inventory lots
-   *   2a — Idempotency check: skip if lots already costed by this invoice
-   *   2b — For each invoice line with receivingLineId: compute final cost per minor unit
-   *        Formula: finalCost = (valueBeforeVat − allocatedHeaderDiscount) / totalQtyMinor(incl. bonus)
-   *        VAT is excluded from inventory cost (goes to vat_input account)
-   *   2c — Update lot: purchasePrice ← final, provisionalPurchasePrice ← original
-   *   2d — Mark receiving status → posted_costed
-   * Step 3 — Set invoice status → approved_costed
-   * Step 4 — Fire journal generation (async, non-blocking)
+   * All of the following happen inside ONE database transaction — they all succeed or all roll back:
+   *   Step 1 — Lock invoice (FOR UPDATE) and validate status = draft
+   *   Step 2 — Lot recosting (if linked to a receiving)
+   *     2a — Idempotency: skip if lots already costed by this invoice (costSourceId match)
+   *     2b — For each invoice line with receivingLineId: compute final cost per minor unit
+   *          Formula: finalCost = (valueBeforeVat − allocatedHeaderDiscount) / totalQtyMinor
+   *          VAT is excluded from inventory cost (recorded in vat_input account instead)
+   *     2c — Update lot: purchasePrice ← final, provisionalPurchasePrice ← original
+   *     2d — Mark receiving status → posted_costed
+   *   Step 3 — Set invoice status → approved_costed
+   *   Step 4 — Generate accounting journal entry via tx (throws on missing mappings / closed period / unbalanced)
+   *
+   * Idempotency guarantees:
+   *   - Lot recosting skipped if costSourceId already = invoiceId
+   *   - Journal generation skipped if sourceDocumentId already exists for this invoice
+   *   - Invoice status guard prevents double-approval
    */
   async approvePurchaseInvoice(this: any, id: string): Promise<PurchaseInvoiceHeader> {
-    const result = await db.transaction(async (tx) => {
+    return await db.transaction(async (tx) => {
       // Step 1: Lock and validate
       const lockResult = await tx.execute(sql`SELECT * FROM purchase_invoice_headers WHERE id = ${id} FOR UPDATE`);
       const locked = lockResult.rows?.[0] as PurchaseInvoiceHeader | undefined;
@@ -208,17 +214,17 @@ const coreMethods = {
             .where(eq(purchaseInvoiceLines.invoiceId, id));
 
           // Invoice-level totals for header discount weight calculation
-          const totalBeforeVat     = parseFloat(invoice.totalBeforeVat  || "0");
-          const totalAfterVat      = parseFloat(invoice.totalAfterVat   || "0");
-          const netPayable         = parseFloat(invoice.netPayable       || "0");
+          const totalBeforeVat      = parseFloat(invoice.totalBeforeVat  || "0");
+          const totalAfterVat       = parseFloat(invoice.totalAfterVat   || "0");
+          const netPayable          = parseFloat(invoice.netPayable       || "0");
           const headerDiscountTotal = totalAfterVat - netPayable;
 
           // Step 2b: Recost each invoice line that has a receiving line reference
           for (const line of invLines) {
             if (!line.receivingLineId) continue;
 
-            // Find the lot that was created from this receiving for this item.
-            // We join through inventory_lot_movements to trace the exact receiving origin.
+            // Find the lot created from this receiving for this item
+            // (join through inventory_lot_movements to trace the exact receiving origin)
             const [lotRow] = await tx
               .select({ lot: inventoryLots })
               .from(inventoryLots)
@@ -236,16 +242,14 @@ const coreMethods = {
             const lot = lotRow?.lot;
             if (!lot) continue;
 
-            // Load receiving line to get total qty in minor unit (billable + bonus)
+            // Load receiving line for total qty (billable + bonus)
             const [recvLine] = await tx.select().from(receivingLines)
               .where(eq(receivingLines.id, line.receivingLineId));
-
             if (!recvLine) continue;
 
             const totalQtyMinor =
               parseFloat(recvLine.qtyInMinor as string || "0") +
               parseFloat(recvLine.bonusQtyInMinor as string || "0");
-
             if (totalQtyMinor <= 0) continue;
 
             // Step 2b formula:
@@ -256,10 +260,10 @@ const coreMethods = {
             const allocatedDiscount  = totalBeforeVat > 0
               ? (lineValueBeforeVat / totalBeforeVat) * headerDiscountTotal
               : 0;
-            const finalLineCost      = lineValueBeforeVat - allocatedDiscount;
-            const finalCostPerMinor  = +(finalLineCost / totalQtyMinor).toFixed(4);
+            const finalLineCost     = lineValueBeforeVat - allocatedDiscount;
+            const finalCostPerMinor = +(finalLineCost / totalQtyMinor).toFixed(4);
 
-            // Step 2c: Update the lot with final cost, preserving original as provisional
+            // Step 2c: Update lot with final cost, preserve original as provisional
             await tx.update(inventoryLots).set({
               provisionalPurchasePrice: lot.purchasePrice,
               purchasePrice:            String(finalCostPerMinor),
@@ -288,17 +292,13 @@ const coreMethods = {
 
       const [updated] = await tx.select().from(purchaseInvoiceHeaders)
         .where(eq(purchaseInvoiceHeaders.id, id));
+
+      // Step 4: Generate journal entry inside the SAME transaction
+      // Throws on: missing mappings, closed period, unbalanced journal → rolls back everything
+      await this.generatePurchaseInvoiceJournalInTx(tx, id, updated);
+
       return updated;
     });
-
-    // Step 4: Fire journal generation outside the transaction (non-blocking, has own idempotency check)
-    if (result) {
-      this.generatePurchaseInvoiceJournal(id, result).catch((err: unknown) =>
-        console.error("Auto journal for purchase invoice failed:", err)
-      );
-    }
-
-    return result;
   },
 
   async deletePurchaseInvoice(id: string, reason?: string): Promise<boolean> {

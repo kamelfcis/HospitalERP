@@ -1,0 +1,55 @@
+Yes — I want you to refactor purchase invoice approval so that journal generation is executed inside the SAME database transaction as:
+1) lot recosting
+2) receiving status update to posted_costed
+3) purchase invoice status update to approved_costed
+
+Reason:
+For purchase invoices, inventory costing finalization and accounting recognition must be atomic.
+The current pattern is risky because inventory and invoice can become finalized while journal posting fails, creating a mismatch between inventory subledger and GL.
+
+Refactor requirements:
+
+A) Transaction design
+- Move purchase journal generation into the same tx object used by approvePurchaseInvoice
+- Refactor generatePurchaseInvoiceJournal to accept tx as parameter
+- Do not use fire-and-forget async after commit for purchase invoice posting
+
+B) Atomic behavior
+If any of the following fails, the whole transaction must rollback:
+- lot recosting
+- receiving status update
+- invoice approval status update
+- journal header insert
+- journal lines insert
+- period-open validation
+- account mapping validation
+
+C) Validation behavior
+Before creating the journal, validate:
+- required account mappings exist for this supplierType / transaction
+- period is open
+- journal remains balanced
+- sourceDocumentId is unique or idempotent logic is respected
+
+D) Error handling
+- return explicit business error if account mappings are missing
+- do not silently log only to console
+- do not leave invoice approved_costed without journal if posting is part of approval
+
+E) Idempotency
+- preserve idempotency for journal creation by sourceDocumentId
+- preserve idempotency for lot recosting by costSourceId
+- ensure retrying approval does not duplicate journal or recosting
+
+F) Output before coding
+First inspect and print:
+1. exact files/functions to change
+2. exact transaction flow before refactor
+3. exact refactor plan
+4. edge cases
+Then implement.
+
+Important:
+- Use the existing real codebase patterns
+- Keep the behavior specific to purchase invoice approval
+- Do not introduce generic architecture changes outside scope

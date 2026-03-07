@@ -1,5 +1,5 @@
-import { db } from "../db";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { db, type DrizzleTransaction } from "../db";
+import { eq, and, gte, lte, asc, sql } from "drizzle-orm";
 import {
   items,
   inventoryLots,
@@ -8,6 +8,7 @@ import {
   receivingHeaders,
   receivingLines,
   purchaseInvoiceHeaders,
+  accountMappings,
   journalEntries,
   journalLines,
   fiscalPeriods,
@@ -29,129 +30,201 @@ function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: 
   return enteredPrice;
 }
 
+/**
+ * Builds and inserts the purchase invoice journal entry inside an existing transaction.
+ *
+ * Design principles:
+ * - ALL reads and writes go through the supplied `tx` — never touches `db` directly.
+ * - Idempotent: if a journal entry already exists for this sourceDocumentId, returns it and skips.
+ * - Throws explicit Arabic business errors on missing mappings, closed period, or unbalanced journal.
+ *   This ensures the caller's transaction rolls back completely on any failure.
+ *
+ * Steps:
+ *   Step A — Idempotency check via tx
+ *   Step B — Load account mappings for "purchase_invoice" via tx
+ *   Step C — Load supplier to determine payables line type
+ *   Step D — Build journal lines (inventory, VAT, discount, payables)
+ *   Step E — Validate balance (throw if diff > 0.01)
+ *   Step F — Validate fiscal period is open via tx
+ *   Step G — Get next entry number via tx (race-safe inside transaction)
+ *   Step H — Insert journal_entries + journal_lines via tx
+ */
+async function generatePurchaseInvoiceJournalInTx(
+  tx: DrizzleTransaction,
+  invoiceId: string,
+  invoice: PurchaseInvoiceHeader
+): Promise<JournalEntry | null> {
+  // Step A: Idempotency — skip if journal already exists for this invoice
+  const [existingEntry] = await tx.select().from(journalEntries)
+    .where(and(
+      eq(journalEntries.sourceType, "purchase_invoice"),
+      eq(journalEntries.sourceDocumentId, invoiceId)
+    ))
+    .limit(1);
+  if (existingEntry) return existingEntry;
+
+  // Guard: skip zero-value invoices
+  const totalBeforeVat = parseFloat(invoice.totalBeforeVat || "0");
+  const totalVat       = parseFloat(invoice.totalVat       || "0");
+  const totalAfterVat  = parseFloat(invoice.totalAfterVat  || "0");
+  const netPayable     = parseFloat(invoice.netPayable      || "0");
+  const headerDiscount = totalAfterVat - netPayable;
+
+  if (totalBeforeVat <= 0 && netPayable <= 0) return null;
+
+  // Step B: Load account mappings via tx (no warehouse-specific override for purchases)
+  const allMappings = await tx.select().from(accountMappings)
+    .where(and(
+      eq(accountMappings.transactionType, "purchase_invoice"),
+      eq(accountMappings.isActive, true),
+      sql`${accountMappings.warehouseId} IS NULL`
+    ))
+    .orderBy(asc(accountMappings.lineType));
+
+  if (allMappings.length === 0) {
+    throw new Error("لا توجد ربط حسابات (Account Mappings) مُعرَّفة لنوع المعاملة: فواتير المشتريات. يرجى تعريفها أولاً.");
+  }
+
+  const mappingMap = new Map<string, AccountMapping>();
+  for (const m of allMappings) {
+    mappingMap.set(m.lineType, m);
+  }
+
+  // Step C: Load supplier to determine payables line type
+  const [supplier] = await tx.select().from(suppliers)
+    .where(eq(suppliers.id, invoice.supplierId));
+  const supplierType    = supplier?.supplierType || "drugs";
+  const payablesLineType = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
+
+  // Step D: Build journal lines
+  const journalLineData: InsertJournalLine[] = [];
+  const descriptionText = `قيد فاتورة مشتريات رقم ${invoice.invoiceNumber}`;
+
+  const inventoryMapping = mappingMap.get("inventory");
+  if (inventoryMapping?.debitAccountId && totalBeforeVat > 0) {
+    journalLineData.push({
+      journalEntryId: "",
+      lineNumber:     0,
+      accountId:      inventoryMapping.debitAccountId,
+      debit:          String(totalBeforeVat.toFixed(2)),
+      credit:         "0",
+      description:    "مخزون - فاتورة مشتريات",
+    });
+  }
+
+  const vatMapping = mappingMap.get("vat_input");
+  if (vatMapping?.debitAccountId && totalVat > 0) {
+    journalLineData.push({
+      journalEntryId: "",
+      lineNumber:     0,
+      accountId:      vatMapping.debitAccountId,
+      debit:          String(totalVat.toFixed(2)),
+      credit:         "0",
+      description:    "ضريبة قيمة مضافة - مدخلات",
+    });
+  }
+
+  const discountMapping = mappingMap.get("discount_earned");
+  if (discountMapping?.creditAccountId && headerDiscount > 0.001) {
+    journalLineData.push({
+      journalEntryId: "",
+      lineNumber:     0,
+      accountId:      discountMapping.creditAccountId,
+      debit:          "0",
+      credit:         String(headerDiscount.toFixed(2)),
+      description:    "خصم مكتسب",
+    });
+  }
+
+  const payablesMapping = mappingMap.get(payablesLineType) || mappingMap.get("payables");
+  if (!payablesMapping?.creditAccountId) {
+    throw new Error(`لا يوجد حساب ذمم موردين (${payablesLineType}) مُعرَّف في ربط الحسابات. يرجى إضافته أولاً.`);
+  }
+  if (netPayable > 0) {
+    journalLineData.push({
+      journalEntryId: "",
+      lineNumber:     0,
+      accountId:      payablesMapping.creditAccountId,
+      debit:          "0",
+      credit:         String(netPayable.toFixed(2)),
+      description:    supplierType === "consumables" ? "موردين مستلزمات" : "موردين أدوية",
+    });
+  }
+
+  if (journalLineData.length === 0) return null;
+
+  // Step E: Validate balance — throw on mismatch so the whole tx rolls back
+  const totalDebits  = journalLineData.reduce((s, l) => s + parseFloat(l.debit  || "0"), 0);
+  const totalCredits = journalLineData.reduce((s, l) => s + parseFloat(l.credit || "0"), 0);
+  const diff = Math.abs(totalDebits - totalCredits);
+  if (diff > 0.01) {
+    throw new Error(`القيد المحاسبي غير متوازن: مدين=${totalDebits.toFixed(2)}، دائن=${totalCredits.toFixed(2)}، الفرق=${diff.toFixed(2)}`);
+  }
+
+  // Step F: Validate fiscal period is open via tx
+  const [period] = await tx.select().from(fiscalPeriods)
+    .where(and(
+      lte(fiscalPeriods.startDate, invoice.invoiceDate),
+      gte(fiscalPeriods.endDate,   invoice.invoiceDate),
+      eq(fiscalPeriods.isClosed, false)
+    ))
+    .limit(1);
+  if (!period) {
+    throw new Error(`الفترة المحاسبية لتاريخ ${invoice.invoiceDate} مغلقة أو غير موجودة. لا يمكن اعتماد الفاتورة.`);
+  }
+
+  // Step G: Next entry number — inside tx to prevent race conditions
+  const [numRow] = await tx
+    .select({ max: sql<number>`COALESCE(MAX(entry_number), 0)` })
+    .from(journalEntries);
+  const entryNumber = (numRow?.max || 0) + 1;
+
+  // Step H: Insert journal entry header + lines via tx
+  const [entry] = await tx.insert(journalEntries).values({
+    entryNumber,
+    entryDate:        invoice.invoiceDate,
+    reference:        `PUR-${invoice.invoiceNumber}`,
+    description:      descriptionText,
+    status:           "draft",
+    periodId:         period.id,
+    sourceType:       "purchase_invoice",
+    sourceDocumentId: invoiceId,
+    totalDebit:       String(totalDebits.toFixed(2)),
+    totalCredit:      String(totalCredits.toFixed(2)),
+  }).returning();
+
+  const linesWithEntryId = journalLineData.map((l, idx) => ({
+    ...l,
+    journalEntryId: entry.id,
+    lineNumber:     idx + 1,
+  }));
+  await tx.insert(journalLines).values(linesWithEntryId);
+
+  return entry;
+}
+
 const journalMethods = {
+  /**
+   * Generates the purchase invoice journal entry inside an existing transaction.
+   * Use this during invoice approval so lot recosting + journal are atomic.
+   * Throws on missing mappings, closed period, or unbalanced journal.
+   */
+  async generatePurchaseInvoiceJournalInTx(
+    tx: DrizzleTransaction,
+    invoiceId: string,
+    invoice: PurchaseInvoiceHeader
+  ): Promise<JournalEntry | null> {
+    return generatePurchaseInvoiceJournalInTx(tx, invoiceId, invoice);
+  },
+
+  /**
+   * Standalone (non-transactional) journal generation — kept for backward compatibility.
+   * Used only for manual retries outside the approval flow.
+   * Has its own idempotency check and fires its own db.transaction internally.
+   */
   async generatePurchaseInvoiceJournal(this: any, invoiceId: string, invoice: PurchaseInvoiceHeader): Promise<JournalEntry | null> {
-    const existingEntries = await db.select().from(journalEntries)
-      .where(and(
-        eq(journalEntries.sourceType, "purchase_invoice"),
-        eq(journalEntries.sourceDocumentId, invoiceId)
-      ));
-    if (existingEntries.length > 0) return existingEntries[0];
-
-    const totalBeforeVat = parseFloat(invoice.totalBeforeVat || "0");
-    const totalVat = parseFloat(invoice.totalVat || "0");
-    const totalAfterVat = parseFloat(invoice.totalAfterVat || "0");
-    const netPayable = parseFloat(invoice.netPayable || "0");
-    const headerDiscount = totalAfterVat - netPayable;
-
-    if (totalBeforeVat <= 0 && netPayable <= 0) return null;
-
-    const mappings = await this.getMappingsForTransaction("purchase_invoice", null);
-    if (mappings.length === 0) return null;
-
-    const mappingMap = new Map<string, AccountMapping>();
-    for (const m of mappings) {
-      mappingMap.set(m.lineType, m);
-    }
-
-    const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, invoice.supplierId));
-    const supplierType = supplier?.supplierType || "drugs";
-    const payablesLineType = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
-
-    const journalLineData: InsertJournalLine[] = [];
-    const descriptionText = `قيد فاتورة مشتريات رقم ${invoice.invoiceNumber}`;
-
-    const inventoryMapping = mappingMap.get("inventory");
-    if (inventoryMapping?.debitAccountId && totalBeforeVat > 0) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: 0,
-        accountId: inventoryMapping.debitAccountId,
-        debit: String(totalBeforeVat.toFixed(2)),
-        credit: "0",
-        description: "مخزون - فاتورة مشتريات",
-      });
-    }
-
-    const vatMapping = mappingMap.get("vat_input");
-    if (vatMapping?.debitAccountId && totalVat > 0) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: 0,
-        accountId: vatMapping.debitAccountId,
-        debit: String(totalVat.toFixed(2)),
-        credit: "0",
-        description: "ضريبة قيمة مضافة - مدخلات",
-      });
-    }
-
-    const discountMapping = mappingMap.get("discount_earned");
-    if (discountMapping?.creditAccountId && headerDiscount > 0.001) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: 0,
-        accountId: discountMapping.creditAccountId,
-        debit: "0",
-        credit: String(headerDiscount.toFixed(2)),
-        description: "خصم مكتسب",
-      });
-    }
-
-    const payablesMapping = mappingMap.get(payablesLineType) || mappingMap.get("payables");
-    if (payablesMapping?.creditAccountId && netPayable > 0) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: 0,
-        accountId: payablesMapping.creditAccountId,
-        debit: "0",
-        credit: String(netPayable.toFixed(2)),
-        description: supplierType === "consumables" ? "موردين مستلزمات" : "موردين أدوية",
-      });
-    }
-
-    if (journalLineData.length === 0) return null;
-
-    const totalDebits = journalLineData.reduce((s, l) => s + parseFloat(l.debit || "0"), 0);
-    const totalCredits = journalLineData.reduce((s, l) => s + parseFloat(l.credit || "0"), 0);
-    const diff = Math.abs(totalDebits - totalCredits);
-
-    if (diff > 0.01) {
-      console.error(`Purchase invoice journal unbalanced: debits=${totalDebits}, credits=${totalCredits}, diff=${diff}`);
-      return null;
-    }
-
     return db.transaction(async (tx) => {
-      const [period] = await tx.select().from(fiscalPeriods)
-        .where(and(
-          lte(fiscalPeriods.startDate, invoice.invoiceDate),
-          gte(fiscalPeriods.endDate, invoice.invoiceDate),
-          eq(fiscalPeriods.isClosed, false)
-        ))
-        .limit(1);
-
-      const entryNumber = await this.getNextEntryNumber();
-
-      const [entry] = await tx.insert(journalEntries).values({
-        entryNumber,
-        entryDate: invoice.invoiceDate,
-        reference: `PUR-${invoice.invoiceNumber}`,
-        description: descriptionText,
-        status: "draft",
-        periodId: period?.id || null,
-        sourceType: "purchase_invoice",
-        sourceDocumentId: invoiceId,
-        totalDebit: String(totalDebits.toFixed(2)),
-        totalCredit: String(totalCredits.toFixed(2)),
-      }).returning();
-
-      const linesWithEntryId = journalLineData.map((l, idx) => ({
-        ...l,
-        journalEntryId: entry.id,
-        lineNumber: idx + 1,
-      }));
-
-      await tx.insert(journalLines).values(linesWithEntryId);
-      return entry;
+      return generatePurchaseInvoiceJournalInTx(tx, invoiceId, invoice);
     });
   },
 
@@ -266,7 +339,7 @@ const journalMethods = {
         }
 
         const newQty = currentQty - qtyToReverse;
-        await tx.update(inventoryLots).set({ 
+        await tx.update(inventoryLots).set({
           qtyInMinor: newQty.toFixed(4),
           updatedAt: new Date(),
         }).where(eq(inventoryLots.id, mov.lotId));
