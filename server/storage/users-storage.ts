@@ -91,12 +91,14 @@ const methods = {
 
   async setRolePermissions(this: DatabaseStorage, role: string, permissions: string[]): Promise<void> {
     type RolePermRole = "admin" | "accountant" | "pharmacist" | "cashier" | "doctor" | "nurse" | "receptionist" | "warehouse" | "viewer" | "lab" | "radiology" | "it";
-    await db.delete(rolePermissions).where(eq(rolePermissions.role, role as RolePermRole));
-    if (permissions.length > 0) {
-      await db.insert(rolePermissions).values(
-        permissions.map(permission => ({ role: role as RolePermRole, permission }))
-      );
-    }
+    await db.transaction(async (tx) => {
+      await tx.delete(rolePermissions).where(eq(rolePermissions.role, role as RolePermRole));
+      if (permissions.length > 0) {
+        await tx.insert(rolePermissions).values(
+          permissions.map(permission => ({ role: role as RolePermRole, permission }))
+        );
+      }
+    });
   },
 
   async getUserPermissions(this: DatabaseStorage, userId: string): Promise<UserPermission[]> {
@@ -104,12 +106,14 @@ const methods = {
   },
 
   async setUserPermissions(this: DatabaseStorage, userId: string, perms: { permission: string; granted: boolean }[]): Promise<void> {
-    await db.delete(userPermissions).where(eq(userPermissions.userId, userId));
-    if (perms.length > 0) {
-      await db.insert(userPermissions).values(
-        perms.map(p => ({ userId, permission: p.permission, granted: p.granted }))
-      );
-    }
+    await db.transaction(async (tx) => {
+      await tx.delete(userPermissions).where(eq(userPermissions.userId, userId));
+      if (perms.length > 0) {
+        await tx.insert(userPermissions).values(
+          perms.map(p => ({ userId, permission: p.permission, granted: p.granted }))
+        );
+      }
+    });
   },
 
   async getUserDepartments(this: DatabaseStorage, userId: string): Promise<Department[]> {
