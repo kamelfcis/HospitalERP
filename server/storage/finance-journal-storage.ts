@@ -201,6 +201,17 @@ const methods = {
         return null;
       }
 
+      // Balance check: each mapped line type produces one Dr + one Cr line of equal amounts,
+      // so the journal is balanced IFF all expected line types were mapped.
+      // If any line type was skipped (unmapped), the totals will diverge — reject the entry
+      // entirely rather than inserting an unbalanced draft.
+      const preCheckDebit  = journalLineData.reduce((s, l) => s + parseMoney(l.debit),  0);
+      const preCheckCredit = journalLineData.reduce((s, l) => s + parseMoney(l.credit), 0);
+      if (Math.abs(preCheckDebit - preCheckCredit) > 0.01) {
+        console.log(`[GL] REJECTED: Unbalanced journal for ${params.sourceType}/${params.sourceDocumentId} (Dr=${preCheckDebit.toFixed(2)}, Cr=${preCheckCredit.toFixed(2)}). Missing mappings: [${unmappedTypes.join(', ')}]. Configure at /account-mappings and the next retry will succeed.`);
+        return null;
+      }
+
       let periodId = params.periodId;
       if (!periodId) {
         const [period] = await tx.select().from(fiscalPeriods)

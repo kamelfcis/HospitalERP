@@ -1,0 +1,53 @@
+I need to reorganize the posting setup logic because the current Account Mappings screen is not clear enough for accounting control.
+
+Current problem:
+- Posting seems to depend on transaction/screen + warehouse
+- But the UI does not clearly show the full expected journal structure for that transaction
+- I had a case where purchase posting generated a journal even though I had not configured the correct warehouse-specific mapping
+- Discount was also missing, which means the posting logic is not transparent enough
+- I need strict and understandable posting behavior
+
+What I need:
+
+1) For each transaction type (example: purchase_invoice), define the full expected journal line types explicitly
+Example:
+- inventory_drugs / inventory_consumables
+- vat_input
+- discount_earned
+- payables_drugs / payables_consumables
+
+2) Distinguish required vs optional lines
+- required lines must block posting if missing
+- conditional lines (tax/discount) must be required whenever their business condition exists
+- no silent skipping
+
+3) Make warehouse-dependent logic explicit
+- if posting depends on warehouse, show clearly whether the mapping is:
+  - warehouse-specific
+  - general fallback
+- do not allow silent fallback that can produce misleading accounting
+
+4) Improve Account Mappings UI
+When I choose transaction type and warehouse, I need to see:
+- all expected journal line types
+- configured mappings
+- missing mappings
+- debit/credit preview
+- balance status
+- whether setup is complete or incomplete
+
+5) Protect posted history
+- changing account mappings must NOT change already posted journal entries
+- mapping changes apply only to future postings
+- reposting old documents must be a separate controlled action
+
+6) Review why purchase posting succeeded for a warehouse that had no complete mapping
+- identify whether fallback, ignored warehouse, or partial line generation caused this
+- explain exactly why discount line was not posted
+
+Return:
+A. Current posting selection logic
+B. Why posting succeeded in that case
+C. Why discount was missing
+D. Required redesign of the Account Mappings screen
+E. Validation rules needed to prevent incomplete postings

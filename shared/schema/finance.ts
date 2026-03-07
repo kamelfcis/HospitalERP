@@ -238,13 +238,34 @@ export const transactionTypeLabels: Record<string, string> = {
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
-  inventory: "مخزون",
-  cogs: "تكلفة البضاعة المباعة",
-  revenue: "إيراد",
-  receivable: "ذمم مدينة",
-  payable: "ذمم دائنة",
-  cash: "نقدية",
-  discount: "خصم",
-  tax: "ضريبة",
-  other: "أخرى",
+  // Purchase invoice (explicit Dr/Cr sides — see purchase journal logic)
+  inventory:            "مخزون",
+  vat_input:            "ضريبة ق.م.أ - مدخلات",
+  discount_earned:      "خصم مكتسب",
+  payables:             "ذمم موردين",
+  payables_drugs:       "ذمم موردين - أدوية",
+  payables_consumables: "ذمم موردين - مستلزمات",
+  // Sales invoice (generic path: each mapping produces Dr + Cr)
+  revenue_drugs:        "إيراد أدوية",
+  revenue_consumables:  "إيراد مستلزمات",
+  revenue_general:      "إيراد عام",
+  cogs_drugs:           "تكلفة مبيعات أدوية",
+  cogs_supplies:        "تكلفة مبيعات مستلزمات",
+  cogs:                 "تكلفة البضاعة المباعة",
+  discount_allowed:     "خصم مسموح",
+  vat_output:           "ضريبة ق.م.أ - مخرجات",
+  returns:              "مرتجعات مبيعات",
+  // Patient invoice
+  cash:                 "نقدية",
+  receivables:          "ذمم مدينة",
+  revenue_services:     "إيراد خدمات",
+  revenue_equipment:    "إيراد معدات",
+  // Receiving
+  payable:              "ذمم دائنة",
+  // Cashier
+  revenue:              "إيراد",
+  discount:             "خصم",
+  tax:                  "ضريبة",
+  // Generic
+  other:                "أخرى",
 };

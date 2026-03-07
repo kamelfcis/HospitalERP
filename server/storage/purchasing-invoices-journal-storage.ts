@@ -72,36 +72,62 @@ async function generatePurchaseInvoiceJournalInTx(
 
   if (totalBeforeVat <= 0 && netPayable <= 0) return null;
 
-  // Step B: Load account mappings via tx (no warehouse-specific override for purchases)
+  // Step B: Load account mappings with warehouse fallback logic
+  //   1. If the invoice is linked to a receiving, use that receiving's warehouseId
+  //   2. Warehouse-specific mappings override generic for matching line types
+  //   3. Generic mappings serve as fallback for any line type not covered by warehouse-specific
+  let invoiceWarehouseId: string | null = null;
+  if (invoice.receivingId) {
+    const [recv] = await tx.select({ warehouseId: receivingHeaders.warehouseId })
+      .from(receivingHeaders)
+      .where(eq(receivingHeaders.id, invoice.receivingId));
+    invoiceWarehouseId = recv?.warehouseId || null;
+  }
+
   const allMappings = await tx.select().from(accountMappings)
     .where(and(
       eq(accountMappings.transactionType, "purchase_invoice"),
-      eq(accountMappings.isActive, true),
-      sql`${accountMappings.warehouseId} IS NULL`
+      eq(accountMappings.isActive, true)
     ))
     .orderBy(asc(accountMappings.lineType));
 
-  if (allMappings.length === 0) {
+  let effectiveMappings: AccountMapping[];
+  if (invoiceWarehouseId) {
+    const warehouseSpecific = allMappings.filter(m => m.warehouseId === invoiceWarehouseId);
+    const generic           = allMappings.filter(m => !m.warehouseId);
+    const coveredByWarehouse = new Set(warehouseSpecific.map(m => m.lineType));
+    const fallback           = generic.filter(m => !coveredByWarehouse.has(m.lineType));
+    effectiveMappings = [...warehouseSpecific, ...fallback];
+  } else {
+    effectiveMappings = allMappings.filter(m => !m.warehouseId);
+  }
+
+  if (effectiveMappings.length === 0) {
     throw new Error("لا توجد ربط حسابات (Account Mappings) مُعرَّفة لنوع المعاملة: فواتير المشتريات. يرجى تعريفها أولاً.");
   }
 
   const mappingMap = new Map<string, AccountMapping>();
-  for (const m of allMappings) {
+  for (const m of effectiveMappings) {
     mappingMap.set(m.lineType, m);
   }
 
   // Step C: Load supplier to determine payables line type
   const [supplier] = await tx.select().from(suppliers)
     .where(eq(suppliers.id, invoice.supplierId));
-  const supplierType    = supplier?.supplierType || "drugs";
+  const supplierType     = supplier?.supplierType || "drugs";
   const payablesLineType = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
 
-  // Step D: Build journal lines
+  // Step D: Build journal lines — REQUIRED mappings throw, CONDITIONAL throw when condition exists
+
   const journalLineData: InsertJournalLine[] = [];
   const descriptionText = `قيد فاتورة مشتريات رقم ${invoice.invoiceNumber}`;
 
+  // inventory — REQUIRED (always present in a purchase)
   const inventoryMapping = mappingMap.get("inventory");
-  if (inventoryMapping?.debitAccountId && totalBeforeVat > 0) {
+  if (!inventoryMapping?.debitAccountId) {
+    throw new Error("حساب المخزون (inventory) غير مُعرَّف في ربط الحسابات. يرجى تحديد حساب المدين له أولاً.");
+  }
+  if (totalBeforeVat > 0) {
     journalLineData.push({
       journalEntryId: "",
       lineNumber:     0,
@@ -112,7 +138,11 @@ async function generatePurchaseInvoiceJournalInTx(
     });
   }
 
+  // vat_input — CONDITIONAL: required when the invoice has VAT
   const vatMapping = mappingMap.get("vat_input");
+  if (totalVat > 0 && !vatMapping?.debitAccountId) {
+    throw new Error("حساب ضريبة القيمة المضافة - المدخلات (vat_input) غير مُعرَّف في ربط الحسابات. الفاتورة تحتوي على ضريبة بقيمة " + totalVat.toFixed(2) + " جنيه.");
+  }
   if (vatMapping?.debitAccountId && totalVat > 0) {
     journalLineData.push({
       journalEntryId: "",
@@ -124,7 +154,11 @@ async function generatePurchaseInvoiceJournalInTx(
     });
   }
 
+  // discount_earned — CONDITIONAL: required when the invoice has a header discount
   const discountMapping = mappingMap.get("discount_earned");
+  if (headerDiscount > 0.001 && !discountMapping?.creditAccountId) {
+    throw new Error("حساب الخصم المكتسب (discount_earned) غير مُعرَّف في ربط الحسابات. الفاتورة تحتوي على خصم بقيمة " + headerDiscount.toFixed(2) + " جنيه.");
+  }
   if (discountMapping?.creditAccountId && headerDiscount > 0.001) {
     journalLineData.push({
       journalEntryId: "",
@@ -136,9 +170,10 @@ async function generatePurchaseInvoiceJournalInTx(
     });
   }
 
+  // payables — REQUIRED (throw was already there, kept)
   const payablesMapping = mappingMap.get(payablesLineType) || mappingMap.get("payables");
   if (!payablesMapping?.creditAccountId) {
-    throw new Error(`لا يوجد حساب ذمم موردين (${payablesLineType}) مُعرَّف في ربط الحسابات. يرجى إضافته أولاً.`);
+    throw new Error(`حساب ذمم الموردين (${payablesLineType}) غير مُعرَّف في ربط الحسابات. يرجى إضافة حساب الدائن له.`);
   }
   if (netPayable > 0) {
     journalLineData.push({
