@@ -272,19 +272,25 @@ const methods = {
   },
 
   async createJournalEntry(this: DatabaseStorage, entry: InsertJournalEntry, lines: InsertJournalLine[]): Promise<JournalEntry> {
-    const entryNumber = await this.getNextEntryNumber();
-    const [newEntry] = await db.insert(journalEntries)
-      .values({ ...entry, entryNumber })
-      .returning();
+    return await db.transaction(async (tx) => {
+      // حساب الرقم التسلسلي داخل الـ transaction لضمان التناسق
+      const [numResult] = await tx
+        .select({ max: sql<number>`COALESCE(MAX(${journalEntries.entryNumber}), 0)` })
+        .from(journalEntries);
+      const entryNumber = (numResult?.max || 0) + 1;
 
-    for (const line of lines) {
-      await db.insert(journalLines).values({
-        ...line,
-        journalEntryId: newEntry.id,
-      });
-    }
+      const [newEntry] = await tx.insert(journalEntries)
+        .values({ ...entry, entryNumber })
+        .returning();
 
-    return newEntry;
+      if (lines.length > 0) {
+        await tx.insert(journalLines).values(
+          lines.map((line) => ({ ...line, journalEntryId: newEntry.id }))
+        );
+      }
+
+      return newEntry;
+    });
   },
 
   async updateJournalEntry(this: DatabaseStorage, id: string, entry: Partial<InsertJournalEntry>, lines?: InsertJournalLine[]): Promise<JournalEntry | undefined> {
