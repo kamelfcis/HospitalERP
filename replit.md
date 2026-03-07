@@ -100,10 +100,30 @@ All files that were >700 lines have been split. Current state:
 - `server/storage/treasuries-storage.ts` — .slice on never
 - `client/src/pages/doctor-orders/components/OrdersTable.tsx` — Map iteration
 
-### Current System Quality Score: 81/100
-- Architecture: 90% | TypeScript: 96% | Security: 82%
+### Session — 2026-03-07 (Purchase-to-Accounting Hardening + Transfer Journal Control)
+
+**Completed this session:**
+1. **Account Mappings UI redesign** — `lineTypeSpecs` per tx type (required/conditional/optional with Dr/Cr side specs), status bar, per-row badges, Dr/Cr side dimming, fallback indicators ("↳ من الإعداد العام"), `suggestedLineTypes` per tx type. `mappingLineTypeLabels` expanded in `shared/schema/finance.ts`.
+2. **Purchase invoice journal hardened** — warehouse fallback reads `receivingHeaders.warehouseId`; `inventory` REQUIRED (throws); `vat_input` CONDITIONAL when VAT > 0; `discount_earned` CONDITIONAL when headerDiscount > 0.001; balance guard returns null on unmapped lines.
+3. **Line discount policy** — `lineDiscountPct/lineDiscountValue` stored/visible/reportable but NOT posted as GL. `totalLineDiscounts = SUM(lineDiscountValue × qty)` bug fixed. Policy comments in `types.ts`, `useInvoiceDiscount.ts`, both purchasing storage files.
+4. **Stock transfer journal — atomic (Step 6 of `postTransfer`)** — inline journal creation inside the same DB transaction. Three-case GL control policy:
+   - Both warehouses without GL → graceful skip (internal, untracked transfer)
+   - One has GL, one doesn't → **BLOCK with Rollback** (misconfiguration — prevents imbalance)
+   - Both have GL → journal REQUIRED → **BLOCK if no open fiscal period**
+   Idempotency via unique index on (sourceType, sourceDocumentId).
+5. **Warehouse GL account fix** — `warehouseUpdateSchema` was missing `glAccountId`; PUT route was not passing it to `updateData`. Now saves and round-trips correctly.
+6. **AccountMappings notice for warehouse_transfer** — Blue info callout explaining the 3-case policy and directing users to Warehouse settings.
+
+**Next session — suggested work:**
+- Supplier management UI (create/edit/view suppliers with GL account linkage)
+- Supplier payments screen
+- Supplier account statement report
+- OR: continue refactoring (330 raw try/catch → `handleError()`)
+
+### Current System Quality Score: 82/100
+- Architecture: 91% | TypeScript: 96% | Security: 83%
 - Frontend quality: 85% | Error handling consistency: 58%
-- File size compliance: 78% | Type safety: 72%
+- File size compliance: 78% | Type safety: 73%
 
 ## External Dependencies
 
