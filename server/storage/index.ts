@@ -640,6 +640,7 @@ export interface IStorage {
   // Sales invoice journal helpers
   regenerateJournalForInvoice(invoiceId: string): Promise<JournalEntry | null>;
   retryFailedJournals(): Promise<{ total: number; succeeded: number; failed: number }>;
+  checkJournalReadiness(invoiceId: string): Promise<{ ready: boolean; critical: string[]; warnings: string[] }>;
 
   // Receiving corrections
   createReceivingCorrection(receivingId: string, corrections: any[]): Promise<any>;

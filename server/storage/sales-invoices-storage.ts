@@ -14,6 +14,7 @@ import {
   journalEntries,
   journalLines,
   fiscalPeriods,
+  accountMappings,
 } from "@shared/schema";
 import type {
   SalesInvoiceHeader,
@@ -1162,6 +1163,71 @@ const methods = {
       notes: reason ? `[ملغي] ${reason}` : (invoice.notes ? `[ملغي] ${invoice.notes}` : "[ملغي]"),
     }).where(eq(salesInvoiceHeaders.id, id));
     return true;
+  },
+
+  async checkJournalReadiness(
+    this: DatabaseStorage,
+    invoiceId: string,
+  ): Promise<{ ready: boolean; critical: string[]; warnings: string[] }> {
+    const [invoice] = await db
+      .select({ invoiceDate: salesInvoiceHeaders.invoiceDate, warehouseId: salesInvoiceHeaders.warehouseId })
+      .from(salesInvoiceHeaders)
+      .where(eq(salesInvoiceHeaders.id, invoiceId));
+
+    if (!invoice) return { ready: false, critical: ["الفاتورة غير موجودة"], warnings: [] };
+
+    const critical: string[] = [];
+    const warnings: string[] = [];
+
+    // 1. Fiscal period — same logic as assertPeriodOpen
+    const [closedPeriod] = await db
+      .select({ name: fiscalPeriods.name })
+      .from(fiscalPeriods)
+      .where(
+        and(
+          lte(fiscalPeriods.startDate, invoice.invoiceDate),
+          gte(fiscalPeriods.endDate, invoice.invoiceDate),
+          eq(fiscalPeriods.isClosed, true),
+        ),
+      )
+      .limit(1);
+
+    if (closedPeriod) {
+      critical.push(`الفترة المحاسبية "${closedPeriod.name}" مغلقة — يجب تغيير تاريخ الفاتورة`);
+    }
+
+    // 2. Account mappings for this warehouse
+    const mappings = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId);
+    const map = new Map(mappings.map((m) => [m.lineType, m]));
+
+    // Critical: receivables — the only hard throw in the journal generator
+    if (!map.get("receivables")?.debitAccountId) {
+      critical.push('حساب المدينون "receivables" غير معرّف — افتح إعدادات الربط المحاسبي');
+    }
+
+    // Warning: at least one revenue account
+    const hasRevenue =
+      map.get("revenue_drugs")?.creditAccountId ||
+      map.get("revenue_consumables")?.creditAccountId ||
+      map.get("revenue_general")?.creditAccountId;
+    if (!hasRevenue) {
+      warnings.push("لم يُعيَّن حساب الإيرادات — لن يُسجَّل إيراد في القيد");
+    }
+
+    // Warning: inventory / COGS
+    let whHasGlAccount = false;
+    if (invoice.warehouseId) {
+      const [wh] = await db
+        .select({ glAccountId: warehouses.glAccountId })
+        .from(warehouses)
+        .where(eq(warehouses.id, invoice.warehouseId));
+      whHasGlAccount = !!wh?.glAccountId;
+    }
+    if (!whHasGlAccount && !map.get("inventory")?.creditAccountId) {
+      warnings.push("حساب المخزون غير معرّف — لن تُسجَّل تكلفة البضاعة في القيد");
+    }
+
+    return { ready: critical.length === 0, critical, warnings };
   },
 };
 

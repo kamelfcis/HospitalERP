@@ -316,6 +316,15 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
+  app.get("/api/sales-invoices/:id/journal-readiness", async (req, res) => {
+    try {
+      const result = await storage.checkJournalReadiness(req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/sales-invoices/:id", async (req, res) => {
     try {
       const invoice = await storage.getSalesInvoice(req.params.id);
@@ -409,6 +418,15 @@ export function registerInvoicingRoutes(app: Express) {
       if (existing.status !== "draft") return res.status(409).json({ message: "الفاتورة ليست مسودة", code: "ALREADY_FINALIZED" });
 
       await storage.assertPeriodOpen(existing.invoiceDate);
+
+      const readiness = await storage.checkJournalReadiness(req.params.id);
+      if (!readiness.ready) {
+        return res.status(422).json({
+          message: "لا يمكن تأكيد الفاتورة بسبب مشاكل في الإعداد المحاسبي",
+          issues: readiness.critical,
+          code: "JOURNAL_READINESS_FAILED",
+        });
+      }
 
       const invoice = await storage.finalizeSalesInvoice(req.params.id);
       await storage.createAuditLog({ tableName: "sales_invoice_headers", recordId: req.params.id, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });

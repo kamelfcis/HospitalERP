@@ -29,6 +29,7 @@ interface Props {
   barcodeInputRef: React.RefObject<HTMLInputElement>;
   warehouses: Warehouse[] | undefined;
   finalizePending: boolean;
+  readinessBadge?: React.ReactNode;
   onBack: () => void;
   onFinalize: () => void;
   onBarcodeScan: () => void;
@@ -51,7 +52,7 @@ export function InvoiceHeaderBar({
   customerType, setCustomerType, customerName, setCustomerName,
   contractCompany, setContractCompany,
   barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef,
-  warehouses, finalizePending,
+  warehouses, finalizePending, readinessBadge,
   onBack, onFinalize, onBarcodeScan, onOpenSearch, onOpenServiceSearch,
 }: Props) {
   return (
@@ -77,6 +78,7 @@ export function InvoiceHeaderBar({
         </div>
         {isDraft && (
           <div className="flex items-center gap-2">
+            {readinessBadge}
             <Button
               size="sm"
               onClick={onFinalize}

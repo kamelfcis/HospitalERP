@@ -20,7 +20,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button }   from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 
-import { InvoiceHeaderBar }   from "./components/InvoiceHeaderBar";
+import { InvoiceHeaderBar }      from "./components/InvoiceHeaderBar";
+import { JournalReadinessBadge } from "./components/JournalReadinessBadge";
 import { InvoiceLineTable }   from "./components/InvoiceLineTable";
 import { InvoiceTotals }      from "./components/InvoiceTotals";
 import { ServiceSearchDialog } from "./components/ServiceSearchDialog";
@@ -156,6 +157,9 @@ export function SalesInvoiceEditor({
         barcodeInputRef={barcodeInputRef}
         warehouses={warehouses}
         finalizePending={mutationsHook.finalizeMutation.isPending}
+        readinessBadge={isDraft && !isNew && editId
+          ? <JournalReadinessBadge invoiceId={editId} />
+          : undefined}
         onBack={onBack}
         onFinalize={() => mutationsHook.finalizeMutation.mutate()}
         onBarcodeScan={onBarcodeScan}
