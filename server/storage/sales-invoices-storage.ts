@@ -117,6 +117,36 @@ const methods = {
     return { ...h, warehouse: wh, lines: linesWithItems };
   },
 
+  /**
+   * ══════════════════════════════════════════════════════════════════
+   *  expandLinesFEFO — توسيع سطور الفاتورة باستخدام قاعدة FEFO
+   *  First-Expired First-Out — الأقدم انتهاءً يُصرف أولاً
+   * ══════════════════════════════════════════════════════════════════
+   *
+   *  ماذا تفعل؟
+   *   كل سطر فاتورة يحتوي على صنف + كمية + وحدة.
+   *   إذا كان الصنف له تواريخ انتهاء (hasExpiry=true) ولم يُحدَّد
+   *   الـ lot يدوياً، تقوم هذه الدالة بـ:
+   *     1. تحويل الكمية لأصغر وحدة (minor units)
+   *     2. جلب الـ lots المتاحة مرتبة من الأقرب للانتهاء للأبعد
+   *     3. تقسيم الكمية المطلوبة على الـ lots بالترتيب (FEFO)
+   *     4. إرجاع سطور متعددة — سطر لكل lot تم استخدامه
+   *
+   *  مثال:
+   *   طلب 10 أقراص دواء → lot A فيه 6 (انتهاء يناير) + lot B فيه 8 (انتهاء مارس)
+   *   النتيجة: سطرين: 6 من lot A + 4 من lot B
+   *
+   *  حالات خاصة:
+   *   - الصنف بدون hasExpiry → يُمرَّر كما هو بدون تقسيم
+   *   - الـ lot محدد يدوياً → لا تقسيم (bypass)
+   *   - الكمية المتاحة لا تكفي → يُحتفظ بالسطر الأصلي كاحتياطي
+   *     (المرحلة التالية ستفشل بسبب نقص المخزون — عمداً)
+   *
+   *  تحذيرات:
+   *   - تُنفَّذ داخل transaction فقط
+   *   - تستخدم FOR UPDATE ضمنياً لأن التحديث يأتي لاحقاً في نفس الـ tx
+   * ══════════════════════════════════════════════════════════════════
+   */
   async expandLinesFEFO(this: DatabaseStorage, tx: DrizzleTransaction, warehouseId: string, rawLines: Partial<InsertSalesInvoiceLine>[]): Promise<Partial<InsertSalesInvoiceLine>[]> {
     const expanded: Partial<InsertSalesInvoiceLine>[] = [];
     for (const line of rawLines) {

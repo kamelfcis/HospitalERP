@@ -43,17 +43,13 @@ export default function AccountLedger() {
     queryKey: ["/api/accounts"],
   });
 
+  const ledgerUrl = selectedAccountId
+    ? `/api/reports/account-ledger?accountId=${selectedAccountId}&startDate=${startDate}&endDate=${endDate}`
+    : null;
+
   const { data: ledger, isLoading: ledgerLoading } = useQuery<AccountLedgerData>({
-    queryKey: ["/api/reports/account-ledger", selectedAccountId, startDate, endDate],
-    queryFn: async () => {
-      if (!selectedAccountId) return null;
-      const response = await fetch(
-        `/api/reports/account-ledger?accountId=${selectedAccountId}&startDate=${startDate}&endDate=${endDate}`
-      );
-      if (!response.ok) throw new Error("Failed to fetch ledger");
-      return response.json();
-    },
-    enabled: !!selectedAccountId,
+    queryKey: [ledgerUrl],
+    enabled: !!ledgerUrl,
   });
 
   const matchesPattern = (text: string, pattern: string): boolean => {
