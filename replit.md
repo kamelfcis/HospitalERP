@@ -1,7 +1,7 @@
 # Hospital General Ledger System
 
 ## Overview
-This project is an Arabic RTL web application for hospital general ledger (GL) accounting. Its primary purpose is to manage accounts, cost centers, and journal entries to generate IFRS-compliant financial reports in Egyptian Pounds (EGP). It aims to provide a robust, user-friendly accounting solution specifically tailored for the healthcare sector in Arabic-speaking regions, featuring a classic accounting software UI aesthetic. Key capabilities include comprehensive financial management, inventory and sales processing, patient and service invoicing, multi-pharmacy support, and advanced security and reporting features. The project envisions becoming the leading accounting solution for healthcare providers in the Middle East.
+This project is an Arabic RTL web application for hospital general ledger (GL) accounting, designed to manage accounts, cost centers, and journal entries to generate IFRS-compliant financial reports in Egyptian Pounds (EGP). It provides a robust, user-friendly accounting solution tailored for the healthcare sector in Arabic-speaking regions, featuring a classic accounting software UI. Key capabilities include comprehensive financial management, inventory and sales processing, patient and service invoicing, multi-pharmacy support, and advanced security and reporting. The project aims to become the leading accounting solution for healthcare providers in the Middle East.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -9,73 +9,47 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Core Design
-The system is a full-stack web application with a React 18 frontend (TypeScript, Wouter, TanStack React Query, shadcn/ui, Tailwind CSS) and a Node.js Express 5 backend (TypeScript, Drizzle ORM). PostgreSQL is the primary data store. The application is designed for full Arabic RTL localization.
+The system is a full-stack web application with a React 18 frontend (TypeScript, Wouter, TanStack React Query, shadcn/ui, Tailwind CSS) and a Node.js Express 5 backend (TypeScript, Drizzle ORM). PostgreSQL serves as the primary data store. The application is designed for full Arabic RTL localization.
 
 ### Key Features
-- **Financial Management**: Includes Chart of Accounts, Cost Centers, a comprehensive Journal Entry system, Fiscal Period controls, and IFRS-compliant financial reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger). Automatic Journal Entries are generated based on configurable account mappings.
-- **Inventory & Sales**: Features Supplier Receiving, Sales Invoicing (with barcode scanning, FEFO allocation, customer types, atomic stock deduction), Sales Returns (search by invoice#/receipt barcode/item, server-validated return quantities, transactional stock restoration), Patient Invoicing (services, drugs, consumables, payments, "Distribute to Cases" feature, linked to admissions), Patient Admissions management, and Master Data for items, patients, and doctors.
-- **Services & Price Lists**: CRUD operations for department-scoped services, price lists with inline editing and bulk adjustments, and integration with sales invoices.
-- **Multi-Pharmacy Support**: Supports multiple pharmacies with isolation for invoicing and cashier operations.
-- **Cashier & Security**: Includes real-time SSE for instant invoice visibility, password-protected cash drawers, department-level invoice isolation, a two-stage journal entry system for sales, and robust role-based access control (RBAC).
-- **Outpatient Clinic Module**: A self-contained module (all tables prefixed `clinic_`, all routes `/api/clinic-*`) with 3 screens: (1) Clinic Booking (`/clinic-booking`) — appointment queue with RBAC filtering by clinic assignment, auto-incrementing turn numbers in transactions, printable turn receipt, doctor statement tab (restricted to admin + doctors only); (2) Doctor Consultation (`/doctor-consultation/:id`) — 2×2 grid layout with chief complaint, diagnosis, prescription (using `ItemFastSearch drugsOnly=true` with unit/qty/price), services, debounced auto-save, prescription printing, per-drug star toggle for clinic-scoped favorites (per doctor per clinic), doctor statement tab showing all consultations, "إنهاء الكشف" button (saves + marks done + navigates back); (3) Doctor Orders (`/doctor-orders`) — view pending service/pharmacy orders. Both service and pharmacy orders are **grouped by consultation** into single rows (e.g., 3 drugs = 1 pharmacy row, 2 lab tests = 1 service row). Pharmacy groups open `PharmacyGroupPopup` → sales invoice with all drugs pre-filled. Service groups open `ServiceGroupPopup` → dept-services with all services pre-filled via `services` JSON param + `clinicOrderIds`. Single service orders show inline "تنفيذ" button. Pharmacy prefill: `/sales-invoices?clinicOrderIds=id1,id2&pharmacyId=yyy` auto-fills with exact unit/quantity from prescription, validates stock availability, shows warnings for insufficient stock. Prescription drugs auto-default to major unit with dynamic price calculation based on unit level. Doctor Statement shows consultation fee (from linked service), drugs total broken down by department (dynamic columns per department, e.g., Lab, Radiology), secretary fee (configurable per clinic as percentage or fixed), with consultation fee total for doctor commission calculation. Each clinic has a configurable `consultation_service_id` linking to a service for fee tracking. Consultation service auto-injects as a service order when a doctor starts a consultation. Doctor-specific pricing supported via `clinic_service_doctor_prices` table — each service can have a custom price per doctor (managed in ServiceDialog). When executing clinic orders, the order's stored `unit_price` takes priority over the service's `base_price`. Module can be removed by dropping `clinic_*` tables + 3 page folders + `/api/clinic-*` routes with zero impact on existing system.
-- **Reporting & Audit**: Generates balanced financial reports, incorporates full RBAC, and maintains a comprehensive audit trail with strict validation and conflict resolution.
-- **User Experience**: Emphasizes a professional UI with a collapsible sidebar, A4 print styles, focus management, and visual auto-save indicators.
-- **Department Services Orders (LAB/RAD)**: A unified module at `/dept-services/:deptCode` for ordering medical services (lab, radiology). Two tabs: Single Order (one patient + services + consumables + discount + payment) and Batch Entry (multiple patients × services → bulk invoice generation). Saving creates `patient_invoice_headers/lines`, deducts consumables via FEFO from department warehouse, logs treasury transactions for cash orders. RBAC permissions: `dept_services.create`, `dept_services.batch`, `dept_services.discount`. Duplicate detection (same patient + service + date). Integrated with Doctor Orders — "تنفيذ" on service orders navigates to dept-services with pre-filled data; pharmacy orders open grouped popup → sales invoice with all drugs pre-filled via `clinicOrderIds` multi-ID support. Multi-clinic-order finalize: comma-separated IDs in `clinic_order_id` column, all marked `executed` on invoice finalization. Two-phase clinic prefill: warehouse state set first, items added after re-render to ensure FEFO allocation works correctly.
-- **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for managing and accruing patient accommodation costs (with transfer double-billing prevention), a Bed Board system with real-time updates and smart bed transfer, and a Surgery Types System.
+- **Financial Management**: Includes Chart of Accounts, Cost Centers, Journal Entries, Fiscal Period controls, and IFRS-compliant financial reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger). Supports automatic journal entry generation.
+- **Inventory & Sales**: Manages Supplier Receiving, Sales Invoicing (with barcode scanning, FEFO allocation), Sales Returns, Patient Invoicing (services, drugs, consumables), Patient Admissions, and Master Data for items, patients, and doctors.
+- **Services & Price Lists**: Provides CRUD for department-scoped services and price lists with inline editing and bulk adjustments.
+- **Multi-Pharmacy Support**: Offers isolation for invoicing and cashier operations across multiple pharmacies.
+- **Cashier & Security**: Features real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, a two-stage journal entry system for sales, and robust Role-Based Access Control (RBAC).
+- **Outpatient Clinic Module**: A self-contained module for clinic booking, doctor consultations (diagnosis, prescription, services), and doctor orders. It integrates with sales invoices and service orders, supporting doctor-specific pricing and clinic-scoped drug favorites.
+- **Reporting & Audit**: Generates balanced financial reports, enforces RBAC, and maintains a comprehensive audit trail with strict validation.
+- **User Experience**: Professional UI with a collapsible sidebar, A4 print styles, and visual auto-save indicators.
+- **Department Services Orders**: A unified module for ordering medical services (lab, radiology) with single order and batch entry options, integrated with doctor orders.
+- **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, a Stay Engine for patient accommodation, a Bed Board system with real-time updates, and a Surgery Types System.
 
-### Backend File Structure
-- **`server/routes/`** — API route modules, split by domain:
-  - `_shared.ts` — Shared middleware (requireAuth, checkPermission), SSE broadcasters, validation schemas
-  - `index.ts` — Barrel file that imports and registers all route modules
-  - `auth.ts` — Authentication, user management, permissions, dashboard
-  - `finance.ts` — Accounts, cost centers, fiscal periods, journal entries, reports, templates, audit log, account mappings
-  - `inventory.ts` — Items, warehouses, transfers, suppliers, receiving, purchase invoices
-  - `invoicing.ts` — Sales invoices, patient invoices, services, price lists, patients, doctors, admissions, sales returns
-  - `hospital.ts` — Bed board, cashier, drawers, pharmacy, room management, treasuries, stay engine
-  - `system.ts` — System settings, announcements, chat
-  - `clinic.ts` — Outpatient clinic module, dept-service orders
-- **`server/storage/`** — Data access layer, split by domain:
-  - `index.ts` — Barrel file: IStorage interface, DatabaseStorage class skeleton, prototype augmentation from domain files, `storage` singleton export
-  - `users-storage.ts` — Users, RBAC, permissions, user-department/warehouse assignments, chat
-  - `finance-storage.ts` — Accounts, cost centers, fiscal periods, journal entries, templates, audit log, reports, account mappings, auto journal generation
-  - `items-storage.ts` — Items, form types, UOMs, departments, department prices, inventory lots, FEFO, barcodes, warehouses
-  - `transfers-storage.ts` — Store transfers, FEFO allocation, item availability, warehouse search, seed pilot test
-  - `purchasing-storage.ts` — Suppliers, receiving/GRN, purchase invoices, corrections
-  - `services-storage.ts` — Services, service consumables, price lists, bulk adjustments, computeInvoiceTotals
-  - `sales-invoices-storage.ts` — Sales invoices CRUD, FEFO stock allocation, finalization, journal generation, retry logic
-  - `patient-invoices-storage.ts` — Patient invoices, finalization, distribution, sales returns
-  - `cashier-storage.ts` — Pharmacies, drawer passwords, cashier shifts, invoice collection/refund, print tracking
-  - `patients-doctors-storage.ts` — Patients, doctors, admissions, consolidation
-  - `bedboard-stay-storage.ts` — Stay engine, surgery types, bed board (admit/transfer/discharge)
-  - `treasuries-storage.ts` — Doctor transfers/settlements, treasuries CRUD, treasury transactions
-  - `clinic-storage.ts` — Outpatient clinic module: clinics, schedules, appointments, consultations, prescriptions, orders, doctor statements, dept-service orders
-- **`server/route-helpers.ts`** — asyncHandler, auditLog, validateBody utilities
-- **`server/finance-helpers.ts`** — roundMoney, roundQty, parseMoney utilities
+### Schema and Backend Structure
+The schema is organized into domain-specific files (`enums.ts`, `users.ts`, `finance.ts`, etc.) within `shared/schema/`, respecting foreign key dependencies. The backend follows a similar domain-based modular structure for API routes (`server/routes/`) and data access logic (`server/storage/`).
 
 ### Technical Implementations
-- **API**: Utilizes a RESTful JSON API.
-- **ORM**: Drizzle ORM with PostgreSQL dialect and Drizzle Kit.
-- **Validation**: Zod with drizzle-zod for schema validation.
-- **Concurrency & Idempotency**: Employs `FOR UPDATE` row locks on inventory lots (sales invoices, patient invoices, and store transfers), optimistic concurrency with versioning, and idempotent conversion processes.
-- **Financial Accuracy**: Invoice totals are recomputed server-side with `HALF_UP` decimal rounding.
-- **System Settings**: Critical system settings are cached in memory.
+- **API**: RESTful JSON API.
+- **ORM**: Drizzle ORM with PostgreSQL.
+- **Validation**: Zod with drizzle-zod.
+- **Concurrency & Idempotency**: Utilizes `FOR UPDATE` row locks, optimistic concurrency, and idempotent conversion processes.
+- **Financial Accuracy**: Server-side recomputation of invoice totals with `HALF_UP` rounding.
+- **System Settings**: Critical settings are cached in memory.
 - **Error Handling**: Centralized Arabic error messages with specific HTTP status codes.
-- **Printing Safety**: Implements print tracking for cashier and refund receipts.
+- **Printing Safety**: Implements print tracking for receipts.
 - **Inventory Strictness**: Enforces expired batch blocking and FEFO ordering.
 - **Monitoring**: Includes slow request/query logging.
-- **Backup & Restore**: Automated backup and restore scripts.
-- **Architectural Enforcement**: Uses route helpers, finance helpers, custom frontend mutation hooks, ESLint rules, and scaffold generators.
-- **Stay Engine Billing Modes**: Supports `hours_24` and `hotel_noon` idempotent billing modes.
-- **Invoice & Discharge Business Rules**: Enforces payment before finalization and finalized invoices before discharge, with role-based bypass options.
-- **Journal Safety Net**: Sales invoice finalization attempts journal generation inside the same DB transaction. If journal fails (missing account mappings, unbalanced), the invoice still finalizes but gets `journal_status = 'failed'`. A background retry runs every 5 minutes. API endpoints: `GET /api/sales-invoices/journal-failures`, `POST /api/sales-invoices/retry-all-journals`, `POST /api/sales-invoices/:id/regenerate-journal`.
-- **HTTP Compression**: Express uses `compression` middleware (threshold 1024 bytes) for API response compression.
-- **Audit Trail**: Captures audit entries for critical financial operations (account CRUD, journal posting/reversal, fiscal period close/reopen, sales returns, patient invoice finalization, permission changes, store transfers, cashier operations, invoice distribution).
-- **Room Management**: Dedicated page for CRUD operations on floors, rooms, and beds, including grade assignment.
-- **Surgery Types Integration**: Allows linking surgery types to admissions, impacting OR_ROOM line items and invoice totals.
-- **Admissions Management**: Enhanced admissions list with invoice status, department filtering, and financial totals.
-- **Refactored Pages**: `PatientInvoicePage`, `SalesInvoices`, `CashierCollection`, `StoreTransfers`, and `SalesReturns` are refactored into modular, hook-based compound components.
-- **Shared ItemSearchDialog**: `@/components/ItemSearchDialog.tsx` is a shared, configurable search dialog used across pages. `ItemFastSearch` (`@/components/ItemFastSearch/`) is the primary fast-search component shared between sales invoices and store transfers.
-- **Transfer Preparation**: A smart preparation screen (`/transfer-preparation`) that queries sales data for a destination warehouse over a date range, shows source/destination stock levels in **major units** (e.g., علبة), allows bulk filtering/exclusion, suggested quantity fill in major units, and converts the prepared list into a store transfer with **auto FEFO distribution split into separate lines per expiry batch**. Refactored into compound components: `types.ts`, `hooks/usePreparationData.ts`, `SetupForm`, `FilterBar`, `PrepTable`, `ActionFooter`.
+- **Backup & Restore**: Automated scripts for backup and restore.
+- **Architectural Enforcement**: Uses route/finance helpers, custom frontend hooks, ESLint, and scaffold generators.
+- **Stay Engine Billing Modes**: Supports `hours_24` and `hotel_noon` idempotent billing.
+- **Invoice & Discharge Rules**: Enforces payment before finalization and finalized invoices before discharge, with RBAC bypass options.
+- **Journal Safety Net**: Sales invoice finalization attempts journal generation within the same DB transaction, with a retry mechanism for failures.
+- **HTTP Compression**: Express uses `compression` middleware.
+- **Audit Trail**: Captures audit entries for critical financial and system operations.
+- **Room Management**: Dedicated page for managing floors, rooms, and beds.
+- **Surgery Types**: Integration with admissions for OR_ROOM line items.
+- **Admissions Management**: Enhanced list with invoice status, department filtering, and financial totals.
+- **Refactored Pages**: Key financial and inventory pages are refactored into modular, hook-based components.
+- **Shared Components**: `ItemSearchDialog` and `ItemFastSearch` are shared for efficient item lookup.
+- **Transfer Preparation**: A smart screen for preparing store transfers based on sales data, with bulk filtering, suggested quantities, and auto FEFO distribution.
 
 ## External Dependencies
 
