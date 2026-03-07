@@ -311,7 +311,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/form-types", async (req, res) => {
+  app.post("/api/form-types", requireAuth, checkPermission(PERMISSIONS.ITEMS_CREATE), async (req, res) => {
     try {
       const validated = insertItemFormTypeSchema.parse(req.body);
       const formType = await storage.createItemFormType(validated);
@@ -335,7 +335,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/uoms", async (req, res) => {
+  app.post("/api/uoms", requireAuth, checkPermission(PERMISSIONS.ITEMS_CREATE), async (req, res) => {
     try {
       const parsed = insertItemUomSchema.parse(req.body);
       const uom = await storage.createItemUom(parsed);
@@ -400,7 +400,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/departments", async (req, res) => {
+  app.post("/api/departments", requireAuth, checkPermission(PERMISSIONS.DEPARTMENTS_MANAGE), async (req, res) => {
     try {
       const parsed = insertDepartmentSchema.parse(req.body);
       const department = await storage.createDepartment(parsed);
@@ -411,7 +411,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.put("/api/departments/:id", async (req, res) => {
+  app.put("/api/departments/:id", requireAuth, checkPermission(PERMISSIONS.DEPARTMENTS_MANAGE), async (req, res) => {
     try {
       const parsed = insertDepartmentSchema.partial().parse(req.body);
       const department = await storage.updateDepartment(req.params.id as string, parsed);
@@ -425,7 +425,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/departments/:id", async (req, res) => {
+  app.delete("/api/departments/:id", requireAuth, checkPermission(PERMISSIONS.DEPARTMENTS_MANAGE), async (req, res) => {
     try {
       await storage.deleteDepartment(req.params.id as string);
       res.status(204).send();
@@ -446,7 +446,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/items/:id/department-prices", async (req, res) => {
+  app.post("/api/items/:id/department-prices", requireAuth, checkPermission(PERMISSIONS.ITEMS_EDIT), async (req, res) => {
     try {
       const parsed = insertItemDepartmentPriceSchema.parse({
         ...req.body,
@@ -460,7 +460,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.put("/api/item-department-prices/:id", async (req, res) => {
+  app.put("/api/item-department-prices/:id", requireAuth, checkPermission(PERMISSIONS.ITEMS_EDIT), async (req, res) => {
     try {
       const parsed = insertItemDepartmentPriceSchema.partial().parse(req.body);
       const price = await storage.updateItemDepartmentPrice(req.params.id as string, parsed);
@@ -474,7 +474,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/item-department-prices/:id", async (req, res) => {
+  app.delete("/api/item-department-prices/:id", requireAuth, checkPermission(PERMISSIONS.ITEMS_EDIT), async (req, res) => {
     try {
       await storage.deleteItemDepartmentPrice(req.params.id as string);
       res.status(204).send();
@@ -519,7 +519,7 @@ export function registerInventoryRoutes(app: Express) {
   });
 
   // ===== EXPIRY SETTINGS =====
-  app.put("/api/items/:id/expiry-settings", async (req, res) => {
+  app.put("/api/items/:id/expiry-settings", requireAuth, checkPermission(PERMISSIONS.ITEMS_EDIT), async (req, res) => {
     try {
       const { hasExpiry } = req.body;
       if (typeof hasExpiry !== "boolean") {
@@ -558,7 +558,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/lots", async (req, res) => {
+  app.post("/api/lots", requireAuth, checkPermission(PERMISSIONS.RECEIVING_CREATE), async (req, res) => {
     try {
       const validated = insertInventoryLotSchema.parse(req.body);
       const item = await storage.getItem(validated.itemId);
@@ -629,7 +629,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/items/:id/barcodes", async (req, res) => {
+  app.post("/api/items/:id/barcodes", requireAuth, checkPermission(PERMISSIONS.ITEMS_EDIT), async (req, res) => {
     try {
       const { barcodeValue, barcodeType } = req.body;
       if (!barcodeValue || !barcodeValue.trim()) {
@@ -654,7 +654,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/barcodes/:id", async (req, res) => {
+  app.delete("/api/barcodes/:id", requireAuth, checkPermission(PERMISSIONS.ITEMS_EDIT), async (req, res) => {
     try {
       const barcode = await storage.deactivateBarcode(req.params.id as string);
       if (!barcode) {
@@ -708,7 +708,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/warehouses", async (req, res) => {
+  app.post("/api/warehouses", requireAuth, checkPermission(PERMISSIONS.WAREHOUSES_MANAGE), async (req, res) => {
     try {
       const validated = insertWarehouseSchema.parse(req.body);
       const wh = await storage.createWarehouse(validated);
@@ -721,7 +721,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.put("/api/warehouses/:id", async (req, res) => {
+  app.put("/api/warehouses/:id", requireAuth, checkPermission(PERMISSIONS.WAREHOUSES_MANAGE), async (req, res) => {
     try {
       const validated = warehouseUpdateSchema.parse(req.body);
       const { warehouseCode, nameAr, departmentId, pharmacyId, isActive } = validated;
@@ -742,7 +742,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/warehouses/:id", async (req, res) => {
+  app.delete("/api/warehouses/:id", requireAuth, checkPermission(PERMISSIONS.WAREHOUSES_MANAGE), async (req, res) => {
     try {
       await storage.deleteWarehouse(req.params.id as string);
       res.json({ success: true });
@@ -828,7 +828,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/transfers/auto-save", async (req, res) => {
+  app.post("/api/transfers/auto-save", requireAuth, checkPermission(PERMISSIONS.TRANSFERS_CREATE), async (req, res) => {
     try {
       const { header, lines, existingId } = req.body;
       if (!header) return res.status(400).json({ message: "بيانات ناقصة" });
@@ -855,7 +855,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/transfers", async (req, res) => {
+  app.post("/api/transfers", requireAuth, checkPermission(PERMISSIONS.TRANSFERS_CREATE), async (req, res) => {
     try {
       const { transferDate, sourceWarehouseId, destinationWarehouseId, notes, lines } = req.body;
 
@@ -878,7 +878,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/transfers/:id/post", async (req, res) => {
+  app.post("/api/transfers/:id/post", requireAuth, checkPermission(PERMISSIONS.TRANSFERS_EXECUTE), async (req, res) => {
     try {
       const existing = await storage.getTransfer(req.params.id as string);
       if (!existing) return res.status(404).json({ message: "التحويل غير موجود" });
@@ -902,7 +902,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/transfers/:id", async (req, res) => {
+  app.delete("/api/transfers/:id", requireAuth, checkPermission(PERMISSIONS.TRANSFERS_EXECUTE), async (req, res) => {
     try {
       const reason = req.body?.reason as string | undefined;
       const deleted = await storage.deleteTransfer(req.params.id as string, reason);
@@ -1056,7 +1056,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/suppliers", async (req, res) => {
+  app.post("/api/suppliers", requireAuth, checkPermission(PERMISSIONS.RECEIVING_CREATE), async (req, res) => {
     try {
       const validated = insertSupplierSchema.parse(req.body);
       const supplier = await storage.createSupplier(validated);
@@ -1072,7 +1072,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/suppliers/:id", async (req, res) => {
+  app.patch("/api/suppliers/:id", requireAuth, checkPermission(PERMISSIONS.RECEIVING_EDIT), async (req, res) => {
     try {
       const validated = insertSupplierSchema.partial().parse(req.body);
       const supplier = await storage.updateSupplier(req.params.id as string, validated);
@@ -1134,7 +1134,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/receivings/auto-save", async (req, res) => {
+  app.post("/api/receivings/auto-save", requireAuth, checkPermission(PERMISSIONS.RECEIVING_CREATE), async (req, res) => {
     try {
       const { header, lines, existingId } = req.body;
       if (!header) return res.status(400).json({ message: "بيانات ناقصة" });
@@ -1182,7 +1182,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/receivings", async (req, res) => {
+  app.post("/api/receivings", requireAuth, checkPermission(PERMISSIONS.RECEIVING_CREATE), async (req, res) => {
     try {
       const { header, lines } = req.body;
       if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
@@ -1210,7 +1210,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/receivings/:id", async (req, res) => {
+  app.patch("/api/receivings/:id", requireAuth, checkPermission(PERMISSIONS.RECEIVING_EDIT), async (req, res) => {
     try {
       const { header, lines } = req.body;
       if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
@@ -1240,7 +1240,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/receivings/:id/post", async (req, res) => {
+  app.post("/api/receivings/:id/post", requireAuth, checkPermission(PERMISSIONS.RECEIVING_POST), async (req, res) => {
     try {
       const receiving = await storage.getReceiving(req.params.id as string);
       if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
@@ -1277,7 +1277,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/receivings/:id/correct", async (req, res) => {
+  app.post("/api/receivings/:id/correct", requireAuth, checkPermission(PERMISSIONS.RECEIVING_EDIT), async (req, res) => {
     try {
       const result = await storage.createReceivingCorrection(req.params.id as string);
       res.status(201).json(result);
@@ -1289,7 +1289,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/receivings/:id", async (req, res) => {
+  app.delete("/api/receivings/:id", requireAuth, checkPermission(PERMISSIONS.RECEIVING_CREATE), async (req, res) => {
     try {
       const reason = req.body?.reason as string | undefined;
       const deleted = await storage.deleteReceiving(req.params.id as string, reason);
@@ -1304,7 +1304,7 @@ export function registerInventoryRoutes(app: Express) {
   });
 
   // ===== CONVERT RECEIVING TO PURCHASE INVOICE =====
-  app.post("/api/receivings/:id/convert-to-invoice", async (req, res) => {
+  app.post("/api/receivings/:id/convert-to-invoice", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_CREATE), async (req, res) => {
     try {
       const invoice = await storage.convertReceivingToInvoice(req.params.id as string);
       res.status(201).json(invoice);
@@ -1381,7 +1381,7 @@ export function registerInventoryRoutes(app: Express) {
     return errors;
   }
 
-  app.post("/api/purchase-invoices/:id/auto-save", async (req, res) => {
+  app.post("/api/purchase-invoices/:id/auto-save", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_EDIT), async (req, res) => {
     try {
       const invoice = await storage.getPurchaseInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
@@ -1396,7 +1396,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/purchase-invoices/:id", async (req, res) => {
+  app.patch("/api/purchase-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_EDIT), async (req, res) => {
     try {
       const invoice = await storage.getPurchaseInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
@@ -1416,7 +1416,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/purchase-invoices/:id", async (req, res) => {
+  app.delete("/api/purchase-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_EDIT), async (req, res) => {
     try {
       const reason = req.body?.reason as string | undefined;
       const deleted = await storage.deletePurchaseInvoice(req.params.id as string, reason);
@@ -1430,7 +1430,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   });
 
-  app.post("/api/purchase-invoices/:id/approve", async (req, res) => {
+  app.post("/api/purchase-invoices/:id/approve", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_APPROVE), async (req, res) => {
     try {
       const invoice = await storage.getPurchaseInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });

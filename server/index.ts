@@ -9,6 +9,8 @@ import { seedDatabase } from "./seed";
 import { slowRequestLogger, registerMonitoringRoutes } from "./monitoring";
 import { loadSettings } from "./settings-cache";
 import { storage } from "./storage";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 
 const app = express();
 const httpServer = createServer(app);
@@ -138,6 +140,22 @@ app.use((req, res, next) => {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   }
+
+  // ── مزامنة تسلسل أرقام القيود مع أعلى رقم موجود في قاعدة البيانات ──────────
+  // ضروري عند بدء التشغيل لضمان أن الـ SEQUENCE يبدأ من بعد آخر قيد مُدخَل
+  try {
+    await db.execute(sql`
+      SELECT setval(
+        'journal_entry_number_seq',
+        COALESCE((SELECT MAX(entry_number) FROM journal_entries), 0) + 1,
+        false
+      )
+    `);
+    log("[STARTUP] journal_entry_number_seq synced");
+  } catch (err: unknown) {
+    console.error("[STARTUP] sequence sync error:", err instanceof Error ? err.message : err);
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.

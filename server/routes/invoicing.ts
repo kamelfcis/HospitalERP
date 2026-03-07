@@ -49,7 +49,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/services", async (req, res) => {
+  app.post("/api/services", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const validated = insertServiceSchema.parse(req.body);
       const service = await storage.createService(validated);
@@ -65,7 +65,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.put("/api/services/:id", async (req, res) => {
+  app.put("/api/services/:id", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const validated = insertServiceSchema.partial().parse(req.body);
       const service = await storage.updateService(req.params.id as string, validated);
@@ -106,7 +106,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.put("/api/services/:id/consumables", async (req, res) => {
+  app.put("/api/services/:id/consumables", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const lines = req.body;
       if (!Array.isArray(lines)) {
@@ -141,7 +141,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/price-lists", async (req, res) => {
+  app.post("/api/price-lists", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const validated = insertPriceListSchema.parse(req.body);
       const list = await storage.createPriceList(validated);
@@ -157,7 +157,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.put("/api/price-lists/:id", async (req, res) => {
+  app.put("/api/price-lists/:id", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const validated = insertPriceListSchema.partial().parse(req.body);
       const list = await storage.updatePriceList(req.params.id as string, validated);
@@ -204,7 +204,7 @@ export function registerInvoicingRoutes(app: Express) {
     })).min(1, "يجب إرسال بند واحد على الأقل"),
   });
 
-  app.post("/api/price-lists/:id/items", async (req, res) => {
+  app.post("/api/price-lists/:id/items", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const validated = priceListItemsBodySchema.parse(req.body);
       await storage.upsertPriceListItems(req.params.id as string, validated.items);
@@ -217,7 +217,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/price-lists/:id/copy-from", async (req, res) => {
+  app.post("/api/price-lists/:id/copy-from", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const { sourceListId } = z.object({ sourceListId: z.string() }).parse(req.body);
       await storage.copyPriceList(req.params.id as string, sourceListId);
@@ -254,7 +254,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/price-lists/:id/bulk-adjust/apply", async (req, res) => {
+  app.post("/api/price-lists/:id/bulk-adjust/apply", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const validated = bulkAdjustBodySchema.parse(req.body);
       const result = await storage.bulkAdjustApply(req.params.id as string, validated);
@@ -315,7 +315,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/sales-invoices/retry-all-journals", async (_req, res) => {
+  app.post("/api/sales-invoices/retry-all-journals", requireAuth, checkPermission(PERMISSIONS.JOURNAL_POST), async (_req, res) => {
     try {
       const result = await storage.retryFailedJournals();
       res.json(result);
@@ -346,7 +346,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/sales-invoices/auto-save", async (req, res) => {
+  app.post("/api/sales-invoices/auto-save", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
       const { header, lines, existingId } = req.body;
       if (!header?.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
@@ -373,7 +373,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/sales-invoices", async (req, res) => {
+  app.post("/api/sales-invoices", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
       const { header, lines } = req.body;
       if (!header?.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
@@ -394,7 +394,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/sales-invoices/:id", async (req, res) => {
+  app.patch("/api/sales-invoices/:id", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
       const { header, lines } = req.body;
       if (!lines || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
@@ -414,7 +414,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/sales-invoices/:id/regenerate-journal", async (req, res) => {
+  app.post("/api/sales-invoices/:id/regenerate-journal", requireAuth, checkPermission(PERMISSIONS.JOURNAL_POST), async (req, res) => {
     try {
       const result = await storage.regenerateJournalForInvoice(req.params.id as string);
       if (!result) return res.status(400).json({ message: "لا يمكن إنشاء القيد - تحقق من ربط الحسابات" });
@@ -425,7 +425,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/sales-invoices/:id/finalize", async (req, res) => {
+  app.post("/api/sales-invoices/:id/finalize", requireAuth, checkPermission(PERMISSIONS.SALES_FINALIZE), async (req, res) => {
     try {
       const existing = await storage.getSalesInvoice(req.params.id as string);
       if (!existing) return res.status(404).json({ message: "الفاتورة غير موجودة" });
@@ -480,7 +480,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/sales-invoices/:id", async (req, res) => {
+  app.delete("/api/sales-invoices/:id", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
       const reason = req.body?.reason as string | undefined;
       await storage.deleteSalesInvoice(req.params.id as string, reason);
@@ -696,7 +696,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/patient-invoices", async (req, res) => {
+  app.post("/api/patient-invoices", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_CREATE), async (req, res) => {
     try {
       const { header, lines, payments } = req.body;
 
@@ -717,7 +717,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.put("/api/patient-invoices/:id", async (req, res) => {
+  app.put("/api/patient-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_EDIT), async (req, res) => {
     try {
       const { header, lines, payments, expectedVersion } = req.body;
 
@@ -820,7 +820,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   );
 
-  app.post("/api/patient-invoices/:id/finalize", async (req, res) => {
+  app.post("/api/patient-invoices/:id/finalize", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_FINALIZE), async (req, res) => {
     try {
       const { expectedVersion } = req.body || {};
       const invoiceId = req.params.id as string;
@@ -880,7 +880,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/patient-invoices/:id/distribute", async (req, res) => {
+  app.post("/api/patient-invoices/:id/distribute", requireAuth, checkPermission(PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
     try {
       const { patients } = req.body;
       if (!Array.isArray(patients) || patients.length < 2) {
@@ -906,7 +906,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/patient-invoices/distribute-direct", async (req, res) => {
+  app.post("/api/patient-invoices/distribute-direct", requireAuth, checkPermission(PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
     try {
       const { patients, lines, invoiceDate, departmentId, warehouseId, doctorName, patientType, contractName, notes } = req.body;
       if (!Array.isArray(patients) || patients.length < 2) {
@@ -936,7 +936,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/patient-invoices/:id", async (req, res) => {
+  app.delete("/api/patient-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_EDIT), async (req, res) => {
     try {
       const reason = req.body?.reason as string | undefined;
       await storage.deletePatientInvoice(req.params.id as string, reason);
@@ -1066,7 +1066,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/patients", async (req, res) => {
+  app.post("/api/patients", requireAuth, checkPermission(PERMISSIONS.PATIENTS_CREATE), async (req, res) => {
     try {
       const p = await storage.createPatient(req.body);
       res.status(201).json(p);
@@ -1076,7 +1076,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/patients/:id", async (req, res) => {
+  app.patch("/api/patients/:id", requireAuth, checkPermission(PERMISSIONS.PATIENTS_EDIT), async (req, res) => {
     try {
       const p = await storage.updatePatient(req.params.id as string, req.body);
       res.json(p);
@@ -1086,7 +1086,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/patients/:id", async (req, res) => {
+  app.delete("/api/patients/:id", requireAuth, checkPermission(PERMISSIONS.PATIENTS_EDIT), async (req, res) => {
     try {
       await storage.deletePatient(req.params.id as string);
       res.json({ success: true });
@@ -1141,7 +1141,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/doctors", async (req, res) => {
+  app.post("/api/doctors", requireAuth, checkPermission(PERMISSIONS.DOCTORS_CREATE), async (req, res) => {
     try {
       const d = await storage.createDoctor(req.body);
       res.status(201).json(d);
@@ -1151,7 +1151,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/doctors/:id", async (req, res) => {
+  app.patch("/api/doctors/:id", requireAuth, checkPermission(PERMISSIONS.DOCTORS_EDIT), async (req, res) => {
     try {
       const d = await storage.updateDoctor(req.params.id as string, req.body);
       res.json(d);
@@ -1161,7 +1161,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/doctors/:id", async (req, res) => {
+  app.delete("/api/doctors/:id", requireAuth, checkPermission(PERMISSIONS.DOCTORS_EDIT), async (req, res) => {
     try {
       await storage.deleteDoctor(req.params.id as string);
       res.json({ success: true });
@@ -1180,7 +1180,7 @@ export function registerInvoicingRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/surgery-types", requireAuth, async (req, res) => {
+  app.post("/api/surgery-types", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const { nameAr, category, isActive } = req.body;
       if (!nameAr?.trim()) return res.status(400).json({ message: "اسم العملية مطلوب" });
@@ -1191,7 +1191,7 @@ export function registerInvoicingRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.put("/api/surgery-types/:id", requireAuth, async (req, res) => {
+  app.put("/api/surgery-types/:id", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const { nameAr, category, isActive } = req.body;
       if (category && !["major","medium","minor","skilled","simple"].includes(category))
@@ -1207,7 +1207,7 @@ export function registerInvoicingRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/surgery-types/:id", requireAuth, async (req, res) => {
+  app.delete("/api/surgery-types/:id", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       await storage.deleteSurgeryType(req.params.id as string);
       res.json({ success: true });
@@ -1221,7 +1221,7 @@ export function registerInvoicingRoutes(app: Express) {
     catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.put("/api/surgery-category-prices/:category", requireAuth, async (req, res) => {
+  app.put("/api/surgery-category-prices/:category", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const { price } = req.body;
       if (price === undefined || isNaN(parseFloat(price)))

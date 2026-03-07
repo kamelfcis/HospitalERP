@@ -1,9 +1,16 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex, pgSequence } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { accountTypeEnum, journalStatusEnum, mappingLineTypeEnum, transactionTypeEnum } from "./enums";
 import { users } from "./users";
+
+// ── تسلسل أرقام القيود اليومية — يضمن عدم التكرار تحت التزامن ──────────────
+export const journalEntryNumberSeq = pgSequence("journal_entry_number_seq", {
+  startWith: 1,
+  increment: 1,
+  minValue: 1,
+});
 
 export const fiscalPeriods = pgTable("fiscal_periods", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -80,7 +87,8 @@ export const journalEntries = pgTable("journal_entries", {
   dateIdx: index("idx_journal_entries_date").on(table.entryDate),
   statusIdx: index("idx_journal_entries_status").on(table.status),
   periodIdx: index("idx_journal_entries_period").on(table.periodId),
-  sourceIdx: index("idx_journal_entries_source").on(table.sourceType, table.sourceDocumentId),
+  // UNIQUE: يمنع إنشاء قيدين لنفس المستند المصدر — NULLs مسموح (مكتملان)
+  sourceIdx: uniqueIndex("idx_journal_entries_source").on(table.sourceType, table.sourceDocumentId),
 }));
 
 export const journalLines = pgTable("journal_lines", {

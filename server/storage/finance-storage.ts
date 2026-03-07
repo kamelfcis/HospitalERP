@@ -265,14 +265,11 @@ const methods = {
     return { ...entry, lines: linesWithAccounts };
   },
 
-  async getNextEntryNumber(this: DatabaseStorage, queryCtx: any = db): Promise<number> {
-    // قفل advisory على مستوى الـ transaction لمنع الـ race condition
-    // يُطلق تلقائياً عند انتهاء الـ transaction (commit أو rollback)
-    await queryCtx.execute(sql`SELECT pg_advisory_xact_lock(771000001)`);
-    const [result] = await queryCtx
-      .select({ max: sql<number>`COALESCE(MAX(${journalEntries.entryNumber}), 0)` })
-      .from(journalEntries);
-    return (result?.max || 0) + 1;
+  async getNextEntryNumber(this: DatabaseStorage, _queryCtx: any = db): Promise<number> {
+    // يستخدم PostgreSQL SEQUENCE — يضمن عدم التكرار تحت التزامن بشكل مدمج في قاعدة البيانات
+    // nextval() لا يتأثر بالـ rollback (gaps مقبولة في قيود المحاسبة)
+    const result = await db.execute(sql`SELECT nextval('journal_entry_number_seq') AS next_num`);
+    return Number((result.rows[0] as Record<string, unknown>).next_num);
   },
 
   async createJournalEntry(this: DatabaseStorage, entry: InsertJournalEntry, lines: InsertJournalLine[]): Promise<JournalEntry> {
