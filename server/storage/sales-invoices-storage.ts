@@ -1110,9 +1110,12 @@ const methods = {
     invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number
   ): Promise<JournalEntry | null> {
     console.log(`[Journal] Starting generateSalesInvoiceJournal for invoice ${invoiceId}`);
-    const result = await this.buildSalesJournalLines(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
-    if (!result) return null;
     return db.transaction(async (tx) => {
+      // قفل الفاتورة أولاً لمنع استدعاءين متزامنين ينشئان قيدين مكررين
+      await tx.execute(sql`SELECT id FROM sales_invoice_headers WHERE id = ${invoiceId} FOR UPDATE`);
+      // الفحص والإنشاء داخل نفس الـ transaction — لا يمكن لـ call آخر أن يمر الفحص في نفس الوقت
+      const result = await this.buildSalesJournalLines(invoiceId, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies, tx);
+      if (!result) return null;
       return this.insertJournalEntry(tx, invoiceId, invoice, result.journalLineData, result.totalDebits, result.totalCredits);
     });
   },
