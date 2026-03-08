@@ -485,6 +485,7 @@ const methods = {
               entryDate:        transfer.transferDate,
               periodId:         period.id,
               description:      desc,
+              reference:        `TRF-${transfer.transferNumber}`,
               sourceType:       "warehouse_transfer",
               sourceDocumentId: transferId,
               status:           "posted" as const,
