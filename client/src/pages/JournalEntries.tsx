@@ -31,7 +31,7 @@ import {
   CheckCircle,
   RotateCcw,
   Filter,
-  Calendar,
+  CalendarIcon,
   FileText,
   Loader2,
   CheckSquare,
@@ -39,11 +39,64 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  X,
 } from "lucide-react";
-import { formatCurrency, formatDateShort, journalStatusLabels } from "@/lib/formatters";
+import { formatCurrency, formatDateShort, formatDateForInput, journalStatusLabels } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sourceTypeLabels } from "@shared/schema";
 import type { JournalEntry } from "@shared/schema";
+
+function DatePickerButton({
+  value,
+  onChange,
+  placeholder,
+  testId,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  testId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const dateObj = value ? new Date(value + "T00:00:00") : undefined;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs font-normal peachtree-select w-[110px] justify-between"
+          data-testid={testId}
+        >
+          <span className={value ? "" : "text-muted-foreground"}>
+            {value ? formatDateShort(value) : placeholder}
+          </span>
+          {value ? (
+            <X
+              className="h-3 w-3 text-muted-foreground hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); onChange(""); }}
+            />
+          ) : (
+            <CalendarIcon className="h-3 w-3 text-muted-foreground" />
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={dateObj}
+          onSelect={(d) => {
+            onChange(d ? formatDateForInput(d) : "");
+            setOpen(false);
+          }}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 const PAGE_SIZE = 50;
 
@@ -53,8 +106,8 @@ export default function JournalEntries() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => formatDateForInput(new Date()));
+  const [dateTo, setDateTo] = useState(() => formatDateForInput(new Date()));
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -300,23 +353,19 @@ export default function JournalEntries() {
           </SelectContent>
         </Select>
         <div className="flex items-center gap-1">
-          <Calendar className="h-3 w-3 text-muted-foreground" />
-          <Input
-            type="date"
+          <CalendarIcon className="h-3 w-3 text-muted-foreground" />
+          <DatePickerButton
             value={dateFrom}
-            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-            className="peachtree-input w-[120px] text-xs"
+            onChange={(v) => { setDateFrom(v); setPage(1); }}
             placeholder="من تاريخ"
-            data-testid="input-date-from"
+            testId="input-date-from"
           />
           <span className="text-xs text-muted-foreground">إلى</span>
-          <Input
-            type="date"
+          <DatePickerButton
             value={dateTo}
-            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-            className="peachtree-input w-[120px] text-xs"
+            onChange={(v) => { setDateTo(v); setPage(1); }}
             placeholder="إلى تاريخ"
-            data-testid="input-date-to"
+            testId="input-date-to"
           />
         </div>
       </div>
