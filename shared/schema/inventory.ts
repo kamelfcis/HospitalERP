@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { itemCategoryEnum, unitLevelEnum, lotTxTypeEnum, transferStatusEnum } from "./enums";
 import { users } from "./users";
-import { accounts } from "./finance";
+import { accounts, costCenters } from "./finance";
 
 export const itemFormTypes = pgTable("item_form_types", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -128,6 +128,7 @@ export const warehouses = pgTable("warehouses", {
   departmentId: varchar("department_id").references(() => departments.id),
   pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
   glAccountId: varchar("gl_account_id").references(() => accounts.id),
+  costCenterId: varchar("cost_center_id").references(() => costCenters.id),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

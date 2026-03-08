@@ -23,7 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Search, Edit2, Trash2, Loader2, Warehouse as WarehouseIcon, Building2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Warehouse, Department, Account } from "@shared/schema";
+import type { Warehouse, Department, Account, CostCenter } from "@shared/schema";
 
 interface Pharmacy {
   id: string;
@@ -44,6 +44,7 @@ export default function Warehouses() {
     departmentId: string | null;
     pharmacyId: string | null;
     glAccountId: string | null;
+    costCenterId: string | null;
     isActive: boolean;
   }>({
     warehouseCode: "",
@@ -51,6 +52,7 @@ export default function Warehouses() {
     departmentId: null,
     pharmacyId: null,
     glAccountId: null,
+    costCenterId: null,
     isActive: true,
   });
   const [accountSearch, setAccountSearch] = useState("");
@@ -71,6 +73,10 @@ export default function Warehouses() {
 
   const { data: allAccounts } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
+  });
+
+  const { data: costCenters } = useQuery<CostCenter[]>({
+    queryKey: ["/api/cost-centers"],
   });
 
   const filteredAccounts = (allAccounts || []).filter((a) => {
@@ -135,6 +141,7 @@ export default function Warehouses() {
         departmentId: warehouse.departmentId,
         pharmacyId: warehouse.pharmacyId || null,
         glAccountId: warehouse.glAccountId || null,
+        costCenterId: (warehouse as any).costCenterId || null,
         isActive: warehouse.isActive,
       });
       if (warehouse.glAccountId) {
@@ -151,6 +158,7 @@ export default function Warehouses() {
         departmentId: null,
         pharmacyId: null,
         glAccountId: null,
+        costCenterId: null,
         isActive: true,
       });
       setAccountSearch("");
@@ -168,6 +176,7 @@ export default function Warehouses() {
       departmentId: null,
       pharmacyId: null,
       glAccountId: null,
+      costCenterId: null,
       isActive: true,
     });
     setAccountSearch("");
@@ -399,6 +408,28 @@ export default function Warehouses() {
                     .map((dept) => (
                       <SelectItem key={dept.id} value={dept.id} className="text-xs">
                         <span className="font-mono">{dept.code}</span> - {dept.nameAr}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">مركز التكلفة <span className="text-muted-foreground">(اختياري)</span></Label>
+              <Select
+                value={formData.costCenterId || "none"}
+                onValueChange={(v) => setFormData({ ...formData, costCenterId: v === "none" ? null : v })}
+                data-testid="select-warehouse-cost-center"
+              >
+                <SelectTrigger className="peachtree-select text-xs h-7">
+                  <SelectValue placeholder="— بدون مركز تكلفة —" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" className="text-xs text-muted-foreground">— بدون مركز تكلفة —</SelectItem>
+                  {(costCenters || [])
+                    .filter((cc) => cc.isActive)
+                    .map((cc) => (
+                      <SelectItem key={cc.id} value={cc.id} className="text-xs">
+                        <span className="font-mono">{cc.code}</span> - {cc.name}
                       </SelectItem>
                     ))}
                 </SelectContent>

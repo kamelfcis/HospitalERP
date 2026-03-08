@@ -59,13 +59,14 @@ export function registerWarehousesRoutes(app: Express) {
   app.put("/api/warehouses/:id", requireAuth, checkPermission(PERMISSIONS.WAREHOUSES_MANAGE), async (req, res) => {
     try {
       const validated = warehouseUpdateSchema.parse(req.body);
-      const { warehouseCode, nameAr, departmentId, pharmacyId, glAccountId, isActive } = validated;
+      const { warehouseCode, nameAr, departmentId, pharmacyId, glAccountId, costCenterId, isActive } = validated;
       const updateData: any = {};
       if (warehouseCode !== undefined) updateData.warehouseCode = warehouseCode;
       if (nameAr !== undefined) updateData.nameAr = nameAr;
       if (departmentId !== undefined) updateData.departmentId = departmentId;
       if (pharmacyId !== undefined) updateData.pharmacyId = pharmacyId;
       if (glAccountId !== undefined) updateData.glAccountId = glAccountId;
+      if (costCenterId !== undefined) updateData.costCenterId = costCenterId;
       if (isActive !== undefined) updateData.isActive = isActive;
       const wh = await storage.updateWarehouse(req.params.id as string, updateData);
       if (!wh) return res.status(404).json({ message: "المخزن غير موجود" });

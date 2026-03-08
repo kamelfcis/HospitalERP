@@ -50,6 +50,7 @@ export const warehouseUpdateSchema = z.object({
   departmentId: z.string().optional().nullable(),
   pharmacyId: z.string().optional().nullable(),
   glAccountId: z.string().optional().nullable(),
+  costCenterId: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
