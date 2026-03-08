@@ -250,7 +250,12 @@ const methods = {
       return { ...line, account, costCenter };
     }));
 
-    return { ...entry, lines: linesWithAccounts };
+    let period;
+    if (entry.periodId) {
+      [period] = await db.select().from(fiscalPeriods).where(eq(fiscalPeriods.id, entry.periodId));
+    }
+
+    return { ...entry, lines: linesWithAccounts, period };
   },
 
   async getNextEntryNumber(this: DatabaseStorage): Promise<number> {
