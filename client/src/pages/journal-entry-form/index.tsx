@@ -14,9 +14,12 @@ import {
   FileText,
   Download,
   ChevronDown,
+  RotateCcw,
+  Eye,
 } from "lucide-react";
-import { formatDateForInput } from "@/lib/formatters";
+import { formatDateForInput, formatNumber } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AlertTriangle } from "lucide-react";
 import type { Account, CostCenter, JournalEntryWithLines, JournalTemplate, TemplateLine } from "@shared/schema";
+import { transactionTypeLabels, journalStatusLabels } from "@shared/schema/finance";
 import type { JournalLineInput } from "./types";
 import JournalLinesTable from "./JournalLinesTable";
 import JournalTotalsBar from "./JournalTotalsBar";
@@ -43,9 +47,11 @@ const emptyLine = (id: string): JournalLineInput => ({
 
 export default function JournalEntryForm() {
   const { toast } = useToast();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const params = useParams<{ id?: string }>();
   const isEditing = !!params.id && params.id !== "new";
+  // عرض فقط لو المسار لا ينتهي بـ /edit
+  const isViewMode = isEditing && !location.endsWith("/edit");
 
   const [entryDate, setEntryDate] = useState(formatDateForInput(new Date()));
   const [description, setDescription] = useState("");
@@ -140,6 +146,18 @@ export default function JournalEntryForm() {
       setShowSaveTemplateDialog(false);
       setTemplateName("");
       setTemplateDescription("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const reverseMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("POST", `/api/journal-entries/${id}/reverse`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal-entries"] });
+      toast({ title: "تم إنشاء القيد العكسي بنجاح" });
+      navigate("/journal-entries");
     },
     onError: (error: Error) => {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
@@ -391,6 +409,133 @@ export default function JournalEntryForm() {
     );
   }
 
+  // شاشة العرض القراءة فقط — URL بدون /edit
+  if (isViewMode && existingEntry) {
+    const entry = existingEntry;
+    const totalDebit = entry.lines.reduce((sum, l) => sum + parseFloat(l.debit || "0"), 0);
+    const totalCredit = entry.lines.reduce((sum, l) => sum + parseFloat(l.credit || "0"), 0);
+    const statusColors: Record<string, string> = {
+      draft: "bg-amber-100 text-amber-800 border-amber-200",
+      posted: "bg-emerald-100 text-emerald-800 border-emerald-200",
+      reversed: "bg-red-100 text-red-800 border-red-200",
+    };
+    return (
+      <div className="h-full flex flex-col">
+        {/* شريط الأدوات */}
+        <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/journal-entries")} data-testid="button-back-view">
+              <ArrowRight className="h-4 w-4 ml-1" />
+              رجوع
+            </Button>
+            <div className="h-6 w-px bg-border" />
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            <h1 className="text-base font-bold">قيد #{entry.entryNumber}</h1>
+            <Badge className={statusColors[entry.status] ?? ""}>
+              {journalStatusLabels[entry.status] ?? entry.status}
+            </Badge>
+          </div>
+          {entry.status === "posted" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive border-destructive hover:bg-destructive/10"
+              onClick={() => {
+                if (confirm("هل تريد إلغاء هذا القيد؟ سيتم إنشاء قيد عكسي.")) {
+                  reverseMutation.mutate(entry.id);
+                }
+              }}
+              disabled={reverseMutation.isPending}
+              data-testid="button-reverse-view"
+            >
+              <RotateCcw className="h-4 w-4 ml-1" />
+              عكس القيد
+            </Button>
+          )}
+        </div>
+
+        {/* بيانات الرأس */}
+        <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4 border-b bg-muted/30">
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">التاريخ</p>
+            <p className="text-sm font-medium">{entry.entryDate}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">المرجع</p>
+            <p className="text-sm font-medium">{entry.reference || "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">نوع المصدر</p>
+            <p className="text-sm font-medium">
+              {entry.sourceType
+                ? (transactionTypeLabels[entry.sourceType] ?? entry.sourceType)
+                : "يدوي"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">الفترة المالية</p>
+            <p className="text-sm font-medium">{(entry as any).period?.name || "—"}</p>
+          </div>
+          {entry.description && (
+            <div className="col-span-2 md:col-span-4">
+              <p className="text-xs text-muted-foreground mb-0.5">البيان</p>
+              <p className="text-sm">{entry.description}</p>
+            </div>
+          )}
+        </div>
+
+        {/* جدول السطور */}
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 border-b sticky top-0">
+              <tr>
+                <th className="text-center p-2 w-10 font-medium text-xs">#</th>
+                <th className="text-right p-2 font-medium text-xs">الحساب</th>
+                <th className="text-right p-2 font-medium text-xs">البيان</th>
+                <th className="text-right p-2 font-medium text-xs">مركز التكلفة</th>
+                <th className="text-left p-2 font-medium text-xs w-36">مدين</th>
+                <th className="text-left p-2 font-medium text-xs w-36">دائن</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entry.lines.map((line, idx) => (
+                <tr key={line.id} className="border-b hover:bg-muted/20">
+                  <td className="text-center p-2 text-muted-foreground text-xs">{idx + 1}</td>
+                  <td className="p-2">
+                    <span className="font-mono text-xs text-muted-foreground ml-2">
+                      {(line as any).account?.code}
+                    </span>
+                    {(line as any).account?.name ?? line.accountId}
+                  </td>
+                  <td className="p-2 text-muted-foreground">{line.description || "—"}</td>
+                  <td className="p-2 text-muted-foreground">{(line as any).costCenter?.name || "—"}</td>
+                  <td className="p-2 text-left font-mono tabular-nums">
+                    {parseFloat(line.debit || "0") > 0
+                      ? formatNumber(parseFloat(line.debit))
+                      : ""}
+                  </td>
+                  <td className="p-2 text-left font-mono tabular-nums">
+                    {parseFloat(line.credit || "0") > 0
+                      ? formatNumber(parseFloat(line.credit))
+                      : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t-2 font-bold bg-muted/30">
+              <tr>
+                <td colSpan={4} className="p-2 text-xs text-muted-foreground">الإجمالي</td>
+                <td className="p-2 text-left font-mono tabular-nums">{formatNumber(totalDebit)}</td>
+                <td className="p-2 text-left font-mono tabular-nums">{formatNumber(totalCredit)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // مسار /edit لقيد مُرحَّل أو ملغي — لا يمكن التعديل
   if (isEditing && existingEntry?.status !== "draft") {
     return (
       <div className="p-4">
