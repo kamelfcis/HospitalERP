@@ -44,6 +44,34 @@ export interface PerfEntry {
   possibleCause: string;
 }
 
+// ── Dev-asset filter ─────────────────────────────────────────────────────────
+/**
+ * Returns true for requests that are Vite dev-server noise or static assets.
+ * Only /api/* and bare document requests (e.g. GET /) are worth profiling.
+ */
+const DEV_PREFIXES = ["/src/", "/@vite/", "/@fs/", "/__vite", "/node_modules/", "/assets/"];
+const DEV_EXTENSIONS = new Set([
+  ".js", ".mjs", ".cjs", ".jsx",
+  ".ts", ".tsx",
+  ".css", ".scss", ".less",
+  ".map",
+  ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp",
+  ".woff", ".woff2", ".ttf", ".eot",
+  ".html",
+]);
+
+function isDevAsset(url: string): boolean {
+  const path = url.split("?")[0];
+  if (DEV_PREFIXES.some((p) => path.startsWith(p))) return true;
+  const dot = path.lastIndexOf(".");
+  if (dot !== -1) {
+    const ext = path.slice(dot).toLowerCase();
+    if (DEV_EXTENSIONS.has(ext)) return true;
+  }
+  return false;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 type CauseKey =
   | "large_data_fetch"
   | "missing_index"
@@ -76,6 +104,8 @@ let perfEntries: PerfEntry[] = [];
  */
 export function perfRequestMiddleware(thresholdMs = 500) {
   return (req: Request, res: Response, next: NextFunction) => {
+    if (isDevAsset(req.originalUrl || req.path)) return next();
+
     const ctx: RequestContext = {
       dbTimeMs: 0,
       queryCount: 0,
