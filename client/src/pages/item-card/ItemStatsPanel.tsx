@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,9 @@ interface ItemStatsPanelProps {
   deletingDeptPrice: boolean;
 }
 
+const TH_STYLE: React.CSSProperties = { fontSize: "10px", padding: "3px 5px", whiteSpace: "nowrap" };
+const TD_STYLE: React.CSSProperties = { fontSize: "10px", padding: "2px 5px" };
+
 export default function ItemStatsPanel({
   item,
   isNew,
@@ -45,6 +49,8 @@ export default function ItemStatsPanel({
   onDeleteDeptPrice,
   deletingDeptPrice,
 }: ItemStatsPanelProps) {
+  const [purchaseTab, setPurchaseTab] = useState<"prices" | "bonuses">("prices");
+
   if (isNew) {
     return (
       <div className="col-span-4 flex items-center justify-center">
@@ -91,71 +97,129 @@ export default function ItemStatsPanel({
           )}
         </div>
 
+        {/* Tab buttons */}
+        <div className="flex gap-0 mb-1.5 border-b border-border/50">
+          <button
+            onClick={() => setPurchaseTab("prices")}
+            data-testid="tab-purchase-prices"
+            className={`px-2.5 py-0.5 text-[10px] font-medium rounded-t-sm -mb-px border-b-2 transition-colors ${
+              purchaseTab === "prices"
+                ? "border-primary text-primary bg-primary/5"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            الأسعار والكميات
+          </button>
+          <button
+            onClick={() => setPurchaseTab("bonuses")}
+            data-testid="tab-purchase-bonuses"
+            className={`px-2.5 py-0.5 text-[10px] font-medium rounded-t-sm -mb-px border-b-2 transition-colors ${
+              purchaseTab === "bonuses"
+                ? "border-primary text-primary bg-primary/5"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            الهدايا والفواتير
+          </button>
+        </div>
+
         {lastPurchases && lastPurchases.length > 0 ? (
-          <div className="w-full overflow-x-auto overflow-y-auto max-h-52 border border-border/40 rounded-sm">
-            <table className="text-[10px] border-collapse min-w-max w-full">
-              <thead>
-                <tr className="border-b bg-muted/30">
-                  <th className="py-1 px-1 text-center font-medium w-5 shrink-0">#</th>
-                  <th className="py-1 px-1 text-right font-medium whitespace-nowrap">التاريخ</th>
-                  <th className="py-1 px-1 text-right font-medium">المورد</th>
-                  <th className="py-1 px-1 text-left font-medium whitespace-nowrap">ك</th>
-                  <th className="py-1 px-1 text-left font-medium whitespace-nowrap">هدية</th>
-                  <th className="py-1 px-1 text-left font-medium whitespace-nowrap">شراء</th>
-                  <th className="py-1 px-1 text-left font-medium whitespace-nowrap">بيع</th>
-                  <th className="py-1 px-1 text-right font-medium whitespace-nowrap">فاتورة المورد</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lastPurchases.map((p, i) => {
-                  const hasBonus = parseFloat(p.bonusQty || "0") > 0;
-                  return (
-                    <tr
-                      key={p.id}
-                      className={i < lastPurchases.length - 1 ? "border-b border-dashed" : ""}
-                      data-testid={`purchase-row-${i}`}
-                    >
-                      <td className="py-1 px-1 text-center text-muted-foreground font-mono">
+          <div className="overflow-y-auto max-h-48 border border-border/40 rounded-sm">
+
+            {/* ── Tab 1: Prices & Quantities ── */}
+            {purchaseTab === "prices" && (
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="peachtree-grid-header">
+                    <th style={TH_STYLE} className="text-center w-6">#</th>
+                    <th style={TH_STYLE} className="text-right">التاريخ</th>
+                    <th style={{...TH_STYLE, maxWidth: 80}} className="text-right">المورد</th>
+                    <th style={TH_STYLE} className="text-center">الكمية</th>
+                    <th style={TH_STYLE} className="text-left">سعر الشراء</th>
+                    <th style={TH_STYLE} className="text-left">سعر البيع</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lastPurchases.map((p, i) => (
+                    <tr key={p.id} className="peachtree-grid-row" data-testid={`purchase-row-${i}`}>
+                      <td style={TD_STYLE} className="text-center font-mono text-muted-foreground">
                         {i + 1}
                       </td>
-                      <td className="py-1 px-1 font-mono whitespace-nowrap" dir="ltr">
+                      <td style={TD_STYLE} className="font-mono whitespace-nowrap" dir="ltr">
                         {p.txDate || "-"}
                       </td>
-                      <td className="py-1 px-1 truncate max-w-[70px]" title={p.supplierName || "-"}>
+                      <td
+                        style={{ ...TD_STYLE, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        title={p.supplierName || "-"}
+                      >
                         {p.supplierName || "-"}
                       </td>
-                      <td className="py-1 px-1 text-left font-mono whitespace-nowrap">
+                      <td style={TD_STYLE} className="text-center font-mono whitespace-nowrap">
                         {p.qty}
                       </td>
-                      <td className="py-1 px-1 text-left font-mono whitespace-nowrap">
-                        {hasBonus ? (
-                          <Badge
-                            variant="secondary"
-                            className="text-[9px] px-1 py-0 bg-green-100 text-green-800 border-green-200"
-                          >
-                            {p.bonusQty}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground/40">-</span>
-                        )}
-                      </td>
-                      <td className="py-1 px-1 text-left font-mono whitespace-nowrap">
+                      <td style={TD_STYLE} className="font-mono whitespace-nowrap" dir="ltr">
                         {formatCurrency(p.purchasePrice)}
                       </td>
-                      <td className="py-1 px-1 text-left font-mono whitespace-nowrap">
+                      <td style={TD_STYLE} className="font-mono whitespace-nowrap" dir="ltr">
                         {p.salePriceSnapshot ? formatCurrency(p.salePriceSnapshot) : "-"}
                       </td>
-                      <td
-                        className="py-1 px-1 text-right font-mono truncate max-w-[70px] text-muted-foreground"
-                        title={p.supplierInvoiceNo || "-"}
-                      >
-                        {p.supplierInvoiceNo || "-"}
-                      </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* ── Tab 2: Bonuses & Supplier Invoices ── */}
+            {purchaseTab === "bonuses" && (
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="peachtree-grid-header">
+                    <th style={TH_STYLE} className="text-center w-6">#</th>
+                    <th style={TH_STYLE} className="text-right">التاريخ</th>
+                    <th style={{...TH_STYLE, maxWidth: 80}} className="text-right">المورد</th>
+                    <th style={TH_STYLE} className="text-center">الهدية</th>
+                    <th style={{...TH_STYLE, minWidth: 90}} className="text-right">فاتورة المورد</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lastPurchases.map((p, i) => {
+                    const hasBonus = parseFloat(p.bonusQty || "0") > 0;
+                    return (
+                      <tr key={p.id} className="peachtree-grid-row" data-testid={`purchase-bonus-row-${i}`}>
+                        <td style={TD_STYLE} className="text-center font-mono text-muted-foreground">
+                          {i + 1}
+                        </td>
+                        <td style={TD_STYLE} className="font-mono whitespace-nowrap" dir="ltr">
+                          {p.txDate || "-"}
+                        </td>
+                        <td
+                          style={{ ...TD_STYLE, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          title={p.supplierName || "-"}
+                        >
+                          {p.supplierName || "-"}
+                        </td>
+                        <td style={TD_STYLE} className="text-center">
+                          {hasBonus ? (
+                            <Badge
+                              variant="secondary"
+                              className="text-[9px] px-1 py-0 bg-green-100 text-green-800 border-green-200"
+                            >
+                              {p.bonusQty}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground/30 text-[9px]">—</span>
+                          )}
+                        </td>
+                        <td style={TD_STYLE} className="font-mono text-muted-foreground whitespace-nowrap">
+                          {p.supplierInvoiceNo || <span className="text-muted-foreground/30 text-[9px]">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
           </div>
         ) : (
           <div className="text-[10px] text-muted-foreground text-center py-2">
