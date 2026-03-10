@@ -257,7 +257,18 @@ const methods = {
           });
         }
       }
-      return { ...appt, id: null, drugs: [], serviceOrders: preloadedServiceOrders };
+      const preloadedFee = preloadedServiceOrders.length > 0
+        ? parseFloat(String(preloadedServiceOrders[0].unit_price || 0))
+        : 0;
+      // بحث عن المريض بالاسم إذا لم يكن مرتبطاً بملف مريض
+      let resolvedPatientId = appt.patient_id ?? null;
+      if (!resolvedPatientId && appt.patient_name) {
+        const ptSearch = await db.execute(sql`
+          SELECT id FROM patients WHERE full_name = ${appt.patient_name} LIMIT 1
+        `);
+        if (ptSearch.rows.length) resolvedPatientId = (ptSearch.rows[0] as any).id;
+      }
+      return { ...appt, id: null, drugs: [], serviceOrders: preloadedServiceOrders, consultation_fee: preloadedFee, patient_id: resolvedPatientId };
     }
     const consultation = consRows.rows[0] as Record<string, unknown>;
     const drugRows = await db.execute(sql`
@@ -299,7 +310,21 @@ const methods = {
         });
       }
     }
-    return { ...consultation, drugs: drugRows.rows, serviceOrders };
+    // بحث عن المريض بالاسم إذا لم يكن مرتبطاً بملف مريض
+    let resolvedPatientId = consultation.patient_id ?? null;
+    if (!resolvedPatientId && consultation.patient_name) {
+      const ptSearch = await db.execute(sql`
+        SELECT id FROM patients WHERE full_name = ${consultation.patient_name} LIMIT 1
+      `);
+      if (ptSearch.rows.length) resolvedPatientId = (ptSearch.rows[0] as any).id;
+    }
+    // حساب رسم الكشف من السعر المحفوظ أو من خدمة الكشف كـ fallback
+    let consultationFee = parseFloat(String(consultation.consultation_fee || 0));
+    if (consultationFee === 0 && serviceOrders.length > 0) {
+      const consService = serviceOrders.find((s: any) => s.is_consultation_service);
+      if (consService) consultationFee = parseFloat(String(consService.unit_price || 0));
+    }
+    return { ...consultation, consultation_fee: consultationFee, patient_id: resolvedPatientId, drugs: drugRows.rows, serviceOrders };
   },
 
   async saveConsultation(this: DatabaseStorage, data: {

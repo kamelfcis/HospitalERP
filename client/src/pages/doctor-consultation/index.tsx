@@ -36,7 +36,12 @@ export default function DoctorConsultation() {
     finishConsultation,
   } = useDoctorConsultation(appointmentId);
 
-  const consultationFee = parseFloat(String(form.consultationFee || 0));
+  // استخرج رسم الكشف: من الحقل المحفوظ أو من خدمة الكشف في الأوامر كـ fallback
+  const storedFee = parseFloat(String(form.consultationFee || 0));
+  const serviceOrderFee = parseFloat(String(
+    form.serviceOrders?.find((so) => so.isConsultationService)?.unitPrice ?? 0
+  ));
+  const consultationFee = storedFee > 0 ? storedFee : serviceOrderFee;
   const discountValue = parseFloat(String(form.discountValue || 0));
   const discountType = form.discountType || "amount";
   const computedFinal = discountType === "percent"
