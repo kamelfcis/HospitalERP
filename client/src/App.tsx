@@ -54,6 +54,7 @@ const ClinicBooking = lazy(() => import("@/pages/clinic-booking"));
 const DoctorConsultation = lazy(() => import("@/pages/doctor-consultation"));
 const DoctorOrders = lazy(() => import("@/pages/doctor-orders"));
 const DeptServicesPage = lazy(() => import("@/pages/dept-services"));
+const PerfDiagnostics = lazy(() => import("@/pages/PerfDiagnostics"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -133,6 +134,7 @@ function Router() {
           <Route path="/doctor-consultation/:id">{() => <G p="doctor.consultation"><DoctorConsultation /></G>}</Route>
           <Route path="/doctor-orders">{() => <G p="doctor_orders.view"><DoctorOrders /></G>}</Route>
           <Route path="/dept-services/:deptCode">{() => <DeptServicesPage />}</Route>
+          <Route path="/perf-diagnostics">{() => <G p="settings.account_mappings"><PerfDiagnostics /></G>}</Route>
           <Route component={NotFound} />
         </Switch>
       </Suspense>

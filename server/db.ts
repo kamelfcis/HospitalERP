@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "@shared/schema";
-import { logSlowQuery } from "./monitoring";
+import { logSlowQuery, requestContextStore } from "./monitoring";
 
 const { Pool } = pg;
 
@@ -18,11 +18,26 @@ const originalQuery = originalPool.query.bind(originalPool);
   const args = arguments;
   const start = performance.now();
   const result: unknown = originalQuery.apply(originalPool, args as any);
-  if (result && typeof (result as any).then === 'function') {
+  if (result && typeof (result as any).then === "function") {
     return (result as any).then((res: any) => {
       const duration = performance.now() - start;
-      const queryText = typeof args[0] === 'string' ? args[0] : ((args[0] as any)?.text || 'unknown');
+      const queryText =
+        typeof args[0] === "string"
+          ? args[0]
+          : ((args[0] as any)?.text ?? "unknown");
+
       logSlowQuery(queryText, duration);
+
+      const ctx = requestContextStore.getStore();
+      if (ctx) {
+        ctx.dbTimeMs += duration;
+        ctx.queryCount += 1;
+        if (duration > ctx.slowestQueryMs) {
+          ctx.slowestQueryMs = duration;
+          ctx.slowestQueryText = queryText.substring(0, 300);
+        }
+      }
+
       return res;
     });
   }
@@ -33,4 +48,6 @@ export const pool = originalPool;
 
 export const db = drizzle(pool, { schema });
 
-export type DrizzleTransaction = Parameters<Parameters<(typeof db)["transaction"]>[0]>[0];
+export type DrizzleTransaction = Parameters<
+  Parameters<(typeof db)["transaction"]>[0]
+>[0];

@@ -6,7 +6,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
-import { slowRequestLogger, registerMonitoringRoutes } from "./monitoring";
+import { perfRequestMiddleware, registerMonitoringRoutes } from "./monitoring";
 import { loadSettings } from "./settings-cache";
 import { storage } from "./storage";
 import { db } from "./db";
@@ -59,7 +59,7 @@ app.use(
   })
 );
 
-app.use(slowRequestLogger(1000));
+app.use(perfRequestMiddleware(500));
 
 // ── Global API Auth Guard ─────────────────────────────────────────────────────
 // يحمي جميع مسارات /api تلقائياً — بدلاً من إضافة requireAuth لكل route بشكل يدوي

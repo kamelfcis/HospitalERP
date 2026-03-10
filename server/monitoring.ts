@@ -1,7 +1,20 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { Express, Request, Response, NextFunction } from "express";
 import * as fs from "fs";
 import * as path from "path";
 
+// ── Per-request accumulator (shared via AsyncLocalStorage) ────────────────────
+export interface RequestContext {
+  dbTimeMs: number;
+  queryCount: number;
+  slowestQueryMs: number;
+  slowestQueryText: string;
+}
+
+export const requestContextStore = new AsyncLocalStorage<RequestContext>();
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Legacy ring-buffer types (kept for backward compat) ───────────────────────
 interface SlowEntry {
   timestamp: string;
   route: string;
@@ -16,58 +29,120 @@ interface SlowQuery {
   durationMs: number;
 }
 
-// Ring buffers with max 100 entries
-const MAX_ENTRIES = 100;
+// ── Rich perf entry ───────────────────────────────────────────────────────────
+export interface PerfEntry {
+  timestamp: string;
+  method: string;
+  route: string;
+  statusCode: number;
+  totalMs: number;
+  dbMs: number;
+  backendMs: number;
+  queryCount: number;
+  slowestQueryMs: number;
+  slowestQueryText: string;
+  possibleCause: string;
+}
+
+type CauseKey =
+  | "large_data_fetch"
+  | "missing_index"
+  | "database_query"
+  | "backend_processing";
+
+function diagnoseCause(
+  dbMs: number,
+  totalMs: number,
+  queryCount: number,
+  slowestQueryMs: number
+): CauseKey {
+  if (queryCount > 20) return "large_data_fetch";
+  if (slowestQueryMs > 500) return "missing_index";
+  if (totalMs > 0 && dbMs / totalMs >= 0.75) return "database_query";
+  return "backend_processing";
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_ENTRIES = 200;
 let slowRequests: SlowEntry[] = [];
 let slowQueries: SlowQuery[] = [];
+let perfEntries: PerfEntry[] = [];
 
+// ── Middleware ─────────────────────────────────────────────────────────────────
 /**
- * Express middleware to log slow requests
- * Records start time and measures duration using high-resolution timer
+ * Records per-request performance data: total time, DB time, query count,
+ * slowest query, and a heuristic cause. Emits a console line for every
+ * request that exceeds thresholdMs. Stores the last MAX_ENTRIES entries.
  */
-export function slowRequestLogger(thresholdMs: number = 1000) {
+export function perfRequestMiddleware(thresholdMs = 500) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const startTime = process.hrtime.bigint();
-    const originalPath = req.originalUrl || req.path;
+    const ctx: RequestContext = {
+      dbTimeMs: 0,
+      queryCount: 0,
+      slowestQueryMs: 0,
+      slowestQueryText: "",
+    };
 
-    res.on("finish", () => {
-      const endTime = process.hrtime.bigint();
-      const durationMs = Number(endTime - startTime) / 1000000; // Convert nanoseconds to milliseconds
+    const startHr = process.hrtime.bigint();
 
-      if (durationMs > thresholdMs) {
-        const entry: SlowEntry = {
-          timestamp: new Date().toISOString(),
-          route: originalPath,
-          method: req.method,
-          durationMs: Math.round(durationMs * 100) / 100, // Round to 2 decimal places
-          statusCode: res.statusCode,
-        };
+    requestContextStore.run(ctx, () => {
+      res.on("finish", () => {
+        const totalMs =
+          Number(process.hrtime.bigint() - startHr) / 1_000_000;
+        const route = req.originalUrl || req.path;
 
-        // Add to ring buffer
-        slowRequests.push(entry);
-        if (slowRequests.length > MAX_ENTRIES) {
-          slowRequests.shift();
+        if (totalMs > thresholdMs) {
+          const entry: PerfEntry = {
+            timestamp: new Date().toISOString(),
+            method: req.method,
+            route,
+            statusCode: res.statusCode,
+            totalMs: Math.round(totalMs * 100) / 100,
+            dbMs: Math.round(ctx.dbTimeMs * 100) / 100,
+            backendMs: Math.round(Math.max(0, totalMs - ctx.dbTimeMs) * 100) / 100,
+            queryCount: ctx.queryCount,
+            slowestQueryMs: Math.round(ctx.slowestQueryMs * 100) / 100,
+            slowestQueryText: ctx.slowestQueryText,
+            possibleCause: diagnoseCause(
+              ctx.dbTimeMs,
+              totalMs,
+              ctx.queryCount,
+              ctx.slowestQueryMs
+            ),
+          };
+
+          perfEntries.push(entry);
+          if (perfEntries.length > MAX_ENTRIES) perfEntries.shift();
+
+          slowRequests.push({
+            timestamp: entry.timestamp,
+            route,
+            method: req.method,
+            durationMs: entry.totalMs,
+            statusCode: res.statusCode,
+          });
+          if (slowRequests.length > MAX_ENTRIES) slowRequests.shift();
+
+          console.log(
+            `[PERF] ${req.method} ${route} | total=${Math.round(totalMs)}ms` +
+              ` db=${Math.round(ctx.dbTimeMs)}ms queries=${ctx.queryCount}` +
+              ` cause=${entry.possibleCause}`
+          );
         }
+      });
 
-        // Log to console
-        console.log(
-          `[SLOW REQUEST] ${req.method} ${originalPath} - ${Math.round(durationMs)}ms`
-        );
-      }
+      next();
     });
-
-    next();
   };
 }
 
 /**
- * Log slow database queries
- * Should be called after query execution with the duration
+ * Log slow database queries (called from db.ts)
  */
 export function logSlowQuery(
   query: string,
   durationMs: number,
-  thresholdMs: number = 500
+  thresholdMs = 500
 ): void {
   if (durationMs > thresholdMs) {
     const entry: SlowQuery = {
@@ -75,112 +150,102 @@ export function logSlowQuery(
       query: query.substring(0, 200),
       durationMs: Math.round(durationMs * 100) / 100,
     };
-
-    // Add to ring buffer
     slowQueries.push(entry);
-    if (slowQueries.length > MAX_ENTRIES) {
-      slowQueries.shift();
-    }
-
-    // Log to console
+    if (slowQueries.length > MAX_ENTRIES) slowQueries.shift();
     console.log(
       `[SLOW QUERY] ${Math.round(durationMs)}ms - ${query.substring(0, 200)}`
     );
   }
 }
 
-/**
- * Get all recorded slow requests
- */
 export function getSlowRequests(): SlowEntry[] {
   return [...slowRequests];
 }
 
-/**
- * Get all recorded slow queries
- */
 export function getSlowQueries(): SlowQuery[] {
   return [...slowQueries];
 }
 
-/**
- * Clear both slow requests and slow queries logs
- */
+export function getPerfEntries(): PerfEntry[] {
+  return [...perfEntries].reverse();
+}
+
 export function clearSlowLogs(): void {
   slowRequests = [];
   slowQueries = [];
+  perfEntries = [];
 }
 
 /**
- * Register monitoring routes for the admin panel
+ * Register monitoring routes
  */
 export function registerMonitoringRoutes(app: Express): void {
-  // Get slow requests
-  app.get("/api/ops/slow-requests", (req: Request, res: Response) => {
+  app.get("/api/ops/slow-requests", (_req: Request, res: Response) => {
     try {
       res.json(getSlowRequests());
     } catch (error: unknown) {
-      const _em = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: _em });
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
     }
   });
 
-  // Get slow queries
-  app.get("/api/ops/slow-queries", (req: Request, res: Response) => {
+  app.get("/api/ops/slow-queries", (_req: Request, res: Response) => {
     try {
       res.json(getSlowQueries());
     } catch (error: unknown) {
-      const _em = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: _em });
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
     }
   });
 
-  // Clear logs
-  app.post("/api/ops/clear-logs", (req: Request, res: Response) => {
+  app.get("/api/ops/perf-report", (_req: Request, res: Response) => {
+    try {
+      res.json(getPerfEntries());
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.post("/api/ops/clear-logs", (_req: Request, res: Response) => {
     try {
       clearSlowLogs();
       res.json({ message: "Logs cleared successfully" });
     } catch (error: unknown) {
-      const _em = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: _em });
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
     }
   });
 
-  // Backup status
-  app.get("/api/ops/backup-status", (req: Request, res: Response) => {
+  app.get("/api/ops/backup-status", (_req: Request, res: Response) => {
     try {
       const statusFile = path.resolve("backups/.backup_status.json");
       if (!fs.existsSync(statusFile)) {
-        return res.json({ status: "no_backup", message: "لم يتم إجراء أي نسخة احتياطية بعد" });
+        return res.json({
+          status: "no_backup",
+          message: "لم يتم إجراء أي نسخة احتياطية بعد",
+        });
       }
       const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
       res.json(data);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: _em });
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
     }
   });
 
-  // Health endpoint
-  app.get("/api/ops/health", (req: Request, res: Response) => {
+  app.get("/api/ops/health", (_req: Request, res: Response) => {
     try {
       const uptime = process.uptime();
       const memoryUsage = process.memoryUsage();
-
       res.json({
         status: "ok",
         uptime: Math.round(uptime),
         memoryUsage: {
-          rss: Math.round(memoryUsage.rss / 1024 / 1024), // MB
-          heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024), // MB
-          heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024), // MB
-          external: Math.round(memoryUsage.external / 1024 / 1024), // MB
+          rss: Math.round(memoryUsage.rss / 1024 / 1024),
+          heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+          heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+          external: Math.round(memoryUsage.external / 1024 / 1024),
         },
         timestamp: new Date().toISOString(),
       });
     } catch (error: unknown) {
-      const _em = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: _em });
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
     }
   });
 }
