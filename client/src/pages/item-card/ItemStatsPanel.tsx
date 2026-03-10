@@ -90,11 +90,11 @@ export default function ItemStatsPanel({
               <X className="h-3 w-3" />
             </button>
           )}
-          {lastPurchases && lastPurchases.length > 0 && (
-            <span className="text-[9px] text-muted-foreground me-auto">
-              {lastPurchases.length} سجل
-            </span>
-          )}
+          <span className="text-[9px] text-muted-foreground me-auto">
+            {purchaseFromDate
+              ? `${lastPurchases?.length ?? 0} سجل`
+              : "آخر 5 مشتريات"}
+          </span>
         </div>
 
         {/* Tab buttons */}
@@ -223,7 +223,7 @@ export default function ItemStatsPanel({
           </div>
         ) : (
           <div className="text-[10px] text-muted-foreground text-center py-2">
-            {purchaseFromDate ? "لا توجد مشتريات في هذه الفترة" : "لا توجد مشتريات"}
+            {purchaseFromDate ? "لا توجد مشتريات في هذه الفترة" : "لا توجد مشتريات بعد"}
           </div>
         )}
       </fieldset>

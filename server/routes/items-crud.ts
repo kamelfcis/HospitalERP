@@ -333,8 +333,8 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
   // Item Transactions
   app.get("/api/items/:id/last-purchases", async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 200;
       const fromDate = (req.query.fromDate as string) || undefined;
+      const limit = fromDate ? 500 : 5;
       const purchases = await storage.getLastPurchases(req.params.id as string, limit, fromDate);
       res.json(purchases);
     } catch (error: unknown) {
