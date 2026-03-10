@@ -19,7 +19,7 @@ import {
   UserCheck, X,
 } from "lucide-react";
 import type { InsertPatient } from "@shared/schema";
-import type { PatientFormDialogProps } from "./types";
+import type { PatientFormDialogProps, PrefilledPatient } from "./types";
 import { useDebounce } from "./useDebounce";
 
 /* ── أنواع محلية ─────────────────────────────────── */
@@ -52,7 +52,7 @@ const PAYMENT_TYPES: { value: PaymentKind; label: string; Icon: any }[] = [
 ];
 
 /* ══════════════════════════════════════════════════ */
-export default function PatientFormDialog({ open, onClose, editingPatient }: PatientFormDialogProps) {
+export default function PatientFormDialog({ open, onClose, editingPatient, prefilledPatient }: PatientFormDialogProps) {
   const { toast } = useToast();
   const isEdit = !!editingPatient;
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -99,27 +99,41 @@ export default function PatientFormDialog({ open, onClose, editingPatient }: Pat
   const debouncedDoctor  = useDebounce(doctorSearch, 300);
   const debouncedAdmDoc  = useDebounce(admDoctorSearch, 300);
 
-  /* ── Reset ──────────────────────────────────────── */
+  /* ── Reset عند الفتح فقط ────────────────────────── */
   useEffect(() => {
+    if (!open) return;
+
+    /* إعادة ضبط حقول الزيارة دائماً عند الفتح */
+    setPaymentType("CASH"); setInsuranceCo("");
+    setVisitReason("");
+    setClinicSearch(""); setSelectedClinic(null);
+    setDoctorSearch(""); setSelectedDoctor(null); setShowDoctorResults(false);
+    setConsultDate(todayISO); setConsultTime("");
+    setSelectedFloor(""); setSelectedRoom(""); setSelectedBed("");
+    setAdmDoctorSearch(""); setAdmDoctor(null);
+    setSurgerySearch(""); setSelectedSurgery(null);
+    setServiceNotes("");
+
     if (editingPatient) {
       setFullName(editingPatient.fullName);
       setPhone(editingPatient.phone || "");
       setNationalId(editingPatient.nationalId || "");
       setAge(editingPatient.age != null ? String(editingPatient.age) : "");
+      setExistingPatient(null);
+      setShowSuggestions(false);
+    } else if (prefilledPatient) {
+      /* تذكرة جديدة لمريض موجود */
+      setExistingPatient({ id: prefilledPatient.id, fullName: prefilledPatient.fullName, phone: prefilledPatient.phone ?? null, age: prefilledPatient.age ?? null, nationalId: prefilledPatient.nationalId ?? null, patientCode: prefilledPatient.patientCode ?? null });
+      setFullName(prefilledPatient.fullName);
+      setPhone(prefilledPatient.phone || "");
+      setNationalId(prefilledPatient.nationalId || "");
+      setAge(prefilledPatient.age != null ? String(prefilledPatient.age) : "");
+      setShowSuggestions(false);
     } else {
       setFullName(""); setPhone(""); setNationalId(""); setAge("");
       setExistingPatient(null); setShowSuggestions(false);
-      setPaymentType("CASH"); setInsuranceCo("");
-      setVisitReason("");
-      setClinicSearch(""); setSelectedClinic(null);
-      setDoctorSearch(""); setSelectedDoctor(null); setShowDoctorResults(false);
-      setConsultDate(todayISO); setConsultTime("");
-      setSelectedFloor(""); setSelectedRoom(""); setSelectedBed("");
-      setAdmDoctorSearch(""); setAdmDoctor(null);
-      setSurgerySearch(""); setSelectedSurgery(null);
-      setServiceNotes("");
     }
-  }, [editingPatient, open]);
+  }, [editingPatient, prefilledPatient, open]); // eslint-disable-line
 
   useEffect(() => { setSelectedRoom(""); setSelectedBed(""); }, [selectedFloor]);
   useEffect(() => { setSelectedBed(""); }, [selectedRoom]);
@@ -379,7 +393,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient }: Pat
 
         <DialogHeader className="px-4 pt-4 pb-2 border-b">
           <DialogTitle className="text-sm font-bold">
-            {isEdit ? "تعديل بيانات مريض" : "استقبال مريض"}
+            {isEdit ? "تعديل بيانات مريض" : prefilledPatient ? "تذكرة جديدة" : "استقبال مريض"}
           </DialogTitle>
         </DialogHeader>
 

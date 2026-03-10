@@ -82,6 +82,7 @@ const methods = {
     const result = await db.execute(sql`
       SELECT
         p.id,
+        p.patient_code,
         p.full_name,
         p.phone,
         p.national_id,

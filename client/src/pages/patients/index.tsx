@@ -12,12 +12,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Search, Users, FolderOpen, ArrowRight } from "lucide-react";
 import type { Patient } from "@shared/schema";
-import type { PatientStats } from "./types";
+import type { PatientStats, PrefilledPatient } from "./types";
 import { useDebounce } from "./useDebounce";
 import PatientGrid from "./PatientGrid";
 import PatientFormDialog from "./PatientFormDialog";
 import { PatientFilePanel } from "./components/PatientFilePanel";
-import { NewVisitDialog } from "./components/NewVisitDialog";
 
 export default function Patients() {
   const [, navigate]      = useLocation();
@@ -33,13 +32,13 @@ export default function Patients() {
   const [dateTo,      setDateTo]      = useState("");
   const [deptId,      setDeptId]      = useState("");
 
-  const [dialogOpen,     setDialogOpen]     = useState(false);
-  const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
+  const [dialogOpen,        setDialogOpen]        = useState(false);
+  const [editingPatient,    setEditingPatient]     = useState<Patient | null>(null);
+  const [prefilledPatient,  setPrefilledPatient]   = useState<PrefilledPatient | null>(null);
 
   const [activeTab,          setActiveTab]          = useState("list");
   const [selectedPatientId,  setSelectedPatientId]  = useState<string | null>(null);
   const [selectedPatientRow, setSelectedPatientRow] = useState<PatientStats | null>(null);
-  const [newVisitPatient,    setNewVisitPatient]    = useState<PatientStats | null>(null);
 
   const debouncedSearch = useDebounce(searchQuery, 350);
 
@@ -73,8 +72,13 @@ export default function Patients() {
     onError: (e: Error) => toast({ title: "خطأ في الحذف", description: e.message, variant: "destructive" }),
   });
 
-  function handleAddNew()    { setEditingPatient(null); setDialogOpen(true); }
+  function handleAddNew() {
+    setEditingPatient(null);
+    setPrefilledPatient(null);
+    setDialogOpen(true);
+  }
   function handleEdit(p: PatientStats) {
+    setPrefilledPatient(null);
     setEditingPatient(p as unknown as Patient);
     setDialogOpen(true);
   }
@@ -93,11 +97,21 @@ export default function Patients() {
     setActiveTab("file");
   }
   function handleNewVisit(patient: PatientStats) {
-    setNewVisitPatient(patient);
+    setEditingPatient(null);
+    setPrefilledPatient({
+      id:          patient.id,
+      fullName:    patient.fullName,
+      phone:       patient.phone,
+      age:         patient.age,
+      nationalId:  patient.nationalId,
+      patientCode: patient.patientCode,
+    });
+    setDialogOpen(true);
   }
   function handleCloseDialog() {
     setDialogOpen(false);
     setEditingPatient(null);
+    setPrefilledPatient(null);
   }
   function handleClearFilters() {
     setDateFrom(""); setDateTo(""); setDeptId("");
@@ -147,7 +161,7 @@ export default function Patients() {
               data-testid="button-add-patient"
             >
               <Plus className="h-3 w-3 ml-1" />
-              إضافة مريض
+              استقبال مريض
             </Button>
           )}
         </div>
@@ -257,6 +271,7 @@ export default function Patients() {
                     onClick={() => handleNewVisit(selectedPatientRow)}
                     data-testid="button-new-visit-from-file"
                   >
+                    <Plus className="h-3 w-3" />
                     تذكرة جديدة
                   </Button>
                 )}
@@ -277,15 +292,8 @@ export default function Patients() {
         open={dialogOpen}
         onClose={handleCloseDialog}
         editingPatient={editingPatient}
+        prefilledPatient={prefilledPatient}
       />
-
-      {newVisitPatient && (
-        <NewVisitDialog
-          open={!!newVisitPatient}
-          patient={newVisitPatient}
-          onClose={() => setNewVisitPatient(null)}
-        />
-      )}
 
     </div>
   );

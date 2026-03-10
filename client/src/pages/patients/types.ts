@@ -2,18 +2,14 @@ import type { Patient } from "@shared/schema";
 
 export { Patient };
 
-export const PAYMENT_TYPES = [
-  { value: "CASH",      label: "نقدي" },
-  { value: "INSURANCE", label: "تأمين" },
-] as const;
-
 export interface PatientStats {
-  id: string;
-  fullName: string;
-  phone: string | null;
-  nationalId: string | null;
-  age: number | null;
-  createdAt: string;
+  id:          string;
+  patientCode: string | null;
+  fullName:    string;
+  phone:       string | null;
+  nationalId:  string | null;
+  age:         number | null;
+  createdAt:   string;
   servicesTotal:     number;
   drugsTotal:        number;
   consumablesTotal:  number;
@@ -34,42 +30,20 @@ export interface DoctorOption {
   specialty?: string;
 }
 
-export interface AdmissionValues {
-  doctorSearch:      string;
-  selectedDoctor:    DoctorOption | null;
-  showDoctorResults: boolean;
-  selectedFloor:     string;
-  selectedRoom:      string;
-  selectedBed:       string;
-  surgerySearch:     string;
-  selectedSurgery:   { id: string; nameAr: string } | null;
-  paymentType:       string;
-  insuranceCo:       string;
-}
-
-export interface AdmissionSetters {
-  setDoctorSearch:      (v: string) => void;
-  setSelectedDoctor:    (v: DoctorOption | null) => void;
-  setShowDoctorResults: (v: boolean) => void;
-  setSelectedFloor:     (v: string) => void;
-  setSelectedRoom:      (v: string) => void;
-  setSelectedBed:       (v: string) => void;
-  setSurgerySearch:     (v: string) => void;
-  setSelectedSurgery:   (v: { id: string; nameAr: string } | null) => void;
-  setPaymentType:       (v: string) => void;
-  setInsuranceCo:       (v: string) => void;
-}
-
-export interface AdmissionSectionProps {
-  open:     boolean;
-  values:   AdmissionValues;
-  setters:  AdmissionSetters;
+export interface PrefilledPatient {
+  id:          string;
+  fullName:    string;
+  phone?:      string | null;
+  age?:        number | null;
+  nationalId?: string | null;
+  patientCode?: string | null;
 }
 
 export interface PatientFormDialogProps {
-  open:           boolean;
-  onClose:        () => void;
-  editingPatient: Patient | null;
+  open:              boolean;
+  onClose:           () => void;
+  editingPatient?:   Patient | null;
+  prefilledPatient?: PrefilledPatient | null;
 }
 
 export interface PatientGridProps {

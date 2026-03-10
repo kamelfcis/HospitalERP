@@ -11,35 +11,25 @@ import { useAppointmentQueue } from "./hooks/useAppointmentQueue";
 import { ClinicHeader } from "./components/ClinicHeader";
 import { AdminSummaryCards } from "./components/AdminSummaryCards";
 import { QueueContent } from "./components/QueueContent";
-import { BookingDialog } from "./components/BookingDialog";
-import { TurnReceipt } from "./components/TurnReceipt";
 import { ClinicManagementDialog } from "./components/ClinicManagementDialog";
 import { DoctorStatementTab } from "../doctor-consultation/components/DoctorStatementTab";
 import type { ClinicAppointment } from "./types";
 
 export default function ClinicBooking() {
-  const [, navigate] = useLocation();
-  const { isAdmin, canBook, canManage, canViewStatement } = useClinicPermissions();
-  const [bookingOpen, setBookingOpen] = useState(false);
+  const [, navigate]    = useLocation();
+  const { isAdmin, canManage, canViewStatement } = useClinicPermissions();
   const [manageOpen, setManageOpen] = useState(false);
-  const [printAppointment, setPrintAppointment] = useState<ClinicAppointment | null>(null);
-  const [activeTab, setActiveTab] = useState("queue");
+  const [activeTab,  setActiveTab]  = useState("queue");
 
   const { data: myDoctor } = useQuery<{ doctorId: string | null }>({
     queryKey: ["/api/clinic-my-doctor"],
-    queryFn: () => apiRequest("GET", "/api/clinic-my-doctor").then((r) => r.json()),
+    queryFn: () => apiRequest("GET", "/api/clinic-my-doctor").then(r => r.json()),
   });
   const myDoctorId = myDoctor?.doctorId || undefined;
 
   const { clinics, clinicsLoading, selectedClinicId, setSelectedClinicId, selectedDate, setSelectedDate } = useClinicBooking();
-  const selectedClinic = clinics.find((c) => c.id === selectedClinicId);
-  const { appointments, isLoading, statusMutation, bookMutation } = useAppointmentQueue(selectedClinicId, selectedDate);
-
-  const handleBook = async (data: any) => {
-    const result = await bookMutation.mutateAsync(data);
-    setPrintAppointment({ ...result, doctorName: "", clinicName: selectedClinic?.nameAr ?? "" });
-    return result;
-  };
+  const selectedClinic = clinics.find(c => c.id === selectedClinicId);
+  const { appointments, isLoading, statusMutation } = useAppointmentQueue(selectedClinicId, selectedDate);
 
   if (clinicsLoading) {
     return <div className="flex items-center justify-center h-64 text-muted-foreground">جارٍ التحميل...</div>;
@@ -65,19 +55,22 @@ export default function ClinicBooking() {
 
   const queueProps = {
     selectedDate,
-    onDateChange: setSelectedDate,
+    onDateChange:        setSelectedDate,
     appointments,
     isLoading,
-    onStatusChange: (id: string, status: string) => statusMutation.mutate({ id, status }),
-    isChangingStatus: statusMutation.isPending,
+    onStatusChange:      (id: string, status: string) => statusMutation.mutate({ id, status }),
+    isChangingStatus:    statusMutation.isPending,
     onStartConsultation: (apt: ClinicAppointment) => navigate(`/doctor-consultation/${apt.id}`),
-    canBook,
-    onBookClick: () => setBookingOpen(true),
   };
 
   return (
     <div className="p-4 space-y-4 max-w-6xl mx-auto" dir="rtl">
-      <ClinicHeader clinics={clinics} selectedClinicId={selectedClinicId} onSelect={setSelectedClinicId} onManage={() => setManageOpen(true)} />
+      <ClinicHeader
+        clinics={clinics}
+        selectedClinicId={selectedClinicId}
+        onSelect={setSelectedClinicId}
+        onManage={() => setManageOpen(true)}
+      />
 
       {isAdmin && !selectedClinicId && (
         <AdminSummaryCards clinics={clinics} selectedDate={selectedDate} onSelect={setSelectedClinicId} />
@@ -106,8 +99,6 @@ export default function ClinicBooking() {
         <QueueContent {...queueProps} />
       ))}
 
-      <BookingDialog open={bookingOpen} onClose={() => setBookingOpen(false)} clinicId={selectedClinicId} selectedDate={selectedDate} onBook={handleBook} isPending={bookMutation.isPending} />
-      <TurnReceipt appointment={printAppointment} clinicName={selectedClinic?.nameAr ?? ""} />
       <ClinicManagementDialog open={manageOpen} onClose={() => setManageOpen(false)} />
     </div>
   );
