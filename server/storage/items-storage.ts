@@ -187,10 +187,12 @@ const methods = {
     return uom;
   },
 
-  async getLastPurchases(this: DatabaseStorage, itemId: string, limit: number = 5): Promise<PurchaseTransaction[]> {
+  async getLastPurchases(this: DatabaseStorage, itemId: string, limit: number = 200, fromDate?: string): Promise<PurchaseTransaction[]> {
+    const conditions = [eq(purchaseTransactions.itemId, itemId)];
+    if (fromDate) conditions.push(gte(purchaseTransactions.txDate, fromDate));
     return db.select()
       .from(purchaseTransactions)
-      .where(eq(purchaseTransactions.itemId, itemId))
+      .where(and(...conditions))
       .orderBy(desc(purchaseTransactions.txDate))
       .limit(limit);
   },

@@ -25,6 +25,7 @@ export function useItemCard() {
   const [showFormTypeDialog, setShowFormTypeDialog] = useState(false);
   const [newFormTypeName, setNewFormTypeName] = useState("");
   const [salesPeriod, setSalesPeriod] = useState("3");
+  const [purchaseFromDate, setPurchaseFromDate] = useState("");
   const [showDeptPriceDialog, setShowDeptPriceDialog] = useState(false);
   const [selectedDeptPrice, setSelectedDeptPrice] = useState<ItemDepartmentPriceWithDepartment | null>(null);
   const [newDeptPrice, setNewDeptPrice] = useState<{ departmentId: string; salePrice: string }>({ departmentId: "", salePrice: "" });
@@ -71,8 +72,9 @@ export function useItemCard() {
     queryKey: ["/api/uoms"],
   });
 
+  const purchaseQueryParams = purchaseFromDate ? `?fromDate=${purchaseFromDate}` : "";
   const { data: lastPurchases } = useQuery<PurchaseTransaction[]>({
-    queryKey: [`/api/items/${itemId}/last-purchases?limit=3`],
+    queryKey: [`/api/items/${itemId}/last-purchases${purchaseQueryParams}`],
     enabled: !!itemId,
   });
 
@@ -457,6 +459,8 @@ export function useItemCard() {
     avgSales,
     salesPeriod,
     setSalesPeriod,
+    purchaseFromDate,
+    setPurchaseFromDate,
     formData,
     setFormData,
     validationErrors,

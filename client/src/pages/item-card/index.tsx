@@ -28,6 +28,8 @@ export default function ItemCard() {
     avgSales,
     salesPeriod,
     setSalesPeriod,
+    purchaseFromDate,
+    setPurchaseFromDate,
     formData,
     setFormData,
     validationErrors,
@@ -185,6 +187,8 @@ export default function ItemCard() {
             avgSales={avgSales}
             salesPeriod={salesPeriod}
             setSalesPeriod={setSalesPeriod}
+            purchaseFromDate={purchaseFromDate}
+            setPurchaseFromDate={setPurchaseFromDate}
             departmentPrices={departmentPrices}
             availableDepartments={availableDepartments}
             handleOpenDeptPriceDialog={handleOpenDeptPriceDialog}

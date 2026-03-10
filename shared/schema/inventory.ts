@@ -61,6 +61,8 @@ export const purchaseTransactions = pgTable("purchase_transactions", {
   purchasePrice: decimal("purchase_price", { precision: 18, scale: 2 }).notNull(),
   salePriceSnapshot: decimal("sale_price_snapshot", { precision: 18, scale: 2 }),
   total: decimal("total", { precision: 18, scale: 2 }).notNull(),
+  bonusQty: decimal("bonus_qty", { precision: 18, scale: 4 }).notNull().default("0"),
+  supplierInvoiceNo: text("supplier_invoice_no"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   itemIdx: index("idx_purchase_tx_item").on(table.itemId),

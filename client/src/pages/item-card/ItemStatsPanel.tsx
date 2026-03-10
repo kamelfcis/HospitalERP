@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Package, Plus, Pencil, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Package, Plus, Pencil, Trash2, X } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -8,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { formatCurrency } from "@/lib/formatters";
 import type { PurchaseTransaction, ItemDepartmentPriceWithDepartment, Department } from "@shared/schema";
 import type { ItemWithFormType, AvgSalesResponse } from "./types";
@@ -20,6 +21,8 @@ interface ItemStatsPanelProps {
   avgSales: AvgSalesResponse | undefined;
   salesPeriod: string;
   setSalesPeriod: (v: string) => void;
+  purchaseFromDate: string;
+  setPurchaseFromDate: (v: string) => void;
   departmentPrices: ItemDepartmentPriceWithDepartment[] | undefined;
   availableDepartments: Department[];
   handleOpenDeptPriceDialog: (dp?: ItemDepartmentPriceWithDepartment) => void;
@@ -34,6 +37,8 @@ export default function ItemStatsPanel({
   avgSales,
   salesPeriod,
   setSalesPeriod,
+  purchaseFromDate,
+  setPurchaseFromDate,
   departmentPrices,
   availableDepartments,
   handleOpenDeptPriceDialog,
@@ -54,34 +59,112 @@ export default function ItemStatsPanel({
 
   return (
     <div className="col-span-4 flex flex-col gap-2">
+
+      {/* ── آخر المشتريات ────────────────────────────────────────── */}
       <fieldset className="peachtree-grid p-2">
         <legend className="text-[11px] font-semibold px-1 text-primary">آخر المشتريات</legend>
+
+        {/* Filter row */}
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <Label className="text-[10px] shrink-0">من:</Label>
+          <Input
+            type="month"
+            value={purchaseFromDate}
+            onChange={(e) => setPurchaseFromDate(e.target.value)}
+            className="h-5 text-[10px] px-1 py-0 w-28"
+            data-testid="input-purchase-from-date"
+          />
+          {purchaseFromDate && (
+            <button
+              onClick={() => setPurchaseFromDate("")}
+              className="text-muted-foreground hover:text-foreground"
+              title="إزالة الفلتر"
+              data-testid="btn-clear-purchase-date"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+          {lastPurchases && lastPurchases.length > 0 && (
+            <span className="text-[9px] text-muted-foreground me-auto">
+              {lastPurchases.length} سجل
+            </span>
+          )}
+        </div>
+
         {lastPurchases && lastPurchases.length > 0 ? (
-          <table className="w-full text-[10px]">
-            <thead>
-              <tr className="border-b bg-muted/30">
-                <th className="py-1 px-1 text-right font-medium">المورد</th>
-                <th className="py-1 px-1 text-left font-medium">ك</th>
-                <th className="py-1 px-1 text-left font-medium">شراء</th>
-                <th className="py-1 px-1 text-left font-medium">بيع</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lastPurchases.map((p, i) => (
-                <tr key={p.id} className={i < lastPurchases.length - 1 ? "border-b border-dashed" : ""}>
-                  <td className="py-1 px-1 truncate max-w-[80px]" title={p.supplierName || "-"}>{p.supplierName || "-"}</td>
-                  <td className="py-1 px-1 text-left font-mono">{p.qty}</td>
-                  <td className="py-1 px-1 text-left font-mono">{formatCurrency(p.purchasePrice)}</td>
-                  <td className="py-1 px-1 text-left font-mono">{p.salePriceSnapshot ? formatCurrency(p.salePriceSnapshot) : "-"}</td>
+          <div className="overflow-x-auto overflow-y-auto max-h-52">
+            <table className="text-[10px] border-collapse" style={{ minWidth: "460px" }}>
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <th className="py-1 px-1 text-center font-medium w-5 shrink-0">#</th>
+                  <th className="py-1 px-1 text-right font-medium whitespace-nowrap">التاريخ</th>
+                  <th className="py-1 px-1 text-right font-medium">المورد</th>
+                  <th className="py-1 px-1 text-left font-medium whitespace-nowrap">ك</th>
+                  <th className="py-1 px-1 text-left font-medium whitespace-nowrap">هدية</th>
+                  <th className="py-1 px-1 text-left font-medium whitespace-nowrap">شراء</th>
+                  <th className="py-1 px-1 text-left font-medium whitespace-nowrap">بيع</th>
+                  <th className="py-1 px-1 text-right font-medium whitespace-nowrap">فاتورة المورد</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {lastPurchases.map((p, i) => {
+                  const hasBonus = parseFloat(p.bonusQty || "0") > 0;
+                  return (
+                    <tr
+                      key={p.id}
+                      className={i < lastPurchases.length - 1 ? "border-b border-dashed" : ""}
+                      data-testid={`purchase-row-${i}`}
+                    >
+                      <td className="py-1 px-1 text-center text-muted-foreground font-mono">
+                        {i + 1}
+                      </td>
+                      <td className="py-1 px-1 font-mono whitespace-nowrap" dir="ltr">
+                        {p.txDate || "-"}
+                      </td>
+                      <td className="py-1 px-1 truncate max-w-[70px]" title={p.supplierName || "-"}>
+                        {p.supplierName || "-"}
+                      </td>
+                      <td className="py-1 px-1 text-left font-mono whitespace-nowrap">
+                        {p.qty}
+                      </td>
+                      <td className="py-1 px-1 text-left font-mono whitespace-nowrap">
+                        {hasBonus ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[9px] px-1 py-0 bg-green-100 text-green-800 border-green-200"
+                          >
+                            {p.bonusQty}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground/40">-</span>
+                        )}
+                      </td>
+                      <td className="py-1 px-1 text-left font-mono whitespace-nowrap">
+                        {formatCurrency(p.purchasePrice)}
+                      </td>
+                      <td className="py-1 px-1 text-left font-mono whitespace-nowrap">
+                        {p.salePriceSnapshot ? formatCurrency(p.salePriceSnapshot) : "-"}
+                      </td>
+                      <td
+                        className="py-1 px-1 text-right font-mono truncate max-w-[70px] text-muted-foreground"
+                        title={p.supplierInvoiceNo || "-"}
+                      >
+                        {p.supplierInvoiceNo || "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <div className="text-[10px] text-muted-foreground text-center py-2">لا توجد مشتريات</div>
+          <div className="text-[10px] text-muted-foreground text-center py-2">
+            {purchaseFromDate ? "لا توجد مشتريات في هذه الفترة" : "لا توجد مشتريات"}
+          </div>
         )}
       </fieldset>
 
+      {/* ── إحصائيات المبيعات ─────────────────────────────────────── */}
       <fieldset className="peachtree-grid p-2">
         <legend className="text-[11px] font-semibold px-1 text-primary">إحصائيات المبيعات</legend>
         <div className="flex items-center gap-1 mb-2">
@@ -113,10 +196,13 @@ export default function ItemStatsPanel({
         </div>
       </fieldset>
 
+      {/* ── أسعار حسب القسم ───────────────────────────────────────── */}
       <fieldset className="peachtree-grid p-2">
         <legend className="text-[11px] font-semibold px-1 text-primary">أسعار حسب القسم (للوحدة الكبرى)</legend>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] text-muted-foreground">السعر الافتراضي/{item?.majorUnitName || "وحدة"}: {formatCurrency(item?.salePriceCurrent || "0")}</span>
+          <span className="text-[10px] text-muted-foreground">
+            السعر الافتراضي/{item?.majorUnitName || "وحدة"}: {formatCurrency(item?.salePriceCurrent || "0")}
+          </span>
           <Button
             variant="outline"
             size="sm"

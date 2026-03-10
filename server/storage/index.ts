@@ -276,7 +276,7 @@ export interface IStorage {
   createItemUom(data: InsertItemUom): Promise<ItemUom>;
 
   // Purchase & Sales Transactions
-  getLastPurchases(itemId: string, limit?: number): Promise<PurchaseTransaction[]>;
+  getLastPurchases(itemId: string, limit?: number, fromDate?: string): Promise<PurchaseTransaction[]>;
   getAverageSales(itemId: string, startDate: string, endDate: string): Promise<{ avgPrice: string; totalQty: string; invoiceCount: number }>;
 
   // Departments

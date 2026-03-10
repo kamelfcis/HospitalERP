@@ -361,6 +361,8 @@ const methods = {
           purchasePrice: line.purchasePrice,
           salePriceSnapshot: line.salePrice || null,
           total: purchaseTotal,
+          bonusQty: line.bonusQty || '0',
+          supplierInvoiceNo: header.supplierInvoiceNo || null,
         });
         
         const updateFields: Partial<typeof items.$inferSelect> = { purchasePriceLast: line.purchasePrice, updatedAt: new Date() };
