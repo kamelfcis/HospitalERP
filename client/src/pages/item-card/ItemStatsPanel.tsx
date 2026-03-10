@@ -92,8 +92,8 @@ export default function ItemStatsPanel({
         </div>
 
         {lastPurchases && lastPurchases.length > 0 ? (
-          <div className="overflow-x-auto overflow-y-auto max-h-52">
-            <table className="text-[10px] border-collapse" style={{ minWidth: "460px" }}>
+          <div className="w-full overflow-x-auto overflow-y-auto max-h-52 border border-border/40 rounded-sm">
+            <table className="text-[10px] border-collapse min-w-max w-full">
               <thead>
                 <tr className="border-b bg-muted/30">
                   <th className="py-1 px-1 text-center font-medium w-5 shrink-0">#</th>

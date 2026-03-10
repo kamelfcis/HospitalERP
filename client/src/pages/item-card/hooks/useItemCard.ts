@@ -72,7 +72,9 @@ export function useItemCard() {
     queryKey: ["/api/uoms"],
   });
 
-  const purchaseQueryParams = purchaseFromDate ? `?fromDate=${purchaseFromDate}` : "";
+  // input[type=month] returns "YYYY-MM"; API needs a full date "YYYY-MM-01"
+  const purchaseFromDateFull = purchaseFromDate ? `${purchaseFromDate}-01` : "";
+  const purchaseQueryParams = purchaseFromDateFull ? `?fromDate=${purchaseFromDateFull}` : "";
   const { data: lastPurchases } = useQuery<PurchaseTransaction[]>({
     queryKey: [`/api/items/${itemId}/last-purchases${purchaseQueryParams}`],
     enabled: !!itemId,
