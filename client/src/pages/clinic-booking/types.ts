@@ -4,6 +4,7 @@ export interface ClinicClinic {
   departmentId?: string | null;
   defaultPharmacyId?: string | null;
   consultationServiceId?: string | null;
+  treasuryId?: string | null;
   secretaryFeeType?: string | null;
   secretaryFeeValue?: string | number | null;
   isActive: boolean;
@@ -11,6 +12,7 @@ export interface ClinicClinic {
   departmentName?: string | null;
   pharmacyName?: string | null;
   consultationServiceName?: string | null;
+  treasuryName?: string | null;
 }
 
 export interface ClinicAppointment {

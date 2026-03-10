@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { items } from "./inventory";
 import { services } from "./invoicing";
-import { doctors, patients } from "./hospital";
+import { treasuries, doctors, patients } from "./hospital";
 
 export const clinicClinics = pgTable("clinic_clinics", {
   id:               varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -12,6 +12,7 @@ export const clinicClinics = pgTable("clinic_clinics", {
   departmentId:     varchar("department_id"),
   defaultPharmacyId:varchar("default_pharmacy_id"),
   consultationServiceId: varchar("consultation_service_id"),
+  treasuryId:       varchar("treasury_id").references(() => treasuries.id),
   secretaryFeeType: varchar("secretary_fee_type", { length: 20 }),
   secretaryFeeValue:decimal("secretary_fee_value", { precision: 10, scale: 2 }).default("0"),
   isActive:         boolean("is_active").notNull().default(true),
@@ -73,14 +74,19 @@ export const clinicUserDoctorAssignments = pgTable("clinic_user_doctor_assignmen
 ]);
 
 export const clinicConsultations = pgTable("clinic_consultations", {
-  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  appointmentId: varchar("appointment_id").notNull().unique().references(() => clinicAppointments.id),
-  chiefComplaint:text("chief_complaint"),
-  diagnosis:     text("diagnosis"),
-  notes:         text("notes"),
-  createdBy:     varchar("created_by"),
-  createdAt:     timestamp("created_at").notNull().defaultNow(),
-  updatedAt:     timestamp("updated_at").notNull().defaultNow(),
+  id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  appointmentId:   varchar("appointment_id").notNull().unique().references(() => clinicAppointments.id),
+  chiefComplaint:  text("chief_complaint"),
+  diagnosis:       text("diagnosis"),
+  notes:           text("notes"),
+  consultationFee: decimal("consultation_fee", { precision: 10, scale: 2 }).default("0"),
+  discountType:    varchar("discount_type", { length: 10 }).default("amount"),
+  discountValue:   decimal("discount_value", { precision: 10, scale: 2 }).default("0"),
+  finalAmount:     decimal("final_amount", { precision: 10, scale: 2 }).default("0"),
+  paymentStatus:   varchar("payment_status", { length: 20 }).default("pending"),
+  createdBy:       varchar("created_by"),
+  createdAt:       timestamp("created_at").notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const clinicConsultationDrugs = pgTable("clinic_consultation_drugs", {

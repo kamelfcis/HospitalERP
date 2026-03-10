@@ -39,6 +39,7 @@ export interface Consultation {
   drugs: ConsultationDrug[];
   serviceOrders: ServiceOrder[];
   patientName?: string;
+  patientId?: string | null;
   patientPhone?: string;
   appointmentDate?: string;
   appointmentTime?: string;
@@ -51,6 +52,12 @@ export interface Consultation {
   clinicName?: string;
   defaultPharmacyId?: string | null;
   consultationServiceId?: string | null;
+  consultationFee?: number | null;
+  discountType?: string | null;
+  discountValue?: number | null;
+  finalAmount?: number | null;
+  paymentStatus?: string | null;
+  treasuryId?: string | null;
 }
 
 export interface FavoriteDrug {

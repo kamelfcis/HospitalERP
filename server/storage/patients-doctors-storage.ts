@@ -191,6 +191,156 @@ const methods = {
     });
   },
 
+  async getPatientJourney(this: DatabaseStorage, patientId: string): Promise<Record<string, unknown> | null> {
+    const patientRes = await db.execute(sql`
+      SELECT id, patient_code, full_name, phone, national_id, age, created_at
+      FROM patients WHERE id = ${patientId}
+    `);
+    if (!patientRes.rows.length) return null;
+    const patient = patientRes.rows[0] as Record<string, unknown>;
+
+    const visitsRes = await db.execute(sql`
+      SELECT
+        a.id AS appointment_id,
+        a.appointment_date,
+        a.turn_number,
+        a.status AS appointment_status,
+        a.patient_name,
+        d.name AS doctor_name,
+        d.id AS doctor_id,
+        cl.name_ar AS clinic_name,
+        c.id AS consultation_id,
+        c.chief_complaint,
+        c.diagnosis,
+        c.notes AS consultation_notes,
+        c.consultation_fee,
+        c.discount_type,
+        c.discount_value,
+        c.final_amount,
+        c.payment_status
+      FROM clinic_appointments a
+      JOIN doctors d ON d.id = a.doctor_id
+      JOIN clinic_clinics cl ON cl.id = a.clinic_id
+      LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
+      WHERE a.patient_id = ${patientId}
+      ORDER BY a.appointment_date DESC, a.turn_number DESC
+    `);
+
+    const visits = [];
+    for (const row of visitsRes.rows as Array<Record<string, unknown>>) {
+      const consultationId = row.consultation_id as string | null;
+
+      let drugs: Array<Record<string, unknown>> = [];
+      let serviceOrders: Array<Record<string, unknown>> = [];
+      let invoices: Array<Record<string, unknown>> = [];
+
+      if (consultationId) {
+        const drugRes = await db.execute(sql`
+          SELECT drug_name, dose, frequency, duration, quantity, unit_level
+          FROM clinic_consultation_drugs WHERE consultation_id = ${consultationId} ORDER BY line_no
+        `);
+        drugs = drugRes.rows as Array<Record<string, unknown>>;
+
+        const ordersRes = await db.execute(sql`
+          SELECT order_type, service_name_manual, target_name, status, executed_at, quantity, unit_price
+          FROM clinic_orders
+          WHERE consultation_id = ${consultationId}
+          ORDER BY created_at
+        `);
+        serviceOrders = ordersRes.rows as Array<Record<string, unknown>>;
+      }
+
+      const appointmentId = row.appointment_id as string;
+      const invoicesRes = await db.execute(sql`
+        SELECT pih.invoice_number, pih.net_amount, pih.status, pih.invoice_date
+        FROM patient_invoice_headers pih
+        JOIN clinic_orders co ON co.executed_invoice_id = pih.id
+        WHERE co.appointment_id = ${appointmentId}
+        GROUP BY pih.id
+        UNION
+        SELECT pih2.invoice_number, pih2.net_amount, pih2.status, pih2.invoice_date
+        FROM patient_invoice_headers pih2
+        WHERE pih2.patient_name = ${row.patient_name}
+          AND pih2.invoice_date = ${row.appointment_date}::date
+        LIMIT 10
+      `);
+      invoices = invoicesRes.rows as Array<Record<string, unknown>>;
+
+      visits.push({
+        appointmentId: row.appointment_id,
+        appointmentDate: row.appointment_date,
+        turnNumber: row.turn_number,
+        appointmentStatus: row.appointment_status,
+        clinicName: row.clinic_name,
+        doctorName: row.doctor_name,
+        consultation: consultationId ? {
+          id: consultationId,
+          chiefComplaint: row.chief_complaint,
+          diagnosis: row.diagnosis,
+          notes: row.consultation_notes,
+          consultationFee: row.consultation_fee,
+          discountType: row.discount_type,
+          discountValue: row.discount_value,
+          finalAmount: row.final_amount,
+          paymentStatus: row.payment_status,
+        } : null,
+        drugs,
+        serviceOrders,
+        invoices,
+      });
+    }
+
+    return {
+      patient: {
+        id: patient.id,
+        patientCode: patient.patient_code,
+        fullName: patient.full_name,
+        phone: patient.phone,
+        nationalId: patient.national_id,
+        age: patient.age,
+        createdAt: patient.created_at,
+      },
+      visits,
+    };
+  },
+
+  async getPatientPreviousConsultations(this: DatabaseStorage, patientId: string, limit: number = 5): Promise<Array<Record<string, unknown>>> {
+    const rows = await db.execute(sql`
+      SELECT
+        c.id,
+        c.chief_complaint,
+        c.diagnosis,
+        c.notes,
+        c.consultation_fee,
+        c.discount_value,
+        c.final_amount,
+        c.payment_status,
+        c.created_at,
+        a.appointment_date,
+        a.turn_number,
+        d.name AS doctor_name,
+        cl.name_ar AS clinic_name
+      FROM clinic_consultations c
+      JOIN clinic_appointments a ON a.id = c.appointment_id
+      JOIN doctors d ON d.id = a.doctor_id
+      JOIN clinic_clinics cl ON cl.id = a.clinic_id
+      WHERE a.patient_id = ${patientId}
+      ORDER BY a.appointment_date DESC, a.turn_number DESC
+      LIMIT ${limit}
+    `);
+
+    const result = [];
+    for (const row of rows.rows as Array<Record<string, unknown>>) {
+      const consultationId = row.id as string;
+      const drugRes = await db.execute(sql`
+        SELECT drug_name, dose, frequency, duration, quantity
+        FROM clinic_consultation_drugs WHERE consultation_id = ${consultationId} ORDER BY line_no
+      `);
+      result.push({ ...row, drugs: drugRes.rows });
+    }
+    return result;
+  },
+
   async deletePatient(this: DatabaseStorage, id: string): Promise<boolean> {
     const [patient] = await db.select({ fullName: patients.fullName }).from(patients).where(eq(patients.id, id));
     if (!patient) throw new Error("المريض غير موجود");

@@ -80,6 +80,9 @@ export default function Patients() {
   function handleOpenInvoice(invoiceId: string) {
     navigate(`/patient-invoices?loadId=${invoiceId}`);
   }
+  function handleViewFile(patientId: string) {
+    navigate(`/patients/${patientId}/file`);
+  }
   function handleCloseDialog() {
     setDialogOpen(false);
     setEditingPatient(null);
@@ -188,6 +191,7 @@ export default function Patients() {
           onEdit={handleEdit}
           onDelete={handleDelete}
           onOpenInvoice={handleOpenInvoice}
+          onViewFile={handleViewFile}
         />
       </div>
 

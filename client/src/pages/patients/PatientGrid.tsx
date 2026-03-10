@@ -1,12 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Edit2, Trash2, FileText } from "lucide-react";
+import { Edit2, Trash2, FileText, FolderOpen } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { AmountCell, InvoiceStatusBadge, TotalsRow } from "./PatientCells";
 import type { PatientGridProps, PatientRowProps } from "./types";
 
-function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit, onDelete, onOpenInvoice }: PatientRowProps) {
+function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit, onDelete, onOpenInvoice, onViewFile }: PatientRowProps) {
   const rowClass = `peachtree-grid-row${dimmed ? " opacity-50" : ""}`;
 
   return (
@@ -34,6 +34,14 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit
 
       <td>
         <div className="flex items-center justify-center gap-0.5">
+          <Button
+            variant="ghost" size="icon" className="h-6 w-6 text-purple-600"
+            title="ملف المريض"
+            onClick={() => onViewFile(p.id)}
+            data-testid={`button-view-file-${p.id}`}
+          >
+            <FolderOpen className="h-3 w-3" />
+          </Button>
           {canViewInvoice && p.latestInvoiceId && (
             <Button
               variant="ghost" size="icon" className="h-6 w-6 text-blue-600"
@@ -77,7 +85,7 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit
   );
 }
 
-export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, onEdit, onDelete, onOpenInvoice }: PatientGridProps) {
+export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, onEdit, onDelete, onOpenInvoice, onViewFile }: PatientGridProps) {
   if (isLoading) {
     return (
       <div className="p-3 space-y-2">
@@ -133,6 +141,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onOpenInvoice={onOpenInvoice}
+                  onViewFile={onViewFile}
                 />
               ))}
 
@@ -157,6 +166,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
                       onEdit={onEdit}
                       onDelete={onDelete}
                       onOpenInvoice={onOpenInvoice}
+                      onViewFile={onViewFile}
                     />
                   ))}
                 </>

@@ -465,6 +465,8 @@ export interface IStorage {
   searchPatients(search: string): Promise<Patient[]>;
   getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<Record<string, unknown>[]>;
   getPatient(id: string): Promise<Patient | undefined>;
+  getPatientJourney(patientId: string): Promise<Record<string, unknown> | null>;
+  getPatientPreviousConsultations(patientId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
   createPatient(data: InsertPatient): Promise<Patient>;
   updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient>;
   deletePatient(id: string): Promise<boolean>;

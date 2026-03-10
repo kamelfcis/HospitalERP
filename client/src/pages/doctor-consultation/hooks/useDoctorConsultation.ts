@@ -27,6 +27,8 @@ export function useDoctorConsultation(appointmentId: string) {
     notes: "",
     drugs: [],
     serviceOrders: [],
+    discountType: "amount",
+    discountValue: 0,
   });
 
   useEffect(() => {
@@ -36,6 +38,8 @@ export function useDoctorConsultation(appointmentId: string) {
         appointmentId,
         drugs: consultation.drugs || [],
         serviceOrders: consultation.serviceOrders || [],
+        discountType: consultation.discountType || "amount",
+        discountValue: consultation.discountValue ?? 0,
       });
     }
   }, [consultation, appointmentId]);
@@ -53,6 +57,8 @@ export function useDoctorConsultation(appointmentId: string) {
         notes: data.notes,
         drugs: data.drugs,
         serviceOrders: data.serviceOrders,
+        discountType: data.discountType || "amount",
+        discountValue: data.discountValue ?? 0,
       }, controller.signal).then((r) => r.json());
     },
     onSuccess: () => {
@@ -177,6 +183,8 @@ export function useDoctorConsultation(appointmentId: string) {
         notes: form.notes,
         drugs: form.drugs,
         serviceOrders: form.serviceOrders,
+        discountType: form.discountType || "amount",
+        discountValue: form.discountValue ?? 0,
       });
       await apiRequest("PATCH", `/api/clinic-appointments/${appointmentId}/status`, { status: "done" });
       setIsDirty(false);

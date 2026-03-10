@@ -93,9 +93,9 @@ export function registerClinicRoutes(app: Express) {
 
   app.post("/api/clinic-clinics", requireAuth, checkPermission("clinic.manage"), async (req, res) => {
     try {
-      const { nameAr, departmentId, defaultPharmacyId, consultationServiceId } = req.body;
+      const { nameAr, departmentId, defaultPharmacyId, consultationServiceId, treasuryId } = req.body;
       if (!nameAr?.trim()) return res.status(400).json({ message: "اسم العيادة مطلوب" });
-      const clinic = await storage.createClinic({ nameAr: nameAr.trim(), departmentId, defaultPharmacyId, consultationServiceId });
+      const clinic = await storage.createClinic({ nameAr: nameAr.trim(), departmentId, defaultPharmacyId, consultationServiceId, treasuryId });
       res.status(201).json(snakeToCamel(clinic));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
@@ -276,7 +276,7 @@ export function registerClinicRoutes(app: Express) {
 
   app.post("/api/clinic-consultations", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
     try {
-      const { appointmentId, chiefComplaint, diagnosis, notes, drugs, serviceOrders } = req.body;
+      const { appointmentId, chiefComplaint, diagnosis, notes, drugs, serviceOrders, discountType, discountValue } = req.body;
       if (!appointmentId) return res.status(400).json({ message: "appointmentId مطلوب" });
       const userId = req.session.userId!;
       const perms = await storage.getUserEffectivePermissions(userId);
@@ -293,6 +293,8 @@ export function registerClinicRoutes(app: Express) {
         appointmentId,
         chiefComplaint, diagnosis, notes,
         createdBy: userId,
+        discountType: discountType || 'amount',
+        discountValue: parseFloat(String(discountValue || 0)),
         drugs: drugs || [],
         serviceOrders: serviceOrders || [],
       });

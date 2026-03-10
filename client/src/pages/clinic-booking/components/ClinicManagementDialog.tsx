@@ -21,11 +21,14 @@ interface Props {
   onClose: () => void;
 }
 
+interface Treasury { id: string; name: string; }
+
 interface ClinicFormData {
   nameAr: string;
   departmentId?: string;
   defaultPharmacyId?: string;
   consultationServiceId?: string;
+  treasuryId?: string;
   secretaryFeeType?: string;
   secretaryFeeValue?: number;
 }
@@ -40,6 +43,7 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
   const [departmentId, setDepartmentId] = useState(clinic?.departmentId || "__none__");
   const [pharmacyId, setPharmacyId] = useState(clinic?.defaultPharmacyId || "__none__");
   const [consultationServiceId, setConsultationServiceId] = useState(clinic?.consultationServiceId || "__none__");
+  const [treasuryId, setTreasuryId] = useState(clinic?.treasuryId || "__none__");
   const [secretaryFeeType, setSecretaryFeeType] = useState(clinic?.secretaryFeeType || "__none__");
   const [secretaryFeeValue, setSecretaryFeeValue] = useState(String(clinic?.secretaryFeeValue || "0"));
 
@@ -52,6 +56,9 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
   const { data: services = [] } = useQuery<Service[]>({
     queryKey: ["/api/services"],
   });
+  const { data: treasuries = [] } = useQuery<Treasury[]>({
+    queryKey: ["/api/treasuries"],
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +68,7 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
       departmentId: departmentId !== "__none__" ? departmentId : "",
       defaultPharmacyId: pharmacyId !== "__none__" ? pharmacyId : "",
       consultationServiceId: consultationServiceId !== "__none__" ? consultationServiceId : "",
+      treasuryId: treasuryId !== "__none__" ? treasuryId : "",
       secretaryFeeType: secretaryFeeType !== "__none__" ? secretaryFeeType : "",
       secretaryFeeValue: secretaryFeeType !== "__none__" ? parseFloat(secretaryFeeValue) || 0 : 0,
     });
@@ -109,21 +117,37 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
           </Select>
         </div>
       </div>
-      <div className="space-y-1">
-        <Label className="text-xs">خدمة الكشف (لكشف حساب الطبيب)</Label>
-        <Select value={consultationServiceId} onValueChange={setConsultationServiceId}>
-          <SelectTrigger className="h-8 text-xs" data-testid="select-consultation-service">
-            <SelectValue placeholder="اختر خدمة الكشف..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">بدون خدمة كشف</SelectItem>
-            {services.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.nameAr} — {parseFloat(String(s.basePrice || 0)).toLocaleString("ar-EG")} ج.م
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">خدمة الكشف (لكشف حساب الطبيب)</Label>
+          <Select value={consultationServiceId} onValueChange={setConsultationServiceId}>
+            <SelectTrigger className="h-8 text-xs" data-testid="select-consultation-service">
+              <SelectValue placeholder="اختر خدمة الكشف..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">بدون خدمة كشف</SelectItem>
+              {services.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.nameAr} — {parseFloat(String(s.basePrice || 0)).toLocaleString("ar-EG")} ج.م
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">خزنة العيادة (لتسجيل رسم الكشف)</Label>
+          <Select value={treasuryId} onValueChange={setTreasuryId}>
+            <SelectTrigger className="h-8 text-xs" data-testid="select-clinic-treasury">
+              <SelectValue placeholder="اختر الخزنة..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">بدون خزنة</SelectItem>
+              {treasuries.map((t) => (
+                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -273,6 +297,9 @@ export function ClinicManagementDialog({ open, onClose }: Props) {
                         <div className="text-xs text-muted-foreground">
                           {[c.departmentName, c.pharmacyName].filter(Boolean).join(" — ") || "بدون تخصيص"}
                         </div>
+                        {c.treasuryName && (
+                          <div className="text-xs text-blue-600 mt-0.5">خزنة: {c.treasuryName}</div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge

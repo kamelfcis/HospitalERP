@@ -12,6 +12,7 @@ import { salesInvoiceHeaders, services, patientInvoiceHeaders } from "./invoicin
 
 export const patients = pgTable("patients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientCode: varchar("patient_code", { length: 20 }),
   fullName: text("full_name").notNull(),
   phone: varchar("phone", { length: 11 }),
   nationalId: varchar("national_id", { length: 14 }),

@@ -2,7 +2,7 @@ import { useParams, useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Save, ArrowRight, Loader2, CheckCircle2, CheckCheck } from "lucide-react";
+import { Printer, Save, Loader2, CheckCircle2, CheckCheck, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDoctorConsultation } from "./hooks/useDoctorConsultation";
 import { useFavoriteDrugs } from "./hooks/useFavoriteDrugs";
@@ -12,6 +12,8 @@ import { PrescriptionQuadrant } from "./components/PrescriptionQuadrant";
 import { ServicesQuadrant } from "./components/ServicesQuadrant";
 import { DoctorStatementTab } from "./components/DoctorStatementTab";
 import { PrintPrescription } from "./components/PrintPrescription";
+import { FeeDiscountBar } from "./components/FeeDiscountBar";
+import { PatientHistoryPanel } from "./components/PatientHistoryPanel";
 
 export default function DoctorConsultation() {
   const params = useParams<{ id: string }>();
@@ -33,6 +35,13 @@ export default function DoctorConsultation() {
     saveNow,
     finishConsultation,
   } = useDoctorConsultation(appointmentId);
+
+  const consultationFee = parseFloat(String(form.consultationFee || 0));
+  const discountValue = parseFloat(String(form.discountValue || 0));
+  const discountType = form.discountType || "amount";
+  const computedFinal = discountType === "percent"
+    ? consultationFee * (1 - discountValue / 100)
+    : consultationFee - discountValue;
 
   const {
     favorites,
@@ -82,6 +91,18 @@ export default function DoctorConsultation() {
             {form.appointmentDate && (
               <span className="text-xs text-muted-foreground" dir="ltr">{form.appointmentDate}</span>
             )}
+            {form.patientId && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 text-xs gap-1 text-purple-600 hover:text-purple-700 px-2"
+                onClick={() => navigate(`/patients/${form.patientId}/file`)}
+                data-testid="button-patient-file"
+              >
+                <History className="h-3 w-3" />
+                ملف المريض
+              </Button>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -110,6 +131,20 @@ export default function DoctorConsultation() {
           </Button>
         </div>
       </div>
+
+      {/* شريط رسم الكشف والخصم */}
+      {consultationFee > 0 && (
+        <FeeDiscountBar
+          consultationFee={consultationFee}
+          discountType={discountType}
+          discountValue={discountValue}
+          finalAmount={Math.max(0, computedFinal)}
+          paymentStatus={form.paymentStatus}
+          treasuryId={form.treasuryId}
+          onDiscountTypeChange={(t) => updateForm("discountType", t)}
+          onDiscountValueChange={(v) => updateForm("discountValue", v)}
+        />
+      )}
 
       {/* التخطيط 2×2 */}
       <div className="grid grid-cols-2 gap-3 h-40 shrink-0">
@@ -152,10 +187,22 @@ export default function DoctorConsultation() {
         <Tabs defaultValue="consultation">
           <TabsList className="h-8">
             <TabsTrigger value="consultation" className="text-xs h-7">كشف الطبيب</TabsTrigger>
+            {form.patientId && (
+              <TabsTrigger value="history" className="text-xs h-7 gap-1" data-testid="tab-patient-history">
+                <History className="h-3 w-3" />
+                تاريخ المريض
+              </TabsTrigger>
+            )}
             <TabsTrigger value="statement" className="text-xs h-7">كشف الحساب</TabsTrigger>
           </TabsList>
           <TabsContent value="consultation" className="mt-2">
             <p className="text-xs text-muted-foreground">البيانات تُحفظ تلقائياً أثناء الكتابة</p>
+          </TabsContent>
+          <TabsContent value="history" className="mt-2 max-h-56 overflow-y-auto">
+            <PatientHistoryPanel
+              patientId={form.patientId}
+              currentAppointmentId={appointmentId}
+            />
           </TabsContent>
           <TabsContent value="statement" className="mt-2">
             <DoctorStatementTab doctorId={form.doctorId} />

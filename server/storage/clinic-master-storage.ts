@@ -20,11 +20,13 @@ const methods = {
       const rows = await db.execute(sql`
         SELECT c.*, d.name_ar AS department_name,
                w.name_ar AS pharmacy_name,
-               sv.name_ar AS consultation_service_name
+               sv.name_ar AS consultation_service_name,
+               tr.name AS treasury_name
         FROM clinic_clinics c
         LEFT JOIN departments d ON d.id = c.department_id
         LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
         LEFT JOIN services sv ON sv.id = c.consultation_service_id
+        LEFT JOIN treasuries tr ON tr.id = c.treasury_id
         ORDER BY c.name_ar
       `);
       return rows.rows as Array<Record<string, unknown>>;
@@ -32,11 +34,13 @@ const methods = {
     const rows = await db.execute(sql`
       SELECT c.*, d.name_ar AS department_name,
              w.name_ar AS pharmacy_name,
-             sv.name_ar AS consultation_service_name
+             sv.name_ar AS consultation_service_name,
+             tr.name AS treasury_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
       LEFT JOIN services sv ON sv.id = c.consultation_service_id
+      LEFT JOIN treasuries tr ON tr.id = c.treasury_id
       JOIN clinic_user_clinic_assignments a ON a.clinic_id = c.id AND a.user_id = ${userId}
       ORDER BY c.name_ar
     `);
@@ -47,31 +51,34 @@ const methods = {
     const rows = await db.execute(sql`
       SELECT c.*, d.name_ar AS department_name,
              w.name_ar AS pharmacy_name,
-             sv.name_ar AS consultation_service_name
+             sv.name_ar AS consultation_service_name,
+             tr.name AS treasury_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
       LEFT JOIN services sv ON sv.id = c.consultation_service_id
+      LEFT JOIN treasuries tr ON tr.id = c.treasury_id
       WHERE c.id = ${id}
     `);
     return (rows.rows[0] as Record<string, unknown>) ?? null;
   },
 
-  async createClinic(this: DatabaseStorage, data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<Record<string, unknown>> {
+  async createClinic(this: DatabaseStorage, data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; treasuryId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<Record<string, unknown>> {
     const rows = await db.execute(sql`
-      INSERT INTO clinic_clinics (name_ar, department_id, default_pharmacy_id, consultation_service_id, secretary_fee_type, secretary_fee_value)
-      VALUES (${data.nameAr}, ${data.departmentId ?? null}, ${data.defaultPharmacyId ?? null}, ${data.consultationServiceId ?? null}, ${data.secretaryFeeType ?? null}, ${data.secretaryFeeValue ?? 0})
+      INSERT INTO clinic_clinics (name_ar, department_id, default_pharmacy_id, consultation_service_id, treasury_id, secretary_fee_type, secretary_fee_value)
+      VALUES (${data.nameAr}, ${data.departmentId ?? null}, ${data.defaultPharmacyId ?? null}, ${data.consultationServiceId ?? null}, ${data.treasuryId ?? null}, ${data.secretaryFeeType ?? null}, ${data.secretaryFeeValue ?? 0})
       RETURNING *
     `);
     return rows.rows[0] as Record<string, unknown>;
   },
 
-  async updateClinic(this: DatabaseStorage, id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<Record<string, unknown> | null> {
+  async updateClinic(this: DatabaseStorage, id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; treasuryId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<Record<string, unknown> | null> {
     const updates = [];
     if (data.nameAr !== undefined) updates.push(sql`name_ar = ${data.nameAr}`);
     if (data.departmentId !== undefined) updates.push(sql`department_id = ${data.departmentId || null}`);
     if (data.defaultPharmacyId !== undefined) updates.push(sql`default_pharmacy_id = ${data.defaultPharmacyId || null}`);
     if (data.consultationServiceId !== undefined) updates.push(sql`consultation_service_id = ${data.consultationServiceId || null}`);
+    if (data.treasuryId !== undefined) updates.push(sql`treasury_id = ${data.treasuryId || null}`);
     if (data.secretaryFeeType !== undefined) updates.push(sql`secretary_fee_type = ${data.secretaryFeeType || null}`);
     if (data.secretaryFeeValue !== undefined) updates.push(sql`secretary_fee_value = ${data.secretaryFeeValue ?? 0}`);
     if (data.isActive !== undefined) updates.push(sql`is_active = ${data.isActive}`);
@@ -204,11 +211,11 @@ const methods = {
   async getConsultationByAppointment(this: DatabaseStorage, appointmentId: string): Promise<Record<string, unknown> | null> {
     const consRows = await db.execute(sql`
       SELECT c.*,
-             a.patient_name, a.patient_phone, a.appointment_date, a.appointment_time,
+             a.patient_name, a.patient_phone, a.patient_id, a.appointment_date, a.appointment_time,
              a.turn_number, a.status AS appointment_status, a.doctor_id, a.clinic_id,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
              cl.name_ar AS clinic_name, cl.default_pharmacy_id,
-             cl.consultation_service_id
+             cl.consultation_service_id, cl.treasury_id
       FROM clinic_consultations c
       JOIN clinic_appointments a ON a.id = c.appointment_id
       JOIN doctors d ON d.id = a.doctor_id
@@ -220,7 +227,7 @@ const methods = {
         SELECT a.*,
                d.name AS doctor_name, d.specialty AS doctor_specialty,
                cl.name_ar AS clinic_name, cl.default_pharmacy_id,
-               cl.consultation_service_id
+               cl.consultation_service_id, cl.treasury_id
         FROM clinic_appointments a
         JOIN doctors d ON d.id = a.doctor_id
         JOIN clinic_clinics cl ON cl.id = a.clinic_id
@@ -297,6 +304,7 @@ const methods = {
 
   async saveConsultation(this: DatabaseStorage, data: {
     appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string;
+    discountType?: string; discountValue?: number;
     drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[];
     serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[];
   }): Promise<any> {
@@ -306,6 +314,7 @@ const methods = {
 
       const apptRes = await client.query(
         `SELECT a.*, d.name AS doctor_name, cl.default_pharmacy_id, cl.consultation_service_id,
+                cl.treasury_id AS clinic_treasury_id,
                 s.name_ar AS consultation_service_name, s.base_price AS consultation_service_base_price,
                 s.department_id AS consultation_service_dept_id,
                 dep.name_ar AS consultation_service_dept_name
@@ -319,16 +328,42 @@ const methods = {
       const appt = apptRes.rows[0];
       if (!appt) throw new Error("الموعد غير موجود");
 
+      // حساب رسم الكشف والخصم
+      let consultationFee = 0;
+      if (appt.consultation_service_id) {
+        const dpRes = await client.query(
+          `SELECT price FROM clinic_service_doctor_prices WHERE service_id = $1 AND doctor_id = $2`,
+          [appt.consultation_service_id, appt.doctor_id]
+        );
+        consultationFee = dpRes.rows.length > 0
+          ? parseFloat(String(dpRes.rows[0].price))
+          : parseFloat(String(appt.consultation_service_base_price || 0));
+      }
+      const discountType = data.discountType || 'amount';
+      const discountValue = parseFloat(String(data.discountValue || 0));
+      const discountAmount = discountType === 'percent'
+        ? Math.round((consultationFee * discountValue / 100) * 100) / 100
+        : discountValue;
+      const finalAmount = Math.max(0, consultationFee - discountAmount);
+
       const consRes = await client.query(`
-        INSERT INTO clinic_consultations (appointment_id, chief_complaint, diagnosis, notes, created_by, updated_at)
-        VALUES ($1, $2, $3, $4, $5, now())
+        INSERT INTO clinic_consultations
+          (appointment_id, chief_complaint, diagnosis, notes, created_by,
+           consultation_fee, discount_type, discount_value, final_amount, payment_status, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'paid', now())
         ON CONFLICT (appointment_id) DO UPDATE
           SET chief_complaint = EXCLUDED.chief_complaint,
               diagnosis = EXCLUDED.diagnosis,
               notes = EXCLUDED.notes,
+              consultation_fee = EXCLUDED.consultation_fee,
+              discount_type = EXCLUDED.discount_type,
+              discount_value = EXCLUDED.discount_value,
+              final_amount = EXCLUDED.final_amount,
+              payment_status = 'paid',
               updated_at = now()
         RETURNING *
-      `, [data.appointmentId, data.chiefComplaint ?? null, data.diagnosis ?? null, data.notes ?? null, data.createdBy ?? null]);
+      `, [data.appointmentId, data.chiefComplaint ?? null, data.diagnosis ?? null, data.notes ?? null,
+          data.createdBy ?? null, consultationFee, discountType, discountValue, finalAmount]);
       const consultation = consRes.rows[0];
 
       await client.query(`DELETE FROM clinic_consultation_drugs WHERE consultation_id = $1`, [consultation.id]);
@@ -416,8 +451,25 @@ const methods = {
 
       await client.query(`UPDATE clinic_appointments SET status = 'in_consultation' WHERE id = $1 AND status = 'waiting'`, [data.appointmentId]);
 
+      // تسجيل رسم الكشف في الخزنة (idempotent)
+      if (appt.clinic_treasury_id && finalAmount > 0) {
+        await client.query(`
+          INSERT INTO treasury_transactions
+            (treasury_id, type, amount, description, source_type, source_id, transaction_date)
+          VALUES ($1, 'receipt', $2, $3, 'clinic_consultation', $4, CURRENT_DATE)
+          ON CONFLICT (source_type, source_id, treasury_id) DO UPDATE
+            SET amount = EXCLUDED.amount,
+                description = EXCLUDED.description
+        `, [
+          appt.clinic_treasury_id,
+          finalAmount,
+          `رسم كشف: ${appt.patient_name} - د. ${appt.doctor_name}`,
+          consultation.id,
+        ]);
+      }
+
       await client.query('COMMIT');
-      return consultation;
+      return { ...consultation, consultationFee, discountType, discountValue, finalAmount };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
