@@ -260,8 +260,12 @@ export default function ItemStatsPanel({
             <div className="text-sm font-bold text-green-700">{avgSales?.totalQty || "0"}</div>
           </div>
           <div className="bg-purple-50 rounded p-1">
-            <div className="text-[9px] text-muted-foreground">متوسط السعر</div>
-            <div className="text-sm font-bold text-purple-700">{formatCurrency(avgSales?.avgPrice || "0")}</div>
+            <div className="text-[9px] text-muted-foreground">متوسط/شهر</div>
+            <div className="text-sm font-bold text-purple-700">
+              {avgSales
+                ? (parseFloat(avgSales.totalQty) / parseInt(salesPeriod)).toFixed(1)
+                : "0"}
+            </div>
           </div>
         </div>
       </fieldset>
