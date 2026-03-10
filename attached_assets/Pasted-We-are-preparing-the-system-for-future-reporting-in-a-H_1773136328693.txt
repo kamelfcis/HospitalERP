@@ -1,0 +1,118 @@
+We are preparing the system for future reporting in a Hospital ERP system.
+
+IMPORTANT:
+Do NOT modify existing business logic or transactional tables.
+We only want to design a reporting architecture for future reports.
+
+The reporting layer must support the FULL PATIENT JOURNEY across the hospital.
+
+PATIENT JOURNEY FLOW
+Patient → Registration → Admission / Visit
+→ Medical Services (Lab, Radiology, Procedures, ICU, OR)
+→ Pharmacy
+→ Billing / Invoice
+→ Payment
+→ Discharge
+
+STEP 1 — Analyze existing transactional tables, especially:
+
+Patient / Clinical
+- patients
+- admissions
+- patient_invoice_headers
+- patient_invoice_lines
+- services
+
+Financial
+- journal_entries
+- journal_lines
+- sales_invoice_headers
+- sales_invoice_lines
+
+Inventory / Pharmacy
+- inventory_lots
+- inventory_lot_movements
+
+Other operational tables if present.
+
+STEP 2 — Identify tables expected to grow heavily in production:
+For example:
+- journal_lines
+- inventory_lot_movements
+- patient_invoice_lines
+- sales_invoice_lines
+
+Explain which tables will become reporting bottlenecks.
+
+STEP 3 — Design a dedicated REPORTING LAYER that avoids heavy joins on transactional tables.
+
+Create proposed reporting tables such as:
+
+Patient Journey
+- reporting_patient_visit_summary
+- reporting_patient_service_usage
+- reporting_patient_revenue
+
+Financial
+- reporting_account_balances_by_period
+- reporting_daily_revenue
+- reporting_department_profitability
+
+Pharmacy / Inventory
+- reporting_inventory_snapshot
+- reporting_item_movements_summary
+
+Operational
+- reporting_department_activity
+- reporting_doctor_activity
+
+STEP 4 — Each reporting table must include:
+
+- clear schema
+- primary keys
+- useful indexes
+- relationships if needed
+
+STEP 5 — Reporting tables must support hospital reports like:
+
+Financial
+- Trial Balance
+- General Ledger
+- Revenue by department
+- Revenue by doctor
+
+Operational
+- Patient journey timeline
+- Service usage per department
+- Bed occupancy
+- Department workload
+
+Pharmacy
+- Drug consumption
+- Inventory movement
+- Expiry monitoring
+
+STEP 6 — Define a REFRESH STRATEGY for each reporting table:
+
+Options:
+- daily batch refresh
+- incremental update
+- scheduled snapshot
+- event-driven refresh
+
+Explain which method is best for each table.
+
+STEP 7 — Provide example SQL for:
+
+- creating reporting tables
+- indexes for reporting
+- refresh logic
+
+STEP 8 — Ensure the design scales to production volumes:
+
+- 1M+ journal_lines
+- 500k inventory movements
+- 200k invoices
+- 300k patient service records
+
+The goal is to create a scalable reporting architecture that supports the full hospital patient journey and prevents slow reports in the future.
