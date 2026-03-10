@@ -19,8 +19,6 @@ import PatientFormDialog from "./PatientFormDialog";
 import { PatientFilePanel } from "./components/PatientFilePanel";
 import { NewVisitDialog } from "./components/NewVisitDialog";
 
-const todayISO = new Date().toISOString().slice(0, 10);
-
 export default function Patients() {
   const [, navigate]      = useLocation();
   const { hasPermission } = useAuth();
@@ -31,8 +29,8 @@ export default function Patients() {
   const canViewInvoice = hasPermission("patient_invoices.view");
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom,    setDateFrom]    = useState(todayISO);
-  const [dateTo,      setDateTo]      = useState(todayISO);
+  const [dateFrom,    setDateFrom]    = useState("");
+  const [dateTo,      setDateTo]      = useState("");
   const [deptId,      setDeptId]      = useState("");
 
   const [dialogOpen,     setDialogOpen]     = useState(false);
