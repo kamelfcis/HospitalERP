@@ -103,9 +103,14 @@ CREATE INDEX IF NOT EXISTS ridx_pr_insurance_period
     ON rpt_patient_revenue (insurance_company, period_year, period_month)
     WHERE insurance_company IS NOT NULL;
 
--- Unique upsert target
-CREATE UNIQUE INDEX IF NOT EXISTS ridx_pr_upsert
-    ON rpt_patient_revenue (period_year, period_month, patient_id);
+-- Walk-in patients (patient_id IS NULL): one aggregate row per month.
+-- Standard UNIQUE constraint skips NULLs, so this partial index closes the gap.
+CREATE UNIQUE INDEX IF NOT EXISTS ridx_pr_walksin
+    ON rpt_patient_revenue (period_year, period_month)
+    WHERE patient_id IS NULL;
+-- NOTE: the named constraint CONSTRAINT rpt_pr_patient_period_unique in 01_create_tables.sql
+-- already provides the backing UNIQUE index for non-NULL patient_id rows.
+-- ridx_pr_walksin covers the NULL case only.
 
 
 -- ┌─────────────────────────────────────────────────────────┐
@@ -160,6 +165,20 @@ CREATE INDEX IF NOT EXISTS ridx_dr_pharmacy_date
 -- Source type filter
 CREATE INDEX IF NOT EXISTS ridx_dr_source_date
     ON rpt_daily_revenue (source_type, revenue_date DESC);
+
+-- UNIQUE: upsert target for rpt_refresh_daily_revenue (DELETE+INSERT, integrity guard).
+-- COALESCE handles nullable dimension columns — NULL department_id, pharmacy_id,
+-- and doctor_name all collapse to '' for uniqueness purposes.
+-- This MUST be a CREATE UNIQUE INDEX (not a table constraint) because COALESCE
+-- is a function expression; PostgreSQL does not allow expressions in inline UNIQUE.
+CREATE UNIQUE INDEX IF NOT EXISTS ridx_dr_upsert
+    ON rpt_daily_revenue (
+        revenue_date,
+        source_type,
+        COALESCE(department_id, ''),
+        COALESCE(pharmacy_id,   ''),
+        COALESCE(doctor_name,   '')
+    );
 
 
 -- ┌─────────────────────────────────────────────────────────┐

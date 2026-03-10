@@ -681,43 +681,64 @@ rpt_item_movements_summary (item_id=I, warehouse_id=W, movement_date=D)
 
 | # | Column | Type | Category | Business Meaning |
 |---|--------|------|----------|-----------------|
-| 1 | `id` | BIGSERIAL PK | ❌ | Auto-incrementing surrogate key. Monotonically increasing order = chronological order. |
-| 2 | `refresh_fn` | TEXT NOT NULL | 🟦 ❌ | Name of the PostgreSQL function that was executed. E.g. `'rpt_refresh_patient_visit_summary'`, `'rpt_nightly_refresh'`. |
-| 3 | `target_table` | TEXT | 🟦 ❌ | Primary reporting table being written. E.g. `'rpt_patient_visit_summary'`. NULL for orchestrator functions that call multiple sub-functions. |
-| 4 | `trigger_source` | TEXT | 🟦 ❌ | What initiated this refresh: `'nightly_cron'`, `'event_invoice_finalize'`, `'event_payment'`, `'event_discharge'`, `'event_journal_post'`, `'manual'`. Useful for separating scheduled runs from event-driven ones. |
-| 5 | `input_params` | JSONB | 🟦 ❌ | Parameters passed to the refresh function at call time. E.g. `{"source_id": "ADM-001", "period_year": 2026, "period_month": 3}`. NULL for full-table refreshes. Stored as JSONB for flexible querying. |
-| 6 | `started_at` | TIMESTAMPTZ NOT NULL | 🟦 ❌ | Wall-clock timestamp when the refresh function was entered. Set by the function before any work begins. |
-| 7 | `completed_at` | TIMESTAMPTZ | 🟦 ❌ | Wall-clock timestamp when the function exited normally. NULL until completion. Compute duration as `completed_at - started_at`. |
-| 8 | `rows_affected` | INTEGER | 🟩 ✅ | Number of rows inserted or updated in the target table during this run. From `GET DIAGNOSTICS`. 0 = ran but nothing changed (idempotent). NULL = not yet completed or not tracked for this function. |
-| 9 | `status` | TEXT NOT NULL | 🟦 ❌ | Run state: `'running'` (inserted at start), `'completed'` (updated on success), `'failed'` (updated on EXCEPTION). Use `WHERE status='failed'` to find broken runs. |
-| 10 | `error_message` | TEXT | 🟦 ❌ | PostgreSQL exception `SQLERRM` text if `status='failed'`. NULL on success. Used to diagnose failed nightly refreshes without access to server logs. |
-| 11 | `error_detail` | TEXT | 🟦 ❌ | PostgreSQL `SQLSTATE` + `PG_EXCEPTION_DETAIL` if available. NULL on success. |
+| 1 | `id` | BIGSERIAL PK | ❌ | Auto-incrementing surrogate key. Monotonically increasing = chronological order. |
+| 2 | `report_table_name` | VARCHAR(100) NOT NULL | 🟦 ❌ | Primary reporting table being written. E.g. `'rpt_patient_visit_summary'`. Value is `'ALL'` for orchestrator function `rpt_nightly_refresh()` which calls multiple sub-functions. |
+| 3 | `refresh_function` | VARCHAR(100) NOT NULL | 🟦 ❌ | Name of the PostgreSQL function that was executed. E.g. `'rpt_refresh_account_balances'`, `'rpt_nightly_refresh'`. |
+| 4 | `refresh_params` | JSONB | 🟦 ❌ | Parameters passed to the refresh function at call time. E.g. `{"period_id":"FP-2026-01","full":true}`. NULL for parameter-free calls. Stored as JSONB for ad hoc querying. |
+| 5 | `refresh_start_at` | TIMESTAMP NOT NULL | 🟦 ❌ | Wall-clock timestamp (`clock_timestamp()`) when the function was entered, before any work begins. |
+| 6 | `refresh_end_at` | TIMESTAMP | 🟦 ❌ | Wall-clock timestamp when the function exited (success or failure). NULL while `status='running'`. |
+| 7 | `duration_ms` | INTEGER | 🟩 ✅ | Elapsed time in milliseconds (`refresh_end_at - refresh_start_at`). NULL if still running. Use for performance trend monitoring. |
+| 8 | `status` | VARCHAR(20) NOT NULL | 🟦 ❌ | Run state: `'running'` → inserted at start; `'success'` → updated on normal completion; `'partial'` → completed but some rows skipped with warnings; `'failed'` → updated on EXCEPTION. Use `WHERE status='failed'` to find broken runs. |
+| 9 | `rows_affected` | INTEGER | 🟩 ✅ | Rows inserted or updated in the target table (`GET DIAGNOSTICS`). 0 = ran but nothing changed (idempotent). NULL = still running, or orchestrator (no direct rows). |
+| 10 | `rows_inspected` | INTEGER | 🟩 ✅ | Source rows read from transactional tables (for cost/regression diagnostics). Set manually in complex functions. NULL for most functions. |
+| 11 | `error_message` | TEXT | 🟦 ❌ | PostgreSQL `SQLERRM` text if `status='failed'`. NULL on success. First line of the error. |
+| 12 | `error_detail` | TEXT | 🟦 ❌ | `SQLSTATE` code (e.g. `'23505'` for unique violation). NULL on success. |
+| 13 | `error_context` | TEXT | 🟦 ❌ | `PG_EXCEPTION_CONTEXT` stack trace if available. NULL on success. Use for diagnosing errors deep in nested function calls. |
+| 14 | `triggered_by` | VARCHAR(50) NOT NULL | 🟦 ❌ | What initiated this refresh: `'nightly_batch'` (default), `'event_invoice_finalize'`, `'event_payment'`, `'event_discharge'`, `'event_journal_post'`, `'event_lot_movement'`, `'period_close'`, `'manual'`. |
+| 15 | `triggered_by_user` | VARCHAR | 🟦 ❌ | `users.id` if triggered manually via admin UI. NULL for automated runs. |
+| 16 | `period_id` | VARCHAR | 🟦 ❌ | `fiscal_periods.id` for period-scoped refreshes (e.g. `rpt_refresh_account_balances`). NULL for date-scoped or full-table refreshes. |
+| 17 | `date_scope` | DATE | 🟦 ❌ | Specific date for date-scoped refreshes (e.g. `rpt_refresh_daily_revenue`, `rpt_refresh_inventory_snapshot`). NULL for period-scoped or full-table refreshes. |
 
 **Usage patterns:**
 ```sql
--- Check last run status for each function
-SELECT refresh_fn, status, started_at, completed_at,
-       completed_at - started_at AS duration,
+-- Check last 24 hours of refresh runs
+SELECT report_table_name, refresh_function, status,
+       refresh_start_at,
+       duration_ms,
        rows_affected
 FROM rpt_refresh_log
-WHERE started_at > NOW() - INTERVAL '24 hours'
-ORDER BY started_at DESC;
+WHERE refresh_start_at > NOW() - INTERVAL '24 hours'
+ORDER BY refresh_start_at DESC;
 
--- Find failed runs in last 7 days
-SELECT * FROM rpt_refresh_log
-WHERE status = 'failed'
-  AND started_at > NOW() - INTERVAL '7 days'
-ORDER BY started_at DESC;
-
--- Monitor refresh duration trends
-SELECT refresh_fn,
-       AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) AS avg_sec,
-       MAX(EXTRACT(EPOCH FROM (completed_at - started_at))) AS max_sec,
-       COUNT(*) FILTER (WHERE status = 'failed') AS fail_count
+-- Find all failed runs in last 7 days
+SELECT report_table_name, refresh_function,
+       refresh_start_at, error_message, error_detail
 FROM rpt_refresh_log
-WHERE started_at > NOW() - INTERVAL '30 days'
-GROUP BY refresh_fn
-ORDER BY avg_sec DESC;
+WHERE status = 'failed'
+  AND refresh_start_at > NOW() - INTERVAL '7 days'
+ORDER BY refresh_start_at DESC;
+
+-- Monitor refresh duration trends (detect slowdowns)
+SELECT refresh_function,
+       AVG(duration_ms)                              AS avg_ms,
+       MAX(duration_ms)                              AS max_ms,
+       COUNT(*) FILTER (WHERE status = 'failed')     AS fail_count,
+       COUNT(*) FILTER (WHERE status = 'success')    AS success_count
+FROM rpt_refresh_log
+WHERE refresh_start_at > NOW() - INTERVAL '30 days'
+  AND status IN ('success', 'failed')
+GROUP BY refresh_function
+ORDER BY avg_ms DESC;
+
+-- Check freshness: last successful run per table
+SELECT DISTINCT ON (report_table_name)
+    report_table_name,
+    refresh_function,
+    refresh_end_at,
+    rows_affected
+FROM rpt_refresh_log
+WHERE status = 'success'
+ORDER BY report_table_name, refresh_end_at DESC;
 ```
 
 ---

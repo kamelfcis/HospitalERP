@@ -170,7 +170,12 @@ CREATE TABLE IF NOT EXISTS rpt_patient_revenue (
     total_paid            NUMERIC(15,2) NOT NULL DEFAULT 0,
     outstanding_balance   NUMERIC(15,2) NOT NULL DEFAULT 0,
 
-    refreshed_at          TIMESTAMP    NOT NULL DEFAULT NOW()
+    refreshed_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
+
+    -- Unique constraint enforces one row per (patient × period).
+    -- NULL patient_id (walk-ins) is NOT covered by this constraint —
+    -- walk-in aggregates are separated by a partial UNIQUE index ridx_pr_walksin in 02.
+    CONSTRAINT rpt_pr_patient_period_unique UNIQUE (period_year, period_month, patient_id)
 );
 
 
@@ -274,9 +279,11 @@ CREATE TABLE IF NOT EXISTS rpt_daily_revenue (
     total_cogs            NUMERIC(15,2) NOT NULL DEFAULT 0,
     gross_profit          NUMERIC(15,2) NOT NULL DEFAULT 0,
 
-    refreshed_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
+    refreshed_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 
-    UNIQUE (revenue_date, source_type, COALESCE(department_id,''), COALESCE(pharmacy_id,''), COALESCE(doctor_name,''))
+    -- NOTE: uniqueness enforced by functional index ridx_dr_upsert in 02_create_indexes.sql.
+    -- COALESCE expressions cannot be used in inline UNIQUE constraints in PostgreSQL;
+    -- they require a CREATE UNIQUE INDEX.  Do NOT add a UNIQUE constraint here.
 );
 
 

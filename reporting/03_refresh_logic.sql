@@ -55,8 +55,19 @@ CREATE OR REPLACE FUNCTION rpt_refresh_account_balances(
 RETURNS INTEGER    -- rows upserted
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_count INTEGER;
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
 BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by, period_id
+    ) VALUES (
+        'rpt_account_balances_by_period',
+        'rpt_refresh_account_balances',
+        jsonb_build_object('period_id', p_period_id, 'full', p_full, 'entry_id', p_entry_id),
+        v_start, 'running', 'event_journal_post', p_period_id
+    ) RETURNING id INTO v_log_id;
     -- Step 1: compute period-level balances from journal_lines
     WITH source AS (
         SELECT
@@ -144,7 +155,24 @@ BEGIN
         refreshed_at        = NOW();
 
     GET DIAGNOSTICS v_count = ROW_COUNT;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
     RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
@@ -153,27 +181,44 @@ $$;
 -- 2. rpt_patient_visit_summary
 -- Rebuild a single visit (called on invoice finalize,
 -- payment, or discharge).
--- p_visit_type: 'inpatient' or 'outpatient'
--- p_source_id:  admissions.id OR patient_invoice_headers.id
+-- p_source_type: 'admissions' | 'patient_invoice_headers'
+-- p_source_id:   admissions.id  OR  patient_invoice_headers.id
 -- ============================================================
 CREATE OR REPLACE FUNCTION rpt_refresh_patient_visit(
-    p_visit_type VARCHAR,
-    p_source_id  VARCHAR
+    p_source_type VARCHAR,   -- 'admissions' | 'patient_invoice_headers'
+    p_source_id   VARCHAR
 )
-RETURNS VOID LANGUAGE plpgsql AS $$
+RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
+    v_log_id       BIGINT;
+    v_start        TIMESTAMP := clock_timestamp();
     v_admission_id VARCHAR;
+    v_visit_type   VARCHAR;   -- derived display label ('inpatient' | 'outpatient')
+    v_count        INTEGER    := 0;
 BEGIN
-    -- Resolve which admission or outpatient invoice we're rebuilding
-    IF p_visit_type = 'inpatient' THEN
+    -- Derive display label and resolve admission FK
+    IF p_source_type = 'admissions' THEN
+        v_visit_type   := 'inpatient';
         v_admission_id := p_source_id;
     ELSE
-        -- For outpatient: source_id is patient_invoice_headers.id
+        v_visit_type   := 'outpatient';
         v_admission_id := NULL;
     END IF;
 
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by
+    ) VALUES (
+        'rpt_patient_visit_summary',
+        'rpt_refresh_patient_visit',
+        jsonb_build_object('source_type', p_source_type, 'source_id', p_source_id),
+        v_start, 'running', 'event'
+    ) RETURNING id INTO v_log_id;
+
     INSERT INTO rpt_patient_visit_summary (
-        id, visit_type, source_id, visit_date, discharge_date, los_days,
+        id,
+        source_type, source_id, visit_type,
+        visit_date, discharge_date, los_days,
         period_year, period_month, period_week,
         patient_id, patient_name, patient_type, insurance_company, payment_type,
         department_id, department_name, doctor_name,
@@ -186,11 +231,12 @@ BEGIN
     )
     SELECT
         gen_random_uuid(),
-        p_visit_type,
+        p_source_type,
         p_source_id,
-        CASE WHEN p_visit_type='inpatient' THEN a.admission_date ELSE h.invoice_date END,
-        CASE WHEN p_visit_type='inpatient' THEN a.discharge_date ELSE NULL END,
-        CASE WHEN p_visit_type='inpatient' AND a.discharge_date IS NOT NULL
+        v_visit_type,
+        CASE WHEN v_visit_type='inpatient' THEN a.admission_date ELSE h.invoice_date END,
+        CASE WHEN v_visit_type='inpatient' THEN a.discharge_date ELSE NULL END,
+        CASE WHEN v_visit_type='inpatient' AND a.discharge_date IS NOT NULL
              THEN (a.discharge_date - a.admission_date)::NUMERIC
              ELSE NULL END,
         EXTRACT(YEAR  FROM COALESCE(a.admission_date, h.invoice_date))::SMALLINT,
@@ -205,7 +251,7 @@ BEGIN
         _rpt_dept_name(h.department_id),
         COALESCE(a.doctor_name, h.doctor_name),
         a.surgery_type_id,
-        NULL,                         -- surgery_type_name: join surgery_types if needed
+        NULL,                         -- surgery_type_name: join surgery_types when needed
         a.status::TEXT,
         agg.invoice_count,
         agg.total_invoiced,
@@ -222,47 +268,67 @@ BEGIN
         agg.consumable_lines,
         NOW()
     FROM (
-        -- Aggregate invoices linked to this visit
         SELECT
-            COUNT(DISTINCT ih.id)                                               AS invoice_count,
-            COALESCE(SUM(ih.total_amount),    0)                                AS total_invoiced,
-            COALESCE(SUM(ih.discount_amount), 0)                                AS total_discount,
-            COALESCE(SUM(ih.net_amount),      0)                                AS net_amount,
-            COALESCE(SUM(ih.paid_amount),     0)                                AS total_paid,
-            COALESCE(SUM(CASE WHEN il.line_type='service'     AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS service_revenue,
-            COALESCE(SUM(CASE WHEN il.line_type='drug'        AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS drug_revenue,
-            COALESCE(SUM(CASE WHEN il.line_type='consumable'  AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS consumable_revenue,
-            COALESCE(SUM(CASE WHEN il.line_type='stay'        AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS stay_revenue,
-            COUNT(CASE WHEN il.line_type='service'    AND NOT il.is_void THEN 1 END)   AS service_lines,
-            COUNT(CASE WHEN il.line_type='drug'       AND NOT il.is_void THEN 1 END)   AS drug_lines,
-            COUNT(CASE WHEN il.line_type='consumable' AND NOT il.is_void THEN 1 END)   AS consumable_lines,
+            COUNT(DISTINCT ih.id)                                                     AS invoice_count,
+            COALESCE(SUM(ih.total_amount),    0)                                      AS total_invoiced,
+            COALESCE(SUM(ih.discount_amount), 0)                                      AS total_discount,
+            COALESCE(SUM(ih.net_amount),      0)                                      AS net_amount,
+            COALESCE(SUM(ih.paid_amount),     0)                                      AS total_paid,
+            COALESCE(SUM(CASE WHEN il.line_type='service'    AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS service_revenue,
+            COALESCE(SUM(CASE WHEN il.line_type='drug'       AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS drug_revenue,
+            COALESCE(SUM(CASE WHEN il.line_type='consumable' AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS consumable_revenue,
+            COALESCE(SUM(CASE WHEN il.line_type='stay'       AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS stay_revenue,
+            COUNT(CASE WHEN il.line_type='service'    AND NOT il.is_void THEN 1 END)  AS service_lines,
+            COUNT(CASE WHEN il.line_type='drug'       AND NOT il.is_void THEN 1 END)  AS drug_lines,
+            COUNT(CASE WHEN il.line_type='consumable' AND NOT il.is_void THEN 1 END)  AS consumable_lines,
             MAX(ih.id) AS last_hdr_id
         FROM patient_invoice_headers ih
         LEFT JOIN patient_invoice_lines il ON il.header_id = ih.id
-        WHERE (p_visit_type = 'inpatient'  AND ih.admission_id = p_source_id)
-           OR (p_visit_type = 'outpatient' AND ih.id           = p_source_id)
+        WHERE (p_source_type = 'admissions'              AND ih.admission_id = p_source_id)
+           OR (p_source_type = 'patient_invoice_headers' AND ih.id           = p_source_id)
     ) agg
     LEFT JOIN patient_invoice_headers h ON h.id = agg.last_hdr_id
-    LEFT JOIN admissions a ON a.id = v_admission_id
+    LEFT JOIN admissions              a ON a.id  = v_admission_id
     ON CONFLICT ON CONSTRAINT rpt_pvs_source_unique
         DO UPDATE SET
-            discharge_date      = EXCLUDED.discharge_date,
-            los_days            = EXCLUDED.los_days,
-            admission_status    = EXCLUDED.admission_status,
-            invoice_count       = EXCLUDED.invoice_count,
-            total_invoiced      = EXCLUDED.total_invoiced,
-            total_discount      = EXCLUDED.total_discount,
-            net_amount          = EXCLUDED.net_amount,
-            total_paid          = EXCLUDED.total_paid,
-            outstanding_balance = EXCLUDED.outstanding_balance,
-            service_revenue     = EXCLUDED.service_revenue,
-            drug_revenue        = EXCLUDED.drug_revenue,
-            consumable_revenue  = EXCLUDED.consumable_revenue,
-            stay_revenue        = EXCLUDED.stay_revenue,
-            service_line_count  = EXCLUDED.service_line_count,
-            drug_line_count     = EXCLUDED.drug_line_count,
+            visit_type            = EXCLUDED.visit_type,
+            discharge_date        = EXCLUDED.discharge_date,
+            los_days              = EXCLUDED.los_days,
+            admission_status      = EXCLUDED.admission_status,
+            invoice_count         = EXCLUDED.invoice_count,
+            total_invoiced        = EXCLUDED.total_invoiced,
+            total_discount        = EXCLUDED.total_discount,
+            net_amount            = EXCLUDED.net_amount,
+            total_paid            = EXCLUDED.total_paid,
+            outstanding_balance   = EXCLUDED.outstanding_balance,
+            service_revenue       = EXCLUDED.service_revenue,
+            drug_revenue          = EXCLUDED.drug_revenue,
+            consumable_revenue    = EXCLUDED.consumable_revenue,
+            stay_revenue          = EXCLUDED.stay_revenue,
+            service_line_count    = EXCLUDED.service_line_count,
+            drug_line_count       = EXCLUDED.drug_line_count,
             consumable_line_count = EXCLUDED.consumable_line_count,
-            refreshed_at        = NOW();
+            refreshed_at          = NOW();
+
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
+    RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
@@ -277,8 +343,19 @@ CREATE OR REPLACE FUNCTION rpt_refresh_patient_service_lines(
 )
 RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
-    v_count INTEGER;
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
 BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by
+    ) VALUES (
+        'rpt_patient_service_usage',
+        'rpt_refresh_patient_service_lines',
+        jsonb_build_object('invoice_id', p_invoice_id),
+        v_start, 'running', 'event_invoice_finalize'
+    ) RETURNING id INTO v_log_id;
     INSERT INTO rpt_patient_service_usage (
         id, source_line_id, invoice_id,
         service_date, period_year, period_month,
@@ -339,7 +416,24 @@ BEGIN
         refreshed_at = NOW();
 
     GET DIAGNOSTICS v_count = ROW_COUNT;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
     RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
@@ -354,8 +448,19 @@ CREATE OR REPLACE FUNCTION rpt_refresh_inventory_snapshot(
 )
 RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
-    v_count INTEGER;
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
 BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by, date_scope
+    ) VALUES (
+        'rpt_inventory_snapshot',
+        'rpt_refresh_inventory_snapshot',
+        jsonb_build_object('snapshot_date', p_snapshot_date),
+        v_start, 'running', 'nightly_batch', p_snapshot_date
+    ) RETURNING id INTO v_log_id;
     INSERT INTO rpt_inventory_snapshot (
         id, snapshot_date,
         item_id, item_code, item_name, item_category, has_expiry,
@@ -425,7 +530,24 @@ BEGIN
         refreshed_at          = NOW();
 
     GET DIAGNOSTICS v_count = ROW_COUNT;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
     RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
@@ -440,8 +562,21 @@ CREATE OR REPLACE FUNCTION rpt_refresh_item_movements(
     p_warehouse_id VARCHAR,
     p_date         DATE DEFAULT CURRENT_DATE
 )
-RETURNS VOID LANGUAGE plpgsql AS $$
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
 BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by, date_scope
+    ) VALUES (
+        'rpt_item_movements_summary',
+        'rpt_refresh_item_movements',
+        jsonb_build_object('item_id', p_item_id, 'warehouse_id', p_warehouse_id, 'date', p_date),
+        v_start, 'running', 'event_lot_movement', p_date
+    ) RETURNING id INTO v_log_id;
     INSERT INTO rpt_item_movements_summary (
         id, movement_date, period_year, period_month,
         item_id, item_name, item_category,
@@ -501,6 +636,26 @@ BEGIN
         adjustment_qty    = EXCLUDED.adjustment_qty,
         net_qty_change    = EXCLUDED.net_qty_change,
         refreshed_at      = NOW();
+
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
+    RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
@@ -515,8 +670,20 @@ CREATE OR REPLACE FUNCTION rpt_refresh_daily_revenue(
 )
 RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
-    v_count INTEGER := 0;
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
 BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by, date_scope
+    ) VALUES (
+        'rpt_daily_revenue',
+        'rpt_refresh_daily_revenue',
+        jsonb_build_object('date', p_date),
+        v_start, 'running', 'nightly_batch', p_date
+    ) RETURNING id INTO v_log_id;
+
     -- Delete old rows for this date (full-day rebuild)
     DELETE FROM rpt_daily_revenue WHERE revenue_date = p_date;
 
@@ -608,7 +775,23 @@ BEGIN
 
     GET DIAGNOSTICS v_count = v_count + ROW_COUNT;
 
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
     RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
@@ -623,8 +806,19 @@ CREATE OR REPLACE FUNCTION rpt_refresh_patient_revenue_month(
 )
 RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
-    v_count INTEGER;
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
 BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by
+    ) VALUES (
+        'rpt_patient_revenue',
+        'rpt_refresh_patient_revenue_month',
+        jsonb_build_object('year', p_year, 'month', p_month),
+        v_start, 'running', 'nightly_batch'
+    ) RETURNING id INTO v_log_id;
     INSERT INTO rpt_patient_revenue (
         id, period_year, period_month,
         patient_id, patient_name, patient_type, insurance_company,
@@ -652,7 +846,7 @@ BEGIN
       AND EXTRACT(MONTH FROM ih.invoice_date) = p_month
       AND ih.status::TEXT IN ('finalized','paid')
     GROUP BY ih.patient_id
-    ON CONFLICT (period_year, period_month, patient_id) DO UPDATE SET
+    ON CONFLICT ON CONSTRAINT rpt_pr_patient_period_unique DO UPDATE SET
         visit_count         = EXCLUDED.visit_count,
         invoice_count       = EXCLUDED.invoice_count,
         total_invoiced      = EXCLUDED.total_invoiced,
@@ -663,7 +857,24 @@ BEGIN
         refreshed_at        = NOW();
 
     GET DIAGNOSTICS v_count = ROW_COUNT;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
     RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
@@ -677,8 +888,20 @@ CREATE OR REPLACE FUNCTION rpt_refresh_dept_activity(
 )
 RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
-    v_count INTEGER;
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
 BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by, date_scope
+    ) VALUES (
+        'rpt_department_activity',
+        'rpt_refresh_dept_activity',
+        jsonb_build_object('date', p_date),
+        v_start, 'running', 'nightly_batch', p_date
+    ) RETURNING id INTO v_log_id;
+
     DELETE FROM rpt_department_activity WHERE activity_date = p_date;
 
     INSERT INTO rpt_department_activity (
@@ -734,41 +957,205 @@ BEGIN
     GROUP BY d.id, d.name_ar;
 
     GET DIAGNOSTICS v_count = ROW_COUNT;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
     RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
 
 -- ============================================================
--- CONVENIENCE: full nightly refresh
+-- 9. rpt_doctor_activity  (STUB — Phase 2)
+-- Daily rows per doctor built nightly; monthly rollup
+-- rebuilt on period close.
+-- Uses doctor_id as the primary business key.
+-- Free-text names get synthetic key: 'UNLINKED:' || MD5(lower(name)).
+-- ============================================================
+CREATE OR REPLACE FUNCTION rpt_refresh_doctor_activity(
+    p_year  SMALLINT,
+    p_month SMALLINT
+)
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
+BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by
+    ) VALUES (
+        'rpt_doctor_activity',
+        'rpt_refresh_doctor_activity',
+        jsonb_build_object('year', p_year, 'month', p_month),
+        v_start, 'running', 'nightly_batch'
+    ) RETURNING id INTO v_log_id;
+
+    -- STUB: full implementation in Phase 2.
+    -- Will aggregate patient_invoice_headers, admissions, clinic_consultations,
+    -- clinic_orders, doctor_transfers, doctor_settlements grouped by
+    -- COALESCE(d.id, 'UNLINKED:' || MD5(lower(ih.doctor_name))) for the given period.
+    RAISE NOTICE 'rpt_refresh_doctor_activity: Phase 2 stub — no rows written.';
+    v_count := 0;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
+    RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
+END;
+$$;
+
+
+-- ============================================================
+-- 10. rpt_department_profitability  (STUB — Phase 2)
+-- Monthly P&L per department: net_revenue − COGS − direct OpEx.
+-- Gross profit only — excludes doctor settlements and overhead.
+-- ============================================================
+CREATE OR REPLACE FUNCTION rpt_refresh_department_profitability(
+    p_year        SMALLINT,
+    p_month       SMALLINT,
+    p_dept_id     VARCHAR DEFAULT NULL   -- NULL = refresh all departments
+)
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_log_id  BIGINT;
+    v_start   TIMESTAMP := clock_timestamp();
+    v_count   INTEGER   := 0;
+BEGIN
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by
+    ) VALUES (
+        'rpt_department_profitability',
+        'rpt_refresh_department_profitability',
+        jsonb_build_object('year', p_year, 'month', p_month, 'dept_id', p_dept_id),
+        v_start, 'running', 'period_close'
+    ) RETURNING id INTO v_log_id;
+
+    -- STUB: full implementation in Phase 2.
+    -- Will aggregate patient_invoice_headers (revenue),
+    -- inventory_lot_movements (COGS from dept warehouses),
+    -- journal_lines (direct OpEx from dept cost centre).
+    RAISE NOTICE 'rpt_refresh_department_profitability: Phase 2 stub — no rows written.';
+    v_count := 0;
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = v_count
+    WHERE id = v_log_id;
+    RETURN v_count;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
+END;
+$$;
+
+
+-- ============================================================
+-- ORCHESTRATOR: full nightly refresh
 -- Call this from a pg_cron job or external scheduler.
+-- Each sub-function writes its own rpt_refresh_log row.
+-- This orchestrator also writes a summary row.
 -- ============================================================
 CREATE OR REPLACE FUNCTION rpt_nightly_refresh()
 RETURNS TEXT LANGUAGE plpgsql AS $$
 DECLARE
-    v_yesterday DATE := CURRENT_DATE - 1;
-    v_year      SMALLINT := EXTRACT(YEAR  FROM v_yesterday)::SMALLINT;
-    v_month     SMALLINT := EXTRACT(MONTH FROM v_yesterday)::SMALLINT;
-    v_msg       TEXT     := '';
+    v_log_id    BIGINT;
+    v_start     TIMESTAMP := clock_timestamp();
+    v_yesterday DATE      := CURRENT_DATE - 1;
+    v_year      SMALLINT  := EXTRACT(YEAR  FROM v_yesterday)::SMALLINT;
+    v_month     SMALLINT  := EXTRACT(MONTH FROM v_yesterday)::SMALLINT;
+    v_msg       TEXT      := '';
     v_n         INTEGER;
 BEGIN
-    -- 1. Inventory snapshot for today
+    INSERT INTO rpt_refresh_log (
+        report_table_name, refresh_function, refresh_params,
+        refresh_start_at, status, triggered_by, date_scope
+    ) VALUES (
+        'ALL',
+        'rpt_nightly_refresh',
+        jsonb_build_object('for_date', v_yesterday),
+        v_start, 'running', 'nightly_batch', v_yesterday
+    ) RETURNING id INTO v_log_id;
+
+    -- 1. Inventory snapshot (today's end-of-day)
     SELECT rpt_refresh_inventory_snapshot(CURRENT_DATE) INTO v_n;
-    v_msg := v_msg || 'inventory_snapshot: ' || v_n || ' rows. ';
+    v_msg := v_msg || 'inventory_snapshot=' || v_n || ' ';
 
-    -- 2. Daily revenue for yesterday
+    -- 2. Daily revenue (yesterday)
     SELECT rpt_refresh_daily_revenue(v_yesterday) INTO v_n;
-    v_msg := v_msg || 'daily_revenue: ' || v_n || ' rows. ';
+    v_msg := v_msg || 'daily_revenue=' || v_n || ' ';
 
-    -- 3. Patient revenue month rollup for yesterday's month
+    -- 3. Patient revenue month rollup (yesterday's month)
     SELECT rpt_refresh_patient_revenue_month(v_year, v_month) INTO v_n;
-    v_msg := v_msg || 'patient_revenue: ' || v_n || ' rows. ';
+    v_msg := v_msg || 'patient_revenue=' || v_n || ' ';
 
-    -- 4. Department activity for yesterday
+    -- 4. Department activity (yesterday)
     SELECT rpt_refresh_dept_activity(v_yesterday) INTO v_n;
-    v_msg := v_msg || 'dept_activity: ' || v_n || ' rows. ';
+    v_msg := v_msg || 'dept_activity=' || v_n || ' ';
 
+    -- 5. Doctor activity (yesterday's month) — Phase 2 stub
+    SELECT rpt_refresh_doctor_activity(v_year, v_month) INTO v_n;
+    v_msg := v_msg || 'doctor_activity=' || v_n || '(stub) ';
+
+    -- 6. Department profitability (yesterday's month) — Phase 2 stub
+    SELECT rpt_refresh_department_profitability(v_year, v_month) INTO v_n;
+    v_msg := v_msg || 'dept_profitability=' || v_n || '(stub) ';
+
+    UPDATE rpt_refresh_log SET
+        status         = 'success',
+        refresh_end_at = clock_timestamp(),
+        duration_ms    = EXTRACT(EPOCH FROM (clock_timestamp() - v_start))::INTEGER * 1000,
+        rows_affected  = 0   -- orchestrator: no direct rows, individual logs track row counts
+    WHERE id = v_log_id;
     RETURN v_msg;
+EXCEPTION WHEN OTHERS THEN
+    IF v_log_id IS NOT NULL THEN
+        UPDATE rpt_refresh_log SET
+            status         = 'failed',
+            refresh_end_at = clock_timestamp(),
+            error_message  = SQLERRM,
+            error_detail   = SQLSTATE
+        WHERE id = v_log_id;
+    END IF;
+    RAISE;
 END;
 $$;
 
