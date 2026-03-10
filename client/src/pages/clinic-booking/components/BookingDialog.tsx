@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, UserCheck, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +16,13 @@ interface Doctor {
   specialty?: string | null;
 }
 
+interface PrefilledPatient {
+  id: string;
+  name: string;
+  phone?: string | null;
+  patientCode?: string | null;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -22,18 +30,27 @@ interface Props {
   selectedDate: string;
   onBook: (data: {
     doctorId: string; patientName: string; patientPhone?: string;
-    appointmentDate: string; appointmentTime?: string;
+    appointmentDate: string; appointmentTime?: string; patientId?: string;
   }) => Promise<any>;
   isPending: boolean;
+  prefilledPatient?: PrefilledPatient;
 }
 
-export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, isPending }: Props) {
+export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, isPending, prefilledPatient }: Props) {
   const { toast } = useToast();
-  const [patientName, setPatientName] = useState("");
-  const [patientPhone, setPatientPhone] = useState("");
+  const [patientName, setPatientName] = useState(prefilledPatient?.name ?? "");
+  const [patientPhone, setPatientPhone] = useState(prefilledPatient?.phone ?? "");
   const [doctorId, setDoctorId] = useState("");
   const [appointmentTime, setAppointmentTime] = useState("");
   const [appointmentDate, setAppointmentDate] = useState(selectedDate);
+
+  useEffect(() => {
+    if (open) {
+      setPatientName(prefilledPatient?.name ?? "");
+      setPatientPhone(prefilledPatient?.phone ?? "");
+      setAppointmentDate(selectedDate);
+    }
+  }, [open, prefilledPatient, selectedDate]);
 
   const { data: schedules = [] } = useQuery<{ doctorId: string; doctorName: string }[]>({
     queryKey: ["/api/clinic-clinics", clinicId, "schedules"],
@@ -60,18 +77,26 @@ export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, i
 
     try {
       const result = await onBook({
-        doctorId, patientName: patientName.trim(),
+        doctorId,
+        patientName: patientName.trim(),
         patientPhone: patientPhone.trim() || undefined,
-        appointmentDate, appointmentTime: appointmentTime || undefined,
+        appointmentDate,
+        appointmentTime: appointmentTime || undefined,
+        patientId: prefilledPatient?.id,
       });
       toast({ title: `تم الحجز — الدور: ${result.turnNumber}` });
-      setPatientName(""); setPatientPhone(""); setDoctorId(""); setAppointmentTime("");
+      setPatientName(prefilledPatient?.name ?? "");
+      setPatientPhone(prefilledPatient?.phone ?? "");
+      setDoctorId("");
+      setAppointmentTime("");
       onClose();
     } catch (err: unknown) {
       const _em = err instanceof Error ? err.message : String(err);
       toast({ variant: "destructive", title: _em || "خطأ في الحجز" });
     }
   };
+
+  const isLinked = !!prefilledPatient;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -80,27 +105,53 @@ export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, i
           <DialogTitle>حجز موعد جديد</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* معلومات المريض */}
           <div className="space-y-2">
-            <Label htmlFor="patientName">اسم المريض *</Label>
-            <Input
-              id="patientName"
-              value={patientName}
-              onChange={(e) => setPatientName(e.target.value)}
-              placeholder="اسم المريض"
-              data-testid="input-patient-name"
-            />
+            <Label htmlFor="patientName">
+              اسم المريض *
+              {isLinked && (
+                <Badge variant="outline" className="mr-2 text-xs text-green-700 border-green-300 bg-green-50">
+                  <UserCheck className="h-3 w-3 ml-1" />
+                  مريض مسجل
+                </Badge>
+              )}
+            </Label>
+            {isLinked ? (
+              <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-md">
+                <User className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                <span className="text-sm font-medium flex-1">{prefilledPatient.name}</span>
+                {prefilledPatient.patientCode && (
+                  <span className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                    {prefilledPatient.patientCode}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <Input
+                id="patientName"
+                value={patientName}
+                onChange={(e) => setPatientName(e.target.value)}
+                placeholder="اسم المريض"
+                data-testid="input-patient-name"
+              />
+            )}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="patientPhone">رقم الهاتف</Label>
-            <Input
-              id="patientPhone"
-              value={patientPhone}
-              onChange={(e) => setPatientPhone(e.target.value)}
-              placeholder="رقم الهاتف"
-              dir="ltr"
-              data-testid="input-patient-phone"
-            />
-          </div>
+
+          {!isLinked && (
+            <div className="space-y-2">
+              <Label htmlFor="patientPhone">رقم الهاتف</Label>
+              <Input
+                id="patientPhone"
+                value={patientPhone}
+                onChange={(e) => setPatientPhone(e.target.value)}
+                placeholder="رقم الهاتف"
+                dir="ltr"
+                data-testid="input-patient-phone"
+              />
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>الطبيب *</Label>
             <Select value={doctorId} onValueChange={setDoctorId}>
@@ -116,6 +167,7 @@ export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, i
               </SelectContent>
             </Select>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="aptDate">التاريخ *</Label>
@@ -138,6 +190,7 @@ export function BookingDialog({ open, onClose, clinicId, selectedDate, onBook, i
               />
             </div>
           </div>
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>إلغاء</Button>
             <Button type="submit" disabled={isPending} data-testid="button-book-submit">
