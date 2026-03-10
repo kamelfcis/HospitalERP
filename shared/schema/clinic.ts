@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { items } from "./inventory";
 import { services } from "./invoicing";
-import { treasuries, doctors, patients } from "./hospital";
+import { doctors, patients } from "./hospital";
 
 export const clinicClinics = pgTable("clinic_clinics", {
   id:               varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -12,7 +12,7 @@ export const clinicClinics = pgTable("clinic_clinics", {
   departmentId:     varchar("department_id"),
   defaultPharmacyId:varchar("default_pharmacy_id"),
   consultationServiceId: varchar("consultation_service_id"),
-  treasuryId:       varchar("treasury_id").references(() => treasuries.id),
+  treasuryId:       varchar("treasury_id"),
   secretaryFeeType: varchar("secretary_fee_type", { length: 20 }),
   secretaryFeeValue:decimal("secretary_fee_value", { precision: 10, scale: 2 }).default("0"),
   isActive:         boolean("is_active").notNull().default(true),

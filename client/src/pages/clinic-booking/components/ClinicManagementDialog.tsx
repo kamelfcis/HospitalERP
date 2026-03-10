@@ -21,7 +21,7 @@ interface Props {
   onClose: () => void;
 }
 
-interface Treasury { id: string; name: string; }
+interface GlAccount { id: string; code: string; name: string; accountType: string; }
 
 interface ClinicFormData {
   nameAr: string;
@@ -61,8 +61,13 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
       return Array.isArray(json) ? json : (json.data ?? []);
     },
   });
-  const { data: treasuries = [] } = useQuery<Treasury[]>({
-    queryKey: ["/api/treasuries"],
+  const { data: glAccounts = [] } = useQuery<GlAccount[]>({
+    queryKey: ["/api/accounts", "asset-flat"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/accounts");
+      const all: GlAccount[] = await res.json();
+      return all.filter((a) => a.accountType === "asset");
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -140,15 +145,17 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
           </Select>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">خزنة العيادة (لتسجيل رسم الكشف)</Label>
+          <Label className="text-xs">الحساب المحاسبي للخزنة (من دليل الحسابات)</Label>
           <Select value={treasuryId} onValueChange={setTreasuryId}>
             <SelectTrigger className="h-8 text-xs" data-testid="select-clinic-treasury">
-              <SelectValue placeholder="اختر الخزنة..." />
+              <SelectValue placeholder="اختر الحساب..." />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__none__">بدون خزنة</SelectItem>
-              {treasuries.map((t) => (
-                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+              <SelectItem value="__none__">بدون حساب</SelectItem>
+              {glAccounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.code} - {a.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>

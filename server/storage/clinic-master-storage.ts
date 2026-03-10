@@ -21,12 +21,12 @@ const methods = {
         SELECT c.*, d.name_ar AS department_name,
                w.name_ar AS pharmacy_name,
                sv.name_ar AS consultation_service_name,
-               tr.name AS treasury_name
+               (acc.code || ' - ' || acc.name) AS treasury_name
         FROM clinic_clinics c
         LEFT JOIN departments d ON d.id = c.department_id
         LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
         LEFT JOIN services sv ON sv.id = c.consultation_service_id
-        LEFT JOIN treasuries tr ON tr.id = c.treasury_id
+        LEFT JOIN accounts acc ON acc.id = c.treasury_id
         ORDER BY c.name_ar
       `);
       return rows.rows as Array<Record<string, unknown>>;
@@ -35,12 +35,12 @@ const methods = {
       SELECT c.*, d.name_ar AS department_name,
              w.name_ar AS pharmacy_name,
              sv.name_ar AS consultation_service_name,
-             tr.name AS treasury_name
+             (acc.code || ' - ' || acc.name) AS treasury_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
       LEFT JOIN services sv ON sv.id = c.consultation_service_id
-      LEFT JOIN treasuries tr ON tr.id = c.treasury_id
+      LEFT JOIN accounts acc ON acc.id = c.treasury_id
       JOIN clinic_user_clinic_assignments a ON a.clinic_id = c.id AND a.user_id = ${userId}
       ORDER BY c.name_ar
     `);
@@ -52,12 +52,12 @@ const methods = {
       SELECT c.*, d.name_ar AS department_name,
              w.name_ar AS pharmacy_name,
              sv.name_ar AS consultation_service_name,
-             tr.name AS treasury_name
+             (acc.code || ' - ' || acc.name) AS treasury_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
       LEFT JOIN services sv ON sv.id = c.consultation_service_id
-      LEFT JOIN treasuries tr ON tr.id = c.treasury_id
+      LEFT JOIN accounts acc ON acc.id = c.treasury_id
       WHERE c.id = ${id}
     `);
     return (rows.rows[0] as Record<string, unknown>) ?? null;
@@ -451,21 +451,27 @@ const methods = {
 
       await client.query(`UPDATE clinic_appointments SET status = 'in_consultation' WHERE id = $1 AND status = 'waiting'`, [data.appointmentId]);
 
-      // تسجيل رسم الكشف في الخزنة (idempotent)
+      // تسجيل رسم الكشف في الخزنة (idempotent) - فقط إذا كان الـ ID يخص خزنة وليس حسابًا محاسبيًا
       if (appt.clinic_treasury_id && finalAmount > 0) {
-        await client.query(`
-          INSERT INTO treasury_transactions
-            (treasury_id, type, amount, description, source_type, source_id, transaction_date)
-          VALUES ($1, 'receipt', $2, $3, 'clinic_consultation', $4, CURRENT_DATE)
-          ON CONFLICT (source_type, source_id, treasury_id) DO UPDATE
-            SET amount = EXCLUDED.amount,
-                description = EXCLUDED.description
-        `, [
-          appt.clinic_treasury_id,
-          finalAmount,
-          `رسم كشف: ${appt.patient_name} - د. ${appt.doctor_name}`,
-          consultation.id,
-        ]);
+        const treasuryCheck = await client.query(
+          `SELECT id FROM treasuries WHERE id = $1`,
+          [appt.clinic_treasury_id]
+        );
+        if (treasuryCheck.rows.length > 0) {
+          await client.query(`
+            INSERT INTO treasury_transactions
+              (treasury_id, type, amount, description, source_type, source_id, transaction_date)
+            VALUES ($1, 'receipt', $2, $3, 'clinic_consultation', $4, CURRENT_DATE)
+            ON CONFLICT (source_type, source_id, treasury_id) DO UPDATE
+              SET amount = EXCLUDED.amount,
+                  description = EXCLUDED.description
+          `, [
+            appt.clinic_treasury_id,
+            finalAmount,
+            `رسم كشف: ${appt.patient_name} - د. ${appt.doctor_name}`,
+            consultation.id,
+          ]);
+        }
       }
 
       await client.query('COMMIT');
