@@ -6,6 +6,53 @@ This project is an Arabic RTL web application for hospital general ledger (GL) a
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## آخر جلسة عمل — ما تم إنجازه (سجل المرضى وحجز العيادات)
+
+### الشاشة الرئيسية: استقبال المرضى (`client/src/pages/patients/`)
+**`PatientFormDialog.tsx`** — نافذة استقبال شاملة تحتوي على:
+- **بيانات المريض**: حقل الاسم مع autocomplete — يبحث عن مرضى موجودين (`/api/patients?search=X`)، عند الاختيار يظهر badge بـ patientCode ويُقفل الحقول
+- **نوع الدفع**: 3 أزرار (نقدي / تأمين / تعاقد) — عند تأمين يظهر حقل شركة التأمين
+- **سبب الزيارة**: 4 بطاقات (كشف عيادة / تسكين / تحاليل / أشعة) — كل اختيار يكشف تفاصيل إضافية
+  - كشف: بحث عيادة + أزرار سريعة من جدول العيادة + بحث حر للطبيب (fallback لعيادات بدون جدول) + تاريخ/وقت
+  - تسكين: دور + غرفة + سرير (أسرة فارغة فقط) + بحث طبيب + نوع عملية
+  - تحاليل/أشعة: textarea ملاحظات + إرشاد للانتقال لصفحة أوامر الخدمات
+- **prop `prefilledPatient`**: عند فتحه من زر "تذكرة جديدة" يأتي مسبق الملء ببيانات المريض الموجود، ويحجز زيارة جديدة بدلاً من إنشاء مريض جديد
+- **منطق الحفظ**: إذا مريض موجود → لا تنشئ patient جديد فقط استخدم الـ ID الموجود
+
+**`types.ts`** — أُضيف:
+- `PrefilledPatient` interface
+- `patientCode` إلى `PatientStats`
+- `prefilledPatient?` إلى `PatientFormDialogProps`
+- حُذفت: `AdmissionValues`, `AdmissionSetters`, `AdmissionSectionProps`
+
+**`patients/index.tsx`** — مبسّط:
+- حُذف `NewVisitDialog` وحالة `newVisitPatient`
+- `handleNewVisit` الآن يفتح `PatientFormDialog` مع `prefilledPatient`
+- الزر الرئيسي أصبح "استقبال مريض"
+
+### صفحة حجز العيادات (`client/src/pages/clinic-booking/`)
+**`index.tsx`** — مبسّط:
+- حُذف `BookingDialog`, `TurnReceipt`, `bookMutation`, `canBook`, `bookingOpen`
+- الصفحة أصبحت للعرض وإدارة قائمة الانتظار فقط
+
+**`QueueContent.tsx`** — حُذف زر "حجز جديد" + Props المرتبطة به
+- يظهر رسالة توجيه: "لإضافة حجز جديد انتقل إلى سجل المرضى"
+
+### ملفات محذوفة (تكرار):
+- `patients/components/NewVisitDialog.tsx`
+- `clinic-booking/components/BookingDialog.tsx`
+- `patients/AdmissionSection.tsx`
+
+### Backend:
+- `getPatientStats` SQL: أُضيف `p.patient_code` إلى الـ SELECT
+
+### Critical Notes للجلسة القادمة:
+- **NO-TOUCH**: `server/routes/auth.ts`, `server/storage/treasuries-storage.ts`, `client/src/pages/doctor-orders/components/OrdersTable.tsx`
+- عيادة الباطنة (`id: 2b11fc0b-1314-4b3d-8714-c7cbf273372c`) — لا يوجد جدول أطباء → يستخدم doctor search
+- `patients.full_name` (not `name` or `nameAr`); `patient_code` format `P-00001`
+- `patients/index.tsx` date filters: default `""` (empty) → LEFT JOIN = يعرض كل المرضى
+- `PatientStats.patientCode` مُضاف حديثاً — متاح في الـ grid والـ prefill
+
 ## System Architecture
 
 ### Core Design
