@@ -1,0 +1,176 @@
+I want to perform a production-grade PostgreSQL index audit for my Hospital ERP system.
+
+Important rules:
+Do NOT apply any schema change automatically. First analyze, verify safety, and produce a report. Wait for my approval before executing anything.
+
+System context:
+- Hospital ERP / HMIS
+- PostgreSQL database
+- Node.js / Express backend
+- Drizzle ORM
+- Critical modules: cashier, invoices, inventory FEFO, journal entries, finance reports, admissions, store transfers.
+
+PHASE 1 — Discover schema and current indexes
+1. List all tables with estimated row counts.
+2. For each table list:
+   - all indexes
+   - index definition (pg_get_indexdef)
+   - columns
+   - index type (btree / partial / unique / composite)
+   - index size
+3. Identify large tables likely to grow significantly:
+   - sales_invoice_headers
+   - sales_invoice_lines
+   - journal_entries
+   - journal_lines
+   - inventory_lots
+   - inventory_lot_movements
+   - patient_invoice_headers
+   - admissions
+   - audit_log
+   - cashier_audit_log
+
+PHASE 2 — Constraint safety validation
+Before recommending removal of any index:
+
+1. Check if the index backs a constraint:
+   - PRIMARY KEY
+   - UNIQUE constraint
+   - FOREIGN KEY support
+
+2. For each index show:
+   - constraint name (if exists)
+   - constraint type
+   - pg_constraint entry
+   - whether the index was auto-created by the constraint
+
+3. Classify each index as:
+   - CONSTRAINT-BACKED (never drop)
+   - SAFE CANDIDATE FOR REVIEW
+   - DUPLICATE INDEX
+   - REDUNDANT / COVERED BY STRONGER INDEX
+
+Never suggest removing a constraint-backed index.
+
+PHASE 3 — Index usage statistics
+For each index gather usage stats from PostgreSQL:
+
+- idx_scan
+- idx_tup_read
+- idx_tup_fetch
+
+Classify:
+
+- heavily used
+- moderately used
+- rarely used
+- never used
+
+Only consider removal if:
+- NOT constraint-backed
+- duplicate or redundant
+- usage near zero
+
+PHASE 4 — Query pattern analysis
+Scan the codebase to extract real query patterns from storage/services files.
+
+Focus especially on queries used by:
+
+- cashier screen
+- invoice list
+- FEFO lot allocation
+- journal entry screens
+- trial balance / income statement reports
+- patient admission lookup
+- store transfers
+- inventory movement reports
+
+Identify WHERE, JOIN, ORDER BY, GROUP BY patterns.
+
+PHASE 5 — Execution plan validation
+For critical queries run:
+
+EXPLAIN
+
+(or EXPLAIN ANALYZE if safe).
+
+Detect:
+
+- sequential scans on large tables
+- inefficient sorting
+- missing composite indexes
+- filters applied after index scan
+
+For each query show:
+
+- execution plan before improvement
+- recommended index
+- expected improvement
+
+PHASE 6 — Missing index recommendations
+For each recommended index show:
+
+- table
+- exact columns
+- whether it should be composite or partial
+- which query it supports
+- why existing indexes are insufficient
+- expected benefit
+
+Do NOT recommend blind indexing.
+
+Prefer composite indexes aligned with query patterns.
+
+PHASE 7 — Redundant index detection
+Identify indexes that are:
+
+- exact duplicates
+- covered by larger composite indexes
+- redundant with unique constraints
+
+But verify constraint safety before suggesting removal.
+
+PHASE 8 — Final report format
+Produce a structured report:
+
+1. Executive summary
+   - index health score
+   - biggest risks
+   - biggest quick wins
+
+2. Large tables risk analysis
+
+3. Constraint-backed indexes
+   - must never be removed
+
+4. Duplicate indexes
+
+5. Redundant indexes
+
+6. Missing recommended indexes
+
+7. Top slow query patterns
+
+PHASE 9 — Safe migration plan
+Generate a staged migration plan:
+
+Batch P0 — safe removals only
+Batch P1 — critical performance indexes
+Batch P2 — optional improvements
+
+For each step provide:
+
+- SQL
+- safety notes
+- expected lock behavior
+
+PHASE 10 — Final verification queries
+Provide SQL queries to verify:
+
+- uniqueness constraints still active
+- indexes actually removed
+- new indexes created successfully
+
+Important:
+Never execute schema changes automatically.
+Stop after generating the report and wait for my approval.
