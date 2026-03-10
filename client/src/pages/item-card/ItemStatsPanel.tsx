@@ -74,10 +74,16 @@ export default function ItemStatsPanel({
         <div className="flex items-center gap-1.5 mb-1.5">
           <Label className="text-[10px] shrink-0">من:</Label>
           <Input
-            type="month"
+            type="date"
             value={purchaseFromDate}
-            onChange={(e) => setPurchaseFromDate(e.target.value)}
-            className="h-5 text-[10px] px-1 py-0 w-28"
+            min="2020-01-01"
+            max="2035-12-31"
+            onChange={(e) => {
+              const val = e.target.value;
+              const year = parseInt(val.split("-")[0] || "0");
+              if (!val || year >= 2020) setPurchaseFromDate(val);
+            }}
+            className="h-5 text-[10px] px-1 py-0 w-32"
             data-testid="input-purchase-from-date"
           />
           {purchaseFromDate && (

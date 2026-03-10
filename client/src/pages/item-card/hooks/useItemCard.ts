@@ -42,7 +42,7 @@ export function useItemCard() {
   const deptPrices = useItemDeptPrices(itemId);
   const barcodes = useItemBarcodes(itemId);
 
-  const purchaseFromDateFull = purchaseFromDate ? `${purchaseFromDate}-01` : "";
+  const purchaseFromDateFull = purchaseFromDate || "";
 
   const { data: lastPurchases } = useQuery<PurchaseTransaction[]>({
     queryKey: ["/api/items", itemId, "last-purchases", purchaseFromDateFull],

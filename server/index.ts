@@ -92,7 +92,8 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
+      const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+      log(`${req.method} ${path}${qs} ${res.statusCode} in ${duration}ms`);
     }
   });
 
