@@ -101,7 +101,10 @@ src_patient AS (
       AND status::TEXT IN ('finalized', 'paid')
 ),
 src_sales AS (
-    -- Exactly the filter from rpt_refresh_daily_revenue function
+    -- Exactly the filter from rpt_refresh_daily_revenue function.
+    -- NOTE: pharmacy_id IS NOT NULL is intentional — clinic OTC sales
+    -- (pharmacy_id IS NULL) are a known coverage gap; they are not yet
+    -- assigned to any source_type in rpt_daily_revenue.
     SELECT
         COALESCE(SUM(subtotal),       0) AS gross,
         COALESCE(SUM(discount_value), 0) AS discount,
@@ -110,6 +113,7 @@ src_sales AS (
     FROM sales_invoice_headers
     WHERE invoice_date        = :test_date
       AND status::TEXT        = 'finalized'
+      AND pharmacy_id         IS NOT NULL
 ),
 src AS (
     SELECT

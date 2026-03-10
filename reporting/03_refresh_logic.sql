@@ -242,7 +242,7 @@ BEGIN
         EXTRACT(YEAR  FROM COALESCE(a.admission_date, h.invoice_date))::SMALLINT,
         EXTRACT(MONTH FROM COALESCE(a.admission_date, h.invoice_date))::SMALLINT,
         EXTRACT(WEEK  FROM COALESCE(a.admission_date, h.invoice_date))::SMALLINT,
-        COALESCE(a.patient_id, h.patient_id),
+        a.patient_id,
         COALESCE(a.patient_name, h.patient_name),
         h.patient_type::TEXT,
         a.insurance_company,
@@ -274,13 +274,13 @@ BEGIN
             COALESCE(SUM(ih.discount_amount), 0)                                      AS total_discount,
             COALESCE(SUM(ih.net_amount),      0)                                      AS net_amount,
             COALESCE(SUM(ih.paid_amount),     0)                                      AS total_paid,
-            COALESCE(SUM(CASE WHEN il.line_type='service'    AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS service_revenue,
-            COALESCE(SUM(CASE WHEN il.line_type='drug'       AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS drug_revenue,
-            COALESCE(SUM(CASE WHEN il.line_type='consumable' AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS consumable_revenue,
-            COALESCE(SUM(CASE WHEN il.line_type='stay'       AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS stay_revenue,
-            COUNT(CASE WHEN il.line_type='service'    AND NOT il.is_void THEN 1 END)  AS service_lines,
-            COUNT(CASE WHEN il.line_type='drug'       AND NOT il.is_void THEN 1 END)  AS drug_lines,
-            COUNT(CASE WHEN il.line_type='consumable' AND NOT il.is_void THEN 1 END)  AS consumable_lines,
+            COALESCE(SUM(CASE WHEN il.line_type::TEXT='service'    AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS service_revenue,
+            COALESCE(SUM(CASE WHEN il.line_type::TEXT='drug'       AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS drug_revenue,
+            COALESCE(SUM(CASE WHEN il.line_type::TEXT='consumable' AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS consumable_revenue,
+            COALESCE(SUM(CASE WHEN il.line_type::TEXT='stay'       AND NOT il.is_void THEN il.total_price ELSE 0 END),0) AS stay_revenue,
+            COUNT(CASE WHEN il.line_type::TEXT='service'    AND NOT il.is_void THEN 1 END)  AS service_lines,
+            COUNT(CASE WHEN il.line_type::TEXT='drug'       AND NOT il.is_void THEN 1 END)  AS drug_lines,
+            COUNT(CASE WHEN il.line_type::TEXT='consumable' AND NOT il.is_void THEN 1 END)  AS consumable_lines,
             MAX(ih.id) AS last_hdr_id
         FROM patient_invoice_headers ih
         LEFT JOIN patient_invoice_lines il ON il.header_id = ih.id
@@ -374,7 +374,7 @@ BEGIN
         ih.invoice_date,
         EXTRACT(YEAR  FROM ih.invoice_date)::SMALLINT,
         EXTRACT(MONTH FROM ih.invoice_date)::SMALLINT,
-        ih.patient_id,
+        adm.patient_id,
         ih.patient_name,
         ih.patient_type::TEXT,
         adm.insurance_company,
@@ -603,15 +603,15 @@ BEGIN
         COALESCE(SUM(qty_change_in_minor * COALESCE(unit_cost, 0)) FILTER (WHERE tx_type::TEXT = 'receive'), 0),
         COUNT(*) FILTER (WHERE tx_type::TEXT = 'receive'),
         -- Issued / Sold (negative values, flip sign)
-        COALESCE(ABS(SUM(qty_change_in_minor)) FILTER (WHERE tx_type::TEXT IN ('sale','patient_sale')), 0),
-        COALESCE(ABS(SUM(qty_change_in_minor * COALESCE(unit_cost,0))) FILTER (WHERE tx_type::TEXT IN ('sale','patient_sale')), 0),
+        ABS(COALESCE(SUM(qty_change_in_minor) FILTER (WHERE tx_type::TEXT IN ('sale','patient_sale')), 0)),
+        ABS(COALESCE(SUM(qty_change_in_minor * COALESCE(unit_cost,0)) FILTER (WHERE tx_type::TEXT IN ('sale','patient_sale')), 0)),
         COUNT(*) FILTER (WHERE tx_type::TEXT IN ('sale','patient_sale')),
         -- Returns
-        COALESCE(SUM(qty_change_in_minor)  FILTER (WHERE tx_type::TEXT = 'return_in'),  0),
-        COALESCE(ABS(SUM(qty_change_in_minor)) FILTER (WHERE tx_type::TEXT = 'return_out'), 0),
+        COALESCE(SUM(qty_change_in_minor) FILTER (WHERE tx_type::TEXT = 'return_in'),  0),
+        ABS(COALESCE(SUM(qty_change_in_minor) FILTER (WHERE tx_type::TEXT = 'return_out'), 0)),
         -- Transfers
-        COALESCE(SUM(qty_change_in_minor)  FILTER (WHERE tx_type::TEXT = 'transfer_in'),  0),
-        COALESCE(ABS(SUM(qty_change_in_minor)) FILTER (WHERE tx_type::TEXT = 'transfer_out'), 0),
+        COALESCE(SUM(qty_change_in_minor) FILTER (WHERE tx_type::TEXT = 'transfer_in'),  0),
+        ABS(COALESCE(SUM(qty_change_in_minor) FILTER (WHERE tx_type::TEXT = 'transfer_out'), 0)),
         -- Adjustments
         COALESCE(SUM(qty_change_in_minor) FILTER (WHERE tx_type::TEXT = 'adjustment'), 0),
         -- Net
@@ -673,6 +673,7 @@ DECLARE
     v_log_id  BIGINT;
     v_start   TIMESTAMP := clock_timestamp();
     v_count   INTEGER   := 0;
+    _rows     INTEGER;
 BEGIN
     INSERT INTO rpt_refresh_log (
         report_table_name, refresh_function, refresh_params,
@@ -720,10 +721,10 @@ BEGIN
             WHERE pmt.payment_date = p_date
               AND pmh.department_id = ih.department_id
         ), 0),
-        COALESCE(SUM(CASE WHEN il.line_type = 'service'    AND NOT il.is_void THEN il.total_price ELSE 0 END), 0),
-        COALESCE(SUM(CASE WHEN il.line_type = 'drug'       AND NOT il.is_void THEN il.total_price ELSE 0 END), 0),
-        COALESCE(SUM(CASE WHEN il.line_type = 'consumable' AND NOT il.is_void THEN il.total_price ELSE 0 END), 0),
-        COALESCE(SUM(CASE WHEN il.line_type = 'stay'       AND NOT il.is_void THEN il.total_price ELSE 0 END), 0),
+        COALESCE(SUM(CASE WHEN il.line_type::TEXT = 'service'    AND NOT il.is_void THEN il.total_price ELSE 0 END), 0),
+        COALESCE(SUM(CASE WHEN il.line_type::TEXT = 'drug'       AND NOT il.is_void THEN il.total_price ELSE 0 END), 0),
+        COALESCE(SUM(CASE WHEN il.line_type::TEXT = 'consumable' AND NOT il.is_void THEN il.total_price ELSE 0 END), 0),
+        COALESCE(SUM(CASE WHEN il.line_type::TEXT = 'stay'       AND NOT il.is_void THEN il.total_price ELSE 0 END), 0),
         0,  -- COGS computed separately below
         0,
         NOW()
@@ -773,7 +774,8 @@ BEGIN
       AND sh.pharmacy_id IS NOT NULL
     GROUP BY sh.pharmacy_id;
 
-    GET DIAGNOSTICS v_count = v_count + ROW_COUNT;
+    GET DIAGNOSTICS _rows = ROW_COUNT;
+    v_count := v_count + _rows;
 
     UPDATE rpt_refresh_log SET
         status         = 'success',
@@ -829,7 +831,7 @@ BEGIN
     SELECT
         gen_random_uuid(),
         p_year, p_month,
-        ih.patient_id,
+        adm.patient_id,
         MAX(ih.patient_name),
         MAX(ih.patient_type::TEXT),
         MAX(adm.insurance_company),
@@ -839,13 +841,14 @@ BEGIN
         COALESCE(SUM(ih.discount_amount), 0),
         COALESCE(SUM(ih.net_amount),      0),
         COALESCE(SUM(ih.paid_amount),     0),
-        COALESCE(SUM(ih.net_amount - ih.paid_amount), 0)
+        COALESCE(SUM(ih.net_amount - ih.paid_amount), 0),
+        NOW()
     FROM patient_invoice_headers  ih
     LEFT JOIN admissions          adm ON adm.id = ih.admission_id
     WHERE EXTRACT(YEAR  FROM ih.invoice_date) = p_year
       AND EXTRACT(MONTH FROM ih.invoice_date) = p_month
       AND ih.status::TEXT IN ('finalized','paid')
-    GROUP BY ih.patient_id
+    GROUP BY adm.patient_id
     ON CONFLICT ON CONSTRAINT rpt_pr_patient_period_unique DO UPDATE SET
         visit_count         = EXCLUDED.visit_count,
         invoice_count       = EXCLUDED.invoice_count,
