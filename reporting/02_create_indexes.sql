@@ -27,9 +27,13 @@ CREATE INDEX IF NOT EXISTS ridx_pvs_dept_period
     ON rpt_patient_visit_summary (department_id, period_year, period_month)
     WHERE department_id IS NOT NULL;
 
--- Source ID lookup (upsert/update target)
-CREATE UNIQUE INDEX IF NOT EXISTS ridx_pvs_source
-    ON rpt_patient_visit_summary (visit_type, source_id);
+-- NOTE: the UNIQUE (source_type, source_id) constraint is defined on the table itself
+-- (CONSTRAINT rpt_pvs_source_unique) and creates its own backing index automatically.
+-- Do NOT add a separate CREATE UNIQUE INDEX here — that would duplicate the index.
+
+-- Clinical visit type filter (inpatient vs outpatient) + date
+CREATE INDEX IF NOT EXISTS ridx_pvs_source_type_date
+    ON rpt_patient_visit_summary (source_type, visit_date DESC);
 
 -- Insurance/contract AR ageing
 CREATE INDEX IF NOT EXISTS ridx_pvs_insurance
@@ -247,21 +251,32 @@ CREATE INDEX IF NOT EXISTS ridx_da_period
 -- │  rpt_doctor_activity                                    │
 -- └─────────────────────────────────────────────────────────┘
 
--- Doctor monthly report
+-- Doctor monthly history (doctor_id is the business key — NOT NULL)
 CREATE INDEX IF NOT EXISTS ridx_docact_doctor_period
-    ON rpt_doctor_activity (doctor_id, period_year DESC, period_month DESC)
-    WHERE doctor_id IS NOT NULL;
+    ON rpt_doctor_activity (doctor_id, period_year DESC, period_month DESC);
 
 -- Period cross-doctor comparison
 CREATE INDEX IF NOT EXISTS ridx_docact_period
     ON rpt_doctor_activity (period_year, period_month);
 
--- Monthly summary rows only (activity_date IS NULL)
-CREATE INDEX IF NOT EXISTS ridx_docact_monthly
-    ON rpt_doctor_activity (period_year, period_month, doctor_id)
+-- UNIQUE: one monthly summary row per doctor per month
+-- (activity_date IS NULL = monthly summary rows)
+CREATE UNIQUE INDEX IF NOT EXISTS ridx_docact_monthly_unique
+    ON rpt_doctor_activity (doctor_id, period_year, period_month)
     WHERE activity_date IS NULL;
 
--- Daily rows only (activity_date IS NOT NULL)
-CREATE INDEX IF NOT EXISTS ridx_docact_daily
+-- UNIQUE: one daily row per doctor per date
+-- (activity_date IS NOT NULL = daily detail rows)
+CREATE UNIQUE INDEX IF NOT EXISTS ridx_docact_daily_unique
+    ON rpt_doctor_activity (doctor_id, activity_date)
+    WHERE activity_date IS NOT NULL;
+
+-- Non-unique index for daily date-range queries
+CREATE INDEX IF NOT EXISTS ridx_docact_daily_date
     ON rpt_doctor_activity (doctor_id, activity_date DESC)
     WHERE activity_date IS NOT NULL;
+
+-- Specialty filter (cross-doctor specialty reports)
+CREATE INDEX IF NOT EXISTS ridx_docact_specialty_period
+    ON rpt_doctor_activity (doctor_specialty, period_year, period_month)
+    WHERE doctor_specialty IS NOT NULL;

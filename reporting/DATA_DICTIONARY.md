@@ -58,7 +58,7 @@ D. INVENTORY / COST
 
 **Refresh:** 🔁 Event-driven — upserted on: invoice finalize, payment recorded, patient discharge. Never deleted; rows for closed visits become immutable.
 
-**Traceback entry point:** `source_id` → either `admissions.id` or `patient_invoice_headers.id`
+**Traceback entry point:** `source_type` + `source_id` — two explicit columns, no discriminator inference needed.
 
 ---
 
@@ -67,48 +67,52 @@ D. INVENTORY / COST
 | # | Column | Type | Category | Business Meaning |
 |---|--------|------|----------|-----------------|
 | 1 | `id` | VARCHAR PK | ❌ | Surrogate key of this reporting row. Has no transactional meaning. |
-| 2 | `visit_type` | VARCHAR(20) | 🟦 ❌ | Discriminator: `'inpatient'` (originated from `admissions`) or `'outpatient'` (standalone invoice). Must be read alongside `source_id` to locate the source record. |
-| 3 | `source_id` | VARCHAR | 🟦 ❌ | **Primary traceback key.** If `visit_type='inpatient'` → `admissions.id`. If `visit_type='outpatient'` → `patient_invoice_headers.id`. |
-| 4 | `visit_date` | DATE | 🟦 ❌ | First date of the visit. For inpatient: `admissions.admission_date`. For outpatient: `patient_invoice_headers.invoice_date`. |
-| 5 | `discharge_date` | DATE | 🟦 ❌ | Date patient left. NULL for outpatient and active inpatients. Source: `admissions.discharge_date`. |
-| 6 | `los_days` | NUMERIC(8,2) | 🟧 ⚠️ | Length of stay in days. `discharge_date - admission_date`. NULL if not discharged or outpatient. Safe to average across visits; not safe to SUM across patients. |
-| 7 | `period_year` | SMALLINT | 🟦 ❌ | Calendar year of `visit_date`. Pre-extracted to avoid `EXTRACT()` on every query. Source: `EXTRACT(YEAR FROM visit_date)`. |
-| 8 | `period_month` | SMALLINT | 🟦 ❌ | Calendar month (1–12) of `visit_date`. Source: `EXTRACT(MONTH FROM visit_date)`. |
-| 9 | `period_week` | SMALLINT | 🟦 ❌ | ISO week number of `visit_date`. Source: `EXTRACT(WEEK FROM visit_date)`. |
-| 10 | `patient_id` | VARCHAR | 🟦 ❌ | FK reference to `patients.id`. NULL when patient was registered without a system account (walk-in). Source: `admissions.patient_id` or `patient_invoice_headers.patient_id`. |
-| 11 | `patient_name` | TEXT | 🟦 ❌ | Full name as entered at time of visit. Copied at visit time — does **not** update if `patients.full_name` changes later. Source: `admissions.patient_name` or `patient_invoice_headers.patient_name`. |
-| 12 | `patient_type` | VARCHAR(30) | 🟦 ❌ | Payment classification: `'cash'`, `'insurance'`, `'contract'`, etc. Source: `patient_invoice_headers.patient_type` (enum). |
-| 13 | `insurance_company` | TEXT | 🟦 ❌ | Name of insurer. NULL for cash patients. Source: `admissions.insurance_company`. |
-| 14 | `payment_type` | VARCHAR(30) | 🟦 ❌ | Admission-level payment arrangement. Source: `admissions.payment_type`. |
-| 15 | `department_id` | VARCHAR | 🟦 ❌ | Treating department. Source: `patient_invoice_headers.department_id`. |
-| 16 | `department_name` | TEXT | 🟦 ❌ | Denormalized name at refresh time. Source: `departments.name_ar` via `_rpt_dept_name()`. Will not update if dept name changes after refresh. |
-| 17 | `doctor_name` | TEXT | 🟦 ❌ | Attending doctor. Free-text field (not FK). Source: `admissions.doctor_name` → fallback to `patient_invoice_headers.doctor_name`. |
-| 18 | `surgery_type_id` | VARCHAR | 🟦 ❌ | Linked surgery type if applicable. Source: `admissions.surgery_type_id`. |
-| 19 | `surgery_type_name` | TEXT | 🟦 ❌ | Denormalized surgery name. Source: `surgery_types.name` (lookup at refresh time). NULL until surgery_types join is implemented. |
-| 20 | `admission_status` | VARCHAR(20) | 🟦 ❌ | Current admission state: `'active'`, `'discharged'`, `'cancelled'`. Source: `admissions.status` enum cast to text. |
-| 21 | `invoice_count` | SMALLINT | 🟩 ✅ | Number of `patient_invoice_headers` linked to this visit. Source: `COUNT(DISTINCT patient_invoice_headers.id)` WHERE `admission_id = source_id`. |
-| 22 | `total_invoiced` | NUMERIC(15,2) | 🟨 ✅ | Gross billed before discounts (EGP). Source: `SUM(patient_invoice_headers.total_amount)`. Includes all invoices for this visit including consolidated ones. |
-| 23 | `total_discount` | NUMERIC(15,2) | 🟨 ✅ | Total discount granted on all invoices for this visit (EGP). Source: `SUM(patient_invoice_headers.discount_amount)`. |
-| 24 | `net_amount` | NUMERIC(15,2) | 🟨 ✅ | Amount after discount (EGP). `total_invoiced - total_discount`. Source: `SUM(patient_invoice_headers.net_amount)`. |
-| 25 | `total_paid` | NUMERIC(15,2) | 🟨 ✅ | Total payments received against this visit's invoices (EGP). Source: `SUM(patient_invoice_headers.paid_amount)`. |
-| 26 | `outstanding_balance` | NUMERIC(15,2) | 🟧 ✅ | Amount still owed (EGP). `net_amount - total_paid`. Positive = patient owes. Negative = overpaid. |
-| 27 | `service_revenue` | NUMERIC(15,2) | 🟨 ✅ | Sum of non-voided lines where `line_type='service'` (EGP). Source: `SUM(patient_invoice_lines.total_price)` filtered by line_type. |
-| 28 | `drug_revenue` | NUMERIC(15,2) | 🟨 ✅ | Sum of non-voided lines where `line_type='drug'` (EGP). |
-| 29 | `consumable_revenue` | NUMERIC(15,2) | 🟨 ✅ | Sum of non-voided lines where `line_type='consumable'` (EGP). |
-| 30 | `stay_revenue` | NUMERIC(15,2) | 🟨 ✅ | Sum of non-voided lines where `line_type='stay'` (EGP). Comes from `stay_segments` billing. |
-| 31 | `service_line_count` | INTEGER | 🟩 ✅ | Count of active (non-voided) service lines. Source: `COUNT(*) FILTER (WHERE line_type='service' AND NOT is_void)`. |
-| 32 | `drug_line_count` | INTEGER | 🟩 ✅ | Count of active drug lines. |
-| 33 | `consumable_line_count` | INTEGER | 🟩 ✅ | Count of active consumable lines. |
-| 34 | `refreshed_at` | TIMESTAMP | ❌ | Timestamp of last upsert into this row. Use to detect stale rows. Not a business value. |
+| 2 | `source_type` | VARCHAR(50) | 🟦 ❌ | **Traceback key part 1.** The literal name of the transactional source table: `'admissions'` for inpatient visits, `'patient_invoice_headers'` for standalone outpatient encounters. Used with `source_id` to construct: `SELECT * FROM {source_type} WHERE id = source_id`. Never NULL. |
+| 3 | `source_id` | VARCHAR | 🟦 ❌ | **Traceback key part 2.** The primary key value in the table named by `source_type`. `admissions.id` when source_type='admissions'; `patient_invoice_headers.id` when source_type='patient_invoice_headers'. Unique constraint `(source_type, source_id)` enforces one row per source record. |
+| 4 | `visit_type` | VARCHAR(20) | 🟦 ❌ | Clinical display label: `'inpatient'` or `'outpatient'`. Derived from `source_type` at refresh time: `'admissions'` → `'inpatient'`; `'patient_invoice_headers'` → `'outpatient'`. Kept separately for readable report filtering without string matching on table names. |
+| 5 | `visit_date` | DATE | 🟦 ❌ | First date of the visit. For inpatient: `admissions.admission_date`. For outpatient: `patient_invoice_headers.invoice_date`. |
+| 6 | `discharge_date` | DATE | 🟦 ❌ | Date patient left. NULL for outpatient and active inpatients. Source: `admissions.discharge_date`. |
+| 7 | `los_days` | NUMERIC(8,2) | 🟧 ⚠️ | Length of stay in days. `discharge_date - admission_date`. NULL if not discharged or outpatient. Safe to average across visits; not safe to SUM across patients. |
+| 8 | `period_year` | SMALLINT | 🟦 ❌ | Calendar year of `visit_date`. Pre-extracted to avoid `EXTRACT()` on every query. Source: `EXTRACT(YEAR FROM visit_date)`. |
+| 9 | `period_month` | SMALLINT | 🟦 ❌ | Calendar month (1–12) of `visit_date`. Source: `EXTRACT(MONTH FROM visit_date)`. |
+| 10 | `period_week` | SMALLINT | 🟦 ❌ | ISO week number of `visit_date`. Source: `EXTRACT(WEEK FROM visit_date)`. |
+| 11 | `patient_id` | VARCHAR | 🟦 ❌ | FK reference to `patients.id`. NULL when patient was registered without a system account (walk-in). Source: `admissions.patient_id` or `patient_invoice_headers.patient_id`. |
+| 12 | `patient_name` | TEXT | 🟦 ❌ | Full name as entered at time of visit. Copied at visit time — does **not** update if `patients.full_name` changes later. Source: `admissions.patient_name` or `patient_invoice_headers.patient_name`. |
+| 13 | `patient_type` | VARCHAR(30) | 🟦 ❌ | Payment classification: `'cash'`, `'insurance'`, `'contract'`, etc. Source: `patient_invoice_headers.patient_type` (enum). |
+| 14 | `insurance_company` | TEXT | 🟦 ❌ | Name of insurer. NULL for cash patients. Source: `admissions.insurance_company`. |
+| 15 | `payment_type` | VARCHAR(30) | 🟦 ❌ | Admission-level payment arrangement. Source: `admissions.payment_type`. |
+| 16 | `department_id` | VARCHAR | 🟦 ❌ | Treating department. Source: `patient_invoice_headers.department_id`. |
+| 17 | `department_name` | TEXT | 🟦 ❌ | Denormalized name at refresh time. Source: `departments.name_ar` via `_rpt_dept_name()`. Will not update if dept name changes after refresh. |
+| 18 | `doctor_name` | TEXT | 🟦 ❌ | Attending doctor. Free-text display field (not FK). Source: `admissions.doctor_name` → fallback to `patient_invoice_headers.doctor_name`. |
+| 19 | `surgery_type_id` | VARCHAR | 🟦 ❌ | Linked surgery type if applicable. Source: `admissions.surgery_type_id`. |
+| 20 | `surgery_type_name` | TEXT | 🟦 ❌ | Denormalized surgery name. Source: `surgery_types.name` (lookup at refresh time). NULL until surgery_types join is implemented. |
+| 21 | `admission_status` | VARCHAR(20) | 🟦 ❌ | Current admission state: `'active'`, `'discharged'`, `'cancelled'`. Source: `admissions.status` enum cast to text. |
+| 22 | `invoice_count` | SMALLINT | 🟩 ✅ | Number of `patient_invoice_headers` linked to this visit. Source: `COUNT(DISTINCT patient_invoice_headers.id)` WHERE `admission_id = source_id`. |
+| 23 | `total_invoiced` | NUMERIC(15,2) | 🟨 ✅ | Gross billed before discounts (EGP). Source: `SUM(patient_invoice_headers.total_amount)`. Includes all invoices for this visit including consolidated ones. |
+| 24 | `total_discount` | NUMERIC(15,2) | 🟨 ✅ | Total discount granted on all invoices for this visit (EGP). Source: `SUM(patient_invoice_headers.discount_amount)`. |
+| 25 | `net_amount` | NUMERIC(15,2) | 🟨 ✅ | Amount after discount (EGP). `total_invoiced - total_discount`. Source: `SUM(patient_invoice_headers.net_amount)`. |
+| 26 | `total_paid` | NUMERIC(15,2) | 🟨 ✅ | Total payments received against this visit's invoices (EGP). Source: `SUM(patient_invoice_headers.paid_amount)`. |
+| 27 | `outstanding_balance` | NUMERIC(15,2) | 🟧 ✅ | Amount still owed (EGP). `net_amount - total_paid`. Positive = patient owes. Negative = overpaid. |
+| 28 | `service_revenue` | NUMERIC(15,2) | 🟨 ✅ | Sum of non-voided lines where `line_type='service'` (EGP). Source: `SUM(patient_invoice_lines.total_price)` filtered by line_type. |
+| 29 | `drug_revenue` | NUMERIC(15,2) | 🟨 ✅ | Sum of non-voided lines where `line_type='drug'` (EGP). |
+| 30 | `consumable_revenue` | NUMERIC(15,2) | 🟨 ✅ | Sum of non-voided lines where `line_type='consumable'` (EGP). |
+| 31 | `stay_revenue` | NUMERIC(15,2) | 🟨 ✅ | Sum of non-voided lines where `line_type='stay'` (EGP). Comes from `stay_segments` billing. |
+| 32 | `service_line_count` | INTEGER | 🟩 ✅ | Count of active (non-voided) service lines. Source: `COUNT(*) FILTER (WHERE line_type='service' AND NOT is_void)`. |
+| 33 | `drug_line_count` | INTEGER | 🟩 ✅ | Count of active drug lines. |
+| 34 | `consumable_line_count` | INTEGER | 🟩 ✅ | Count of active consumable lines. |
+| 35 | `refreshed_at` | TIMESTAMP | ❌ | Timestamp of last upsert into this row. Use to detect stale rows. Not a business value. |
 
 **Traceback Path:**
 ```
-rpt_patient_visit_summary.source_id
-  → IF visit_type='inpatient':  admissions WHERE id = source_id
-      → patient_invoice_headers WHERE admission_id = source_id
-          → patient_invoice_lines WHERE header_id = invoice.id
-  → IF visit_type='outpatient': patient_invoice_headers WHERE id = source_id
-          → patient_invoice_lines WHERE header_id = source_id
+-- Step 1: identify the source table and record
+rpt_patient_visit_summary.source_type = 'admissions'
+  → SELECT * FROM admissions WHERE id = source_id
+      → SELECT * FROM patient_invoice_headers WHERE admission_id = source_id
+          → SELECT * FROM patient_invoice_lines WHERE header_id IN (...)
+
+rpt_patient_visit_summary.source_type = 'patient_invoice_headers'
+  → SELECT * FROM patient_invoice_headers WHERE id = source_id
+      → SELECT * FROM patient_invoice_lines WHERE header_id = source_id
 ```
 
 ---
@@ -226,11 +230,13 @@ rpt_department_activity (activity_date=D, department_id=X)
 
 **Purpose:** Doctor performance aggregated by period. Two row types: `activity_date IS NULL` = monthly summary; `activity_date IS NOT NULL` = daily detail.
 
-**Grain:** 1 row = (doctor × period_year × period_month) for monthly rows, or (doctor × date) for daily rows
+**Grain:** 1 row = (doctor_id × period_year × period_month) for monthly rows, or (doctor_id × date) for daily rows
 
 **Refresh:** 🌙 Nightly — daily rows built each night; monthly rollup rebuilt on period close.
 
-**Traceback entry point:** `doctor_name` + `period_year` + `period_month` → filter source tables
+**Traceback entry point:** `doctor_id` + `period_year` + `period_month` → filter source tables
+
+**Key design decision:** `doctor_id` is the primary business key, **NOT** `doctor_name`. `doctor_name` is a snapshot/display field only and must never be used in JOINs or WHERE clauses for identity matching. For doctors not linked to a `doctors` table record (free-text names from admissions/invoices), a stable synthetic key `'UNLINKED:' || MD5(lower(doctor_name))` is assigned at refresh time so every row has a non-NULL `doctor_id`.
 
 ---
 
@@ -241,10 +247,10 @@ rpt_department_activity (activity_date=D, department_id=X)
 | 1 | `id` | VARCHAR PK | ❌ | Surrogate key. |
 | 2 | `period_year` | SMALLINT | 🟦 ❌ | Calendar year of activity. |
 | 3 | `period_month` | SMALLINT | 🟦 ❌ | Calendar month (1–12). |
-| 4 | `activity_date` | DATE | 🟦 ❌ | NULL = monthly summary row. NOT NULL = daily detail row. |
-| 5 | `doctor_id` | VARCHAR | 🟦 ❌ | FK to `doctors.id`. NULL for doctor_name entries not linked to a `doctors` record (free-text doctor names). |
-| 6 | `doctor_name` | TEXT | 🟦 ❌ | Source: `doctors.name` or free-text from `patient_invoice_lines.doctor_name` / `admissions.doctor_name`. |
-| 7 | `doctor_specialty` | TEXT | 🟦 ❌ | Source: `doctors.specialty`. NULL if doctor is unlinked. |
+| 4 | `activity_date` | DATE | 🟦 ❌ | NULL = monthly summary row (one per doctor per month). NOT NULL = daily detail row (one per doctor per day). |
+| 5 | `doctor_id` | VARCHAR NOT NULL | 🟦 ❌ | **Primary business key.** Never NULL. For doctors in `doctors` table: `doctors.id`. For free-text doctor names not in the table: `'UNLINKED:' \|\| MD5(lower(doctor_name))` — stable deterministic synthetic key. Used in all joins and filters. Unique constraint: `(doctor_id, period_year, period_month) WHERE activity_date IS NULL` and `(doctor_id, activity_date) WHERE activity_date IS NOT NULL`. |
+| 6 | `doctor_name` | TEXT | 🟦 ❌ | **Display/snapshot field only. Do NOT use for filtering or joining.** Captured at refresh time from `doctors.name` (if linked) or from the free-text name in source documents. May differ from `doctors.name` if doctor was renamed after rows were written. |
+| 7 | `doctor_specialty` | TEXT | 🟦 ❌ | Snapshot from `doctors.specialty` at refresh time. NULL for unlinked doctors. |
 | 8 | `department_id` | VARCHAR | 🟦 ❌ | Primary department of this doctor's activity in this period. |
 | 9 | `department_name` | TEXT | 🟦 ❌ | Denormalized from `departments.name_ar`. |
 | 10 | `patient_count` | INTEGER | 🟩 ✅ | Distinct patients seen by this doctor in the period. Source: `COUNT(DISTINCT patient_id)` from `patient_invoice_headers WHERE doctor_name = ?`. |
@@ -265,14 +271,23 @@ rpt_department_activity (activity_date=D, department_id=X)
 
 **Traceback Path:**
 ```
-rpt_doctor_activity (doctor_name=N, period=Y/M)
-  → patient_invoice_headers WHERE doctor_name=N AND period matches
+-- Use doctor_id as the join key, NOT doctor_name.
+-- For linked doctors (doctor_id starts with doctors.id format):
+rpt_doctor_activity (doctor_id=D, period=Y/M)
+  → doctors WHERE id=D                          -- get canonical name + specialty
+  → patient_invoice_headers WHERE doctor_name = (SELECT name FROM doctors WHERE id=D)
+      AND EXTRACT(YEAR/MONTH FROM invoice_date) = Y/M
       → patient_invoice_lines WHERE header_id IN (...)
-  → admissions WHERE doctor_name=N AND admission_date in period
-  → clinic_consultations WHERE doctor_id = doctor_id
-  → clinic_orders WHERE doctor_id = doctor_id
-  → doctor_transfers WHERE doctor_name=N AND period matches
-  → doctor_settlements WHERE doctor_name=N AND period matches
+  → admissions WHERE doctor_name = (SELECT name FROM doctors WHERE id=D)
+      AND EXTRACT(YEAR/MONTH FROM admission_date) = Y/M
+  → clinic_consultations WHERE doctor_id=D
+  → clinic_orders WHERE doctor_id=D
+  → doctor_transfers WHERE doctor_name = (SELECT name FROM doctors WHERE id=D)
+  → doctor_settlements WHERE doctor_name = (SELECT name FROM doctors WHERE id=D)
+
+-- For unlinked doctors (doctor_id starts with 'UNLINKED:'):
+-- Traceback via doctor_name snapshot field only.
+-- No doctors table record exists for these doctors.
 ```
 
 ---
@@ -384,13 +399,20 @@ rpt_daily_revenue (revenue_date=D, source_type='sales_pharmacy', pharmacy_id=Y)
 
 ## Table: `rpt_department_profitability`
 
-**Purpose:** Monthly P&L per department. Revenue (from billing) vs COGS (from inventory movements) vs OpEx (from GL journal lines on dept cost centre). Produces gross profit and operating profit per department per month.
+**Purpose:** Monthly P&L per department. Revenue (clinical billing only) minus COGS (inventory cost of drugs + consumables dispensed in dept warehouses) minus partial OpEx (GL expense lines explicitly coded to dept cost centre). Produces gross profit and a partial operating profit figure per department per month.
 
 **Grain:** 1 row = 1 department × 1 calendar month
 
 **Refresh:** 📅 Monthly batch — triggered after fiscal period close. Prior-month rows are immutable.
 
 **Traceback entry point:** `department_id` + `period_year` + `period_month` → multiple source tables
+
+**Profitability model summary:**
+- `gross_profit` = `net_revenue - total_cogs` — **GROSS PROFIT** (inventory margin only)
+- `operating_profit` = `gross_profit - total_opex` — **PARTIAL NET** (not full P&L — excludes doctor settlements, overhead allocation, unallocated fixed costs)
+- Doctor settlements: **NOT included** — tracked separately in `rpt_doctor_activity`
+- Overhead (salaries, utilities, depreciation): **NOT included** — no allocation engine in the system
+- Pharmacy OTC sales: **NOT included** — belong to pharmacy dimension, not department
 
 ---
 
@@ -410,9 +432,9 @@ rpt_daily_revenue (revenue_date=D, source_type='sales_pharmacy', pharmacy_id=Y)
 | 10 | `net_revenue` | NUMERIC(15,2) | 🟨 ✅ | Revenue after discount (EGP). `gross_revenue - total_discount`. |
 | 11 | `total_cogs` | NUMERIC(15,2) | 🟧 ✅ | Cost of drugs + consumables issued in this dept's warehouse in the month (EGP). Source: `SUM(ABS(qty_change) × unit_cost)` from `inventory_lot_movements` filtered to dept's default warehouse and issue tx_types. |
 | 12 | `total_opex` | NUMERIC(15,2) | 🟧 ✅ | Operating expenses posted to this dept's cost centre in GL (EGP). Source: `SUM(journal_lines.debit - journal_lines.credit)` WHERE `cost_center_id = dept_cc` AND `account_type = 'expense'` in posted journal entries for the period. |
-| 13 | `gross_profit` | NUMERIC(15,2) | 🟧 ✅ | `net_revenue - total_cogs` (EGP). Measures billing margin before overhead. |
-| 14 | `operating_profit` | NUMERIC(15,2) | 🟧 ✅ | `gross_profit - total_opex` (EGP). Full department P&L. |
-| 15 | `gross_margin_pct` | NUMERIC(7,4) | 🟧 ❌ | `gross_profit / net_revenue`. Range 0–1. Do NOT sum — recalculate from components if aggregating across departments. |
+| 13 | `gross_profit` | NUMERIC(15,2) | 🟧 ✅ | `net_revenue - total_cogs` (EGP). **GROSS PROFIT** — clinical billing margin after direct drug/consumable costs only. Does NOT include doctor settlements, fixed overhead, or shared services. Use for unit-economics comparison across departments. |
+| 14 | `operating_profit` | NUMERIC(15,2) | 🟧 ✅ | `gross_profit - total_opex` (EGP). **PARTIAL figure, NOT full P&L.** Subtracts only GL expense lines explicitly coded to this department's cost centre. Doctor settlements, unallocated salaries, utilities, and depreciation are excluded. Label in reports as "Contribution After Direct Costs" rather than "Operating Profit". |
+| 15 | `gross_margin_pct` | NUMERIC(7,4) | 🟧 ❌ | `gross_profit / NULLIF(net_revenue, 0)`. Fraction, range −∞ to 1. Do NOT sum across departments — recalculate from component totals when aggregating. |
 | 16 | `patient_count` | INTEGER | 🟩 ✅ | Distinct patients billed in this dept in the month. |
 | 17 | `admission_count` | INTEGER | 🟩 ✅ | Admissions linked to this dept in the month. |
 | 18 | `service_count` | INTEGER | 🟩 ✅ | Non-voided service lines billed in the month. |
@@ -635,7 +657,71 @@ rpt_item_movements_summary (item_id=I, warehouse_id=W, movement_date=D)
 | `rpt_item_movements_summary` | Event-driven upsert | Every lot movement insert | < 1 sec |
 | `rpt_department_activity` | Nightly batch | Nightly 00:15 | ~24 hrs |
 | `rpt_doctor_activity` | Daily batch + monthly rollup | Nightly 00:20 | ~24 hrs |
+| `rpt_refresh_log` | Append-only audit | Written by every refresh function | < 1 sec |
 
 ---
 
-*End of Data Dictionary v1.0 — Status: Pre-Implementation Review*
+# D. INFRASTRUCTURE / AUDIT
+
+---
+
+## Table: `rpt_refresh_log`
+
+**Purpose:** Append-only audit trail for every reporting layer refresh operation. One row is inserted at the START of each refresh run and updated to COMPLETED or FAILED on exit. Used for monitoring refresh health, diagnosing data freshness issues, and idempotency checking.
+
+**Grain:** 1 row = 1 execution of any reporting refresh function
+
+**Refresh:** Append-only. Rows are never deleted or updated except to record completion/failure of the same run. No data is read from this table by refresh functions (audit-only).
+
+**Traceback entry point:** N/A — this is the audit table for the reporting layer itself.
+
+---
+
+### Column Dictionary
+
+| # | Column | Type | Category | Business Meaning |
+|---|--------|------|----------|-----------------|
+| 1 | `id` | BIGSERIAL PK | ❌ | Auto-incrementing surrogate key. Monotonically increasing order = chronological order. |
+| 2 | `refresh_fn` | TEXT NOT NULL | 🟦 ❌ | Name of the PostgreSQL function that was executed. E.g. `'rpt_refresh_patient_visit_summary'`, `'rpt_nightly_refresh'`. |
+| 3 | `target_table` | TEXT | 🟦 ❌ | Primary reporting table being written. E.g. `'rpt_patient_visit_summary'`. NULL for orchestrator functions that call multiple sub-functions. |
+| 4 | `trigger_source` | TEXT | 🟦 ❌ | What initiated this refresh: `'nightly_cron'`, `'event_invoice_finalize'`, `'event_payment'`, `'event_discharge'`, `'event_journal_post'`, `'manual'`. Useful for separating scheduled runs from event-driven ones. |
+| 5 | `input_params` | JSONB | 🟦 ❌ | Parameters passed to the refresh function at call time. E.g. `{"source_id": "ADM-001", "period_year": 2026, "period_month": 3}`. NULL for full-table refreshes. Stored as JSONB for flexible querying. |
+| 6 | `started_at` | TIMESTAMPTZ NOT NULL | 🟦 ❌ | Wall-clock timestamp when the refresh function was entered. Set by the function before any work begins. |
+| 7 | `completed_at` | TIMESTAMPTZ | 🟦 ❌ | Wall-clock timestamp when the function exited normally. NULL until completion. Compute duration as `completed_at - started_at`. |
+| 8 | `rows_affected` | INTEGER | 🟩 ✅ | Number of rows inserted or updated in the target table during this run. From `GET DIAGNOSTICS`. 0 = ran but nothing changed (idempotent). NULL = not yet completed or not tracked for this function. |
+| 9 | `status` | TEXT NOT NULL | 🟦 ❌ | Run state: `'running'` (inserted at start), `'completed'` (updated on success), `'failed'` (updated on EXCEPTION). Use `WHERE status='failed'` to find broken runs. |
+| 10 | `error_message` | TEXT | 🟦 ❌ | PostgreSQL exception `SQLERRM` text if `status='failed'`. NULL on success. Used to diagnose failed nightly refreshes without access to server logs. |
+| 11 | `error_detail` | TEXT | 🟦 ❌ | PostgreSQL `SQLSTATE` + `PG_EXCEPTION_DETAIL` if available. NULL on success. |
+
+**Usage patterns:**
+```sql
+-- Check last run status for each function
+SELECT refresh_fn, status, started_at, completed_at,
+       completed_at - started_at AS duration,
+       rows_affected
+FROM rpt_refresh_log
+WHERE started_at > NOW() - INTERVAL '24 hours'
+ORDER BY started_at DESC;
+
+-- Find failed runs in last 7 days
+SELECT * FROM rpt_refresh_log
+WHERE status = 'failed'
+  AND started_at > NOW() - INTERVAL '7 days'
+ORDER BY started_at DESC;
+
+-- Monitor refresh duration trends
+SELECT refresh_fn,
+       AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) AS avg_sec,
+       MAX(EXTRACT(EPOCH FROM (completed_at - started_at))) AS max_sec,
+       COUNT(*) FILTER (WHERE status = 'failed') AS fail_count
+FROM rpt_refresh_log
+WHERE started_at > NOW() - INTERVAL '30 days'
+GROUP BY refresh_fn
+ORDER BY avg_sec DESC;
+```
+
+---
+
+---
+
+*End of Data Dictionary v1.1 — Status: Pre-Implementation Review (Final Design)*

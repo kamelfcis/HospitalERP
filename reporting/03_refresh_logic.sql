@@ -244,7 +244,7 @@ BEGIN
     ) agg
     LEFT JOIN patient_invoice_headers h ON h.id = agg.last_hdr_id
     LEFT JOIN admissions a ON a.id = v_admission_id
-    ON CONFLICT ON CONSTRAINT rpt_patient_visit_summary_visit_type_source_id
+    ON CONFLICT ON CONSTRAINT rpt_pvs_source_unique
         DO UPDATE SET
             discharge_date      = EXCLUDED.discharge_date,
             los_days            = EXCLUDED.los_days,

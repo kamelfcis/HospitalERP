@@ -25,9 +25,10 @@
 CREATE TABLE IF NOT EXISTS rpt_patient_visit_summary (
     id                    VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    -- Visit type & source
-    visit_type            VARCHAR(20)  NOT NULL,          -- 'inpatient' | 'outpatient'
-    source_id             VARCHAR      NOT NULL,          -- admissions.id  OR  patient_invoice_headers.id
+    -- Explicit source tracing (two-column pattern — no discriminator inference needed)
+    source_type           VARCHAR(50)  NOT NULL,          -- exact source table: 'admissions' | 'patient_invoice_headers'
+    source_id             VARCHAR      NOT NULL,          -- PK value in the source table named by source_type
+    visit_type            VARCHAR(20)  NOT NULL,          -- clinical display: 'inpatient' | 'outpatient'
     visit_date            DATE         NOT NULL,
     discharge_date        DATE,
     los_days              NUMERIC(8,2),                   -- length of stay (NULL for outpatient)
@@ -72,7 +73,10 @@ CREATE TABLE IF NOT EXISTS rpt_patient_visit_summary (
     consumable_line_count INTEGER      NOT NULL DEFAULT 0,
 
     -- Metadata
-    refreshed_at          TIMESTAMP    NOT NULL DEFAULT NOW()
+    refreshed_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
+
+    -- Unique: one row per source record
+    CONSTRAINT rpt_pvs_source_unique UNIQUE (source_type, source_id)
 );
 
 
@@ -278,9 +282,63 @@ CREATE TABLE IF NOT EXISTS rpt_daily_revenue (
 
 -- -----------------------------------------------------------
 -- rpt_department_profitability
--- Monthly profitability per department (revenue vs COGS vs
--- operating expenses from GL).
--- Drives: Management P&L by department.
+-- Monthly P&L per department.  Drives management reporting.
+--
+-- PROFITABILITY MODEL — READ CAREFULLY:
+--
+-- REVENUE (net_revenue):
+--   Source: SUM(patient_invoice_headers.net_amount)
+--     WHERE department_id = this department
+--       AND status IN ('finalized', 'paid')
+--       AND invoice_date falls within the period
+--   Includes: all finalized clinical billings for the dept
+--     (services, drugs, consumables, stay charges)
+--   Excludes: draft invoices, cancelled invoices, return
+--     invoices (is_return or voided lines)
+--   NOT included: sales_invoice_headers (pharmacy OTC sales —
+--     those belong to the pharmacy dimension, not dept)
+--
+-- DIRECT COST / COGS (total_cogs):
+--   Source: SUM(ABS(inventory_lot_movements.qty_change_in_minor)
+--            × inventory_lot_movements.unit_cost)
+--     WHERE lot.warehouse_id IN dept's warehouses
+--       AND tx_type IN ('sale', 'patient_sale', 'patient_invoice')
+--       AND tx_date falls within the period
+--   Represents: inventory cost of drugs + consumables
+--     dispensed to patients billed to this department
+--   Uses: lot-level purchase_price (FIFO/FEFO costing) —
+--     upgraded to provisional_purchase_price when available
+--   Excludes: service lines (no physical inventory consumed)
+--   Excludes: stay/accommodation (no COGS)
+--
+-- DOCTOR SETTLEMENTS (NOT included):
+--   doctor_transfers and doctor_settlements are NOT included
+--   in total_cogs or total_opex.  Doctor payables are a
+--   separate liability/expense dimension tracked in
+--   rpt_doctor_activity.  Including them here would require
+--   allocating settlement amounts by department, which the
+--   system does not currently support at line level.
+--
+-- OVERHEAD ALLOCATION (NOT included):
+--   No overhead (salaries, utilities, depreciation) is
+--   allocated to departments in this table.  The system has
+--   no overhead allocation engine.  total_opex reflects only
+--   GL expense lines explicitly posted to the dept's cost
+--   centre via journal entries.
+--
+-- RESULT TYPE — GROSS PROFIT:
+--   gross_profit = net_revenue - total_cogs
+--   This is GROSS PROFIT (billing revenue minus direct
+--   inventory cost).  It is NOT contribution margin (which
+--   would subtract variable non-inventory costs) and NOT
+--   full net profitability (which would include overhead,
+--   doctor settlements, and allocated fixed costs).
+--
+--   operating_profit = gross_profit - total_opex
+--   This is a PARTIAL NET FIGURE — it subtracts only GL
+--   expense lines explicitly coded to the dept cost centre.
+--   Interpret with caution: departments with few direct GL
+--   postings will show inflated operating_profit.
 --
 -- Refresh strategy: MONTHLY BATCH after period close.
 --   Prior months are immutable once period is closed.
@@ -297,20 +355,27 @@ CREATE TABLE IF NOT EXISTS rpt_department_profitability (
     cost_center_name      TEXT,
 
     -- Revenue
+    -- = SUM(patient_invoice_headers.net_amount) for finalized invoices in period
     gross_revenue         NUMERIC(15,2) NOT NULL DEFAULT 0,
     total_discount        NUMERIC(15,2) NOT NULL DEFAULT 0,
     net_revenue           NUMERIC(15,2) NOT NULL DEFAULT 0,
 
-    -- COGS (inventory issued, from lot_movements + purchase price)
+    -- Direct Cost / COGS
+    -- = inventory cost of drugs+consumables dispensed in dept warehouses
+    -- Does NOT include doctor settlements or overhead
     total_cogs            NUMERIC(15,2) NOT NULL DEFAULT 0,
 
-    -- Operating expenses (from posted journal lines on dept cost centre)
+    -- Operating expenses coded to dept cost centre in GL
+    -- = SUM(journal_lines.debit) WHERE cost_center_id=dept_cc AND account_type='expense'
+    -- Partial figure only — excludes unallocated overhead
     total_opex            NUMERIC(15,2) NOT NULL DEFAULT 0,
 
-    -- Profit
-    gross_profit          NUMERIC(15,2) NOT NULL DEFAULT 0,  -- net_revenue - total_cogs
-    operating_profit      NUMERIC(15,2) NOT NULL DEFAULT 0,  -- gross_profit - total_opex
-    gross_margin_pct      NUMERIC(7,4)  NOT NULL DEFAULT 0,  -- 0-1
+    -- Gross Profit = net_revenue - total_cogs (GROSS PROFIT, not full P&L)
+    gross_profit          NUMERIC(15,2) NOT NULL DEFAULT 0,
+    -- Partial Net = gross_profit - total_opex (PARTIAL figure — see model notes above)
+    operating_profit      NUMERIC(15,2) NOT NULL DEFAULT 0,
+    -- gross_profit / net_revenue  (0–1 ratio, do NOT sum across depts)
+    gross_margin_pct      NUMERIC(7,4)  NOT NULL DEFAULT 0,
 
     -- Activity counters
     patient_count         INTEGER      NOT NULL DEFAULT 0,
@@ -488,6 +553,12 @@ CREATE TABLE IF NOT EXISTS rpt_department_activity (
 -- Drives: doctor revenue report, settlement base,
 --   workload analysis, referral tracking.
 --
+-- Primary business key: doctor_id (doctors.id).
+-- doctor_name is a denormalized snapshot field for display only.
+-- For doctors not yet linked to a doctors table record,
+-- doctor_id = 'UNLINKED:' || MD5(doctor_name) as a stable
+-- synthetic key to avoid NULL key collisions.
+--
 -- Refresh strategy: DAILY BATCH (daily rows) +
 --   MONTHLY ROLLUP (monthly summary rows where
 --   activity_date IS NULL).
@@ -499,9 +570,13 @@ CREATE TABLE IF NOT EXISTS rpt_doctor_activity (
     period_month          SMALLINT     NOT NULL,
     activity_date         DATE,                           -- NULL = monthly summary row
 
-    doctor_id             VARCHAR,                        -- NULL = 'unknown doctor' catch-all
-    doctor_name           TEXT         NOT NULL,
-    doctor_specialty      TEXT,
+    -- doctor_id is the primary business key.
+    -- Use doctors.id when available.
+    -- Use 'UNLINKED:' || MD5(lower(doctor_name)) for free-text names
+    -- not linked to a doctors record. Never NULL.
+    doctor_id             VARCHAR      NOT NULL,
+    doctor_name           TEXT         NOT NULL,          -- snapshot/display only — do not use for joins
+    doctor_specialty      TEXT,                           -- snapshot from doctors.specialty at refresh time
     department_id         VARCHAR,
     department_name       TEXT,
 
@@ -525,5 +600,83 @@ CREATE TABLE IF NOT EXISTS rpt_doctor_activity (
     total_settled         NUMERIC(15,2) NOT NULL DEFAULT 0,
     unsettled_balance     NUMERIC(15,2) NOT NULL DEFAULT 0,
 
-    refreshed_at          TIMESTAMP    NOT NULL DEFAULT NOW()
+    refreshed_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
+
+    -- Unique constraints:
+    --   Monthly summary rows  (activity_date IS NULL):  one per doctor per month
+    --   Daily detail rows     (activity_date IS NOT NULL): one per doctor per day
+    -- Enforced via partial unique indexes in 02_create_indexes.sql:
+    --   ridx_docact_monthly_unique  WHERE activity_date IS NULL
+    --   ridx_docact_daily_unique    WHERE activity_date IS NOT NULL
+    CONSTRAINT rpt_doctor_activity_doctor_period_monthly_check
+        CHECK (activity_date IS NULL OR period_year IS NOT NULL)
 );
+
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │  INFRASTRUCTURE                                         │
+-- └─────────────────────────────────────────────────────────┘
+
+-- -----------------------------------------------------------
+-- rpt_refresh_log
+-- Audit trail for every reporting refresh operation.
+-- One row per function call — regardless of success or failure.
+-- Provides: performance monitoring, failure alerting,
+--   freshness tracking, and replay audit trail.
+--
+-- This table is populated by all refresh functions in
+-- 03_refresh_logic.sql via BEGIN/END wrapper calls.
+-- It is append-only — rows are never updated or deleted.
+-- -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rpt_refresh_log (
+    id                    BIGSERIAL    PRIMARY KEY,
+
+    -- Which reporting table was refreshed
+    report_table_name     VARCHAR(100) NOT NULL,
+
+    -- Which refresh function was called
+    refresh_function      VARCHAR(100) NOT NULL,          -- e.g. 'rpt_refresh_account_balances'
+
+    -- Parameters passed to the function (for replay/debugging)
+    refresh_params        JSONB,                          -- e.g. {"period_id":"FP-2026-01","full":true}
+
+    -- Timing
+    refresh_start_at      TIMESTAMP    NOT NULL,
+    refresh_end_at        TIMESTAMP,                      -- NULL if still running or failed before completion
+    duration_ms           INTEGER,                        -- refresh_end_at - refresh_start_at in milliseconds
+
+    -- Outcome
+    status                VARCHAR(20)  NOT NULL           -- 'running' | 'success' | 'partial' | 'failed'
+                          DEFAULT 'running',
+    rows_affected         INTEGER,                        -- rows inserted/updated (NULL on failure)
+    rows_inspected        INTEGER,                        -- source rows read (for cost diagnostics)
+
+    -- Failure details
+    error_message         TEXT,                           -- NULL on success
+    error_detail          TEXT,                           -- Postgres error detail / hint
+    error_context         TEXT,                           -- stack context if available
+
+    -- Who/what triggered the refresh
+    triggered_by          VARCHAR(50)  NOT NULL           -- 'nightly_batch' | 'event_invoice' | 'event_payment'
+                          DEFAULT 'nightly_batch',        --   | 'event_discharge' | 'manual' | 'period_close'
+    triggered_by_user     VARCHAR,                        -- users.id if manually triggered; NULL for automated
+
+    -- Period scope (for period-scoped refreshes)
+    period_id             VARCHAR,                        -- fiscal_periods.id if applicable
+    date_scope            DATE                            -- specific date if date-scoped (e.g. daily revenue)
+);
+
+
+-- Index: query freshness for a given table (most common monitoring query)
+CREATE INDEX IF NOT EXISTS ridx_rrl_table_start
+    ON rpt_refresh_log (report_table_name, refresh_start_at DESC);
+
+-- Index: find all failures
+CREATE INDEX IF NOT EXISTS ridx_rrl_failures
+    ON rpt_refresh_log (status, refresh_start_at DESC)
+    WHERE status IN ('failed', 'partial');
+
+-- Index: find long-running or still-running jobs
+CREATE INDEX IF NOT EXISTS ridx_rrl_running
+    ON rpt_refresh_log (status, refresh_start_at)
+    WHERE status = 'running';
