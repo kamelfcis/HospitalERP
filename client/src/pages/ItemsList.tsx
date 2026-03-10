@@ -33,6 +33,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/useDebounce";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,7 +48,6 @@ interface ItemsResponse {
 export default function ItemsList() {
   const { toast } = useToast();
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [category, setCategory] = useState<string>("all");
   const [isToxic, setIsToxic] = useState<string>("all");
@@ -57,70 +57,47 @@ export default function ItemsList() {
   const [deleteItemName, setDeleteItemName] = useState<string>("");
   const limit = 20;
 
+  const debouncedSearch = useDebounce(searchInput, 400);
+
   const { data: formTypes } = useQuery<ItemFormType[]>({
     queryKey: ["/api/form-types"],
   });
 
-  const buildQueryString = () => {
-    const params = new URLSearchParams();
-    params.set("page", page.toString());
-    params.set("limit", limit.toString());
-    if (search) params.set("search", search);
-    if (category !== "all") params.set("category", category);
-    if (isToxic !== "all") params.set("isToxic", isToxic);
-    if (isActive !== "all") params.set("isActive", isActive);
-    if (formTypeId !== "all") params.set("formTypeId", formTypeId);
-    return params.toString();
-  };
-
   const { data, isLoading } = useQuery<ItemsResponse>({
-    queryKey: ["/api/items", page, search, category, isToxic, isActive, formTypeId],
+    queryKey: ["/api/items", page, debouncedSearch, category, isToxic, isActive, formTypeId],
     queryFn: async () => {
-      const response = await fetch(`/api/items?${buildQueryString()}`);
-      if (!response.ok) throw new Error("Failed to fetch items");
-      return response.json();
+      const params = new URLSearchParams();
+      params.set("page", page.toString());
+      params.set("limit", limit.toString());
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (category !== "all") params.set("category", category);
+      if (isToxic !== "all") params.set("isToxic", isToxic);
+      if (isActive !== "all") params.set("isActive", isActive);
+      if (formTypeId !== "all") params.set("formTypeId", formTypeId);
+      const res = await fetch(`/api/items?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch items");
+      return res.json();
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/items/${id}`);
-    },
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/items/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/items"] });
       toast({ title: "تم حذف الصنف بنجاح" });
       setDeleteItemId(null);
     },
-    onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
-    },
+    onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
-  const handleDelete = (id: string, name: string) => {
-    setDeleteItemId(id);
-    setDeleteItemName(name);
-  };
-
-  const confirmDelete = () => {
-    if (deleteItemId) {
-      deleteMutation.mutate(deleteItemId);
-    }
-  };
-
-  const handleSearch = () => {
-    setSearch(searchInput);
+  const handleFilterChange = (setter: (v: string) => void) => (v: string) => {
+    setter(v);
     setPage(1);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
   };
 
   const totalPages = data ? Math.ceil(data.total / limit) : 1;
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <div className="p-2 space-y-2">
         <div className="peachtree-toolbar">
@@ -146,14 +123,12 @@ export default function ItemsList() {
           <span className="text-xs text-muted-foreground">|</span>
           <span className="text-xs text-muted-foreground">إدارة الأصناف والأدوية والمستلزمات</span>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/items/new">
-            <Button size="sm" className="h-7 text-xs gap-1" data-testid="button-add-item">
-              <Plus className="h-3 w-3" />
-              إضافة صنف
-            </Button>
-          </Link>
-        </div>
+        <Link href="/items/new">
+          <Button size="sm" className="h-7 text-xs gap-1" data-testid="button-add-item">
+            <Plus className="h-3 w-3" />
+            إضافة صنف
+          </Button>
+        </Link>
       </div>
 
       <div className="peachtree-toolbar flex items-center gap-3 flex-wrap">
@@ -163,27 +138,20 @@ export default function ItemsList() {
             type="text"
             placeholder="بحث بالكود أو الاسم (استخدم % للبحث المتقدم)"
             value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onChange={(e) => { setSearchInput(e.target.value); setPage(1); }}
             className="peachtree-input w-64"
             data-testid="input-search"
           />
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={handleSearch}
-            data-testid="button-search"
-          >
-            بحث
-          </Button>
+          {isLoading && debouncedSearch && (
+            <span className="text-[10px] text-muted-foreground animate-pulse">جاري البحث…</span>
+          )}
         </div>
 
         <div className="flex items-center gap-1">
           <Filter className="h-3 w-3 text-muted-foreground" />
           <span className="text-xs font-medium">التصنيف:</span>
         </div>
-        <Select value={category} onValueChange={(v) => { setCategory(v); setPage(1); }}>
+        <Select value={category} onValueChange={handleFilterChange(setCategory)}>
           <SelectTrigger className="peachtree-select w-28" data-testid="select-category">
             <SelectValue />
           </SelectTrigger>
@@ -196,7 +164,7 @@ export default function ItemsList() {
         </Select>
 
         <span className="text-xs font-medium">نوع الشكل:</span>
-        <Select value={formTypeId} onValueChange={(v) => { setFormTypeId(v); setPage(1); }}>
+        <Select value={formTypeId} onValueChange={handleFilterChange(setFormTypeId)}>
           <SelectTrigger className="peachtree-select w-28" data-testid="select-form-type">
             <SelectValue />
           </SelectTrigger>
@@ -209,7 +177,7 @@ export default function ItemsList() {
         </Select>
 
         <span className="text-xs font-medium">سموم:</span>
-        <Select value={isToxic} onValueChange={(v) => { setIsToxic(v); setPage(1); }}>
+        <Select value={isToxic} onValueChange={handleFilterChange(setIsToxic)}>
           <SelectTrigger className="peachtree-select w-20" data-testid="select-toxic">
             <SelectValue />
           </SelectTrigger>
@@ -221,7 +189,7 @@ export default function ItemsList() {
         </Select>
 
         <span className="text-xs font-medium">الحالة:</span>
-        <Select value={isActive} onValueChange={(v) => { setIsActive(v); setPage(1); }}>
+        <Select value={isActive} onValueChange={handleFilterChange(setIsActive)}>
           <SelectTrigger className="peachtree-select w-24" data-testid="select-active">
             <SelectValue />
           </SelectTrigger>
@@ -259,9 +227,7 @@ export default function ItemsList() {
                       {itemCategoryLabels[item.category] || item.category}
                     </Badge>
                   </td>
-                  <td className="text-xs text-muted-foreground">
-                    {item.formType?.nameAr || "-"}
-                  </td>
+                  <td className="text-xs text-muted-foreground">{item.formType?.nameAr || "-"}</td>
                   <td className="text-center">
                     {item.isToxic && (
                       <Badge variant="destructive" className="text-xs gap-1">
@@ -270,41 +236,27 @@ export default function ItemsList() {
                       </Badge>
                     )}
                   </td>
-                  <td className="peachtree-amount text-xs">
-                    {formatCurrency(item.purchasePriceLast)}
-                  </td>
-                  <td className="peachtree-amount text-xs">
-                    {formatCurrency(item.salePriceCurrent)}
-                  </td>
+                  <td className="peachtree-amount text-xs">{formatCurrency(item.purchasePriceLast)}</td>
+                  <td className="peachtree-amount text-xs">{formatCurrency(item.salePriceCurrent)}</td>
                   <td>
                     {item.isActive ? (
-                      <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
-                        نشط
-                      </Badge>
+                      <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">نشط</Badge>
                     ) : (
-                      <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
-                        موقوف
-                      </Badge>
+                      <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">موقوف</Badge>
                     )}
                   </td>
                   <td>
                     <div className="flex items-center gap-1">
                       <Link href={`/items/${item.id}`}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs gap-1"
-                          data-testid={`button-view-${item.id}`}
-                        >
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1" data-testid={`button-view-${item.id}`}>
                           <Eye className="h-3 w-3" />
                           عرض
                         </Button>
                       </Link>
                       <Button
-                        variant="ghost"
-                        size="sm"
+                        variant="ghost" size="sm"
                         className="h-6 px-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => handleDelete(item.id, item.nameAr)}
+                        onClick={() => { setDeleteItemId(item.id); setDeleteItemName(item.nameAr); }}
                         data-testid={`button-delete-${item.id}`}
                       >
                         <Trash2 className="h-3 w-3" />
@@ -330,28 +282,12 @@ export default function ItemsList() {
             عرض {((page - 1) * limit) + 1} إلى {Math.min(page * limit, data.total)} من {data.total} صنف
           </span>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2"
-              disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
-              data-testid="button-prev-page"
-            >
+            <Button variant="outline" size="sm" className="h-6 px-2" disabled={page <= 1} onClick={() => setPage(p => p - 1)} data-testid="button-prev-page">
               <ChevronRight className="h-3 w-3" />
               السابق
             </Button>
-            <span className="text-xs font-medium px-2">
-              صفحة {page} من {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2"
-              disabled={page >= totalPages}
-              onClick={() => setPage(page + 1)}
-              data-testid="button-next-page"
-            >
+            <span className="text-xs font-medium px-2">صفحة {page} من {totalPages}</span>
+            <Button variant="outline" size="sm" className="h-6 px-2" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} data-testid="button-next-page">
               التالي
               <ChevronLeft className="h-3 w-3" />
             </Button>
@@ -365,14 +301,13 @@ export default function ItemsList() {
             <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
             <AlertDialogDescription>
               هل أنت متأكد من حذف الصنف "{deleteItemName}"؟
-              <br />
-              لا يمكن التراجع عن هذا الإجراء.
+              <br />لا يمكن التراجع عن هذا الإجراء.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
             <AlertDialogCancel>إلغاء</AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmDelete}
+              onClick={() => deleteItemId && deleteMutation.mutate(deleteItemId)}
               className="bg-red-600 hover:bg-red-700"
               data-testid="button-confirm-delete"
             >
