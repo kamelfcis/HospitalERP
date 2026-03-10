@@ -55,6 +55,11 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
   });
   const { data: services = [] } = useQuery<Service[]>({
     queryKey: ["/api/services"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/services?pageSize=500&active=true");
+      const json = await res.json();
+      return Array.isArray(json) ? json : (json.data ?? []);
+    },
   });
   const { data: treasuries = [] } = useQuery<Treasury[]>({
     queryKey: ["/api/treasuries"],
