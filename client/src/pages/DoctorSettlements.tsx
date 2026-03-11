@@ -29,11 +29,14 @@ export default function DoctorSettlements() {
   // ── سجل التسويات ──
   const { data: settlements = [], isLoading } = useQuery<SettlementWithAllocs[]>({
     queryKey: ["/api/doctor-settlements", filterDoctor],
-    queryFn: () => {
+    queryFn: async () => {
       const url = filterDoctor
         ? `/api/doctor-settlements?doctorName=${encodeURIComponent(filterDoctor)}`
         : "/api/doctor-settlements";
-      return fetch(url, { credentials: "include" }).then(r => r.json());
+      const r = await fetch(url, { credentials: "include" });
+      if (!r.ok) throw new Error("unauthorized");
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
     },
   });
 
