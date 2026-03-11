@@ -87,8 +87,9 @@ const methods = {
     const user = await this.getUser(userId);
     if (!user) return [];
 
-    const rolPerms = await db.select().from(rolePermissions).where(eq(rolePermissions.role, user.role));
-    const rolePermSet = new Set(rolPerms.map(rp => rp.permission));
+    // استخدام raw SQL لتجنب مشكلة pgEnum cast مع أدوار غير معرّفة في الـ Drizzle schema
+    const rolPermsRaw = await db.execute(sql`SELECT permission FROM role_permissions WHERE role = ${user.role}`);
+    const rolePermSet = new Set((rolPermsRaw.rows as { permission: string }[]).map(r => r.permission));
 
     const userPerms = await db.select().from(userPermissions).where(eq(userPermissions.userId, userId));
 
