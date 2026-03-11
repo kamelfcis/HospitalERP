@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Search, Users, FolderOpen, ArrowRight } from "lucide-react";
 import type { Patient } from "@shared/schema";
 import type { PatientStats, PrefilledPatient } from "./types";
@@ -167,7 +167,7 @@ export default function Patients() {
         </div>
 
         {/* محتوى تاب القائمة */}
-        <TabsContent value="list" className="flex-1 flex flex-col min-h-0 mt-1 space-y-2">
+        {activeTab === "list" && <div className="flex-1 flex flex-col min-h-0 mt-1 space-y-2">
 
           <div className="peachtree-toolbar rounded flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1">
@@ -249,12 +249,12 @@ export default function Patients() {
             />
           </div>
 
-        </TabsContent>
+        </div>}
 
         {/* محتوى تاب ملف المريض */}
-        <TabsContent value="file" className="flex-1 overflow-auto mt-1 px-1">
+        {activeTab === "file" && <div className="flex-1 overflow-auto mt-1 px-1">
           {selectedPatientId ? (
-            <div className="space-y-2">
+            <div className="space-y-2 pb-4">
               <div className="flex items-center gap-2 print:hidden">
                 <Button
                   variant="ghost" size="sm" className="h-7 text-xs gap-1"
@@ -284,7 +284,7 @@ export default function Patients() {
               <p className="text-sm">اختر مريضاً من القائمة لعرض ملفه</p>
             </div>
           )}
-        </TabsContent>
+        </div>}
 
       </Tabs>
 
