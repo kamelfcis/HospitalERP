@@ -7,7 +7,7 @@ import { requireAuth, checkPermission } from "./_shared";
 export function registerPatientsRoutes(app: Express) {
   // ==================== Patients API ====================
 
-  app.get("/api/patients", async (req, res) => {
+  app.get("/api/patients", requireAuth, async (req, res) => {
     try {
       const search = req.query.search as string;
       const list = search ? await storage.searchPatients(search) : await storage.getPatients();
@@ -51,7 +51,7 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patients/:id", async (req, res) => {
+  app.get("/api/patients/:id", requireAuth, async (req, res) => {
     try {
       const p = await storage.getPatient(req.params.id as string);
       if (!p) return res.status(404).json({ message: "مريض غير موجود" });
@@ -227,7 +227,7 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/doctors", async (req, res) => {
+  app.get("/api/doctors", requireAuth, async (req, res) => {
     try {
       const search = req.query.search as string;
       const includeInactive = req.query.includeInactive === "true";
@@ -239,7 +239,7 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/doctors/:id", async (req, res) => {
+  app.get("/api/doctors/:id", requireAuth, async (req, res) => {
     try {
       const d = await storage.getDoctor(req.params.id as string);
       if (!d) return res.status(404).json({ message: "طبيب غير موجود" });
