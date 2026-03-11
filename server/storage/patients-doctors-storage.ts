@@ -206,15 +206,31 @@ const methods = {
 
     const summaryRes = await db.execute(sql`
       SELECT
-        (SELECT COUNT(*) FROM clinic_appointments WHERE patient_id = ${patientId})::int AS total_clinic_visits,
-        (SELECT COUNT(*) FROM admissions WHERE patient_id = ${patientId})::int AS total_admissions,
-        (SELECT COUNT(*) FROM patient_invoice_headers WHERE patient_id = ${patientId})::int AS total_invoices,
-        COALESCE((SELECT SUM(net_amount) FROM patient_invoice_headers WHERE patient_id = ${patientId}), 0) AS total_billed,
-        COALESCE((SELECT SUM(paid_amount) FROM patient_invoice_headers WHERE patient_id = ${patientId}), 0) AS total_paid,
-        (SELECT MIN(appointment_date) FROM clinic_appointments WHERE patient_id = ${patientId}) AS first_visit_date,
+        (SELECT COUNT(*) FROM clinic_appointments
+          WHERE patient_id = ${patientId}
+             OR (patient_id IS NULL AND patient_name = ${patient.full_name as string}))::int AS total_clinic_visits,
+        (SELECT COUNT(*) FROM admissions
+          WHERE patient_id = ${patientId}
+             OR (patient_id IS NULL AND patient_name = ${patient.full_name as string}))::int AS total_admissions,
+        (SELECT COUNT(*) FROM patient_invoice_headers
+          WHERE patient_id = ${patientId}
+             OR (patient_id IS NULL AND patient_name = ${patient.full_name as string}))::int AS total_invoices,
+        COALESCE((SELECT SUM(net_amount) FROM patient_invoice_headers
+          WHERE patient_id = ${patientId}
+             OR (patient_id IS NULL AND patient_name = ${patient.full_name as string})), 0) AS total_billed,
+        COALESCE((SELECT SUM(paid_amount) FROM patient_invoice_headers
+          WHERE patient_id = ${patientId}
+             OR (patient_id IS NULL AND patient_name = ${patient.full_name as string})), 0) AS total_paid,
+        (SELECT MIN(appointment_date) FROM clinic_appointments
+          WHERE patient_id = ${patientId}
+             OR (patient_id IS NULL AND patient_name = ${patient.full_name as string})) AS first_visit_date,
         GREATEST(
-          (SELECT MAX(appointment_date) FROM clinic_appointments WHERE patient_id = ${patientId}),
-          (SELECT MAX(admission_date)   FROM admissions WHERE patient_id = ${patientId})
+          (SELECT MAX(appointment_date) FROM clinic_appointments
+            WHERE patient_id = ${patientId}
+               OR (patient_id IS NULL AND patient_name = ${patient.full_name as string})),
+          (SELECT MAX(admission_date) FROM admissions
+            WHERE patient_id = ${patientId}
+               OR (patient_id IS NULL AND patient_name = ${patient.full_name as string}))
         ) AS last_activity_date
     `);
     const s = summaryRes.rows[0] as Record<string, unknown>;
@@ -252,6 +268,7 @@ const methods = {
       JOIN doctors d ON d.id = a.doctor_id
       LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
       WHERE a.patient_id = ${patientId}
+         OR (a.patient_id IS NULL AND a.patient_name = ${patient.full_name as string})
       ORDER BY a.appointment_date DESC, a.turn_number DESC
       LIMIT 100
     `);
@@ -273,6 +290,7 @@ const methods = {
       LEFT JOIN rooms r ON r.id = b.room_id
       LEFT JOIN floors f ON f.id = r.floor_id
       WHERE adm.patient_id = ${patientId}
+         OR (adm.patient_id IS NULL AND adm.patient_name = ${patient.full_name as string})
       ORDER BY adm.admission_date DESC
       LIMIT 50
     `);
@@ -288,7 +306,10 @@ const methods = {
         pih.patient_type,
         pih.admission_id
       FROM patient_invoice_headers pih
-      WHERE pih.patient_id = ${patientId}
+      WHERE (
+        pih.patient_id = ${patientId}
+        OR (pih.patient_id IS NULL AND pih.patient_name = ${patient.full_name as string})
+      )
         AND pih.admission_id IS NULL
       ORDER BY pih.invoice_date DESC
       LIMIT 100
