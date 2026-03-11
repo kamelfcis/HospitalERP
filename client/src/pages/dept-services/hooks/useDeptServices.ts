@@ -45,13 +45,6 @@ export function useUserTreasury() {
   });
 }
 
-export function useDoctors() {
-  return useQuery<any[]>({
-    queryKey: ["/api/doctors"],
-    staleTime: 0,
-  });
-}
-
 export function usePatientSearch(search: string) {
   return useQuery<any[]>({
     queryKey: ["/api/patients", { search }],
@@ -62,13 +55,6 @@ export function usePatientSearch(search: string) {
       return res.json();
     },
     enabled: search.length >= 2,
-    staleTime: 0,
-  });
-}
-
-export function useDepartments() {
-  return useQuery<any[]>({
-    queryKey: ["/api/departments"],
     staleTime: 0,
   });
 }

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
+import { useClinicsLookup } from "@/hooks/lookups/useClinicsLookup";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -34,10 +36,10 @@ export default function UsersManagement() {
   const [permUserId,     setPermUserId]     = useState<string | null>(null);
 
   const { data: users = [], isLoading } = useQuery<UserData[]>({ queryKey: ["/api/users"] });
-  const { data: departments = [] }      = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/departments"] });
+  const { items: departmentItems }      = useDepartmentsLookup();
   const { data: pharmacies = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/pharmacies"] });
   const { data: cashierAccounts = [] }  = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({ queryKey: ["/api/drawer-passwords"] });
-  const { data: clinics = [] }          = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/clinic-clinics"] });
+  const { items: clinicItems }          = useClinicsLookup();
 
   const createMutation = useMutation({
     mutationFn: async (data: Partial<UserData>) => (await apiRequest("POST", "/api/users", data)).json(),
@@ -207,9 +209,9 @@ export default function UsersManagement() {
         open={showDialog}
         editingUser={editingUser}
         formData={formData}
-        departments={departments}
+        departments={departmentItems.map(i => ({ id: i.id, nameAr: i.name }))}
         pharmacies={pharmacies}
-        clinics={clinics}
+        clinics={clinicItems.map(i => ({ id: i.id, nameAr: i.name }))}
         cashierAccounts={cashierAccounts}
         isPending={isPending}
         onFormChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}

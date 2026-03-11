@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Loader2, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber } from "@/lib/formatters";
-import type { Department } from "@shared/schema";
+import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
 
 interface Props {
   open: boolean;
@@ -34,7 +34,7 @@ export default function BulkAdjustModal({ open, onClose, listId }: Props) {
   const [createMissing, setCreateMissing] = useState(true);
   const [preview, setPreview]         = useState<any>(null);
 
-  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
+  const { items: departmentItems } = useDepartmentsLookup({ enabled: open });
 
   const buildPayload = () => ({
     mode, direction, value: parseFloat(value),
@@ -113,8 +113,8 @@ export default function BulkAdjustModal({ open, onClose, listId }: Props) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">الكل</SelectItem>
-                  {(departments || []).map(d => (
-                    <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+                  {departmentItems.map(d => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

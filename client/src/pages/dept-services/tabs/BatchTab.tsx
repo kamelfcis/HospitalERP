@@ -8,7 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ServicesGrid, type ServiceLine } from "../components/ServicesGrid";
 import { ConsumablesPanel } from "../components/ConsumablesPanel";
-import { useDeptServices, useDoctors, usePatientSearch, useUserTreasury } from "../hooks/useDeptServices";
+import { useDeptServices, usePatientSearch, useUserTreasury } from "../hooks/useDeptServices";
+import { DoctorLookup } from "@/components/lookups";
 import { Save, Loader2, Plus, Trash2, Users, CheckCircle2, XCircle } from "lucide-react";
 import type { Patient } from "@shared/schema";
 
@@ -31,23 +32,22 @@ interface Props {
 export function BatchTab({ departmentId, departmentName }: Props) {
   const { toast } = useToast();
   const { data: services = [], isLoading: loadingServices } = useDeptServices(departmentId);
-  const { data: doctors = [] } = useDoctors();
   const { data: treasuryData } = useUserTreasury();
 
-  const [doctorId, setDoctorId] = useState("");
-  const [orderType, setOrderType] = useState<string>("cash");
-  const [contractName, setContractName] = useState("");
+  const [doctorId,       setDoctorId]       = useState("");
+  const [doctorName,     setDoctorName]      = useState("");
+  const [orderType,      setOrderType]       = useState<string>("cash");
+  const [contractName,   setContractName]    = useState("");
   const [discountPercent, setDiscountPercent] = useState(0);
-  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
-  const [patients, setPatients] = useState<PatientEntry[]>([{ patientName: "", patientPhone: "" }]);
-  const [batchResults, setBatchResults] = useState<BatchResult[] | null>(null);
+  const [serviceLines,   setServiceLines]    = useState<ServiceLine[]>([]);
+  const [patients,       setPatients]        = useState<PatientEntry[]>([{ patientName: "", patientPhone: "" }]);
+  const [batchResults,   setBatchResults]    = useState<BatchResult[] | null>(null);
 
   const [patientSearchIdx, setPatientSearchIdx] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const { data: searchResults = [] } = usePatientSearch(searchTerm);
 
   const treasury = treasuryData && !Array.isArray(treasuryData) ? treasuryData : (Array.isArray(treasuryData) ? treasuryData[0] : null);
-  const selectedDoctor = doctors.find((d: any) => d.id === doctorId);
 
   const subtotal = serviceLines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
   const discountAmount = subtotal * discountPercent / 100;
@@ -84,7 +84,7 @@ export function BatchTab({ departmentId, departmentName }: Props) {
       if (!serviceLines.length) throw new Error("يرجى إضافة خدمة واحدة على الأقل");
       const res = await apiRequest("POST", "/api/dept-service-orders/batch", {
         patients: validPatients, doctorId: doctorId || undefined,
-        doctorName: selectedDoctor?.name || undefined, departmentId, orderType,
+        doctorName: doctorName || undefined, departmentId, orderType,
         contractName: orderType === "contract" ? contractName : undefined,
         treasuryId: orderType === "cash" && treasury ? treasury.id : undefined,
         services: serviceLines, discountPercent,
@@ -103,7 +103,7 @@ export function BatchTab({ departmentId, departmentName }: Props) {
   });
 
   const resetForm = () => {
-    setDoctorId(""); setOrderType("cash"); setContractName("");
+    setDoctorId(""); setDoctorName(""); setOrderType("cash"); setContractName("");
     setDiscountPercent(0); setServiceLines([]);
     setPatients([{ patientName: "", patientPhone: "" }]);
     setBatchResults(null);
@@ -120,13 +120,16 @@ export function BatchTab({ departmentId, departmentName }: Props) {
         </div>
         <div>
           <Label className="text-xs">الطبيب</Label>
-          <Select value={doctorId || "__none__"} onValueChange={v => setDoctorId(v === "__none__" ? "" : v)}>
-            <SelectTrigger className="h-8 text-sm" data-testid="batch-select-doctor"><SelectValue placeholder="طبيب..." /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">بدون</SelectItem>
-              {doctors.map((d: any) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}
-            </SelectContent>
-          </Select>
+          <DoctorLookup
+            value={doctorId}
+            onChange={(item) => {
+              setDoctorId(item?.id || "");
+              setDoctorName(item?.name || "");
+            }}
+            placeholder="ابحث عن طبيب..."
+            clearable
+            data-testid="batch-select-doctor"
+          />
         </div>
         <div>
           <Label className="text-xs">النوع</Label>

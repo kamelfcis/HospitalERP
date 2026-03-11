@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -8,8 +8,8 @@ import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber } from "@/lib/formatters";
-import type { ServiceWithDepartment } from "@shared/schema";
-import { useDebounce } from "./hooks";
+import { useServicesLookup } from "@/hooks/lookups/useServicesLookup";
+import type { LookupItem } from "@/lib/lookupTypes";
 
 interface Props {
   open: boolean;
@@ -26,24 +26,14 @@ interface Props {
 export default function AddPricesModal({ open, onClose, listId }: Props) {
   const { toast } = useToast();
   const [search, setSearch]         = useState("");
-  const debouncedSearch             = useDebounce(search, 300);
   const [selected, setSelected]     = useState<{ serviceId: string; code: string; nameAr: string; price: string }[]>([]);
   const [defaultPrice, setDefaultPrice] = useState("");
 
-  const { data: servicesData } = useQuery<{ data: ServiceWithDepartment[]; total: number }>({
-    queryKey: ["/api/services", "active=true&pageSize=200" + (debouncedSearch ? `&search=${debouncedSearch}` : "")],
-    queryFn: async () => {
-      const qs = "active=true&pageSize=200" + (debouncedSearch ? `&search=${debouncedSearch}` : "");
-      const res = await fetch(`/api/services?${qs}`, { credentials: "include" });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    enabled: open,
-  });
+  const { items, isLoading } = useServicesLookup({ search, active: true, enabled: open });
 
   const addMutation = useMutation({
-    mutationFn: (items: { serviceId: string; price: string }[]) =>
-      apiRequest("POST", `/api/price-lists/${listId}/items`, { items }),
+    mutationFn: (entries: { serviceId: string; price: string }[]) =>
+      apiRequest("POST", `/api/price-lists/${listId}/items`, { items: entries }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/price-lists", listId] });
       toast({ title: "تم إضافة الأسعار" });
@@ -53,11 +43,16 @@ export default function AddPricesModal({ open, onClose, listId }: Props) {
     onError: (e: Error) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
-  function toggleService(s: ServiceWithDepartment) {
+  function toggleService(item: LookupItem) {
     setSelected(prev => {
-      const exists = prev.find(x => x.serviceId === s.id);
-      if (exists) return prev.filter(x => x.serviceId !== s.id);
-      return [...prev, { serviceId: s.id, code: s.code, nameAr: s.nameAr, price: defaultPrice || String(s.basePrice) }];
+      const exists = prev.find(x => x.serviceId === item.id);
+      if (exists) return prev.filter(x => x.serviceId !== item.id);
+      return [...prev, {
+        serviceId: item.id,
+        code: item.code || "",
+        nameAr: item.name,
+        price: defaultPrice || String((item.meta as any)?.basePrice || 0),
+      }];
     });
   }
 
@@ -78,7 +73,7 @@ export default function AddPricesModal({ open, onClose, listId }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <Input
               data-testid="input-search-add-services"
-              placeholder="بحث عن خدمة..."
+              placeholder="ابحث عن خدمة (أدخل حرفين على الأقل)..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="peachtree-input flex-1"
@@ -104,20 +99,36 @@ export default function AddPricesModal({ open, onClose, listId }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(servicesData?.data || []).map(s => {
-                    const isSelected = selected.some(x => x.serviceId === s.id);
-                    return (
-                      <tr key={s.id} className="peachtree-grid-row cursor-pointer"
-                        onClick={() => toggleService(s)} data-testid={`row-add-service-${s.id}`}>
-                        <td>
-                          <Checkbox checked={isSelected} data-testid={`checkbox-service-${s.id}`} />
-                        </td>
-                        <td className="font-mono text-xs">{s.code}</td>
-                        <td className="text-xs">{s.nameAr}</td>
-                        <td className="peachtree-amount text-xs">{formatNumber(s.basePrice)}</td>
-                      </tr>
-                    );
-                  })}
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={4} className="text-center py-4 text-xs text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                      </td>
+                    </tr>
+                  ) : items.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="text-center py-4 text-xs text-muted-foreground">
+                        {search.length < 2 ? "ابحث بكتابة اسم الخدمة أو الكود..." : "لا توجد نتائج"}
+                      </td>
+                    </tr>
+                  ) : (
+                    items.map(item => {
+                      const isSelected = selected.some(x => x.serviceId === item.id);
+                      return (
+                        <tr key={item.id} className="peachtree-grid-row cursor-pointer"
+                          onClick={() => toggleService(item)} data-testid={`row-add-service-${item.id}`}>
+                          <td>
+                            <Checkbox checked={isSelected} data-testid={`checkbox-service-${item.id}`} />
+                          </td>
+                          <td className="font-mono text-xs">{item.code}</td>
+                          <td className="text-xs">{item.name}</td>
+                          <td className="peachtree-amount text-xs">
+                            {formatNumber((item.meta as any)?.basePrice)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>

@@ -10,8 +10,9 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber } from "@/lib/formatters";
 import { serviceTypeLabels } from "@shared/schema";
-import type { ServiceWithDepartment, Department } from "@shared/schema";
+import type { ServiceWithDepartment } from "@shared/schema";
 import { useDebounce } from "./hooks";
+import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
 import ServiceDialog, {
   type ServiceFormState, type ConsumableRow, defaultServiceForm,
 } from "./ServiceDialog";
@@ -59,8 +60,8 @@ export default function ServicesTab() {
     },
   });
 
-  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
-  const { data: categories }  = useQuery<string[]>({ queryKey: ["/api/service-categories"] });
+  const { items: departmentItems } = useDepartmentsLookup();
+  const { data: categories }       = useQuery<string[]>({ queryKey: ["/api/service-categories"] });
 
   const services    = servicesData?.data  || [];
   const total       = servicesData?.total || 0;
@@ -187,8 +188,8 @@ export default function ServicesTab() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">كل الأقسام</SelectItem>
-            {(departments || []).map(d => (
-              <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+            {departmentItems.map(d => (
+              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>

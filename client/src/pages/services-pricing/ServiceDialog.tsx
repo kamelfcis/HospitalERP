@@ -13,8 +13,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Loader2, Trash2, UserPlus } from "lucide-react";
 import { serviceTypeLabels } from "@shared/schema";
 import type {
-  ServiceWithDepartment, Department, CostCenter, Warehouse, Item, ServiceConsumableWithItem,
+  ServiceWithDepartment, CostCenter, Warehouse, Item, ServiceConsumableWithItem,
 } from "@shared/schema";
+import { DepartmentLookup, DoctorLookup } from "@/components/lookups";
 
 // ─── 1. ثوابت ─────────────────────────────────────────────────────────────────
 const SERVICE_TYPES = ["SERVICE", "ACCOMMODATION", "OPERATING_ROOM", "DEVICE", "GAS", "OTHER"] as const;
@@ -75,7 +76,6 @@ export default function ServiceDialog({
   const [consumableResults, setConsumableResults] = useState<Item[]>([]);
   const [searchingItems, setSearchingItems] = useState(false);
 
-  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
   const { data: warehouses }  = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
   const { data: revenueAccounts } = useRevenueAccounts();
   const { data: costCenters } = useQuery<CostCenter[]>({ queryKey: ["/api/cost-centers"] });
@@ -177,16 +177,13 @@ export default function ServiceDialog({
 
           <div className="space-y-1">
             <Label>القسم *</Label>
-            <Select value={form.departmentId} onValueChange={v => set("departmentId", v)}>
-              <SelectTrigger data-testid="select-trigger-service-department">
-                <SelectValue placeholder="اختر القسم" />
-              </SelectTrigger>
-              <SelectContent>
-                {(departments || []).map(d => (
-                  <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DepartmentLookup
+              value={form.departmentId}
+              onChange={(item) => set("departmentId", item?.id || "")}
+              placeholder="اختر القسم"
+              clearable={false}
+              data-testid="select-trigger-service-department"
+            />
           </div>
 
           <div className="space-y-1">
@@ -397,12 +394,11 @@ export default function ServiceDialog({
   );
 }
 
-interface Doctor { id: string; name: string; specialty?: string; }
 interface DoctorPrice { id: string; serviceId: string; doctorId: string; price: string; doctorName: string; specialty?: string; }
 
 function DoctorPricingSection({ serviceId }: { serviceId: string }) {
   const { toast } = useToast();
-  const [selectedDoctorId, setSelectedDoctorId] = useState("__none__");
+  const [selectedDoctorId, setSelectedDoctorId] = useState("");
   const [price, setPrice] = useState("");
 
   const { data: doctorPrices = [] } = useQuery<DoctorPrice[]>({
@@ -410,19 +406,12 @@ function DoctorPricingSection({ serviceId }: { serviceId: string }) {
     queryFn: () => apiRequest("GET", `/api/clinic-service-doctor-prices/${serviceId}`).then(r => r.json()),
   });
 
-  const { data: doctors = [] } = useQuery<Doctor[]>({
-    queryKey: ["/api/doctors"],
-  });
-
-  const assignedDoctorIds = new Set(doctorPrices.map(dp => dp.doctorId));
-  const availableDoctors = doctors.filter(d => !assignedDoctorIds.has(d.id));
-
   const addMutation = useMutation({
     mutationFn: (data: { serviceId: string; doctorId: string; price: number }) =>
       apiRequest("POST", "/api/clinic-service-doctor-prices", data).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-service-doctor-prices", serviceId] });
-      setSelectedDoctorId("__none__");
+      setSelectedDoctorId("");
       setPrice("");
       toast({ title: "تم تخصيص السعر" });
     },
@@ -438,7 +427,7 @@ function DoctorPricingSection({ serviceId }: { serviceId: string }) {
   });
 
   const handleAdd = () => {
-    if (selectedDoctorId === "__none__" || !price) return;
+    if (!selectedDoctorId || !price) return;
     addMutation.mutate({ serviceId, doctorId: selectedDoctorId, price: parseFloat(price) || 0 });
   };
 
@@ -452,17 +441,13 @@ function DoctorPricingSection({ serviceId }: { serviceId: string }) {
       <div className="flex items-end gap-2 mb-2">
         <div className="flex-1 space-y-1">
           <Label className="text-xs">الطبيب</Label>
-          <Select value={selectedDoctorId} onValueChange={setSelectedDoctorId}>
-            <SelectTrigger className="h-8 text-xs" data-testid="select-doctor-price">
-              <SelectValue placeholder="اختر طبيب..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">اختر طبيب...</SelectItem>
-              {availableDoctors.map(d => (
-                <SelectItem key={d.id} value={d.id}>{d.name} {d.specialty ? `(${d.specialty})` : ""}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <DoctorLookup
+            value={selectedDoctorId}
+            onChange={(item) => setSelectedDoctorId(item?.id || "")}
+            placeholder="ابحث عن طبيب..."
+            clearable
+            data-testid="select-doctor-price"
+          />
         </div>
         <div className="w-28 space-y-1">
           <Label className="text-xs">السعر</Label>
@@ -476,7 +461,7 @@ function DoctorPricingSection({ serviceId }: { serviceId: string }) {
         <Button
           size="sm" className="h-8 gap-1 text-xs"
           onClick={handleAdd}
-          disabled={selectedDoctorId === "__none__" || !price || addMutation.isPending}
+          disabled={!selectedDoctorId || !price || addMutation.isPending}
           data-testid="button-add-doctor-price"
         >
           {addMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}

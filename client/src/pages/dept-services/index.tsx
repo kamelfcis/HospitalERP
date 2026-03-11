@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SingleOrderTab } from "./tabs/SingleOrderTab";
 import { BatchTab } from "./tabs/BatchTab";
-import { useDepartments } from "./hooks/useDeptServices";
+import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
 import { FileText, Users } from "lucide-react";
 
 const DEPT_CODE_MAP: Record<string, string> = {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useClinicsLookup } from "@/hooks/lookups/useClinicsLookup";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button }     from "@/components/ui/button";
@@ -15,12 +16,6 @@ interface PermissionsDialogProps {
   userId:       string | null;
   open:         boolean;
   onOpenChange: (v: boolean) => void;
-}
-
-interface ClinicOption {
-  id: string;
-  nameAr: string;
-  isActive: boolean;
 }
 
 interface DoctorOption { id: string; name: string; }
@@ -127,10 +122,7 @@ function ClinicAssignmentsSection({ userId }: { userId: string }) {
   const { toast } = useToast();
   const [selectedClinicId, setSelectedClinicId] = useState("");
 
-  const { data: allClinics = [] } = useQuery<ClinicOption[]>({
-    queryKey: ["/api/clinic-clinics"],
-    staleTime: 0,
-  });
+  const { items: allClinics } = useClinicsLookup();
 
   const { data: assignedClinicIds = [], isLoading } = useQuery<string[]>({
     queryKey: ["/api/clinic-user-clinic", userId],
@@ -161,7 +153,7 @@ function ClinicAssignmentsSection({ userId }: { userId: string }) {
   });
 
   const unassignedClinics = allClinics.filter(
-    (c) => c.isActive && !assignedClinicIds.includes(c.id)
+    (c) => c.isActive !== false && !assignedClinicIds.includes(c.id)
   );
 
   const assignedClinics = allClinics.filter((c) => assignedClinicIds.includes(c.id));
@@ -186,7 +178,7 @@ function ClinicAssignmentsSection({ userId }: { userId: string }) {
               <SelectItem value="__none__" disabled>لا توجد عيادات متاحة</SelectItem>
             ) : (
               unassignedClinics.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.nameAr}</SelectItem>
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
               ))
             )}
           </SelectContent>
@@ -216,7 +208,7 @@ function ClinicAssignmentsSection({ userId }: { userId: string }) {
               className="text-xs gap-1 bg-blue-50 text-blue-700 border-blue-200 pr-1"
               data-testid={`badge-assigned-clinic-${c.id}`}
             >
-              {c.nameAr}
+              {c.name}
               <button
                 type="button"
                 className="hover:bg-blue-200 rounded-full p-0.5 transition-colors"
