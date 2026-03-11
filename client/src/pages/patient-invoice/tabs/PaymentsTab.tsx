@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useTreasuriesLookup } from "@/hooks/lookups/useTreasuriesLookup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,10 +16,8 @@ interface PaymentsTabProps {
 }
 
 export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, removePayment }: PaymentsTabProps) {
-  const { data: treasuries = [] } = useQuery<{ id: string; name: string; isActive: boolean }[]>({
-    queryKey: ["/api/treasuries"],
-  });
-  const activeTreasuries = treasuries.filter(t => t.isActive);
+  const { items: allTreasuries } = useTreasuriesLookup();
+  const activeTreasuries = allTreasuries.filter(t => t.isActive !== false);
 
   return (
     <div className="space-y-3">
@@ -110,7 +108,7 @@ export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, remo
                       </SelectContent>
                     </Select>
                   ) : (
-                    activeTreasuries.find(t => t.id === p.treasuryId)?.name ?? treasuries.find(t => t.id === p.treasuryId)?.name ?? "—"
+                    activeTreasuries.find(t => t.id === p.treasuryId)?.name ?? allTreasuries.find(t => t.id === p.treasuryId)?.name ?? "—"
                   )}
                 </td>
                 <td>

@@ -23,7 +23,9 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Search, Edit2, Trash2, Loader2, Warehouse as WarehouseIcon, Building2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Warehouse, Department, Account, CostCenter } from "@shared/schema";
+import type { Warehouse, Account, CostCenter } from "@shared/schema";
+import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
+import { useAccountsLookup } from "@/hooks/lookups/useAccountsLookup";
 
 interface Pharmacy {
   id: string;
@@ -63,16 +65,12 @@ export default function Warehouses() {
     queryKey: ["/api/warehouses"],
   });
 
-  const { data: departments } = useQuery<Department[]>({
-    queryKey: ["/api/departments"],
-  });
+  const { items: deptItems } = useDepartmentsLookup();
+  const { items: accountItems } = useAccountsLookup();
+  const allAccounts = accountItems.map(i => i.meta as Account);
 
   const { data: pharmacies } = useQuery<Pharmacy[]>({
     queryKey: ["/api/pharmacies"],
-  });
-
-  const { data: allAccounts } = useQuery<Account[]>({
-    queryKey: ["/api/accounts"],
   });
 
   const { data: costCenters } = useQuery<CostCenter[]>({
@@ -204,9 +202,9 @@ export default function Warehouses() {
   }) || [];
 
   const getDepartmentName = (departmentId: string | null) => {
-    if (!departmentId || !departments) return "-";
-    const dept = departments.find((d) => d.id === departmentId);
-    return dept ? dept.nameAr : "-";
+    if (!departmentId) return "-";
+    const dept = deptItems.find((d) => d.id === departmentId);
+    return dept ? dept.name : "-";
   };
 
   const getPharmacyName = (pharmacyId: string | null | undefined) => {
@@ -403,11 +401,11 @@ export default function Warehouses() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none" className="text-xs">بدون قسم</SelectItem>
-                  {departments
-                    ?.filter((d) => d.isActive)
+                  {deptItems
+                    .filter((d) => d.isActive !== false)
                     .map((dept) => (
                       <SelectItem key={dept.id} value={dept.id} className="text-xs">
-                        <span className="font-mono">{dept.code}</span> - {dept.nameAr}
+                        <span className="font-mono">{(dept.meta as any)?.code}</span> - {dept.name}
                       </SelectItem>
                     ))}
                 </SelectContent>

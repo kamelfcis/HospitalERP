@@ -9,7 +9,8 @@ import { Plus, Search, ChevronLeft, ChevronRight, Pencil, Copy, Settings2, Check
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatNumber } from "@/lib/formatters";
-import type { PriceList, PriceListItemWithService, Department } from "@shared/schema";
+import type { PriceList, PriceListItemWithService } from "@shared/schema";
+import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
 import { useDebounce } from "./hooks";
 import PriceListModal, { type PriceListFormState, defaultPriceListForm } from "./PriceListModal";
 import AddPricesModal from "./AddPricesModal";
@@ -52,7 +53,7 @@ export default function PriceListsTab() {
 
   // ─── استعلامات ────────────────────────────────────────────────────────────
   const { data: priceLists, isLoading: plLoading } = useQuery<PriceList[]>({ queryKey: ["/api/price-lists"] });
-  const { data: departments } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
+  const { items: departmentItems } = useDepartmentsLookup();
 
   const filteredLists = useMemo(() => {
     if (!priceLists) return [];
@@ -291,8 +292,8 @@ export default function PriceListsTab() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">كل الأقسام</SelectItem>
-                  {(departments || []).map(d => (
-                    <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+                  {departmentItems.map(d => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

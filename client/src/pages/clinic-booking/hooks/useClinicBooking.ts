@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
 import type { ClinicClinic } from "../types";
 
 export function useClinicBooking() {
@@ -11,7 +10,6 @@ export function useClinicBooking() {
 
   const { data: clinics = [], isLoading: clinicsLoading } = useQuery<ClinicClinic[]>({
     queryKey: ["/api/clinic-clinics"],
-    queryFn: () => apiRequest("GET", "/api/clinic-clinics").then((r) => r.json()),
   });
 
   const autoSelected = !selectedClinicId && clinics.length === 1 ? clinics[0].id : selectedClinicId;

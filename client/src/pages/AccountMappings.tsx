@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useAccountsLookup } from "@/hooks/lookups/useAccountsLookup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -226,7 +227,8 @@ export default function AccountMappings() {
   const [hasChanges, setHasChanges] = useState(false);
   const keyCounter = useRef(0);
 
-  const { data: accounts, isLoading: accountsLoading } = useQuery<Account[]>({ queryKey: ["/api/accounts"] });
+  const { items: accountItems, isLoading: accountsLoading } = useAccountsLookup();
+  const accounts = accountItems.map(i => i.meta as Account);
   const { data: warehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
 
   const { data: mappings, isLoading: mappingsLoading } = useQuery<AccountMapping[]>({

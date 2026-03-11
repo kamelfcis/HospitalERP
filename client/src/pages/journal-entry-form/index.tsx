@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useAccountsLookup } from "@/hooks/lookups/useAccountsLookup";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,9 +71,8 @@ export default function JournalEntryForm() {
   const [templateName, setTemplateName] = useState("");
   const [templateDescription, setTemplateDescription] = useState("");
 
-  const { data: accounts } = useQuery<Account[]>({
-    queryKey: ["/api/accounts"],
-  });
+  const { items: accountItems } = useAccountsLookup();
+  const accounts = accountItems.map(i => i.meta as Account);
 
   const { data: costCenters } = useQuery<CostCenter[]>({
     queryKey: ["/api/cost-centers"],
