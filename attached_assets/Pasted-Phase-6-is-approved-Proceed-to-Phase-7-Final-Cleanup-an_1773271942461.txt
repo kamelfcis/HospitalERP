@@ -1,0 +1,61 @@
+Phase 6 is approved.
+
+Proceed to Phase 7 — Final Cleanup and Final Verification.
+
+Goal:
+Close the centralized lookup/search migration completely and verify that no legacy centralized-entity search logic remains outside the new lookup architecture.
+
+Phase 7 tasks:
+1) Run a full final sweep across the codebase for all centralized entities:
+- doctors
+- services
+- accounts
+- treasuries
+- clinics
+- departments
+
+2) Remove any remaining dead code related to replaced centralized lookup/search logic:
+- old hooks
+- old helper functions
+- old debounce/search utilities that are no longer used
+- unused imports
+- obsolete query key literals
+- unused wrappers/components if any
+
+3) Verify that all remaining direct fetch/useQuery occurrences for centralized entities are either:
+- inside hooks/lookups
+or
+- explicitly documented as out of scope / intentional exceptions
+
+4) Verify that SearchDropdown is no longer used for centralized entities and is used only for legitimate non-centralized cases.
+
+5) Verify that query keys for centralized entities are no longer scattered outside queryKeys.ts, except where unavoidable and explicitly documented.
+
+6) Keep cleanup safe:
+- do not touch patient lookup logic
+- do not touch warehouse/cost center logic unless it was already documented as in scope
+- do not introduce unrelated features
+- do not break legacy justified exceptions like doctorName storage in dept-services
+
+MANDATORY FINAL VERIFICATION
+Run and return actual results for these checks using both .ts and .tsx:
+
+A) direct fetch for centralized entities
+grep -r 'fetch.*\/api\/doctors\|fetch.*\/api\/services\|fetch.*\/api\/accounts\|fetch.*\/api\/treasuries\|fetch.*\/api\/clinic-clinics\|fetch.*\/api\/departments' client/src --include='*.ts' --include='*.tsx' | grep -v 'client/src/hooks/lookups'
+
+B) direct useQuery for centralized entities
+grep -r 'useQuery.*\/api\/doctors\|useQuery.*\/api\/services\|useQuery.*\/api\/accounts\|useQuery.*\/api\/treasuries\|useQuery.*\/api\/clinic-clinics\|useQuery.*\/api\/departments' client/src --include='*.ts' --include='*.tsx' | grep -v 'client/src/hooks/lookups'
+
+C) remaining debounce/search logic
+grep -r 'debounceRef\|AbortController\|setTimeout\|clearTimeout' client/src --include='*.ts' --include='*.tsx'
+
+D) remaining old centralized lookup references
+grep -r 'useDoctors\|useDepartments\|useAccounts\|useClinics\|useTreasuries\|DoctorSearchInput\|AccountSearchSelect' client/src --include='*.ts' --include='*.tsx'
+
+RETURN EXACTLY:
+1) Files cleaned
+2) Files deleted
+3) Remaining intentional exceptions
+4) Verification output
+5) Final centralized lookup migration status
+6) Risks / assumptions
