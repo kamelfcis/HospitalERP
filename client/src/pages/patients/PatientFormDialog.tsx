@@ -241,17 +241,26 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     enabled: !!selectedClinic?.id,
   });
 
-  /* بحث أطباء للكشف (عند كتابة اسم أو لا يوجد جدول) */
-  const { data: doctorResults = [] } = useQuery<DoctorOption[]>({
-    queryKey: ["/api/doctors", debouncedDoctor],
+  /* كل الأطباء النشطين — يُجلب تلقائياً عند اختيار عيادة للكشف */
+  const { data: allDoctors = [] } = useQuery<DoctorOption[]>({
+    queryKey: ["/api/doctors", "active-all"],
     queryFn: async () => {
-      const r = await fetch(`/api/doctors?search=${encodeURIComponent(debouncedDoctor)}`, { credentials: "include" });
+      const r = await fetch("/api/doctors", { credentials: "include" });
       if (!r.ok) throw new Error("doctors fetch failed");
       const data = await r.json();
       return Array.isArray(data) ? data : [];
     },
-    enabled: visitReason === "consultation" && debouncedDoctor.trim().length >= 1,
+    enabled: visitReason === "consultation" && !!selectedClinic,
+    staleTime: 2 * 60_000,
   });
+
+  /* فلترة الأطباء حسب ما يكتبه المستخدم */
+  const doctorResults = doctorSearch.trim().length === 0
+    ? allDoctors
+    : allDoctors.filter(d =>
+        d.name.includes(doctorSearch) ||
+        (d.specialty ?? "").includes(doctorSearch)
+      );
 
   const { data: bedBoard = [] } = useQuery<FloorOption[]>({
     queryKey: ["/api/bed-board"],
@@ -840,10 +849,12 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                             className="h-7 text-xs pr-7"
                             data-testid="input-consult-doctor-search"
                           />
-                          {showDoctorResults && doctorSearch.trim().length >= 1 && (
-                            <div className="absolute z-50 w-full mt-0.5 border rounded-md bg-white shadow-md text-xs overflow-hidden max-h-40 overflow-y-auto">
+                          {showDoctorResults && (
+                            <div className="absolute z-50 w-full mt-0.5 border rounded-md bg-white shadow-md text-xs overflow-hidden max-h-48 overflow-y-auto">
                               {doctorResults.length === 0
-                                ? <div className="px-2 py-1.5 text-muted-foreground">لا يوجد طبيب بهذا الاسم</div>
+                                ? <div className="px-2 py-1.5 text-muted-foreground">
+                                    {allDoctors.length === 0 ? "لا يوجد أطباء مسجلون" : "لا يوجد طبيب بهذا الاسم"}
+                                  </div>
                                 : doctorResults.map(d => (
                                   <button key={d.id} type="button"
                                     onMouseDown={e => e.preventDefault()}
