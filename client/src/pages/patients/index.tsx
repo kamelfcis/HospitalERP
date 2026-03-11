@@ -5,18 +5,21 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, Users, FolderOpen, ArrowRight } from "lucide-react";
+import { Plus, Search, Users, FolderOpen, ArrowRight, Building2, AlertCircle } from "lucide-react";
 import type { Patient } from "@shared/schema";
 import type { PatientStats, PrefilledPatient } from "./types";
 import { useDebounce } from "./useDebounce";
 import PatientGrid from "./PatientGrid";
 import PatientFormDialog from "./PatientFormDialog";
 import { PatientFilePanel } from "./components/PatientFilePanel";
+
+type PatientScope = { isFullAccess: boolean; allowedDepartmentIds: string[]; allowedPharmacyIds: string[] };
 
 export default function Patients() {
   const [, navigate]      = useLocation();
@@ -42,6 +45,13 @@ export default function Patients() {
 
   const debouncedSearch = useDebounce(searchQuery, 350);
 
+  const { data: scope } = useQuery<PatientScope>({
+    queryKey: ["/api/patient-scope"],
+    staleTime: 60_000,
+  });
+  const isFullAccess = scope?.isFullAccess ?? true;
+  const allowedDeptIds = scope?.allowedDepartmentIds ?? [];
+
   const { data: departments = [] } = useQuery<{ id: string; nameAr: string }[]>({
     queryKey: ["/api/departments"],
   });
@@ -50,18 +60,22 @@ export default function Patients() {
   if (debouncedSearch.trim()) statsParams.set("search", debouncedSearch.trim());
   if (dateFrom) statsParams.set("dateFrom", dateFrom);
   if (dateTo)   statsParams.set("dateTo",   dateTo);
-  if (deptId)   statsParams.set("deptId",   deptId);
+  if (isFullAccess && deptId) statsParams.set("deptId", deptId);
 
-  const { data: rows = [], isLoading } = useQuery<PatientStats[]>({
-    queryKey: ["/api/patients/stats", debouncedSearch, dateFrom, dateTo, deptId],
+  const { data: rows = [], isLoading, isError } = useQuery<PatientStats[]>({
+    queryKey: ["/api/patients/stats", debouncedSearch, dateFrom, dateTo, isFullAccess ? deptId : "__scoped__"],
     queryFn: async () => {
       const res = await fetch(`/api/patients/stats?${statsParams}`, { credentials: "include" });
-      if (!res.ok) throw new Error("فشل في جلب بيانات المرضى");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "فشل في جلب بيانات المرضى");
+      }
       return res.json();
     },
+    enabled: scope !== undefined,
   });
 
-  const hasFilter = !!(dateFrom || dateTo || deptId);
+  const hasFilter = isFullAccess ? !!(dateFrom || dateTo || deptId) : !!(dateFrom || dateTo);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/patients/${id}`),
@@ -114,7 +128,8 @@ export default function Patients() {
     setPrefilledPatient(null);
   }
   function handleClearFilters() {
-    setDateFrom(""); setDateTo(""); setDeptId("");
+    setDateFrom(""); setDateTo("");
+    if (isFullAccess) setDeptId("");
   }
   function handleBackToList() {
     setActiveTab("list");
@@ -202,20 +217,34 @@ export default function Patients() {
               />
             </div>
 
-            <div className="flex items-center gap-1">
-              <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
-              <Select value={deptId || "all"} onValueChange={v => setDeptId(v === "all" ? "" : v)}>
-                <SelectTrigger className="h-7 text-xs w-36" data-testid="select-dept-filter">
-                  <SelectValue placeholder="كل الأقسام" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">كل الأقسام</SelectItem>
-                  {departments.map(d => (
-                    <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {isFullAccess ? (
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
+                <Select value={deptId || "all"} onValueChange={v => setDeptId(v === "all" ? "" : v)}>
+                  <SelectTrigger className="h-7 text-xs w-36" data-testid="select-dept-filter">
+                    <SelectValue placeholder="كل الأقسام" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">كل الأقسام</SelectItem>
+                    {departments.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 flex-wrap">
+                {allowedDeptIds.map(id => {
+                  const deptName = departments.find(d => d.id === id)?.nameAr ?? "...";
+                  return (
+                    <Badge key={id} variant="outline" className="text-xs gap-1 border-blue-300 text-blue-700 bg-blue-50">
+                      <Building2 className="h-3 w-3" />
+                      {deptName}
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
 
             {hasFilter && (
               <>
@@ -234,11 +263,18 @@ export default function Patients() {
             )}
           </div>
 
+          {isError && (
+            <div className="flex items-center gap-2 text-xs text-destructive bg-red-50 border border-red-200 rounded px-3 py-2">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              ليس لديك صلاحية عرض أي قسم — تواصل مع مدير النظام
+            </div>
+          )}
+
           <div className="peachtree-grid rounded flex-1 overflow-hidden">
             <PatientGrid
               rows={rows}
               isLoading={isLoading}
-              hasDeptFilter={!!deptId}
+              hasDeptFilter={isFullAccess ? !!deptId : true}
               canViewInvoice={canViewInvoice}
               canEdit={canEdit}
               onEdit={handleEdit}

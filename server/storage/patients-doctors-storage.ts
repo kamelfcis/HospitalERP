@@ -42,17 +42,17 @@ const methods = {
       .limit(50);
   },
 
-  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<Record<string, unknown>[]> {
+  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[] }): Promise<Record<string, unknown>[]> {
     const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
 
     const invConds: string[] = ["pih.status != 'cancelled'"];
     if (filters?.dateFrom) invConds.push(`pih.invoice_date >= '${filters.dateFrom}'`);
     if (filters?.dateTo)   invConds.push(`pih.invoice_date <= '${filters.dateTo}'`);
-    if (filters?.deptId) {
-      const d = filters.deptId.replace(/'/g, "''");
+    if (filters?.deptIds && filters.deptIds.length > 0) {
+      const ids = filters.deptIds.map(d => `'${d.replace(/'/g, "''")}'`).join(", ");
       invConds.push(
-        `(pih.department_id = '${d}' OR (pih.department_id IS NULL AND EXISTS (` +
-        `SELECT 1 FROM warehouses w WHERE w.id = pih.warehouse_id AND w.department_id = '${d}'` +
+        `(pih.department_id IN (${ids}) OR (pih.department_id IS NULL AND EXISTS (` +
+        `SELECT 1 FROM warehouses w WHERE w.id = pih.warehouse_id AND w.department_id IN (${ids})` +
         `)))`
       );
     }
@@ -776,18 +776,19 @@ const methods = {
       dateTo?: string | null;
       search?: string | null;
     },
-    forcedDeptId: string | null,
-    isAdmin: boolean,
+    forcedDeptIds: string[] | null,
   ): Promise<{ rows: Record<string, unknown>[]; count: number; limit: number; hasMore: boolean }> {
 
     const LIMIT = 200;
     const esc = (s: string) => s.replace(/'/g, "''");
 
     // ─── R1/R2/R3: dept isolation ────────────────────────────
+    // forcedDeptIds === null  → full access (admin / cashier.all_units)
+    // forcedDeptIds = [...]   → restricted to those depts (route guarantees length >= 1)
     let deptClause: string;
-    if (!isAdmin) {
-      const safe = esc(forcedDeptId ?? "");
-      deptClause = `AND pih.department_id IS NOT NULL AND pih.department_id = '${safe}'`;
+    if (forcedDeptIds !== null) {
+      const ids = forcedDeptIds.map(d => `'${esc(d)}'`).join(", ");
+      deptClause = `AND pih.department_id IS NOT NULL AND pih.department_id IN (${ids})`;
     } else if (filters.adminDeptFilter) {
       deptClause = `AND pih.department_id = '${esc(filters.adminDeptFilter)}'`;
     } else {
@@ -903,8 +904,7 @@ const methods = {
   async getPatientInquiryLines(
     this: DatabaseStorage,
     patientKey: { patientId?: string | null; patientName?: string | null },
-    forcedDeptId: string | null,
-    isAdmin: boolean,
+    forcedDeptIds: string[] | null,
     lineType?: string | null,
   ): Promise<Record<string, unknown>[]> {
 
@@ -921,10 +921,11 @@ const methods = {
     }
 
     // ─── R3/R9: dept isolation ────────────────────────────────
+    // forcedDeptIds === null → full access; string[] → restricted (route guarantees length >= 1)
     let deptClause = "";
-    if (!isAdmin) {
-      const safe = esc(forcedDeptId ?? "");
-      deptClause = `AND pih.department_id IS NOT NULL AND pih.department_id = '${safe}'`;
+    if (forcedDeptIds !== null) {
+      const ids = forcedDeptIds.map(d => `'${esc(d)}'`).join(", ");
+      deptClause = `AND pih.department_id IS NOT NULL AND pih.department_id IN (${ids})`;
     }
 
     // ─── line type filter ─────────────────────────────────────

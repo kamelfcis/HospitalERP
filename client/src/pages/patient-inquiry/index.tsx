@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,6 +34,8 @@ import {
 import { useDebounce } from "@/pages/patients/useDebounce";
 
 const OPD_DEPT_ID = "b3347de7-e3d1-4b63-b9d6-ba93175d1bce";
+
+type PatientScope = { isFullAccess: boolean; allowedDepartmentIds: string[]; allowedPharmacyIds: string[] };
 
 const fmt = (n: unknown) =>
   Number(n ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -82,10 +83,6 @@ type Department = { id: string; nameAr: string };
 type Clinic = { id: string; nameAr: string; departmentId: string | null };
 
 export default function PatientInquiryPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const userDeptId = user?.departmentId ?? null;
-
   const [adminDeptFilter, setAdminDeptFilter] = useState("");
   const [clinicId, setClinicId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -93,16 +90,25 @@ export default function PatientInquiryPage() {
   const [searchRaw, setSearchRaw] = useState("");
   const search = useDebounce(searchRaw, 400);
 
-  const activeDeptId = isAdmin ? adminDeptFilter : (userDeptId ?? "");
-  const showClinicFilter = activeDeptId === OPD_DEPT_ID;
-
   const [selectedRow, setSelectedRow] = useState<InquiryRow | null>(null);
   const [activeTab, setActiveTab] = useState<"service" | "drug" | "consumable">("service");
 
+  const { data: scope } = useQuery<PatientScope>({
+    queryKey: ["/api/patient-scope"],
+    staleTime: 60_000,
+  });
+  const isFullAccess = scope?.isFullAccess ?? true;
+  const allowedDeptIds = scope?.allowedDepartmentIds ?? [];
+  const scopeReady = scope !== undefined;
+
   const { data: departments = [] } = useQuery<Department[]>({
     queryKey: ["/api/departments"],
-    enabled: isAdmin,
+    enabled: isFullAccess,
   });
+
+  // Clinic sub-filter: show when selected dept is OPD (full-access) OR user only has OPD access
+  const activeDeptId = isFullAccess ? adminDeptFilter : (allowedDeptIds.length === 1 ? allowedDeptIds[0] : "");
+  const showClinicFilter = activeDeptId === OPD_DEPT_ID;
 
   const { data: clinics = [] } = useQuery<Clinic[]>({
     queryKey: ["/api/clinic-clinics"],
@@ -110,7 +116,7 @@ export default function PatientInquiryPage() {
   });
 
   const queryParams = new URLSearchParams();
-  if (isAdmin && adminDeptFilter) queryParams.set("deptId", adminDeptFilter);
+  if (isFullAccess && adminDeptFilter) queryParams.set("deptId", adminDeptFilter);
   if (clinicId && showClinicFilter) queryParams.set("clinicId", clinicId);
   if (dateFrom) queryParams.set("dateFrom", dateFrom);
   if (dateTo) queryParams.set("dateTo", dateTo);
@@ -131,7 +137,7 @@ export default function PatientInquiryPage() {
       }
       return res.json();
     },
-    enabled: isAdmin ? true : !!userDeptId,
+    enabled: scopeReady && (isFullAccess || allowedDeptIds.length > 0),
     staleTime: 30_000,
   });
 
@@ -152,21 +158,21 @@ export default function PatientInquiryPage() {
   });
 
   const clearFilters = useCallback(() => {
-    if (isAdmin) setAdminDeptFilter("");
+    if (isFullAccess) setAdminDeptFilter("");
     setClinicId("");
     setDateFrom("");
     setDateTo("");
     setSearchRaw("");
-  }, [isAdmin]);
+  }, [isFullAccess]);
 
   const hasFilters = !!(adminDeptFilter || clinicId || dateFrom || dateTo || searchRaw);
 
-  if (!isAdmin && !userDeptId) {
+  if (scopeReady && !isFullAccess && allowedDeptIds.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground p-8">
         <AlertCircle className="h-10 w-10 text-amber-500" />
-        <p className="text-sm font-medium">ليس لديك قسم محدد</p>
-        <p className="text-xs text-center">تواصل مع مدير النظام لتعيين القسم الخاص بك</p>
+        <p className="text-sm font-medium">ليس لديك صلاحية عرض أي قسم</p>
+        <p className="text-xs text-center">تواصل مع مدير النظام لتعيين الأقسام الخاصة بك</p>
       </div>
     );
   }
@@ -189,17 +195,24 @@ export default function PatientInquiryPage() {
           <div>
             <h1 className="text-sm font-bold text-foreground">استعلام المرضى</h1>
             <p className="text-xs text-muted-foreground">
-              {isAdmin
-                ? "عرض شامل لجميع الأقسام"
-                : `القسم: ${rows[0]?.dept_name ?? "..."}`}
+              {isFullAccess ? "عرض شامل لجميع الأقسام" : `${allowedDeptIds.length} قسم محدد`}
             </p>
           </div>
         </div>
-        {!isAdmin && (
-          <Badge variant="outline" className="text-xs gap-1 border-blue-300 text-blue-700 bg-blue-50">
-            <Building2 className="h-3 w-3" />
-            {rows[0]?.dept_name ?? "قسمك"}
-          </Badge>
+        {!isFullAccess && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {allowedDeptIds.map(id => {
+              const deptName = departments.find(d => d.id === id)?.nameAr
+                ?? rows.find(r => r.department_id === id)?.dept_name
+                ?? "...";
+              return (
+                <Badge key={id} variant="outline" className="text-xs gap-1 border-blue-300 text-blue-700 bg-blue-50">
+                  <Building2 className="h-3 w-3" />
+                  {deptName}
+                </Badge>
+              );
+            })}
+          </div>
         )}
       </div>
 
@@ -237,7 +250,7 @@ export default function PatientInquiryPage() {
           />
         </div>
 
-        {isAdmin && (
+        {isFullAccess && (
           <div className="flex items-center gap-1">
             <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
             <Select value={adminDeptFilter || "all"} onValueChange={v => { setAdminDeptFilter(v === "all" ? "" : v); setClinicId(""); }}>
@@ -312,7 +325,7 @@ export default function PatientInquiryPage() {
                   <th className="peachtree-th px-2 py-1.5 text-right">كود</th>
                   <th className="peachtree-th px-2 py-1.5 text-right">اسم المريض</th>
                   <th className="peachtree-th px-2 py-1.5 text-right">التليفون</th>
-                  {isAdmin && <th className="peachtree-th px-2 py-1.5 text-right">القسم</th>}
+                  {isFullAccess && <th className="peachtree-th px-2 py-1.5 text-right">القسم</th>}
                   <th className="peachtree-th px-2 py-1.5 text-left">الخدمات</th>
                   <th className="peachtree-th px-2 py-1.5 text-left">الأدوية</th>
                   <th className="peachtree-th px-2 py-1.5 text-left">المستهلكات</th>
@@ -340,7 +353,7 @@ export default function PatientInquiryPage() {
                       </td>
                       <td className="peachtree-td px-2 py-1.5 font-medium">{row.patient_name}</td>
                       <td className="peachtree-td px-2 py-1.5 text-muted-foreground">{row.patient_phone ?? "—"}</td>
-                      {isAdmin && (
+                      {isFullAccess && (
                         <td className="peachtree-td px-2 py-1.5">
                           <Badge variant="secondary" className="text-xs px-1 py-0">{row.dept_name ?? "—"}</Badge>
                         </td>

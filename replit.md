@@ -6,7 +6,18 @@ This project is an Arabic RTL web application for hospital general ledger (GL) a
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
-## آخر جلسة عمل — شاشة استعلام المرضى (Patient Inquiry)
+## آخر جلسة عمل — Multi-Dept Access Control (مكتمل ✓)
+
+تم تطبيق نموذج `getUserCashierScope()` بالكامل على جميع endpoints المرضى:
+- `GET /api/patient-scope` — يعيد `{ isFullAccess, allowedDepartmentIds, allowedPharmacyIds }`
+- `GET /api/patients/stats` — `deptIds?: string[]` بدلاً من `departmentId` واحد
+- `GET /api/patient-inquiry` + `GET /api/patient-inquiry/lines` — `forcedDeptIds: string[] | null`
+- `patients/index.tsx` + `patient-inquiry/index.tsx` — `isFullAccess`/`allowedDeptIds` كمصدر وحيد للصلاحيات
+- `users.department_id` لم يعد مُستخدم في أي endpoint للمرضى
+
+---
+
+## شاشة استعلام المرضى (Patient Inquiry)
 
 ### شاشة استعلام المرضى (`/patient-inquiry`)
 **وصف**: شاشة استعلام آمنة تعرض بيانات المرضى + الخدمات + الأدوية + المستهلكات مع عزل صارم على مستوى الأقسام.

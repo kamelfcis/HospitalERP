@@ -18,14 +18,36 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patients/stats", async (req, res) => {
+  app.get("/api/patient-scope", requireAuth, async (req, res) => {
     try {
-      const { search, dateFrom, dateTo, deptId } = req.query as Record<string, string>;
-      const list = await storage.getPatientStats({ search, dateFrom, dateTo, deptId });
-      res.json(list);
+      const scope = await storage.getUserCashierScope(req.session.userId!);
+      res.json(scope);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
-      res.status(500).json({ message: _em });
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.get("/api/patients/stats", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
+    try {
+      const { search, dateFrom, dateTo } = req.query as Record<string, string>;
+      const scope = await storage.getUserCashierScope(req.session.userId!);
+
+      let deptIds: string[] | undefined;
+      if (!scope.isFullAccess) {
+        if (scope.allowedDepartmentIds.length === 0) {
+          return res.status(403).json({ message: "ليس لديك صلاحية عرض أي قسم، تواصل مع مدير النظام" });
+        }
+        deptIds = scope.allowedDepartmentIds;
+      } else {
+        const adminDeptId = req.query.deptId as string | undefined;
+        if (adminDeptId) deptIds = [adminDeptId];
+      }
+
+      const list = await storage.getPatientStats({ search, dateFrom, dateTo, deptIds });
+      return res.json(list);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ message: _em });
     }
   });
 
@@ -262,22 +284,18 @@ export function registerPatientsRoutes(app: Express) {
 
   app.get("/api/patient-inquiry", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(401).json({ message: "يجب تسجيل الدخول" });
+      const scope = await storage.getUserCashierScope(req.session.userId!);
 
-      const isAdmin = user.role === "admin";
-
-      // R6: non-admin without dept → 403
-      if (!isAdmin && !user.departmentId) {
-        return res.status(403).json({ message: "ليس لديك قسم محدد للاستعلام، تواصل مع مدير النظام" });
+      // R6: restricted user with no allowed depts → 403
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض أي قسم، تواصل مع مدير النظام" });
       }
 
-      // R1, R2: forcedDeptId ALWAYS from session, never from query
-      const forcedDeptId = isAdmin ? null : (user.departmentId ?? null);
+      // forcedDeptIds: null = full access, string[] = restricted to those depts
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
 
-      // Admin-only optional dept filter
-      const adminDeptFilter = isAdmin ? ((req.query.deptId as string) || null) : null;
+      // Full-access optional dept filter from query
+      const adminDeptFilter = scope.isFullAccess ? ((req.query.deptId as string) || null) : null;
 
       const {
         clinicId = null,
@@ -288,8 +306,7 @@ export function registerPatientsRoutes(app: Express) {
 
       const result = await storage.getPatientInquiry(
         { adminDeptFilter, clinicId, dateFrom, dateTo, search },
-        forcedDeptId,
-        isAdmin,
+        forcedDeptIds,
       );
 
       return res.json(result);
@@ -301,18 +318,14 @@ export function registerPatientsRoutes(app: Express) {
 
   app.get("/api/patient-inquiry/lines", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(401).json({ message: "يجب تسجيل الدخول" });
+      const scope = await storage.getUserCashierScope(req.session.userId!);
 
-      const isAdmin = user.role === "admin";
-
-      // R6
-      if (!isAdmin && !user.departmentId) {
-        return res.status(403).json({ message: "ليس لديك قسم محدد للاستعلام" });
+      // R6: restricted user with no allowed depts → 403
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض أي قسم، تواصل مع مدير النظام" });
       }
 
-      const forcedDeptId = isAdmin ? null : (user.departmentId ?? null);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
 
       const {
         patientId   = null,
@@ -326,8 +339,7 @@ export function registerPatientsRoutes(app: Express) {
 
       const lines = await storage.getPatientInquiryLines(
         { patientId, patientName },
-        forcedDeptId,
-        isAdmin,
+        forcedDeptIds,
         lineType,
       );
 

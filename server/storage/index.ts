@@ -463,19 +463,17 @@ export interface IStorage {
   // Patients
   getPatients(): Promise<Patient[]>;
   searchPatients(search: string): Promise<Patient[]>;
-  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<Record<string, unknown>[]>;
+  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[] }): Promise<Record<string, unknown>[]>;
   getPatient(id: string): Promise<Patient | undefined>;
   getPatientJourney(patientId: string): Promise<Record<string, unknown> | null>;
   getPatientTimeline(patientId: string): Promise<Record<string, unknown> | null>;
   getPatientInquiry(
     filters: { adminDeptFilter?: string | null; clinicId?: string | null; dateFrom?: string | null; dateTo?: string | null; search?: string | null },
-    forcedDeptId: string | null,
-    isAdmin: boolean,
+    forcedDeptIds: string[] | null,
   ): Promise<{ rows: Record<string, unknown>[]; count: number; limit: number; hasMore: boolean }>;
   getPatientInquiryLines(
     patientKey: { patientId?: string | null; patientName?: string | null },
-    forcedDeptId: string | null,
-    isAdmin: boolean,
+    forcedDeptIds: string[] | null,
     lineType?: string | null,
   ): Promise<Record<string, unknown>[]>;
   getPatientPreviousConsultations(patientId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
