@@ -441,6 +441,21 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     let patientId: string;
     if (existingPatient) {
       patientId = existingPatient.id;
+      // تحديث بيانات المريض إذا أضاف الموظف موبايل/سن/رقم قومي مفقود
+      const hasChanges =
+        (phone      || null) !== (existingPatient.phone      || null) ||
+        (nationalId || null) !== (existingPatient.nationalId || null) ||
+        (age !== "" ? parseInt(age, 10) : null) !== (existingPatient.age ?? null);
+      if (hasChanges) {
+        try {
+          await apiRequest("PATCH", `/api/patients/${patientId}`, {
+            fullName:   fullName.trim(),
+            phone:      phone || null,
+            nationalId: nationalId || null,
+            age:        age !== "" ? parseInt(age, 10) : null,
+          });
+        } catch { /* تجاهل خطأ التحديث ولا نوقف الحجز */ }
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/patients/stats"] });
     } else {
       try {
@@ -607,7 +622,6 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                     onChange={e => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
                     placeholder="01xxxxxxxxx" maxLength={11}
                     className="h-7 text-xs font-mono"
-                    readOnly={!!existingPatient}
                     data-testid="input-patient-phone"
                   />
                 </div>
@@ -617,7 +631,6 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                     type="number" min={0} max={120} value={age}
                     onChange={e => setAge(e.target.value)}
                     placeholder="—" className="h-7 text-xs"
-                    readOnly={!!existingPatient}
                     data-testid="input-patient-age"
                   />
                 </div>
@@ -628,7 +641,6 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                     onChange={e => setNationalId(e.target.value.replace(/\D/g, "").slice(0, 14))}
                     placeholder="14 رقم" maxLength={14}
                     className="h-7 text-xs font-mono"
-                    readOnly={!!existingPatient}
                     data-testid="input-patient-nationalid"
                   />
                 </div>
