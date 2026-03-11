@@ -16,7 +16,7 @@ import {
 import {
   Stethoscope, Bed, FlaskConical, Radiation,
   Search, Loader2, Banknote, ShieldCheck, FileSignature,
-  UserCheck, X,
+  UserCheck, X, AlertTriangle, Lock, Info,
 } from "lucide-react";
 import type { InsertPatient } from "@shared/schema";
 import type { PatientFormDialogProps, PrefilledPatient } from "./types";
@@ -25,6 +25,51 @@ import { useDebounce } from "./useDebounce";
 /* ── أنواع محلية ─────────────────────────────────── */
 type VisitReason = "" | "consultation" | "admission" | "lab" | "radiology";
 type PaymentKind = "CASH" | "INSURANCE" | "CONTRACT";
+
+interface DuplicateCandidate {
+  patientId: string; patientCode: string | null; fullName: string;
+  phone: string | null; nationalId: string | null; age: number | null;
+  score: number; reasons: string[];
+}
+interface DuplicateCheckResult {
+  duplicateStatus: "none" | "warning" | "block";
+  candidates: DuplicateCandidate[];
+  recommendedAction: string;
+}
+
+/* ── قائمة مرشحي التكرار ──────────────────────────── */
+function CandidateList({ candidates, onSelect }: { candidates: DuplicateCandidate[]; onSelect: (p: PatientSuggest) => void }) {
+  return (
+    <div className="space-y-1 max-h-40 overflow-y-auto">
+      {candidates.map(c => (
+        <div key={c.patientId} className="flex items-center gap-2 p-2 rounded border bg-white text-xs">
+          <div className="flex-1 min-w-0">
+            <div className="font-medium truncate">{c.fullName}</div>
+            <div className="text-muted-foreground font-mono">{c.phone || "—"}</div>
+            <div className="flex gap-1 mt-0.5 flex-wrap">
+              {c.reasons.map((r, i) => (
+                <span key={i} className="px-1 py-0.5 rounded bg-muted text-muted-foreground">{r}</span>
+              ))}
+            </div>
+          </div>
+          {c.patientCode && (
+            <span className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded shrink-0">
+              {c.patientCode}
+            </span>
+          )}
+          <button
+            type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => onSelect({ id: c.patientId, fullName: c.fullName, patientCode: c.patientCode, phone: c.phone, age: c.age, nationalId: c.nationalId })}
+            className="shrink-0 px-2 py-1 rounded border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 text-xs font-medium"
+          >
+            استخدام
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const todayISO = new Date().toISOString().slice(0, 10);
 
@@ -65,6 +110,10 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   const [existingPatient, setExistingPatient] = useState<PatientSuggest | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  /* ── اكتشاف التكرار ─── */
+  const [overrideReason,   setOverrideReason]   = useState("");
+  const [dupDismissed,     setDupDismissed]     = useState(false);
+
   /* ── نوع الدفع ────────── */
   const [paymentType, setPaymentType] = useState<PaymentKind>("CASH");
   const [insuranceCo, setInsuranceCo] = useState("");
@@ -96,6 +145,8 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
 
   /* ── Debounced searches ─ */
   const debouncedName    = useDebounce(fullName, 300);
+  const debouncedPhone   = useDebounce(phone, 500);
+  const debouncedNid     = useDebounce(nationalId, 500);
   const debouncedDoctor  = useDebounce(doctorSearch, 300);
   const debouncedAdmDoc  = useDebounce(admDoctorSearch, 300);
 
@@ -113,6 +164,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     setAdmDoctorSearch(""); setAdmDoctor(null);
     setSurgerySearch(""); setSelectedSurgery(null);
     setServiceNotes("");
+    setOverrideReason(""); setDupDismissed(false);
 
     if (editingPatient) {
       setFullName(editingPatient.fullName);
@@ -148,6 +200,34 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
         .then(r => r.json()),
     enabled: !isEdit && !existingPatient && debouncedName.trim().length >= 2,
   });
+
+  /* اكتشاف التكرار — يُفعَّل عند وجود اسم كافٍ أو هاتف أو رقم هوية */
+  const shouldCheckDup = !isEdit && !existingPatient && !dupDismissed && (
+    debouncedName.trim().length >= 2 ||
+    debouncedPhone.trim().length >= 5 ||
+    debouncedNid.trim().length >= 5
+  );
+
+  const { data: dupResult, isFetching: dupChecking } = useQuery<DuplicateCheckResult>({
+    queryKey: ["/api/patients/check-duplicates", debouncedName.trim(), debouncedPhone.trim(), debouncedNid.trim()],
+    queryFn: () =>
+      apiRequest("POST", "/api/patients/check-duplicates", {
+        fullName:   debouncedName.trim() || null,
+        phone:      debouncedPhone.trim() || null,
+        nationalId: debouncedNid.trim() || null,
+        age:        age ? parseInt(age, 10) : null,
+        excludePatientId: editingPatient?.id,
+      }).then(r => r.json()),
+    enabled: shouldCheckDup,
+    staleTime: 0,
+    gcTime: 30_000,
+  });
+
+  /* إعادة ضبط التجاوز عند تغير بيانات المريض */
+  useEffect(() => {
+    setOverrideReason("");
+    setDupDismissed(false);
+  }, [debouncedName, debouncedPhone, debouncedNid]);
 
   const { data: clinics = [] } = useQuery<ClinicOption[]>({
     queryKey: ["/api/clinic-clinics"],
@@ -290,6 +370,17 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   /* ── Submit ──────────────────────────────────── */
   async function handleSubmit() {
     if (!validate()) return;
+
+    /* فحص التكرار — block يمنع الإضافة تماماً */
+    if (!isEdit && !existingPatient && dupResult?.duplicateStatus === "block") {
+      toast({ title: "لا يمكن إضافة مريض مكرر", description: "يوجد مريض بنفس البيانات — الرجاء استخدام ملفه الموجود", variant: "destructive" });
+      return;
+    }
+    /* warning يتطلب سبباً قبل المتابعة */
+    if (!isEdit && !existingPatient && dupResult?.duplicateStatus === "warning" && !overrideReason.trim()) {
+      toast({ title: "سبب الإضافة مطلوب", description: "يوجد مرضى مشابهون — اكتب سبب إنشاء ملف جديد في خانة التنبيه", variant: "destructive" });
+      return;
+    }
 
     const baseData: Partial<InsertPatient> = {
       fullName:   fullName.trim(),
@@ -528,6 +619,75 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                 </div>
               </div>
             </section>
+
+            {/* ══ لوحة اكتشاف التكرار ════════════════ */}
+            {!isEdit && !existingPatient && shouldCheckDup && (
+              <section className="space-y-1">
+                {dupChecking && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>جاري البحث عن مرضى مشابهين...</span>
+                  </div>
+                )}
+
+                {/* BLOCK: تكرار قاطع */}
+                {!dupChecking && dupResult?.duplicateStatus === "block" && !dupDismissed && (
+                  <div className="p-3 rounded-md border border-red-300 bg-red-50 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-red-700">
+                        <Lock className="h-3.5 w-3.5" />
+                        <span className="text-xs font-semibold">مريض مكرر — الإضافة محظورة</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-red-600">{dupResult.recommendedAction}</p>
+                    <CandidateList candidates={dupResult.candidates} onSelect={handleSelectExistingPatient} />
+                  </div>
+                )}
+
+                {/* WARNING: تحذير يحتاج سبباً للمتابعة */}
+                {!dupChecking && dupResult?.duplicateStatus === "warning" && !dupDismissed && (
+                  <div className="p-3 rounded-md border border-amber-300 bg-amber-50 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-amber-700">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        <span className="text-xs font-semibold">تنبيه: مرضى مشابهون موجودون</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDupDismissed(true)}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="تجاهل التحذير"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-amber-700">{dupResult.recommendedAction}</p>
+                    <CandidateList candidates={dupResult.candidates} onSelect={handleSelectExistingPatient} />
+                    <div className="space-y-1 pt-1">
+                      <Label className="text-xs text-amber-800">لإنشاء ملف جديد — اكتب سبب عدم التطابق *</Label>
+                      <Input
+                        value={overrideReason}
+                        onChange={e => setOverrideReason(e.target.value)}
+                        placeholder="مثال: نفس الاسم لكن شخص مختلف — الرقم القومي مختلف"
+                        className="h-7 text-xs border-amber-400 focus:border-amber-500"
+                        data-testid="input-dup-override-reason"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* NONE: لا تكرار — اقتراحات طوعية */}
+                {!dupChecking && dupResult?.duplicateStatus === "none" && dupResult.candidates.length > 0 && !dupDismissed && (
+                  <div className="p-2 rounded-md border border-blue-200 bg-blue-50 space-y-1">
+                    <div className="flex items-center gap-1.5 text-blue-700 text-xs">
+                      <Info className="h-3 w-3" />
+                      <span className="font-medium">مرضى قريبون — هل تقصد أحدهم؟</span>
+                    </div>
+                    <CandidateList candidates={dupResult.candidates.slice(0, 3)} onSelect={handleSelectExistingPatient} />
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* ══ نوع الدفع ══════════════════════════ */}
             <section className="space-y-2">

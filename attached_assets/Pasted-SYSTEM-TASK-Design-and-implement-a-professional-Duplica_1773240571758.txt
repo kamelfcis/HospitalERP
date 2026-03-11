@@ -1,0 +1,482 @@
+SYSTEM TASK
+Design and implement a professional “Duplicate Patient Prevention & Resolution” system for the hospital ERP / HMIS.
+
+The goal is to prevent duplicate patient files as much as possible at creation time, detect likely duplicates intelligently, and provide a safe governed merge/review workflow.
+
+This is a core master-data quality feature, not a cosmetic improvement.
+
+------------------------------------------------
+BUSINESS PROBLEM
+
+The hospital system must not allow uncontrolled duplication of patient records.
+
+Common duplicate scenarios:
+
+• Same patient registered twice with slightly different Arabic name spelling
+• Same patient registered with mobile in one file and national ID in another
+• Same patient registered once in reception and once in clinic
+• Same patient registered with missing DOB or missing national ID
+• Same patient registered by typo in phone/name
+• Emergency registration created quickly, then patient registered again later
+
+Duplicate patients cause serious operational and financial problems:
+
+• fragmented clinical history
+• incorrect billing / insurance linkage
+• duplicated balances
+• repeated visits across different files
+• reporting distortion
+• unsafe medical decisions
+
+We need a robust solution.
+
+------------------------------------------------
+OBJECTIVE
+
+Implement a complete duplicate prevention system with 4 layers:
+
+LAYER 1
+Normalization before save
+
+LAYER 2
+Hard unique rules for strong identifiers
+
+LAYER 3
+Soft duplicate detection for likely matches
+
+LAYER 4
+Governed merge / review process
+
+------------------------------------------------
+CORE PRINCIPLES
+
+P1
+Patient master data must be treated as a controlled entity, not free text.
+
+P2
+Do not rely on exact Arabic name matching only.
+
+P3
+Strong identifiers must block duplicates.
+
+P4
+Weak identifiers must trigger warnings, not always hard block.
+
+P5
+Merging patient records must be auditable, reversible only through controlled admin workflow, and never done silently.
+
+P6
+Existing financial/clinical references must remain intact after merge.
+
+------------------------------------------------
+REQUIRED DATA MODEL REVIEW
+
+Review current patient table and related entities.
+
+Patient master likely includes fields such as:
+
+• id
+• patient_code
+• full_name
+• phone
+• national_id
+• date_of_birth
+• gender
+• address
+• insurance / contract refs
+
+Review all tables that reference patient_id, such as:
+
+• appointments
+• patient_invoice_headers
+• patient_invoice_lines
+• admissions / stays
+• doctor visits / consultations
+• lab / radiology orders
+• prescriptions
+• payments
+• insurance claims
+• documents / attachments
+• notes
+• audit logs
+
+Produce a safe patient merge dependency map before implementing merge.
+
+------------------------------------------------
+LAYER 1 — NORMALIZATION
+
+Before duplicate checks, normalize patient inputs.
+
+Implement normalized derived fields for matching:
+
+• normalized_full_name
+• normalized_phone
+• normalized_national_id
+
+Arabic name normalization rules:
+
+• trim spaces
+• collapse repeated spaces
+• unify Arabic letter variants where safe
+• normalize:
+  أ / إ / آ → ا
+  ى → ي
+  ة optionally to ه only for search key, not display
+• remove tatweel and extra punctuation
+• standardize common separators
+
+Phone normalization rules:
+
+• remove spaces, dashes, parentheses
+• convert local and country forms consistently
+• normalize Egyptian mobile formats if applicable
+Examples:
+  010xxxxxxx
+  +2010xxxxxxx
+  2010xxxxxxx
+→ normalized into one canonical format
+
+National ID normalization rules:
+
+• remove spaces and non-digits
+• validate length and numeric structure
+• store normalized digits only for uniqueness checks
+
+Do not overwrite the original entered display values blindly.
+Store normalized helper values separately.
+
+------------------------------------------------
+LAYER 2 — HARD DUPLICATE PREVENTION
+
+Apply strict blocking rules for strong identifiers.
+
+Rules:
+
+R1
+If normalized_national_id exists and already belongs to another active patient → block creation.
+
+R2
+If normalized_phone exists and system policy says phone must be unique per active patient, then block or require override workflow.
+Prefer configurable policy:
+• strict unique
+• warn only
+• allow duplicates with reason
+
+R3
+If a patient is marked merged_into_patient_id, the old record must not be reusable for new registrations.
+
+Implement partial unique indexes where appropriate, for active non-merged patients only.
+
+Examples:
+• unique on normalized_national_id where normalized_national_id is not null and merged_into_patient_id is null
+• optional unique/warn policy on normalized_phone
+
+------------------------------------------------
+LAYER 3 — SOFT DUPLICATE DETECTION
+
+When a new patient is being created or an existing patient is edited, run duplicate candidate detection.
+
+Candidate matching signals:
+
+Strong signals:
+• same normalized_national_id
+• same normalized_phone
+• same passport / insurance member ID if applicable
+
+Medium signals:
+• same normalized_full_name + same DOB
+• same normalized_full_name + same gender + same phone prefix
+• same full name similarity + same mobile
+• same full name similarity + same birth year
+
+Weak signals:
+• similar Arabic name only
+• same phone only if phone policy is non-unique
+• same DOB + similar name
+
+Build a weighted duplicate score.
+
+Example scoring model:
+• national ID exact = 100
+• phone exact = 70
+• name exact + DOB exact = 85
+• name similar + DOB exact = 75
+• name similar + phone exact = 80
+• name exact only = 40
+
+Threshold policy:
+• score >= 90 → hard block and force user to review existing record
+• score 70–89 → warning modal with likely duplicates; user may continue only with permission/reason
+• score < 70 → allow normal save
+
+Implement a reusable service:
+checkPatientDuplicateCandidates(input)
+
+Return:
+• duplicateStatus: none | warning | block
+• candidates: array with score and reasons
+• recommendedAction
+
+------------------------------------------------
+LAYER 4 — GOVERNED MERGE / RESOLUTION
+
+Implement a controlled duplicate resolution workflow.
+
+Do NOT auto-merge records.
+
+Create a duplicate review screen for authorized users only.
+
+Permissions:
+• PATIENTS_VIEW
+• PATIENTS_MERGE or equivalent elevated permission
+
+Functions:
+1. View duplicate candidates
+2. Compare two patient files side by side
+3. Choose master record
+4. Merge secondary into master
+5. Preserve full audit trail
+
+Merge rules:
+
+• Secondary patient record becomes inactive / merged
+• Set:
+  merged_into_patient_id
+  merged_at
+  merged_by_user_id
+  merge_reason
+• Repoint all related foreign keys from secondary patient_id to master patient_id
+• Preserve old patient code in alias/history table
+• Add merge log entry
+• Prevent merged patient from appearing in normal search results
+• Searching by old code should redirect/show master patient
+
+Very important:
+Before merge, run a dry-run report showing counts of related records to be moved:
+• invoices count
+• visits count
+• admissions count
+• orders count
+• payments count
+• attachments count
+
+Merge must run inside a DB transaction.
+
+If any step fails → rollback all.
+
+------------------------------------------------
+SEARCH / REGISTRATION UX
+
+During patient registration, as the user types:
+• name
+• phone
+• national ID
+
+show “possible existing patients” panel live.
+
+Display:
+• patient code
+• name
+• phone
+• DOB
+• national ID masked
+• last visit date
+• status
+
+Actions:
+• Use existing patient
+• Continue as new patient (if allowed)
+• Ask supervisor
+
+For hard matches, do not allow silent duplicate creation.
+
+------------------------------------------------
+PATIENT SEARCH IMPROVEMENTS
+
+Improve patient search to reduce duplicate creation.
+
+Search by:
+• patient code
+• full name Arabic
+• phone
+• national ID
+• old merged code / alias
+• normalized search key
+
+Support fast partial matching.
+Prefer indexed normalized fields.
+
+------------------------------------------------
+DATABASE CHANGES REQUIRED
+
+Add fields to patients table as needed:
+
+• normalized_full_name
+• normalized_phone
+• normalized_national_id
+• is_active
+• merged_into_patient_id
+• merged_at
+• merged_by_user_id
+• duplicate_review_status
+• duplicate_review_note
+
+Create supporting table:
+patient_merge_audit
+
+Suggested columns:
+• id
+• master_patient_id
+• merged_patient_id
+• merged_by_user_id
+• merged_at
+• reason
+• moved_invoice_count
+• moved_visit_count
+• moved_admission_count
+• moved_order_count
+• moved_payment_count
+• raw_snapshot_json
+
+Optional supporting table:
+patient_aliases
+• id
+• patient_id
+• alias_type (old_code, old_name, old_phone, merged_from_code)
+• alias_value
+• created_at
+
+Optional supporting table:
+patient_duplicate_reviews
+• id
+• incoming_payload_json
+• candidate_patient_id
+• score
+• status
+• reviewed_by
+• reviewed_at
+• resolution
+
+------------------------------------------------
+API / BACKEND REQUIREMENTS
+
+Implement service functions such as:
+
+• normalizePatientIdentity(input)
+• checkPatientDuplicateCandidates(input)
+• createPatientWithDuplicateCheck(input, userId)
+• getPatientDuplicateCandidates(input)
+• mergePatients(masterPatientId, duplicatePatientId, reason, userId)
+• getPatientMergeImpact(masterPatientId, duplicatePatientId)
+
+Endpoints to add or refactor:
+
+• POST /api/patients/check-duplicates
+• POST /api/patients
+• POST /api/patients/:id/merge-preview
+• POST /api/patients/:id/merge
+• GET /api/patients/:id/aliases
+• GET /api/patients/duplicate-reviews
+
+All sensitive endpoints must use:
+requireAuth
+requirePermission(...)
+
+------------------------------------------------
+AUDIT & GOVERNANCE
+
+Every duplicate-related action must be logged:
+
+• who attempted to create a duplicate
+• which candidates were shown
+• whether user selected existing patient
+• whether override happened
+• who merged which records
+• what related records were moved
+
+This is mandatory.
+
+------------------------------------------------
+SAFETY RULES
+
+S1
+No automatic merge without user review.
+
+S2
+No physical delete of patient records after merge.
+
+S3
+Merged records remain historically traceable.
+
+S4
+All merge operations must be transactional.
+
+S5
+Creation override for warning-level duplicates must require reason and proper permission.
+
+S6
+Hard-block duplicates must never be bypassed by normal users.
+
+------------------------------------------------
+PERFORMANCE RULES
+
+• Add indexes on normalized_full_name
+• Add indexes on normalized_phone
+• Add indexes on normalized_national_id
+• Optimize duplicate candidate search for large patient volumes
+• Do not scan full patient table on every keystroke without indexes / limits
+
+Use limit on duplicate candidate results, e.g. top 10–20 likely matches.
+
+------------------------------------------------
+UI DELIVERABLES
+
+Implement or plan the following screens/components:
+
+1. Registration duplicate warning modal
+2. Existing patient suggestion dropdown / panel
+3. Duplicate review list
+4. Merge preview dialog
+5. Side-by-side patient comparison screen
+6. Merged patient redirect / alias resolution behavior
+
+------------------------------------------------
+ACCEPTANCE CRITERIA
+
+The implementation is considered done when:
+
+• Same national ID cannot create a second active patient
+• Registration shows likely duplicate suggestions before save
+• Similar duplicates are flagged with scoring
+• Users can safely select existing patient instead of creating new one
+• Authorized users can merge duplicates with preview and audit trail
+• All patient-related records move correctly to the master file during merge
+• Old duplicate record is hidden from normal use but preserved historically
+• Search by old patient code can still find the master record
+• No uncontrolled duplicate patient creation remains in normal workflow
+
+------------------------------------------------
+IMPORTANT IMPLEMENTATION NOTE
+
+Do not deliver only a superficial UI warning.
+This task requires:
+• DB schema changes
+• backend duplicate detection logic
+• auditability
+• merge-safe transaction design
+• frontend registration workflow integration
+
+------------------------------------------------
+DELIVERABLE FORMAT
+
+Return:
+
+1. implementation plan
+2. schema changes
+3. backend changes
+4. frontend changes
+5. merge strategy
+6. edge cases
+7. testing checklist
+
+END TASK

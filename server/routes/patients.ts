@@ -89,6 +89,17 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
+  // GET /api/patients/duplicate-candidates — must be before /:id wildcard
+  app.get("/api/patients/duplicate-candidates", requireAuth, checkPermission(PERMISSIONS.PATIENTS_MERGE), async (req, res) => {
+    try {
+      const limit = parseInt(String(req.query.limit || "50"));
+      const list = await storage.getPatientDuplicateCandidatesList(Math.min(limit, 200));
+      res.json(list);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   // Single patient record — PATIENTS_VIEW + dept scope check (prevent ID enumeration)
   app.get("/api/patients/:id", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
@@ -270,6 +281,64 @@ export function registerPatientsRoutes(app: Express) {
       res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
     }
   });
+
+  // ==================== Duplicate Prevention API ====================
+
+  // POST /api/patients/check-duplicates — callable without creating a patient
+  // Returns scored candidates and duplicate status (none/warning/block)
+  app.post("/api/patients/check-duplicates", requireAuth, checkPermission(PERMISSIONS.PATIENTS_CREATE), async (req, res) => {
+    try {
+      const { fullName, phone, nationalId, age, excludePatientId } = req.body;
+      const result = await storage.checkPatientDuplicateCandidates(
+        { fullName, phone, nationalId, age },
+        excludePatientId,
+      );
+      res.json(result);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // POST /api/patients/:id/merge-preview — dry run: shows what will move (no DB change)
+  app.post("/api/patients/:id/merge-preview", requireAuth, checkPermission(PERMISSIONS.PATIENTS_MERGE), async (req, res) => {
+    try {
+      const { duplicatePatientId } = req.body;
+      if (!duplicatePatientId) return res.status(400).json({ message: "duplicatePatientId مطلوب" });
+      const impact = await storage.getPatientMergeImpact(req.params.id, duplicatePatientId);
+      res.json(impact);
+    } catch (error: unknown) {
+      const code = (error as { statusCode?: number }).statusCode ?? 500;
+      res.status(code).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // POST /api/patients/:id/merge — execute governed merge (transactional, audited)
+  app.post("/api/patients/:id/merge", requireAuth, checkPermission(PERMISSIONS.PATIENTS_MERGE), async (req, res) => {
+    try {
+      const { duplicatePatientId, reason } = req.body;
+      if (!duplicatePatientId) return res.status(400).json({ message: "duplicatePatientId مطلوب" });
+      if (!reason || !String(reason).trim()) return res.status(400).json({ message: "reason (سبب الدمج) مطلوب" });
+
+      await storage.mergePatients(req.params.id, duplicatePatientId, String(reason), req.session.userId!);
+
+      // Audit log the merge action
+      storage.createAuditLog({
+        tableName: "patients",
+        recordId: req.params.id,
+        action: "merge",
+        newValues: JSON.stringify({ masterPatientId: req.params.id, duplicatePatientId, reason }),
+        userId: req.session.userId!,
+        ipAddress: req.ip ?? null,
+      }).catch(() => {});
+
+      res.json({ success: true });
+    } catch (error: unknown) {
+      const code = (error as { statusCode?: number }).statusCode ?? 500;
+      res.status(code).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ==================== Patient CRUD ====================
 
   app.post("/api/patients", requireAuth, checkPermission(PERMISSIONS.PATIENTS_CREATE), async (req, res) => {
     try {

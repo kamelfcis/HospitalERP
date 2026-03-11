@@ -479,6 +479,24 @@ export interface IStorage {
   getPatientPreviousConsultations(patientId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
   checkPatientInScope(patientId: string, forcedDeptIds: string[] | null): Promise<boolean>;
   checkInvoiceInScope(invoiceId: string, forcedDeptIds: string[] | null): Promise<boolean>;
+  checkPatientDuplicateCandidates(
+    input: { fullName?: string | null; phone?: string | null; nationalId?: string | null; age?: number | null },
+    excludePatientId?: string,
+  ): Promise<import("../services/patient-dedup").DuplicateCheckResult>;
+  getPatientMergeImpact(masterPatientId: string, duplicatePatientId: string): Promise<{
+    masterPatient: Record<string, unknown>;
+    duplicatePatient: Record<string, unknown>;
+    invoiceCount: number;
+    admissionCount: number;
+    appointmentCount: number;
+  }>;
+  mergePatients(masterPatientId: string, duplicatePatientId: string, reason: string, userId: string): Promise<void>;
+  getPatientDuplicateCandidatesList(limit?: number): Promise<Array<{
+    patientA: Record<string, unknown>;
+    patientB: Record<string, unknown>;
+    matchReason: string;
+    score: number;
+  }>>;
   createPatient(data: InsertPatient): Promise<Patient>;
   updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient>;
   deletePatient(id: string): Promise<boolean>;

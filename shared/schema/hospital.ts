@@ -14,15 +14,57 @@ export const patients = pgTable("patients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   patientCode: varchar("patient_code", { length: 20 }),
   fullName: text("full_name").notNull(),
-  phone: varchar("phone", { length: 11 }),
-  nationalId: varchar("national_id", { length: 14 }),
+  phone: varchar("phone", { length: 20 }),
+  nationalId: varchar("national_id", { length: 20 }),
   age: integer("age"),
+  gender: varchar("gender", { length: 10 }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // ── Normalized fields for dedup matching ──────────────────────────────────
+  normalizedFullName: text("normalized_full_name"),
+  normalizedPhone: varchar("normalized_phone", { length: 20 }),
+  normalizedNationalId: varchar("normalized_national_id", { length: 20 }),
+  // ── Merge tracking ─────────────────────────────────────────────────────────
+  mergedIntoPatientId: varchar("merged_into_patient_id"),
+  mergedAt: timestamp("merged_at"),
+  mergedByUserId: varchar("merged_by_user_id"),
+  mergeReason: text("merge_reason"),
 }, (table) => ({
   nameIdx: index("idx_patients_name").on(table.fullName),
   phoneIdx: index("idx_patients_phone").on(table.phone),
   nationalIdIdx: index("idx_patients_national_id").on(table.nationalId),
+  normNameIdx: index("idx_patients_norm_name").on(table.normalizedFullName),
+  normPhoneIdx: index("idx_patients_norm_phone").on(table.normalizedPhone),
+  normNidIdx: index("idx_patients_norm_nid").on(table.normalizedNationalId),
+}));
+
+// ─── سجل دمج المرضى ──────────────────────────────────────────────────────────
+export const patientMergeAudit = pgTable("patient_merge_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  masterPatientId: varchar("master_patient_id").notNull(),
+  mergedPatientId: varchar("merged_patient_id").notNull(),
+  mergedByUserId: varchar("merged_by_user_id").notNull(),
+  mergedAt: timestamp("merged_at").notNull().defaultNow(),
+  reason: text("reason"),
+  movedInvoiceCount: integer("moved_invoice_count").notNull().default(0),
+  movedAdmissionCount: integer("moved_admission_count").notNull().default(0),
+  movedAppointmentCount: integer("moved_appointment_count").notNull().default(0),
+  rawSnapshotJson: text("raw_snapshot_json"),
+}, (table) => ({
+  masterIdx: index("idx_pma_master").on(table.masterPatientId),
+  mergedIdx: index("idx_pma_merged").on(table.mergedPatientId),
+}));
+
+// ─── أسماء بديلة / كودات قديمة ───────────────────────────────────────────────
+export const patientAliases = pgTable("patient_aliases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: varchar("patient_id").notNull().references(() => patients.id),
+  aliasType: varchar("alias_type", { length: 30 }).notNull(),
+  aliasValue: text("alias_value").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  patientIdx: index("idx_pal_patient").on(table.patientId),
+  valueIdx: index("idx_pal_value").on(table.aliasValue),
 }));
 
 export const doctors = pgTable("doctors", {

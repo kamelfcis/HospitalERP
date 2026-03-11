@@ -57,6 +57,7 @@ const PatientFilePage = lazy(() => import("@/pages/patient-file"));
 const DoctorOrders = lazy(() => import("@/pages/doctor-orders"));
 const DeptServicesPage = lazy(() => import("@/pages/dept-services"));
 const PerfDiagnostics = lazy(() => import("@/pages/PerfDiagnostics"));
+const DuplicatePatients = lazy(() => import("@/pages/duplicate-patients"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -119,6 +120,7 @@ function Router() {
           <Route path="/patients">{() => <G p="patients.view"><Patients /></G>}</Route>
           <Route path="/patients/:id/file">{() => <G p="patients.view"><PatientFilePage /></G>}</Route>
           <Route path="/patient-inquiry">{() => <G p="patients.view"><PatientInquiry /></G>}</Route>
+          <Route path="/duplicate-patients">{() => <G p="patients.merge"><DuplicatePatients /></G>}</Route>
           <Route path="/doctors">{() => <G p="doctors.view"><Doctors /></G>}</Route>
           <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><ErrorBoundary fallbackLabel="خطأ في صفحة فاتورة المريض"><PatientInvoice /></ErrorBoundary></G>}</Route>
           <Route path="/bed-board">{() => <G p="patient_invoices.view"><BedBoard /></G>}</Route>

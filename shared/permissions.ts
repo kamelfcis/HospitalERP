@@ -75,6 +75,7 @@ export const PERMISSIONS = {
   PATIENTS_VIEW: "patients.view",
   PATIENTS_CREATE: "patients.create",
   PATIENTS_EDIT: "patients.edit",
+  PATIENTS_MERGE: "patients.merge",
 
   DOCTORS_VIEW: "doctors.view",
   DOCTORS_CREATE: "doctors.create",
@@ -482,6 +483,7 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.PATIENTS_VIEW, label: "عرض" },
       { key: PERMISSIONS.PATIENTS_CREATE, label: "إنشاء" },
       { key: PERMISSIONS.PATIENTS_EDIT, label: "تعديل" },
+      { key: PERMISSIONS.PATIENTS_MERGE, label: "دمج المرضى" },
     ],
   },
   {

@@ -49,6 +49,7 @@ import {
   Undo2,
   Gauge,
   ScanSearch,
+  GitMerge,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -95,6 +96,7 @@ const mainNavItems: NavItem[] = [
   { title: "الأقسام",               href: "/departments",        icon: Building2,          permission: "departments.view" },
   { title: "سجل المرضى",            href: "/patients",           icon: Users,              permission: "patients.view" },
   { title: "استعلام المرضى",         href: "/patient-inquiry",    icon: ScanSearch,         permission: "patients.view" },
+  { title: "مراجعة المرضى المكررين", href: "/duplicate-patients", icon: GitMerge,           permission: "patients.merge" },
   { title: "سجل الأطباء",           href: "/doctors",            icon: Stethoscope,        permission: "doctors.view" },
 ];
 
