@@ -7,8 +7,8 @@ import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
 import { FileText, Users } from "lucide-react";
 
 const DEPT_CODE_MAP: Record<string, string> = {
-  LAB: "e1298b3f",
-  RAD: "33343989",
+  LAB: "e1298b3f-1653-4014-a5b3-5a1de17cd3ce",
+  RAD: "33343989-3ebc-4186-b617-81506484754a",
 };
 
 const DEPT_NAME_MAP: Record<string, string> = {
