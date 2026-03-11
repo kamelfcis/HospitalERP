@@ -8,9 +8,10 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ServicesGrid, type ServiceLine } from "../components/ServicesGrid";
 import { ConsumablesPanel } from "../components/ConsumablesPanel";
-import { useDeptServices, useDoctors, usePatientSearch, useUserTreasury } from "../hooks/useDeptServices";
+import { useDeptServices, usePatientSearch, useUserTreasury } from "../hooks/useDeptServices";
+import { DoctorLookup } from "@/components/lookups";
 import { Save, Loader2, AlertTriangle } from "lucide-react";
-import type { Patient, Doctor, Service } from "@shared/schema";
+import type { Patient, Service } from "@shared/schema";
 
 interface Props {
   departmentId: string;
@@ -25,7 +26,6 @@ interface DuplicateWarning {
 export function SingleOrderTab({ departmentId, departmentName }: Props) {
   const { toast } = useToast();
   const { data: services = [], isLoading: loadingServices } = useDeptServices(departmentId);
-  const { data: doctors = [] } = useDoctors();
   const { data: treasuryData } = useUserTreasury();
 
   const [patientName, setPatientName] = useState("");
@@ -35,6 +35,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const [doctorId, setDoctorId] = useState("");
+  const [doctorName, setDoctorName] = useState("");
   const [orderType, setOrderType] = useState<string>("cash");
   const [contractName, setContractName] = useState("");
   const [notes, setNotes] = useState("");
@@ -90,7 +91,6 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
   }, []);
 
   const treasury = treasuryData && !Array.isArray(treasuryData) ? treasuryData : (Array.isArray(treasuryData) ? treasuryData[0] : null);
-  const selectedDoctor = doctors.find((d) => d.id === doctorId);
 
   const subtotal = serviceLines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
   const discountAmount = subtotal * discountPercent / 100;
@@ -100,7 +100,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
     mutationFn: async () => {
       const body = {
         patientName, patientPhone: patientPhone || undefined,
-        doctorId: doctorId || undefined, doctorName: selectedDoctor?.name || undefined,
+        doctorId: doctorId || undefined, doctorName: doctorName || undefined,
         departmentId, orderType,
         contractName: orderType === "contract" ? contractName : undefined,
         treasuryId: orderType === "cash" && treasury ? treasury.id : undefined,
@@ -152,7 +152,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
 
   const resetForm = () => {
     setPatientName(""); setPatientPhone(""); setPatientSearch("");
-    setDoctorId(""); setOrderType("cash"); setContractName("");
+    setDoctorId(""); setDoctorName(""); setOrderType("cash"); setContractName("");
     setNotes(""); setDiscountPercent(0); setServiceLines([]);
     setDuplicateWarning([]); setClinicOrderIds([]);
   };
@@ -200,13 +200,13 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
 
         <div>
           <Label className="text-xs">الطبيب</Label>
-          <Select value={doctorId || "__none__"} onValueChange={v => setDoctorId(v === "__none__" ? "" : v)}>
-            <SelectTrigger className="h-8 text-sm" data-testid="select-doctor"><SelectValue placeholder="طبيب..." /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">بدون</SelectItem>
-              {doctors.map((d: any) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}
-            </SelectContent>
-          </Select>
+          <DoctorLookup
+            value={doctorId}
+            onChange={(item) => { setDoctorId(item?.id || ""); setDoctorName(item?.name || ""); }}
+            placeholder="ابحث عن طبيب..."
+            clearable
+            data-testid="select-doctor"
+          />
         </div>
 
         <div>

@@ -20,13 +20,13 @@ export default function DeptServicesPage() {
   const [, params] = useRoute("/dept-services/:deptCode");
   const deptCode = (params?.deptCode || "LAB").toUpperCase();
 
-  const { data: departments = [] } = useDepartments();
+  const { items: deptItems } = useDepartmentsLookup();
 
-  const dept = departments.find((d: any) => d.code === deptCode) ||
-    departments.find((d: any) => d.id === DEPT_CODE_MAP[deptCode]);
+  const dept = deptItems.find(d => (d.meta as any)?.code === deptCode) ||
+    deptItems.find(d => d.id === DEPT_CODE_MAP[deptCode]);
 
   const departmentId = dept?.id || DEPT_CODE_MAP[deptCode] || "";
-  const departmentName = dept?.nameAr || dept?.name_ar || DEPT_NAME_MAP[deptCode] || deptCode;
+  const departmentName = dept?.name || DEPT_NAME_MAP[deptCode] || deptCode;
 
   return (
     <div className="p-3 md:p-4" dir="rtl">
