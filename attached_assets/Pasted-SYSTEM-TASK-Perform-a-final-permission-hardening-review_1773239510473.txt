@@ -1,0 +1,181 @@
+SYSTEM TASK
+Perform a **final permission hardening review** for all patient and doctor endpoints.
+
+The recent security review confirmed that authentication (`requireAuth`) was added correctly, but some endpoints may still allow broader access than intended.
+
+This task ensures that **authentication, permissions, and department scope rules are consistently enforced across all endpoints**.
+
+This is a **security tightening step**, not a redesign.
+
+---
+
+CURRENT STATUS
+
+The following endpoints are already verified and correctly secured:
+
+/api/patient-scope
+/api/patients/stats
+/api/patient-inquiry
+/api/patient-inquiry/lines
+
+They enforce:
+
+• requireAuth
+• PATIENTS_VIEW permission
+• department isolation using getUserCashierScope()
+
+No change is needed for these endpoints.
+
+---
+
+ENDPOINTS TO REVIEW
+
+The following endpoints recently received `requireAuth`, but they may still require **permission-level protection**:
+
+GET /api/patients
+GET /api/patients/:id
+GET /api/doctors
+GET /api/doctors/:id
+
+---
+
+REQUIRED HARDENING
+
+1️⃣ Add permission checks where appropriate.
+
+For patient endpoints:
+
+Use
+
+requirePermission('PATIENTS_VIEW')
+
+Example:
+
+GET /api/patients
+GET /api/patients/:id
+
+Only users with PATIENTS_VIEW permission should access patient data.
+
+---
+
+2️⃣ Add doctor view permission.
+
+Introduce a new permission if it does not exist:
+
+DOCTORS_VIEW
+
+Protect endpoints:
+
+GET /api/doctors
+GET /api/doctors/:id
+
+Example:
+
+requirePermission('DOCTORS_VIEW')
+
+---
+
+3️⃣ Verify authentication order.
+
+Routes must follow this pattern:
+
+requireAuth → requirePermission → handler
+
+Example:
+
+router.get(
+"/api/patients",
+requireAuth,
+requirePermission("PATIENTS_VIEW"),
+handler
+)
+
+---
+
+4️⃣ Review search/autocomplete endpoints.
+
+Check if any endpoints expose patient or doctor data without authentication.
+
+Examples to inspect:
+
+/api/patients/search
+/api/doctors/search
+/api/patients/autocomplete
+
+If found:
+
+Add
+
+requireAuth
+requirePermission
+
+---
+
+5️⃣ Ensure consistent permission use.
+
+Patient-related endpoints must use:
+
+PATIENTS_VIEW
+
+Doctor-related endpoints must use:
+
+DOCTORS_VIEW
+
+Do not rely on authentication alone.
+
+---
+
+6️⃣ Confirm department isolation is not bypassed.
+
+Ensure no endpoint can return patient data outside allowedDepartmentIds.
+
+Specifically verify:
+
+/api/patients/stats
+/api/patient-inquiry
+/api/patient-inquiry/lines
+
+continue to enforce:
+
+getUserCashierScope()
+
+---
+
+7️⃣ Verify SQL safety.
+
+All SQL queries must remain protected.
+
+Avoid string concatenation.
+
+Prefer parameterized queries.
+
+Example:
+
+WHERE department_id = ANY($1)
+
+---
+
+8️⃣ Review logging.
+
+Ensure access attempts are logged for:
+
+401 Unauthorized
+403 Forbidden
+
+If audit logging already exists, confirm these events are recorded.
+
+---
+
+EXPECTED RESULT
+
+After this review:
+
+• All patient endpoints require PATIENTS_VIEW permission
+• All doctor endpoints require DOCTORS_VIEW permission
+• No endpoint exposes sensitive data with requireAuth alone
+• Department scope remains enforced
+• Unauthorized access attempts are logged
+
+---
+
+FILES
