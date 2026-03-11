@@ -42,9 +42,19 @@ export function registerPatientsRoutes(app: Express) {
 
   app.get("/api/patients/:id/journey", requireAuth, async (req, res) => {
     try {
-      const journey = await storage.getPatientJourney(req.params.id as string);
-      if (!journey) return res.status(404).json({ message: "مريض غير موجود" });
-      res.json(journey);
+      const data = await storage.getPatientTimeline(req.params.id as string);
+      if (!data) return res.status(404).json({ message: "مريض غير موجود" });
+      res.json(data);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.get("/api/patients/:id/timeline", requireAuth, async (req, res) => {
+    try {
+      const data = await storage.getPatientTimeline(req.params.id as string);
+      if (!data) return res.status(404).json({ message: "مريض غير موجود" });
+      res.json(data);
     } catch (error: unknown) {
       res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
     }

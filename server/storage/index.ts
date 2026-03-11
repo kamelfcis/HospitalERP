@@ -466,6 +466,7 @@ export interface IStorage {
   getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<Record<string, unknown>[]>;
   getPatient(id: string): Promise<Patient | undefined>;
   getPatientJourney(patientId: string): Promise<Record<string, unknown> | null>;
+  getPatientTimeline(patientId: string): Promise<Record<string, unknown> | null>;
   getPatientPreviousConsultations(patientId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
   createPatient(data: InsertPatient): Promise<Patient>;
   updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient>;
@@ -506,7 +507,7 @@ export interface IStorage {
   // Bed Board
   getBedBoard(): Promise<Array<Floor & { rooms: Array<Room & { beds: Array<Bed & { patientName?: string; admissionNumber?: string }> }> }>>;
   getAvailableBeds(): Promise<Array<Bed & { roomNameAr: string; floorNameAr: string }>>;
-  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string; paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
+  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; patientId?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string; paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
   transferPatientBed(params: { sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string }): Promise<{ sourceBed: Bed; targetBed: Bed }>;
   dischargeFromBed(bedId: string): Promise<{ bed: Bed }>;
   setBedStatus(bedId: string, status: string): Promise<Bed>;

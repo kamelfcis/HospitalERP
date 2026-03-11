@@ -193,6 +193,10 @@ const methods = {
   },
 
   async getPatientJourney(this: DatabaseStorage, patientId: string): Promise<Record<string, unknown> | null> {
+    return this.getPatientTimeline(patientId);
+  },
+
+  async getPatientTimeline(this: DatabaseStorage, patientId: string): Promise<Record<string, unknown> | null> {
     const patientRes = await db.execute(sql`
       SELECT id, patient_code, full_name, phone, national_id, age, created_at
       FROM patients WHERE id = ${patientId}
@@ -200,108 +204,185 @@ const methods = {
     if (!patientRes.rows.length) return null;
     const patient = patientRes.rows[0] as Record<string, unknown>;
 
-    const visitsRes = await db.execute(sql`
+    const summaryRes = await db.execute(sql`
       SELECT
-        a.id AS appointment_id,
-        a.appointment_date,
+        (SELECT COUNT(*) FROM clinic_appointments WHERE patient_id = ${patientId})::int AS total_clinic_visits,
+        (SELECT COUNT(*) FROM admissions WHERE patient_id = ${patientId})::int AS total_admissions,
+        (SELECT COUNT(*) FROM patient_invoice_headers WHERE patient_id = ${patientId})::int AS total_invoices,
+        COALESCE((SELECT SUM(net_amount) FROM patient_invoice_headers WHERE patient_id = ${patientId}), 0) AS total_billed,
+        COALESCE((SELECT SUM(paid_amount) FROM patient_invoice_headers WHERE patient_id = ${patientId}), 0) AS total_paid,
+        (SELECT MIN(appointment_date) FROM clinic_appointments WHERE patient_id = ${patientId}) AS first_visit_date,
+        GREATEST(
+          (SELECT MAX(appointment_date) FROM clinic_appointments WHERE patient_id = ${patientId}),
+          (SELECT MAX(admission_date)   FROM admissions WHERE patient_id = ${patientId})
+        ) AS last_activity_date
+    `);
+    const s = summaryRes.rows[0] as Record<string, unknown>;
+    const totalBilled = parseFloat(String(s.total_billed || "0"));
+    const totalPaid   = parseFloat(String(s.total_paid   || "0"));
+
+    const summary = {
+      totalClinicVisits: Number(s.total_clinic_visits) || 0,
+      totalAdmissions:   Number(s.total_admissions)    || 0,
+      totalInvoices:     Number(s.total_invoices)      || 0,
+      totalBilled,
+      totalPaid,
+      totalOutstanding:  Math.max(0, totalBilled - totalPaid),
+      firstVisitDate:    s.first_visit_date   ?? null,
+      lastActivityDate:  s.last_activity_date ?? null,
+    };
+
+    const clinicRes = await db.execute(sql`
+      SELECT
+        a.id AS event_id,
+        a.appointment_date AS event_date,
         a.turn_number,
-        a.status AS appointment_status,
-        a.patient_name,
+        a.status,
+        cl.name_ar AS location,
         d.name AS doctor_name,
-        d.id AS doctor_id,
-        cl.name_ar AS clinic_name,
         c.id AS consultation_id,
         c.chief_complaint,
         c.diagnosis,
         c.notes AS consultation_notes,
         c.consultation_fee,
-        c.discount_type,
-        c.discount_value,
-        c.final_amount,
+        c.final_amount AS amount,
         c.payment_status
       FROM clinic_appointments a
-      JOIN doctors d ON d.id = a.doctor_id
       JOIN clinic_clinics cl ON cl.id = a.clinic_id
+      JOIN doctors d ON d.id = a.doctor_id
       LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
       WHERE a.patient_id = ${patientId}
       ORDER BY a.appointment_date DESC, a.turn_number DESC
+      LIMIT 100
     `);
 
-    const visits = [];
-    for (const row of visitsRes.rows as Array<Record<string, unknown>>) {
-      const consultationId = row.consultation_id as string | null;
+    const admissionRes = await db.execute(sql`
+      SELECT
+        adm.id AS event_id,
+        adm.admission_date AS event_date,
+        adm.admission_number,
+        adm.discharge_date,
+        adm.status,
+        adm.doctor_name,
+        adm.payment_type,
+        adm.notes,
+        r.name_ar AS room_name,
+        f.name_ar AS floor_name
+      FROM admissions adm
+      LEFT JOIN beds b ON b.current_admission_id = adm.id
+      LEFT JOIN rooms r ON r.id = b.room_id
+      LEFT JOIN floors f ON f.id = r.floor_id
+      WHERE adm.patient_id = ${patientId}
+      ORDER BY adm.admission_date DESC
+      LIMIT 50
+    `);
 
+    const invoiceRes = await db.execute(sql`
+      SELECT
+        pih.id AS event_id,
+        pih.invoice_date AS event_date,
+        pih.invoice_number,
+        pih.net_amount AS amount,
+        pih.paid_amount,
+        pih.status,
+        pih.patient_type,
+        pih.admission_id
+      FROM patient_invoice_headers pih
+      WHERE pih.patient_id = ${patientId}
+        AND pih.admission_id IS NULL
+      ORDER BY pih.invoice_date DESC
+      LIMIT 100
+    `);
+
+    const clinicEvents: Array<Record<string, unknown>> = [];
+    for (const row of clinicRes.rows as Array<Record<string, unknown>>) {
+      const consultId = row.consultation_id as string | null;
       let drugs: Array<Record<string, unknown>> = [];
       let serviceOrders: Array<Record<string, unknown>> = [];
-      let invoices: Array<Record<string, unknown>> = [];
 
-      if (consultationId) {
-        const drugRes = await db.execute(sql`
+      if (consultId) {
+        const drugRows = await db.execute(sql`
           SELECT drug_name, dose, frequency, duration, quantity, unit_level
-          FROM clinic_consultation_drugs WHERE consultation_id = ${consultationId} ORDER BY line_no
+          FROM clinic_consultation_drugs WHERE consultation_id = ${consultId} ORDER BY line_no
         `);
-        drugs = drugRes.rows as Array<Record<string, unknown>>;
+        drugs = drugRows.rows as Array<Record<string, unknown>>;
 
-        const ordersRes = await db.execute(sql`
+        const orderRows = await db.execute(sql`
           SELECT order_type, service_name_manual, target_name, status, executed_at, quantity, unit_price
-          FROM clinic_orders
-          WHERE consultation_id = ${consultationId}
-          ORDER BY created_at
+          FROM clinic_orders WHERE consultation_id = ${consultId} ORDER BY created_at
         `);
-        serviceOrders = ordersRes.rows as Array<Record<string, unknown>>;
+        serviceOrders = orderRows.rows as Array<Record<string, unknown>>;
       }
 
-      const appointmentId = row.appointment_id as string;
-      const invoicesRes = await db.execute(sql`
-        SELECT pih.invoice_number, pih.net_amount, pih.status, pih.invoice_date
-        FROM patient_invoice_headers pih
-        JOIN clinic_orders co ON co.executed_invoice_id = pih.id
-        WHERE co.appointment_id = ${appointmentId}
-        GROUP BY pih.id
-        UNION
-        SELECT pih2.invoice_number, pih2.net_amount, pih2.status, pih2.invoice_date
-        FROM patient_invoice_headers pih2
-        WHERE pih2.patient_name = ${row.patient_name}
-          AND pih2.invoice_date = ${row.appointment_date}::date
-        LIMIT 10
-      `);
-      invoices = invoicesRes.rows as Array<Record<string, unknown>>;
-
-      visits.push({
-        appointmentId: row.appointment_id,
-        appointmentDate: row.appointment_date,
-        turnNumber: row.turn_number,
-        appointmentStatus: row.appointment_status,
-        clinicName: row.clinic_name,
-        doctorName: row.doctor_name,
-        consultation: consultationId ? {
-          id: consultationId,
-          chiefComplaint: row.chief_complaint,
-          diagnosis: row.diagnosis,
-          notes: row.consultation_notes,
+      clinicEvents.push({
+        eventType:     "clinic_visit",
+        eventId:       row.event_id,
+        eventDate:     row.event_date,
+        location:      row.location,
+        doctorName:    row.doctor_name,
+        turnNumber:    row.turn_number,
+        status:        row.status,
+        consultation:  consultId ? {
+          id:              consultId,
+          chiefComplaint:  row.chief_complaint,
+          diagnosis:       row.diagnosis,
+          notes:           row.consultation_notes,
           consultationFee: row.consultation_fee,
-          discountType: row.discount_type,
-          discountValue: row.discount_value,
-          finalAmount: row.final_amount,
-          paymentStatus: row.payment_status,
+          finalAmount:     row.amount,
+          paymentStatus:   row.payment_status,
         } : null,
         drugs,
         serviceOrders,
-        invoices,
       });
     }
 
+    const admissionEvents = (admissionRes.rows as Array<Record<string, unknown>>).map(row => {
+      const room  = row.room_name  ? String(row.room_name)  : null;
+      const floor = row.floor_name ? String(row.floor_name) : null;
+      const location = [room, floor].filter(Boolean).join(" — ") || null;
+      return {
+        eventType:       "admission",
+        eventId:         row.event_id,
+        eventDate:       row.event_date,
+        admissionNumber: row.admission_number,
+        dischargeDate:   row.discharge_date,
+        status:          row.status,
+        doctorName:      row.doctor_name,
+        location,
+        notes:           row.notes,
+        paymentType:     row.payment_type,
+      };
+    });
+
+    const invoiceEvents = (invoiceRes.rows as Array<Record<string, unknown>>).map(row => ({
+      eventType:     "invoice",
+      eventId:       row.event_id,
+      eventDate:     row.event_date,
+      invoiceNumber: row.invoice_number,
+      amount:        row.amount,
+      paidAmount:    row.paid_amount,
+      status:        row.status,
+    }));
+
+    const allEvents = [...clinicEvents, ...admissionEvents, ...invoiceEvents].sort((a, b) => {
+      const da = String(a.eventDate || "");
+      const db2 = String(b.eventDate || "");
+      return db2.localeCompare(da);
+    });
+
     return {
       patient: {
-        id: patient.id,
+        id:          patient.id,
         patientCode: patient.patient_code,
-        fullName: patient.full_name,
-        phone: patient.phone,
-        nationalId: patient.national_id,
-        age: patient.age,
-        createdAt: patient.created_at,
+        fullName:    patient.full_name,
+        phone:       patient.phone,
+        nationalId:  patient.national_id,
+        age:         patient.age,
+        createdAt:   patient.created_at,
       },
-      visits,
+      summary,
+      events: allEvents,
+      visits: clinicEvents,
     };
   },
 

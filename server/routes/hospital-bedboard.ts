@@ -67,12 +67,13 @@ export function registerBedBoardRoutes(app: Express) {
 
   app.post("/api/beds/:id/admit", async (req, res) => {
     try {
-      const { patientName, patientPhone, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
+      const { patientName, patientPhone, patientId, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       const result = await storage.admitPatientToBed({
         bedId: req.params.id as string,
         patientName: patientName.trim(),
         patientPhone: patientPhone || undefined,
+        patientId: patientId || undefined,
         departmentId: departmentId || undefined,
         serviceId: serviceId || undefined,
         doctorName: doctorName || undefined,

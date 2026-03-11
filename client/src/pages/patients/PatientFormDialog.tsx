@@ -312,6 +312,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
         body: {
           patientName:      fullName.trim(),
           patientPhone:     phone || undefined,
+          patientId:        existingPatient?.id || undefined,
           doctorName:       admDoctor?.name || undefined,
           surgeryTypeId:    selectedSurgery?.id || undefined,
           paymentType,

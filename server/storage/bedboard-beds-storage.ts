@@ -119,7 +119,7 @@ const methods = {
   },
 
   async admitPatientToBed(this: DatabaseStorage, params: {
-    bedId: string; patientName: string; patientPhone?: string;
+    bedId: string; patientName: string; patientPhone?: string; patientId?: string;
     departmentId?: string; serviceId?: string; doctorName?: string; notes?: string;
     paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string;
   }) {
@@ -133,31 +133,30 @@ const methods = {
       const seq = parseInt((cntRes.rows[0] as Record<string, unknown>)?.cnt as string | undefined ?? "0") + 1;
       const admissionNumber = `ADM-${String(seq).padStart(6, "0")}`;
 
-      const existingPatient = await tx.execute(
-        sql`SELECT id FROM patients WHERE full_name = ${params.patientName} AND is_active = true LIMIT 1`
-      );
-      if (existingPatient.rows.length === 0) {
-        await tx.execute(sql`
-          INSERT INTO patients (id, full_name, phone, national_id, age, is_active, created_at)
-          VALUES (
-            gen_random_uuid(),
-            ${params.patientName},
-            ${params.patientPhone || null},
-            null,
-            null,
-            true,
-            NOW()
-          )
-        `);
-      } else if (params.patientPhone) {
-        await tx.execute(sql`
-          UPDATE patients SET phone = ${params.patientPhone}
-          WHERE id = ${(existingPatient.rows[0] as Record<string, unknown>).id as string}
-        `);
+      let resolvedPatientId: string | null = params.patientId || null;
+
+      if (!resolvedPatientId) {
+        const existingPatient = await tx.execute(
+          sql`SELECT id FROM patients WHERE full_name = ${params.patientName} AND is_active = true LIMIT 1`
+        );
+        if (existingPatient.rows.length === 0) {
+          const newPat = await tx.execute(sql`
+            INSERT INTO patients (id, full_name, phone, national_id, age, is_active, created_at)
+            VALUES (gen_random_uuid(), ${params.patientName}, ${params.patientPhone || null}, null, null, true, NOW())
+            RETURNING id
+          `);
+          resolvedPatientId = (newPat.rows[0] as Record<string, unknown>).id as string;
+        } else {
+          resolvedPatientId = (existingPatient.rows[0] as Record<string, unknown>).id as string;
+          if (params.patientPhone) {
+            await tx.execute(sql`UPDATE patients SET phone = ${params.patientPhone} WHERE id = ${resolvedPatientId}`);
+          }
+        }
       }
 
       const [admission] = await tx.insert(admissions).values({
         admissionNumber,
+        patientId: resolvedPatientId,
         patientName: params.patientName,
         patientPhone: params.patientPhone || "",
         admissionDate: new Date().toISOString().split("T")[0] as unknown as Date,

@@ -4,13 +4,88 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   Loader2, Printer, User, Phone, CreditCard, CalendarDays,
   Stethoscope, Pill, FlaskConical, Receipt, ChevronDown, ChevronUp,
-  CheckCircle2, Clock, XCircle, Banknote,
+  XCircle, Banknote, Bed, TrendingUp, TrendingDown, Activity,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
-interface PatientJourney {
+interface PatientSummary {
+  totalClinicVisits: number;
+  totalAdmissions: number;
+  totalInvoices: number;
+  totalBilled: number;
+  totalPaid: number;
+  totalOutstanding: number;
+  firstVisitDate: string | null;
+  lastActivityDate: string | null;
+}
+
+interface ConsultationInfo {
+  id: string;
+  chiefComplaint?: string;
+  diagnosis?: string;
+  notes?: string;
+  consultationFee?: string;
+  finalAmount?: string;
+  paymentStatus?: string;
+}
+
+interface DrugInfo {
+  drug_name: string;
+  dose?: string;
+  frequency?: string;
+  duration?: string;
+  quantity?: number;
+  unit_level?: string;
+}
+
+interface ServiceOrderInfo {
+  order_type?: string;
+  service_name_manual?: string;
+  target_name?: string;
+  status?: string;
+  quantity?: number;
+}
+
+interface ClinicEvent {
+  eventType: "clinic_visit";
+  eventId: string;
+  eventDate: string;
+  location: string;
+  doctorName: string;
+  turnNumber: number;
+  status: string;
+  consultation: ConsultationInfo | null;
+  drugs: DrugInfo[];
+  serviceOrders: ServiceOrderInfo[];
+}
+
+interface AdmissionEvent {
+  eventType: "admission";
+  eventId: string;
+  eventDate: string;
+  admissionNumber: string;
+  dischargeDate?: string | null;
+  status: string;
+  doctorName?: string;
+  location?: string | null;
+  notes?: string;
+}
+
+interface InvoiceEvent {
+  eventType: "invoice";
+  eventId: string;
+  eventDate: string;
+  invoiceNumber: string;
+  amount: string;
+  paidAmount: string;
+  status: string;
+}
+
+type TimelineEvent = ClinicEvent | AdmissionEvent | InvoiceEvent;
+
+interface PatientTimeline {
   patient: {
     id: string;
     patientCode?: string;
@@ -20,163 +95,125 @@ interface PatientJourney {
     age?: number;
     createdAt?: string;
   };
-  visits: VisitRecord[];
+  summary: PatientSummary;
+  events: TimelineEvent[];
 }
 
-interface VisitRecord {
-  appointmentId: string;
-  appointmentDate: string;
-  turnNumber: number;
-  appointmentStatus: string;
-  clinicName: string;
-  doctorName: string;
-  consultation: {
-    id: string;
-    chiefComplaint?: string;
-    diagnosis?: string;
-    notes?: string;
-    consultationFee?: string;
-    discountType?: string;
-    discountValue?: string;
-    finalAmount?: string;
-    paymentStatus?: string;
-  } | null;
-  drugs: Array<{
-    drug_name: string;
-    dose?: string;
-    frequency?: string;
-    duration?: string;
-    quantity?: number;
-    unit_level?: string;
-  }>;
-  serviceOrders: Array<{
-    order_type?: string;
-    service_name_manual?: string;
-    target_name?: string;
-    status?: string;
-    executed_at?: string;
-    quantity?: number;
-    unit_price?: string;
-  }>;
-  invoices: Array<{
-    invoice_number?: string;
-    net_amount?: string;
-    status?: string;
-    invoice_date?: string;
-  }>;
+type TabFilter = "all" | "clinic_visit" | "admission" | "invoice";
+
+function fmtDate(d?: string | null, opts?: Intl.DateTimeFormatOptions) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("ar-EG", opts ?? { year: "numeric", month: "short", day: "numeric" });
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; className: string }> = {
-    done:             { label: "مكتمل",      className: "bg-green-50 text-green-700 border-green-200" },
-    waiting:          { label: "في الانتظار", className: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-    in_consultation:  { label: "داخل الكشف", className: "bg-blue-50 text-blue-700 border-blue-200" },
-    cancelled:        { label: "ملغي",       className: "bg-red-50 text-red-700 border-red-200" },
-    pending:          { label: "منتظر",      className: "bg-amber-50 text-amber-700 border-amber-200" },
-    executed:         { label: "تم التنفيذ", className: "bg-green-50 text-green-700 border-green-200" },
-    paid:             { label: "مدفوع",      className: "bg-green-50 text-green-700 border-green-200" },
-    waived:           { label: "معفى",       className: "bg-purple-50 text-purple-700 border-purple-200" },
-  };
-  const s = map[status] || { label: status, className: "bg-gray-50 text-gray-700 border-gray-200" };
+function fmtMoney(v?: string | number | null) {
+  const n = parseFloat(String(v ?? 0));
+  return isNaN(n) ? "0" : n.toLocaleString("ar-EG");
+}
+
+const STATUS_MAP: Record<string, { label: string; className: string }> = {
+  done:             { label: "مكتمل",      className: "bg-green-50 text-green-700 border-green-200" },
+  waiting:          { label: "في الانتظار", className: "bg-yellow-50 text-yellow-700 border-yellow-200" },
+  in_consultation:  { label: "داخل الكشف", className: "bg-blue-50 text-blue-700 border-blue-200" },
+  cancelled:        { label: "ملغي",       className: "bg-red-50 text-red-700 border-red-200" },
+  pending:          { label: "منتظر",      className: "bg-amber-50 text-amber-700 border-amber-200" },
+  executed:         { label: "تم التنفيذ", className: "bg-green-50 text-green-700 border-green-200" },
+  paid:             { label: "مدفوع",      className: "bg-green-50 text-green-700 border-green-200" },
+  waived:           { label: "معفى",       className: "bg-purple-50 text-purple-700 border-purple-200" },
+  active:           { label: "نشط",        className: "bg-blue-50 text-blue-700 border-blue-200" },
+  discharged:       { label: "خرج",        className: "bg-gray-50 text-gray-700 border-gray-200" },
+  draft:            { label: "مسودة",      className: "bg-gray-50 text-gray-600 border-gray-200" },
+  finalized:        { label: "معتمد",      className: "bg-green-50 text-green-700 border-green-200" },
+};
+
+function StatusBadge({ status }: { status?: string }) {
+  if (!status) return null;
+  const s = STATUS_MAP[status] ?? { label: status, className: "bg-gray-50 text-gray-700 border-gray-200" };
   return <Badge variant="outline" className={`text-xs ${s.className}`}>{s.label}</Badge>;
 }
 
-function VisitCard({ visit }: { visit: VisitRecord }) {
+function ClinicEventCard({ ev }: { ev: ClinicEvent }) {
   const [open, setOpen] = useState(true);
-  const fmtDate = visit.appointmentDate
-    ? new Date(visit.appointmentDate).toLocaleDateString("ar-EG", {
-        weekday: "short", year: "numeric", month: "long", day: "numeric",
-      })
-    : "";
-  const fee   = parseFloat(String(visit.consultation?.consultationFee || 0));
-  const disc  = parseFloat(String(visit.consultation?.discountValue || 0));
-  const final = parseFloat(String(visit.consultation?.finalAmount || 0));
+  const hasDrugs   = ev.drugs.length > 0;
+  const hasOrders  = ev.serviceOrders.length > 0;
+  const hasDetails = !!ev.consultation || hasDrugs || hasOrders;
 
   return (
-    <Card className="border-r-4 border-r-blue-400" data-testid={`visit-card-${visit.appointmentId}`}>
-      <CardHeader className="p-0">
-        <button
-          type="button"
-          className="w-full flex items-center gap-3 px-4 py-3 text-right hover:bg-muted/40 transition-colors rounded-t-lg"
-          onClick={() => setOpen(!open)}
-        >
-          <CalendarDays className="h-4 w-4 text-blue-500 shrink-0" />
-          <span className="font-semibold text-sm text-foreground" dir="ltr">{fmtDate}</span>
-          <span className="text-xs text-muted-foreground">دور #{visit.turnNumber}</span>
-          <Badge variant="outline" className="text-xs">{visit.clinicName}</Badge>
-          <span className="text-xs text-muted-foreground">د. {visit.doctorName}</span>
-          <div className="flex-1" />
-          <StatusBadge status={visit.appointmentStatus} />
-          {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-        </button>
-      </CardHeader>
-      {open && (
-        <CardContent className="px-4 pb-4 pt-0 space-y-4">
-          {visit.consultation && (
+    <Card className="border-r-4 border-r-blue-400 shadow-sm" data-testid={`event-clinic-${ev.eventId}`}>
+      <button
+        type="button"
+        className="w-full flex items-center gap-3 px-4 py-3 text-right hover:bg-muted/30 transition-colors rounded-t-lg"
+        onClick={() => setOpen(!open)}
+        data-testid={`toggle-clinic-${ev.eventId}`}
+      >
+        <Stethoscope className="h-4 w-4 text-blue-500 shrink-0" />
+        <div className="flex flex-col items-start gap-0.5 flex-1 min-w-0">
+          <span className="font-semibold text-sm">{ev.location}</span>
+          <span className="text-xs text-muted-foreground">
+            {fmtDate(ev.eventDate)} · دور #{ev.turnNumber} · د. {ev.doctorName}
+          </span>
+        </div>
+        <StatusBadge status={ev.status} />
+        {hasDetails && (open
+          ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        )}
+      </button>
+      {open && hasDetails && (
+        <CardContent className="px-4 pb-4 pt-0 space-y-3">
+          {ev.consultation && (
             <div className="border rounded-lg p-3 space-y-2 bg-muted/10">
-              <div className="flex items-center gap-2 text-sm font-medium border-b pb-2">
-                <Stethoscope className="h-4 w-4 text-blue-500" />
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground border-b pb-1.5">
+                <Stethoscope className="h-3.5 w-3.5" />
                 الكشف الطبي
-                {visit.consultation.paymentStatus && <StatusBadge status={visit.consultation.paymentStatus} />}
+                {ev.consultation.paymentStatus && <StatusBadge status={ev.consultation.paymentStatus} />}
               </div>
-              {visit.consultation.chiefComplaint && (
-                <div className="text-sm"><span className="text-muted-foreground ml-1">الشكوى:</span><span>{visit.consultation.chiefComplaint}</span></div>
+              {ev.consultation.chiefComplaint && (
+                <div className="text-sm"><span className="text-muted-foreground ml-1">الشكوى:</span>{ev.consultation.chiefComplaint}</div>
               )}
-              {visit.consultation.diagnosis && (
-                <div className="text-sm"><span className="text-muted-foreground ml-1">التشخيص:</span><span className="font-medium">{visit.consultation.diagnosis}</span></div>
+              {ev.consultation.diagnosis && (
+                <div className="text-sm"><span className="text-muted-foreground ml-1">التشخيص:</span><span className="font-medium">{ev.consultation.diagnosis}</span></div>
               )}
-              {visit.consultation.notes && (
-                <div className="text-sm"><span className="text-muted-foreground ml-1">ملاحظات:</span><span>{visit.consultation.notes}</span></div>
+              {ev.consultation.notes && (
+                <div className="text-sm"><span className="text-muted-foreground ml-1">ملاحظات:</span>{ev.consultation.notes}</div>
               )}
-              {fee > 0 && (
-                <div className="flex items-center gap-3 text-xs border-t pt-2 mt-1">
+              {parseFloat(String(ev.consultation.finalAmount || 0)) > 0 && (
+                <div className="flex items-center gap-2 text-xs border-t pt-1.5">
                   <Banknote className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-muted-foreground">رسم الكشف:</span>
-                  <span>{fee.toLocaleString("ar-EG")} ج.م</span>
-                  {disc > 0 && (
-                    <>
-                      <span className="text-muted-foreground">خصم:</span>
-                      <span className="text-red-600">
-                        {visit.consultation.discountType === "percent" ? `${disc}%` : `${disc.toLocaleString("ar-EG")} ج.م`}
-                      </span>
-                      <span className="text-muted-foreground">=</span>
-                      <span className="font-bold text-green-700">{final.toLocaleString("ar-EG")} ج.م</span>
-                    </>
-                  )}
+                  <span className="text-muted-foreground">الإجمالي:</span>
+                  <span className="font-bold text-green-700">{fmtMoney(ev.consultation.finalAmount)} ج.م</span>
                 </div>
               )}
             </div>
           )}
-          {visit.drugs.length > 0 && (
+          {hasDrugs && (
             <div className="border rounded-lg p-3 space-y-1.5 bg-muted/10">
-              <div className="flex items-center gap-2 text-sm font-medium border-b pb-2">
-                <Pill className="h-4 w-4 text-green-500" />
-                الأدوية المكتوبة ({visit.drugs.length})
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground border-b pb-1.5">
+                <Pill className="h-3.5 w-3.5 text-green-500" />
+                الأدوية ({ev.drugs.length})
               </div>
-              {visit.drugs.map((d, i) => (
-                <div key={i} className="flex items-start gap-3 text-sm pr-2">
-                  <span className="w-4 text-muted-foreground text-xs mt-0.5">{i + 1}.</span>
-                  <div className="flex flex-wrap gap-2 flex-1">
-                    <span className="font-medium">{d.drug_name}</span>
-                    {d.dose && <span className="text-muted-foreground text-xs">{d.dose}</span>}
-                    {d.frequency && <span className="text-muted-foreground text-xs">{d.frequency}</span>}
-                    {d.duration && <span className="text-muted-foreground text-xs">لمدة {d.duration}</span>}
-                    {d.quantity && <span className="text-muted-foreground text-xs">× {d.quantity} {d.unit_level || ""}</span>}
-                  </div>
+              {ev.drugs.map((d, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2 text-sm pr-2">
+                  <span className="text-xs text-muted-foreground w-4">{i + 1}.</span>
+                  <span className="font-medium">{d.drug_name}</span>
+                  {d.dose && <span className="text-xs text-muted-foreground">{d.dose}</span>}
+                  {d.frequency && <span className="text-xs text-muted-foreground">{d.frequency}</span>}
+                  {d.duration && <span className="text-xs text-muted-foreground">لمدة {d.duration}</span>}
+                  {d.quantity && <span className="text-xs text-muted-foreground">× {d.quantity}</span>}
                 </div>
               ))}
             </div>
           )}
-          {visit.serviceOrders.length > 0 && (
+          {hasOrders && (
             <div className="border rounded-lg p-3 space-y-1.5 bg-muted/10">
-              <div className="flex items-center gap-2 text-sm font-medium border-b pb-2">
-                <FlaskConical className="h-4 w-4 text-purple-500" />
-                الأوامر الطبية ({visit.serviceOrders.length})
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground border-b pb-1.5">
+                <FlaskConical className="h-3.5 w-3.5 text-purple-500" />
+                الأوامر الطبية ({ev.serviceOrders.length})
               </div>
-              {visit.serviceOrders.map((o, i) => (
+              {ev.serviceOrders.map((o, i) => (
                 <div key={i} className="flex items-center gap-3 text-sm pr-2">
-                  <span className="text-xs text-muted-foreground w-16 shrink-0">
-                    {o.order_type === "lab" ? "تحليل" : o.order_type === "radiology" ? "أشعة" : o.order_type || "خدمة"}
+                  <span className="text-xs text-muted-foreground w-14 shrink-0">
+                    {o.order_type === "lab" ? "تحليل" : o.order_type === "radiology" ? "أشعة" : o.order_type === "service" ? "خدمة" : o.order_type || "—"}
                   </span>
                   <span className="flex-1">{o.service_name_manual || o.target_name || "—"}</span>
                   {o.status && <StatusBadge status={o.status} />}
@@ -184,33 +221,83 @@ function VisitCard({ visit }: { visit: VisitRecord }) {
               ))}
             </div>
           )}
-          {visit.invoices.length > 0 && (
-            <div className="border rounded-lg p-3 space-y-1.5 bg-muted/10">
-              <div className="flex items-center gap-2 text-sm font-medium border-b pb-2">
-                <Receipt className="h-4 w-4 text-amber-500" />
-                الفواتير ({visit.invoices.length})
-              </div>
-              {visit.invoices.map((inv, i) => (
-                <div key={i} className="flex items-center gap-3 text-sm pr-2">
-                  {inv.invoice_number && <span className="font-mono text-xs text-muted-foreground">#{inv.invoice_number}</span>}
-                  <span className="flex-1">{parseFloat(String(inv.net_amount || 0)).toLocaleString("ar-EG")} ج.م</span>
-                  {inv.status && <StatusBadge status={inv.status} />}
-                  {inv.invoice_date && (
-                    <span className="text-xs text-muted-foreground" dir="ltr">
-                      {new Date(inv.invoice_date).toLocaleDateString("ar-EG")}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {!visit.consultation && visit.drugs.length === 0 && visit.serviceOrders.length === 0 && visit.invoices.length === 0 && (
-            <p className="text-xs text-muted-foreground py-1">لا توجد بيانات تفصيلية لهذه الزيارة</p>
-          )}
         </CardContent>
       )}
     </Card>
   );
+}
+
+function AdmissionEventCard({ ev }: { ev: AdmissionEvent }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <Card className="border-r-4 border-r-green-400 shadow-sm" data-testid={`event-admission-${ev.eventId}`}>
+      <button
+        type="button"
+        className="w-full flex items-center gap-3 px-4 py-3 text-right hover:bg-muted/30 transition-colors rounded-t-lg"
+        onClick={() => setOpen(!open)}
+      >
+        <Bed className="h-4 w-4 text-green-600 shrink-0" />
+        <div className="flex flex-col items-start gap-0.5 flex-1 min-w-0">
+          <span className="font-semibold text-sm">
+            إقامة {ev.location ? `— ${ev.location}` : ""}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {fmtDate(ev.eventDate)} · رقم: {ev.admissionNumber}
+            {ev.doctorName ? ` · د. ${ev.doctorName}` : ""}
+          </span>
+        </div>
+        <StatusBadge status={ev.status} />
+        {open
+          ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        }
+      </button>
+      {open && (
+        <CardContent className="px-4 pb-4 pt-0">
+          <div className="border rounded-lg p-3 space-y-1.5 bg-muted/10 text-sm">
+            <div className="flex gap-6 flex-wrap text-xs text-muted-foreground">
+              <span>الدخول: <span className="text-foreground font-medium">{fmtDate(ev.eventDate)}</span></span>
+              <span>الخروج: <span className="text-foreground font-medium">{fmtDate(ev.dischargeDate)}</span></span>
+            </div>
+            {ev.notes && <div><span className="text-muted-foreground text-xs">ملاحظات: </span>{ev.notes}</div>}
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function InvoiceEventCard({ ev }: { ev: InvoiceEvent }) {
+  const amount = parseFloat(String(ev.amount || 0));
+  const paid   = parseFloat(String(ev.paidAmount || 0));
+  const outstanding = Math.max(0, amount - paid);
+  return (
+    <Card className="border-r-4 border-r-gray-300 shadow-sm" data-testid={`event-invoice-${ev.eventId}`}>
+      <CardContent className="px-4 py-3 flex items-center gap-3">
+        <Receipt className="h-4 w-4 text-gray-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-muted-foreground">#{ev.invoiceNumber}</span>
+            <StatusBadge status={ev.status} />
+          </div>
+          <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
+            <span>{fmtDate(ev.eventDate)}</span>
+            <span>الإجمالي: <span className="text-foreground font-medium">{fmtMoney(amount)} ج.م</span></span>
+            <span>المسدد: <span className="text-green-700 font-medium">{fmtMoney(paid)} ج.م</span></span>
+            {outstanding > 0 && (
+              <span>المتبقي: <span className="text-red-600 font-medium">{fmtMoney(outstanding)} ج.م</span></span>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TimelineEventCard({ ev }: { ev: TimelineEvent }) {
+  if (ev.eventType === "clinic_visit") return <ClinicEventCard ev={ev} />;
+  if (ev.eventType === "admission")   return <AdmissionEventCard ev={ev} />;
+  return <InvoiceEventCard ev={ev as InvoiceEvent} />;
 }
 
 interface PatientFilePanelProps {
@@ -218,11 +305,20 @@ interface PatientFilePanelProps {
   showPrint?: boolean;
 }
 
+const TABS: { key: TabFilter; label: string; icon: React.ReactNode }[] = [
+  { key: "all",         label: "كل الأحداث",  icon: <Activity className="h-3.5 w-3.5" /> },
+  { key: "clinic_visit",label: "زيارات العيادة", icon: <Stethoscope className="h-3.5 w-3.5" /> },
+  { key: "admission",   label: "التسكين",      icon: <Bed className="h-3.5 w-3.5" /> },
+  { key: "invoice",     label: "الفواتير",     icon: <Receipt className="h-3.5 w-3.5" /> },
+];
+
 export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePanelProps) {
-  const { data: journey, isLoading, isError } = useQuery<PatientJourney>({
-    queryKey: ["/api/patients", patientId, "journey"],
+  const [activeTab, setActiveTab] = useState<TabFilter>("all");
+
+  const { data, isLoading, isError } = useQuery<PatientTimeline>({
+    queryKey: ["/api/patients", patientId, "timeline"],
     queryFn: () =>
-      apiRequest("GET", `/api/patients/${patientId}/journey`).then((r) => r.json()),
+      apiRequest("GET", `/api/patients/${patientId}/timeline`).then((r) => r.json()),
     enabled: !!patientId,
   });
 
@@ -234,7 +330,7 @@ export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePan
     );
   }
 
-  if (isError || !journey) {
+  if (isError || !data) {
     return (
       <div className="flex flex-col items-center justify-center h-40 gap-2">
         <XCircle className="h-6 w-6 text-red-400" />
@@ -243,43 +339,67 @@ export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePan
     );
   }
 
-  const { patient, visits } = journey;
+  const { patient, summary, events } = data;
+
+  const filtered = activeTab === "all"
+    ? events
+    : events.filter((e) => e.eventType === activeTab);
+
+  const tabCount = (key: TabFilter) =>
+    key === "all" ? events.length : events.filter((e) => e.eventType === key).length;
+
+  const totalVisits = summary.totalClinicVisits + summary.totalAdmissions;
 
   return (
     <div className="space-y-4" dir="rtl">
-      {/* بطاقة معلومات المريض */}
+
+      {/* ───── رأس المريض ───── */}
       <Card className="border-2 border-blue-200 bg-blue-50/30">
-        <CardContent className="p-3">
+        <CardContent className="p-4">
           <div className="flex flex-wrap items-start gap-3">
-            <div className="flex items-center gap-2 bg-blue-100 border border-blue-300 rounded-full px-3 py-1">
-              <User className="h-3.5 w-3.5 text-blue-600" />
-              {patient.patientCode && (
-                <span className="font-mono font-bold text-blue-800 text-xs" data-testid="text-patient-code">
-                  {patient.patientCode}
-                </span>
-              )}
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 border border-blue-300 shrink-0">
+              <User className="h-5 w-5 text-blue-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-base font-bold" data-testid="text-patient-name">{patient.fullName}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-bold" data-testid="text-patient-name">{patient.fullName}</h2>
+                {patient.patientCode && (
+                  <Badge variant="outline" className="font-mono text-xs bg-blue-50 border-blue-300 text-blue-800" data-testid="text-patient-code">
+                    {patient.patientCode}
+                  </Badge>
+                )}
+              </div>
               <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
+                {patient.age && (
+                  <span className="flex items-center gap-1">
+                    <CalendarDays className="h-3 w-3" />{patient.age} سنة
+                  </span>
+                )}
                 {patient.phone && (
-                  <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{patient.phone}</span>
+                  <span className="flex items-center gap-1">
+                    <Phone className="h-3 w-3" />{patient.phone}
+                  </span>
                 )}
                 {patient.nationalId && (
-                  <span className="flex items-center gap-1"><CreditCard className="h-3 w-3" />{patient.nationalId}</span>
+                  <span className="flex items-center gap-1">
+                    <CreditCard className="h-3 w-3" />{patient.nationalId}
+                  </span>
                 )}
-                {patient.age && (
-                  <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{patient.age} سنة</span>
+                {summary.firstVisitDate && (
+                  <span className="flex items-center gap-1">
+                    مريض منذ: {fmtDate(summary.firstVisitDate, { year: "numeric", month: "long" })}
+                  </span>
+                )}
+                {summary.lastActivityDate && (
+                  <span className="flex items-center gap-1">
+                    آخر نشاط: {fmtDate(summary.lastActivityDate)}
+                  </span>
                 )}
               </div>
             </div>
-            <div className="text-left shrink-0">
-              <div className="text-xl font-bold text-blue-700">{visits.length}</div>
-              <div className="text-xs text-muted-foreground">زيارة</div>
-            </div>
             {showPrint && (
               <Button
-                variant="outline" size="sm" className="h-7 text-xs gap-1 print:hidden"
+                variant="outline" size="sm" className="h-7 text-xs gap-1 print:hidden shrink-0"
                 onClick={() => window.print()}
                 data-testid="button-print-file"
               >
@@ -291,20 +411,99 @@ export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePan
         </CardContent>
       </Card>
 
-      {/* الجدول الزمني */}
-      {visits.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground border rounded-lg">
+      {/* ───── ملخص مالي ───── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="shadow-sm">
+          <CardContent className="p-3 text-center">
+            <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
+              <TrendingUp className="h-3.5 w-3.5" />
+              <span className="text-xs">إجمالي المطالبات</span>
+            </div>
+            <div className="text-lg font-bold text-foreground" data-testid="text-total-billed">
+              {fmtMoney(summary.totalBilled)}
+            </div>
+            <div className="text-xs text-muted-foreground">ج.م</div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm">
+          <CardContent className="p-3 text-center">
+            <div className="flex items-center justify-center gap-1 text-green-600 mb-1">
+              <Banknote className="h-3.5 w-3.5" />
+              <span className="text-xs">المسدد</span>
+            </div>
+            <div className="text-lg font-bold text-green-700" data-testid="text-total-paid">
+              {fmtMoney(summary.totalPaid)}
+            </div>
+            <div className="text-xs text-muted-foreground">ج.م</div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm">
+          <CardContent className="p-3 text-center">
+            <div className={`flex items-center justify-center gap-1 mb-1 ${summary.totalOutstanding > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+              <TrendingDown className="h-3.5 w-3.5" />
+              <span className="text-xs">المتبقي</span>
+            </div>
+            <div className={`text-lg font-bold ${summary.totalOutstanding > 0 ? "text-red-600" : "text-gray-400"}`} data-testid="text-outstanding">
+              {fmtMoney(summary.totalOutstanding)}
+            </div>
+            <div className="text-xs text-muted-foreground">ج.م</div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm">
+          <CardContent className="p-3 text-center">
+            <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
+              <Activity className="h-3.5 w-3.5" />
+              <span className="text-xs">إجمالي الزيارات</span>
+            </div>
+            <div className="text-lg font-bold" data-testid="text-total-visits">{totalVisits}</div>
+            <div className="text-xs text-muted-foreground">
+              {summary.totalClinicVisits > 0 && `${summary.totalClinicVisits} عيادة`}
+              {summary.totalClinicVisits > 0 && summary.totalAdmissions > 0 && " · "}
+              {summary.totalAdmissions > 0 && `${summary.totalAdmissions} إقامة`}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ───── تبويبات الفلتر ───── */}
+      <div className="flex gap-1 flex-wrap border-b pb-0">
+        {TABS.map((tab) => {
+          const count = tabCount(tab.key);
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg border border-b-0 transition-colors ${
+                isActive
+                  ? "bg-background text-foreground border-border -mb-px"
+                  : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted/70"
+              }`}
+              data-testid={`tab-${tab.key}`}
+            >
+              {tab.icon}
+              {tab.label}
+              {count > 0 && (
+                <Badge variant="secondary" className="text-xs px-1.5 py-0 h-4 min-w-4">
+                  {count}
+                </Badge>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ───── الأحداث ───── */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-10 text-muted-foreground border rounded-lg bg-muted/10">
           <Stethoscope className="h-7 w-7 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">لا توجد زيارات مسجلة لهذا المريض</p>
+          <p className="text-sm">لا توجد أحداث في هذه الفئة</p>
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
-            سجل الزيارات — {visits.length} زيارة (الأحدث أولاً)
-          </div>
-          {visits.map((visit) => (
-            <VisitCard key={visit.appointmentId} visit={visit} />
+          {filtered.map((ev) => (
+            <TimelineEventCard key={`${ev.eventType}-${ev.eventId}`} ev={ev} />
           ))}
         </div>
       )}
@@ -313,7 +512,7 @@ export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePan
         @media print {
           body * { visibility: hidden; }
           .space-y-4, .space-y-4 * { visibility: visible; }
-          .space-y-4 { position: absolute; left: 0; top: 0; width: 100%; }
+          .space-y-4 { position: absolute; inset: 0; }
           .print\\:hidden { display: none !important; }
         }
       `}</style>

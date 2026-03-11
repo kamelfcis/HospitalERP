@@ -149,6 +149,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   departmentId: varchar("department_id").references(() => departments.id),
   warehouseId: varchar("warehouse_id").references(() => warehouses.id),
   admissionId: varchar("admission_id"),
+  patientId: varchar("patient_id"),
   isConsolidated: boolean("is_consolidated").notNull().default(false),
   sourceInvoiceIds: text("source_invoice_ids"),
   doctorName: text("doctor_name"),
@@ -172,6 +173,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   doctorIdx: index("idx_pat_inv_doctor").on(table.doctorName),
   statusIdx: index("idx_pat_inv_status").on(table.status),
   admissionIdx: index("idx_pat_inv_admission").on(table.admissionId),
+  patientIdIdx: index("idx_pat_inv_patient_id").on(table.patientId),
 }));
 
 export const patientInvoiceLines = pgTable("patient_invoice_lines", {
