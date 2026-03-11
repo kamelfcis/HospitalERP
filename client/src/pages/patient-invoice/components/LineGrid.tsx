@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import {
   getUnitName,
 } from "../utils/units";
 import { SearchDropdown } from "./SearchDropdown";
-import { useServicesLookup } from "@/hooks/lookups/useServicesLookup";
+import { ServiceLookup } from "@/components/lookups";
 
 interface LineGridProps {
   type: string;
@@ -59,10 +59,7 @@ export function LineGrid({
   openStatsPopup,
   getServiceRowClass,
 }: LineGridProps) {
-  const [localServiceSearch, setLocalServiceSearch] = useState("");
-  const localServiceRef   = useRef<HTMLInputElement>(null);
-  const localSvcDropRef   = useRef<HTMLDivElement>(null);
-  const { items: serviceItems, isLoading: searchingServices } = useServicesLookup({ search: localServiceSearch });
+  const [selectedServiceId, setSelectedServiceId] = useState("");
 
   return (
     <div className="space-y-3">
@@ -122,34 +119,19 @@ export function LineGrid({
       ) : (
         <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
           <div className="flex-1 min-w-[200px]">
-            <SearchDropdown
-              inputRef={localServiceRef}
-              dropdownRef={localSvcDropRef}
-              value={localServiceSearch}
-              onChange={setLocalServiceSearch}
-              onClear={() => setLocalServiceSearch("")}
-              show={serviceItems.length > 0}
-              setShow={(v) => { if (!v) setLocalServiceSearch(""); }}
-              loading={searchingServices}
-              items={serviceItems.map(item => ({
-                id: item.id,
-                primary: item.name,
-                secondary: item.meta ? formatNumber((item.meta as any).basePrice) : undefined,
-                raw: item.meta,
-              }))}
-              onSelect={(si) => {
-                addServiceLine(si.raw as Service);
-                setLocalServiceSearch("");
+            <ServiceLookup
+              value={selectedServiceId}
+              onChange={(item) => {
+                if (item) {
+                  addServiceLine(item.meta as Service);
+                  setSelectedServiceId("");
+                }
               }}
               placeholder="بحث عن خدمة..."
               disabled={!isDraft}
-              showSearchIcon
-              inputClassName="pr-8"
-              inputTestId="input-service-search"
-              itemTestIdPrefix="result-service"
+              data-testid="input-service-search"
             />
           </div>
-          {searchingServices && <Loader2 className="h-4 w-4 animate-spin" />}
         </div>
       )}
 
