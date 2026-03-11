@@ -244,9 +244,12 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   /* بحث أطباء للكشف (عند كتابة اسم أو لا يوجد جدول) */
   const { data: doctorResults = [] } = useQuery<DoctorOption[]>({
     queryKey: ["/api/doctors", debouncedDoctor],
-    queryFn: () =>
-      fetch(`/api/doctors?search=${encodeURIComponent(debouncedDoctor)}`, { credentials: "include" })
-        .then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/doctors?search=${encodeURIComponent(debouncedDoctor)}`, { credentials: "include" });
+      if (!r.ok) throw new Error("doctors fetch failed");
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    },
     enabled: visitReason === "consultation" && debouncedDoctor.trim().length >= 1,
   });
 
@@ -257,9 +260,12 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
 
   const { data: admDoctors = [] } = useQuery<DoctorOption[]>({
     queryKey: ["/api/doctors", "adm", debouncedAdmDoc],
-    queryFn: () =>
-      fetch(`/api/doctors?search=${encodeURIComponent(debouncedAdmDoc)}`, { credentials: "include" })
-        .then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/doctors?search=${encodeURIComponent(debouncedAdmDoc)}`, { credentials: "include" });
+      if (!r.ok) throw new Error("doctors fetch failed");
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    },
     enabled: open && visitReason === "admission" && debouncedAdmDoc.trim().length >= 1,
   });
 
