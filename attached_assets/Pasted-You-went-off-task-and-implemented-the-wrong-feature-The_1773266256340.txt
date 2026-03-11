@@ -1,0 +1,49 @@
+You went off-task and implemented the wrong feature.
+
+The current task is NOT patient duplicate prevention, merge logic, duplicate candidates, aliases, or merge audit.
+
+The approved task is Phase 4 of the centralized lookup/search migration only.
+
+Discard the duplicate-patient feature work for this task and return to the approved scope.
+
+APPROVED PHASE 4 SCOPE ONLY
+- replace DoctorSearchInput with DoctorLookup
+- migrate doctor + clinic lookups in PatientFormDialog
+- migrate doctor/service lookups in ReceptionSheet where in scope
+- migrate all in-scope shared entity lookups inside ClinicManagementDialog:
+  - service
+  - department
+  - clinic
+  - account
+- remove/replace service-search logic where applicable in useServiceSearch
+- remove ONLY doctor + service search logic from useSearchState
+- keep patient + item logic intact because patient is explicitly out of scope
+
+STRICT RULES
+- do not work on duplicate patients
+- do not add merge logic
+- do not change patient deduplication
+- do not introduce any unrelated feature
+- do not create new page-specific search abstractions
+- do not use direct fetch/useQuery in screens for centralized entities
+- use only the new centralized lookup hooks/components
+- include cleanup in the same phase
+
+MANDATORY CLEANUP
+- delete DoctorSearchInput.tsx if fully replaced
+- remove old doctor/service debounce + fetch logic from migrated files
+- remove unused imports
+- do not leave old and new implementations side by side
+
+MANDATORY VERIFICATION
+Run verification including both .ts and .tsx files:
+grep -r 'fetch.*\/api\/doctors\|fetch.*\/api\/services' client/src --include='*.ts' --include='*.tsx' | grep -v 'client/src/hooks/lookups'
+grep -r 'useQuery.*\/api\/doctors\|useQuery.*\/api\/services\|useQuery.*\/api\/accounts\|useQuery.*\/api\/clinic-clinics\|useQuery.*\/api\/departments\|useQuery.*\/api\/treasuries' client/src --include='*.ts' --include='*.tsx' | grep -v 'client/src/hooks/lookups'
+
+RETURN EXACTLY:
+1) Files migrated
+2) Files deleted
+3) Files partially cleaned
+4) Remaining high-priority items if any
+5) Verification results
+6) Risks / assumptions

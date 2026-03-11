@@ -1,25 +1,30 @@
+import { useState, useRef, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Plus, Search, X } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
+import { useServicesLookup } from "@/hooks/lookups/useServicesLookup";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  serviceSearch: string;
-  onServiceSearchChange: (v: string) => void;
-  serviceResults: any[];
-  serviceSearchLoading: boolean;
   addingServiceId: string | null;
-  serviceSearchRef: React.RefObject<HTMLInputElement>;
   onAddService: (id: string, name: string) => void;
 }
 
-export function ServiceSearchDialog({
-  open, onClose, serviceSearch, onServiceSearchChange, serviceResults,
-  serviceSearchLoading, addingServiceId, serviceSearchRef, onAddService,
-}: Props) {
+export function ServiceSearchDialog({ open, onClose, addingServiceId, onAddService }: Props) {
+  const [search, setSearch] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { items, isLoading } = useServicesLookup({ search, enabled: open });
+
+  useEffect(() => {
+    if (open) {
+      setSearch("");
+      setTimeout(() => inputRef.current?.focus(), 80);
+    }
+  }, [open]);
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl max-h-[80vh]" dir="rtl">
@@ -30,15 +35,15 @@ export function ServiceSearchDialog({
         <div className="flex items-center gap-2 mb-2">
           <Search className="h-4 w-4 text-muted-foreground" />
           <input
-            ref={serviceSearchRef}
+            ref={inputRef}
             type="text"
-            value={serviceSearch}
-            onChange={(e) => onServiceSearchChange(e.target.value)}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="ابحث عن خدمة بالكود أو الاسم..."
             className="peachtree-input flex-1"
             data-testid="input-service-search-invoice"
           />
-          {serviceSearchLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
         </div>
         <ScrollArea className="max-h-[50vh]">
           <table className="peachtree-grid w-full text-[12px]" data-testid="table-service-results">
@@ -52,29 +57,34 @@ export function ServiceSearchDialog({
               </tr>
             </thead>
             <tbody>
-              {serviceResults.map((svc: any) => (
-                <tr key={svc.id} className="peachtree-grid-row" data-testid={`row-service-${svc.id}`}>
-                  <td className="text-center font-mono">{svc.code}</td>
-                  <td className="font-semibold">{svc.nameAr}</td>
-                  <td className="text-center">{svc.department?.nameAr || "-"}</td>
-                  <td className="text-center peachtree-amount">{formatNumber(svc.basePrice)}</td>
-                  <td className="text-center">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled={addingServiceId === svc.id}
-                      onClick={() => onAddService(svc.id, svc.nameAr)}
-                      data-testid={`button-add-service-${svc.id}`}
-                    >
-                      {addingServiceId === svc.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-              {serviceResults.length === 0 && serviceSearch && !serviceSearchLoading && (
+              {items.map((item) => {
+                const svc = item.meta as any;
+                return (
+                  <tr key={item.id} className="peachtree-grid-row" data-testid={`row-service-${item.id}`}>
+                    <td className="text-center font-mono">{item.code || svc?.code}</td>
+                    <td className="font-semibold">{item.name}</td>
+                    <td className="text-center">{svc?.department?.nameAr || "-"}</td>
+                    <td className="text-center peachtree-amount">{formatNumber(svc?.basePrice)}</td>
+                    <td className="text-center">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={addingServiceId === item.id}
+                        onClick={() => onAddService(item.id, item.name)}
+                        data-testid={`button-add-service-${item.id}`}
+                      >
+                        {addingServiceId === item.id
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <Plus className="h-3 w-3" />}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {items.length === 0 && search && !isLoading && (
                 <tr><td colSpan={5} className="text-center text-muted-foreground py-4">لا توجد نتائج</td></tr>
               )}
-              {!serviceSearch && (
+              {!search && (
                 <tr><td colSpan={5} className="text-center text-muted-foreground py-4">ابحث عن خدمة لإضافة مستهلكاتها</td></tr>
               )}
             </tbody>

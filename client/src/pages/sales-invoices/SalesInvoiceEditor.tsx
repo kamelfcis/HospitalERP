@@ -204,12 +204,7 @@ export function SalesInvoiceEditor({
       <ServiceSearchDialog
         open={serviceSearchHook.serviceModalOpen}
         onClose={() => serviceSearchHook.setServiceModalOpen(false)}
-        serviceSearch={serviceSearchHook.serviceSearch}
-        onServiceSearchChange={serviceSearchHook.onServiceSearchChange}
-        serviceResults={serviceSearchHook.serviceResults}
-        serviceSearchLoading={serviceSearchHook.serviceSearchLoading}
         addingServiceId={serviceSearchHook.addingServiceId}
-        serviceSearchRef={serviceSearchHook.serviceSearchRef}
         onAddService={serviceSearchHook.addServiceConsumables}
       />
 

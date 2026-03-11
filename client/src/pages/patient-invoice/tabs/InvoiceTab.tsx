@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -7,12 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, ArrowLeftRight, Stethoscope } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
-import type { Department, Service, Item, Admission, Doctor, DoctorTransfer } from "@shared/schema";
+import type { Department, Service, Item, Admission, DoctorTransfer } from "@shared/schema";
 import type { LineLocal, PaymentLocal } from "../types";
 import { LineGrid } from "../components/LineGrid";
 import { InvoiceHeaderBar } from "../components/InvoiceHeaderBar";
 import { TotalsSummaryCard } from "../components/TotalsSummaryCard";
-import { DoctorSearchInput } from "../components/DoctorSearchInput";
+import { DoctorLookup } from "@/components/lookups";
 import { PaymentsTab } from "./PaymentsTab";
 import { ConsolidatedTab } from "./ConsolidatedTab";
 
@@ -50,14 +51,6 @@ interface InvoiceTabProps {
 
   doctorName: string;
   setDoctorName: (v: string) => void;
-  doctorSearch: string;
-  setDoctorSearch: (v: string) => void;
-  doctorResults: Doctor[];
-  searchingDoctors: boolean;
-  showDoctorDropdown: boolean;
-  setShowDoctorDropdown: (v: boolean) => void;
-  doctorSearchRef: React.RefObject<HTMLInputElement>;
-  doctorDropdownRef: React.RefObject<HTMLDivElement>;
 
   departmentId: string;
   setDepartmentId: (v: string) => void;
@@ -91,15 +84,8 @@ interface InvoiceTabProps {
   itemResults: Item[];
   searchingItems: boolean;
   fefoLoading: boolean;
-  serviceSearch: string;
-  setServiceSearch: (v: string) => void;
-  setServiceResults: (v: Service[]) => void;
-  serviceResults: Service[];
-  searchingServices: boolean;
   itemSearchRef: React.RefObject<HTMLInputElement>;
   itemDropdownRef: React.RefObject<HTMLDivElement>;
-  serviceSearchRef: React.RefObject<HTMLInputElement>;
-  serviceDropdownRef: React.RefObject<HTMLDivElement>;
   pendingQtyRef: React.MutableRefObject<Map<string, string>>;
 
   addServiceLine: (svc: Service) => void;
@@ -153,10 +139,6 @@ export function InvoiceTab({
   showPatientDropdown, setShowPatientDropdown,
   patientSearchRef, patientDropdownRef,
   doctorName, setDoctorName,
-  doctorSearch, setDoctorSearch,
-  doctorResults, searchingDoctors,
-  showDoctorDropdown, setShowDoctorDropdown,
-  doctorSearchRef, doctorDropdownRef,
   departmentId, setDepartmentId, departments,
   warehouseId, setWarehouseId, warehouses,
   admissionId, setAdmissionId, activeAdmissions,
@@ -166,8 +148,7 @@ export function InvoiceTab({
   subTab, setSubTab,
   lines, filteredLines,
   itemSearch, setItemSearch, setItemResults, itemResults, searchingItems, fefoLoading,
-  serviceSearch, setServiceSearch, setServiceResults, serviceResults, searchingServices,
-  itemSearchRef, itemDropdownRef, serviceSearchRef, serviceDropdownRef,
+  itemSearchRef, itemDropdownRef,
   pendingQtyRef,
   addServiceLine, addItemLine, updateLine, removeLine,
   handleQtyConfirm, handleUnitLevelChange, openStatsPopup,
@@ -180,11 +161,12 @@ export function InvoiceTab({
   getStatusBadgeClass, getServiceRowClass,
   canDiscount, onOpenDiscountDialog,
 }: InvoiceTabProps) {
+  const [localDtDoctorId, setLocalDtDoctorId] = useState("");
+
   const lineGridSharedProps = {
     isDraft,
     itemSearch, setItemSearch, setItemResults, itemResults, searchingItems, fefoLoading,
-    serviceSearch, setServiceSearch, setServiceResults, serviceResults, searchingServices,
-    itemSearchRef, itemDropdownRef, serviceSearchRef, serviceDropdownRef,
+    itemSearchRef, itemDropdownRef,
     pendingQtyRef,
     addServiceLine, addItemLine, updateLine, removeLine,
     handleQtyConfirm, handleUnitLevelChange, openStatsPopup,
@@ -215,14 +197,6 @@ export function InvoiceTab({
         patientDropdownRef={patientDropdownRef}
         doctorName={doctorName}
         setDoctorName={setDoctorName}
-        doctorSearch={doctorSearch}
-        setDoctorSearch={setDoctorSearch}
-        doctorResults={doctorResults}
-        searchingDoctors={searchingDoctors}
-        showDoctorDropdown={showDoctorDropdown}
-        setShowDoctorDropdown={setShowDoctorDropdown}
-        doctorSearchRef={doctorSearchRef}
-        doctorDropdownRef={doctorDropdownRef}
         departmentId={departmentId}
         setDepartmentId={setDepartmentId}
         departments={departments}
@@ -356,13 +330,17 @@ export function InvoiceTab({
             <div className="flex flex-row-reverse items-end gap-2 flex-wrap border-t pt-2">
               <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs whitespace-nowrap">الطبيب *</Label>
-                <DoctorSearchInput
-                  value={dtDoctorName}
-                  onChange={setDtDoctorName}
-                  placeholder="ابحث عن طبيب..."
-                  inputClassName="h-7 text-xs w-44"
-                  inputTestId="input-dt-doctor"
-                />
+                <div className="w-44">
+                  <DoctorLookup
+                    value={localDtDoctorId}
+                    displayValue={dtDoctorName}
+                    onChange={(item) => {
+                      setLocalDtDoctorId(item?.id || "");
+                      setDtDoctorName(item?.name || "");
+                    }}
+                    data-testid="lookup-dt-doctor"
+                  />
+                </div>
               </div>
               <div className="flex flex-row-reverse items-center gap-1">
                 <Label className="text-xs whitespace-nowrap">المبلغ *</Label>

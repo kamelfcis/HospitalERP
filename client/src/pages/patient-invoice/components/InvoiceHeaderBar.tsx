@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,7 @@ import { patientInvoiceStatusLabels, patientTypeLabels } from "@shared/schema";
 import type { Department, Admission } from "@shared/schema";
 import { SearchDropdown } from "./SearchDropdown";
 import type { LineLocal } from "../types";
+import { DoctorLookup } from "@/components/lookups";
 
 interface InvoiceHeaderBarProps {
   invoiceId: string | null;
@@ -33,14 +35,6 @@ interface InvoiceHeaderBarProps {
 
   doctorName: string;
   setDoctorName: (v: string) => void;
-  doctorSearch: string;
-  setDoctorSearch: (v: string) => void;
-  doctorResults: Record<string, unknown>[];
-  searchingDoctors: boolean;
-  showDoctorDropdown: boolean;
-  setShowDoctorDropdown: (v: boolean) => void;
-  doctorSearchRef: React.RefObject<HTMLInputElement>;
-  doctorDropdownRef: React.RefObject<HTMLDivElement>;
 
   departmentId: string;
   setDepartmentId: (v: string) => void;
@@ -82,10 +76,6 @@ export function InvoiceHeaderBar({
   showPatientDropdown, setShowPatientDropdown,
   patientSearchRef, patientDropdownRef,
   doctorName, setDoctorName,
-  doctorSearch, setDoctorSearch,
-  doctorResults, searchingDoctors,
-  showDoctorDropdown, setShowDoctorDropdown,
-  doctorSearchRef, doctorDropdownRef,
   departmentId, setDepartmentId, departments,
   warehouseId, setWarehouseId, warehouses,
   admissionId, setAdmissionId, activeAdmissions,
@@ -96,6 +86,8 @@ export function InvoiceHeaderBar({
   resetForm, saveMutation, finalizeMutation, openDistributeDialog,
   getStatusBadgeClass,
 }: InvoiceHeaderBarProps) {
+  const [localDoctorId, setLocalDoctorId] = useState("");
+
   return (
     <div className="border rounded-md p-2 space-y-2">
       <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
@@ -232,46 +224,18 @@ export function InvoiceHeaderBar({
         </div>
         <div className="flex flex-row-reverse items-center gap-1">
           <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
-          <SearchDropdown
-            inputRef={doctorSearchRef}
-            dropdownRef={doctorDropdownRef}
-            value={doctorName}
-            onChange={(v) => {
-              setDoctorName(v);
-              setDoctorSearch(v);
-              setShowDoctorDropdown(true);
-            }}
-            onClear={() => {
-              setDoctorSearch("");
-              setShowDoctorDropdown(false);
-            }}
-            onFocus={() => {
-              if (doctorName.length >= 1) {
-                setDoctorSearch(doctorName);
-                setShowDoctorDropdown(true);
-              }
-            }}
-            show={showDoctorDropdown}
-            setShow={setShowDoctorDropdown}
-            loading={searchingDoctors}
-            items={doctorResults.map((d: any) => ({
-              id: String(d.id),
-              primary: String(d.name),
-              secondary: d.specialty ? String(d.specialty) : undefined,
-              raw: d,
-            }))}
-            onSelect={(item) => {
-              setDoctorName(item.primary);
-              setDoctorSearch("");
-            }}
-            disabled={!isDraft}
-            placeholder="ابحث عن طبيب..."
-            inputClassName="h-7 text-xs w-32"
-            dropdownWidth="w-60"
-            inputTestId="input-doctor-name"
-            dropdownTestId="dropdown-doctor-search"
-            itemTestIdPrefix="option-doctor"
-          />
+          <div className="w-44">
+            <DoctorLookup
+              value={localDoctorId}
+              displayValue={doctorName}
+              onChange={(item) => {
+                setLocalDoctorId(item?.id || "");
+                setDoctorName(item?.name || "");
+              }}
+              disabled={!isDraft}
+              data-testid="lookup-invoice-doctor"
+            />
+          </div>
         </div>
         <div className="flex flex-row-reverse items-center gap-1">
           <Label className="text-xs text-muted-foreground whitespace-nowrap">النوع:</Label>

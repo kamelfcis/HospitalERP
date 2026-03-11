@@ -7,15 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
+import { DoctorLookup, DepartmentLookup } from "@/components/lookups";
 import { Tag } from "lucide-react";
 import type { SurgeryType } from "@shared/schema";
 import { surgeryCategoryLabels } from "@shared/schema";
-import type { BedData, Patient, Department, Doctor } from "../types";
+import type { BedData, Patient } from "../types";
+import type { LookupItem } from "@/lib/lookupTypes";
 
 interface Props {
   open: boolean;
@@ -89,9 +88,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   const [patientPhone, setPatientPhone] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [departmentId, setDepartmentId] = useState("");
-  const [doctorSearch, setDoctorSearch] = useState("");
-  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
-  const [showDoctorResults, setShowDoctorResults] = useState(false);
+  const [selectedDoctor, setSelectedDoctor] = useState<LookupItem | null>(null);
   const [surgerySearch, setSurgerySearch] = useState("");
   const [selectedSurgery, setSelectedSurgery] = useState<SurgeryType | null>(null);
   const [showSurgeryResults, setShowSurgeryResults] = useState(false);
@@ -107,20 +104,6 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
         (r) => r.json(),
       ),
     enabled: patientSearch.length >= 2,
-  });
-
-  const { data: doctors = [] } = useQuery<Doctor[]>({
-    queryKey: ["/api/doctors", doctorSearch],
-    queryFn: () =>
-      apiRequest("GET", `/api/doctors?search=${encodeURIComponent(doctorSearch)}`).then((r) =>
-        r.json(),
-      ),
-    enabled: doctorSearch.length >= 1,
-  });
-
-  const { data: departments = [] } = useQuery<Department[]>({
-    queryKey: ["/api/departments"],
-    queryFn: () => apiRequest("GET", "/api/departments").then((r) => r.json()),
   });
 
   const { data: surgeries = [] } = useQuery<SurgeryType[]>({
@@ -164,9 +147,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     setPatientPhone("");
     setSelectedPatient(null);
     setDepartmentId("");
-    setDoctorSearch("");
     setSelectedDoctor(null);
-    setShowDoctorResults(false);
     setSurgerySearch("");
     setSelectedSurgery(null);
     setShowSurgeryResults(false);
@@ -292,88 +273,21 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
           {/* ── Department ────────────────────────────────────────────── */}
           <div className="space-y-2">
             <Label>القسم</Label>
-            <Select value={departmentId} onValueChange={setDepartmentId}>
-              <SelectTrigger data-testid="select-department">
-                <SelectValue placeholder="اختر القسم (اختياري)" />
-              </SelectTrigger>
-              <SelectContent>
-                {departments.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.nameAr}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DepartmentLookup
+              value={departmentId}
+              onChange={(item) => setDepartmentId(item?.id || "")}
+              data-testid="lookup-department"
+            />
           </div>
 
-          {/* ── Doctor searchable ──────────────────────────────────────── */}
+          {/* ── Doctor ────────────────────────────────────────────────── */}
           <div className="space-y-2">
             <Label>اسم الطبيب</Label>
-            {selectedDoctor ? (
-              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                <span className="text-sm font-medium flex-1">د. {selectedDoctor.name}</span>
-                {selectedDoctor.specialty && (
-                  <span className="text-xs text-muted-foreground">
-                    {selectedDoctor.specialty}
-                  </span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => {
-                    setSelectedDoctor(null);
-                    setDoctorSearch("");
-                  }}
-                >
-                  تغيير
-                </Button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Input
-                  data-testid="input-doctor-search"
-                  placeholder="ابحث باسم الطبيب..."
-                  value={doctorSearch}
-                  onChange={(e) => {
-                    setDoctorSearch(e.target.value);
-                    setShowDoctorResults(true);
-                  }}
-                  onFocus={() => setShowDoctorResults(true)}
-                  onBlur={() => setTimeout(() => setShowDoctorResults(false), 200)}
-                />
-                {showDoctorResults && doctorSearch.length >= 1 && doctors.length > 0 && (
-                  <div className="absolute z-50 w-full mt-1 border rounded-lg bg-background shadow-md overflow-hidden max-h-48 overflow-y-auto">
-                    {doctors.map((d) => (
-                      <button
-                        key={d.id}
-                        data-testid={`doctor-option-${d.id}`}
-                        type="button"
-                        className="w-full text-right px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setSelectedDoctor(d);
-                          setDoctorSearch("");
-                          setShowDoctorResults(false);
-                        }}
-                      >
-                        <span className="font-medium">د. {d.name}</span>
-                        {d.specialty && (
-                          <span className="text-muted-foreground text-xs mr-2">
-                            {d.specialty}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {showDoctorResults && doctorSearch.length >= 1 && doctors.length === 0 && (
-                  <div className="absolute z-50 w-full mt-1 border rounded-lg bg-background shadow-md px-3 py-2 text-sm text-muted-foreground">
-                    لا يوجد طبيب بهذا الاسم
-                  </div>
-                )}
-              </div>
-            )}
+            <DoctorLookup
+              value={selectedDoctor?.id || ""}
+              onChange={setSelectedDoctor}
+              data-testid="lookup-doctor"
+            />
           </div>
 
           {/* ── Surgery type searchable ────────────────────────────────── */}

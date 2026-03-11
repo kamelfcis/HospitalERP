@@ -104,8 +104,6 @@ interface UseLineManagementParams {
   departmentId: string;
   setItemSearch: (v: string) => void;
   setItemResults: (v: ItemSearchResult[]) => void;
-  setServiceSearch: (v: string) => void;
-  setServiceResults: (v: ServiceSearchResult[]) => void;
   addingItemRef: React.MutableRefObject<Set<string>>;
   itemSearchRef: React.RefObject<HTMLInputElement>;
 }
@@ -116,8 +114,6 @@ export function useLineManagement({
   departmentId,
   setItemSearch,
   setItemResults,
-  setServiceSearch,
-  setServiceResults,
   addingItemRef,
   itemSearchRef,
 }: UseLineManagementParams) {
@@ -216,9 +212,7 @@ export function useLineManagement({
       sourceId: null,
     };
     setLines(prev => [...prev, newLine]);
-    setServiceSearch("");
-    setServiceResults([]);
-  }, [setServiceSearch, setServiceResults]);
+  }, []);
 
   // ── Add item line (with FEFO) ──────────────────────────────────────────────
   const addItemLine = useCallback(async (item: ItemSearchResult, lineType: "drug" | "consumable" | "equipment") => {

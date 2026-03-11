@@ -1,3 +1,4 @@
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import {
   getUnitName,
 } from "../utils/units";
 import { SearchDropdown } from "./SearchDropdown";
+import { useServicesLookup } from "@/hooks/lookups/useServicesLookup";
 
 interface LineGridProps {
   type: string;
@@ -22,15 +24,8 @@ interface LineGridProps {
   itemResults: Item[];
   searchingItems: boolean;
   fefoLoading: boolean;
-  serviceSearch: string;
-  setServiceSearch: (v: string) => void;
-  setServiceResults: (v: Service[]) => void;
-  serviceResults: Service[];
-  searchingServices: boolean;
   itemSearchRef: React.RefObject<HTMLInputElement>;
   itemDropdownRef: React.RefObject<HTMLDivElement>;
-  serviceSearchRef: React.RefObject<HTMLInputElement>;
-  serviceDropdownRef: React.RefObject<HTMLDivElement>;
   pendingQtyRef: React.MutableRefObject<Map<string, string>>;
   addServiceLine: (svc: Service) => void;
   addItemLine: (item: Item, type: "drug" | "consumable" | "equipment") => void;
@@ -52,15 +47,8 @@ export function LineGrid({
   itemResults,
   searchingItems,
   fefoLoading,
-  serviceSearch,
-  setServiceSearch,
-  setServiceResults,
-  serviceResults,
-  searchingServices,
   itemSearchRef,
   itemDropdownRef,
-  serviceSearchRef,
-  serviceDropdownRef,
   pendingQtyRef,
   addServiceLine,
   addItemLine,
@@ -71,6 +59,11 @@ export function LineGrid({
   openStatsPopup,
   getServiceRowClass,
 }: LineGridProps) {
+  const [localServiceSearch, setLocalServiceSearch] = useState("");
+  const localServiceRef   = useRef<HTMLInputElement>(null);
+  const localSvcDropRef   = useRef<HTMLDivElement>(null);
+  const { items: serviceItems, isLoading: searchingServices } = useServicesLookup({ search: localServiceSearch });
+
   return (
     <div className="space-y-3">
       {type !== "service" ? (
@@ -130,24 +123,24 @@ export function LineGrid({
         <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
           <div className="flex-1 min-w-[200px]">
             <SearchDropdown
-              inputRef={serviceSearchRef}
-              dropdownRef={serviceDropdownRef}
-              value={serviceSearch}
-              onChange={setServiceSearch}
-              onClear={() => {
-                setServiceSearch("");
-                setServiceResults([]);
-              }}
-              show={serviceResults.length > 0}
-              setShow={(v) => { if (!v) setServiceResults([]); }}
-              loading={false}
-              items={serviceResults.map((svc: Service) => ({
-                id: svc.id,
-                primary: svc.nameAr || svc.code,
-                secondary: formatNumber(parseFloat(String(svc.basePrice))),
-                raw: svc,
+              inputRef={localServiceRef}
+              dropdownRef={localSvcDropRef}
+              value={localServiceSearch}
+              onChange={setLocalServiceSearch}
+              onClear={() => setLocalServiceSearch("")}
+              show={serviceItems.length > 0}
+              setShow={(v) => { if (!v) setLocalServiceSearch(""); }}
+              loading={searchingServices}
+              items={serviceItems.map(item => ({
+                id: item.id,
+                primary: item.name,
+                secondary: item.meta ? formatNumber((item.meta as any).basePrice) : undefined,
+                raw: item.meta,
               }))}
-              onSelect={(si) => addServiceLine(si.raw)}
+              onSelect={(si) => {
+                addServiceLine(si.raw as Service);
+                setLocalServiceSearch("");
+              }}
               placeholder="بحث عن خدمة..."
               disabled={!isDraft}
               showSearchIcon

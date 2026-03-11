@@ -7,21 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DepartmentLookup, ServiceLookup, AccountLookup } from "@/components/lookups";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Pencil, Check, X, Loader2 } from "lucide-react";
 import type { ClinicClinic } from "../types";
 
-interface Department { id: string; nameAr: string; }
 interface Warehouse { id: string; nameAr: string; }
-interface Service { id: string; nameAr: string; basePrice: string; }
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-interface GlAccount { id: string; code: string; name: string; accountType: string; }
+
 
 interface ClinicFormData {
   nameAr: string;
@@ -40,34 +39,15 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
   isPending: boolean;
 }) {
   const [nameAr, setNameAr] = useState(clinic?.nameAr || "");
-  const [departmentId, setDepartmentId] = useState(clinic?.departmentId || "__none__");
+  const [departmentId, setDepartmentId] = useState(clinic?.departmentId || "");
   const [pharmacyId, setPharmacyId] = useState(clinic?.defaultPharmacyId || "__none__");
-  const [consultationServiceId, setConsultationServiceId] = useState(clinic?.consultationServiceId || "__none__");
-  const [treasuryId, setTreasuryId] = useState(clinic?.treasuryId || "__none__");
+  const [consultationServiceId, setConsultationServiceId] = useState(clinic?.consultationServiceId || "");
+  const [treasuryId, setTreasuryId] = useState(clinic?.treasuryId || "");
   const [secretaryFeeType, setSecretaryFeeType] = useState(clinic?.secretaryFeeType || "__none__");
   const [secretaryFeeValue, setSecretaryFeeValue] = useState(String(clinic?.secretaryFeeValue || "0"));
 
-  const { data: departments = [] } = useQuery<Department[]>({
-    queryKey: ["/api/departments"],
-  });
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
-  });
-  const { data: services = [] } = useQuery<Service[]>({
-    queryKey: ["/api/services"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/services?pageSize=500&active=true");
-      const json = await res.json();
-      return Array.isArray(json) ? json : (json.data ?? []);
-    },
-  });
-  const { data: glAccounts = [] } = useQuery<GlAccount[]>({
-    queryKey: ["/api/accounts", "asset-flat"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/accounts");
-      const all: GlAccount[] = await res.json();
-      return all.filter((a) => a.accountType === "asset");
-    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -75,10 +55,10 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
     if (!nameAr.trim()) return;
     onSave({
       nameAr: nameAr.trim(),
-      departmentId: departmentId !== "__none__" ? departmentId : "",
+      departmentId: departmentId || "",
       defaultPharmacyId: pharmacyId !== "__none__" ? pharmacyId : "",
-      consultationServiceId: consultationServiceId !== "__none__" ? consultationServiceId : "",
-      treasuryId: treasuryId !== "__none__" ? treasuryId : "",
+      consultationServiceId: consultationServiceId || "",
+      treasuryId: treasuryId || "",
       secretaryFeeType: secretaryFeeType !== "__none__" ? secretaryFeeType : "",
       secretaryFeeValue: secretaryFeeType !== "__none__" ? parseFloat(secretaryFeeValue) || 0 : 0,
     });
@@ -100,17 +80,11 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">القسم (اختياري)</Label>
-          <Select value={departmentId} onValueChange={setDepartmentId}>
-            <SelectTrigger className="h-8 text-xs" data-testid="select-clinic-department">
-              <SelectValue placeholder="اختر قسم..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">بدون قسم</SelectItem>
-              {departments.map((d) => (
-                <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <DepartmentLookup
+            value={departmentId}
+            onChange={(item) => setDepartmentId(item?.id || "")}
+            data-testid="lookup-clinic-department"
+          />
         </div>
         <div className="space-y-1">
           <Label className="text-xs">الصيدلية الافتراضية (اختياري)</Label>
@@ -130,35 +104,21 @@ function ClinicForm({ clinic, onSave, onCancel, isPending }: {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">خدمة الكشف (لكشف حساب الطبيب)</Label>
-          <Select value={consultationServiceId} onValueChange={setConsultationServiceId}>
-            <SelectTrigger className="h-8 text-xs" data-testid="select-consultation-service">
-              <SelectValue placeholder="اختر خدمة الكشف..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">بدون خدمة كشف</SelectItem>
-              {services.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.nameAr} — {parseFloat(String(s.basePrice || 0)).toLocaleString("ar-EG")} ج.م
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ServiceLookup
+            value={consultationServiceId}
+            onChange={(item) => setConsultationServiceId(item?.id || "")}
+            data-testid="lookup-consultation-service"
+          />
         </div>
         <div className="space-y-1">
           <Label className="text-xs">الحساب المحاسبي للخزنة (من دليل الحسابات)</Label>
-          <Select value={treasuryId} onValueChange={setTreasuryId}>
-            <SelectTrigger className="h-8 text-xs" data-testid="select-clinic-treasury">
-              <SelectValue placeholder="اختر الحساب..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">بدون حساب</SelectItem>
-              {glAccounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} - {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AccountLookup
+            value={treasuryId}
+            onChange={(item) => setTreasuryId(item?.id || "")}
+            filter="asset"
+            placeholder="ابحث عن حساب أصول..."
+            data-testid="lookup-clinic-treasury"
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">

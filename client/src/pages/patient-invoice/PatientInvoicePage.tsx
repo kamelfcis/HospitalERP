@@ -55,8 +55,6 @@ export default function PatientInvoice() {
     departmentId:     form.departmentId,
     setItemSearch:    search.setItemSearch,
     setItemResults:   (v) => search.setItemResults(v as unknown as Parameters<typeof search.setItemResults>[0]),
-    setServiceSearch: search.setServiceSearch,
-    setServiceResults: (v) => search.setServiceResults(v as unknown as Parameters<typeof search.setServiceResults>[0]),
     addingItemRef:    search.addingItemRef,
     itemSearchRef:    search.itemSearchRef,
   });
@@ -285,14 +283,6 @@ export default function PatientInvoice() {
             patientDropdownRef={search.patientDropdownRef}
             doctorName={form.doctorName}
             setDoctorName={form.setDoctorName}
-            doctorSearch={search.doctorSearch}
-            setDoctorSearch={search.setDoctorSearch}
-            doctorResults={search.doctorResults}
-            searchingDoctors={search.searchingDoctors}
-            showDoctorDropdown={search.showDoctorDropdown}
-            setShowDoctorDropdown={search.setShowDoctorDropdown}
-            doctorSearchRef={search.doctorSearchRef}
-            doctorDropdownRef={search.doctorDropdownRef}
             departmentId={form.departmentId}
             setDepartmentId={form.setDepartmentId}
             departments={departments}
@@ -318,15 +308,8 @@ export default function PatientInvoice() {
             itemResults={search.itemResults}
             searchingItems={search.searchingItems}
             fefoLoading={lm.fefoLoading}
-            serviceSearch={search.serviceSearch}
-            setServiceSearch={search.setServiceSearch}
-            setServiceResults={search.setServiceResults}
-            serviceResults={search.serviceResults}
-            searchingServices={search.searchingServices}
             itemSearchRef={search.itemSearchRef}
             itemDropdownRef={search.itemDropdownRef}
-            serviceSearchRef={search.serviceSearchRef}
-            serviceDropdownRef={search.serviceDropdownRef}
             pendingQtyRef={lm.pendingQtyRef}
             addServiceLine={lm.addServiceLine}
             addItemLine={lm.addItemLine}

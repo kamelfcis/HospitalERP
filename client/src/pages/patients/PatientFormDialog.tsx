@@ -18,6 +18,8 @@ import {
   Search, Loader2, Banknote, ShieldCheck, FileSignature,
   UserCheck, X, AlertTriangle, Lock, Info,
 } from "lucide-react";
+import { ClinicLookup, DoctorLookup } from "@/components/lookups";
+import type { LookupItem } from "@/lib/lookupTypes";
 import type { InsertPatient } from "@shared/schema";
 import type { PatientFormDialogProps, PrefilledPatient } from "./types";
 import { useDebounce } from "./useDebounce";
@@ -73,9 +75,8 @@ function CandidateList({ candidates, onSelect }: { candidates: DuplicateCandidat
 
 const todayISO = new Date().toISOString().slice(0, 10);
 
-interface ClinicOption   { id: string; nameAr: string; }
+
 interface ScheduleOption { doctorId: string; doctorName: string; }
-interface DoctorOption   { id: string; name: string; specialty?: string | null; }
 interface PatientSuggest { id: string; fullName: string; patientCode?: string | null; phone?: string | null; age?: number | null; nationalId?: string | null; }
 interface FloorOption    { id: string; nameAr: string; rooms: RoomOption[]; }
 interface RoomOption     { id: string; nameAr: string; beds: BedOption[]; }
@@ -122,11 +123,8 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   const [visitReason, setVisitReason] = useState<VisitReason>("");
 
   /* ── حجز كشف ─────────── */
-  const [clinicSearch,       setClinicSearch]       = useState("");
-  const [selectedClinic,     setSelectedClinic]     = useState<ClinicOption | null>(null);
-  const [doctorSearch,       setDoctorSearch]       = useState("");
-  const [selectedDoctor,     setSelectedDoctor]     = useState<DoctorOption | null>(null);
-  const [showDoctorResults,  setShowDoctorResults]  = useState(false);
+  const [selectedClinic,     setSelectedClinic]     = useState<LookupItem | null>(null);
+  const [selectedDoctor,     setSelectedDoctor]     = useState<LookupItem | null>(null);
   const [consultDate,        setConsultDate]        = useState(todayISO);
   const [consultTime,        setConsultTime]        = useState("");
 
@@ -134,9 +132,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   const [selectedFloor,   setSelectedFloor]   = useState("");
   const [selectedRoom,    setSelectedRoom]    = useState("");
   const [selectedBed,     setSelectedBed]     = useState("");
-  const [admDoctorSearch, setAdmDoctorSearch] = useState("");
-  const [admDoctor,       setAdmDoctor]       = useState<DoctorOption | null>(null);
-  const [admShowDoc,      setAdmShowDoc]      = useState(false);
+  const [admDoctor,       setAdmDoctor]       = useState<LookupItem | null>(null);
   const [surgerySearch,   setSurgerySearch]   = useState("");
   const [selectedSurgery, setSelectedSurgery] = useState<SurgeryType | null>(null);
 
@@ -147,8 +143,6 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   const debouncedName    = useDebounce(fullName, 300);
   const debouncedPhone   = useDebounce(phone, 500);
   const debouncedNid     = useDebounce(nationalId, 500);
-  const debouncedDoctor  = useDebounce(doctorSearch, 300);
-  const debouncedAdmDoc  = useDebounce(admDoctorSearch, 300);
 
   /* ── Reset عند الفتح فقط ────────────────────────── */
   useEffect(() => {
@@ -157,11 +151,10 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     /* إعادة ضبط حقول الزيارة دائماً عند الفتح */
     setPaymentType("CASH"); setInsuranceCo("");
     setVisitReason("");
-    setClinicSearch(""); setSelectedClinic(null);
-    setDoctorSearch(""); setSelectedDoctor(null); setShowDoctorResults(false);
+    setSelectedClinic(null); setSelectedDoctor(null);
     setConsultDate(todayISO); setConsultTime("");
     setSelectedFloor(""); setSelectedRoom(""); setSelectedBed("");
-    setAdmDoctorSearch(""); setAdmDoctor(null);
+    setAdmDoctor(null);
     setSurgerySearch(""); setSelectedSurgery(null);
     setServiceNotes("");
     setOverrideReason(""); setDupDismissed(false);
@@ -229,11 +222,6 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     setDupDismissed(false);
   }, [debouncedName, debouncedPhone, debouncedNid]);
 
-  const { data: clinics = [] } = useQuery<ClinicOption[]>({
-    queryKey: ["/api/clinic-clinics"],
-    enabled: open && visitReason === "consultation",
-  });
-
   const { data: schedules = [] } = useQuery<ScheduleOption[]>({
     queryKey: ["/api/clinic-clinics", selectedClinic?.id, "schedules"],
     queryFn: () =>
@@ -241,41 +229,9 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     enabled: !!selectedClinic?.id,
   });
 
-  /* كل الأطباء النشطين — يُجلب تلقائياً عند اختيار عيادة للكشف */
-  const { data: allDoctors = [] } = useQuery<DoctorOption[]>({
-    queryKey: ["/api/doctors", "active-all"],
-    queryFn: async () => {
-      const r = await fetch("/api/doctors", { credentials: "include" });
-      if (!r.ok) throw new Error("doctors fetch failed");
-      const data = await r.json();
-      return Array.isArray(data) ? data : [];
-    },
-    enabled: visitReason === "consultation" && !!selectedClinic,
-    staleTime: 2 * 60_000,
-  });
-
-  /* فلترة الأطباء حسب ما يكتبه المستخدم */
-  const doctorResults = doctorSearch.trim().length === 0
-    ? allDoctors
-    : allDoctors.filter(d =>
-        d.name.includes(doctorSearch) ||
-        (d.specialty ?? "").includes(doctorSearch)
-      );
-
   const { data: bedBoard = [] } = useQuery<FloorOption[]>({
     queryKey: ["/api/bed-board"],
     enabled: open && visitReason === "admission",
-  });
-
-  const { data: admDoctors = [] } = useQuery<DoctorOption[]>({
-    queryKey: ["/api/doctors", "adm", debouncedAdmDoc],
-    queryFn: async () => {
-      const r = await fetch(`/api/doctors?search=${encodeURIComponent(debouncedAdmDoc)}`, { credentials: "include" });
-      if (!r.ok) throw new Error("doctors fetch failed");
-      const data = await r.json();
-      return Array.isArray(data) ? data : [];
-    },
-    enabled: open && visitReason === "admission" && debouncedAdmDoc.trim().length >= 1,
   });
 
   const { data: surgeryTypes = [] } = useQuery<SurgeryType[]>({
@@ -309,7 +265,6 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     if (beds.length === 1 && !selectedBed) setSelectedBed(beds[0].id);
   }, [beds]); // eslint-disable-line
 
-  const filteredClinics = clinics.filter(c => !clinicSearch || c.nameAr.includes(clinicSearch));
 
   /* ── اختيار مريض موجود ── */
   function handleSelectExistingPatient(p: PatientSuggest) {
@@ -484,7 +439,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
         queryClient.invalidateQueries({ queryKey: ["/api/clinic-appointments"] });
         toast({
           title: existingPatient ? "تم حجز زيارة جديدة" : "تم إضافة المريض وحجز الكشف",
-          description: `${selectedClinic.nameAr} — رقم الدور: ${apt.turnNumber}`,
+          description: `${selectedClinic.name} — رقم الدور: ${apt.turnNumber}`,
         });
       } catch {
         toast({ title: existingPatient ? "تم تسجيل الزيارة" : "تم إضافة المريض", description: "لكن فشل حجز الكشف — يمكنك الحجز لاحقاً" });
@@ -784,55 +739,31 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                   </p>
 
                   {/* اختيار العيادة */}
-                  {!selectedClinic ? (
-                    <div className="space-y-1">
-                      <Label className="text-xs">العيادة</Label>
-                      <div className="relative">
-                        <Search className="absolute right-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
-                        <Input
-                          value={clinicSearch} onChange={e => setClinicSearch(e.target.value)}
-                          placeholder="ابحث عن عيادة..." className="h-7 text-xs pr-7"
-                          data-testid="input-clinic-search"
-                        />
-                      </div>
-                      {filteredClinics.length > 0 && (
-                        <div className="border rounded max-h-32 overflow-y-auto bg-white">
-                          {filteredClinics.map(c => (
-                            <button
-                              key={c.id} type="button"
-                              onClick={() => { setSelectedClinic(c); setClinicSearch(""); setSelectedDoctor(null); setDoctorSearch(""); }}
-                              className="w-full text-right px-2 py-1.5 text-xs hover:bg-blue-50 border-b last:border-0"
-                              data-testid={`clinic-option-${c.id}`}
-                            >{c.nameAr}</button>
-                          ))}
-                        </div>
-                      )}
-                      {clinics.length === 0 && (
-                        <p className="text-xs text-muted-foreground">لا توجد عيادات مسجلة</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 px-2 py-1.5 bg-white border border-blue-200 rounded text-xs">
-                      <Stethoscope className="h-3 w-3 text-blue-600" />
-                      <span className="flex-1 font-medium">{selectedClinic.nameAr}</span>
-                      <button type="button" onClick={() => { setSelectedClinic(null); setSelectedDoctor(null); setDoctorSearch(""); }}
-                        className="text-muted-foreground hover:text-foreground">تغيير</button>
-                    </div>
-                  )}
+                  <div className="space-y-1">
+                    <Label className="text-xs">العيادة</Label>
+                    <ClinicLookup
+                      value={selectedClinic?.id || ""}
+                      onChange={(item) => {
+                        setSelectedClinic(item);
+                        setSelectedDoctor(null);
+                      }}
+                      data-testid="lookup-clinic"
+                    />
+                  </div>
 
-                  {/* اختيار الطبيب — بحث حر دائماً */}
+                  {/* اختيار الطبيب */}
                   {selectedClinic && (
                     <div className="space-y-1">
                       <Label className="text-xs">الطبيب *</Label>
 
                       {/* أزرار سريعة من جدول العيادة */}
-                      {schedules.length > 0 && !selectedDoctor && (
+                      {schedules.length > 0 && (
                         <div className="flex flex-wrap gap-1 mb-1">
                           <span className="text-xs text-muted-foreground self-center">أطباء العيادة:</span>
                           {schedules.map(s => (
                             <button
                               key={s.doctorId} type="button"
-                              onClick={() => { setSelectedDoctor({ id: s.doctorId, name: s.doctorName }); setDoctorSearch(""); setShowDoctorResults(false); }}
+                              onClick={() => setSelectedDoctor({ id: s.doctorId, name: s.doctorName })}
                               className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 rounded px-2 py-0.5 transition-colors"
                               data-testid={`schedule-doctor-${s.doctorId}`}
                             >
@@ -842,47 +773,12 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                         </div>
                       )}
 
-                      {selectedDoctor ? (
-                        <div className="flex items-center gap-2 px-2 py-1.5 bg-white border border-blue-200 rounded text-xs">
-                          <span className="flex-1 font-medium">د. {selectedDoctor.name}</span>
-                          {selectedDoctor.specialty && <span className="text-muted-foreground">{selectedDoctor.specialty}</span>}
-                          <button type="button" onClick={() => { setSelectedDoctor(null); setDoctorSearch(""); }}
-                            className="text-muted-foreground hover:text-foreground">تغيير</button>
-                        </div>
-                      ) : (
-                        <div className="relative">
-                          <Search className="absolute right-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
-                          <Input
-                            value={doctorSearch}
-                            onChange={e => { setDoctorSearch(e.target.value); setShowDoctorResults(true); }}
-                            onFocus={() => setShowDoctorResults(true)}
-                            onBlur={() => setTimeout(() => setShowDoctorResults(false), 200)}
-                            placeholder="ابحث باسم الطبيب..."
-                            className="h-7 text-xs pr-7"
-                            data-testid="input-consult-doctor-search"
-                          />
-                          {showDoctorResults && (
-                            <div className="absolute z-50 w-full mt-0.5 border rounded-md bg-white shadow-md text-xs overflow-hidden max-h-48 overflow-y-auto">
-                              {doctorResults.length === 0
-                                ? <div className="px-2 py-1.5 text-muted-foreground">
-                                    {allDoctors.length === 0 ? "لا يوجد أطباء مسجلون" : "لا يوجد طبيب بهذا الاسم"}
-                                  </div>
-                                : doctorResults.map(d => (
-                                  <button key={d.id} type="button"
-                                    onMouseDown={e => e.preventDefault()}
-                                    onClick={() => { setSelectedDoctor(d); setDoctorSearch(""); setShowDoctorResults(false); }}
-                                    className="w-full text-right px-2 py-1.5 hover:bg-blue-50 border-b last:border-0"
-                                    data-testid={`doctor-result-${d.id}`}
-                                  >
-                                    <span className="font-medium">د. {d.name}</span>
-                                    {d.specialty && <span className="text-muted-foreground mr-2">{d.specialty}</span>}
-                                  </button>
-                                ))
-                              }
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <DoctorLookup
+                        value={selectedDoctor?.id || ""}
+                        displayValue={selectedDoctor?.name || ""}
+                        onChange={setSelectedDoctor}
+                        data-testid="lookup-consult-doctor"
+                      />
                     </div>
                   )}
 
@@ -943,44 +839,12 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                   {/* الطبيب */}
                   <div className="space-y-1">
                     <Label className="text-xs">الطبيب المعالج</Label>
-                    {admDoctor ? (
-                      <div className="flex items-center gap-2 px-2 py-1.5 bg-white border border-green-200 rounded text-xs">
-                        <span className="flex-1 font-medium">د. {admDoctor.name}</span>
-                        {admDoctor.specialty && <span className="text-muted-foreground">{admDoctor.specialty}</span>}
-                        <button type="button" onClick={() => { setAdmDoctor(null); setAdmDoctorSearch(""); }}
-                          className="text-muted-foreground hover:text-foreground">تغيير</button>
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <Search className="absolute right-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
-                        <Input
-                          value={admDoctorSearch}
-                          onChange={e => { setAdmDoctorSearch(e.target.value); setAdmShowDoc(true); }}
-                          onFocus={() => setAdmShowDoc(true)}
-                          onBlur={() => setTimeout(() => setAdmShowDoc(false), 200)}
-                          placeholder="ابحث باسم الطبيب..." className="h-7 text-xs pr-7"
-                          data-testid="input-adm-doctor-search"
-                        />
-                        {admShowDoc && admDoctorSearch.trim().length >= 1 && (
-                          <div className="absolute z-50 w-full mt-0.5 border rounded-md bg-white shadow-md text-xs overflow-hidden max-h-40 overflow-y-auto">
-                            {admDoctors.length === 0
-                              ? <div className="px-2 py-1.5 text-muted-foreground">لا يوجد</div>
-                              : admDoctors.map(d => (
-                                <button key={d.id} type="button"
-                                  onMouseDown={e => e.preventDefault()}
-                                  onClick={() => { setAdmDoctor(d); setAdmDoctorSearch(""); setAdmShowDoc(false); }}
-                                  className="w-full text-right px-2 py-1.5 hover:bg-muted border-b last:border-0"
-                                  data-testid={`adm-doctor-${d.id}`}
-                                >
-                                  <span className="font-medium">د. {d.name}</span>
-                                  {d.specialty && <span className="text-muted-foreground mr-2">{d.specialty}</span>}
-                                </button>
-                              ))
-                            }
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <DoctorLookup
+                      value={admDoctor?.id || ""}
+                      displayValue={admDoctor?.name || ""}
+                      onChange={setAdmDoctor}
+                      data-testid="lookup-adm-doctor"
+                    />
                   </div>
                   {/* نوع العملية */}
                   <div className="space-y-1">

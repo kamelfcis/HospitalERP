@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { getUnitName, calculateQtyInMinor } from "../utils";
 
@@ -9,31 +9,7 @@ export function useServiceSearch(
 ) {
   const { toast } = useToast();
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
-  const [serviceSearch, setServiceSearch] = useState("");
-  const [serviceResults, setServiceResults] = useState<any[]>([]);
-  const [serviceSearchLoading, setServiceSearchLoading] = useState(false);
   const [addingServiceId, setAddingServiceId] = useState<string | null>(null);
-  const serviceSearchRef = useRef<HTMLInputElement>(null);
-  const serviceDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const onServiceSearchChange = useCallback((q: string) => {
-    setServiceSearch(q);
-    if (serviceDebounceRef.current) clearTimeout(serviceDebounceRef.current);
-    if (!q || q.length < 2) { setServiceResults([]); return; }
-    setServiceSearchLoading(true);
-    serviceDebounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `/api/services?search=${encodeURIComponent(q)}&active=true&page=1&pageSize=20`,
-          { credentials: "include" }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setServiceResults(data.data || []);
-        }
-      } catch {} finally { setServiceSearchLoading(false); }
-    }, 300);
-  }, []);
 
   const addServiceConsumables = useCallback(async (serviceId: string, serviceName: string) => {
     if (!warehouseId) {
@@ -104,19 +80,11 @@ export function useServiceSearch(
 
   const openServiceModal = useCallback(() => {
     setServiceModalOpen(true);
-    setServiceSearch("");
-    setServiceResults([]);
-    setTimeout(() => serviceSearchRef.current?.focus(), 100);
   }, []);
 
   return {
     serviceModalOpen, setServiceModalOpen,
-    serviceSearch,
-    serviceResults,
-    serviceSearchLoading,
     addingServiceId,
-    serviceSearchRef,
-    onServiceSearchChange,
     addServiceConsumables,
     openServiceModal,
   };
