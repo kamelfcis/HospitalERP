@@ -461,7 +461,7 @@ export interface IStorage {
   getCashierRefundReceipt(receiptId: string): Promise<Record<string, unknown>>;
 
   // Patients
-  getPatients(): Promise<Patient[]>;
+  getPatients(limit?: number): Promise<Patient[]>;
   searchPatients(search: string): Promise<Patient[]>;
   getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[] }): Promise<Record<string, unknown>[]>;
   getPatient(id: string): Promise<Patient | undefined>;
@@ -477,6 +477,8 @@ export interface IStorage {
     lineType?: string | null,
   ): Promise<Record<string, unknown>[]>;
   getPatientPreviousConsultations(patientId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
+  checkPatientInScope(patientId: string, forcedDeptIds: string[] | null): Promise<boolean>;
+  checkInvoiceInScope(invoiceId: string, forcedDeptIds: string[] | null): Promise<boolean>;
   createPatient(data: InsertPatient): Promise<Patient>;
   updatePatient(id: string, data: Partial<InsertPatient>): Promise<Patient>;
   deletePatient(id: string): Promise<boolean>;

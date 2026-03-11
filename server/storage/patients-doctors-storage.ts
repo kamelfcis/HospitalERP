@@ -21,8 +21,11 @@ import type { DatabaseStorage } from "./index";
 
 const methods = {
 
-  async getPatients(this: DatabaseStorage): Promise<Patient[]> {
-    return db.select().from(patients).where(eq(patients.isActive, true)).orderBy(asc(patients.fullName));
+  async getPatients(this: DatabaseStorage, limit = 200): Promise<Patient[]> {
+    return db.select().from(patients)
+      .where(eq(patients.isActive, true))
+      .orderBy(asc(patients.fullName))
+      .limit(limit);
   },
 
   async searchPatients(this: DatabaseStorage, search: string): Promise<Patient[]> {
@@ -960,6 +963,64 @@ const methods = {
 
     return result.rows as Record<string, unknown>[];
   },
+  // ─── Scope validation helpers (parameterized — no esc() needed) ─────────────
+
+  /**
+   * Returns true if a full-access user OR if the patient has at least one
+   * non-cancelled invoice whose department_id is within forcedDeptIds.
+   * Used by patient detail endpoints to prevent cross-department ID enumeration.
+   */
+  async checkPatientInScope(
+    this: DatabaseStorage,
+    patientId: string,
+    forcedDeptIds: string[] | null,
+  ): Promise<boolean> {
+    if (forcedDeptIds === null) return true;
+    if (forcedDeptIds.length === 0) return false;
+
+    // Check by patient_id column (most patients have one)
+    const byId = await db.execute(sql`
+      SELECT 1 FROM patient_invoice_headers pih
+      WHERE pih.patient_id = ${patientId}
+        AND pih.department_id = ANY(${forcedDeptIds}::text[])
+        AND pih.status != 'cancelled'
+      LIMIT 1
+    `);
+    if (byId.rows.length > 0) return true;
+
+    // Fallback: match by patient name (older invoices may lack patient_id)
+    const byName = await db.execute(sql`
+      SELECT 1 FROM patient_invoice_headers pih
+      JOIN patients p ON p.full_name = pih.patient_name
+      WHERE p.id = ${patientId}
+        AND pih.department_id = ANY(${forcedDeptIds}::text[])
+        AND pih.status != 'cancelled'
+      LIMIT 1
+    `);
+    return byName.rows.length > 0;
+  },
+
+  /**
+   * Returns true if the invoice belongs to one of forcedDeptIds.
+   * Used by /api/patient-invoices/:id/transfers to prevent cross-dept access.
+   */
+  async checkInvoiceInScope(
+    this: DatabaseStorage,
+    invoiceId: string,
+    forcedDeptIds: string[] | null,
+  ): Promise<boolean> {
+    if (forcedDeptIds === null) return true;
+    if (forcedDeptIds.length === 0) return false;
+
+    const result = await db.execute(sql`
+      SELECT 1 FROM patient_invoice_headers
+      WHERE id = ${invoiceId}
+        AND department_id = ANY(${forcedDeptIds}::text[])
+      LIMIT 1
+    `);
+    return result.rows.length > 0;
+  },
+
 };
 
 export default methods;

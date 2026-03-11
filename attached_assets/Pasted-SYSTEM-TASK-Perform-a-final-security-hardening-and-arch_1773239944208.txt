@@ -1,0 +1,291 @@
+SYSTEM TASK
+Perform a **final security hardening and architecture validation** of all patient and doctor related endpoints.
+
+The system already implemented:
+
+• Multi-department access control
+• getUserCashierScope() as the source of department scope
+• requireAuth + permission checks on sensitive endpoints
+
+This task ensures **no remaining data exposure paths exist** and improves long-term security and maintainability.
+
+---
+
+SECURITY MODEL (EXPECTED)
+
+Department access must always be derived from:
+
+getUserCashierScope(userId)
+
+Never rely on:
+
+• users.department_id
+• frontend filters
+• query parameters
+
+Department filtering must be enforced server-side.
+
+---
+
+CURRENT SECURED ENDPOINTS (VERIFY ONLY)
+
+The following endpoints are already correctly secured:
+
+GET /api/patient-scope
+GET /api/patients/stats
+GET /api/patient-inquiry
+GET /api/patient-inquiry/lines
+
+They enforce:
+
+requireAuth
+requirePermission('PATIENTS_VIEW')
+department scope using getUserCashierScope()
+
+Confirm no regression occurred.
+
+---
+
+STEP 1 — VERIFY PERMISSION HARDENING
+
+Confirm the following endpoints now require both authentication and permissions.
+
+Patients:
+
+GET /api/patients → requireAuth + PATIENTS_VIEW
+GET /api/patients/:id → requireAuth + PATIENTS_VIEW
+GET /api/patients/:id/journey → requireAuth + PATIENTS_VIEW
+GET /api/patients/:id/timeline → requireAuth + PATIENTS_VIEW
+GET /api/patients/:id/previous-consultations → requireAuth + PATIENTS_VIEW
+
+Patient invoices:
+
+GET /api/patient-invoices/:id/transfers → requireAuth + PATIENT_INVOICES_VIEW
+
+Doctors:
+
+GET /api/doctors → requireAuth + DOCTORS_VIEW
+GET /api/doctors/:id → requireAuth + DOCTORS_VIEW
+GET /api/doctors/balances → requireAuth + DOCTORS_VIEW
+GET /api/doctor-statement → requireAuth + DOCTOR_VIEW_STATEMENT
+GET /api/doctor-settlements → requireAuth + DOCTORS_VIEW
+GET /api/doctor-settlements/outstanding → requireAuth + DOCTORS_VIEW
+
+Verify middleware order:
+
+requireAuth → requirePermission → handler
+
+---
+
+STEP 2 — VERIFY DEPARTMENT SCOPE PROTECTION
+
+Confirm that endpoints exposing patient operational data enforce department isolation.
+
+Specifically validate:
+
+/api/patients/stats
+/api/patient-inquiry
+/api/patient-inquiry/lines
+
+These endpoints must filter using:
+
+allowedDepartmentIds from getUserCashierScope()
+
+SQL must contain:
+
+department_id = ANY($1)
+
+Restricted users must never see data outside allowedDepartmentIds.
+
+---
+
+STEP 3 — REVIEW PATIENT DETAIL ENDPOINTS
+
+Evaluate whether the following endpoints should also enforce department scope:
+
+/api/patients/:id
+/api/patients/:id/journey
+/api/patients/:id/timeline
+/api/patients/:id/previous-consultations
+
+If these endpoints return clinical or financial data related to a specific department visit, then apply department filtering as well.
+
+Recommended approach:
+
+Check whether the patient has at least one invoice or visit within allowedDepartmentIds.
+
+If not → return 403.
+
+This prevents **ID enumeration attacks**.
+
+---
+
+STEP 4 — VERIFY PATIENT INVOICE ENDPOINT
+
+Review:
+
+/api/patient-invoices/:id/transfers
+
+Confirm whether invoice transfers belong to a specific department.
+
+If yes:
+
+Add department scope validation similar to patient inquiry endpoints.
+
+---
+
+STEP 5 — PREVENT ID ENUMERATION
+
+Ensure that endpoints retrieving resources by ID cannot expose cross-department data.
+
+Example vulnerable pattern:
+
+/api/patients/123
+/api/patient-invoices/555
+
+Even if the ID exists, the response must be filtered by department scope.
+
+---
+
+STEP 6 — VERIFY SQL SAFETY
+
+Ensure all SQL queries remain injection-safe.
+
+Avoid manual SQL concatenation.
+
+Preferred pattern:
+
+WHERE department_id = ANY($1)
+
+Never construct:
+
+IN ('id1','id2','id3')
+
+from string interpolation.
+
+---
+
+STEP 7 — IMPLEMENT RESPONSE DATA MINIMIZATION
+
+Ensure list endpoints return only necessary fields.
+
+Example:
+
+GET /api/patients
+
+Should return only:
+
+id
+name
+phone
+
+Sensitive fields such as:
+
+national_id
+insurance_data
+internal_notes
+
+must only appear in detail endpoints if required.
+
+---
+
+STEP 8 — VERIFY PAGINATION
+
+Ensure large endpoints use pagination.
+
+Example:
+
+/api/patients
+/api/patient-inquiry
+
+Implement:
+
+LIMIT
+OFFSET
+
+or page/pageSize.
+
+Avoid returning entire tables.
+
+---
+
+STEP 9 — VERIFY AUDIT LOGGING
+
+Confirm that sensitive endpoints generate audit logs.
+
+Create or verify table:
+
+audit_access_logs
+
+Fields:
+
+user_id
+endpoint
+timestamp
+filters
+row_count
+
+Log access for:
+
+/api/patients
+/api/patient-inquiry
+/api/patient-inquiry/lines
+/api/patient-invoices/:id/transfers
+
+---
+
+STEP 10 — VERIFY ROLE PERMISSIONS
+
+Ensure the following role permissions exist:
+
+pharmacist
+→ patients.view
+→ doctors.view
+
+department_admin
+→ doctors.view
+
+Confirm these permissions are stored in migrations or seed scripts so they persist across deployments.
+
+---
+
+STEP 11 — FINAL SECURITY TESTS
+
+Run these tests:
+
+1️⃣ Unauthenticated request to /api/patients → must return 401.
+
+2️⃣ Authenticated user without PATIENTS_VIEW → must return 403.
+
+3️⃣ Restricted user requesting data from another department → must return empty result or 403.
+
+4️⃣ Direct request to /api/patients/:id for patient outside scope → must not return data.
+
+---
+
+EXPECTED RESULT
+
+After this hardening review:
+
+• No endpoint exposes patient data without permission
+• No endpoint allows cross-department data leakage
+• ID enumeration is prevented
+• SQL injection risks are minimized
+• Patient data exposure is limited to necessary fields
+• Large datasets are paginated
+• Sensitive access is logged
+
+---
+
+FILES TO REVIEW
+
+server/routes/patients.ts
+server/routes/doctors.ts
+server/routes/auth.ts
+server/storage/patients-doctors-storage.ts
+server/storage/index.ts
+server/storage/users-storage.ts
+
+---
+
+END TASK

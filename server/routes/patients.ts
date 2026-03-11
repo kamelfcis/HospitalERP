@@ -4,14 +4,49 @@ import { storage } from "../storage";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 
+// ─── Fire-and-forget audit logger ────────────────────────────────────────────
+// Logs sensitive read access without blocking the response.
+function logReadAccess(opts: {
+  userId: string;
+  endpoint: string;
+  ipAddress?: string | null;
+  filters?: Record<string, unknown>;
+  rowCount?: number;
+}) {
+  storage.createAuditLog({
+    tableName: "patients",
+    recordId: opts.endpoint,
+    action: "read_access",
+    newValues: JSON.stringify({ filters: opts.filters ?? {}, rowCount: opts.rowCount }),
+    userId: opts.userId,
+    ipAddress: opts.ipAddress ?? null,
+  }).catch(() => { /* silenced — audit failure must never break the response */ });
+}
+
 export function registerPatientsRoutes(app: Express) {
   // ==================== Patients API ====================
 
-  // Patient list / autocomplete search — needs PATIENTS_VIEW
+  // Patient list / autocomplete search — PATIENTS_VIEW required
+  // Pagination: default 200 for full list, search already capped at 50
   app.get("/api/patients", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const search = req.query.search as string;
-      const list = search ? await storage.searchPatients(search) : await storage.getPatients();
+      const limitParam = parseInt(String(req.query.limit || "200"));
+      const limit = Math.min(Math.max(1, isNaN(limitParam) ? 200 : limitParam), 500);
+
+      const list = search
+        ? await storage.searchPatients(search)
+        : await storage.getPatients(limit);
+
+      // Audit log for list access (fire-and-forget)
+      logReadAccess({
+        userId: req.session.userId!,
+        endpoint: "/api/patients",
+        ipAddress: req.ip,
+        filters: { search: search || null, limit },
+        rowCount: list.length,
+      });
+
       res.json(list);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
@@ -54,10 +89,23 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  // Single patient record — PATIENTS_VIEW
+  // Single patient record — PATIENTS_VIEW + dept scope check (prevent ID enumeration)
   app.get("/api/patients/:id", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const p = await storage.getPatient(req.params.id as string);
+      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
+
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض هذا المريض" });
+      }
+
+      // Scope gate: restricted users may only see patients with an invoice in their depts
+      const inScope = await storage.checkPatientInScope(req.params.id, forcedDeptIds);
+      if (!inScope) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+      }
+
+      const p = await storage.getPatient(req.params.id);
       if (!p) return res.status(404).json({ message: "مريض غير موجود" });
       res.json(p);
     } catch (error: unknown) {
@@ -66,10 +114,20 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  // Patient journey / timeline — PATIENTS_VIEW
+  // Patient journey — PATIENTS_VIEW + dept scope check
   app.get("/api/patients/:id/journey", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const data = await storage.getPatientTimeline(req.params.id as string);
+      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
+
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض هذا المريض" });
+      }
+
+      const inScope = await storage.checkPatientInScope(req.params.id, forcedDeptIds);
+      if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+
+      const data = await storage.getPatientTimeline(req.params.id);
       if (!data) return res.status(404).json({ message: "مريض غير موجود" });
       res.json(data);
     } catch (error: unknown) {
@@ -77,9 +135,20 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
+  // Patient timeline — PATIENTS_VIEW + dept scope check
   app.get("/api/patients/:id/timeline", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const data = await storage.getPatientTimeline(req.params.id as string);
+      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
+
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض هذا المريض" });
+      }
+
+      const inScope = await storage.checkPatientInScope(req.params.id, forcedDeptIds);
+      if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+
+      const data = await storage.getPatientTimeline(req.params.id);
       if (!data) return res.status(404).json({ message: "مريض غير موجود" });
       res.json(data);
     } catch (error: unknown) {
@@ -87,21 +156,41 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  // Previous consultations — used by clinic module; PATIENTS_VIEW covers it
+  // Previous consultations — PATIENTS_VIEW + dept scope check
   app.get("/api/patients/:id/previous-consultations", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
+      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
+
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض هذا المريض" });
+      }
+
+      const inScope = await storage.checkPatientInScope(req.params.id, forcedDeptIds);
+      if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+
       const limit = parseInt(String(req.query.limit || "5"));
-      const consultations = await storage.getPatientPreviousConsultations(req.params.id as string, limit);
+      const consultations = await storage.getPatientPreviousConsultations(req.params.id, limit);
       res.json(consultations);
     } catch (error: unknown) {
       res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
     }
   });
 
-  // Doctor transfer records on an invoice — PATIENT_INVOICES_VIEW
+  // Doctor transfer records — PATIENT_INVOICES_VIEW + invoice dept scope check
   app.get("/api/patient-invoices/:id/transfers", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_VIEW), async (req, res) => {
     try {
-      const transfers = await storage.getDoctorTransfers(req.params.id as string);
+      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
+
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض هذه الفاتورة" });
+      }
+
+      const inScope = await storage.checkInvoiceInScope(req.params.id, forcedDeptIds);
+      if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض هذه الفاتورة" });
+
+      const transfers = await storage.getDoctorTransfers(req.params.id);
       res.json(transfers);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
@@ -134,7 +223,6 @@ export function registerPatientsRoutes(app: Express) {
 
   // ==================== Doctor Settlements ====================
 
-  // Settlement list — DOCTORS_VIEW (financial doctor data)
   app.get("/api/doctor-settlements", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const { doctorName } = req.query;
@@ -146,7 +234,6 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  // Outstanding transfers for settlement — DOCTORS_VIEW
   app.get("/api/doctor-settlements/outstanding", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const { doctorName } = req.query;
@@ -216,7 +303,6 @@ export function registerPatientsRoutes(app: Express) {
 
   // ==================== Doctors API ====================
 
-  // Doctor payable balances — DOCTORS_VIEW
   app.get("/api/doctors/balances", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       res.json(await storage.getDoctorBalances());
@@ -226,7 +312,6 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  // Doctor account statement — DOCTOR_VIEW_STATEMENT (designed for this purpose)
   app.get("/api/doctor-statement", requireAuth, checkPermission(PERMISSIONS.DOCTOR_VIEW_STATEMENT), async (req, res) => {
     try {
       const { doctorName, dateFrom, dateTo } = req.query as Record<string, string>;
@@ -238,7 +323,6 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  // Doctor list / search — DOCTORS_VIEW
   app.get("/api/doctors", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const search = req.query.search as string;
@@ -251,7 +335,6 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  // Single doctor record — DOCTORS_VIEW
   app.get("/api/doctors/:id", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const d = await storage.getDoctor(req.params.id as string);
@@ -299,15 +382,11 @@ export function registerPatientsRoutes(app: Express) {
     try {
       const scope = await storage.getUserCashierScope(req.session.userId!);
 
-      // R6: restricted user with no allowed depts → 403
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
         return res.status(403).json({ message: "ليس لديك صلاحية عرض أي قسم، تواصل مع مدير النظام" });
       }
 
-      // forcedDeptIds: null = full access, string[] = restricted to those depts
       const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
-
-      // Full-access optional dept filter from query
       const adminDeptFilter = scope.isFullAccess ? ((req.query.deptId as string) || null) : null;
 
       const {
@@ -322,6 +401,15 @@ export function registerPatientsRoutes(app: Express) {
         forcedDeptIds,
       );
 
+      // Audit log (fire-and-forget)
+      logReadAccess({
+        userId: req.session.userId!,
+        endpoint: "/api/patient-inquiry",
+        ipAddress: req.ip,
+        filters: { deptId: adminDeptFilter, clinicId, dateFrom, dateTo, search },
+        rowCount: result.count,
+      });
+
       return res.json(result);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
@@ -333,7 +421,6 @@ export function registerPatientsRoutes(app: Express) {
     try {
       const scope = await storage.getUserCashierScope(req.session.userId!);
 
-      // R6: restricted user with no allowed depts → 403
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
         return res.status(403).json({ message: "ليس لديك صلاحية عرض أي قسم، تواصل مع مدير النظام" });
       }
@@ -355,6 +442,15 @@ export function registerPatientsRoutes(app: Express) {
         forcedDeptIds,
         lineType,
       );
+
+      // Audit log (fire-and-forget)
+      logReadAccess({
+        userId: req.session.userId!,
+        endpoint: "/api/patient-inquiry/lines",
+        ipAddress: req.ip,
+        filters: { patientId, patientName, lineType },
+        rowCount: lines.length,
+      });
 
       return res.json(lines);
     } catch (error: unknown) {
