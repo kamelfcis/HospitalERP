@@ -4,20 +4,20 @@ import type { LookupItem } from "@/lib/lookupTypes";
 
 interface ServiceRaw {
   id: string;
-  name: string;
+  nameAr: string;
   code?: string;
   departmentId?: string;
   isActive?: boolean;
+  [key: string]: unknown;
 }
 
 function serviceAdapter(s: ServiceRaw): LookupItem {
   return {
     id: s.id,
-    name: s.name,
+    name: s.nameAr,
     code: s.code,
-    subtitle: s.departmentId ?? undefined,
     isActive: s.isActive ?? true,
-    meta: { id: s.id, name: s.name, departmentId: s.departmentId },
+    meta: { ...s },
   };
 }
 

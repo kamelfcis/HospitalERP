@@ -1,0 +1,62 @@
+Proceed with Phase 4 — High Priority Migrations, but apply these mandatory corrections first:
+
+1) DO NOT create any new shared replacement for useSearchState.
+Do not introduce another generic search hook.
+Instead:
+- remove ONLY doctor + service search logic from useSearchState.ts
+- keep patient + item logic intact because they are out of scope
+- all centralized entity search must continue to live only in the new lookup hooks/components
+
+2) ClinicManagementDialog.tsx must not be migrated for clinic only.
+Migrate all in-scope shared entities used inside it:
+- service
+- department
+- clinic
+- account
+Leave warehouse untouched only if it is truly out of scope for this phase.
+
+3) Phase 4 must include mandatory cleanup in the same task.
+After migration:
+- delete DoctorSearchInput.tsx if fully replaced
+- remove doctor/service logic from useSearchState.ts
+- remove old debounce/search code for doctor/service from migrated files
+- remove unused imports
+- do not leave old and new implementations side by side
+
+PHASE 4 SCOPE
+Migrate these high-priority targets:
+- patient-invoice/components/DoctorSearchInput.tsx → replace with DoctorLookup
+- patients/PatientFormDialog.tsx → migrate doctor + clinic lookups
+- bed-board/components/ReceptionSheet.tsx → migrate doctor/service lookups if service is in scope there
+- clinic-booking/components/ClinicManagementDialog.tsx → migrate all in-scope shared entity lookups used inside it
+- sales-invoices/hooks/useServiceSearch.ts → remove/replace service-search logic where applicable
+- patient-invoice/hooks/useSearchState.ts → remove only doctor/service search parts, keep patient/item parts
+
+STRICT RULES
+- do not create new page-specific search abstractions
+- do not add direct fetch/useQuery for centralized entities inside screens
+- use only the new centralized lookup hooks/components
+- keep files clean and refactored
+- if a file becomes too large, split it
+- preserve edit mode selected values
+- preserve permissions and existing business behavior
+
+MANDATORY VERIFICATION AFTER PHASE 4
+Run verification including BOTH .ts and .tsx files.
+
+Check for remaining direct fetches:
+grep -r 'fetch.*\/api\/doctors\|fetch.*\/api\/services' client/src --include='*.ts' --include='*.tsx' | grep -v 'client/src/hooks/lookups'
+
+Check for remaining direct useQuery calls for centralized entities:
+grep -r 'useQuery.*\/api\/doctors\|useQuery.*\/api\/services\|useQuery.*\/api\/accounts\|useQuery.*\/api\/clinic-clinics\|useQuery.*\/api\/departments\|useQuery.*\/api\/treasuries' client/src --include='*.ts' --include='*.tsx' | grep -v 'client/src/hooks/lookups'
+
+Check for leftover debounce logic for migrated centralized entities:
+grep -r 'debounceRef\|setTimeout\|clearTimeout' client/src/pages --include='*.ts' --include='*.tsx'
+
+AT THE END RETURN EXACTLY:
+1) Files migrated
+2) Files deleted
+3) Files partially cleaned
+4) Remaining high-priority items if any
+5) Verification results
+6) Risks / assumptions

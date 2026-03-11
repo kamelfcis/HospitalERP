@@ -7,6 +7,7 @@ export interface DoctorLookupProps {
   value: string;
   onChange: (item: LookupItem | null) => void;
   onChangeName?: (name: string) => void;
+  displayValue?: string;
   placeholder?: string;
   disabled?: boolean;
   clearable?: boolean;
@@ -17,6 +18,7 @@ export function DoctorLookup({
   value,
   onChange,
   onChangeName,
+  displayValue: displayValueOverride,
   placeholder = "ابحث عن طبيب...",
   disabled = false,
   clearable = true,
@@ -25,7 +27,7 @@ export function DoctorLookup({
   const [search, setSearch] = useState("");
   const { items, isLoading, resolveById } = useDoctorsLookup({ search, enabled: !disabled });
 
-  const displayValue = resolveById(value)?.name;
+  const displayValue = displayValueOverride ?? resolveById(value)?.name;
 
   function handleChange(item: LookupItem | null) {
     onChange(item);
