@@ -1,0 +1,276 @@
+Architect-Level Prompt for Replit Agent
+
+Mode: Architecture Review + Implementation Plan
+Instruction: Do NOT implement anything yet.
+
+Your task is to act as a Senior Healthcare System Architect reviewing and upgrading the Patient Master Record architecture of this Hospital Management System.
+
+The goal is to build a robust Patient File similar to professional EMR/HMIS systems (Epic/Cerner-style patient timeline) while keeping the current system stable.
+
+Before coding anything, analyze the current plan and produce a refined implementation architecture.
+
+System Context
+
+This system currently includes modules for:
+
+Patients
+
+Clinic appointments
+
+Consultations
+
+Admissions / stays
+
+Invoices
+
+Payments
+
+However, the patient file is incomplete and invoices currently reference the patient name instead of patient_id, which is unsafe.
+
+The objective is to transform the patient profile into a complete longitudinal patient record.
+
+Core Architectural Goals
+
+Establish patient_id as the single source of truth across financial and clinical records.
+
+Introduce a unified patient timeline showing the full journey of the patient.
+
+Maintain data integrity and auditability.
+
+Avoid breaking existing system behavior.
+
+Ensure performance scalability for large datasets.
+
+Required Architectural Improvements
+1️⃣ Safe Migration to patient_id
+
+Invoices currently link patients using patient_name.
+
+Design a migration that:
+
+Adds patient_id to patient_invoice_headers
+
+Populates it safely using matching logic.
+
+Rules:
+
+If exactly one patient matches the invoice name → link
+
+If multiple matches → leave NULL
+
+If no match → leave NULL
+
+Produce a migration audit report listing:
+
+matched invoices
+
+ambiguous matches
+
+unmatched invoices
+
+Also include a database backup step before migration.
+
+2️⃣ Establish Patient Encounter Layer
+
+Introduce a clinical encounter model to structure the patient journey.
+
+Create a new table concept:
+
+patient_encounters
+
+Fields:
+
+id
+patient_id
+encounter_type (clinic / emergency / admission)
+doctor_id
+department_id
+start_time
+end_time
+status
+created_at
+
+All clinical and billing events should optionally reference:
+
+encounter_id
+
+This allows grouping services under a visit.
+
+3️⃣ Unified Patient Timeline Architecture
+
+Design a timeline aggregation layer that merges events from multiple modules.
+
+Sources include:
+
+clinic appointments
+
+consultations
+
+admissions
+
+lab orders
+
+radiology
+
+pharmacy sales
+
+invoices
+
+payments
+
+Each timeline event must return a standardized structure:
+
+event_type
+event_id
+event_date
+title
+subtitle
+location
+doctor_name
+description
+amount
+paid_amount
+status
+patient_id
+encounter_id
+source_table
+
+The timeline must be sorted by:
+
+event_date DESC
+
+Important rule:
+
+The timeline must be computed dynamically via query or view.
+Do NOT store duplicated timeline rows.
+
+4️⃣ Financial Summary Engine
+
+Design a patient financial summary that returns:
+
+total_clinic_visits
+total_admissions
+total_invoices
+total_billed
+total_paid
+total_outstanding
+first_visit_date
+last_activity_date
+
+Where:
+
+total_outstanding = total_billed - total_paid
+
+This summary should be calculated via aggregation queries.
+
+5️⃣ Patient Profile UI Design
+
+Design a patient profile similar to professional hospital systems.
+
+Layout:
+
+Header
+Patient Name
+Patient Code
+Age / DOB
+Phone
+First Visit
+Last Activity
+Financial Summary Cards
+Total Billed
+Total Paid
+Outstanding Balance
+Total Visits
+Tab Navigation
+All Timeline
+Clinic Visits
+Admissions
+Lab
+Radiology
+Pharmacy
+Invoices
+Payments
+Timeline View
+
+Display chronological cards:
+
+Examples:
+
+Clinic Visit
+
+[Date]
+Clinic Visit — Internal Medicine
+Doctor: Dr. Ahmed
+Complaint: abdominal pain
+Diagnosis: gastritis
+Amount: 150 EGP
+
+Admission
+
+[Date]
+Admission — Room 201
+Doctor: Dr. Khaled
+Admission Date / Discharge Date
+Status: active
+
+Invoice
+
+[Date]
+Invoice INV-001
+Total: 500 EGP
+Paid: 500 EGP
+Status: Paid
+
+Use color coding by event type.
+
+6️⃣ Data Integrity Rules
+
+Ensure:
+
+All new invoices created from patient workflows include patient_id
+
+Medical records link to patient_id
+
+Optionally link to encounter_id
+
+Add indexes:
+
+patients(id)
+patient_invoice_headers(patient_id)
+patient_encounters(patient_id)
+clinic_appointments(patient_id)
+admissions(patient_id)
+7️⃣ Performance Strategy
+
+Design the timeline API to remain fast for hospitals with:
+
+100k patients
+1M timeline events
+
+Include:
+
+indexed joins
+
+pagination
+
+optional date filters
+
+lazy loading
+
+Required Output
+
+Do NOT implement yet.
+
+First return a structured architecture proposal with this format:
+
+SECTION A — Migration Strategy
+SECTION B — Database Schema Changes
+SECTION C — Encounter Model Design
+SECTION D — Timeline Query Architecture
+SECTION E — Financial Summary Logic
+SECTION F — Patient UI Architecture
+SECTION G — Data Integrity Controls
+SECTION H — Performance & Scaling Strategy
+SECTION I — Implementation Roadmap
+
+Then stop and wait for approval before writing code.

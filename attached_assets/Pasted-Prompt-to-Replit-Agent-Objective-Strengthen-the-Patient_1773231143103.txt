@@ -1,0 +1,191 @@
+Prompt to Replit Agent
+
+Objective:
+Strengthen the Patient Data Model and build a reliable Patient Medical Record by fixing the core relational issue and preparing a unified patient timeline.
+
+1️⃣ Critical Fix — Replace Patient Name with patient_id
+
+Currently patient_invoice_headers links invoices to patients using the patient name text field, which is unsafe and can cause data conflicts.
+
+Required changes:
+
+Add column:
+
+patient_id UUID / INTEGER (same type as patients.id)
+
+Add foreign key:
+
+patient_invoice_headers.patient_id → patients.id
+
+Create migration script to populate patient_id by matching existing invoices with patients.
+
+Matching logic priority:
+
+Exact name match
+
+Name + phone if available
+
+Otherwise mark record for manual review
+
+After migration:
+
+patient_id NOT NULL
+
+All new invoices must reference patient_id only.
+
+Do NOT rely on patient name anywhere in financial records.
+
+2️⃣ Introduce Encounter / Visit Concept
+
+Create a visit layer between patient and services.
+
+New table:
+
+patient_encounters
+
+Fields:
+
+id
+patient_id
+encounter_type (clinic / emergency / admission)
+doctor_id
+department_id
+start_time
+end_time
+status
+created_at
+
+All medical actions should relate to encounter_id, not just patient.
+
+Examples:
+
+consultation
+
+prescriptions
+
+lab orders
+
+radiology
+
+services
+
+invoices
+
+3️⃣ Build Unified Patient Timeline (Read Model)
+
+Create a unified patient timeline query/view that aggregates events from multiple modules.
+
+Sources:
+
+clinic visits
+
+encounters
+
+admissions / stays
+
+lab orders
+
+radiology orders
+
+pharmacy sales
+
+invoices
+
+payments
+
+Each timeline item should return:
+
+event_id
+patient_id
+encounter_id
+event_type
+event_source
+event_date
+description
+amount (if financial)
+status
+
+Timeline must be sorted by event_date DESC.
+
+This timeline is computed, not stored in a new table.
+
+4️⃣ Patient Financial Summary
+
+Create aggregated metrics for patient header:
+
+total_visits
+total_admissions
+total_invoices
+total_billed
+total_paid
+total_outstanding
+last_visit_date
+first_visit_date
+
+These values should be computed via queries.
+
+5️⃣ Patient File UI Structure
+
+Update Patient Profile page to include:
+
+Header
+
+Patient Code
+
+Name
+
+Age
+
+Phone
+
+First Visit
+
+Last Visit
+
+Financial Summary
+
+Total billed
+
+Total paid
+
+Outstanding balance
+
+Tabs
+
+All Timeline
+Visits
+Admissions
+Lab
+Radiology
+Pharmacy
+Invoices
+Payments
+6️⃣ Data Integrity Rules
+
+Enforce:
+
+Every invoice must have patient_id
+
+Every medical action should link to encounter_id
+
+Prevent creating financial records without a patient reference
+
+Add indexes:
+
+patients(id)
+patient_invoice_headers(patient_id)
+patient_encounters(patient_id)
+7️⃣ Performance
+
+Patient timeline must remain performant even with large data.
+
+Use:
+
+indexed joins
+
+pagination
+
+limit queries
+
+Goal:
+Create a reliable patient master record that tracks the full medical and financial journey of the patient without ambiguity.
