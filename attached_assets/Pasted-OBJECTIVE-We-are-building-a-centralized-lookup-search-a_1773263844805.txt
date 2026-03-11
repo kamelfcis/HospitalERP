@@ -1,0 +1,294 @@
+OBJECTIVE
+We are building a centralized lookup/search architecture for shared master-data entities.
+The current audit and plan are mostly correct, but before implementation the plan must be revised with stricter architectural rules and clarifications.
+
+IMPORTANT
+DO NOT START IMPLEMENTATION.
+You must revise the plan only.
+
+The new plan must incorporate the following mandatory architectural constraints.
+
+-----------------------------------------------------
+
+1) SCOPE CLARITY (CRITICAL)
+
+Explicitly define the scope of centralized lookup.
+
+Entities that MUST be centralized:
+- Doctors
+- Services
+- Chart of Accounts (Accounts)
+- Treasuries
+- Clinics
+- Departments
+
+Decide clearly whether Patient lookup is:
+A) included in the centralized lookup system
+OR
+B) explicitly out of scope for this phase.
+
+Do NOT leave patient lookup half-included.
+
+-----------------------------------------------------
+
+2) ABSOLUTE RULE: NO DIRECT FETCH IN SCREENS
+
+After migration is complete, no screen/page/component may directly implement:
+
+- fetch()
+- apiRequest()
+- direct useQuery() for shared entities
+- local state lists for master data
+- custom debounce search logic
+
+All lookups for the entities above MUST go only through:
+
+• centralized query keys
+• shared lookup hooks
+• shared lookup components
+
+Any remaining direct entity search in screens is considered a failure of the task.
+
+-----------------------------------------------------
+
+3) ENDPOINT STRATEGY
+
+Clarify the API strategy explicitly.
+
+Either:
+
+OPTION A
+Create standardized lookup endpoints:
+- /api/lookups/doctors
+- /api/lookups/services
+- /api/lookups/accounts
+- /api/lookups/treasuries
+- /api/lookups/clinics
+- /api/lookups/departments
+
+OR
+
+OPTION B
+Reuse existing endpoints but normalize their results through adapters.
+
+The plan must explicitly state:
+- which endpoints remain
+- which endpoints are replaced
+- how responses will be normalized
+
+-----------------------------------------------------
+
+4) NORMALIZED LOOKUP RESULT CONTRACT
+
+All lookup APIs must return the same result shape:
+
+{
+  items: [
+    {
+      id: string,
+      name: string,
+      code?: string,
+      subtitle?: string,
+      isActive?: boolean,
+      meta?: any
+    }
+  ],
+  total?: number
+}
+
+This guarantees BaseLookupCombobox does not require entity-specific parsing logic.
+
+-----------------------------------------------------
+
+5) EDIT MODE / PRESELECTED VALUE STRATEGY
+
+The system must support edit forms where an entity is already selected.
+
+Example:
+A record has doctorId stored in DB.
+
+When the form opens, the lookup must display the selected doctor immediately even if the user has not searched yet.
+
+The plan must define one clear strategy:
+
+• initialSelectedItem
+OR
+• resolveById endpoint
+OR
+• fetchById
+
+This must work consistently for:
+- doctor
+- service
+- account
+- clinic
+- department
+- treasury
+
+-----------------------------------------------------
+
+6) KEEP BASE COMPONENT GENERIC
+
+BaseLookupCombobox must remain purely generic and UI-focused.
+
+It must NOT contain entity-specific business logic.
+
+Entity differences must be handled in wrapper components such as:
+
+- DoctorLookup
+- ServiceLookup
+- AccountLookup
+- TreasuryLookup
+- ClinicLookup
+- DepartmentLookup
+
+This prevents the base component from becoming a giant component.
+
+-----------------------------------------------------
+
+7) CENTRALIZED QUERY KEY REGISTRY
+
+All query keys must be defined in:
+
+lib/queryKeys.ts
+
+Example:
+
+QUERY_KEYS.doctors(search)
+QUERY_KEYS.services(params)
+QUERY_KEYS.accounts(filter)
+QUERY_KEYS.treasuries()
+QUERY_KEYS.clinics()
+QUERY_KEYS.departments()
+
+No query key literals should remain scattered across the codebase.
+
+-----------------------------------------------------
+
+8) REAL-TIME UPDATE GUARANTEE
+
+When a new entity is created or updated:
+
+Doctor → invalidate ["api/doctors"]
+Service → invalidate ["api/services"]
+Account → invalidate ["api/accounts"]
+Treasury → invalidate ["api/treasuries"]
+Clinic → invalidate ["api/clinic-clinics"]
+Department → invalidate ["api/departments"]
+
+All lookup components must reflect the new data immediately without page reload.
+
+-----------------------------------------------------
+
+9) PERFORMANCE RULES
+
+The plan must define performance behavior:
+
+Large datasets:
+• doctors
+• services
+• accounts
+
+→ server-side search required
+
+Small datasets:
+• departments
+• clinics
+• treasuries
+
+→ cached list with client filtering allowed.
+
+Debounce standard:
+300 ms
+
+-----------------------------------------------------
+
+10) CLEANUP AFTER EACH PHASE
+
+After each migration phase the system must run a cleanup refactor:
+
+• remove replaced legacy code
+• remove duplicated helpers
+• remove unused imports
+• remove obsolete query keys
+• split large files
+• remove unused search hooks
+• ensure no duplicated search logic remains
+
+Old and new search systems must not coexist.
+
+-----------------------------------------------------
+
+11) CODE QUALITY RULES
+
+Enforce these rules:
+
+• no giant components
+• no giant hooks
+• no duplicated debounce logic
+• no duplicated API fetch logic
+• no files exceeding reasonable complexity
+• prefer small reusable modules
+• shared logic must live in hooks or shared utilities
+
+If large files appear during migration, split them immediately.
+
+-----------------------------------------------------
+
+12) ACCEPTANCE CRITERIA
+
+The migration is only successful if:
+
+• no independent doctor search remains outside DoctorLookup/useDoctorsLookup
+• no independent service search remains outside ServiceLookup/useServicesLookup
+• no independent account search remains outside AccountLookup/useAccountsLookup
+• no duplicated debounce logic remains for shared entities
+• all entity creation flows invalidate the correct query keys
+• newly created entities appear instantly in all lookup components
+• no entity queryKey literals remain outside queryKeys.ts
+
+-----------------------------------------------------
+
+13) IMPLEMENTATION DISCIPLINE
+
+Implementation must follow this order ONLY:
+
+Phase 1 — Foundation
+(queryKeys + useLookup)
+
+Phase 2 — Entity hooks
+(useDoctorsLookup etc.)
+
+Phase 3 — Lookup components
+(BaseLookupCombobox + wrappers)
+
+Phase 4 — High priority screen migration
+
+Phase 5 — Medium priority migration
+
+Phase 6 — Low priority migration
+
+Phase 7 — Final refactor + cleanup
+
+-----------------------------------------------------
+
+14) FINAL INSTRUCTION
+
+Do NOT start implementation yet.
+
+First revise the plan to include all constraints above.
+
+Return the updated plan using the same structure:
+
+1) Executive Summary
+2) Search Audit Table
+3) Duplicated Patterns Found
+4) Proposed Centralized Lookup Architecture
+5) Real-Time Update Strategy
+6) Performance Strategy
+7) Migration Phases
+8) Refactor Strategy
+9) Risks / Edge Cases
+10) Files To Create
+11) Files To Refactor
+12) Final Recommendation Before Implementation

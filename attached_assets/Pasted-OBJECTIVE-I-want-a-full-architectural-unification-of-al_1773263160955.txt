@@ -1,0 +1,237 @@
+OBJECTIVE
+I want a full architectural unification of all search / lookup behavior across the entire system.
+
+CRITICAL RULE
+No screen in the application is allowed to keep its own separate custom search logic for:
+- doctors
+- services
+- chart of accounts accounts
+- treasuries / cash accounts
+- clinics
+- departments
+- or any shared master-data entity
+
+All such searches must come from one centralized reusable lookup/search system built from shared components, shared hooks, centralized query keys, and standardized server-side lookup endpoints.
+
+THIS IS NOT OPTIONAL
+I do NOT want every screen to implement its own doctor search, account search, or service search.
+I want all of that to come from one place only.
+
+PRIMARY GOAL
+You must locate all current search/select implementations in the codebase that independently search for:
+- doctors
+- services
+- accounts
+- treasuries
+- clinics
+- departments
+- and similar shared entities
+
+Then prepare a complete execution plan to replace all of them with a single centralized lookup architecture that is:
+- reusable
+- fast
+- live-updated
+- easy to maintain
+- non-duplicated
+- server-side filtered
+- consistent in behavior and UI
+
+IMPORTANT
+DO NOT START IMPLEMENTATION YET.
+
+PHASE 1 ONLY = ANALYSIS + PLAN
+
+Your job now is only to:
+1) inspect the current codebase
+2) find every screen / component / modal / form / selector / combobox / dropdown that performs these searches
+3) identify duplicated search logic
+4) identify stale local lists, hardcoded options, custom fetches, and non-reusable lookup patterns
+5) propose a strong refactor plan
+
+ONLY AFTER I REVIEW THE PLAN will implementation start.
+
+PLAN REQUIREMENTS
+
+A) FULL SEARCH AUDIT
+Find and list all places where the app currently searches/selects:
+- doctor
+- service
+- account
+- treasury
+- clinic
+- department
+- patient (if applicable)
+- any other repeated master-data selector
+
+For each place show:
+- file path
+- component name
+- entity being searched
+- current implementation pattern
+- duplicated logic yes/no
+- stale data risk yes/no
+- migration priority
+
+B) DUPLICATION ANALYSIS
+Identify clearly:
+- repeated combobox implementations
+- repeated dropdown implementations
+- repeated API fetch logic
+- repeated debounce logic
+- repeated query mapping logic
+- repeated option formatting logic
+- repeated “fetch on mount” patterns
+- repeated local filtering
+- hardcoded lists
+
+C) PROPOSED TARGET ARCHITECTURE
+
+Design a centralized lookup system including:
+
+1) Base shared component
+Example:
+BaseLookupCombobox
+
+2) Entity specific lookup wrappers
+DoctorLookup
+ServiceLookup
+AccountLookup
+TreasuryLookup
+ClinicLookup
+DepartmentLookup
+
+3) Shared lookup hooks
+useLookup
+useDoctorsLookup
+useServicesLookup
+useAccountsLookup
+useTreasuriesLookup
+useClinicsLookup
+useDepartmentsLookup
+
+4) Central query key registry
+
+5) Unified lookup API endpoints
+
+6) Standard normalized response structure
+
+7) Central lookup configuration registry
+
+D) REAL TIME UPDATE STRATEGY
+
+The architecture must guarantee that:
+
+When a new service is created → it appears instantly in all search boxes.
+
+When a new doctor is created → it appears instantly in all search boxes.
+
+When a new account or treasury is created → it appears instantly in all search boxes.
+
+When a new clinic or department is created → it appears instantly in all search boxes.
+
+No page reload allowed.
+No stale data allowed.
+
+Use centralized cache invalidation strategy.
+
+E) PERFORMANCE STRATEGY
+
+Search must be:
+
+fast  
+debounced  
+server side filtered  
+cache efficient  
+not loading huge lists unnecessarily  
+consistent across screens  
+
+F) MIGRATION STRATEGY
+
+Explain clearly:
+
+Which shared lookup foundation will be built first.
+
+Which screens will be migrated first.
+
+How duplicated search code will be removed.
+
+How edit forms will keep their selected values.
+
+How department filtering / clinic filtering / permission filtering will remain correct.
+
+How treasury and chart-of-accounts relations remain consistent.
+
+G) CODE QUALITY + REFACTOR REQUIREMENT (CRITICAL)
+
+After each major implementation phase you must perform a strong refactor to ensure:
+
+- no bloated files
+- no massive components
+- no code duplication
+- no unnecessary lines of code
+- clear folder structure
+- clean reusable modules
+- readable and maintainable code
+
+Files must be logically split into small maintainable units.
+
+Avoid long components with hundreds of lines.
+
+Avoid repeating similar logic across files.
+
+Prefer reusable utilities, hooks, and shared components.
+
+Code must remain clean, organized, and scalable.
+
+If you detect large messy files during this refactor, include them in the refactor scope.
+
+H) RISK ANALYSIS
+
+Mention potential risks such as:
+
+- breaking edit mode values
+- inconsistent existing data structures
+- mixed treasury/account logic
+- modals not invalidating cache
+- hidden duplicated selectors in older screens
+
+I) FILES TO CREATE
+
+List all new shared files likely needed.
+
+J) FILES TO REFACTOR
+
+List existing files that must be modified or migrated.
+
+K) IMPLEMENTATION PHASES
+
+Explain step-by-step phases such as:
+
+Phase 1 — Audit  
+Phase 2 — Shared lookup foundation  
+Phase 3 — API standardization  
+Phase 4 — Screen migrations  
+Phase 5 — Global refactor and cleanup  
+
+FINAL INSTRUCTION
+
+Do not implement anything yet.
+
+First deeply inspect the codebase and return the full execution plan.
+
+DELIVERABLE FORMAT
+
+Return the result exactly in this structure:
+
+1) Executive Summary  
+2) Search Audit Table  
+3) Duplicated Patterns Found  
+4) Proposed Centralized Lookup Architecture  
+5) Real-Time Update Strategy  
+6) Performance Strategy  
+7) Migration Phases  
+8) Refactor Strategy  
+9) Risks / Edge Cases  
+10) Files To Create  
+11) Files To Refactor  
+12) Final Recommendation Before Implementation
