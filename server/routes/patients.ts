@@ -7,17 +7,19 @@ import { requireAuth, checkPermission } from "./_shared";
 export function registerPatientsRoutes(app: Express) {
   // ==================== Patients API ====================
 
-  app.get("/api/patients", requireAuth, async (req, res) => {
+  // Patient list / autocomplete search — needs PATIENTS_VIEW
+  app.get("/api/patients", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const search = req.query.search as string;
       const list = search ? await storage.searchPatients(search) : await storage.getPatients();
       res.json(list);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
+  // Scope endpoint — requireAuth only (every logged-in user needs their own scope)
   app.get("/api/patient-scope", requireAuth, async (req, res) => {
     try {
       const scope = await storage.getUserCashierScope(req.session.userId!);
@@ -27,6 +29,7 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
+  // Patient stats grid (patients/index page) — PATIENTS_VIEW + dept scope
   app.get("/api/patients/stats", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const { search, dateFrom, dateTo } = req.query as Record<string, string>;
@@ -51,18 +54,20 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patients/:id", requireAuth, async (req, res) => {
+  // Single patient record — PATIENTS_VIEW
+  app.get("/api/patients/:id", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const p = await storage.getPatient(req.params.id as string);
       if (!p) return res.status(404).json({ message: "مريض غير موجود" });
       res.json(p);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
-  app.get("/api/patients/:id/journey", requireAuth, async (req, res) => {
+  // Patient journey / timeline — PATIENTS_VIEW
+  app.get("/api/patients/:id/journey", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const data = await storage.getPatientTimeline(req.params.id as string);
       if (!data) return res.status(404).json({ message: "مريض غير موجود" });
@@ -72,7 +77,7 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patients/:id/timeline", requireAuth, async (req, res) => {
+  app.get("/api/patients/:id/timeline", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const data = await storage.getPatientTimeline(req.params.id as string);
       if (!data) return res.status(404).json({ message: "مريض غير موجود" });
@@ -82,7 +87,8 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patients/:id/previous-consultations", requireAuth, async (req, res) => {
+  // Previous consultations — used by clinic module; PATIENTS_VIEW covers it
+  app.get("/api/patients/:id/previous-consultations", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const limit = parseInt(String(req.query.limit || "5"));
       const consultations = await storage.getPatientPreviousConsultations(req.params.id as string, limit);
@@ -92,19 +98,20 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patient-invoices/:id/transfers", requireAuth, async (req, res) => {
+  // Doctor transfer records on an invoice — PATIENT_INVOICES_VIEW
+  app.get("/api/patient-invoices/:id/transfers", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_VIEW), async (req, res) => {
     try {
       const transfers = await storage.getDoctorTransfers(req.params.id as string);
       res.json(transfers);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
   app.post("/api/patient-invoices/:id/transfer-to-doctor",
     requireAuth,
-    checkPermission("patient_invoices.transfer_doctor"),
+    checkPermission(PERMISSIONS.PATIENT_INVOICES_TRANSFER_DOCTOR),
     async (req, res) => {
     try {
       const { doctorName, amount, clientRequestId, notes } = req.body;
@@ -127,32 +134,34 @@ export function registerPatientsRoutes(app: Express) {
 
   // ==================== Doctor Settlements ====================
 
-  app.get("/api/doctor-settlements", requireAuth, async (req, res) => {
+  // Settlement list — DOCTORS_VIEW (financial doctor data)
+  app.get("/api/doctor-settlements", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const { doctorName } = req.query;
       const data = await storage.getDoctorSettlements(doctorName ? { doctorName: String(doctorName) } : undefined);
       res.json(data);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
-  app.get("/api/doctor-settlements/outstanding", requireAuth, async (req, res) => {
+  // Outstanding transfers for settlement — DOCTORS_VIEW
+  app.get("/api/doctor-settlements/outstanding", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const { doctorName } = req.query;
       if (!doctorName) return res.status(400).json({ message: "doctorName مطلوب" });
       const data = await storage.getDoctorOutstandingTransfers(String(doctorName));
       res.json(data);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
   app.post("/api/doctor-settlements",
     requireAuth,
-    checkPermission("doctor_settlements.create"),
+    checkPermission(PERMISSIONS.DOCTOR_SETTLEMENTS_CREATE),
     async (req, res) => {
     try {
       const { doctorName, paymentDate, amount, paymentMethod, settlementUuid, notes, allocations } = req.body;
@@ -180,7 +189,7 @@ export function registerPatientsRoutes(app: Express) {
       const p = await storage.createPatient(req.body);
       res.status(201).json(p);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
@@ -190,7 +199,7 @@ export function registerPatientsRoutes(app: Express) {
       const p = await storage.updatePatient(req.params.id as string, req.body);
       res.json(p);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
@@ -200,52 +209,56 @@ export function registerPatientsRoutes(app: Express) {
       await storage.deletePatient(req.params.id as string);
       res.json({ success: true });
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
   // ==================== Doctors API ====================
 
-  app.get("/api/doctors/balances", requireAuth, async (req, res) => {
+  // Doctor payable balances — DOCTORS_VIEW
+  app.get("/api/doctors/balances", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       res.json(await storage.getDoctorBalances());
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
-  app.get("/api/doctor-statement", requireAuth, async (req, res) => {
+  // Doctor account statement — DOCTOR_VIEW_STATEMENT (designed for this purpose)
+  app.get("/api/doctor-statement", requireAuth, checkPermission(PERMISSIONS.DOCTOR_VIEW_STATEMENT), async (req, res) => {
     try {
       const { doctorName, dateFrom, dateTo } = req.query as Record<string, string>;
       if (!doctorName) return res.status(400).json({ message: "doctorName مطلوب" });
       res.json(await storage.getDoctorStatement({ doctorName, dateFrom, dateTo }));
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
-  app.get("/api/doctors", requireAuth, async (req, res) => {
+  // Doctor list / search — DOCTORS_VIEW
+  app.get("/api/doctors", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const search = req.query.search as string;
       const includeInactive = req.query.includeInactive === "true";
       const list = search ? await storage.searchDoctors(search) : await storage.getDoctors(includeInactive);
       res.json(list);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
 
-  app.get("/api/doctors/:id", requireAuth, async (req, res) => {
+  // Single doctor record — DOCTORS_VIEW
+  app.get("/api/doctors/:id", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const d = await storage.getDoctor(req.params.id as string);
       if (!d) return res.status(404).json({ message: "طبيب غير موجود" });
       res.json(d);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
@@ -255,7 +268,7 @@ export function registerPatientsRoutes(app: Express) {
       const d = await storage.createDoctor(req.body);
       res.status(201).json(d);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
@@ -265,7 +278,7 @@ export function registerPatientsRoutes(app: Express) {
       const d = await storage.updateDoctor(req.params.id as string, req.body);
       res.json(d);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
@@ -275,7 +288,7 @@ export function registerPatientsRoutes(app: Express) {
       await storage.deleteDoctor(req.params.id as string);
       res.json({ success: true });
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });
