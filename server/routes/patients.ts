@@ -304,7 +304,7 @@ export function registerPatientsRoutes(app: Express) {
     try {
       const { duplicatePatientId } = req.body;
       if (!duplicatePatientId) return res.status(400).json({ message: "duplicatePatientId مطلوب" });
-      const impact = await storage.getPatientMergeImpact(req.params.id, duplicatePatientId);
+      const impact = await storage.getPatientMergeImpact(req.params.id as string, String(duplicatePatientId));
       res.json(impact);
     } catch (error: unknown) {
       const code = (error as { statusCode?: number }).statusCode ?? 500;
@@ -319,14 +319,15 @@ export function registerPatientsRoutes(app: Express) {
       if (!duplicatePatientId) return res.status(400).json({ message: "duplicatePatientId مطلوب" });
       if (!reason || !String(reason).trim()) return res.status(400).json({ message: "reason (سبب الدمج) مطلوب" });
 
-      await storage.mergePatients(req.params.id, duplicatePatientId, String(reason), req.session.userId!);
+      const masterId = req.params.id as string;
+      await storage.mergePatients(masterId, String(duplicatePatientId), String(reason), req.session.userId!);
 
       // Audit log the merge action
       storage.createAuditLog({
         tableName: "patients",
-        recordId: req.params.id,
+        recordId: masterId,
         action: "merge",
-        newValues: JSON.stringify({ masterPatientId: req.params.id, duplicatePatientId, reason }),
+        newValues: JSON.stringify({ masterPatientId: masterId, duplicatePatientId, reason }),
         userId: req.session.userId!,
         ipAddress: req.ip ?? null,
       }).catch(() => {});
