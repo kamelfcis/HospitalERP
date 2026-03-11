@@ -258,4 +258,84 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
+  // ==================== Patient Inquiry ====================
+
+  app.get("/api/patient-inquiry", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "يجب تسجيل الدخول" });
+
+      const isAdmin = user.role === "admin";
+
+      // R6: non-admin without dept → 403
+      if (!isAdmin && !user.departmentId) {
+        return res.status(403).json({ message: "ليس لديك قسم محدد للاستعلام، تواصل مع مدير النظام" });
+      }
+
+      // R1, R2: forcedDeptId ALWAYS from session, never from query
+      const forcedDeptId = isAdmin ? null : (user.departmentId ?? null);
+
+      // Admin-only optional dept filter
+      const adminDeptFilter = isAdmin ? ((req.query.deptId as string) || null) : null;
+
+      const {
+        clinicId = null,
+        dateFrom = null,
+        dateTo   = null,
+        search   = null,
+      } = req.query as Record<string, string>;
+
+      const result = await storage.getPatientInquiry(
+        { adminDeptFilter, clinicId, dateFrom, dateTo, search },
+        forcedDeptId,
+        isAdmin,
+      );
+
+      return res.json(result);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ message: _em });
+    }
+  });
+
+  app.get("/api/patient-inquiry/lines", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "يجب تسجيل الدخول" });
+
+      const isAdmin = user.role === "admin";
+
+      // R6
+      if (!isAdmin && !user.departmentId) {
+        return res.status(403).json({ message: "ليس لديك قسم محدد للاستعلام" });
+      }
+
+      const forcedDeptId = isAdmin ? null : (user.departmentId ?? null);
+
+      const {
+        patientId   = null,
+        patientName = null,
+        lineType    = null,
+      } = req.query as Record<string, string>;
+
+      if (!patientId && !patientName) {
+        return res.status(400).json({ message: "يجب تحديد المريض (patientId أو patientName)" });
+      }
+
+      const lines = await storage.getPatientInquiryLines(
+        { patientId, patientName },
+        forcedDeptId,
+        isAdmin,
+        lineType,
+      );
+
+      return res.json(lines);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ message: _em });
+    }
+  });
+
 }

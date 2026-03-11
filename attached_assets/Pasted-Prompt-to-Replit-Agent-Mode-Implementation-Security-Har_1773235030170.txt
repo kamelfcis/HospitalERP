@@ -1,0 +1,315 @@
+Prompt to Replit Agent
+
+Mode: Implementation + Security Hardening
+Objective:
+Implement a Patient Inquiry Screen that allows users to query patient activity (services, drugs, consumables) while strictly enforcing department-level data isolation.
+
+The system must guarantee that:
+
+Admins can see all departments
+
+Non-admin users can ONLY see their own department
+
+No user can bypass this restriction via query parameters or URL manipulation
+
+Security enforcement must be server-side, not frontend-only.
+
+System Context
+
+Existing tables:
+
+users
+departments
+patients
+patient_invoice_headers
+patient_invoice_lines
+clinic_appointments
+clinic_clinics
+admissions
+
+Important fields:
+
+users.department_id
+users.role
+patient_invoice_headers.department_id
+patient_invoice_headers.patient_id
+patient_invoice_lines.line_type
+
+Line types:
+
+service
+drug
+consumable
+Critical Security Rules (Must Be Enforced)
+Rule 1 — Department Isolation
+
+For non-admin users:
+
+ALL queries must enforce:
+pih.department_id = req.user.departmentId
+
+Even if a user sends:
+
+/api/patient-inquiry?deptId=anotherDept
+
+The backend must ignore it.
+
+Department restriction must always come from:
+
+req.user.departmentId
+Rule 2 — Ignore Query Department for Non-Admins
+
+If:
+
+user.role != 'admin'
+
+Then:
+
+deptId from query params MUST be ignored
+
+Only admins may filter departments manually.
+
+Rule 3 — Prevent Data Leakage from NULL Departments
+
+Invoices where:
+
+department_id IS NULL
+
+must NOT appear to non-admin users.
+
+Admins may see them.
+
+Rule 4 — Secure Patient Matching
+
+Avoid using patient name as primary identifier.
+
+Logic must be:
+
+IF patient_id exists → use patient_id
+ELSE fallback to patient_name (legacy records only)
+
+Fallback using patient name must still enforce department restriction.
+
+Rule 5 — Admissions Data Visibility
+
+Admissions currently have no department_id.
+
+To prevent cross-department data leakage:
+
+Phase 1 rule:
+
+Admissions should NOT be included in Patient Inquiry results
+for non-admin users unless a reliable department mapping exists.
+
+Admins may see them.
+
+Rule 6 — API Authorization
+
+Access to this screen requires:
+
+patients.view permission
+
+Additionally:
+
+if user.role != admin AND user.department_id IS NULL
+→ return HTTP 403
+
+Do NOT rely on frontend validation.
+
+Tasks
+T001 — Backend Storage Functions
+
+File:
+
+server/storage/patients-doctors-storage.ts
+
+Create functions:
+
+getPatientInquiry(filters, forcedDeptId, isAdmin)
+getPatientInquiryLines(patientKey, forcedDeptId, isAdmin, lineType?)
+Department Enforcement Logic
+forcedDeptId = isAdmin ? null : req.user.departmentId
+
+Query must enforce:
+
+WHERE pih.status != 'cancelled'
+AND NOT COALESCE(pil.is_void, false)
+
+Department rules:
+
+IF isAdmin
+   optional dept filter allowed
+ELSE
+   enforce pih.department_id = forcedDeptId
+
+Never trust client department filters.
+
+Patient Inquiry Query
+
+Aggregate patient totals per department.
+
+Return:
+
+patient_id
+patient_code
+patient_name
+patient_phone
+department_id
+department_name
+invoice_count
+services_total
+drugs_total
+consumables_total
+total_net
+total_paid
+total_outstanding
+last_invoice_date
+
+Important:
+
+total_outstanding = total_net - total_paid
+
+Limit:
+
+LIMIT 200
+
+Sort:
+
+ORDER BY last_invoice_date DESC
+T002 — Patient Inquiry Lines
+
+Function:
+
+getPatientInquiryLines()
+
+Return invoice line items for selected patient.
+
+Columns:
+
+line_type
+description
+quantity
+unit_price
+total_price
+invoice_number
+invoice_date
+invoice_status
+department_id
+
+Matching rule:
+
+IF patientId exists → use patientId
+ELSE fallback to patientName
+
+Department restriction still applies.
+
+T003 — API Routes
+
+File:
+
+server/routes/patients.ts
+
+Add endpoints:
+
+GET /api/patient-inquiry
+GET /api/patient-inquiry/lines
+
+Security logic:
+
+const isAdmin = req.user.role === 'admin';
+
+if (!isAdmin && !req.user.departmentId)
+  return res.status(403)
+
+Department enforcement:
+
+const forcedDeptId = isAdmin ? null : req.user.departmentId;
+
+Call storage functions with forcedDeptId.
+
+T004 — Frontend Page
+
+File:
+
+client/src/pages/patient-inquiry/index.tsx
+
+Filters:
+
+Search (name / phone)
+Date range
+Department (admin only)
+Clinic filter (OPD only)
+
+Department filter visibility:
+
+Admins → dropdown
+Non-admin → fixed badge showing their department
+Table Layout
+
+Columns:
+
+#
+Patient Code
+Patient Name
+Phone
+Department
+Services Total
+Drugs Total
+Consumables Total
+Total
+Paid
+Remaining
+Last Invoice
+
+Remaining amount coloring:
+
+>0 red
+0 green
+Patient Details Panel
+
+Open using side sheet.
+
+Tabs:
+
+Services
+Drugs
+Consumables
+
+Each tab shows invoice lines.
+
+Performance
+
+Search must use:
+
+debounce 400ms
+LIMIT 200
+
+Lines loaded lazily.
+
+Required Security Checks
+
+Verify:
+
+1️⃣ Non-admin users cannot see other departments
+2️⃣ Query params cannot bypass department restriction
+3️⃣ Invoices without department_id hidden from non-admin users
+4️⃣ Patient matching never leaks records across departments
+
+Expected Result
+
+A secure patient inquiry system where:
+
+Admin → sees all data
+Department user → sees only their department
+
+No cross-department visibility is possible.
+
+Before Implementation
+
+First confirm:
+
+Department isolation logic
+Security enforcement rules
+API structure
+
+Then proceed with coding.

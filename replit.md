@@ -6,7 +6,36 @@ This project is an Arabic RTL web application for hospital general ledger (GL) a
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
-## آخر جلسة عمل — ما تم إنجازه (سجل المرضى وحجز العيادات)
+## آخر جلسة عمل — شاشة استعلام المرضى (Patient Inquiry)
+
+### شاشة استعلام المرضى (`/patient-inquiry`)
+**وصف**: شاشة استعلام آمنة تعرض بيانات المرضى + الخدمات + الأدوية + المستهلكات مع عزل صارم على مستوى الأقسام.
+
+**الأمان (Server-Side Enforced)**:
+- R1/R2: `forcedDeptId` دائماً من `req.user.departmentId` — لا من query params
+- R3: فواتير بدون `department_id` مخفية لغير الأدمن
+- R4: مطابقة المريض بـ `patient_id` أولاً ثم `patient_name` fallback
+- R5: Admissions غير مدرجة لغير الأدمن (Phase 1)
+- R6: HTTP 403 إذا المستخدم غير أدمن وليس له قسم
+
+**Backend**:
+- `getPatientInquiry()` في `patients-doctors-storage.ts` — CTE query مع aggregation منفصل للـ headers والـ lines
+- `getPatientInquiryLines()` — بنود مريض محدد مع عزل القسم
+- `GET /api/patient-inquiry` و `GET /api/patient-inquiry/lines` في `patients.ts`
+
+**Frontend**:
+- `client/src/pages/patient-inquiry/index.tsx`
+- الأدمن: dropdown لاختيار القسم
+- العيادات الخارجية: فلتر عيادة إضافي (`showClinicFilter` عند OPD dept)
+- غير الأدمن: badge ثابت يعرض اسم قسمه فقط
+- جدول مرضى مع ألوان: الباقي أحمر إذا > 0، أخضر إذا = 0
+- Sheet تفاصيل مريض: 3 tabs (الخدمات / الأدوية / المستهلكات) + إجمالي كل tab
+
+**Route**: `/patient-inquiry` — sidebar item "استعلام المرضى" بأيقونة ScanSearch
+
+---
+
+## جلسة سابقة — ما تم إنجازه (سجل المرضى وحجز العيادات)
 
 ### الشاشة الرئيسية: استقبال المرضى (`client/src/pages/patients/`)
 **`PatientFormDialog.tsx`** — نافذة استقبال شاملة تحتوي على:

@@ -1,0 +1,572 @@
+SYSTEM TASK
+Implement a secure, backend-enforced Patient Inquiry screen for the hospital ERP system.
+
+This feature must allow users to search and view patient financial/service activity (services, drugs, consumables) while enforcing strict department-level isolation at the backend level.
+
+Frontend filtering is ONLY for UX. Security must be enforced entirely in the backend.
+
+The implementation must follow the architecture and constraints below exactly.
+
+------------------------------------------------
+
+OBJECTIVE
+
+Build a Patient Inquiry module that displays:
+
+• Patient identity
+• Patient phone
+• Department
+• Total services
+• Total drugs
+• Total consumables
+• Total net invoices
+• Total paid
+• Outstanding balance
+• Last invoice date
+
+And allow opening a detailed side panel showing the lines grouped by:
+
+• Services
+• Drugs
+• Consumables
+
+Data source is the existing invoice system:
+
+patient_invoice_headers  
+patient_invoice_lines
+
+------------------------------------------------
+
+CRITICAL SECURITY RULES
+
+R1  
+Non-admin users must ONLY see invoices belonging to their department.
+
+Always enforce:
+
+WHERE pih.department_id = req.user.departmentId
+
+R2  
+Non-admin users must NEVER control department filtering through query parameters.
+
+Ignore any deptId passed in the URL for non-admin users.
+
+Use only:
+
+forcedDeptId = req.user.departmentId
+
+R3  
+Invoices with department_id IS NULL must be hidden from non-admin users.
+
+R4  
+Patient matching priority:
+
+1️⃣ patient_id  
+2️⃣ fallback to patient_name ONLY if patient_id is NULL
+
+R5  
+Admissions data must NOT be shown to non-admin users in Phase 1.
+
+R6  
+If a non-admin user has no department assigned → return HTTP 403.
+
+R7  
+Clinic filtering is only allowed when the effective department is OPD.
+
+R8  
+All totals must be calculated WITHOUT duplication caused by JOINing invoice lines.
+
+R9  
+Lines endpoint must verify that the requested patient actually has invoices inside the user's department scope.
+
+R10  
+API responses must return metadata:
+
+count  
+limit  
+hasMore
+
+R11  
+Date filters must be inclusive of the full day (avoid time boundary errors).
+
+R12  
+Every access to Patient Inquiry endpoints must be audit logged.
+
+------------------------------------------------
+
+SYSTEM CONTEXT
+
+users.role = 'admin'
+users.department_id
+
+patient_invoice_headers.department_id
+
+patient_invoice_lines.line_type
+
+enum values:
+
+service  
+drug  
+consumable
+
+Known IDs:
+
+OPD Department ID
+b3347de7-e3d1-4b63-b9d6-ba93175d1bce
+
+Clinic Example
+2b11fc0b-1314-4b3d-8714-c7cbf273372c
+
+------------------------------------------------
+
+IMPLEMENTATION PLAN
+
+Tasks must be executed in order.
+
+T001 → T002 → T003 → T004
+
+------------------------------------------------
+
+T001
+BACKEND STORAGE FUNCTIONS
+
+File
+
+server/storage/patients-doctors-storage.ts
+
+Create two functions.
+
+------------------------------------------------
+
+FUNCTION 1
+
+getPatientInquiry(filters, forcedDeptId, isAdmin)
+
+IMPORTANT
+
+Do NOT directly join invoice headers and lines when calculating totals.
+
+This causes header totals to multiply by number of lines.
+
+Instead use CTE structure.
+
+Required SQL structure:
+
+CTE 1
+filtered_invoices
+
+Select only invoices allowed for the user.
+
+Apply rules:
+
+• status != cancelled
+• department isolation
+• date filters
+• clinic filter (if applicable)
+
+CTE 2
+invoice_totals
+
+Aggregate header totals per patient.
+
+SUM net_amount  
+SUM paid_amount  
+SUM outstanding
+
+CTE 3
+line_totals
+
+Aggregate totals by line_type
+
+SUM services  
+SUM drugs  
+SUM consumables
+
+CTE 4
+final join
+
+Join the results.
+
+Fields returned:
+
+uid  
+patient_id  
+patient_code  
+patient_name  
+patient_phone  
+department_id  
+dept_name  
+invoice_count  
+services_total  
+drugs_total  
+consumables_total  
+total_net  
+total_paid  
+total_outstanding  
+last_invoice_date
+
+Sort:
+
+ORDER BY last_invoice_date DESC
+
+Limit:
+
+LIMIT 200
+
+Return metadata:
+
+count  
+limit  
+hasMore
+
+------------------------------------------------
+
+FUNCTION 2
+
+getPatientInquiryLines(patientKey, forcedDeptId, isAdmin, lineType)
+
+patientKey structure
+
+{
+ patientId?: string
+ patientName?: string
+}
+
+Matching logic:
+
+IF patientId exists  
+match by patient_id
+
+ELSE  
+fallback to patient_name
+
+Filters
+
+• status != cancelled
+• line is not void
+• department isolation
+
+Columns returned
+
+line_id  
+line_type  
+description  
+quantity  
+unit_price  
+total_price  
+invoice_number  
+invoice_date  
+department_id  
+department_name
+
+Order
+
+invoice_date DESC  
+created_at DESC
+
+Before returning lines:
+
+Validate that at least one matching invoice exists within the user's department scope.
+
+If not → return empty array.
+
+------------------------------------------------
+
+Add both function signatures to
+
+IStorage interface
+
+------------------------------------------------
+
+T002
+BACKEND API ROUTES
+
+File
+
+server/routes/patients.ts
+
+------------------------------------------------
+
+Route 1
+
+GET /api/patient-inquiry
+
+Permission
+
+patients.view
+
+Logic
+
+1️⃣ Identify user
+
+const user = req.user
+
+2️⃣ Check role
+
+const isAdmin = user.role === 'admin'
+
+3️⃣ Enforce department requirement
+
+if (!isAdmin && !user.departmentId)
+return 403
+
+4️⃣ Force department scope
+
+const forcedDeptId = isAdmin ? null : user.departmentId
+
+5️⃣ Allow dept filter only for admin
+
+const adminDeptFilter = isAdmin ? req.query.deptId : null
+
+6️⃣ Extract filters
+
+clinicId  
+dateFrom  
+dateTo  
+search
+
+7️⃣ Call storage
+
+getPatientInquiry()
+
+8️⃣ Return response with metadata
+
+------------------------------------------------
+
+Route 2
+
+GET /api/patient-inquiry/lines
+
+Permission
+
+patients.view
+
+Validation
+
+Must receive either:
+
+patientId  
+or  
+patientName
+
+Department isolation must still apply.
+
+------------------------------------------------
+
+AUDIT LOGGING
+
+Log every request with:
+
+user_id  
+endpoint  
+filters used  
+timestamp  
+rows returned
+
+------------------------------------------------
+
+T003
+FRONTEND PAGE
+
+File
+
+client/src/pages/patient-inquiry/index.tsx
+
+------------------------------------------------
+
+SECURITY NOTE
+
+Frontend filtering is ONLY for UX.
+
+Backend already enforces security.
+
+------------------------------------------------
+
+AUTH CONTEXT
+
+const { user } = useAuth()
+
+const isAdmin = user?.role === 'admin'
+
+const userDeptId = user?.departmentId
+
+------------------------------------------------
+
+FILTER BAR
+
+Fields
+
+🔍 Search name / phone  
+📅 Date From  
+📅 Date To  
+🏥 Department (admin only)  
+🩺 Clinic (only when department = OPD)  
+Clear button
+
+Non-admin users
+
+Show department badge instead of dropdown.
+
+------------------------------------------------
+
+PATIENT TABLE
+
+Columns
+
+#  
+Patient Code  
+Patient Name  
+Phone  
+Department  
+Services  
+Drugs  
+Consumables  
+Total  
+Paid  
+Outstanding  
+Last Invoice
+
+Formatting
+
+EGP currency
+
+Outstanding
+
+Red if > 0  
+Green if = 0
+
+------------------------------------------------
+
+DETAIL PANEL
+
+Open on row click
+
+Right side sheet
+
+Header
+
+Patient name  
+Code  
+Phone  
+Totals
+
+Tabs
+
+Services  
+Drugs  
+Consumables
+
+Each tab shows
+
+description  
+quantity  
+unit price  
+total  
+invoice number  
+invoice date
+
+------------------------------------------------
+
+DATA LOADING
+
+Main list
+
+React Query
+
+staleTime 30 seconds
+
+Details
+
+Lazy loaded
+
+staleTime 60 seconds
+
+Search field
+
+Debounce 400ms
+
+------------------------------------------------
+
+LIMIT WARNING
+
+If API indicates hasMore = true
+
+Display banner
+
+"Results limited to 200 records. Refine your filters."
+
+------------------------------------------------
+
+T004
+APP ROUTING
+
+Files
+
+client/src/App.tsx
+
+Add lazy route
+
+/patient-inquiry
+
+Permission
+
+patients.view
+
+Add sidebar item
+
+🔍 Patient Inquiry
+
+------------------------------------------------
+
+PERFORMANCE NOTES
+
+Ensure indexes exist on
+
+patient_invoice_headers
+
+department_id  
+invoice_date  
+patient_id
+
+patient_invoice_lines
+
+header_id  
+line_type
+
+patients
+
+full_name  
+phone
+
+------------------------------------------------
+
+DO NOT MODIFY THESE FILES
+
+server/routes/auth.ts  
+server/storage/treasuries-storage.ts  
+doctor-orders/components/OrdersTable.tsx
+
+------------------------------------------------
+
+ACCEPTANCE CRITERIA
+
+Admin users
+
+• can see all departments
+• can filter by department
+
+Non-admin users
+
+• see ONLY their department
+
+Changing URL query params must NOT bypass restrictions.
+
+Totals must be accurate and not duplicated.
+
+System must not expose data across departments.
+
+All endpoints must be SQL injection safe using parameterized queries.
+
+------------------------------------------------
+
+END TASK

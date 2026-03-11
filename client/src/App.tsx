@@ -36,6 +36,7 @@ const SalesReturns = lazy(() => import("@/pages/sales-returns"));
 const Warehouses = lazy(() => import("@/pages/Warehouses"));
 const Departments = lazy(() => import("@/pages/Departments"));
 const Patients = lazy(() => import("@/pages/patients"));
+const PatientInquiry = lazy(() => import("@/pages/patient-inquiry"));
 const Doctors = lazy(() => import("@/pages/Doctors"));
 const PatientInvoice = lazy(() => import("@/pages/PatientInvoice"));
 const CashierCollection = lazy(() => import("@/pages/cashier/CashierCollection"));
@@ -117,6 +118,7 @@ function Router() {
           <Route path="/departments">{() => <G p="departments.view"><Departments /></G>}</Route>
           <Route path="/patients">{() => <G p="patients.view"><Patients /></G>}</Route>
           <Route path="/patients/:id/file">{() => <G p="patients.view"><PatientFilePage /></G>}</Route>
+          <Route path="/patient-inquiry">{() => <G p="patients.view"><PatientInquiry /></G>}</Route>
           <Route path="/doctors">{() => <G p="doctors.view"><Doctors /></G>}</Route>
           <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><ErrorBoundary fallbackLabel="خطأ في صفحة فاتورة المريض"><PatientInvoice /></ErrorBoundary></G>}</Route>
           <Route path="/bed-board">{() => <G p="patient_invoices.view"><BedBoard /></G>}</Route>
