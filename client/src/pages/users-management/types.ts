@@ -21,5 +21,6 @@ export interface UserFormData {
   cashierGlAccountId:  string;
   allowedPharmacyIds:  string[];
   allowedDepartmentIds: string[];
+  allowedClinicIds:    string[];
   hasAllUnits:         boolean;
 }

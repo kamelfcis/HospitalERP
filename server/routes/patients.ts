@@ -459,11 +459,22 @@ export function registerPatientsRoutes(app: Express) {
       const adminDeptFilter = scope.isFullAccess ? ((req.query.deptId as string) || null) : null;
 
       const {
-        clinicId = null,
         dateFrom = null,
         dateTo   = null,
         search   = null,
       } = req.query as Record<string, string>;
+
+      // clinic scope: if user has allowedClinicIds, ignore client-supplied clinicId and use forced
+      let clinicId: string | null = (req.query.clinicId as string) || null;
+      if (!scope.isFullAccess && scope.allowedClinicIds.length > 0) {
+        // single clinic → auto-force; multiple clinics → allow client to pick from allowed list
+        const requestedClinic = clinicId;
+        if (requestedClinic && scope.allowedClinicIds.includes(requestedClinic)) {
+          clinicId = requestedClinic;
+        } else {
+          clinicId = scope.allowedClinicIds.length === 1 ? scope.allowedClinicIds[0] : null;
+        }
+      }
 
       const result = await storage.getPatientInquiry(
         { adminDeptFilter, clinicId, dateFrom, dateTo, search },

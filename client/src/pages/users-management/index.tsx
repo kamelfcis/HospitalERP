@@ -14,7 +14,7 @@ const EMPTY_FORM: UserFormData = {
   username: "", password: "", fullName: "",
   role: "data_entry", departmentId: "", pharmacyId: "",
   isActive: true, cashierGlAccountId: "",
-  allowedPharmacyIds: [], allowedDepartmentIds: [], hasAllUnits: false,
+  allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [], hasAllUnits: false,
 };
 
 export default function UsersManagement() {
@@ -37,6 +37,7 @@ export default function UsersManagement() {
   const { data: departments = [] }      = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/departments"] });
   const { data: pharmacies = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/pharmacies"] });
   const { data: cashierAccounts = [] }  = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({ queryKey: ["/api/drawer-passwords"] });
+  const { data: clinics = [] }          = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/clinic-clinics"] });
 
   const createMutation = useMutation({
     mutationFn: async (data: Partial<UserData>) => (await apiRequest("POST", "/api/users", data)).json(),
@@ -72,11 +73,19 @@ export default function UsersManagement() {
   });
 
   async function saveScopeForUser(userId: string) {
-    if (!formData.cashierGlAccountId) return;
+    if (formData.cashierGlAccountId) {
+      try {
+        await apiRequest("PUT", `/api/users/${userId}/cashier-scope`, {
+          departmentIds: formData.allowedDepartmentIds,
+          hasAllUnits:   formData.hasAllUnits,
+        });
+      } catch {
+      }
+    }
+    // Save clinic assignments always (independent from cashier scope)
     try {
-      await apiRequest("PUT", `/api/users/${userId}/cashier-scope`, {
-        departmentIds: formData.allowedDepartmentIds,
-        hasAllUnits:   formData.hasAllUnits,
+      await apiRequest("PUT", `/api/users/${userId}/clinics`, {
+        clinicIds: formData.allowedClinicIds,
       });
     } catch {
     }
@@ -95,26 +104,32 @@ export default function UsersManagement() {
       cashierGlAccountId:  user.cashierGlAccountId || "",
       allowedPharmacyIds:  user.pharmacyId ? [user.pharmacyId] : [],
       allowedDepartmentIds: [],
+      allowedClinicIds:    [],
       hasAllUnits:         false,
     };
     setFormData(base);
     setShowDialog(true);
 
-    if (user.cashierGlAccountId) {
-      setScopeLoading(true);
-      try {
-        const res = await apiRequest("GET", `/api/users/${user.id}/cashier-scope`);
-        const scope = await res.json();
-        setFormData(prev => ({
-          ...prev,
-          allowedPharmacyIds:  scope.allowedPharmacyIds || [],
-          allowedDepartmentIds: (scope.assignedDepartments || []).map((d: any) => d.id),
-          hasAllUnits:          scope.isFullAccess && user.role !== "admin" && user.role !== "owner",
-        }));
-      } catch {
-      } finally {
-        setScopeLoading(false);
-      }
+    setScopeLoading(true);
+    try {
+      const [scopeRes, clinicsRes] = await Promise.all([
+        user.cashierGlAccountId
+          ? apiRequest("GET", `/api/users/${user.id}/cashier-scope`).then(r => r.json())
+          : Promise.resolve(null),
+        apiRequest("GET", `/api/users/${user.id}/clinics`).then(r => r.json()),
+      ]);
+      setFormData(prev => ({
+        ...prev,
+        ...(scopeRes ? {
+          allowedPharmacyIds:   scopeRes.allowedPharmacyIds || [],
+          allowedDepartmentIds: (scopeRes.assignedDepartments || []).map((d: any) => d.id),
+          hasAllUnits:          scopeRes.isFullAccess && user.role !== "admin" && user.role !== "owner",
+        } : {}),
+        allowedClinicIds: clinicsRes.clinicIds || [],
+      }));
+    } catch {
+    } finally {
+      setScopeLoading(false);
     }
   }
 
@@ -194,6 +209,7 @@ export default function UsersManagement() {
         formData={formData}
         departments={departments}
         pharmacies={pharmacies}
+        clinics={clinics}
         cashierAccounts={cashierAccounts}
         isPending={isPending}
         onFormChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}

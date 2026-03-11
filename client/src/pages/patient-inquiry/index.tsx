@@ -35,7 +35,12 @@ import { useDebounce } from "@/pages/patients/useDebounce";
 
 const OPD_DEPT_ID = "b3347de7-e3d1-4b63-b9d6-ba93175d1bce";
 
-type PatientScope = { isFullAccess: boolean; allowedDepartmentIds: string[]; allowedPharmacyIds: string[] };
+type PatientScope = {
+  isFullAccess: boolean;
+  allowedDepartmentIds: string[];
+  allowedPharmacyIds: string[];
+  allowedClinicIds: string[];
+};
 
 const fmt = (n: unknown) =>
   Number(n ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -99,6 +104,7 @@ export default function PatientInquiryPage() {
   });
   const isFullAccess = scope?.isFullAccess ?? true;
   const allowedDeptIds = scope?.allowedDepartmentIds ?? [];
+  const allowedClinicIds = scope?.allowedClinicIds ?? [];
   const scopeReady = scope !== undefined;
 
   const { data: departments = [] } = useQuery<Department[]>({
@@ -106,18 +112,27 @@ export default function PatientInquiryPage() {
     enabled: isFullAccess,
   });
 
-  // Clinic sub-filter: show when selected dept is OPD (full-access) OR user only has OPD access
+  // Clinic scope: user assigned to specific clinic(s)
+  const hasClinicScope = !isFullAccess && allowedClinicIds.length > 0;
+  const singleClinic   = hasClinicScope && allowedClinicIds.length === 1;
+
+  // Clinic sub-filter: show when OPD dept is active (admin) OR user is scoped to OPD dept
   const activeDeptId = isFullAccess ? adminDeptFilter : (allowedDeptIds.length === 1 ? allowedDeptIds[0] : "");
-  const showClinicFilter = activeDeptId === OPD_DEPT_ID;
+  const showClinicFilter = (activeDeptId === OPD_DEPT_ID) && !singleClinic;
 
   const { data: clinics = [] } = useQuery<Clinic[]>({
     queryKey: ["/api/clinic-clinics"],
-    enabled: showClinicFilter,
+    enabled: showClinicFilter || hasClinicScope,
   });
+
+  // Effective clinic filter sent to the API
+  const effectiveClinicId = singleClinic
+    ? allowedClinicIds[0]
+    : (clinicId || null);
 
   const queryParams = new URLSearchParams();
   if (isFullAccess && adminDeptFilter) queryParams.set("deptId", adminDeptFilter);
-  if (clinicId && showClinicFilter) queryParams.set("clinicId", clinicId);
+  if (effectiveClinicId && (showClinicFilter || singleClinic)) queryParams.set("clinicId", effectiveClinicId);
   if (dateFrom) queryParams.set("dateFrom", dateFrom);
   if (dateTo) queryParams.set("dateTo", dateTo);
   if (search) queryParams.set("search", search);
@@ -267,6 +282,36 @@ export default function PatientInquiryPage() {
           </div>
         )}
 
+        {/* عيادة محددة مسبقاً للمستخدم — badge ثابت */}
+        {singleClinic && (
+          <div className="flex items-center gap-1">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">العيادة:</Label>
+            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700">
+              <Stethoscope className="h-3 w-3" />
+              {clinics.find(c => c.id === allowedClinicIds[0])?.nameAr ?? "..."}
+            </span>
+          </div>
+        )}
+
+        {/* عيادات متعددة مسموحة — dropdown مقيّد */}
+        {hasClinicScope && !singleClinic && (
+          <div className="flex items-center gap-1">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">العيادة:</Label>
+            <Select value={clinicId || "all"} onValueChange={v => setClinicId(v === "all" ? "" : v)}>
+              <SelectTrigger className="h-7 text-xs w-36" data-testid="select-clinic-inquiry">
+                <SelectValue placeholder="كل عياداتك" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل عياداتك</SelectItem>
+                {clinics.filter(c => allowedClinicIds.includes(c.id)).map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.nameAr}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* فلتر العيادة للأدمن عند اختيار قسم العيادات الخارجية */}
         {showClinicFilter && (
           <div className="flex items-center gap-1">
             <Label className="text-xs text-muted-foreground whitespace-nowrap">العيادة:</Label>

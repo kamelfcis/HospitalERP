@@ -179,4 +179,22 @@ export function registerSystemRoutes(app: Express) {
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
+
+  // ==================== User-Clinic assignments ====================
+
+  app.get("/api/users/:id/clinics", requireAuth, checkPermission(PERMISSIONS.USERS_EDIT), async (req, res) => {
+    try {
+      const clinicIds = await storage.getUserClinics(req.params.id);
+      res.json({ clinicIds });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  app.put("/api/users/:id/clinics", requireAuth, checkPermission(PERMISSIONS.USERS_EDIT), async (req, res) => {
+    try {
+      const { clinicIds } = req.body as { clinicIds: string[] };
+      if (!Array.isArray(clinicIds)) return res.status(400).json({ message: "clinicIds يجب أن تكون قائمة" });
+      await storage.setUserClinics(req.params.id, clinicIds);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
 }

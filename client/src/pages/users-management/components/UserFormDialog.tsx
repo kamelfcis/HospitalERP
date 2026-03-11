@@ -17,6 +17,7 @@ interface UserFormDialogProps {
   formData:        UserFormData;
   departments:     { id: string; nameAr: string }[];
   pharmacies:      { id: string; nameAr: string }[];
+  clinics:         { id: string; nameAr: string }[];
   cashierAccounts: { glAccountId: string; code: string; name: string; hasPassword: boolean }[];
   isPending:       boolean;
   onFormChange:    (patch: Partial<UserFormData>) => void;
@@ -25,7 +26,7 @@ interface UserFormDialogProps {
 }
 
 export function UserFormDialog({
-  open, editingUser, formData, departments, pharmacies, cashierAccounts,
+  open, editingUser, formData, departments, pharmacies, clinics, cashierAccounts,
   isPending, onFormChange, onSave, onOpenChange,
 }: UserFormDialogProps) {
   const showScope = !!formData.cashierGlAccountId;
@@ -164,11 +165,14 @@ export function UserFormDialog({
             <ScopeSelector
               pharmacies={pharmacies}
               departments={departments}
+              clinics={clinics}
               allowedPharmacyIds={formData.allowedPharmacyIds}
               allowedDepartmentIds={formData.allowedDepartmentIds}
+              allowedClinicIds={formData.allowedClinicIds}
               hasAllUnits={formData.hasAllUnits}
               onPharmaciesChange={ids => onFormChange({ allowedPharmacyIds: ids })}
               onDepartmentsChange={ids => onFormChange({ allowedDepartmentIds: ids })}
+              onClinicsChange={ids => onFormChange({ allowedClinicIds: ids })}
               onAllUnitsChange={v => onFormChange({ hasAllUnits: v })}
             />
           )}

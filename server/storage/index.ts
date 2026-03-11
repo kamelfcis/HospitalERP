@@ -322,8 +322,12 @@ export interface IStorage {
   getUserWarehouses(userId: string): Promise<Warehouse[]>;
   setUserWarehouses(userId: string, warehouseIds: string[]): Promise<void>;
 
+  // User-Clinic assignments
+  getUserClinics(userId: string): Promise<string[]>;
+  setUserClinics(userId: string, clinicIds: string[]): Promise<void>;
+
   // Cashier scope
-  getUserCashierScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[] }>;
+  getUserCashierScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }>;
 
   // Store Transfers
   getTransfers(): Promise<StoreTransferWithDetails[]>;

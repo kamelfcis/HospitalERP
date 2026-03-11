@@ -100,6 +100,15 @@ export const userDepartments = pgTable("user_departments", {
   uniqueUserDept: uniqueIndex("idx_user_departments_unique").on(table.userId, table.departmentId),
 }));
 
+export const userClinics = pgTable("user_clinics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clinicId: varchar("clinic_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserClinic: uniqueIndex("idx_user_clinics_unique").on(table.userId, table.clinicId),
+}));
+
 export const itemDepartmentPrices = pgTable("item_department_prices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
@@ -299,6 +308,8 @@ export const insertItemDepartmentPriceSchema = createInsertSchema(itemDepartment
 export const insertWarehouseSchema = createInsertSchema(warehouses).omit({ id: true, createdAt: true });
 export const insertUserDepartmentSchema = createInsertSchema(userDepartments).omit({ id: true, createdAt: true });
 export const insertUserWarehouseSchema = createInsertSchema(userWarehouses).omit({ id: true, createdAt: true });
+export const insertUserClinicSchema = createInsertSchema(userClinics).omit({ id: true, createdAt: true });
+export type UserClinic = typeof userClinics.$inferSelect;
 export const insertInventoryLotSchema = createInsertSchema(inventoryLots).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertInventoryLotMovementSchema = createInsertSchema(inventoryLotMovements).omit({ id: true, createdAt: true });
 export const insertItemBarcodeSchema = createInsertSchema(itemBarcodes).omit({ id: true, createdAt: true });

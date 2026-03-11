@@ -21,6 +21,7 @@ import {
   userPermissions,
   userDepartments,
   userWarehouses,
+  userClinics,
   departments,
   warehouses,
 } from "@shared/schema";
@@ -174,17 +175,33 @@ const methods = {
     }
   },
 
-  async getUserCashierScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[] }> {
+  async getUserClinics(this: DatabaseStorage, userId: string): Promise<string[]> {
+    const rows = await db.select({ clinicId: userClinics.clinicId })
+      .from(userClinics)
+      .where(eq(userClinics.userId, userId));
+    return rows.map(r => r.clinicId);
+  },
+
+  async setUserClinics(this: DatabaseStorage, userId: string, clinicIds: string[]): Promise<void> {
+    await db.delete(userClinics).where(eq(userClinics.userId, userId));
+    if (clinicIds.length > 0) {
+      await db.insert(userClinics).values(
+        clinicIds.map(clinicId => ({ userId, clinicId }))
+      );
+    }
+  },
+
+  async getUserCashierScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }> {
     const user = await this.getUser(userId);
-    if (!user) return { isFullAccess: false, allowedPharmacyIds: [], allowedDepartmentIds: [] };
+    if (!user) return { isFullAccess: false, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
 
     if (user.role === "admin" || (user.role as string) === "owner") {
-      return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [] };
+      return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
     }
 
     const perms = await this.getUserEffectivePermissions(userId);
     if (perms.includes("cashier.all_units")) {
-      return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [] };
+      return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
     }
 
     const allowedPharmacyIds = user.pharmacyId ? [user.pharmacyId] : [];
@@ -193,7 +210,12 @@ const methods = {
       .where(eq(userDepartments.userId, userId));
     const allowedDepartmentIds = deptRows.map(r => r.id);
 
-    return { isFullAccess: false, allowedPharmacyIds, allowedDepartmentIds };
+    const clinicRows = await db.select({ clinicId: userClinics.clinicId })
+      .from(userClinics)
+      .where(eq(userClinics.userId, userId));
+    const allowedClinicIds = clinicRows.map(r => r.clinicId);
+
+    return { isFullAccess: false, allowedPharmacyIds, allowedDepartmentIds, allowedClinicIds };
   },
 
   async getChatUsers(this: DatabaseStorage, currentUserId: string): Promise<{ id: string; fullName: string; role: string; unreadCount: number; lastMessage: string | null; lastMessageAt: Date | null }[]> {
