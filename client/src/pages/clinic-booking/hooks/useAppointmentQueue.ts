@@ -41,5 +41,11 @@ export function useAppointmentQueue(clinicId: string, date: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  return { appointments, isLoading, noDoctorLinked, statusMutation, bookMutation };
+  const cancelRefundMutation = useMutation({
+    mutationFn: (aptId: string) =>
+      apiRequest("POST", `/api/clinic-appointments/${aptId}/cancel-refund`, {}).then((r) => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  });
+
+  return { appointments, isLoading, noDoctorLinked, statusMutation, bookMutation, cancelRefundMutation };
 }

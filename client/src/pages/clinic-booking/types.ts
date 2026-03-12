@@ -32,6 +32,9 @@ export interface ClinicAppointment {
   doctorName?: string;
   doctorSpecialty?: string;
   patientFileNumber?: string | null;
+  paymentType?: string | null;
+  invoiceId?: string | null;
+  invoiceStatus?: string | null;
 }
 
 export const STATUS_LABELS: Record<string, string> = {

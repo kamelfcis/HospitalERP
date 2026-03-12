@@ -618,6 +618,7 @@ export interface IStorage {
   createAppointment(data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string; paymentType?: string; insuranceCompany?: string; payerReference?: string; }): Promise<Record<string, unknown>>;
   getAppointmentClinicId(appointmentId: string): Promise<string | null>;
   updateAppointmentStatus(id: string, status: string): Promise<void>;
+  cancelAndRefundAppointment(aptId: string, refundedBy: string): Promise<{ refundedAmount: string; patientName: string }>;
 
   // الربط بالمستخدم/الطبيب
   getUserDoctorId(userId: string): Promise<string | null>;

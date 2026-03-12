@@ -11,11 +11,14 @@ interface Props {
   onStatusChange:    (id: string, status: string) => void;
   isChangingStatus:  boolean;
   onStartConsultation: (apt: ClinicAppointment) => void;
+  onCancelRefund:    (id: string) => Promise<any>;
+  isCancelRefunding: boolean;
 }
 
 export function QueueContent({
   selectedDate, onDateChange, appointments, isLoading,
   onStatusChange, isChangingStatus, onStartConsultation,
+  onCancelRefund, isCancelRefunding,
 }: Props) {
   return (
     <div className="space-y-3">
@@ -39,6 +42,8 @@ export function QueueContent({
         onStatusChange={onStatusChange}
         isChanging={isChangingStatus}
         onStartConsultation={onStartConsultation}
+        onCancelRefund={onCancelRefund}
+        isCancelRefunding={isCancelRefunding}
       />
     </div>
   );

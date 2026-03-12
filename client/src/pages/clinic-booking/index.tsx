@@ -29,7 +29,7 @@ export default function ClinicBooking() {
 
   const { clinics, clinicsLoading, selectedClinicId, setSelectedClinicId, selectedDate, setSelectedDate } = useClinicBooking();
   const selectedClinic = clinics.find(c => c.id === selectedClinicId);
-  const { appointments, isLoading, noDoctorLinked, statusMutation } = useAppointmentQueue(selectedClinicId, selectedDate);
+  const { appointments, isLoading, noDoctorLinked, statusMutation, cancelRefundMutation } = useAppointmentQueue(selectedClinicId, selectedDate);
 
   if (clinicsLoading) {
     return <div className="flex items-center justify-center h-64 text-muted-foreground">جارٍ التحميل...</div>;
@@ -61,6 +61,8 @@ export default function ClinicBooking() {
     onStatusChange:      (id: string, status: string) => statusMutation.mutate({ id, status }),
     isChangingStatus:    statusMutation.isPending,
     onStartConsultation: (apt: ClinicAppointment) => navigate(`/doctor-consultation/${apt.id}`),
+    onCancelRefund:      (id: string) => cancelRefundMutation.mutateAsync(id),
+    isCancelRefunding:   cancelRefundMutation.isPending,
   };
 
   return (

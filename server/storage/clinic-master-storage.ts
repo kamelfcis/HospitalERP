@@ -679,6 +679,87 @@ const methods = {
       client.release();
     }
   },
+
+  async cancelAndRefundAppointment(this: DatabaseStorage, aptId: string, refundedBy: string): Promise<{ refundedAmount: string; patientName: string }> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // ── 1. احضر الموعد ─────────────────────────────────────────────────────
+      const aptRes = await client.query(
+        `SELECT a.*, c.treasury_id AS clinic_treasury_id
+         FROM clinic_appointments a
+         JOIN clinic_clinics c ON c.id = a.clinic_id
+         WHERE a.id = $1 FOR UPDATE`,
+        [aptId]
+      );
+      if (!aptRes.rows.length) throw new Error("الموعد غير موجود");
+      const apt = aptRes.rows[0];
+
+      if (apt.status === 'cancelled') throw new Error("الموعد ملغى بالفعل");
+      if (apt.status === 'done') throw new Error("لا يمكن إلغاء موعد منتهٍ");
+      if (apt.payment_type !== 'CASH') throw new Error("هذا الموعد لا يحمل دفعة نقدية — لا يوجد مبلغ لإعادته");
+      if (!apt.invoice_id) throw new Error("لم يتم ربط فاتورة بهذا الموعد");
+
+      // ── 2. احضر الفاتورة ───────────────────────────────────────────────────
+      const invRes = await client.query(
+        `SELECT * FROM patient_invoice_headers WHERE id = $1 FOR UPDATE`,
+        [apt.invoice_id]
+      );
+      if (!invRes.rows.length) throw new Error("الفاتورة غير موجودة");
+      const inv = invRes.rows[0];
+      if (inv.status === 'cancelled') throw new Error("الفاتورة ملغاة بالفعل");
+
+      const refundAmount = parseFloat(inv.paid_amount || inv.net_amount || '0');
+      if (refundAmount <= 0) throw new Error("لا يوجد مبلغ مدفوع لإعادته");
+
+      // ── 3. احضر الخزينة ────────────────────────────────────────────────────
+      // نفس منطق createAppointment: أولاً فحص treasury_id مباشرة ثم by gl_account
+      let treasuryId: string = apt.clinic_treasury_id;
+      if (treasuryId) {
+        const tRes = await client.query(`SELECT id FROM treasuries WHERE id = $1`, [treasuryId]);
+        if (!tRes.rows.length) {
+          const byGl = await client.query(
+            `SELECT id FROM treasuries WHERE gl_account_id = $1 AND is_active = true LIMIT 1`,
+            [treasuryId]
+          );
+          if (!byGl.rows.length) throw new Error("لم يتم العثور على خزينة صالحة لإتمام الاسترداد");
+          treasuryId = byGl.rows[0].id;
+        }
+      } else {
+        throw new Error("العيادة لا تملك خزينة مرتبطة");
+      }
+
+      // ── 4. إلغاء الموعد ────────────────────────────────────────────────────
+      await client.query(
+        `UPDATE clinic_appointments SET status = 'cancelled' WHERE id = $1`,
+        [aptId]
+      );
+
+      // ── 5. إلغاء الفاتورة ─────────────────────────────────────────────────
+      await client.query(
+        `UPDATE patient_invoice_headers SET status = 'cancelled', paid_amount = 0 WHERE id = $1`,
+        [apt.invoice_id]
+      );
+
+      // ── 6. قيد عكسي في الخزينة (استرداد) ──────────────────────────────────
+      const today = new Date().toISOString().slice(0, 10);
+      await client.query(
+        `INSERT INTO treasury_transactions
+           (treasury_id, type, amount, description, source_type, source_id, transaction_date)
+         VALUES ($1, 'refund', $2, $3, 'clinic_appointment_refund', $4, $5::date)`,
+        [treasuryId, -refundAmount, `استرداد رسم كشف: ${apt.patient_name}`, aptId, today]
+      );
+
+      await client.query('COMMIT');
+      return { refundedAmount: refundAmount.toFixed(2), patientName: apt.patient_name };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  },
 };
 
 export default methods;

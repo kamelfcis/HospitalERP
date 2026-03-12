@@ -197,6 +197,19 @@ export function registerClinicRoutes(app: Express) {
     } catch (e: any) { res.status(400).json({ message: e.message }); }
   });
 
+  // رد مبلغ موعد عيادة نقدي وإلغاؤه
+  app.post("/api/clinic-appointments/:id/cancel-refund", requireAuth, checkPermission("clinic.book"), async (req, res) => {
+    try {
+      const result = await storage.cancelAndRefundAppointment(
+        req.params.id as string,
+        req.session.userId!
+      );
+      const clinicId = await storage.getAppointmentClinicId(req.params.id as string);
+      if (clinicId) broadcastToClinic(clinicId, "appointment_changed", { ts: Date.now() });
+      res.json({ ok: true, ...result });
+    } catch (e: any) { res.status(400).json({ message: e.message }); }
+  });
+
   app.patch("/api/clinic-appointments/:id/status", requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;
