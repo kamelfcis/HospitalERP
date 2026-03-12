@@ -52,12 +52,7 @@ export interface Consultation {
   clinicName?: string;
   defaultPharmacyId?: string | null;
   consultationServiceId?: string | null;
-  consultationFee?: number | null;
-  discountType?: string | null;
-  discountValue?: number | null;
-  finalAmount?: number | null;
   paymentStatus?: string | null;
-  treasuryId?: string | null;
 }
 
 export interface FavoriteDrug {

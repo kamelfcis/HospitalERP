@@ -116,8 +116,9 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   const [dupDismissed,     setDupDismissed]     = useState(false);
 
   /* ── نوع الدفع ────────── */
-  const [paymentType, setPaymentType] = useState<PaymentKind>("CASH");
-  const [insuranceCo, setInsuranceCo] = useState("");
+  const [paymentType,    setPaymentType]    = useState<PaymentKind>("CASH");
+  const [insuranceCo,    setInsuranceCo]    = useState("");
+  const [payerReference, setPayerReference] = useState("");
 
   /* ── سبب الزيارة ──────── */
   const [visitReason, setVisitReason] = useState<VisitReason>("");
@@ -149,7 +150,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     if (!open) return;
 
     /* إعادة ضبط حقول الزيارة دائماً عند الفتح */
-    setPaymentType("CASH"); setInsuranceCo("");
+    setPaymentType("CASH"); setInsuranceCo(""); setPayerReference("");
     setVisitReason("");
     setSelectedClinic(null); setSelectedDoctor(null);
     setConsultDate(todayISO); setConsultTime("");
@@ -328,6 +329,9 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     if (paymentType === "INSURANCE" && !insuranceCo.trim()) {
       toast({ title: "الرجاء كتابة اسم شركة التأمين", variant: "destructive" }); return false;
     }
+    if (paymentType === "CONTRACT" && visitReason === "consultation" && !payerReference.trim()) {
+      toast({ title: "الرجاء كتابة اسم الجهة المتعاقدة", variant: "destructive" }); return false;
+    }
     if (visitReason === "consultation" && selectedClinic && !selectedDoctor) {
       toast({ title: "الرجاء اختيار الطبيب للكشف", variant: "destructive" }); return false;
     }
@@ -428,21 +432,32 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
         const apt = await appointmentMutation.mutateAsync({
           clinicId: selectedClinic.id,
           body: {
-            doctorId:        selectedDoctor.id,
+            doctorId:         selectedDoctor.id,
             patientId,
-            patientName:     fullName.trim(),
-            patientPhone:    phone || undefined,
-            appointmentDate: consultDate,
-            appointmentTime: consultTime || undefined,
+            patientName:      fullName.trim(),
+            patientPhone:     phone || undefined,
+            appointmentDate:  consultDate,
+            appointmentTime:  consultTime || undefined,
+            paymentType,
+            insuranceCompany: paymentType === "INSURANCE" ? insuranceCo.trim() : undefined,
+            payerReference:   paymentType === "CONTRACT"  ? payerReference.trim() : undefined,
           },
         });
         queryClient.invalidateQueries({ queryKey: ["/api/clinic-appointments"] });
+        const invoicePart = apt.invoiceNumber
+          ? ` — فاتورة رقم: ${apt.invoiceNumber}` : "";
+        const paymentPart = paymentType === "CASH"
+          ? " (تم التحصيل نقداً)"
+          : paymentType === "INSURANCE"
+          ? ` (تأمين: ${insuranceCo})`
+          : ` (تعاقد: ${payerReference})`;
         toast({
           title: existingPatient ? "تم حجز زيارة جديدة" : "تم إضافة المريض وحجز الكشف",
-          description: `${selectedClinic.name} — رقم الدور: ${apt.turnNumber}`,
+          description: `${selectedClinic.name} — رقم الدور: ${apt.turnNumber}${invoicePart}${paymentPart}`,
         });
-      } catch {
-        toast({ title: existingPatient ? "تم تسجيل الزيارة" : "تم إضافة المريض", description: "لكن فشل حجز الكشف — يمكنك الحجز لاحقاً" });
+      } catch (e: any) {
+        toast({ title: "خطأ في الحجز", description: e?.message || "فشل حجز الكشف — يمكنك المحاولة مجدداً", variant: "destructive" });
+        return;
       }
     } else if (visitReason === "lab") {
       toast({ title: existingPatient ? "تم تسجيل زيارة تحاليل" : "تم إضافة المريض", description: serviceNotes || "سبب الزيارة: تحاليل" });
@@ -702,7 +717,15 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                 </div>
               )}
               {paymentType === "CONTRACT" && (
-                <p className="text-xs text-muted-foreground px-1">● مريض متعاقد — سيتم تطبيق شروط التعاقد عند إنشاء الفاتورة</p>
+                <div className="space-y-1">
+                  <Label className="text-xs">الجهة المتعاقدة *</Label>
+                  <Input
+                    value={payerReference} onChange={e => setPayerReference(e.target.value)}
+                    placeholder="اسم الشركة أو الجهة" className="h-7 text-xs"
+                    data-testid="input-payer-reference"
+                  />
+                  <p className="text-xs text-muted-foreground px-1">سيتم إنشاء فاتورة آجلة بشروط التعاقد</p>
+                </div>
               )}
             </section>
 
@@ -797,6 +820,22 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                       </div>
                     </div>
                   )}
+
+                  {/* معاينة رسوم الكشف */}
+                  {selectedClinic && (() => {
+                    const fee = (selectedClinic.meta as any)?.consultationServiceBasePrice;
+                    if (!fee) return null;
+                    const feeNum = parseFloat(String(fee));
+                    if (isNaN(feeNum) || feeNum <= 0) return null;
+                    return (
+                      <div className="flex items-center justify-between bg-white/80 border border-blue-200 rounded px-2 py-1.5">
+                        <span className="text-xs text-blue-700 font-medium">رسوم الكشف</span>
+                        <span className="text-xs font-bold text-blue-900" data-testid="text-consult-fee">
+                          {feeNum.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ج.م
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

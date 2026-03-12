@@ -12,7 +12,6 @@ import { PrescriptionQuadrant } from "./components/PrescriptionQuadrant";
 import { ServicesQuadrant } from "./components/ServicesQuadrant";
 import { DoctorStatementTab } from "./components/DoctorStatementTab";
 import { PrintPrescription } from "./components/PrintPrescription";
-import { FeeDiscountBar } from "./components/FeeDiscountBar";
 import { PatientHistoryPanel } from "./components/PatientHistoryPanel";
 
 export default function DoctorConsultation() {
@@ -35,18 +34,6 @@ export default function DoctorConsultation() {
     saveNow,
     finishConsultation,
   } = useDoctorConsultation(appointmentId);
-
-  // استخرج رسم الكشف: من الحقل المحفوظ أو من خدمة الكشف في الأوامر كـ fallback
-  const storedFee = parseFloat(String(form.consultationFee || 0));
-  const serviceOrderFee = parseFloat(String(
-    form.serviceOrders?.find((so) => so.isConsultationService)?.unitPrice ?? 0
-  ));
-  const consultationFee = storedFee > 0 ? storedFee : serviceOrderFee;
-  const discountValue = parseFloat(String(form.discountValue || 0));
-  const discountType = form.discountType || "amount";
-  const computedFinal = discountType === "percent"
-    ? consultationFee * (1 - discountValue / 100)
-    : consultationFee - discountValue;
 
   const {
     favorites,
@@ -136,20 +123,6 @@ export default function DoctorConsultation() {
           </Button>
         </div>
       </div>
-
-      {/* شريط رسم الكشف والخصم */}
-      {consultationFee > 0 && (
-        <FeeDiscountBar
-          consultationFee={consultationFee}
-          discountType={discountType}
-          discountValue={discountValue}
-          finalAmount={Math.max(0, computedFinal)}
-          paymentStatus={form.paymentStatus}
-          treasuryId={form.treasuryId}
-          onDiscountTypeChange={(t) => updateForm("discountType", t)}
-          onDiscountValueChange={(v) => updateForm("discountValue", v)}
-        />
-      )}
 
       {/* التخطيط 2×2 */}
       <div className="grid grid-cols-2 gap-3 h-40 shrink-0">

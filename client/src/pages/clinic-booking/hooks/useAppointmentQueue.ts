@@ -6,13 +6,20 @@ import type { ClinicAppointment } from "../types";
 export function useAppointmentQueue(clinicId: string, date: string) {
   const queryKey = ["/api/clinic-clinics", clinicId, "appointments", date];
 
-  const { data: appointments = [], isLoading } = useQuery<ClinicAppointment[]>({
+  type QueueResponse = ClinicAppointment[] | { appointments: ClinicAppointment[]; noDoctorLinked: boolean };
+
+  const { data: rawData, isLoading } = useQuery<QueueResponse>({
     queryKey,
     queryFn: () =>
       apiRequest("GET", `/api/clinic-clinics/${clinicId}/appointments?date=${date}`)
         .then((r) => r.json()),
     enabled: !!clinicId && !!date,
   });
+
+  const noDoctorLinked = !Array.isArray(rawData) && (rawData as any)?.noDoctorLinked === true;
+  const appointments: ClinicAppointment[] = Array.isArray(rawData)
+    ? rawData
+    : (rawData as any)?.appointments ?? [];
 
   // تحديث فوري عبر SSE بدلاً من polling كل 15 ثانية
   useSSE(clinicId && date ? `/api/clinic/sse/${clinicId}` : null, {
@@ -34,5 +41,5 @@ export function useAppointmentQueue(clinicId: string, date: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  return { appointments, isLoading, statusMutation, bookMutation };
+  return { appointments, isLoading, noDoctorLinked, statusMutation, bookMutation };
 }

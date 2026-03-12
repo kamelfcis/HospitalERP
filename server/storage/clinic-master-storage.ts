@@ -21,6 +21,7 @@ const methods = {
         SELECT c.*, d.name_ar AS department_name,
                w.name_ar AS pharmacy_name,
                sv.name_ar AS consultation_service_name,
+               sv.base_price AS consultation_service_base_price,
                (acc.code || ' - ' || acc.name) AS treasury_name
         FROM clinic_clinics c
         LEFT JOIN departments d ON d.id = c.department_id
@@ -35,6 +36,7 @@ const methods = {
       SELECT c.*, d.name_ar AS department_name,
              w.name_ar AS pharmacy_name,
              sv.name_ar AS consultation_service_name,
+             sv.base_price AS consultation_service_base_price,
              (acc.code || ' - ' || acc.name) AS treasury_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
@@ -52,6 +54,7 @@ const methods = {
       SELECT c.*, d.name_ar AS department_name,
              w.name_ar AS pharmacy_name,
              sv.name_ar AS consultation_service_name,
+             sv.base_price AS consultation_service_base_price,
              (acc.code || ' - ' || acc.name) AS treasury_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
@@ -130,7 +133,21 @@ const methods = {
     return rows.rows[0] as Record<string, unknown>;
   },
 
-  async getClinicAppointments(this: DatabaseStorage, clinicId: string, date: string): Promise<Array<Record<string, unknown>>> {
+  async getClinicAppointments(this: DatabaseStorage, clinicId: string, date: string, filterDoctorId?: string | null): Promise<Array<Record<string, unknown>>> {
+    if (filterDoctorId) {
+      const rows = await db.execute(sql`
+        SELECT a.*,
+               d.name AS doctor_name, d.specialty AS doctor_specialty,
+               p.national_id AS patient_file_number
+        FROM clinic_appointments a
+        JOIN doctors d ON d.id = a.doctor_id
+        LEFT JOIN patients p ON p.id = a.patient_id
+        WHERE a.clinic_id = ${clinicId} AND a.appointment_date = ${date}::date
+          AND a.doctor_id = ${filterDoctorId}
+        ORDER BY a.turn_number
+      `);
+      return rows.rows as Array<Record<string, unknown>>;
+    }
     const rows = await db.execute(sql`
       SELECT a.*,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
@@ -144,29 +161,210 @@ const methods = {
     return rows.rows as Array<Record<string, unknown>>;
   },
 
-  async createAppointment(this: DatabaseStorage, data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string }): Promise<any> {
+  async createAppointment(this: DatabaseStorage, data: {
+    clinicId: string; doctorId: string; patientId?: string; patientName: string;
+    patientPhone?: string; appointmentDate: string; appointmentTime?: string;
+    notes?: string; createdBy?: string;
+    paymentType?: string; insuranceCompany?: string; payerReference?: string;
+  }): Promise<any> {
+    const paymentType = (data.paymentType || 'CASH').toUpperCase();
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      // ── 1. احضر بيانات العيادة والخدمة ────────────────────────────────────
+      const clinicRes = await client.query(`
+        SELECT c.*, s.name_ar AS svc_name, s.base_price AS svc_base_price,
+               s.department_id AS svc_dept_id, dep.name_ar AS svc_dept_name
+        FROM clinic_clinics c
+        LEFT JOIN services s ON s.id = c.consultation_service_id
+        LEFT JOIN departments dep ON dep.id = s.department_id
+        WHERE c.id = $1 FOR UPDATE
+      `, [data.clinicId]);
+      const clinic = clinicRes.rows[0];
+      if (!clinic) throw new Error("العيادة غير موجودة");
+
+      // ── 2. التحقق من متطلبات الدفع ────────────────────────────────────────
+      if (paymentType === 'CASH') {
+        if (!clinic.treasury_id) throw new Error("العيادة لا تملك خزينة مرتبطة — لا يمكن تحصيل نقداً");
+        const treasuryCheck = await client.query(
+          `SELECT id FROM treasuries WHERE id = $1`, [clinic.treasury_id]
+        );
+        // Fallback: treat treasury_id as GL account → find treasury by gl_account_id
+        if (treasuryCheck.rows.length === 0) {
+          const byGl = await client.query(
+            `SELECT id FROM treasuries WHERE gl_account_id = $1 AND is_active = true LIMIT 1`,
+            [clinic.treasury_id]
+          );
+          if (byGl.rows.length === 0) {
+            throw new Error("لم يتم العثور على خزينة صالحة مرتبطة بالعيادة — يرجى مراجعة إعداد العيادة");
+          }
+          clinic.resolved_treasury_id = byGl.rows[0].id;
+        } else {
+          clinic.resolved_treasury_id = clinic.treasury_id;
+        }
+      }
+      if (paymentType === 'INSURANCE' && !data.insuranceCompany?.trim()) {
+        throw new Error("اسم شركة التأمين مطلوب");
+      }
+      if (paymentType === 'CONTRACT' && !data.payerReference?.trim()) {
+        throw new Error("اسم الجهة المتعاقدة مطلوب");
+      }
+
+      // ── 3. احسب رقم الدور ──────────────────────────────────────────────────
       const turnRes = await client.query(`
         SELECT COALESCE(MAX(turn_number), 0) + 1 AS next_turn
         FROM clinic_appointments
         WHERE clinic_id = $1 AND appointment_date = $2::date
       `, [data.clinicId, data.appointmentDate]);
       const turnNumber = turnRes.rows[0].next_turn;
+
+      // ── 4. أنشئ الموعد ─────────────────────────────────────────────────────
       const ins = await client.query(`
         INSERT INTO clinic_appointments
           (clinic_id, doctor_id, patient_id, patient_name, patient_phone,
-           appointment_date, appointment_time, turn_number, notes, created_by)
-        VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10)
+           appointment_date, appointment_time, turn_number, notes, created_by,
+           payment_type, insurance_company, payer_reference)
+        VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10,$11,$12,$13)
         RETURNING *
       `, [
         data.clinicId, data.doctorId, data.patientId ?? null, data.patientName,
         data.patientPhone ?? null, data.appointmentDate, data.appointmentTime ?? null,
-        turnNumber, data.notes ?? null, data.createdBy ?? null
+        turnNumber, data.notes ?? null, data.createdBy ?? null,
+        paymentType,
+        paymentType === 'INSURANCE' ? (data.insuranceCompany?.trim() ?? null) : null,
+        paymentType === 'CONTRACT'  ? (data.payerReference?.trim()   ?? null) : null,
       ]);
+      const appointment = ins.rows[0];
+
+      // ── 5. إنشاء فاتورة رسم الكشف (إذا كانت العيادة تملك خدمة كشف) ──────
+      if (clinic.consultation_service_id) {
+        // حساب سعر الكشف: سعر الطبيب أو السعر الأساسي
+        const dpRes = await client.query(
+          `SELECT price FROM clinic_service_doctor_prices WHERE service_id = $1 AND doctor_id = $2`,
+          [clinic.consultation_service_id, data.doctorId]
+        );
+        const consultationFee = dpRes.rows.length > 0
+          ? parseFloat(String(dpRes.rows[0].price))
+          : parseFloat(String(clinic.svc_base_price || 0));
+
+        // رقم الفاتورة التالي
+        const numRes = await client.query(
+          `SELECT COALESCE(MAX(CASE WHEN invoice_number ~ '^[0-9]+$' THEN invoice_number::int ELSE 0 END), 0) + 1 AS next_num FROM patient_invoice_headers`
+        );
+        const invoiceNumber = String(numRes.rows[0].next_num);
+
+        // نوع المريض في الفاتورة
+        const invoicePatientType = paymentType === 'CASH' ? 'cash' : 'contract';
+        const contractName = paymentType === 'INSURANCE'
+          ? (data.insuranceCompany?.trim() ?? null)
+          : paymentType === 'CONTRACT'
+          ? (data.payerReference?.trim() ?? null)
+          : null;
+
+        // أنشئ رأس الفاتورة
+        const headerRes = await client.query(`
+          INSERT INTO patient_invoice_headers
+            (invoice_number, invoice_date, patient_id, patient_name, patient_phone,
+             patient_type, contract_name, doctor_name,
+             total_amount, discount_amount, net_amount, paid_amount,
+             status, notes)
+          VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, 0, $8, 0, 'draft', $9)
+          RETURNING id, invoice_number
+        `, [
+          invoiceNumber,
+          data.patientId ?? null,
+          data.patientName,
+          data.patientPhone ?? null,
+          invoicePatientType,
+          contractName,
+          null, // doctor_name — filled by department when executing
+          consultationFee,
+          `رسم كشف عيادة — ${clinic.name_ar ?? ''}`,
+        ]);
+        const invoiceId = headerRes.rows[0].id;
+
+        // أضف سطر الخدمة
+        await client.query(`
+          INSERT INTO patient_invoice_lines
+            (header_id, line_type, service_id, description, quantity, unit_price, total_price, sort_order)
+          VALUES ($1, 'service', $2, $3, 1, $4, $4, 1)
+        `, [
+          invoiceId,
+          clinic.consultation_service_id,
+          clinic.svc_name ?? 'رسم كشف',
+          consultationFee,
+        ]);
+
+        // ── CASH: أنشئ دفع فوري + معاملة خزنة + غيّر الفاتورة لـ finalized ──
+        if (paymentType === 'CASH' && consultationFee > 0) {
+          const resolvedTreasuryId = clinic.resolved_treasury_id;
+
+          await client.query(`
+            INSERT INTO patient_invoice_payments
+              (header_id, payment_date, amount, payment_method, treasury_id, notes)
+            VALUES ($1, CURRENT_DATE, $2, 'cash', $3, $4)
+          `, [
+            invoiceId,
+            consultationFee,
+            resolvedTreasuryId,
+            `سداد رسم كشف — موعد #${appointment.id}`,
+          ]);
+
+          await client.query(`
+            INSERT INTO treasury_transactions
+              (treasury_id, type, amount, description, source_type, source_id, transaction_date)
+            VALUES ($1, 'receipt', $2, $3, 'clinic_appointment', $4, CURRENT_DATE)
+            ON CONFLICT (source_type, source_id, treasury_id) DO UPDATE
+              SET amount = EXCLUDED.amount, description = EXCLUDED.description
+          `, [
+            resolvedTreasuryId,
+            consultationFee,
+            `رسم كشف: ${data.patientName}`,
+            invoiceId,
+          ]);
+
+          await client.query(`
+            UPDATE patient_invoice_headers
+            SET status = 'finalized', paid_amount = $2, finalized_at = now(), updated_at = now()
+            WHERE id = $1
+          `, [invoiceId, consultationFee]);
+        }
+
+        // ── INSURANCE / CONTRACT: الفاتورة تبقى draft (لا دفع) ──────────────
+        // لا شيء إضافي — الفاتورة في وضع draft جاهزة للتحصيل لاحقاً
+
+        // أنشئ أمر خدمة كشف بحالة executed (مُنفَّذ عند الحجز)
+        await client.query(`
+          INSERT INTO clinic_orders
+            (appointment_id, doctor_id, patient_name,
+             order_type, target_type, target_id, target_name,
+             service_id, service_name_manual, quantity, unit_price, status)
+          VALUES ($1,$2,$3,'service','department',$4,$5,$6,$7,1,$8,'executed')
+        `, [
+          appointment.id, data.doctorId, data.patientName,
+          clinic.svc_dept_id ?? null,
+          clinic.svc_dept_name ?? null,
+          clinic.consultation_service_id,
+          clinic.svc_name ?? 'رسم كشف',
+          consultationFee,
+        ]);
+
+        // اربط الفاتورة بالموعد
+        await client.query(
+          `UPDATE clinic_appointments SET invoice_id = $1 WHERE id = $2`,
+          [invoiceId, appointment.id]
+        );
+
+        appointment.invoice_id = invoiceId;
+        appointment.invoice_number = invoiceNumber;
+        appointment.consultation_fee = consultationFee;
+        appointment.invoice_status = paymentType === 'CASH' ? 'finalized' : 'draft';
+      }
+
       await client.query('COMMIT');
-      return ins.rows[0];
+      return appointment;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -247,12 +445,23 @@ const methods = {
         `);
         if (svcRows.rows.length) {
           const svc = svcRows.rows[0] as { id: string, name_ar: string, unit_price: string };
+          // احضر الحالة الفعلية من clinic_orders (الأمر أُنشئ عند الحجز بـ consultation_id = NULL)
+          const actualOrderRows = await db.execute(sql`
+            SELECT status FROM clinic_orders
+            WHERE appointment_id = ${appointmentId}
+              AND service_id = ${appt.consultation_service_id}
+              AND consultation_id IS NULL
+            ORDER BY created_at DESC LIMIT 1
+          `);
+          const actualStatus = actualOrderRows.rows.length > 0
+            ? (actualOrderRows.rows[0] as { status: string }).status
+            : 'executed';
           preloadedServiceOrders.push({
             service_id: svc.id,
             service_name_manual: svc.name_ar,
             unit_price: svc.unit_price,
             order_type: 'service',
-            status: 'pending',
+            status: actualStatus,
             is_consultation_service: true,
           });
         }
@@ -300,12 +509,23 @@ const methods = {
       `);
       if (svcRows.rows.length) {
         const svc = svcRows.rows[0] as { id: string, name_ar: string, unit_price: string };
+        // احضر الحالة الفعلية من أمر الحجز (consultation_id = NULL)
+        const actualOrderRows = await db.execute(sql`
+          SELECT status FROM clinic_orders
+          WHERE appointment_id = ${appointmentId}
+            AND service_id = ${clinicServiceId}
+            AND consultation_id IS NULL
+          ORDER BY created_at DESC LIMIT 1
+        `);
+        const actualStatus = actualOrderRows.rows.length > 0
+          ? (actualOrderRows.rows[0] as { status: string }).status
+          : 'executed';
         serviceOrders.unshift({
           service_id: svc.id,
           service_name_manual: svc.name_ar,
           unit_price: svc.unit_price,
           order_type: 'service',
-          status: 'pending',
+          status: actualStatus,
           is_consultation_service: true,
         });
       }
@@ -329,7 +549,6 @@ const methods = {
 
   async saveConsultation(this: DatabaseStorage, data: {
     appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string;
-    discountType?: string; discountValue?: number;
     drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[];
     serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[];
   }): Promise<any> {
@@ -337,70 +556,48 @@ const methods = {
     try {
       await client.query('BEGIN');
 
+      // احضر بيانات الموعد والعيادة (للحصول على consultation_service_id لتجاوز خدمة الكشف)
       const apptRes = await client.query(
-        `SELECT a.*, d.name AS doctor_name, cl.default_pharmacy_id, cl.consultation_service_id,
-                cl.treasury_id AS clinic_treasury_id,
-                s.name_ar AS consultation_service_name, s.base_price AS consultation_service_base_price,
-                s.department_id AS consultation_service_dept_id,
-                dep.name_ar AS consultation_service_dept_name
+        `SELECT a.*, d.name AS doctor_name, cl.default_pharmacy_id, cl.consultation_service_id
          FROM clinic_appointments a
          JOIN doctors d ON d.id = a.doctor_id
          JOIN clinic_clinics cl ON cl.id = a.clinic_id
-         LEFT JOIN services s ON s.id = cl.consultation_service_id
-         LEFT JOIN departments dep ON dep.id = s.department_id
          WHERE a.id = $1`, [data.appointmentId]
       );
       const appt = apptRes.rows[0];
       if (!appt) throw new Error("الموعد غير موجود");
 
-      // حساب رسم الكشف والخصم
-      let consultationFee = 0;
-      if (appt.consultation_service_id) {
-        const dpRes = await client.query(
-          `SELECT price FROM clinic_service_doctor_prices WHERE service_id = $1 AND doctor_id = $2`,
-          [appt.consultation_service_id, appt.doctor_id]
-        );
-        consultationFee = dpRes.rows.length > 0
-          ? parseFloat(String(dpRes.rows[0].price))
-          : parseFloat(String(appt.consultation_service_base_price || 0));
-      }
-      const discountType = data.discountType || 'amount';
-      const discountValue = parseFloat(String(data.discountValue || 0));
-      const discountAmount = discountType === 'percent'
-        ? Math.round((consultationFee * discountValue / 100) * 100) / 100
-        : discountValue;
-      const finalAmount = Math.max(0, consultationFee - discountAmount);
-
+      // أنشئ أو حدّث سجل الكشف (بيانات سريرية فقط — بدون بيانات مالية)
       const consRes = await client.query(`
         INSERT INTO clinic_consultations
-          (appointment_id, chief_complaint, diagnosis, notes, created_by,
-           consultation_fee, discount_type, discount_value, final_amount, payment_status, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'paid', now())
+          (appointment_id, chief_complaint, diagnosis, notes, created_by, updated_at)
+        VALUES ($1, $2, $3, $4, $5, now())
         ON CONFLICT (appointment_id) DO UPDATE
           SET chief_complaint = EXCLUDED.chief_complaint,
-              diagnosis = EXCLUDED.diagnosis,
-              notes = EXCLUDED.notes,
-              consultation_fee = EXCLUDED.consultation_fee,
-              discount_type = EXCLUDED.discount_type,
-              discount_value = EXCLUDED.discount_value,
-              final_amount = EXCLUDED.final_amount,
-              payment_status = 'paid',
-              updated_at = now()
+              diagnosis       = EXCLUDED.diagnosis,
+              notes           = EXCLUDED.notes,
+              updated_at      = now()
         RETURNING *
-      `, [data.appointmentId, data.chiefComplaint ?? null, data.diagnosis ?? null, data.notes ?? null,
-          data.createdBy ?? null, consultationFee, discountType, discountValue, finalAmount]);
+      `, [data.appointmentId, data.chiefComplaint ?? null, data.diagnosis ?? null,
+          data.notes ?? null, data.createdBy ?? null]);
       const consultation = consRes.rows[0];
 
+      // احفظ الأدوية (حذف ثم إعادة إدراج — idempotent)
       await client.query(`DELETE FROM clinic_consultation_drugs WHERE consultation_id = $1`, [consultation.id]);
       for (const drug of data.drugs) {
         await client.query(`
-          INSERT INTO clinic_consultation_drugs (consultation_id, line_no, item_id, drug_name, dose, frequency, duration, notes, unit_level, quantity, unit_price)
+          INSERT INTO clinic_consultation_drugs
+            (consultation_id, line_no, item_id, drug_name, dose, frequency, duration, notes, unit_level, quantity, unit_price)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-        `, [consultation.id, drug.lineNo, drug.itemId ?? null, drug.drugName, drug.dose ?? null, drug.frequency ?? null, drug.duration ?? null, drug.notes ?? null, drug.unitLevel ?? 'major', drug.quantity ?? 1, drug.unitPrice ?? 0]);
+        `, [consultation.id, drug.lineNo, drug.itemId ?? null, drug.drugName,
+            drug.dose ?? null, drug.frequency ?? null, drug.duration ?? null,
+            drug.notes ?? null, drug.unitLevel ?? 'major', drug.quantity ?? 1, drug.unitPrice ?? 0]);
       }
 
+      // احذف أوامر الكشف المرتبطة بهذا الكشف (ليس أوامر الحجز التي لها consultation_id = NULL)
       await client.query(`DELETE FROM clinic_orders WHERE consultation_id = $1`, [consultation.id]);
 
+      // أدوات الصيدلية — أنشئ أوامر pharmacy بحالة pending
       for (const drug of data.drugs) {
         if (!drug.itemId && !drug.drugName) continue;
         await client.query(`
@@ -417,10 +614,13 @@ const methods = {
         ]);
       }
 
+      // خدمات الطبيب (تحاليل/أشعة/غيرها) — تجاوز خدمة الكشف (تم تسجيلها عند الحجز)
       for (const svc of data.serviceOrders) {
         if (!svc.serviceId && !svc.serviceNameManual) continue;
-        let orderPrice = 0;
-        if (svc.serviceId) {
+        // تجاوز خدمة الكشف — تم إنشاء أمرها عند حجز الموعد بحالة executed
+        if (svc.serviceId && svc.serviceId === appt.consultation_service_id) continue;
+        let orderPrice = svc.unitPrice ?? 0;
+        if (svc.serviceId && !svc.unitPrice) {
           const dpRes = await client.query(
             `SELECT price FROM clinic_service_doctor_prices WHERE service_id = $1 AND doctor_id = $2`,
             [svc.serviceId, appt.doctor_id]
@@ -446,61 +646,8 @@ const methods = {
         ]);
       }
 
-      if (appt.consultation_service_id) {
-        const alreadyHasConsultationService = data.serviceOrders.some(
-          (s) => s.serviceId === appt.consultation_service_id
-        );
-        if (!alreadyHasConsultationService) {
-          const doctorPriceRes = await client.query(
-            `SELECT price FROM clinic_service_doctor_prices WHERE service_id = $1 AND doctor_id = $2`,
-            [appt.consultation_service_id, appt.doctor_id]
-          );
-          const consultationPrice = doctorPriceRes.rows.length > 0
-            ? parseFloat(String(doctorPriceRes.rows[0].price))
-            : parseFloat(String(appt.consultation_service_base_price || 0));
-
-          await client.query(`
-            INSERT INTO clinic_orders
-              (consultation_id, appointment_id, doctor_id, patient_name,
-               order_type, target_type, target_id, target_name,
-               service_id, service_name_manual, quantity, unit_price, status)
-            VALUES ($1,$2,$3,$4,'service','department',$5,$6,$7,$8,1,$9,'executed')
-          `, [
-            consultation.id, data.appointmentId, appt.doctor_id, appt.patient_name,
-            appt.consultation_service_dept_id ?? null, appt.consultation_service_dept_name ?? null,
-            appt.consultation_service_id, appt.consultation_service_name,
-            consultationPrice
-          ]);
-        }
-      }
-
-      await client.query(`UPDATE clinic_appointments SET status = 'in_consultation' WHERE id = $1 AND status = 'waiting'`, [data.appointmentId]);
-
-      // تسجيل رسم الكشف في الخزنة (idempotent) - فقط إذا كان الـ ID يخص خزنة وليس حسابًا محاسبيًا
-      if (appt.clinic_treasury_id && finalAmount > 0) {
-        const treasuryCheck = await client.query(
-          `SELECT id FROM treasuries WHERE id = $1`,
-          [appt.clinic_treasury_id]
-        );
-        if (treasuryCheck.rows.length > 0) {
-          await client.query(`
-            INSERT INTO treasury_transactions
-              (treasury_id, type, amount, description, source_type, source_id, transaction_date)
-            VALUES ($1, 'receipt', $2, $3, 'clinic_consultation', $4, CURRENT_DATE)
-            ON CONFLICT (source_type, source_id, treasury_id) DO UPDATE
-              SET amount = EXCLUDED.amount,
-                  description = EXCLUDED.description
-          `, [
-            appt.clinic_treasury_id,
-            finalAmount,
-            `رسم كشف: ${appt.patient_name} - د. ${appt.doctor_name}`,
-            consultation.id,
-          ]);
-        }
-      }
-
       await client.query('COMMIT');
-      return { ...consultation, consultationFee, discountType, discountValue, finalAmount };
+      return consultation;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;

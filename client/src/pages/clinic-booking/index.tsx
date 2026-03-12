@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, Settings, ClipboardList } from "lucide-react";
+import { CalendarDays, Settings, ClipboardList, AlertCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useClinicBooking } from "./hooks/useClinicBooking";
 import { useClinicPermissions } from "./hooks/useClinicPermissions";
@@ -29,7 +29,7 @@ export default function ClinicBooking() {
 
   const { clinics, clinicsLoading, selectedClinicId, setSelectedClinicId, selectedDate, setSelectedDate } = useClinicBooking();
   const selectedClinic = clinics.find(c => c.id === selectedClinicId);
-  const { appointments, isLoading, statusMutation } = useAppointmentQueue(selectedClinicId, selectedDate);
+  const { appointments, isLoading, noDoctorLinked, statusMutation } = useAppointmentQueue(selectedClinicId, selectedDate);
 
   if (clinicsLoading) {
     return <div className="flex items-center justify-center h-64 text-muted-foreground">جارٍ التحميل...</div>;
@@ -74,6 +74,13 @@ export default function ClinicBooking() {
 
       {isAdmin && !selectedClinicId && (
         <AdminSummaryCards clinics={clinics} selectedDate={selectedDate} onSelect={setSelectedClinicId} />
+      )}
+
+      {noDoctorLinked && selectedClinicId && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800" data-testid="banner-no-doctor-linked">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>حسابك غير مرتبط بطبيب — تواصل مع مدير النظام لربط حسابك بطبيب حتى تظهر قائمة الانتظار</span>
+        </div>
       )}
 
       {selectedClinicId && (canViewStatement ? (

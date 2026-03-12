@@ -132,11 +132,11 @@ export function registerClinicRoutes(app: Express) {
   app.get("/api/clinic-clinics/:id/appointments", requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;
-      const role = req.session.role!;
       const perms = await storage.getUserEffectivePermissions(userId);
       const canViewAll = perms.includes("clinic.view_all");
       const canViewOwn = perms.includes("clinic.view_own");
-      if (!canViewAll && !canViewOwn) return res.status(403).json({ message: "لا تملك صلاحية" });
+      const canConsult = perms.includes("doctor.consultation");
+      if (!canViewAll && !canViewOwn && !canConsult) return res.status(403).json({ message: "لا تملك صلاحية" });
 
       if (!canViewAll) {
         const allowedIds = await storage.getUserClinicIds(userId);
@@ -146,6 +146,20 @@ export function registerClinicRoutes(app: Express) {
       }
 
       const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+
+      // ── فلترة قائمة المواعيد حسب الدور ──────────────────────────────────────
+      // الأطباء: يرون مواعيدهم فقط — يجب أن يكون للمستخدم سجل طبيب مرتبط
+      if (canConsult && !canViewAll) {
+        const doctorId = await storage.getUserDoctorId(userId);
+        if (!doctorId) {
+          // لا يوجد طبيب مرتبط → أعِد قائمة فارغة مع تحذير
+          return res.json({ appointments: [], noDoctorLinked: true });
+        }
+        const appointments = await storage.getClinicAppointments(req.params.id as string, date, doctorId);
+        return res.json({ appointments: snakeToCamel(appointments) });
+      }
+
+      // الاستقبال والإدارة: يرون جميع المواعيد (بدون فلتر طبيب)
       const appointments = await storage.getClinicAppointments(req.params.id as string, date);
       res.json(snakeToCamel(appointments));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -161,14 +175,26 @@ export function registerClinicRoutes(app: Express) {
           return res.status(403).json({ message: "غير مصرح لك بالحجز في هذه العيادة" });
         }
       }
-      const data = { ...req.body, clinicId: req.params.id as string, createdBy: userId };
-      if (!data.patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
-      if (!data.doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
-      if (!data.appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
-      const appointment = await storage.createAppointment(data);
+      const {
+        patientName, patientId, patientPhone,
+        doctorId, appointmentDate, appointmentTime, notes,
+        paymentType, insuranceCompany, payerReference,
+      } = req.body;
+      if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
+      if (!doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
+      if (!appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
+      const appointment = await storage.createAppointment({
+        clinicId: req.params.id as string,
+        createdBy: userId,
+        patientName: patientName.trim(),
+        patientId, patientPhone, doctorId, appointmentDate, appointmentTime, notes,
+        paymentType: paymentType || 'CASH',
+        insuranceCompany: insuranceCompany || undefined,
+        payerReference: payerReference || undefined,
+      });
       broadcastToClinic(req.params.id as string, "appointment_changed", { ts: Date.now() });
       res.status(201).json(snakeToCamel(appointment));
-    } catch (e: any) { res.status(500).json({ message: e.message }); }
+    } catch (e: any) { res.status(400).json({ message: e.message }); }
   });
 
   app.patch("/api/clinic-appointments/:id/status", requireAuth, async (req, res) => {
@@ -276,7 +302,7 @@ export function registerClinicRoutes(app: Express) {
 
   app.post("/api/clinic-consultations", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
     try {
-      const { appointmentId, chiefComplaint, diagnosis, notes, drugs, serviceOrders, discountType, discountValue } = req.body;
+      const { appointmentId, chiefComplaint, diagnosis, notes, drugs, serviceOrders } = req.body;
       if (!appointmentId) return res.status(400).json({ message: "appointmentId مطلوب" });
       const userId = req.session.userId!;
       const perms = await storage.getUserEffectivePermissions(userId);
@@ -293,8 +319,6 @@ export function registerClinicRoutes(app: Express) {
         appointmentId,
         chiefComplaint, diagnosis, notes,
         createdBy: userId,
-        discountType: discountType || 'amount',
-        discountValue: parseFloat(String(discountValue || 0)),
         drugs: drugs || [],
         serviceOrders: serviceOrders || [],
       });

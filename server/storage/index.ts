@@ -603,7 +603,7 @@ export interface IStorage {
   // العيادات
   getClinics(userId: string, role: string): Promise<Record<string, unknown>[]>;
   getClinicById(id: string): Promise<Record<string, unknown> | null>;
-  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<Record<string, unknown>>;
+  createClinic(data: { nameAr: string; departmentId?: string; defaultPharmacyId?: string; consultationServiceId?: string; treasuryId?: string; secretaryFeeType?: string; secretaryFeeValue?: number }): Promise<Record<string, unknown>>;
   updateClinic(id: string, data: Partial<{ nameAr: string; departmentId: string; defaultPharmacyId: string; consultationServiceId: string; secretaryFeeType: string; secretaryFeeValue: number; isActive: boolean }>): Promise<Record<string, unknown>>;
   getUserClinicIds(userId: string): Promise<string[]>;
   assignUserToClinic(userId: string, clinicId: string): Promise<void>;
@@ -614,8 +614,8 @@ export interface IStorage {
   upsertDoctorSchedule(data: { clinicId: string; doctorId: string; weekday?: number | null; startTime?: string; endTime?: string; maxAppointments?: number }): Promise<Record<string, unknown>>;
 
   // الحجوزات
-  getClinicAppointments(clinicId: string, date: string): Promise<Record<string, unknown>[]>;
-  createAppointment(data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string }): Promise<Record<string, unknown>>;
+  getClinicAppointments(clinicId: string, date: string, filterDoctorId?: string | null): Promise<Record<string, unknown>[]>;
+  createAppointment(data: { clinicId: string; doctorId: string; patientId?: string; patientName: string; patientPhone?: string; appointmentDate: string; appointmentTime?: string; notes?: string; createdBy?: string; paymentType?: string; insuranceCompany?: string; payerReference?: string; }): Promise<Record<string, unknown>>;
   getAppointmentClinicId(appointmentId: string): Promise<string | null>;
   updateAppointmentStatus(id: string, status: string): Promise<void>;
 
@@ -627,7 +627,7 @@ export interface IStorage {
 
   // الكشف والروشتة
   getConsultationByAppointment(appointmentId: string): Promise<Record<string, unknown> | null>;
-  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[] }): Promise<Record<string, unknown>>;
+  saveConsultation(data: { appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string; drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[]; serviceOrders: { serviceId?: string | null; serviceNameManual?: string; unitPrice?: number; targetId?: string; targetName?: string }[] }): Promise<Record<string, unknown>>;
 
   // الأدوية المفضلة
   getDoctorFavoriteDrugs(doctorId: string, clinicId?: string | null): Promise<Record<string, unknown>[]>;

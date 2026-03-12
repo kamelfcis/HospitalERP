@@ -6,6 +6,10 @@ interface ClinicRaw {
   id: string;
   nameAr: string;
   isActive?: boolean;
+  consultationServiceId?: string | null;
+  consultationServiceName?: string | null;
+  consultationServiceBasePrice?: string | number | null;
+  treasuryId?: string | null;
 }
 
 function clinicAdapter(c: ClinicRaw): LookupItem {
@@ -13,7 +17,14 @@ function clinicAdapter(c: ClinicRaw): LookupItem {
     id: c.id,
     name: c.nameAr,
     isActive: c.isActive ?? true,
-    meta: { id: c.id, name: c.nameAr },
+    meta: {
+      id: c.id,
+      name: c.nameAr,
+      consultationServiceId: c.consultationServiceId ?? null,
+      consultationServiceName: c.consultationServiceName ?? null,
+      consultationServiceBasePrice: c.consultationServiceBasePrice ?? null,
+      treasuryId: c.treasuryId ?? null,
+    },
   };
 }
 
