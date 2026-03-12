@@ -1,0 +1,107 @@
+P2-A — Fix N+1 in GL Financial Reports Only
+
+Objective
+Refactor the 4 GL financial report functions in server/storage/finance-reports-storage.ts to remove N+1 query patterns and replace them with single aggregated SQL queries, while preserving exact accounting logic, totals, filters, response shape, and frontend compatibility.
+
+In scope
+- getTrialBalance
+- getIncomeStatement
+- getBalanceSheet
+- getCostCenterReport
+
+Out of scope
+- getAccountLedger
+- getDashboardStats
+- any other reports
+- any frontend changes
+- any route changes
+- any schema changes
+- any migrations
+- any *_rpt table wiring
+- rpt_patient_visit_summary
+- rpt_item_movements_summary
+
+Requirements
+1) Replace query-per-account / query-per-cost-center loops with one set-based SQL query per report.
+2) Use GROUP BY + conditional SUM/CASE WHEN as needed.
+3) Preserve exact current business logic and accounting meaning.
+4) Preserve exact current response JSON shape.
+5) Preserve exact current filtering behavior, date logic, and zero-balance handling.
+6) Preserve exact current posted/unposted logic. Do not change status filtering semantics.
+7) Preserve exact debit/credit sign conventions. Do not reinterpret polarity.
+8) No unrelated refactors.
+9) No schema changes or migrations.
+10) Keep zero-balance accounts available through LEFT JOIN behavior, then apply any zero filtering in Node exactly like current behavior.
+
+Tasks
+
+1) getTrialBalance
+- Replace Promise.all query-per-account pattern with one SQL query.
+- Use LEFT JOIN from accounts to journal lines / journal entries as appropriate.
+- GROUP BY account_id.
+- Preserve current date/status filtering exactly.
+- Keep Node-side calculations for:
+  - netBalance
+  - debitBalance
+  - creditBalance
+- Preserve exact response shape:
+  - items
+  - totalDebit
+  - totalCredit
+  - isBalanced
+
+2) getIncomeStatement
+- Replace N calls to getAccountAmount() with one grouped SQL query covering account_type IN ('revenue', 'expense').
+- Preserve exact zero filtering behavior in Node.
+- Preserve exact response shape:
+  - revenues
+  - expenses
+  - totalRevenue
+  - totalExpense
+  - netIncome
+
+3) getBalanceSheet
+- Replace all Promise.all loops and sequential per-account loops with one grouped SQL query covering required account types.
+- In Node, split by account_type exactly as current logic does.
+- Compute netIncome exactly the same way current code does.
+- Preserve exact treatment of equity and exact balance equation.
+- Preserve exact response shape:
+  - assets
+  - liabilities
+  - equity
+  - totalAssets
+  - totalLiabilities
+  - totalEquity
+  - isBalanced
+
+4) getCostCenterReport
+- Replace query-per-cost-center pattern with one grouped SQL query.
+- Join journal lines / journal entries / accounts / cost centers as needed.
+- Support both:
+  - one specific cost center
+  - all cost centers
+- Preserve exact response shape:
+  - items
+  - grandTotalRevenue
+  - grandTotalExpense
+  - grandNetResult
+
+Verification requirements
+For each report, return:
+- old query pattern removed
+- new SQL strategy used
+- old totals vs new totals
+- old row/item count vs new row/item count
+- confirmation that response shape is unchanged
+- confirmation that zero-balance behavior is unchanged
+- confirmation that posted/draft filtering behavior is unchanged
+- any assumptions or risks
+
+Definition of done
+- Trial Balance runs in 1 aggregated query instead of per-account queries
+- Income Statement runs in 1 aggregated query instead of per-account queries
+- Balance Sheet runs in 1 aggregated query instead of multiple Promise.all + sequential loops
+- Cost Center Report runs in 1 aggregated query instead of per-cost-center queries
+- Response shapes remain backward-compatible
+- No frontend or route changes
+- No schema changes

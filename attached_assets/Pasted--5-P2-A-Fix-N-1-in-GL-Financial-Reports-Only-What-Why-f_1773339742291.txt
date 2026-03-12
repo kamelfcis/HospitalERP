@@ -1,0 +1,94 @@
+#5 - P2-A — Fix N+1 in GL Financial Reports Only
+
+What & Why
+أربع دوال في finance-reports-storage.ts تُنفّذ استعلام قاعدة بيانات منفصل لكل حساب أو مركز تكلفة بدلاً من استعلام واحد مُجمَّع. مع 614 حساباً و31 مركز تكلفة، ينتج عن كل طلب تقرير مئات الرحلات إلى قاعدة البيانات:
+
+الدالة	عدد الاستعلامات الحالية	بعد الإصلاح
+getTrialBalance	614 استعلام (واحد لكل حساب)	1 استعلام
+getIncomeStatement	349 استعلام متوازٍ (revenue + expense)	1 استعلام
+getBalanceSheet	614 متوازية + sequential for-loops على 349 حساب	1 استعلام
+getCostCenterReport	31 استعلام (واحد لكل مركز تكلفة)	1 استعلام
+
+Done looks like
+- Trial Balance يُنفّذ 1 استعلام مُجمَّع بدلاً من query-per-account
+- Income Statement يُنفّذ 1 استعلام مُجمَّع بدلاً من query-per-account
+- Balance Sheet يُنفّذ 1 استعلام مُجمَّع بدلاً من Promise.all loops + sequential loops
+- Cost Center Report يُنفّذ 1 استعلام مُجمَّع بدلاً من query-per-cost-center
+- شكل JSON لكل استجابة يبقى مطابقاً للسابق تماماً (backward-compatible)
+- لا تغييرات في الواجهة الأمامية أو المسارات
+- لا تغييرات في المخطط أو هجرات قاعدة البيانات
+
+Out of scope
+- getAccountLedger — مستعلامان فقط، صحيح بالفعل
+- getDashboardStats — 5 استعلامات بسيطة، صحيحة بالفعل
+- أي تقارير أخرى خارج finance-reports-storage.ts
+- أي تغييرات في الواجهة الأمامية أو المسارات
+- أي تغييرات في المخطط أو هجرات
+- rpt_patient_visit_summary أو rpt_item_movements_summary (P2-B منفصلة)
+
+Tasks
+
+1) إصلاح getTrialBalance
+- استبدال Promise.all query-per-account باستعلام واحد
+- استخدام LEFT JOIN من accounts إلى journal_lines → journal_entries
+- GROUP BY account_id مع CASE WHEN للتصفية بالتاريخ والحالة
+- تبقى الحسابات الحسابية في Node:
+  - netBalance
+  - debitBalance
+  - creditBalance
+- شكل الاستجابة يبقى:
+  - items
+  - totalDebit
+  - totalCredit
+  - isBalanced
+
+2) إصلاح getIncomeStatement
+- استبدال N استدعاءات لـ getAccountAmount() باستعلام واحد
+- يشمل account_type IN ('revenue', 'expense')
+- GROUP BY account_id
+- تصفية الحسابات الصفرية تبقى في Node
+- شكل الاستجابة يبقى:
+  - revenues
+  - expenses
+  - totalRevenue
+  - totalExpense
+  - netIncome
+
+3) إصلاح getBalanceSheet
+- استبدال 3 Promise.all loops + 2 sequential for-loops باستعلام واحد
+- يشمل جميع account_types المطلوبة
+- Node يُقسّم النتائج حسب account_type
+- حساب netIncome يبقى بنفس منطق الكود الحالي تماماً
+- معادلة حقوق الملكية وصافي الدخل تبقى مطابقة تماماً
+- شكل الاستجابة يبقى:
+  - assets
+  - liabilities
+  - equity
+  - totalAssets
+  - totalLiabilities
+  - totalEquity
+  - isBalanced
+
+4) إصلاح getCostCenterReport
+- استبدال Promise.all query-per-cost-center باستعلام واحد
+- JOIN journal_lines → journal_entries → accounts → cost_centers
+- GROUP BY cost_center_id
+- يدعم مركز تكلفة واحد أو الكل
+- شكل الاستجابة يبقى:
+  - items
+  - grandTotalRevenue
+  - grandTotalExpense
+  - grandNetResult
+
+Critical requirements
+- استخدام LEFT JOIN لضمان ظهور جميع الحسابات بما فيها ذات الأرصدة الصفرية، ثم تصفية الصفرية في Node — نفس سلوك الكود الحالي تماماً
+- لا تغيير في دلالات تصفية status (posted/draft)
+- لا تغيير في اتجاهات debit/credit
+- لا تغيير في semantics تصنيف الحسابات: revenue / expense / asset / liability / equity
+- الحفاظ على نفس منطق net income ونفس معاملة equity في Balance Sheet
+- استخدام sql template literals + db.execute() أو Drizzle query builder فقط
+- لا cast لأنواع TypeScript مباشرة
+- للتحقق: مقارنة الإجماليات وعدد العناصر وشكل الاستجابة قبل وبعد التعديل
+
+Relevant files
+- server/storage/finance-reports-storage.ts:61-300

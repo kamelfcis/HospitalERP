@@ -10,15 +10,12 @@
  */
 
 import { db } from "../db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, inArray } from "drizzle-orm";
 import {
   accounts,
   costCenters,
   journalEntries,
   journalLines,
-} from "@shared/schema";
-import type {
-  CostCenter,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 
@@ -58,34 +55,74 @@ const methods = {
     };
   },
 
+  // ─── ميزان المراجعة ───────────────────────────────────────────────────────
+  // P2-A: استبدال 614 استعلام (query-per-account) باستعلام واحد مُجمَّع
+  // LEFT JOIN من accounts → journal_lines → journal_entries مع GROUP BY account id
   async getTrialBalance(this: DatabaseStorage, asOfDate: string): Promise<any> {
-    const allAccounts = await this.getAccounts();
-    
-    const items = await Promise.all(allAccounts.map(async (account) => {
-      const [balance] = await db.select({
-        debit: sql<string>`COALESCE(SUM(CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} <= ${asOfDate} THEN ${journalLines.debit}::numeric ELSE 0 END), 0)::text`,
-        credit: sql<string>`COALESCE(SUM(CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} <= ${asOfDate} THEN ${journalLines.credit}::numeric ELSE 0 END), 0)::text`,
-      })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
-      .where(eq(journalLines.accountId, account.id));
+    const rows = await db.select({
+      id: accounts.id,
+      code: accounts.code,
+      name: accounts.name,
+      accountType: accounts.accountType,
+      parentId: accounts.parentId,
+      level: accounts.level,
+      isActive: accounts.isActive,
+      requiresCostCenter: accounts.requiresCostCenter,
+      description: accounts.description,
+      openingBalance: accounts.openingBalance,
+      createdAt: accounts.createdAt,
+      txDebit: sql<string>`COALESCE(SUM(
+        CASE WHEN ${journalEntries.status} = 'posted'
+             AND ${journalEntries.entryDate} <= ${asOfDate}
+        THEN ${journalLines.debit}::numeric ELSE 0 END
+      ), 0)::text`,
+      txCredit: sql<string>`COALESCE(SUM(
+        CASE WHEN ${journalEntries.status} = 'posted'
+             AND ${journalEntries.entryDate} <= ${asOfDate}
+        THEN ${journalLines.credit}::numeric ELSE 0 END
+      ), 0)::text`,
+    })
+    .from(accounts)
+    .leftJoin(journalLines, eq(journalLines.accountId, accounts.id))
+    .leftJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
+    .groupBy(accounts.id);
 
-      const debitBalance = parseFloat(balance?.debit || "0") + parseFloat(account.openingBalance || "0");
-      const creditBalance = parseFloat(balance?.credit || "0");
+    const items = rows.map((row) => {
+      const txDebit    = parseFloat(row.txDebit);
+      const txCredit   = parseFloat(row.txCredit);
+      const openingBal = parseFloat(row.openingBalance || "0");
+
+      // نفس منطق الكود السابق تماماً
+      const debitBalance = txDebit + openingBal;
+      const creditBalance = txCredit;
       const netBalance = debitBalance - creditBalance;
+
+      const account = {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        accountType: row.accountType,
+        parentId: row.parentId,
+        level: row.level,
+        isActive: row.isActive,
+        requiresCostCenter: row.requiresCostCenter,
+        description: row.description,
+        openingBalance: row.openingBalance,
+        createdAt: row.createdAt,
+      };
 
       return {
         account,
         debitBalance: netBalance > 0 ? netBalance.toFixed(2) : "0",
         creditBalance: netBalance < 0 ? Math.abs(netBalance).toFixed(2) : "0",
       };
-    }));
+    });
 
-    const nonZeroItems = items.filter(item => 
+    const nonZeroItems = items.filter(item =>
       parseFloat(item.debitBalance) > 0 || parseFloat(item.creditBalance) > 0
     );
 
-    const totalDebit = nonZeroItems.reduce((sum, item) => sum + parseFloat(item.debitBalance), 0);
+    const totalDebit  = nonZeroItems.reduce((sum, item) => sum + parseFloat(item.debitBalance), 0);
     const totalCredit = nonZeroItems.reduce((sum, item) => sum + parseFloat(item.creditBalance), 0);
 
     return {
@@ -97,194 +134,220 @@ const methods = {
     };
   },
 
+  // ─── قائمة الدخل ──────────────────────────────────────────────────────────
+  // P2-A: استبدال N استدعاء لـ getAccountAmount() باستعلام واحد مُجمَّع
+  // يشمل account_type IN ('revenue', 'expense') مع GROUP BY account id
   async getIncomeStatement(this: DatabaseStorage, startDate: string, endDate: string): Promise<any> {
-    const allAccounts = await this.getAccounts();
-    
-    const revenueAccounts = allAccounts.filter(a => a.accountType === 'revenue');
-    const expenseAccounts = allAccounts.filter(a => a.accountType === 'expense');
+    const rows = await db.select({
+      id: accounts.id,
+      code: accounts.code,
+      name: accounts.name,
+      accountType: accounts.accountType,
+      netAmount: sql<string>`COALESCE(SUM(
+        CASE WHEN ${journalEntries.status} = 'posted'
+             AND ${journalEntries.entryDate} >= ${startDate}
+             AND ${journalEntries.entryDate} <= ${endDate}
+        THEN ${journalLines.credit}::numeric - ${journalLines.debit}::numeric
+        ELSE 0 END
+      ), 0)::text`,
+    })
+    .from(accounts)
+    .leftJoin(journalLines, eq(journalLines.accountId, accounts.id))
+    .leftJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
+    .where(inArray(accounts.accountType, ['revenue', 'expense']))
+    .groupBy(accounts.id);
 
-    const getAccountAmount = async (accountId: string) => {
-      const [result] = await db.select({
-        amount: sql<string>`COALESCE(SUM(
-          CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} >= ${startDate} AND ${journalEntries.entryDate} <= ${endDate}
-          THEN ${journalLines.credit}::numeric - ${journalLines.debit}::numeric ELSE 0 END
-        ), 0)::text`,
-      })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
-      .where(eq(journalLines.accountId, accountId));
-      return result?.amount || "0";
-    };
+    const revenues = rows
+      .filter(r => r.accountType === 'revenue')
+      .map(r => ({
+        accountId:   r.id,
+        accountCode: r.code,
+        accountName: r.name,
+        amount:      r.netAmount,
+      }))
+      .filter(r => parseFloat(r.amount) !== 0);
 
-    const revenues = await Promise.all(revenueAccounts.map(async (account) => {
-      const amount = await getAccountAmount(account.id);
-      return {
-        accountId: account.id,
-        accountCode: account.code,
-        accountName: account.name,
-        amount,
-      };
-    }));
-
-    const expenses = await Promise.all(expenseAccounts.map(async (account) => {
-      const amount = await getAccountAmount(account.id);
-      return {
-        accountId: account.id,
-        accountCode: account.code,
-        accountName: account.name,
-        amount: (parseFloat(amount) * -1).toFixed(2),
-      };
-    }));
+    const expenses = rows
+      .filter(r => r.accountType === 'expense')
+      .map(r => ({
+        accountId:   r.id,
+        accountCode: r.code,
+        accountName: r.name,
+        // نفس منطق الكود السابق: expense = net * -1
+        amount: (parseFloat(r.netAmount) * -1).toFixed(2),
+      }))
+      .filter(e => parseFloat(e.amount) !== 0);
 
     const totalRevenue = revenues.reduce((sum, r) => sum + parseFloat(r.amount), 0);
     const totalExpense = expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
-    const netIncome = totalRevenue - totalExpense;
+    const netIncome    = totalRevenue - totalExpense;
 
     return {
-      revenues: revenues.filter(r => parseFloat(r.amount) !== 0),
-      expenses: expenses.filter(e => parseFloat(e.amount) !== 0),
+      revenues,
+      expenses,
       totalRevenue: totalRevenue.toFixed(2),
       totalExpense: totalExpense.toFixed(2),
-      netIncome: netIncome.toFixed(2),
+      netIncome:    netIncome.toFixed(2),
       startDate,
       endDate,
     };
   },
 
+  // ─── الميزانية العمومية ───────────────────────────────────────────────────
+  // P2-A: استبدال 3 Promise.all + 2 sequential for-loops باستعلام واحد مُجمَّع
+  // استعلام واحد يشمل جميع account_types — Node يُقسّم ويحسب netIncome
   async getBalanceSheet(this: DatabaseStorage, asOfDate: string): Promise<any> {
-    const allAccounts = await this.getAccounts();
-    
-    const assetAccounts = allAccounts.filter(a => a.accountType === 'asset');
-    const liabilityAccounts = allAccounts.filter(a => a.accountType === 'liability');
-    const equityAccounts = allAccounts.filter(a => a.accountType === 'equity');
+    const rows = await db.select({
+      id: accounts.id,
+      code: accounts.code,
+      name: accounts.name,
+      accountType: accounts.accountType,
+      openingBalance: accounts.openingBalance,
+      txDebit: sql<string>`COALESCE(SUM(
+        CASE WHEN ${journalEntries.status} = 'posted'
+             AND ${journalEntries.entryDate} <= ${asOfDate}
+        THEN ${journalLines.debit}::numeric ELSE 0 END
+      ), 0)::text`,
+      txCredit: sql<string>`COALESCE(SUM(
+        CASE WHEN ${journalEntries.status} = 'posted'
+             AND ${journalEntries.entryDate} <= ${asOfDate}
+        THEN ${journalLines.credit}::numeric ELSE 0 END
+      ), 0)::text`,
+    })
+    .from(accounts)
+    .leftJoin(journalLines, eq(journalLines.accountId, accounts.id))
+    .leftJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
+    .groupBy(accounts.id);
 
-    const getAccountBalance = async (accountId: string, isDebitNormal: boolean) => {
-      const [result] = await db.select({
-        debit: sql<string>`COALESCE(SUM(CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} <= ${asOfDate} THEN ${journalLines.debit}::numeric ELSE 0 END), 0)::text`,
-        credit: sql<string>`COALESCE(SUM(CASE WHEN ${journalEntries.status} = 'posted' AND ${journalEntries.entryDate} <= ${asOfDate} THEN ${journalLines.credit}::numeric ELSE 0 END), 0)::text`,
-      })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
-      .where(eq(journalLines.accountId, accountId));
-
-      const debit = parseFloat(result?.debit || "0");
-      const credit = parseFloat(result?.credit || "0");
-      return isDebitNormal ? (debit - credit).toFixed(2) : (credit - debit).toFixed(2);
+    // نفس منطق getAccountBalance السابق تماماً:
+    // isDebitNormal=true  → debit - credit
+    // isDebitNormal=false → credit - debit
+    const computeBalance = (
+      txDebit: string,
+      txCredit: string,
+      openingBalance: string | null,
+      isDebitNormal: boolean,
+      includeOpening: boolean,
+    ): number => {
+      const d   = parseFloat(txDebit);
+      const c   = parseFloat(txCredit);
+      const ob  = includeOpening ? parseFloat(openingBalance || "0") : 0;
+      const txB = isDebitNormal ? (d - c) : (c - d);
+      return ob + txB;
     };
 
-    const assets = await Promise.all(assetAccounts.map(async (account) => {
-      const openingBalance = parseFloat(account.openingBalance || "0");
-      const transactionBalance = parseFloat(await getAccountBalance(account.id, true));
-      const balance = (openingBalance + transactionBalance).toFixed(2);
-      return {
-        accountId: account.id,
-        accountCode: account.code,
-        accountName: account.name,
-        balance,
-      };
-    }));
-
-    const liabilities = await Promise.all(liabilityAccounts.map(async (account) => {
-      const balance = await getAccountBalance(account.id, false);
-      return {
-        accountId: account.id,
-        accountCode: account.code,
-        accountName: account.name,
-        balance,
-      };
-    }));
-
-    const equity = await Promise.all(equityAccounts.map(async (account) => {
-      const balance = await getAccountBalance(account.id, false);
-      return {
-        accountId: account.id,
-        accountCode: account.code,
-        accountName: account.name,
-        balance,
-      };
-    }));
-
-    const revenueAccounts = allAccounts.filter(a => a.accountType === 'revenue');
-    const expenseAccounts = allAccounts.filter(a => a.accountType === 'expense');
-
-    let totalRevenue = 0;
-    for (const acc of revenueAccounts) {
-      const openBal = parseFloat(acc.openingBalance || "0");
-      const txBal = parseFloat(await getAccountBalance(acc.id, false));
-      totalRevenue += openBal + txBal;
-    }
+    const assets: any[]      = [];
+    const liabilities: any[] = [];
+    const equity: any[]      = [];
+    let totalRevenue  = 0;
     let totalExpenses = 0;
-    for (const acc of expenseAccounts) {
-      const openBal = parseFloat(acc.openingBalance || "0");
-      const txBal = parseFloat(await getAccountBalance(acc.id, true));
-      totalExpenses += openBal + txBal;
+
+    for (const row of rows) {
+      const { id, code, name, accountType, openingBalance, txDebit, txCredit } = row;
+
+      if (accountType === 'asset') {
+        // nfس منطق: openingBalance + (debit - credit)
+        const balance = computeBalance(txDebit, txCredit, openingBalance, true, true);
+        assets.push({ accountId: id, accountCode: code, accountName: name, balance: balance.toFixed(2) });
+
+      } else if (accountType === 'liability') {
+        // نفس منطق: credit - debit (لا opening balance)
+        const balance = computeBalance(txDebit, txCredit, openingBalance, false, false);
+        liabilities.push({ accountId: id, accountCode: code, accountName: name, balance: balance.toFixed(2) });
+
+      } else if (accountType === 'equity') {
+        // نفس منطق: credit - debit (لا opening balance)
+        const balance = computeBalance(txDebit, txCredit, openingBalance, false, false);
+        equity.push({ accountId: id, accountCode: code, accountName: name, balance: balance.toFixed(2) });
+
+      } else if (accountType === 'revenue') {
+        // نفس منطق: openingBalance + (credit - debit)
+        totalRevenue += computeBalance(txDebit, txCredit, openingBalance, false, true);
+
+      } else if (accountType === 'expense') {
+        // نفس منطق: openingBalance + (debit - credit)
+        totalExpenses += computeBalance(txDebit, txCredit, openingBalance, true, true);
+      }
     }
+
     const netIncome = totalRevenue - totalExpenses;
 
-    const totalAssets = assets.reduce((sum, a) => sum + parseFloat(a.balance), 0);
-    const totalLiabilities = liabilities.reduce((sum, l) => sum + parseFloat(l.balance), 0);
-    const totalEquityFromAccounts = equity.reduce((sum, e) => sum + parseFloat(e.balance), 0);
-    const totalEquityWithIncome = totalEquityFromAccounts + netIncome;
+    const totalAssets              = assets.reduce((sum, a) => sum + parseFloat(a.balance), 0);
+    const totalLiabilities         = liabilities.reduce((sum, l) => sum + parseFloat(l.balance), 0);
+    const totalEquityFromAccounts  = equity.reduce((sum, e) => sum + parseFloat(e.balance), 0);
+    const totalEquityWithIncome    = totalEquityFromAccounts + netIncome;
 
     const equityItems = equity.filter(e => parseFloat(e.balance) !== 0);
     if (Math.abs(netIncome) >= 0.01) {
       equityItems.push({
-        accountId: "net-income",
+        accountId:   "net-income",
         accountCode: "",
         accountName: "صافي ربح/خسارة الفترة",
-        balance: netIncome.toFixed(2),
+        balance:     netIncome.toFixed(2),
       });
     }
 
     return {
-      assets: assets.filter(a => parseFloat(a.balance) !== 0),
+      assets:      assets.filter(a => parseFloat(a.balance) !== 0),
       liabilities: liabilities.filter(l => parseFloat(l.balance) !== 0),
-      equity: equityItems,
-      totalAssets: totalAssets.toFixed(2),
-      totalLiabilities: totalLiabilities.toFixed(2),
-      totalEquity: totalEquityWithIncome.toFixed(2),
+      equity:      equityItems,
+      totalAssets:               totalAssets.toFixed(2),
+      totalLiabilities:          totalLiabilities.toFixed(2),
+      totalEquity:               totalEquityWithIncome.toFixed(2),
       totalLiabilitiesAndEquity: (totalLiabilities + totalEquityWithIncome).toFixed(2),
-      netIncome: netIncome.toFixed(2),
+      netIncome:                 netIncome.toFixed(2),
       asOfDate,
       isBalanced: Math.abs(totalAssets - (totalLiabilities + totalEquityWithIncome)) < 0.01,
     };
   },
 
+  // ─── تقرير مراكز التكلفة ──────────────────────────────────────────────────
+  // P2-A: استبدال 31 استعلام (query-per-cost-center) باستعلام واحد مُجمَّع
+  // LEFT JOIN cost_centers → journal_lines → journal_entries → accounts
   async getCostCenterReport(this: DatabaseStorage, startDate: string, endDate: string, costCenterId?: string): Promise<any> {
-    const allCostCenters = costCenterId && costCenterId !== 'all'
-      ? [await this.getCostCenter(costCenterId)].filter(Boolean) as CostCenter[]
-      : await this.getCostCenters();
+    const query = db.select({
+      costCenterId: costCenters.id,
+      costCenterCode: costCenters.code,
+      costCenterName: costCenters.name,
+      totalRevenue: sql<string>`COALESCE(SUM(
+        CASE WHEN ${accounts.accountType} = 'revenue'
+             AND ${journalEntries.status} = 'posted'
+             AND ${journalEntries.entryDate} >= ${startDate}
+             AND ${journalEntries.entryDate} <= ${endDate}
+        THEN ${journalLines.credit}::numeric - ${journalLines.debit}::numeric
+        ELSE 0 END
+      ), 0)::text`,
+      totalExpense: sql<string>`COALESCE(SUM(
+        CASE WHEN ${accounts.accountType} = 'expense'
+             AND ${journalEntries.status} = 'posted'
+             AND ${journalEntries.entryDate} >= ${startDate}
+             AND ${journalEntries.entryDate} <= ${endDate}
+        THEN ${journalLines.debit}::numeric - ${journalLines.credit}::numeric
+        ELSE 0 END
+      ), 0)::text`,
+    })
+    .from(costCenters)
+    .leftJoin(journalLines, eq(journalLines.costCenterId, costCenters.id))
+    .leftJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
+    .leftJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .groupBy(costCenters.id);
 
-    const items = await Promise.all(allCostCenters.map(async (cc) => {
-      const [result] = await db.select({
-        totalRevenue: sql<string>`COALESCE(SUM(
-          CASE WHEN ${accounts.accountType} = 'revenue' AND ${journalEntries.status} = 'posted' 
-               AND ${journalEntries.entryDate} >= ${startDate} AND ${journalEntries.entryDate} <= ${endDate}
-          THEN ${journalLines.credit}::numeric - ${journalLines.debit}::numeric ELSE 0 END
-        ), 0)::text`,
-        totalExpense: sql<string>`COALESCE(SUM(
-          CASE WHEN ${accounts.accountType} = 'expense' AND ${journalEntries.status} = 'posted'
-               AND ${journalEntries.entryDate} >= ${startDate} AND ${journalEntries.entryDate} <= ${endDate}
-          THEN ${journalLines.debit}::numeric - ${journalLines.credit}::numeric ELSE 0 END
-        ), 0)::text`,
-      })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.journalEntryId, journalEntries.id))
-      .innerJoin(accounts, eq(journalLines.accountId, accounts.id))
-      .where(eq(journalLines.costCenterId, cc.id));
+    const rows = costCenterId && costCenterId !== 'all'
+      ? await query.where(eq(costCenters.id, costCenterId))
+      : await query;
 
-      const totalRevenue = parseFloat(result?.totalRevenue || "0");
-      const totalExpense = parseFloat(result?.totalExpense || "0");
-
+    const items = rows.map((row) => {
+      const totalRevenue = parseFloat(row.totalRevenue);
+      const totalExpense = parseFloat(row.totalExpense);
       return {
-        costCenterId: cc.id,
-        costCenterCode: cc.code,
-        costCenterName: cc.name,
-        totalRevenue: totalRevenue.toFixed(2),
-        totalExpense: totalExpense.toFixed(2),
-        netResult: (totalRevenue - totalExpense).toFixed(2),
+        costCenterId:   row.costCenterId,
+        costCenterCode: row.costCenterCode,
+        costCenterName: row.costCenterName,
+        totalRevenue:   totalRevenue.toFixed(2),
+        totalExpense:   totalExpense.toFixed(2),
+        netResult:      (totalRevenue - totalExpense).toFixed(2),
       };
-    }));
+    });
 
     const grandTotalRevenue = items.reduce((sum, i) => sum + parseFloat(i.totalRevenue), 0);
     const grandTotalExpense = items.reduce((sum, i) => sum + parseFloat(i.totalExpense), 0);
@@ -293,12 +356,14 @@ const methods = {
       items,
       grandTotalRevenue: grandTotalRevenue.toFixed(2),
       grandTotalExpense: grandTotalExpense.toFixed(2),
-      grandNetResult: (grandTotalRevenue - grandTotalExpense).toFixed(2),
+      grandNetResult:    (grandTotalRevenue - grandTotalExpense).toFixed(2),
       startDate,
       endDate,
     };
   },
 
+  // ─── كشف الحساب ─────────────────────────────────────────────────────────
+  // خارج نطاق P2-A — استعلامان فقط (صحيح بالفعل)
   async getAccountLedger(this: DatabaseStorage, accountId: string, startDate: string, endDate: string): Promise<any> {
     const account = await this.getAccount(accountId);
     if (!account) {
@@ -317,12 +382,12 @@ const methods = {
       sql`${journalEntries.entryDate} < ${startDate}`
     ));
 
-    const openingDebit = parseFloat(openingResult?.totalDebit || "0");
+    const openingDebit  = parseFloat(openingResult?.totalDebit || "0");
     const openingCredit = parseFloat(openingResult?.totalCredit || "0");
-    
+
     const isDebitNormal = ['asset', 'expense'].includes(account.accountType);
     const accountOpeningBalance = parseFloat(account.openingBalance || "0");
-    let openingBalance = isDebitNormal 
+    let openingBalance = isDebitNormal
       ? accountOpeningBalance + (openingDebit - openingCredit)
       : accountOpeningBalance + (openingCredit - openingDebit);
 
@@ -350,9 +415,9 @@ const methods = {
 
     let runningBalance = openingBalance;
     const linesWithBalance = lines.map(line => {
-      const debit = parseFloat(line.debit || "0");
+      const debit  = parseFloat(line.debit || "0");
       const credit = parseFloat(line.credit || "0");
-      
+
       if (isDebitNormal) {
         runningBalance += (debit - credit);
       } else {
@@ -365,7 +430,7 @@ const methods = {
       };
     });
 
-    const totalDebit = lines.reduce((sum, l) => sum + parseFloat(l.debit || "0"), 0);
+    const totalDebit  = lines.reduce((sum, l) => sum + parseFloat(l.debit || "0"), 0);
     const totalCredit = lines.reduce((sum, l) => sum + parseFloat(l.credit || "0"), 0);
     const closingBalance = runningBalance;
 
@@ -373,7 +438,7 @@ const methods = {
       account,
       openingBalance: openingBalance.toFixed(2),
       lines: linesWithBalance,
-      totalDebit: totalDebit.toFixed(2),
+      totalDebit:  totalDebit.toFixed(2),
       totalCredit: totalCredit.toFixed(2),
       closingBalance: closingBalance.toFixed(2),
     };
