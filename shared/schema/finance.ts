@@ -81,14 +81,13 @@ export const journalEntries = pgTable("journal_entries", {
   templateId: varchar("template_id").references(() => journalTemplates.id, { onDelete: "set null" }),
   sourceType: text("source_type"),
   sourceDocumentId: varchar("source_document_id"),
+  sourceEntryType: text("source_entry_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   dateIdx: index("idx_journal_entries_date").on(table.entryDate),
   statusIdx: index("idx_journal_entries_status").on(table.status),
   periodIdx: index("idx_journal_entries_period").on(table.periodId),
-  // UNIQUE: يمنع إنشاء قيدين لنفس المستند المصدر — NULLs مسموح (مكتملان)
-  sourceIdx: uniqueIndex("idx_journal_entries_source").on(table.sourceType, table.sourceDocumentId),
 }));
 
 export const journalLines = pgTable("journal_lines", {

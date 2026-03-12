@@ -89,6 +89,39 @@ All shared-entity lookups (doctors, departments, accounts, treasuries, clinics, 
 - **Base component**: `client/src/components/lookups/BaseLookupCombobox.tsx`
 This architecture enforces consistent data fetching and display patterns, preventing direct `fetch()` calls or `useQuery` outside designated lookup modules for these entities.
 
+### OPD GL Accounting — IFRS Revenue Deferral
+
+Clinic consultation payments use deferred revenue (21163) until service delivery is complete. All journal entries are atomic, idempotent, and created inside the same DB transaction as the operational event.
+
+**Accounts**
+- 21163 (مقدم حجز العيادات الخارجية) — liability / deferred revenue
+- 4166 (ايراد كشوفات العيادات الخارجية) — revenue (via `services.revenue_account_id`)
+- Treasury GL accounts (e.g., 12129, 12130) — dynamic per clinic (`clinics.treasury_id → treasuries.gl_account_id`)
+
+**Event 1 — CASH Booking (`createAppointment`)**
+- Dr Treasury GL / Cr 21163
+- Sets `accounting_posted_advance = TRUE`
+- `source_type = 'clinic_appointment'`, `source_entry_type = 'OPD_ADVANCE_RECEIPT'`
+
+**Event 2 — Consultation Done (`updateAppointmentStatus → 'done'`)**
+- Dr 21163 / Cr 4166 (revenue recognition)
+- Only fires if `accounting_posted_advance = TRUE` AND `accounting_posted_revenue = FALSE`
+- Sets `accounting_posted_revenue = TRUE`
+- `source_entry_type = 'OPD_REVENUE_RECOGNITION'`
+
+**Event 3 — Full Cancel with Refund (`cancelAndRefundAppointment` with `cancelAppointment=true`)**
+- Dr 21163 / Cr Treasury GL (reversal of advance)
+- Only fires if `isFullCancel = true` AND `accounting_posted_advance = TRUE`
+- `source_entry_type = 'OPD_ADVANCE_REVERSAL'`
+
+**Event 4 — No-show**: No journal entry. Advance remains in 21163 until admin decision.
+
+**Idempotency**: `UNIQUE(source_type, source_document_id, source_entry_type)` partial index prevents duplicate entries. The helper function `postOpdJournalEntry` checks for existing entries before inserting.
+
+**Safety net**: Each GL block uses PostgreSQL `SAVEPOINT` so GL failures don't abort the main operational transaction.
+
+**DB columns added**: `clinic_appointments.accounting_posted_advance`, `clinic_appointments.accounting_posted_revenue`, `journal_entries.source_entry_type`
+
 ### OPD Refund Workflow — Final Rules
 
 Refunds on clinic appointments are handled by `cancelAndRefundAppointment` (storage) via `POST /api/clinic-appointments/:id/cancel-refund` (guarded by `checkPermission("clinic.book")`).

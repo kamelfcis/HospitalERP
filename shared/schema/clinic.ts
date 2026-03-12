@@ -47,6 +47,12 @@ export const clinicAppointments = pgTable("clinic_appointments", {
   notes:           text("notes"),
   createdBy:       varchar("created_by"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
+  paymentType:     varchar("payment_type", { length: 20 }).default("CASH"),
+  insuranceCompany: text("insurance_company"),
+  payerReference:  text("payer_reference"),
+  invoiceId:       varchar("invoice_id"),
+  accountingPostedAdvance: boolean("accounting_posted_advance").notNull().default(false),
+  accountingPostedRevenue: boolean("accounting_posted_revenue").notNull().default(false),
 }, (t) => [
   index("idx_clinic_appts_clinic_date").on(t.clinicId, t.appointmentDate),
   index("idx_clinic_appts_clinic_date_status").on(t.clinicId, t.appointmentDate, t.status),
