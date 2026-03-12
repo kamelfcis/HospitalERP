@@ -1,0 +1,221 @@
+#11 - P3-D — Production hardening for reporting refreshes: observability, admin control, and failure safety
+
+Objective
+Harden the reporting/summary layer so it is production-operable, observable, and controllable.
+This phase is NOT about building new business reports.
+This phase is about making the existing reporting refresh system safe, monitorable, and manageable.
+
+Current reporting assets in scope
+- rpt_patient_visit_summary
+- rpt_inventory_snapshot
+- rpt_item_movements_summary
+
+Current refresh/orchestration assets in scope
+- refreshPatientVisitSummary()
+- refreshInventorySnapshot()
+- refreshItemMovementsSummary()
+- inventory snapshot scheduler / orchestration
+- 15-minute fallback polling
+
+Why this phase
+We now have multiple reporting/snapshot tables that are actively used by endpoints.
+They refresh successfully, but production readiness requires:
+- visibility
+- manual control
+- error tracking
+- last-run status
+- safe admin refresh actions
+- clear dependency awareness
+
+This phase should make the reporting layer operationally trustworthy.
+
+In scope
+1) Add refresh run observability/status
+2) Add admin-safe manual refresh controls
+3) Add clear structured logging and failure visibility
+4) Add lightweight health/status endpoint(s) or internal admin route(s)
+5) Standardize refresh orchestration behavior across reporting assets
+6) Document dependency map between source tables, refresh jobs, and consuming endpoints
+
+Out of scope
+- Do NOT build new report business features
+- Do NOT redesign reporting schemas broadly
+- Do NOT change frontend UI unless absolutely necessary
+- Do NOT refactor unrelated modules
+- Do NOT alter business semantics of existing reports
+- Do NOT add heavy monitoring infrastructure outside the app unless already available
+
+Critical requirements
+1) Do not change report business results.
+2) Do not change route contracts for existing business endpoints.
+3) Any new refresh/admin endpoint must be admin-only or internal-only.
+4) Manual refresh actions must be safe to rerun.
+5) Refresh status must clearly show last success / last failure.
+6) Refresh errors must never fail silently.
+7) Logging must be structured and clear enough for production troubleshooting.
+8) Keep implementation narrow, reviewable, and practical.
+
+Required deliverables
+
+A) Refresh status tracking
+Implement a small internal status model for each reporting refresh process.
+
+For each of the following:
+- patient_visit_summary refresh
+- inventory_snapshot refresh
+- item_movements_summary refresh
+
+Track at minimum:
+- refresh_key
+- last_started_at
+- last_finished_at
+- last_status (success / error / running / idle)
+- last_duration_ms
+- last_rows_upserted
+- last_error_message (if any)
+- trigger_source (startup / polling / event-driven / manual)
+- currently_running flag
+
+This can be done either:
+- in-memory if acceptable for current app model, OR
+- in a lightweight DB table if clearly better and still bounded
+
+Do NOT over-engineer.
+Pick the simplest reliable solution and justify it.
+
+B) Standardized refresh runner
+Create a shared refresh execution wrapper so all refreshes follow one pattern:
+- log start
+- mark running
+- execute refresh
+- capture rows upserted / duration
+- capture success or error
+- clear running state
+- prevent overlap where required
+
+Do not leave each refresh with custom ad hoc logging logic.
+
+C) Admin-safe manual refresh controls
+Add internal/admin-only routes or actions to manually trigger:
+- patient visit summary refresh
+- inventory snapshot refresh
+- item movements summary refresh
+- optional “refresh all reporting tables” action
+
+Requirements:
+- admin-only protection is mandatory
+- safe to rerun
+- clear success/error response
+- if a refresh is already running, return a safe bounded response instead of starting duplicates
+
+D) Reporting status endpoint
+Add an admin-only/internal endpoint to return current refresh status for all reporting assets.
+
+The response should include, per asset:
+- current status
+- last run timestamps
+- last duration
+- last rows upserted
+- last error if any
+- whether a run is currently active
+
+This endpoint is for observability, not public consumption.
+
+E) Logging hardening
+Standardize logs for reporting refreshes, e.g.:
+- scheduled
+- coalesced
+- started
+- done
+- failed
+- skipped/already running
+
+Logs must clearly identify:
+- which refresh
+- why it ran
+- duration
+- rows affected
+- error if failed
+
+F) Dependency map documentation
+Produce a concise internal documentation summary showing:
+1) each reporting table
+2) its source-of-truth tables
+3) its refresh method
+4) its trigger mode
+5) which endpoints currently consume it
+
+For example:
+- rpt_patient_visit_summary
+  - sources: admissions, patient_invoice_headers, patient_invoice_lines, doctor_transfers, ...
+  - refresh: refreshPatientVisitSummary()
+  - triggers: startup/manual/polling
+  - consumers: /api/patients/stats, /api/admissions (if applicable)
+
+- rpt_inventory_snapshot
+  - sources: inventory lots / stock truth sources
+  - refresh: refreshInventorySnapshot()
+  - triggers: startup/polling/event-driven
+  - consumers: searchItemsAdvanced
+
+- rpt_item_movements_summary
+  - sources: inventory_lot_movements + inventory_lots
+  - refresh: refreshItemMovementsSummary()
+  - triggers: startup/polling/event-driven
+  - consumers: /api/reports/item-movements
+
+Implementation constraints
+- No broad architectural rewrite
+- No external monitoring platform integration in this phase
+- No frontend dashboard required in this phase unless extremely cheap and already needed
+- Keep all new controls admin/internal only
+- Preserve current schedulers and fallbacks unless there is a clear bug
+- Do not remove safety-net polling unless fully justified
+
+Verification requirements
+Return proof for:
+
+1) status tracking works
+- run each refresh
+- verify status fields update correctly
+- verify success and error paths are both represented if safely testable
+
+2) manual refresh controls work
+- admin-only protection verified
+- duplicate run protection verified
+- safe response shape verified
+
+3) status endpoint works
+- returns all reporting assets
+- reflects real last-run state
+
+4) logging is consistent
+- show sample logs for:
+  - scheduled
+  - started
+  - done
+  - failed or skipped
+
+5) no regression
+- existing business endpoints still work
+- no semantic changes
+- no scheduler breakage
+
+Definition of done
+P3-D is complete only if:
+- refreshes are observable
+- manual admin-safe control exists
+- status for all reporting assets can be inspected
+- errors are visible
+- logging is standardized
+- current reporting behavior remains unchanged
+
+Return exactly:
+1) refresh status model implemented
+2) standardized runner/orchestration changes
+3) admin/manual controls added
+4) status endpoint added
+5) logging improvements
+6) dependency map summary
+7) verification results
+8) remaining risks / future improvements

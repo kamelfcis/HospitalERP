@@ -11,6 +11,7 @@ import { loadSettings } from "./settings-cache";
 import { storage } from "./storage";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { runRefresh, REFRESH_KEYS } from "./lib/rpt-refresh-orchestrator";
 
 const app = express();
 const httpServer = createServer(app);
@@ -206,41 +207,48 @@ app.use((req, res, next) => {
   setTimeout(runJournalRetry, 15000);
   setInterval(runJournalRetry, JOURNAL_RETRY_MS);
 
-  // RPT Refresh: rebuild rpt_patient_visit_summary every 15 minutes
-  const RPT_REFRESH_MS = 15 * 60 * 1000;
-  const runRptRefresh = async () => {
-    try {
-      const result = await storage.refreshPatientVisitSummary();
-      if (result.upserted > 0) {
-        log(`[RPT_REFRESH] upserted=${result.upserted} rows in ${result.durationMs}ms`);
-      }
-    } catch (err: unknown) {
-      const _em = err instanceof Error ? err.message : String(err);
-      console.error("[RPT_REFRESH] tick error:", _em);
-    }
-  };
-  setTimeout(runRptRefresh, 10000);
-  setInterval(runRptRefresh, RPT_REFRESH_MS);
+  // ── RPT Refresh polling — all three reporting tables ──────────────────────
+  // All runs go through the orchestrator (rpt-refresh-orchestrator.ts) which
+  // handles status tracking, structured logging, and per-job overlap protection.
+  // The first call uses trigger='startup'; subsequent polling calls use 'polling'.
 
-  // Inventory Snapshot + Item Movements Refresh: rebuild both rpt tables every 15 minutes
+  const RPT_REFRESH_MS  = 15 * 60 * 1000;
   const SNAP_REFRESH_MS = 15 * 60 * 1000;
-  const runSnapRefresh = async () => {
+
+  // patient_visit_summary — startup after 10s, then every 15 min
+  const runRptRefresh = (trigger: "startup" | "polling") => async () => {
     try {
-      const [snapResult, movResult] = await Promise.all([
-        storage.refreshInventorySnapshot(),
-        storage.refreshItemMovementsSummary(),
-      ]);
-      if (snapResult.upserted > 0 || movResult.upserted > 0) {
-        log(
-          `[SNAP_REFRESH] snap.upserted=${snapResult.upserted} in ${snapResult.durationMs}ms` +
-          ` | mov.upserted=${movResult.upserted} in ${movResult.durationMs}ms`
-        );
-      }
-    } catch (err: unknown) {
-      const _em = err instanceof Error ? err.message : String(err);
-      console.error("[SNAP_REFRESH] tick error:", _em);
+      await runRefresh(
+        REFRESH_KEYS.PATIENT_VISIT,
+        () => storage.refreshPatientVisitSummary(),
+        trigger,
+      );
+    } catch (_err: unknown) {
+      // error already logged + status updated by orchestrator
     }
   };
-  setTimeout(runSnapRefresh, 12000);
-  setInterval(runSnapRefresh, SNAP_REFRESH_MS);
+  setTimeout(runRptRefresh("startup"), 10000);
+  setInterval(runRptRefresh("polling"), RPT_REFRESH_MS);
+
+  // inventory_snapshot + item_movements_summary — startup after 12s, then every 15 min
+  const runSnapRefresh = (trigger: "startup" | "polling") => async () => {
+    try {
+      await Promise.all([
+        runRefresh(
+          REFRESH_KEYS.INVENTORY_SNAP,
+          () => storage.refreshInventorySnapshot(),
+          trigger,
+        ),
+        runRefresh(
+          REFRESH_KEYS.ITEM_MOVEMENTS,
+          () => storage.refreshItemMovementsSummary(),
+          trigger,
+        ),
+      ]);
+    } catch (_err: unknown) {
+      // errors already logged + status updated by orchestrator
+    }
+  };
+  setTimeout(runSnapRefresh("startup"), 12000);
+  setInterval(runSnapRefresh("polling"), SNAP_REFRESH_MS);
 })();

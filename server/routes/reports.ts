@@ -1,24 +1,69 @@
 /*
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Reports Routes — تقارير المخزون والحركات
+ *  Reports Routes — تقارير المخزون والحركات + إدارة جداول التقارير
  * ═══════════════════════════════════════════════════════════════════════════════
  *
+ *  Business endpoints (requireAuth — any logged-in user):
+ *  ────────────────────────────────────────────────────────
  *  GET /api/reports/item-movements
- *  ─────────────────────────────────
- *  تقرير حركات الأصناف بين تاريخين.
- *  مصدر البيانات: rpt_item_movements_summary (daily grain)
- *  الحسابات:
- *    current_qty   = rpt_inventory_snapshot.qty_in_minor  (اللحظي)
- *    closing_qty   = current_qty − SUM(net_qty_change WHERE date > toDate)
- *    opening_qty   = closing_qty − SUM(net_qty_change WHERE fromDate ≤ date ≤ toDate)
+ *    تقرير حركات الأصناف بين تاريخين.
+ *    مصدر البيانات: rpt_item_movements_summary (daily grain)
+ *    الحسابات:
+ *      current_qty = rpt_inventory_snapshot.qty_in_minor (اللحظي)
+ *      closing_qty = current_qty − SUM(net_qty_change WHERE date > toDate)
+ *      opening_qty = closing_qty − SUM(net_qty_change WHERE fromDate ≤ date ≤ toDate)
+ *
+ *  Admin-only endpoints (role must be admin | owner):
+ *  ──────────────────────────────────────────────────
+ *  GET  /api/admin/rpt/status
+ *    حالة كل refresh job: آخر تشغيل، المدة، الصفوف، الأخطاء.
+ *
+ *  POST /api/admin/rpt/refresh/:key
+ *    تشغيل يدوي لـ job محدد. آمن للإعادة. يرفض التشغيل المتزامن.
+ *    keys: patient_visit_summary | inventory_snapshot | item_movements_summary
+ *
+ *  POST /api/admin/rpt/refresh-all
+ *    تشغيل يدوي لجميع jobs دفعةً واحدة.
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { requireAuth } from "./_auth";
+import {
+  getStatusAll,
+  runRefresh,
+  REFRESH_KEYS,
+  type RefreshKey,
+} from "../lib/rpt-refresh-orchestrator";
+import { storage } from "../storage";
+
+// ── Admin guard helper ────────────────────────────────────────────────────────
+function requireAdmin(req: Request, res: Response): boolean {
+  if (!req.session.userId) {
+    res.status(401).json({ message: "يجب تسجيل الدخول" });
+    return false;
+  }
+  if (!["admin", "owner"].includes(req.session.role as string)) {
+    res.status(403).json({ message: "غير مصرح — هذا الإجراء للمشرف فقط" });
+    return false;
+  }
+  return true;
+}
+
+// ── Refresh function map (keyed by REFRESH_KEYS values) ──────────────────────
+type RefreshFn = () => Promise<{ upserted: number; durationMs: number; ranAt: string }>;
+
+function getRefreshFn(key: string): RefreshFn | null {
+  switch (key) {
+    case REFRESH_KEYS.PATIENT_VISIT:  return () => storage.refreshPatientVisitSummary();
+    case REFRESH_KEYS.INVENTORY_SNAP: return () => storage.refreshInventorySnapshot();
+    case REFRESH_KEYS.ITEM_MOVEMENTS: return () => storage.refreshItemMovementsSummary();
+    default: return null;
+  }
+}
 
 export function registerReportsRoutes(app: Express) {
 
@@ -32,13 +77,6 @@ export function registerReportsRoutes(app: Express) {
   //   itemId      (optional) — UUID
   //   warehouseId (optional) — UUID
   //
-  // Opening/closing walk-back logic (locked design):
-  //   current_qty     = rpt_inventory_snapshot.qty_in_minor
-  //   net_after_end   = SUM(rpt.net_qty_change WHERE movement_date > toDate)
-  //   closing_qty     = current_qty − net_after_end
-  //   in_period_net   = SUM(rpt.net_qty_change WHERE fromDate ≤ date ≤ toDate)
-  //   opening_qty     = closing_qty − in_period_net
-  //
   app.get("/api/reports/item-movements", requireAuth, async (req, res) => {
     try {
       const { fromDate, toDate, itemId, warehouseId } = req.query as Record<string, string | undefined>;
@@ -47,7 +85,6 @@ export function registerReportsRoutes(app: Express) {
         return res.status(400).json({ error: "fromDate و toDate مطلوبان" });
       }
 
-      // Basic date format validation
       const dateRx = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRx.test(fromDate) || !dateRx.test(toDate)) {
         return res.status(400).json({ error: "صيغة التاريخ يجب أن تكون YYYY-MM-DD" });
@@ -106,8 +143,6 @@ export function registerReportsRoutes(app: Express) {
           pm.item_category                                               AS "itemCategory",
           pm.warehouse_id                                                AS "warehouseId",
           pm.warehouse_name                                              AS "warehouseName",
-
-          -- حركات الفترة
           pm.received_qty::numeric                                       AS "receivedQty",
           pm.received_value::numeric                                     AS "receivedValue",
           pm.issued_qty::numeric                                         AS "issuedQty",
@@ -118,15 +153,9 @@ export function registerReportsRoutes(app: Express) {
           pm.return_out_qty::numeric                                     AS "returnOutQty",
           pm.adjustment_qty::numeric                                     AS "adjustmentQty",
           pm.net_qty_change::numeric                                     AS "netQtyChange",
-
-          -- الرصيد اللحظي من snapshot
           COALESCE(snap.qty_in_minor, 0)::numeric                       AS "currentQty",
-
-          -- الرصيد الختامي = اللحظي - حركات ما بعد الفترة
           (COALESCE(snap.qty_in_minor, 0) - COALESCE(ap.net_after_end, 0))::numeric
                                                                          AS "closingQty",
-
-          -- الرصيد الافتتاحي = الختامي - صافي حركات الفترة
           (COALESCE(snap.qty_in_minor, 0) - COALESCE(ap.net_after_end, 0)
             - pm.net_qty_change)::numeric                               AS "openingQty"
 
@@ -151,6 +180,123 @@ export function registerReportsRoutes(app: Express) {
       console.error("[reports] item-movements error:", msg);
       return res.status(500).json({ error: "خطأ في استرجاع تقرير الحركات" });
     }
+  });
+
+  // ── GET /api/admin/rpt/status ────────────────────────────────────────────────
+  //
+  // حالة جميع refresh jobs للمراقبة. للمشرف فقط.
+  //
+  // Response: { jobs: RefreshJobStatus[], generatedAt: ISO string }
+  //
+  app.get("/api/admin/rpt/status", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const jobs = getStatusAll();
+    return res.json({
+      jobs,
+      generatedAt: new Date().toISOString(),
+    });
+  });
+
+  // ── POST /api/admin/rpt/refresh/:key ────────────────────────────────────────
+  //
+  // تشغيل يدوي لـ refresh job محدد. للمشرف فقط.
+  //
+  // :key — أحد القيم: patient_visit_summary | inventory_snapshot | item_movements_summary
+  //
+  // Responses:
+  //   200  { status: 'success', upserted, durationMs, ranAt }
+  //   202  { status: 'already_running', message }
+  //   400  { error: 'unknown_key' }
+  //   403  غير مصرح
+  //   500  { error, message }
+  //
+  app.post("/api/admin/rpt/refresh/:key", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+
+    const key = req.params.key as RefreshKey;
+    const fn  = getRefreshFn(key);
+
+    if (!fn) {
+      return res.status(400).json({
+        error:    "unknown_key",
+        message:  `مفتاح غير معروف: ${key}. القيم المقبولة: ${Object.values(REFRESH_KEYS).join(", ")}`,
+        validKeys: Object.values(REFRESH_KEYS),
+      });
+    }
+
+    try {
+      const result = await runRefresh(key, fn, "manual");
+
+      if (result === null) {
+        // already running
+        return res.status(202).json({
+          status:  "already_running",
+          message: `الـ refresh لـ [${key}] يعمل حالياً، سيتم تحديث الحالة عند الانتهاء.`,
+          key,
+        });
+      }
+
+      return res.json({
+        status:     "success",
+        key,
+        upserted:   result.upserted,
+        durationMs: result.durationMs,
+        ranAt:      result.ranAt,
+      });
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({
+        status:  "error",
+        key,
+        error:   msg,
+      });
+    }
+  });
+
+  // ── POST /api/admin/rpt/refresh-all ─────────────────────────────────────────
+  //
+  // تشغيل يدوي لجميع refresh jobs دفعةً واحدة. للمشرف فقط.
+  // يُشغَّل بالتوازي (Promise.allSettled) لعزل الفشل.
+  //
+  // Response: { results: [{ key, status, upserted?, durationMs?, error? }] }
+  //
+  app.post("/api/admin/rpt/refresh-all", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+
+    const jobs = [
+      { key: REFRESH_KEYS.PATIENT_VISIT,  fn: () => storage.refreshPatientVisitSummary() },
+      { key: REFRESH_KEYS.INVENTORY_SNAP, fn: () => storage.refreshInventorySnapshot() },
+      { key: REFRESH_KEYS.ITEM_MOVEMENTS, fn: () => storage.refreshItemMovementsSummary() },
+    ];
+
+    const settled = await Promise.allSettled(
+      jobs.map(j => runRefresh(j.key, j.fn, "manual"))
+    );
+
+    const results = jobs.map((j, i) => {
+      const s = settled[i];
+      if (s.status === "fulfilled") {
+        if (s.value === null) {
+          return { key: j.key, status: "already_running" };
+        }
+        return {
+          key:        j.key,
+          status:     "success",
+          upserted:   s.value.upserted,
+          durationMs: s.value.durationMs,
+          ranAt:      s.value.ranAt,
+        };
+      } else {
+        const msg = s.reason instanceof Error ? s.reason.message : String(s.reason);
+        return { key: j.key, status: "error", error: msg };
+      }
+    });
+
+    return res.json({
+      results,
+      completedAt: new Date().toISOString(),
+    });
   });
 
 }
