@@ -1,0 +1,118 @@
+#8 - P3-A — Complete rpt_patient_visit_summary and migrate getPatientStats safely
+
+Objective
+Extend `rpt_patient_visit_summary` with the missing fields required to safely power `getPatientStats`, then refactor `getPatientStats` to aggregate from the summary table instead of heavy base-table aggregation.
+
+Why this phase
+`getPatientStats` still has avoidable heavy patterns:
+- correlated subquery on doctor_transfers per invoice
+- repeated ARRAY_AGG(... ORDER BY created_at DESC)[1] for latest invoice fields
+- aggregation directly over patient_invoice_lines
+
+`rpt_patient_visit_summary` is already active but currently missing the fields needed for a safe migration.
+
+Missing fields to add
+- or_room_total
+- transferred_total
+- latest_invoice_id
+- latest_invoice_number
+- latest_invoice_status
+- latest_doctor_name
+
+In scope
+1) Extend `rpt_patient_visit_summary` with the 6 missing fields
+2) Update `refreshPatientVisitSummary()` to populate them correctly
+3) Refactor `getPatientStats` to use `rpt_patient_visit_summary`
+4) Verify parity against the current implementation
+
+Out of scope
+- Do NOT touch inventory snapshot logic
+- Do NOT touch rpt_item_movements_summary
+- Do NOT redesign unrelated patient endpoints
+- Do NOT introduce frontend changes
+- Do NOT change route contracts unless absolutely unavoidable
+- Do NOT do broad refactors outside the patient stats path
+
+Critical requirements
+1) Preserve exact business meaning and response JSON shape of `getPatientStats`.
+2) Do not guess semantics for the new fields.
+3) Define the exact grain of `rpt_patient_visit_summary` before populating new fields.
+4) Latest invoice fields must be deterministic:
+   - explicitly define ordering logic
+   - include tie-breaker if needed
+5) `transferred_total` must preserve exact existing semantics from current `getPatientStats`.
+6) `or_room_total` must preserve exact current source meaning:
+   - SUM(line) WHERE source_type = 'OR_ROOM'
+7) Refresh logic must remain idempotent and safe to rerun.
+8) No silent semantic drift.
+
+Phase tasks
+
+1) Confirm rpt grain
+Before changing logic, explicitly confirm:
+- what one row in `rpt_patient_visit_summary` represents
+- which visit/admission key it uses
+- whether latest invoice fields belong naturally to that grain
+
+If grain ambiguity exists, document it first and resolve it explicitly.
+
+2) Add missing columns
+Add the 6 fields to `rpt_patient_visit_summary` safely and minimally.
+
+3) Update refreshPatientVisitSummary()
+Populate all 6 fields from real source-of-truth logic:
+- `or_room_total` from invoice lines filtered by source_type='OR_ROOM'
+- `transferred_total` from doctor_transfers using the same semantics as the current endpoint
+- latest invoice fields from a deterministic latest-invoice selection
+- `latest_doctor_name` from the same latest-invoice context if that is the current meaning
+
+4) Refactor getPatientStats
+Rewrite it to aggregate from `rpt_patient_visit_summary` instead of base table-heavy aggregation.
+
+Requirements:
+- preserve exact filters and date semantics
+- preserve exact totals and counts
+- preserve exact response shape
+- do not reintroduce correlated subqueries
+- keep any unavoidable base-table fallback small and clearly justified
+
+Verification requirements
+Return proof for:
+1) field population validation
+- sample rows for the 6 new fields
+- null handling behavior
+- deterministic latest invoice selection
+
+2) endpoint parity
+- old totals vs new totals
+- old row count vs new row count
+- old response shape vs new response shape
+- no unexpected missing patients/visits
+
+3) semantic parity
+- OR room totals match
+- transferred totals match
+- latest invoice fields match
+- latest doctor name matches
+
+4) performance impact
+- heavy base-table aggregation removed or reduced
+- correlated subqueries removed
+- response time improved or stable
+
+Definition of done
+P3-A is complete only if:
+- `rpt_patient_visit_summary` contains the 6 missing fields correctly populated
+- `refreshPatientVisitSummary()` fills them idempotently
+- `getPatientStats` is safely powered by the summary table
+- response behavior remains backward-compatible
+- totals and latest-field semantics match the old implementation exactly
+
+Return exactly:
+1) rpt grain confirmed
+2) schema additions made
+3) refresh logic updated
+4) getPatientStats changes made
+5) verification results
+6) performance impact
+7) remaining risks / assumptions

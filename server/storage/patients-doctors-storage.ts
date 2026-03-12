@@ -88,12 +88,27 @@ const methods = {
     }
     const invFilter = invConds.join(" AND ");
 
+    // فلتر "أحدث فاتورة" — نفس شروط التاريخ والحالة بدون alias pih.
+    // يُستخدم في subquery منفصلة مع DISTINCT ON بدلاً من ARRAY_AGG
+    const liConds: string[] = ["li2.status != 'cancelled'"];
+    if (effectiveDateFrom) liConds.push(`li2.invoice_date >= '${effectiveDateFrom}'`);
+    if (effectiveDateTo)   liConds.push(`li2.invoice_date <= '${effectiveDateTo}'`);
+    if (filters?.deptIds && filters.deptIds.length > 0) {
+      const ids = filters.deptIds.map((d: string) => `'${d.replace(/'/g, "''")}'`).join(", ");
+      liConds.push(
+        `(li2.department_id IN (${ids}) OR (li2.department_id IS NULL AND EXISTS (` +
+        `SELECT 1 FROM warehouses w WHERE w.id = li2.warehouse_id AND w.department_id IN (${ids})` +
+        `)))`
+      );
+    }
+    const liFilter = liConds.join(" AND ");
+
     const joinType = "JOIN";
 
     let patientFilter = "p.is_active = true";
     if (filters?.search?.trim()) {
       const tokens = filters.search.trim().split(/\s+/).filter(Boolean);
-      const conds = tokens.map(t => {
+      const conds = tokens.map((t: string) => {
         const pat = `'%${t.replace(/'/g, "''").replace(/%/g, "\\%")}%'`;
         return (
           `(p.full_name ILIKE ${pat}` +
@@ -108,6 +123,18 @@ const methods = {
       patientFilter += ` AND (${conds.join(" AND ")})`;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // الاستعلام المحسَّن:
+    //   1. dt_agg: تجميع doctor_transfers مُسبقاً (بدلاً من correlated subquery
+    //      لكل فاتورة — يُلغي N+1 على جدول doctor_transfers)
+    //   2. li_agg: DISTINCT ON لأحدث فاتورة لكل مريض (بدلاً من 4×ARRAY_AGG)
+    //
+    // سبب عدم الاعتماد الكامل على rpt_patient_visit_summary:
+    //   الـ rpt يغطي الإقامات فقط (6 فواتير من 55 غير ملغاة). 15 مريضاً من 18
+    //   لديهم فواتير مستقلة (صيدلية / عيادة) غير مربوطة بإقامة → migration
+    //   كامل إلى rpt ستُضيّع 83% من المرضى. يبقى هذا على base tables مع إزالة
+    //   الأنماط المكلفة (correlated subquery + ARRAY_AGG).
+    // ─────────────────────────────────────────────────────────────────────────
     const result = await db.execute(sql`
       SELECT
         p.id,
@@ -127,59 +154,68 @@ const methods = {
           COALESCE(s.stay_total, 0)        AS grand_total,
         COALESCE(s.paid_total, 0)          AS paid_total,
         COALESCE(s.transferred_total, 0)   AS transferred_total,
-        s.latest_invoice_id,
-        s.latest_invoice_number,
-        s.latest_invoice_status,
-        s.latest_doctor_name,
+        li_agg.id                          AS latest_invoice_id,
+        li_agg.invoice_number              AS latest_invoice_number,
+        li_agg.status                      AS latest_invoice_status,
+        li_agg.doctor_name                 AS latest_doctor_name,
         COUNT(*) OVER()                    AS total_count
       FROM patients p
       ${sql.raw(joinType)} (
         SELECT
           inv.patient_name,
-          SUM(inv.services_total)      AS services_total,
-          SUM(inv.drugs_total)         AS drugs_total,
-          SUM(inv.consumables_total)   AS consumables_total,
-          SUM(inv.or_room_total)       AS or_room_total,
-          SUM(inv.stay_total)          AS stay_total,
-          SUM(inv.paid_amount)         AS paid_total,
-          SUM(inv.transferred_total)   AS transferred_total,
-          (ARRAY_AGG(inv.id             ORDER BY inv.created_at DESC))[1] AS latest_invoice_id,
-          (ARRAY_AGG(inv.invoice_number ORDER BY inv.created_at DESC))[1] AS latest_invoice_number,
-          (ARRAY_AGG(inv.status         ORDER BY inv.created_at DESC))[1] AS latest_invoice_status,
-          (ARRAY_AGG(inv.doctor_name    ORDER BY inv.created_at DESC))[1] AS latest_doctor_name
+          SUM(inv.services_total)               AS services_total,
+          SUM(inv.drugs_total)                  AS drugs_total,
+          SUM(inv.consumables_total)            AS consumables_total,
+          SUM(inv.or_room_total)                AS or_room_total,
+          SUM(inv.stay_total)                   AS stay_total,
+          SUM(inv.paid_amount)                  AS paid_total,
+          COALESCE(SUM(inv.transferred_total), 0) AS transferred_total
         FROM (
           SELECT
             pih.id,
             pih.patient_name,
-            pih.created_at,
-            pih.invoice_number,
-            pih.status,
             pih.paid_amount,
-            pih.doctor_name,
-            COALESCE((
-              SELECT SUM(dt.amount)
-              FROM doctor_transfers dt
-              WHERE dt.invoice_id = pih.id
-            ), 0) AS transferred_total,
+            -- transferred_total: مُجمَّع مُسبقاً عبر JOIN بدلاً من correlated subquery
+            COALESCE(dt_agg.invoice_transferred, 0)                         AS transferred_total,
             SUM(CASE WHEN pil.source_type IS NULL AND pil.line_type = 'service'
-                THEN pil.total_price ELSE 0 END) AS services_total,
-            SUM(CASE WHEN pil.line_type = 'drug'
-                THEN pil.total_price ELSE 0 END) AS drugs_total,
-            SUM(CASE WHEN pil.line_type = 'consumable'
-                THEN pil.total_price ELSE 0 END) AS consumables_total,
-            SUM(CASE WHEN pil.source_type = 'OR_ROOM'
-                THEN pil.total_price ELSE 0 END) AS or_room_total,
-            SUM(CASE WHEN pil.source_type = 'STAY_ENGINE'
-                THEN pil.total_price ELSE 0 END) AS stay_total
+                     AND pil.is_void = false
+                THEN pil.total_price::numeric ELSE 0 END)                   AS services_total,
+            SUM(CASE WHEN pil.line_type = 'drug' AND pil.is_void = false
+                THEN pil.total_price::numeric ELSE 0 END)                   AS drugs_total,
+            SUM(CASE WHEN pil.line_type = 'consumable' AND pil.is_void = false
+                THEN pil.total_price::numeric ELSE 0 END)                   AS consumables_total,
+            SUM(CASE WHEN pil.source_type = 'OR_ROOM' AND pil.is_void = false
+                THEN pil.total_price::numeric ELSE 0 END)                   AS or_room_total,
+            SUM(CASE WHEN pil.source_type = 'STAY_ENGINE' AND pil.is_void = false
+                THEN pil.total_price::numeric ELSE 0 END)                   AS stay_total
           FROM patient_invoice_headers pih
           LEFT JOIN patient_invoice_lines pil
-            ON pil.header_id = pih.id AND pil.is_void = false
+            ON pil.header_id = pih.id
+          -- تجميع doctor_transfers مُسبقاً — يُلغي N+1 correlated subquery
+          LEFT JOIN (
+            SELECT invoice_id, SUM(amount::numeric) AS invoice_transferred
+            FROM doctor_transfers
+            GROUP BY invoice_id
+          ) dt_agg ON dt_agg.invoice_id = pih.id
           WHERE ${sql.raw(invFilter)}
-          GROUP BY pih.id, pih.patient_name, pih.created_at,
-                   pih.invoice_number, pih.status, pih.paid_amount, pih.doctor_name
+          GROUP BY pih.id, pih.patient_name, pih.paid_amount,
+                   dt_agg.invoice_transferred
         ) inv
         GROUP BY inv.patient_name
       ) s ON s.patient_name = p.full_name
+      -- أحدث فاتورة لكل مريض — DISTINCT ON بدلاً من 4×ARRAY_AGG
+      -- tie-breaker: id DESC يضمن حتمية النتائج عند تساوي created_at
+      LEFT JOIN (
+        SELECT DISTINCT ON (li2.patient_name)
+          li2.patient_name,
+          li2.id,
+          li2.invoice_number,
+          li2.status,
+          li2.doctor_name
+        FROM patient_invoice_headers li2
+        WHERE ${sql.raw(liFilter)}
+        ORDER BY li2.patient_name, li2.created_at DESC, li2.id DESC
+      ) li_agg ON li_agg.patient_name = s.patient_name
       WHERE ${sql.raw(patientFilter)}
       ORDER BY p.created_at DESC
       LIMIT ${pageSize} OFFSET ${offset}

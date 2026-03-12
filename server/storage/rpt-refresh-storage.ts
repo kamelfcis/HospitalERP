@@ -211,6 +211,9 @@ const methods = {
         total_paid, outstanding_balance,
         service_revenue, drug_revenue, consumable_revenue, stay_revenue,
         service_line_count, drug_line_count, consumable_line_count,
+        or_room_total, transferred_total,
+        latest_invoice_id, latest_invoice_number,
+        latest_invoice_status, latest_doctor_name,
         refreshed_at
       )
       SELECT
@@ -253,6 +256,13 @@ const methods = {
         COALESCE(line_agg.service_line_count, 0)                     AS service_line_count,
         COALESCE(line_agg.drug_line_count,    0)                     AS drug_line_count,
         COALESCE(line_agg.consumable_line_count, 0)                  AS consumable_line_count,
+        -- 6 حقول جديدة ─────────────────────────────────────────────────────────
+        COALESCE(line_agg.or_room_total,          0)                 AS or_room_total,
+        COALESCE(transfer_agg.transferred_total,  0)                 AS transferred_total,
+        hdr_agg.latest_invoice_id                                     AS latest_invoice_id,
+        hdr_agg.latest_invoice_number                                 AS latest_invoice_number,
+        hdr_agg.latest_invoice_status                                 AS latest_invoice_status,
+        hdr_agg.latest_doctor_name                                    AS latest_doctor_name,
         NOW()                                                         AS refreshed_at
 
       FROM admissions a
@@ -261,19 +271,24 @@ const methods = {
       LEFT JOIN (
         SELECT
           pih.admission_id,
-          COUNT(pih.id)::smallint                                     AS invoice_count,
-          SUM(pih.total_amount::numeric)                              AS total_invoiced,
-          SUM(pih.discount_amount::numeric)                           AS total_discount,
-          SUM(pih.net_amount::numeric)                                AS net_amount,
-          SUM(pih.paid_amount::numeric)                               AS total_paid,
-          (ARRAY_AGG(pih.department_id ORDER BY pih.created_at DESC))[1] AS latest_dept_id
+          COUNT(pih.id)::smallint                                          AS invoice_count,
+          SUM(pih.total_amount::numeric)                                   AS total_invoiced,
+          SUM(pih.discount_amount::numeric)                                AS total_discount,
+          SUM(pih.net_amount::numeric)                                     AS net_amount,
+          SUM(pih.paid_amount::numeric)                                    AS total_paid,
+          (ARRAY_AGG(pih.department_id  ORDER BY pih.created_at DESC))[1] AS latest_dept_id,
+          -- أحدث فاتورة (ORDER BY created_at DESC، pih.id كمفاتيح فصل متساوية)
+          (ARRAY_AGG(pih.id             ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_id,
+          (ARRAY_AGG(pih.invoice_number ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_number,
+          (ARRAY_AGG(pih.status         ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_status,
+          (ARRAY_AGG(pih.doctor_name    ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_doctor_name
         FROM patient_invoice_headers pih
         WHERE pih.status != 'cancelled'
           AND pih.admission_id IS NOT NULL
         GROUP BY pih.admission_id
       ) hdr_agg ON hdr_agg.admission_id = a.id
 
-      -- ── تجميع بنود الفواتير منفصلاً (للإيرادات حسب النوع) ───────────────
+      -- ── تجميع بنود الفواتير منفصلاً (للإيرادات حسب النوع + غرفة العمليات) ─
       LEFT JOIN (
         SELECT
           pih.admission_id,
@@ -294,6 +309,11 @@ const methods = {
             WHEN pil.source_type = 'STAY_ENGINE' AND pil.is_void = false
             THEN pil.total_price::numeric ELSE 0
           END)                                                        AS stay_revenue,
+          -- غرفة العمليات: بنود source_type = 'OR_ROOM'
+          SUM(CASE
+            WHEN pil.source_type = 'OR_ROOM' AND pil.is_void = false
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS or_room_total,
           COUNT(CASE
             WHEN pil.source_type IS NULL AND pil.line_type = 'service'
                  AND pil.is_void = false THEN 1
@@ -310,6 +330,19 @@ const methods = {
           AND pih.admission_id IS NOT NULL
         GROUP BY pih.admission_id
       ) line_agg ON line_agg.admission_id = a.id
+
+      -- ── تجميع التحويلات للأطباء مُسبقاً (بدلاً من correlated subquery) ──────
+      LEFT JOIN (
+        SELECT
+          pih2.admission_id,
+          COALESCE(SUM(dt.amount::numeric), 0) AS transferred_total
+        FROM doctor_transfers dt
+        JOIN patient_invoice_headers pih2
+          ON pih2.id = dt.invoice_id
+         AND pih2.status != 'cancelled'
+         AND pih2.admission_id IS NOT NULL
+        GROUP BY pih2.admission_id
+      ) transfer_agg ON transfer_agg.admission_id = a.id
 
       LEFT JOIN departments  d  ON d.id  = hdr_agg.latest_dept_id
       LEFT JOIN surgery_types st ON st.id = a.surgery_type_id
@@ -345,6 +378,12 @@ const methods = {
         service_line_count     = EXCLUDED.service_line_count,
         drug_line_count        = EXCLUDED.drug_line_count,
         consumable_line_count  = EXCLUDED.consumable_line_count,
+        or_room_total          = EXCLUDED.or_room_total,
+        transferred_total      = EXCLUDED.transferred_total,
+        latest_invoice_id      = EXCLUDED.latest_invoice_id,
+        latest_invoice_number  = EXCLUDED.latest_invoice_number,
+        latest_invoice_status  = EXCLUDED.latest_invoice_status,
+        latest_doctor_name     = EXCLUDED.latest_doctor_name,
         refreshed_at           = EXCLUDED.refreshed_at
     `);
 
