@@ -205,4 +205,20 @@ app.use((req, res, next) => {
   };
   setTimeout(runJournalRetry, 15000);
   setInterval(runJournalRetry, JOURNAL_RETRY_MS);
+
+  // RPT Refresh: rebuild rpt_patient_visit_summary every 15 minutes
+  const RPT_REFRESH_MS = 15 * 60 * 1000;
+  const runRptRefresh = async () => {
+    try {
+      const result = await storage.refreshPatientVisitSummary();
+      if (result.upserted > 0) {
+        log(`[RPT_REFRESH] upserted=${result.upserted} rows in ${result.durationMs}ms`);
+      }
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      console.error("[RPT_REFRESH] tick error:", _em);
+    }
+  };
+  setTimeout(runRptRefresh, 10000);
+  setInterval(runRptRefresh, RPT_REFRESH_MS);
 })();

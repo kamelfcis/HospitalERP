@@ -684,6 +684,10 @@ export interface IStorage {
   createReceivingCorrection(receivingId: string, corrections?: Record<string, unknown>[]): Promise<Record<string, unknown>>;
   postReceivingCorrection(correctionId: string): Promise<Record<string, unknown>>;
   getItemAvailabilitySummary(itemId: string, asOfDate?: string, excludeExpired?: boolean): Promise<Record<string, unknown>>;
+
+  // RPT refresh jobs
+  refreshPatientVisitSummary(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
+
   [key: string]: unknown;
 }
 
@@ -729,6 +733,7 @@ import patientsDoctorsMethods from "./patients-doctors-storage";
 import { bedboardStaysMethods, bedboardBedsMethods } from "./bedboard-stay-storage";
 import treasuriesMethods from "./treasuries-storage";
 import { clinicMasterMethods, clinicOrdersMethods } from "./clinic-storage";
+import rptRefreshMethods from "./rpt-refresh-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -758,6 +763,7 @@ Object.assign(
   treasuriesMethods,
   clinicMasterMethods,
   clinicOrdersMethods,
+  rptRefreshMethods,
 );
 
 export const storage = new DatabaseStorage();

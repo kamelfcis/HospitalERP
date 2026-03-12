@@ -646,7 +646,7 @@ const methods = {
       conds.push(sql`(a.patient_name ILIKE ${s} OR a.admission_number ILIKE ${s} OR a.patient_phone ILIKE ${s} OR a.doctor_name ILIKE ${s})`);
     }
     if (filters?.deptId) {
-      conds.push(sql`inv_agg.latest_invoice_dept_id = ${filters.deptId}`);
+      conds.push(sql`rpt.department_id = ${filters.deptId}`);
     }
 
     const whereExpr = conds.length > 0
@@ -661,46 +661,41 @@ const methods = {
       ? sql`, COUNT(*) OVER() AS total_count`
       : sql``;
 
+    // ── جدول rpt يوفر المبالغ المجمَّعة وإسم القسم دون ARRAY_AGG أو DISTINCT ON ──
+    // الفواتير المرتبطة مباشرةً فقط (admission_id IS NOT NULL).
+    // inv_latest يوفر رقم الفاتورة الأخيرة وحالتها والمبالغ المحوَّلة (doctor_transfers).
     const result = await db.execute(sql`
       SELECT
         a.*,
-        COALESCE(inv_agg.total_net_amount, 0)          AS total_net_amount,
-        COALESCE(inv_agg.total_paid_amount, 0)         AS total_paid_amount,
-        COALESCE(inv_agg.total_transferred, 0)         AS total_transferred_amount,
-        inv_agg.latest_invoice_number                   AS latest_invoice_number,
-        inv_agg.latest_invoice_id                       AS latest_invoice_id,
-        inv_agg.latest_invoice_status                   AS latest_invoice_status,
-        inv_agg.latest_invoice_dept_id                  AS latest_invoice_dept_id,
-        inv_agg.latest_invoice_dept_name                AS latest_invoice_dept_name
+        COALESCE(rpt.net_amount,   0)                    AS total_net_amount,
+        COALESCE(rpt.total_paid,   0)                    AS total_paid_amount,
+        COALESCE(inv_latest.total_transferred, 0)        AS total_transferred_amount,
+        inv_latest.latest_invoice_number                 AS latest_invoice_number,
+        inv_latest.latest_invoice_id                     AS latest_invoice_id,
+        inv_latest.latest_invoice_status                 AS latest_invoice_status,
+        rpt.department_id                                AS latest_invoice_dept_id,
+        rpt.department_name                              AS latest_invoice_dept_name
         ${countCol}
       FROM admissions a
+      LEFT JOIN rpt_patient_visit_summary rpt
+        ON rpt.source_type = 'admission' AND rpt.source_id = a.id
       LEFT JOIN (
         SELECT
-          COALESCE(pi.admission_id, a_fb.id)                                       AS eff_admission_id,
-          SUM(pi.net_amount::numeric)                                               AS total_net_amount,
-          SUM(pi.paid_amount::numeric)                                              AS total_paid_amount,
-          COALESCE(SUM(dt_agg.dt_total), 0)                                        AS total_transferred,
-          (ARRAY_AGG(pi.invoice_number ORDER BY pi.created_at DESC))[1]            AS latest_invoice_number,
-          (ARRAY_AGG(pi.id             ORDER BY pi.created_at DESC))[1]            AS latest_invoice_id,
-          (ARRAY_AGG(pi.status         ORDER BY pi.created_at DESC))[1]            AS latest_invoice_status,
-          (ARRAY_AGG(pi.department_id  ORDER BY pi.created_at DESC))[1]            AS latest_invoice_dept_id,
-          (ARRAY_AGG(d.name_ar         ORDER BY pi.created_at DESC))[1]            AS latest_invoice_dept_name
-        FROM patient_invoice_headers pi
-        LEFT JOIN departments d ON d.id = pi.department_id
-        LEFT JOIN (
-          SELECT DISTINCT ON (patient_name) id, patient_name
-          FROM admissions
-          ORDER BY patient_name, created_at DESC
-        ) a_fb ON a_fb.patient_name = pi.patient_name AND pi.admission_id IS NULL
+          pih.admission_id,
+          (ARRAY_AGG(pih.invoice_number ORDER BY pih.created_at DESC))[1]  AS latest_invoice_number,
+          (ARRAY_AGG(pih.id             ORDER BY pih.created_at DESC))[1]  AS latest_invoice_id,
+          (ARRAY_AGG(pih.status         ORDER BY pih.created_at DESC))[1]  AS latest_invoice_status,
+          COALESCE(SUM(dt_agg.dt_total), 0)                                AS total_transferred
+        FROM patient_invoice_headers pih
         LEFT JOIN (
           SELECT invoice_id, SUM(amount::numeric) AS dt_total
           FROM doctor_transfers
           GROUP BY invoice_id
-        ) dt_agg ON dt_agg.invoice_id = pi.id
-        WHERE pi.status != 'cancelled'
-          AND COALESCE(pi.admission_id, a_fb.id) IS NOT NULL
-        GROUP BY COALESCE(pi.admission_id, a_fb.id)
-      ) inv_agg ON inv_agg.eff_admission_id = a.id
+        ) dt_agg ON dt_agg.invoice_id = pih.id
+        WHERE pih.status != 'cancelled'
+          AND pih.admission_id IS NOT NULL
+        GROUP BY pih.admission_id
+      ) inv_latest ON inv_latest.admission_id = a.id
       ${whereExpr}
       ORDER BY a.created_at DESC
       ${limitClause}

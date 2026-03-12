@@ -1,0 +1,235 @@
+#6 - P2-B — Wire Up rpt_patient_visit_summary Safely and Incrementally
+
+Objective
+Activate and use the existing reporting table `rpt_patient_visit_summary` as the backend source for selected patient/reporting endpoints, using a safe refresh strategy that does NOT add heavy per-transaction overhead and does NOT change business behavior unexpectedly.
+
+This phase is about wiring an already-existing reporting asset that is currently unused and empty.
+The goal is to turn it into a real reporting source safely, incrementally, and with bounded scope.
+
+Strict scope for this phase
+In scope:
+- Audit the current structure and intended meaning of `rpt_patient_visit_summary`
+- Identify the minimum source tables required to populate it correctly
+- Implement a safe refresh mechanism
+- Populate the table
+- Wire it into:
+  - `/api/patients/stats`
+  - `/api/admissions`
+- Consider `patient-inquiry` only if it is low-risk and clearly beneficial; otherwise report it as next step, do not force it now
+
+Out of scope:
+- Do NOT touch GL financial reports from P2-A
+- Do NOT redesign clinic doctor statement
+- Do NOT wire `rpt_item_movements_summary`
+- Do NOT introduce frontend redesigns
+- Do NOT change route contracts unless absolutely unavoidable
+- Do NOT introduce transaction-level triggers on hot operational tables
+- Do NOT do broad refactors outside the reporting path
+
+Business intent
+`rpt_patient_visit_summary` is a reporting store, not an operational truth source.
+It should improve reporting speed and reduce repeated heavy joins over live transactional tables.
+It must not slow down the daily hospital workflow.
+
+Critical architecture decision
+Use a refresh job / rebuild strategy.
+Do NOT use per-transaction trigger-based population unless you prove it is extremely lightweight and safe — default decision is NO TRIGGERS.
+
+Preferred strategy
+Implement one of these, in this order of preference:
+1) Incremental refresh job
+2) Rebuild changed visits only
+3) Full rebuild only if the table is still small and clearly safe
+
+Default expectation:
+- scheduled refresh job
+- idempotent refresh logic
+- safe re-runs
+- no duplicate summary rows
+- no blocking of operational workflows
+
+Non-negotiable requirements
+1) Preserve business meaning exactly.
+2) Preserve endpoint response JSON shape exactly wherever possible.
+3) Do not silently change calculation semantics for invoiced / paid / outstanding / LOS / department / insurance / revenue breakdown.
+4) Do not introduce trigger-based write amplification on every operational transaction.
+5) Do not slow down patient registration, invoicing, cashiering, admissions, or discharge flows.
+6) Keep the implementation reviewable and bounded.
+7) If some field in `rpt_patient_visit_summary` is ambiguous, stop and document the ambiguity clearly instead of guessing.
+8) Do not populate the summary table from assumptions — derive fields from real source tables only.
+9) Ensure one row per visit/patient-visit key according to the intended design.
+10) Refresh must be idempotent: rerunning it must not duplicate data or drift totals.
+
+Phase tasks
+
+1) Audit `rpt_patient_visit_summary`
+- Inspect its schema fully
+- Document each column and infer its intended source meaning from code/schema
+- Identify:
+  - primary key / unique key expectation
+  - visit identifier used
+  - revenue fields
+  - payment fields
+  - outstanding fields
+  - LOS / stay fields
+  - insurance / department / patient dimensions
+- Confirm whether the table is truly designed as one-row-per-visit
+
+Return clearly:
+- current schema
+- intended grain
+- missing assumptions
+- source tables needed
+
+2) Map the source-of-truth tables
+Determine exactly which base tables feed the summary, such as:
+- patient invoice header/lines
+- payments / paid invoice / treasury references if relevant
+- admissions / stays
+- patient registration / visits
+- insurance references
+- department references
+- any other required dimensions
+
+For every summary field, identify its source logic explicitly.
+Do not guess.
+If two different source interpretations are possible, document both and choose only if the current code clearly supports one.
+
+3) Build the refresh strategy
+Implement a safe refresh mechanism for `rpt_patient_visit_summary`.
+
+Preferred implementation:
+- dedicated refresh function in storage/service layer
+- callable manually
+- callable by scheduled job
+- supports:
+  - full rebuild
+  - incremental rebuild for changed visits if practical
+
+Hard rules:
+- no per-row trigger on hot write path
+- no heavy synchronous rebuild inside user API request
+- no duplicate rows
+- use UPSERT or delete+rebuild-per-visit strategy safely
+- rerunning refresh must produce the same result
+
+4) Populate the table
+Backfill `rpt_patient_visit_summary` from current production data safely.
+
+Requirements:
+- populate only from validated source joins
+- ensure null handling is deliberate
+- ensure department / insurance / visit keys are consistent
+- ensure amounts reconcile to source transactions
+- if some visits have no data for certain dimensions, preserve that state safely instead of inventing defaults unless current logic already has defaults
+
+5) Wire `/api/patients/stats` to use the summary table
+Refactor this endpoint to read from `rpt_patient_visit_summary` wherever it is a safe drop-in replacement.
+
+Requirements:
+- preserve exact response shape
+- preserve current date filtering semantics
+- preserve pagination / 90-day default / control behavior already completed in P1
+- preserve totals and counts
+- do not reintroduce N+1
+- if a field still must come from base tables, keep that part bounded and explain why
+
+6) Wire `/api/admissions` to use the summary table where appropriate
+Refactor admissions reporting/list aggregation to use `rpt_patient_visit_summary` only where it truly fits.
+
+Requirements:
+- preserve exact response shape
+- preserve pagination behavior already completed
+- preserve department/admission meaning
+- do not force unrelated logic into the summary if not represented there
+- if partial usage is the right choice, do partial usage and document it clearly
+
+7) Evaluate `patient-inquiry`
+Do NOT force this.
+Only wire `patient-inquiry` if:
+- the summary clearly supports it
+- response semantics remain exact
+- the change is low-risk
+Otherwise:
+- leave it untouched
+- report it as the next logical phase
+
+Refresh strategy requirements
+The refresh mechanism must clearly specify:
+- how changed visits are detected
+- whether refresh is full or incremental
+- when it is expected to run
+- how it avoids duplicates
+- how it handles corrected/edited invoices or payments
+- how it handles cancelled/reversed visits if applicable
+- how it handles deleted or inactive records if applicable
+
+If incremental refresh is implemented, explain the incremental key:
+- updated_at
+- journal/invoice/payment timestamps
+- visit modified timestamp
+- or another reliable mechanism
+
+Verification requirements
+You must verify the summary table against base tables directly.
+
+Return proof for:
+1) row count sanity
+- number of visits summarized
+- whether grain is one-row-per-visit
+
+2) amount reconciliation
+- invoiced totals vs base tables
+- paid totals vs base tables
+- outstanding totals vs base tables
+
+3) dimensional reconciliation
+- departments match source records
+- insurance attribution matches source records
+- LOS/stay metrics match source logic
+
+4) endpoint parity
+For `/api/patients/stats` and `/api/admissions`:
+- old totals vs new totals
+- old row count vs new row count
+- response shape unchanged
+- pagination unchanged
+- no frontend breakage
+
+5) performance check
+- query count reduced or bounded
+- response time improved or at least stable
+- no heavy synchronous operational overhead introduced
+
+Implementation constraints
+- Keep changes narrow and reviewable
+- Prefer one new refresh path over many scattered helpers
+- No unrelated cleanup
+- No broad naming refactors
+- No frontend redesign
+- No route signature changes unless absolutely unavoidable
+- No database migrations unless truly required; if required, stop and report before doing them
+
+Definition of done
+P2-B is complete only if:
+- `rpt_patient_visit_summary` is populated from real source data
+- refresh logic exists and is safe/idempotent
+- `/api/patients/stats` is wired safely to it
+- `/api/admissions` is wired safely to it where appropriate
+- totals reconcile against base tables
+- response contracts remain backward-compatible
+- no trigger-heavy operational risk is introduced
+
+Return exactly this structure
+1) summary table audit
+2) source mapping used
+3) refresh strategy implemented
+4) endpoints wired
+5) verification results
+6) performance impact
+7) remaining risks / next recommended step
+
+Important final instruction
+Do not overreach.
+If a field or endpoint cannot be safely moved to `rpt_patient_visit_summary` without semantic risk, leave it on base tables and state that explicitly.
+Correctness and operational safety are more important than forcing full adoption in one pass.
