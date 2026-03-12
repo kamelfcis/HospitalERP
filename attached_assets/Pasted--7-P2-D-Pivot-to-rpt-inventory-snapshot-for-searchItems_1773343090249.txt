@@ -1,0 +1,149 @@
+#7 - P2-D — Pivot to rpt_inventory_snapshot for searchItemsAdvanced, defer rpt_item_movements_summary
+
+Objective
+Do not invest further in `rpt_item_movements_summary` yet.
+Instead, use the already-available `rpt_inventory_snapshot` to remove expensive correlated inventory subqueries from `searchItemsAdvanced`, because this is the real active performance path today.
+
+Decision
+- Defer `rpt_item_movements_summary` formally
+- Pivot to `rpt_inventory_snapshot`
+- Scope this phase narrowly around validating snapshot accuracy, adding safe refresh support, and wiring `searchItemsAdvanced`
+
+What we know
+- `rpt_item_movements_summary` has only 6 incomplete rows and no active consumer in code
+- `inventory_lot_movements` has movement data but no reporting endpoint currently uses it
+- `rpt_inventory_snapshot` already has 75 rows and appears to represent current stock by item/warehouse
+- `searchItemsAdvanced` currently contains 5 correlated subqueries against `inventory_lots`, which is the real performance problem now
+
+In scope
+1) Validate `rpt_inventory_snapshot` accuracy
+2) Implement safe refresh support for `rpt_inventory_snapshot`
+3) Refactor `searchItemsAdvanced` to use snapshot data instead of repeated correlated subqueries
+4) Document `rpt_item_movements_summary` as deferred because it has no active consumer yet
+
+Out of scope
+- Do NOT build a full refresh pipeline for `rpt_item_movements_summary`
+- Do NOT create new inventory reporting endpoints
+- Do NOT redesign inventory reporting architecture broadly
+- Do NOT touch unrelated search or inventory functions
+- Do NOT change frontend contracts unless absolutely necessary
+- Do NOT introduce schema changes unless strictly required; if required, stop and report before doing them
+
+Phase tasks
+
+1) Validate snapshot accuracy
+Compare `rpt_inventory_snapshot` against live `inventory_lots` / current source-of-truth for a meaningful sample.
+
+Minimum checks:
+- qty_in_minor matches direct stock calculation
+- earliest_expiry_date matches source lots
+- expiring_30d_qty matches source lots
+- warehouse/item grain is correct
+- no obvious missing active items
+
+Return clearly:
+- validation method
+- sample size checked
+- mismatch count
+- whether snapshot is safe to use
+
+If snapshot is NOT accurate:
+- do not wire it into search yet
+- fix refresh path first
+- then re-validate
+
+2) Implement safe refresh support for rpt_inventory_snapshot
+Create a safe refresh mechanism similar in spirit to P2-B:
+- idempotent
+- re-runnable
+- reviewable
+- does not add heavy synchronous work to hot operational paths by default
+
+Preferred starting strategy:
+- background refresh job every 15 minutes
+- optional manual refresh function
+- if lightweight event-based refresh is possible later, document it as future enhancement, do not force it now
+
+Requirements:
+- preserve one row per intended grain
+- avoid duplicates
+- use safe UPSERT logic if appropriate
+- log refresh execution clearly
+- do not slow down daily operations
+
+3) Refactor searchItemsAdvanced
+Replace the 5 correlated subqueries against `inventory_lots` with snapshot-driven fields wherever possible.
+
+Target replacements:
+- current stock qty → `rpt_inventory_snapshot.qty_in_minor`
+- earliest expiry → `rpt_inventory_snapshot.earliest_expiry_date`
+- expiring soon qty → `rpt_inventory_snapshot.expiring_30d_qty`
+- any other current-stock derived values should come from snapshot if semantically equivalent
+
+If `nearest_expiry_lot_id` is needed and not already available in snapshot:
+- use one slim bounded join to the identified lot source
+- do NOT reintroduce multiple correlated subqueries per row
+
+Hard requirement:
+Preserve exact response contract of `searchItemsAdvanced` unless absolutely impossible.
+If any field cannot be sourced from snapshot without semantic loss, keep it bounded and explain why.
+
+4) Defer rpt_item_movements_summary formally
+Do not delete it.
+Do not build refresh logic for it in this phase.
+Return a formal note:
+- no active consumer currently exists
+- current rows are incomplete
+- activation should wait until there is a real item movement report endpoint or analytics consumer
+
+Critical requirements
+- No broad refactors
+- No unrelated cleanup
+- No frontend changes unless strictly required
+- No route contract changes unless strictly required
+- No schema changes unless absolutely required
+- Preserve search semantics exactly
+- Preserve item availability meaning exactly
+- Preserve expiry-related meaning exactly
+- Do not replace accurate live semantics with approximate snapshot semantics unless verified
+
+Verification requirements
+Return proof for:
+1) snapshot validation
+- qty match
+- expiry match
+- expiring-soon match
+- mismatch summary
+
+2) search parity
+- old vs new response comparison on same inputs
+- row count unchanged
+- key stock/expiry fields unchanged
+- no items disappear unexpectedly
+- no duplicates introduced
+
+3) performance impact
+- correlated subqueries removed or drastically reduced
+- query strategy simplified
+- response time improved or at least bounded better
+
+4) deferred decision documentation
+- why `rpt_item_movements_summary` was deferred
+- what future trigger would justify activating it
+
+Definition of done
+P2-D is complete only if:
+- `rpt_inventory_snapshot` is validated or repaired and validated
+- safe refresh support exists
+- `searchItemsAdvanced` no longer relies on the 5 correlated inventory subqueries
+- response behavior remains backward-compatible
+- `rpt_item_movements_summary` is formally documented as deferred, not abandoned
+
+Return exactly:
+1) snapshot validation results
+2) refresh strategy implemented
+3) searchItemsAdvanced changes made
+4) verification results
+5) performance impact
+6) deferred decision for rpt_item_movements_summary
+7) remaining risks / next recommended phase

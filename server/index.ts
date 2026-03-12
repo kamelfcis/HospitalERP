@@ -221,4 +221,20 @@ app.use((req, res, next) => {
   };
   setTimeout(runRptRefresh, 10000);
   setInterval(runRptRefresh, RPT_REFRESH_MS);
+
+  // Inventory Snapshot Refresh: rebuild rpt_inventory_snapshot every 15 minutes
+  const SNAP_REFRESH_MS = 15 * 60 * 1000;
+  const runSnapRefresh = async () => {
+    try {
+      const result = await storage.refreshInventorySnapshot();
+      if (result.upserted > 0) {
+        log(`[SNAP_REFRESH] upserted=${result.upserted} rows in ${result.durationMs}ms`);
+      }
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      console.error("[SNAP_REFRESH] tick error:", _em);
+    }
+  };
+  setTimeout(runSnapRefresh, 12000);
+  setInterval(runSnapRefresh, SNAP_REFRESH_MS);
 })();

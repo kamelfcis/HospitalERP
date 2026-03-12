@@ -1,5 +1,32 @@
+/*
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  Transfers Search Storage — بحث الأصناف للتحويلات والصيدليات
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  searchItemsAdvanced — P2-D (snapshot-driven)
+ *  ─────────────────────────────────────────────
+ *  بدلاً من 5 correlated subqueries على inventory_lots لكل صنف، تستخدم الدالة:
+ *    - LEFT JOIN rpt_inventory_snapshot (snapshot_date = أحدث تاريخ)
+ *      لجلب qty_in_minor, earliest_expiry_date مباشرةً من صف واحد مُفهرَس.
+ *    - LEFT JOIN inventory_lots nl على nearest_expiry_lot_id من الـ snapshot
+ *      لجلب expiry_month, expiry_year بدون بحث إضافي.
+ *    - subquery مُقيَّدة واحدة فقط لحساب nearestExpiryQtyMinor
+ *      (تستخدم earliest_expiry_date المعروف مسبقاً، بدلاً من nested MIN).
+ *
+ *  الحالة الاحتياطية: إذا لم يكن هناك snapshot بعد (latestSnapDate = null)،
+ *  تعود الدالة إلى الـ 5 subqueries الأصلية (آمن، لا يكسر أي شيء).
+ *
+ *  rpt_item_movements_summary — مُرجأة رسمياً
+ *  ─────────────────────────────────────────────
+ *  لا يوجد مستهلك نشط لهذا الجدول. الصفوف الموجودة ناقصة (received_qty=0).
+ *  يُفعَّل هذا الجدول عند بناء endpoint تقرير حركة الأصناف.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
 import { db } from "../db";
-import { eq, and, sql, or, ilike, asc } from "drizzle-orm";
+import { sql } from "drizzle-orm";
+import { eq, and, or, ilike, asc } from "drizzle-orm";
 import {
   items,
   itemBarcodes,
@@ -7,7 +34,16 @@ import {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 
+// ─── Helper: جلب أحدث snapshot_date مرة واحدة ──────────────────────────────
+async function getLatestSnapshotDate(): Promise<string | null> {
+  const r = await db.execute(
+    sql`SELECT MAX(snapshot_date)::text AS d FROM rpt_inventory_snapshot`
+  );
+  return (r.rows[0] as any)?.d ?? null;
+}
+
 export const transfersSearchMethods = {
+
   async searchItemsAdvanced(this: DatabaseStorage, params: {
     mode: 'AR' | 'EN' | 'CODE' | 'BARCODE';
     query: string;
@@ -20,7 +56,10 @@ export const transfersSearchMethods = {
     minPrice?: number;
     maxPrice?: number;
   }): Promise<{items: Array<any>; total: number}> {
-    const { mode, query, warehouseId, page, pageSize, includeZeroStock, drugsOnly, excludeServices, minPrice, maxPrice } = params;
+    const {
+      mode, query, warehouseId, page, pageSize,
+      includeZeroStock, drugsOnly, excludeServices, minPrice, maxPrice,
+    } = params;
     const offset = (page - 1) * pageSize;
 
     const buildPattern = (q: string) => {
@@ -31,217 +70,224 @@ export const transfersSearchMethods = {
       return p;
     };
 
-    let searchCondition: any;
-    let joinBarcode = false;
+    const pattern = buildPattern(query);
+
+    // ── snapshot: اجلب أحدث تاريخ مرة واحدة ────────────────────────────────
+    const latestSnapDate = await getLatestSnapshotDate();
+
+    // ── بناء شرط البحث كـ SQL fragment ──────────────────────────────────────
+    let searchFrag: ReturnType<typeof sql>;
+    let barcodeMode = false;
 
     switch (mode) {
       case 'AR':
-        searchCondition = ilike(items.nameAr, buildPattern(query));
+        searchFrag = sql`i.name_ar ILIKE ${pattern}`;
         break;
       case 'EN':
-        searchCondition = ilike(sql`COALESCE(${items.nameEn}, '')`, buildPattern(query));
+        searchFrag = sql`COALESCE(i.name_en, '') ILIKE ${pattern}`;
         break;
       case 'CODE':
-        searchCondition = ilike(items.itemCode, buildPattern(query));
+        searchFrag = sql`i.item_code ILIKE ${pattern}`;
         break;
       case 'BARCODE':
-        joinBarcode = true;
-        searchCondition = ilike(itemBarcodes.barcodeValue, buildPattern(query));
+        barcodeMode = true;
+        // نستخدم EXISTS بدلاً من INNER JOIN لتجنب تكرار الصفوف
+        searchFrag = sql`EXISTS (
+          SELECT 1 FROM item_barcodes ib
+          WHERE ib.item_id = i.id
+            AND ib.is_active = true
+            AND ib.barcode_value ILIKE ${pattern}
+        )`;
         break;
       default:
-        searchCondition = ilike(items.nameAr, buildPattern(query));
+        searchFrag = sql`i.name_ar ILIKE ${pattern}`;
     }
 
-    const conditions: Array<any> = [eq(items.isActive, true), searchCondition];
-    if (drugsOnly) {
-      conditions.push(eq(items.category, 'drug'));
-    }
-    if (excludeServices) {
-      conditions.push(sql`${items.category} != 'service'`);
-    }
-    if (minPrice !== undefined) {
-      conditions.push(sql`${items.salePriceCurrent}::numeric >= ${minPrice}`);
-    }
-    if (maxPrice !== undefined) {
-      conditions.push(sql`${items.salePriceCurrent}::numeric <= ${maxPrice}`);
-    }
+    // ── شروط إضافية ──────────────────────────────────────────────────────────
+    const extraParts: ReturnType<typeof sql>[] = [];
+    if (drugsOnly)       extraParts.push(sql`i.category = 'drug'`);
+    if (excludeServices) extraParts.push(sql`i.category != 'service'`);
+    if (minPrice !== undefined) extraParts.push(sql`i.sale_price_current::numeric >= ${minPrice}`);
+    if (maxPrice !== undefined) extraParts.push(sql`i.sale_price_current::numeric <= ${maxPrice}`);
 
-    const itemIdRef = sql.raw(`"items"."id"`);
-    const availQtySql = sql<string>`COALESCE((
-      SELECT SUM(il.qty_in_minor::numeric)::text
-      FROM inventory_lots il
-      WHERE il.item_id = ${itemIdRef}
-        AND il.warehouse_id = ${warehouseId}
-        AND il.is_active = true
-        AND il.qty_in_minor::numeric > 0
-    ), '0')`;
+    const extraWhere = extraParts.length > 0
+      ? sql` AND ${sql.join(extraParts, sql` AND `)}`
+      : sql``;
 
-    const nearestExpirySql = sql<string>`(
-      SELECT MIN(il.expiry_date)::text
-      FROM inventory_lots il
-      WHERE il.item_id = ${itemIdRef}
-        AND il.warehouse_id = ${warehouseId}
-        AND il.is_active = true
-        AND il.qty_in_minor::numeric > 0
-        AND il.expiry_date IS NOT NULL
-        AND il.expiry_date >= CURRENT_DATE
-    )`;
+    // ── JOINs على الـ snapshot ───────────────────────────────────────────────
+    //
+    // إذا كان latestSnapDate موجوداً:
+    //   LEFT JOIN rpt_inventory_snapshot snap
+    //     ON snap.item_id = i.id
+    //    AND snap.warehouse_id = $warehouseId
+    //    AND snap.snapshot_date = $latestSnapDate
+    //   LEFT JOIN inventory_lots nl ON nl.id = snap.nearest_expiry_lot_id
+    //
+    // الفائدة: صف واحد مُفهرَس بدلاً من 5 subqueries بتجميعات متعددة.
+    //
+    const snapshotJoin = latestSnapDate
+      ? sql`
+          LEFT JOIN rpt_inventory_snapshot snap
+            ON snap.item_id      = i.id
+           AND snap.warehouse_id = ${warehouseId}
+           AND snap.snapshot_date = ${latestSnapDate}::date
+          LEFT JOIN inventory_lots nl
+            ON nl.id = snap.nearest_expiry_lot_id
+        `
+      : sql``;
 
-    const nearestExpiryMonthSql = sql<number>`(
-      SELECT il.expiry_month
-      FROM inventory_lots il
-      WHERE il.item_id = ${itemIdRef}
-        AND il.warehouse_id = ${warehouseId}
-        AND il.is_active = true
-        AND il.qty_in_minor::numeric > 0
-        AND il.expiry_month IS NOT NULL
-        AND il.expiry_year IS NOT NULL
-        AND (il.expiry_year > EXTRACT(YEAR FROM CURRENT_DATE)::int OR (il.expiry_year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND il.expiry_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))
-      ORDER BY il.expiry_year ASC, il.expiry_month ASC
-      LIMIT 1
-    )`;
+    // ── حقول الكمية والتواريخ ────────────────────────────────────────────────
+    //
+    // إذا كان الـ snapshot متاحاً → snapshot-driven (أسرع بكثير)
+    // إذا لم يكن → fallback لـ correlated subqueries على inventory_lots
+    //
+    const availableQtyExpr = latestSnapDate
+      ? sql`COALESCE(snap.qty_in_minor, 0)::text`
+      : sql`COALESCE((
+          SELECT SUM(il.qty_in_minor::numeric)::text
+          FROM inventory_lots il
+          WHERE il.item_id = i.id
+            AND il.warehouse_id = ${warehouseId}
+            AND il.is_active = true
+            AND il.qty_in_minor::numeric > 0
+        ), '0')`;
 
-    const nearestExpiryYearSql = sql<number>`(
-      SELECT il.expiry_year
-      FROM inventory_lots il
-      WHERE il.item_id = ${itemIdRef}
-        AND il.warehouse_id = ${warehouseId}
-        AND il.is_active = true
-        AND il.qty_in_minor::numeric > 0
-        AND il.expiry_month IS NOT NULL
-        AND il.expiry_year IS NOT NULL
-        AND (il.expiry_year > EXTRACT(YEAR FROM CURRENT_DATE)::int OR (il.expiry_year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND il.expiry_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))
-      ORDER BY il.expiry_year ASC, il.expiry_month ASC
-      LIMIT 1
-    )`;
+    const nearestExpiryDateExpr = latestSnapDate
+      ? sql`snap.earliest_expiry_date::text`
+      : sql`(
+          SELECT MIN(il.expiry_date)::text
+          FROM inventory_lots il
+          WHERE il.item_id = i.id
+            AND il.warehouse_id = ${warehouseId}
+            AND il.is_active = true
+            AND il.qty_in_minor::numeric > 0
+            AND il.expiry_date IS NOT NULL
+            AND il.expiry_date >= CURRENT_DATE
+        )`;
 
-    const nearestExpiryQtySql = sql<string>`(
-      SELECT SUM(il.qty_in_minor::numeric)::text
-      FROM inventory_lots il
-      WHERE il.item_id = ${itemIdRef}
-        AND il.warehouse_id = ${warehouseId}
-        AND il.is_active = true
-        AND il.qty_in_minor::numeric > 0
-        AND il.expiry_date = (
-          SELECT MIN(il2.expiry_date)
+    const nearestExpiryMonthExpr = latestSnapDate
+      ? sql`nl.expiry_month`
+      : sql`(
+          SELECT il.expiry_month
+          FROM inventory_lots il
+          WHERE il.item_id = i.id
+            AND il.warehouse_id = ${warehouseId}
+            AND il.is_active = true
+            AND il.qty_in_minor::numeric > 0
+            AND il.expiry_month IS NOT NULL
+            AND il.expiry_year IS NOT NULL
+            AND (il.expiry_year > EXTRACT(YEAR FROM CURRENT_DATE)::int
+              OR (il.expiry_year = EXTRACT(YEAR FROM CURRENT_DATE)::int
+                  AND il.expiry_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))
+          ORDER BY il.expiry_year ASC, il.expiry_month ASC
+          LIMIT 1
+        )`;
+
+    const nearestExpiryYearExpr = latestSnapDate
+      ? sql`nl.expiry_year`
+      : sql`(
+          SELECT il.expiry_year
+          FROM inventory_lots il
+          WHERE il.item_id = i.id
+            AND il.warehouse_id = ${warehouseId}
+            AND il.is_active = true
+            AND il.qty_in_minor::numeric > 0
+            AND il.expiry_month IS NOT NULL
+            AND il.expiry_year IS NOT NULL
+            AND (il.expiry_year > EXTRACT(YEAR FROM CURRENT_DATE)::int
+              OR (il.expiry_year = EXTRACT(YEAR FROM CURRENT_DATE)::int
+                  AND il.expiry_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))
+          ORDER BY il.expiry_year ASC, il.expiry_month ASC
+          LIMIT 1
+        )`;
+
+    // nearestExpiryQtyMinor: حتى مع الـ snapshot، نحتاج subquery واحدة
+    // لكنها أبسط بكثير (flat، بدون nested MIN) لأننا نعرف earliest_expiry_date مسبقاً
+    const nearestExpiryQtyExpr = latestSnapDate
+      ? sql`COALESCE((
+          SELECT SUM(il2.qty_in_minor::numeric)::text
           FROM inventory_lots il2
-          WHERE il2.item_id = ${itemIdRef}
+          WHERE il2.item_id      = i.id
             AND il2.warehouse_id = ${warehouseId}
-            AND il2.is_active = true
+            AND il2.is_active    = true
             AND il2.qty_in_minor::numeric > 0
-            AND il2.expiry_date IS NOT NULL
-            AND il2.expiry_date >= CURRENT_DATE
-        )
-    )`;
+            AND il2.expiry_date  = snap.earliest_expiry_date
+        ), '0')`
+      : sql`(
+          SELECT SUM(il.qty_in_minor::numeric)::text
+          FROM inventory_lots il
+          WHERE il.item_id = i.id
+            AND il.warehouse_id = ${warehouseId}
+            AND il.is_active = true
+            AND il.qty_in_minor::numeric > 0
+            AND il.expiry_date = (
+              SELECT MIN(il2.expiry_date)
+              FROM inventory_lots il2
+              WHERE il2.item_id      = i.id
+                AND il2.warehouse_id = ${warehouseId}
+                AND il2.is_active    = true
+                AND il2.qty_in_minor::numeric > 0
+                AND il2.expiry_date IS NOT NULL
+                AND il2.expiry_date >= CURRENT_DATE
+            )
+        )`;
 
-    if (joinBarcode) {
-      const baseQuery = db.select({
-        id: items.id,
-        itemCode: items.itemCode,
-        nameAr: items.nameAr,
-        nameEn: items.nameEn,
-        hasExpiry: items.hasExpiry,
-        category: items.category,
-        majorUnitName: items.majorUnitName,
-        minorUnitName: items.minorUnitName,
-        majorToMinor: items.majorToMinor,
-        majorToMedium: items.majorToMedium,
-        mediumUnitName: items.mediumUnitName,
-        mediumToMinor: items.mediumToMinor,
-        salePriceCurrent: items.salePriceCurrent,
-        availableQtyMinor: availQtySql,
-        nearestExpiryDate: nearestExpirySql,
-        nearestExpiryMonth: nearestExpiryMonthSql,
-        nearestExpiryYear: nearestExpiryYearSql,
-        nearestExpiryQtyMinor: nearestExpiryQtySql,
-      })
-        .from(items)
-        .innerJoin(itemBarcodes, and(eq(itemBarcodes.itemId, items.id), eq(itemBarcodes.isActive, true)))
-        .where(and(...conditions))
-        .groupBy(items.id);
+    // ── الاستعلام الأساسي ─────────────────────────────────────────────────────
+    const baseQuery = sql`
+      SELECT
+        i.id,
+        i.item_code              AS "itemCode",
+        i.name_ar                AS "nameAr",
+        i.name_en                AS "nameEn",
+        i.has_expiry             AS "hasExpiry",
+        i.category,
+        i.major_unit_name        AS "majorUnitName",
+        i.minor_unit_name        AS "minorUnitName",
+        i.major_to_minor         AS "majorToMinor",
+        i.major_to_medium        AS "majorToMedium",
+        i.medium_unit_name       AS "mediumUnitName",
+        i.medium_to_minor        AS "mediumToMinor",
+        i.sale_price_current     AS "salePriceCurrent",
+        ${availableQtyExpr}      AS "availableQtyMinor",
+        ${nearestExpiryDateExpr} AS "nearestExpiryDate",
+        ${nearestExpiryMonthExpr} AS "nearestExpiryMonth",
+        ${nearestExpiryYearExpr} AS "nearestExpiryYear",
+        ${nearestExpiryQtyExpr}  AS "nearestExpiryQtyMinor"
+      FROM items i
+      ${snapshotJoin}
+      WHERE i.is_active = true
+        AND ${searchFrag}
+        ${extraWhere}
+    `;
 
-      if (!includeZeroStock) {
-        const allResults = await baseQuery.orderBy(asc(items.itemCode));
-        const filtered = allResults.filter(r => parseFloat(r.availableQtyMinor) > 0);
-        const total = filtered.length;
-        const paged = filtered.slice(offset, offset + pageSize);
-        return { items: paged, total };
-      }
-
-      const countResult = await db.select({ count: sql<number>`COUNT(DISTINCT ${items.id})` })
-        .from(items)
-        .innerJoin(itemBarcodes, and(eq(itemBarcodes.itemId, items.id), eq(itemBarcodes.isActive, true)))
-        .where(and(...conditions));
-
-      const total = countResult[0]?.count || 0;
-      const results = await baseQuery.orderBy(asc(items.itemCode)).limit(pageSize).offset(offset);
-      return { items: results, total };
-    }
-
+    // ── تنفيذ حسب includeZeroStock ──────────────────────────────────────────
     if (!includeZeroStock) {
-      const allResults = await db.select({
-        id: items.id,
-        itemCode: items.itemCode,
-        nameAr: items.nameAr,
-        nameEn: items.nameEn,
-        hasExpiry: items.hasExpiry,
-        category: items.category,
-        majorUnitName: items.majorUnitName,
-        minorUnitName: items.minorUnitName,
-        majorToMinor: items.majorToMinor,
-        majorToMedium: items.majorToMedium,
-        mediumUnitName: items.mediumUnitName,
-        mediumToMinor: items.mediumToMinor,
-        salePriceCurrent: items.salePriceCurrent,
-        availableQtyMinor: availQtySql,
-        nearestExpiryDate: nearestExpirySql,
-        nearestExpiryMonth: nearestExpiryMonthSql,
-        nearestExpiryYear: nearestExpiryYearSql,
-        nearestExpiryQtyMinor: nearestExpiryQtySql,
-      })
-        .from(items)
-        .where(and(...conditions))
-        .orderBy(asc(items.itemCode));
-
-      const filtered = allResults.filter(r => parseFloat(r.availableQtyMinor) > 0);
+      const allRows = await db.execute(
+        sql`${baseQuery} ORDER BY i.item_code ASC`
+      );
+      const filtered = (allRows.rows as any[]).filter(
+        r => parseFloat(r.availableQtyMinor) > 0
+      );
       const total = filtered.length;
       const paged = filtered.slice(offset, offset + pageSize);
       return { items: paged, total };
     }
 
-    const [countResult] = await db.select({ count: sql<number>`COUNT(*)` })
-      .from(items)
-      .where(and(...conditions));
+    // includeZeroStock = true: paginate in DB
+    const countQuery = sql`
+      SELECT COUNT(*) AS count
+      FROM items i
+      WHERE i.is_active = true
+        AND ${searchFrag}
+        ${extraWhere}
+    `;
+    const countResult = await db.execute(countQuery);
+    const total = parseInt(String((countResult.rows[0] as any)?.count ?? 0), 10);
 
-    const total = countResult?.count || 0;
-
-    const results = await db.select({
-      id: items.id,
-      itemCode: items.itemCode,
-      nameAr: items.nameAr,
-      nameEn: items.nameEn,
-      hasExpiry: items.hasExpiry,
-      category: items.category,
-      majorUnitName: items.majorUnitName,
-      minorUnitName: items.minorUnitName,
-      majorToMinor: items.majorToMinor,
-      majorToMedium: items.majorToMedium,
-      mediumUnitName: items.mediumUnitName,
-      mediumToMinor: items.mediumToMinor,
-      salePriceCurrent: items.salePriceCurrent,
-      availableQtyMinor: availQtySql,
-      nearestExpiryDate: nearestExpirySql,
-      nearestExpiryMonth: nearestExpiryMonthSql,
-      nearestExpiryYear: nearestExpiryYearSql,
-      nearestExpiryQtyMinor: nearestExpiryQtySql,
-    })
-      .from(items)
-      .where(and(...conditions))
-      .orderBy(asc(items.itemCode))
-      .limit(pageSize)
-      .offset(offset);
-
-    return { items: results, total };
+    const pagedRows = await db.execute(
+      sql`${baseQuery} ORDER BY i.item_code ASC LIMIT ${pageSize} OFFSET ${offset}`
+    );
+    return { items: pagedRows.rows as any[], total };
   },
 
   async searchItemsByPattern(this: DatabaseStorage, query: string, limit: number): Promise<any[]> {

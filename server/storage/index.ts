@@ -687,6 +687,7 @@ export interface IStorage {
 
   // RPT refresh jobs
   refreshPatientVisitSummary(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
+  refreshInventorySnapshot(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
 
   [key: string]: unknown;
 }

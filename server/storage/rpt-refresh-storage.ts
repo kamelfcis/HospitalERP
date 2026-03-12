@@ -3,19 +3,24 @@
  *  RPT Refresh Storage — إعادة بناء جداول التقارير المُجمَّعة
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- *  يحتوي على دالة `refreshPatientVisitSummary()` التي تُحدّث جدول
- *  `rpt_patient_visit_summary` من البيانات الحية بصورة آمنة ومتكررة.
+ *  refreshPatientVisitSummary()
+ *  ────────────────────────────
+ *  يُحدّث جدول `rpt_patient_visit_summary` من البيانات الحية.
+ *  - UPSERT بحيث إعادة التشغيل لا تُكرّر بيانات
+ *  - مشكلة N×M محلولة: تجميع رؤوس/بنود الفواتير منفصل
+ *  - يُغطّي حالياً: source_type = 'admission' فقط
+ *
+ *  refreshInventorySnapshot()
+ *  ───────────────────────────
+ *  يُحدّث جدول `rpt_inventory_snapshot` من `inventory_lots` الحية.
+ *  - UPSERT على UNIQUE(snapshot_date, item_id, warehouse_id)
+ *  - يُدرج صفاً واحداً لكل (صنف × مخزن) يملك lots فعلية
+ *  - بعد الإدراج يحذف الصفوف القديمة (snapshot_date < CURRENT_DATE)
+ *    لضمان صف واحد فقط لكل حبّة (item, warehouse) في أي وقت
  *
  *  القواعد الصارمة:
  *  - لا trigger على مسار الكتابة التشغيلي
- *  - UPSERT بحيث إعادة التشغيل لا تُكرّر بيانات
- *  - تغطّي فقط الإقامات ذات الفواتير المرتبطة مباشرةً عبر admission_id
- *
- *  مشكلة N×M محلولة: تجميع رؤوس الفواتير منفصل عن تجميع البنود،
- *  كلٌّ منهما في subquery مستقلة للاتحاد لاحقاً.
- *
- *  الجدول يُغطّي حالياً: source_type = 'admission' فقط.
- *  المصادر الأخرى محجوزة للإصدارات القادمة.
+ *  - لا تعديل للـ schema هنا
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  */
@@ -30,6 +35,156 @@ export interface RptRefreshResult {
 }
 
 const methods = {
+
+  // ─── rpt_inventory_snapshot ────────────────────────────────────────────────
+  //
+  // يُعيد بناء لقطة المخزون الجارية من inventory_lots.
+  //
+  // الخوارزمية:
+  //   1. UPSERT بصف واحد لكل (item_id × warehouse_id) لديه lots فعلية.
+  //      snapshot_date = CURRENT_DATE — الحقل الثالث في المفتاح الفريد.
+  //   2. حذف الصفوف القديمة (snapshot_date < CURRENT_DATE) بعد الإدراج.
+  //      النتيجة: حبّة واحدة فقط لكل (item, warehouse) في الجدول.
+  //
+  // nearestExpiryLotId: يتطلب correlated subquery لأن DISTINCT FIRST
+  //   غير متاح في GROUP BY مباشرةً، لكنه مُقيَّد بـ LIMIT 1 + INDEX،
+  //   فعلياً O(log N) لكل مجموعة.
+  //
+  async refreshInventorySnapshot(): Promise<RptRefreshResult> {
+    const start = Date.now();
+
+    const result = await db.execute(sql`
+      INSERT INTO rpt_inventory_snapshot (
+        snapshot_date,
+        item_id, item_code, item_name, item_category, has_expiry,
+        warehouse_id, warehouse_code, warehouse_name,
+        qty_in_minor, active_lot_count,
+        expired_qty, expiring_30d_qty, expiring_90d_qty,
+        earliest_expiry_date, nearest_expiry_lot_id,
+        avg_unit_cost, total_cost_value, total_sale_value,
+        refreshed_at
+      )
+      SELECT
+        CURRENT_DATE,
+        i.id,
+        i.item_code,
+        i.name_ar,
+        i.category::text,
+        i.has_expiry,
+        w.id,
+        w.warehouse_code,
+        w.name_ar,
+
+        -- qty_in_minor: مجموع الكميات الإيجابية في الـ lots الفعّالة
+        COALESCE(SUM(il.qty_in_minor::numeric)
+          FILTER (WHERE il.is_active AND il.qty_in_minor::numeric > 0), 0),
+
+        -- active_lot_count
+        COUNT(il.id)
+          FILTER (WHERE il.is_active AND il.qty_in_minor::numeric > 0),
+
+        -- expired_qty: كميات منتهية الصلاحية (is_active مع تاريخ في الماضي)
+        COALESCE(SUM(il.qty_in_minor::numeric)
+          FILTER (WHERE il.is_active
+                    AND il.qty_in_minor::numeric > 0
+                    AND il.expiry_date IS NOT NULL
+                    AND il.expiry_date < CURRENT_DATE), 0),
+
+        -- expiring_30d_qty
+        COALESCE(SUM(il.qty_in_minor::numeric)
+          FILTER (WHERE il.is_active
+                    AND il.qty_in_minor::numeric > 0
+                    AND il.expiry_date IS NOT NULL
+                    AND il.expiry_date >= CURRENT_DATE
+                    AND il.expiry_date <= CURRENT_DATE + 30), 0),
+
+        -- expiring_90d_qty
+        COALESCE(SUM(il.qty_in_minor::numeric)
+          FILTER (WHERE il.is_active
+                    AND il.qty_in_minor::numeric > 0
+                    AND il.expiry_date IS NOT NULL
+                    AND il.expiry_date >= CURRENT_DATE
+                    AND il.expiry_date <= CURRENT_DATE + 90), 0),
+
+        -- earliest_expiry_date
+        MIN(il.expiry_date)
+          FILTER (WHERE il.is_active
+                    AND il.qty_in_minor::numeric > 0
+                    AND il.expiry_date IS NOT NULL
+                    AND il.expiry_date >= CURRENT_DATE),
+
+        -- nearest_expiry_lot_id: أقرب lot بتاريخ انتهاء صالح (LIMIT 1 + INDEX)
+        (SELECT il2.id
+         FROM   inventory_lots il2
+         WHERE  il2.item_id    = i.id
+           AND  il2.warehouse_id = w.id
+           AND  il2.is_active  = true
+           AND  il2.qty_in_minor::numeric > 0
+           AND  il2.expiry_date IS NOT NULL
+           AND  il2.expiry_date >= CURRENT_DATE
+         ORDER BY il2.expiry_date ASC
+         LIMIT 1),
+
+        -- avg_unit_cost: متوسط تكلفة الوحدة بالكمية مرجّحة
+        CASE
+          WHEN SUM(il.qty_in_minor::numeric)
+               FILTER (WHERE il.is_active AND il.qty_in_minor::numeric > 0) > 0
+          THEN SUM((il.qty_in_minor * il.purchase_price)::numeric)
+               FILTER (WHERE il.is_active AND il.qty_in_minor::numeric > 0)
+             / SUM(il.qty_in_minor::numeric)
+               FILTER (WHERE il.is_active AND il.qty_in_minor::numeric > 0)
+          ELSE NULL
+        END,
+
+        -- total_cost_value
+        COALESCE(SUM((il.qty_in_minor * il.purchase_price)::numeric)
+          FILTER (WHERE il.is_active AND il.qty_in_minor::numeric > 0), 0),
+
+        -- total_sale_value
+        COALESCE(SUM(il.qty_in_minor::numeric)
+          FILTER (WHERE il.is_active AND il.qty_in_minor::numeric > 0), 0)
+          * i.sale_price_current::numeric,
+
+        NOW()
+
+      FROM  inventory_lots il
+      JOIN  items      i ON i.id  = il.item_id      AND i.is_active = true
+      JOIN  warehouses w ON w.id  = il.warehouse_id
+
+      GROUP BY
+        i.id, i.item_code, i.name_ar, i.category, i.has_expiry, i.sale_price_current,
+        w.id, w.warehouse_code, w.name_ar
+
+      ON CONFLICT (snapshot_date, item_id, warehouse_id) DO UPDATE SET
+        qty_in_minor          = EXCLUDED.qty_in_minor,
+        active_lot_count      = EXCLUDED.active_lot_count,
+        expired_qty           = EXCLUDED.expired_qty,
+        expiring_30d_qty      = EXCLUDED.expiring_30d_qty,
+        expiring_90d_qty      = EXCLUDED.expiring_90d_qty,
+        earliest_expiry_date  = EXCLUDED.earliest_expiry_date,
+        nearest_expiry_lot_id = EXCLUDED.nearest_expiry_lot_id,
+        avg_unit_cost         = EXCLUDED.avg_unit_cost,
+        total_cost_value      = EXCLUDED.total_cost_value,
+        total_sale_value      = EXCLUDED.total_sale_value,
+        item_name             = EXCLUDED.item_name,
+        item_category         = EXCLUDED.item_category,
+        item_code             = EXCLUDED.item_code,
+        warehouse_name        = EXCLUDED.warehouse_name,
+        warehouse_code        = EXCLUDED.warehouse_code,
+        refreshed_at          = EXCLUDED.refreshed_at
+    `);
+
+    // حذف الصفوف القديمة لضمان صف واحد لكل (item, warehouse)
+    await db.execute(sql`
+      DELETE FROM rpt_inventory_snapshot
+      WHERE snapshot_date < CURRENT_DATE
+    `);
+
+    const durationMs = Date.now() - start;
+    const upserted   = Number((result as any).rowCount ?? 0);
+
+    return { upserted, durationMs, ranAt: new Date().toISOString() };
+  },
 
   async refreshPatientVisitSummary(): Promise<RptRefreshResult> {
     const start = Date.now();
