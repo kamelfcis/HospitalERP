@@ -203,63 +203,87 @@ const methods = {
         cl.secretary_fee_type,
         cl.secretary_fee_value,
         d.name AS doctor_name,
-        COALESCE(sdp_fee.price, s_fee.base_price, 0) AS consultation_fee,
-        COALESCE(drugs_totals.total, 0) AS drugs_total,
-        COALESCE(services_by_dept.details, '[]'::json) AS services_by_department,
-        COALESCE(exec_stats.total_orders, 0) AS total_orders,
-        COALESCE(exec_stats.executed_orders, 0) AS executed_orders,
-        COALESCE(exec_stats.pending_orders, 0) AS pending_orders,
-        COALESCE(exec_stats.total_service_orders, 0) AS total_service_orders,
-        COALESCE(exec_stats.executed_service_orders, 0) AS executed_service_orders,
-        COALESCE(exec_stats.total_pharmacy_orders, 0) AS total_pharmacy_orders,
-        COALESCE(exec_stats.executed_pharmacy_orders, 0) AS executed_pharmacy_orders
+        COALESCE(sdp_fee.price, s_fee.base_price, 0)    AS consultation_fee,
+        COALESCE(drugs_agg.total, 0)                     AS drugs_total,
+        COALESCE(svc_by_dept.details, '[]'::json)        AS services_by_department,
+        COALESCE(exec_agg.total_orders, 0)               AS total_orders,
+        COALESCE(exec_agg.executed_orders, 0)            AS executed_orders,
+        COALESCE(exec_agg.pending_orders, 0)             AS pending_orders,
+        COALESCE(exec_agg.total_service_orders, 0)       AS total_service_orders,
+        COALESCE(exec_agg.executed_service_orders, 0)    AS executed_service_orders,
+        COALESCE(exec_agg.total_pharmacy_orders, 0)      AS total_pharmacy_orders,
+        COALESCE(exec_agg.executed_pharmacy_orders, 0)   AS executed_pharmacy_orders
       FROM clinic_appointments a
       LEFT JOIN clinic_consultations c ON c.appointment_id = a.id
       LEFT JOIN clinic_clinics cl ON cl.id = a.clinic_id
       LEFT JOIN doctors d ON d.id = a.doctor_id
       LEFT JOIN services s_fee ON s_fee.id = cl.consultation_service_id
-      LEFT JOIN clinic_service_doctor_prices sdp_fee ON sdp_fee.service_id = cl.consultation_service_id AND sdp_fee.doctor_id = a.doctor_id
-      LEFT JOIN LATERAL (
-        SELECT COALESCE(SUM(cd.quantity * cd.unit_price), 0) AS total
+      LEFT JOIN clinic_service_doctor_prices sdp_fee
+        ON sdp_fee.service_id = cl.consultation_service_id AND sdp_fee.doctor_id = a.doctor_id
+
+      -- أدوية الاستشارة: مجمَّعة مسبقاً بدلاً من LATERAL per-row
+      LEFT JOIN (
+        SELECT consultation_id, COALESCE(SUM(cd.quantity * cd.unit_price), 0) AS total
         FROM clinic_consultation_drugs cd
-        WHERE cd.consultation_id = c.id
-      ) drugs_totals ON true
-      LEFT JOIN LATERAL (
-        SELECT COALESCE(json_agg(json_build_object(
-          'departmentId', sub.department_id,
-          'departmentName', sub.dept_name,
-          'total', sub.dept_total
-        )), '[]'::json) AS details
+        GROUP BY consultation_id
+      ) drugs_agg ON drugs_agg.consultation_id = c.id
+
+      -- خدمات الموعد مجمَّعة حسب القسم (مرحلتان بدلاً من LATERAL):
+      --   1) inner_agg: GROUP BY (appointment_id, department_id) → totals per dept
+      --   2) svc_by_dept: json_agg per appointment_id → JSON array
+      -- فلتر consultation_service_id مُنقول داخل الـ subquery عبر JOIN إضافي على clinic_clinics
+      LEFT JOIN (
+        SELECT
+          inner_agg.appointment_id,
+          COALESCE(
+            json_agg(json_build_object(
+              'departmentId',   inner_agg.department_id,
+              'departmentName', inner_agg.dept_name,
+              'total',          inner_agg.dept_total
+            )),
+            '[]'::json
+          ) AS details
         FROM (
           SELECT
-            COALESCE(dep.id, '__none__') AS department_id,
-            COALESCE(dep.name_ar, 'بدون قسم') AS dept_name,
+            co.appointment_id,
+            COALESCE(dep.id,      '__none__')   AS department_id,
+            COALESCE(dep.name_ar, 'بدون قسم')  AS dept_name,
             SUM(
-              CASE WHEN co.service_id IS NOT NULL THEN COALESCE(co.unit_price, sv.base_price, 0) * COALESCE(co.quantity, 1)
-                   ELSE COALESCE(co.unit_price, 0) * COALESCE(co.quantity, 1) END
+              CASE WHEN co.service_id IS NOT NULL
+                   THEN COALESCE(co.unit_price, sv.base_price, 0) * COALESCE(co.quantity, 1)
+                   ELSE COALESCE(co.unit_price, 0) * COALESCE(co.quantity, 1)
+              END
             ) AS dept_total
           FROM clinic_orders co
+          JOIN clinic_appointments ca ON ca.id = co.appointment_id
+          JOIN clinic_clinics cc ON cc.id = ca.clinic_id
           LEFT JOIN services sv ON sv.id = co.service_id
           LEFT JOIN departments dep ON dep.id = sv.department_id
-          WHERE co.appointment_id = a.id
-            AND co.order_type = 'service'
+          WHERE co.order_type = 'service'
             AND co.status != 'cancelled'
-            AND (cl.consultation_service_id IS NULL OR co.service_id IS DISTINCT FROM cl.consultation_service_id)
-          GROUP BY dep.id, dep.name_ar
-        ) sub
-      ) services_by_dept ON true
-      LEFT JOIN LATERAL (
+            AND (cc.consultation_service_id IS NULL
+                 OR co.service_id IS DISTINCT FROM cc.consultation_service_id)
+          GROUP BY co.appointment_id, dep.id, dep.name_ar
+        ) inner_agg
+        GROUP BY inner_agg.appointment_id
+      ) svc_by_dept ON svc_by_dept.appointment_id = a.id
+
+      -- إحصاءات التنفيذ: مجمَّعة مسبقاً بدلاً من LATERAL per-row
+      LEFT JOIN (
         SELECT
-          COUNT(*)::int AS total_orders,
-          COUNT(*) FILTER (WHERE eo.status = 'executed')::int AS executed_orders,
-          COUNT(*) FILTER (WHERE eo.status = 'pending')::int AS pending_orders,
-          COUNT(*) FILTER (WHERE eo.order_type = 'service' AND eo.status != 'cancelled')::int AS total_service_orders,
-          COUNT(*) FILTER (WHERE eo.order_type = 'service' AND eo.status = 'executed')::int AS executed_service_orders,
+          eo.appointment_id,
+          COUNT(*)::int                                                                        AS total_orders,
+          COUNT(*) FILTER (WHERE eo.status = 'executed')::int                                AS executed_orders,
+          COUNT(*) FILTER (WHERE eo.status = 'pending')::int                                 AS pending_orders,
+          COUNT(*) FILTER (WHERE eo.order_type = 'service'  AND eo.status != 'cancelled')::int AS total_service_orders,
+          COUNT(*) FILTER (WHERE eo.order_type = 'service'  AND eo.status = 'executed')::int   AS executed_service_orders,
           COUNT(*) FILTER (WHERE eo.order_type = 'pharmacy' AND eo.status != 'cancelled')::int AS total_pharmacy_orders,
-          COUNT(*) FILTER (WHERE eo.order_type = 'pharmacy' AND eo.status = 'executed')::int AS executed_pharmacy_orders
+          COUNT(*) FILTER (WHERE eo.order_type = 'pharmacy' AND eo.status = 'executed')::int   AS executed_pharmacy_orders
         FROM clinic_orders eo
-        WHERE eo.appointment_id = a.id AND eo.status != 'cancelled'
-      ) exec_stats ON true
+        WHERE eo.status != 'cancelled'
+        GROUP BY eo.appointment_id
+      ) exec_agg ON exec_agg.appointment_id = a.id
+
       WHERE a.appointment_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
         AND a.status IN ('in_consultation', 'done')
         ${doctorFilter}
