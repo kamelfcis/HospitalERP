@@ -212,6 +212,7 @@ export function useChartOfAccounts() {
   };
 
   const buildTree = (accountsList: Account[]): AccountTreeNode[] => {
+    const accountIds = new Set(accountsList.map(a => a.id));
     const accountMap = new Map<string | null, AccountTreeNode[]>();
     
     accountsList.forEach((account) => {
@@ -229,7 +230,13 @@ export function useChartOfAccounts() {
       return node;
     };
 
-    const rootNodes = accountMap.get(null) || [];
+    const rootNodes: AccountTreeNode[] = [];
+    accountMap.forEach((nodes, parentId) => {
+      if (parentId === null || !accountIds.has(parentId)) {
+        rootNodes.push(...nodes);
+      }
+    });
+    rootNodes.sort((a, b) => a.code.localeCompare(b.code));
     return rootNodes.map(assignChildren);
   };
 
