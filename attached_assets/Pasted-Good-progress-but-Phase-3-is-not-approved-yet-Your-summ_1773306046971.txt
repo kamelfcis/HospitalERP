@@ -1,0 +1,68 @@
+Good progress, but Phase 3 is not approved yet.
+
+Your summary covered mainly frontend changes.
+Before approval, I need full verification of the critical backend/DB parts too.
+
+Return a complete Phase 3 report with proof for all parts:
+
+1) DB migration verification
+Confirm that these columns now exist in clinic_appointments:
+- payment_type
+- insurance_company
+- payer_reference
+- invoice_id
+
+2) Backend verification
+Show clearly that:
+- createAppointment now creates consultation billing at reception
+- saveConsultation now has zero financial logic
+- doctor save no longer creates treasury_transactions
+- doctor save no longer creates consultation-fee clinic_orders
+- status in_consultation is no longer triggered by autosave
+
+3) Payment behavior verification
+Verify these scenarios explicitly:
+A) CASH booking:
+- appointment created
+- patient_invoice_headers created
+- patient_invoice_lines created
+- patient_invoice_payments created
+- treasury_transactions created
+- invoice status = paid
+
+B) INSURANCE booking:
+- appointment created
+- invoice created
+- no patient_invoice_payments
+- no treasury_transactions
+- invoice status = pending
+
+C) CONTRACT booking:
+- appointment created
+- invoice created
+- no patient_invoice_payments
+- no treasury_transactions
+- invoice status = pending
+
+4) Idempotency verification
+Prove that consultation fee is not duplicated:
+- re-saving consultation does not create another consultation fee
+- re-opening doctor consultation does not create another consultation fee
+- appointment retry does not duplicate consultation billing
+
+5) Doctor queue filtering verification
+Verify:
+- reception sees full queue for assigned clinic
+- doctor sees only appointments assigned to their doctor_id
+- doctor with no linked doctor record gets empty queue + noDoctorLinked warning
+
+6) Files changed
+List all backend and frontend files actually changed.
+
+RETURN EXACTLY:
+1) Files changed
+2) DB changes verified
+3) Backend behavior verified
+4) Frontend behavior verified
+5) Scenario test results
+6) Remaining risks / assumptions
