@@ -1,10 +1,12 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Search, Printer } from "lucide-react";
+import { FileText, Printer } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import type { Account } from "@shared/schema";
+import { AccountLookup } from "@/components/lookups/AccountLookup";
+import type { LookupItem } from "@/lib/lookupTypes";
 
 interface LedgerLine {
   id: string;
@@ -33,15 +35,8 @@ export default function AccountLedger() {
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
-  const [selectedAccountDisplay, setSelectedAccountDisplay] = useState<string>("");
   const [startDate, setStartDate] = useState(firstDayOfMonth.toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState(today.toISOString().split("T")[0]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showDropdown, setShowDropdown] = useState(false);
-
-  const { data: accounts, isLoading: accountsLoading } = useQuery<Account[]>({
-    queryKey: ["/api/accounts"],
-  });
 
   const ledgerUrl = selectedAccountId
     ? `/api/reports/account-ledger?accountId=${selectedAccountId}&startDate=${startDate}&endDate=${endDate}`
@@ -51,66 +46,6 @@ export default function AccountLedger() {
     queryKey: [ledgerUrl],
     enabled: !!ledgerUrl,
   });
-
-  const matchesPattern = (text: string, pattern: string): boolean => {
-    if (!pattern) return true;
-    const normalizedText = text.toLowerCase().trim();
-    const normalizedPattern = pattern.toLowerCase().trim();
-    
-    if (normalizedPattern.includes("%")) {
-      const parts = normalizedPattern.split("%").filter(p => p.length > 0);
-      let lastIndex = 0;
-      for (const part of parts) {
-        const index = normalizedText.indexOf(part, lastIndex);
-        if (index === -1) return false;
-        lastIndex = index + part.length;
-      }
-      return true;
-    }
-    
-    return normalizedText.includes(normalizedPattern);
-  };
-
-  const filteredAccounts = useMemo(() => {
-    if (!accounts) return [];
-    if (!searchQuery.trim()) {
-      return accounts.filter(a => a.isActive).slice(0, 50);
-    }
-    
-    const query = searchQuery.trim();
-    const results = accounts.filter((account) => {
-      if (!account.isActive) return false;
-      
-      if (matchesPattern(account.code, query)) return true;
-      if (matchesPattern(account.name, query)) return true;
-      
-      const combinedText = `${account.code} ${account.name}`;
-      return matchesPattern(combinedText, query);
-    });
-    
-    results.sort((a, b) => {
-      const aStartsWithCode = a.code.startsWith(query);
-      const bStartsWithCode = b.code.startsWith(query);
-      if (aStartsWithCode && !bStartsWithCode) return -1;
-      if (!aStartsWithCode && bStartsWithCode) return 1;
-      
-      const aNameStarts = a.name.startsWith(query);
-      const bNameStarts = b.name.startsWith(query);
-      if (aNameStarts && !bNameStarts) return -1;
-      if (!aNameStarts && bNameStarts) return 1;
-      
-      return a.code.localeCompare(b.code);
-    });
-    
-    return results;
-  }, [accounts, searchQuery]);
-
-  const selectAccount = (account: Account) => {
-    setSelectedAccountId(account.id);
-    setSelectedAccountDisplay(`${account.code} - ${account.name}`);
-    setShowDropdown(false);
-    setSearchQuery("");
-  };
 
   const handlePrint = () => {
     window.print();
@@ -145,56 +80,15 @@ export default function AccountLedger() {
 
       <div className="peachtree-grid p-3">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="md:col-span-2 space-y-1 relative">
+          <div className="md:col-span-2 space-y-1">
             <label className="text-xs font-medium">الحساب</label>
-            <div className="relative">
-              <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground z-10" />
-              <input
-                type="text"
-                placeholder="ابحث بالكود أو الاسم..."
-                value={showDropdown ? searchQuery : selectedAccountDisplay}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowDropdown(true);
-                }}
-                onFocus={() => {
-                  setShowDropdown(true);
-                  setSearchQuery("");
-                }}
-                className="peachtree-input w-full pr-7"
-                data-testid="input-search-account"
-              />
-            </div>
-            {showDropdown && (
-              <div className="absolute z-50 top-full right-0 left-0 mt-1 bg-popover border rounded shadow-lg max-h-72 overflow-auto">
-                <div className="sticky top-0 px-2 py-1.5 text-xs text-muted-foreground bg-muted border-b flex items-center justify-between">
-                  <span>استخدم % للبحث المتقدم (مثال: خصم%مكتسب)</span>
-                  <span className="text-primary font-medium">{filteredAccounts.length} نتيجة</span>
-                </div>
-                {filteredAccounts.length === 0 ? (
-                  <div className="p-3 text-center text-xs text-muted-foreground">
-                    لا توجد نتائج للبحث "{searchQuery}"
-                  </div>
-                ) : (
-                  filteredAccounts.slice(0, 50).map((acc) => (
-                    <div
-                      key={acc.id}
-                      className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-accent text-xs border-b border-muted/50 last:border-0 ${selectedAccountId === acc.id ? "bg-accent" : ""}`}
-                      onClick={() => selectAccount(acc)}
-                      data-testid={`option-account-${acc.id}`}
-                    >
-                      <span className="font-mono w-16 text-muted-foreground flex-shrink-0">{acc.code}</span>
-                      <span className="flex-1">{acc.name}</span>
-                    </div>
-                  ))
-                )}
-                {filteredAccounts.length > 50 && (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted text-center">
-                    +{filteredAccounts.length - 50} نتيجة أخرى - حدد البحث أكثر
-                  </div>
-                )}
-              </div>
-            )}
+            <AccountLookup
+              value={selectedAccountId}
+              onChange={(item: LookupItem | null) => setSelectedAccountId(item?.id ?? "")}
+              placeholder="ابحث بالكود أو الاسم..."
+              clearable
+              data-testid="lookup-account-ledger"
+            />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium">من تاريخ</label>
