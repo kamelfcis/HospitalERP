@@ -82,21 +82,65 @@ const methods = {
     });
   },
 
-  async getDoctorSettlements(this: DatabaseStorage, params?: { doctorName?: string }): Promise<(DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]> {
-    const rows = params?.doctorName
-      ? await db.select().from(doctorSettlements)
-          .where(eq(doctorSettlements.doctorName, params.doctorName))
-          .orderBy(desc(doctorSettlements.createdAt))
-      : await db.select().from(doctorSettlements).orderBy(desc(doctorSettlements.createdAt));
+  async getDoctorSettlements(this: DatabaseStorage, params?: { doctorName?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{ data: (DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]; total: number; page: number; pageSize: number }> {
+    const page     = Math.max(1, params?.page     ?? 1);
+    const pageSize = Math.min(200, Math.max(1, params?.pageSize ?? 50));
+    const offset   = (page - 1) * pageSize;
 
-    const results: (DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[] = [];
-    for (const row of rows) {
-      const allocs = await db.select().from(doctorSettlementAllocations)
-        .where(eq(doctorSettlementAllocations.settlementId, row.id))
-        .orderBy(asc(doctorSettlementAllocations.createdAt));
-      results.push({ ...row, allocations: allocs });
-    }
-    return results;
+    const whereParts: string[] = [];
+    if (params?.doctorName) whereParts.push(`ds.doctor_name = '${params.doctorName.replace(/'/g, "''")}'`);
+    if (params?.dateFrom)   whereParts.push(`ds.payment_date >= '${params.dateFrom}'`);
+    if (params?.dateTo)     whereParts.push(`ds.payment_date <= '${params.dateTo}'`);
+    const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+
+    const result = await db.execute(sql`
+      SELECT
+        ds.id,
+        ds.doctor_name,
+        ds.payment_date,
+        ds.amount,
+        ds.payment_method,
+        ds.settlement_uuid,
+        ds.notes,
+        ds.gl_posted,
+        ds.created_at,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id',           dsa.id,
+              'settlementId', dsa.settlement_id,
+              'transferId',   dsa.transfer_id,
+              'amount',       dsa.amount::text,
+              'createdAt',    dsa.created_at
+            ) ORDER BY dsa.created_at ASC
+          ) FILTER (WHERE dsa.id IS NOT NULL),
+          '[]'::json
+        ) AS allocations,
+        COUNT(*) OVER() AS total_count
+      FROM doctor_settlements ds
+      LEFT JOIN doctor_settlement_allocations dsa ON dsa.settlement_id = ds.id
+      ${sql.raw(whereClause)}
+      GROUP BY ds.id
+      ORDER BY ds.created_at DESC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const rawRows = result.rows as any[];
+    const total   = rawRows.length > 0 ? Number(rawRows[0].total_count) : 0;
+    const data    = rawRows.map(row => ({
+      id:              row.id,
+      doctorName:      row.doctor_name,
+      paymentDate:     row.payment_date,
+      amount:          row.amount,
+      paymentMethod:   row.payment_method,
+      settlementUuid:  row.settlement_uuid,
+      notes:           row.notes,
+      glPosted:        row.gl_posted,
+      createdAt:       row.created_at,
+      allocations:     Array.isArray(row.allocations) ? row.allocations : [],
+    })) as (DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[];
+
+    return { data, total, page, pageSize };
   },
 
   async getDoctorOutstandingTransfers(this: DatabaseStorage, doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string })[]> {
@@ -350,23 +394,69 @@ const methods = {
     await db.delete(userTreasuries).where(eq(userTreasuries.userId, userId));
   },
 
-  async getTreasuryStatement(this: DatabaseStorage, params: { treasuryId: string; dateFrom?: string; dateTo?: string }): Promise<{ transactions: TreasuryTransaction[]; totalIn: string; totalOut: string; balance: string }> {
-    let conds = [eq(treasuryTransactions.treasuryId, params.treasuryId)];
-    if (params.dateFrom) conds.push(sql`${treasuryTransactions.transactionDate} >= ${params.dateFrom}`);
-    if (params.dateTo)   conds.push(sql`${treasuryTransactions.transactionDate} <= ${params.dateTo}`);
-    const rows = await db.select().from(treasuryTransactions)
-      .where(and(...conds))
-      .orderBy(treasuryTransactions.transactionDate, treasuryTransactions.createdAt);
-    let totalIn = 0, totalOut = 0;
-    for (const r of rows) {
-      if (r.type === "in")  totalIn  += parseFloat(r.amount);
-      else                  totalOut += parseFloat(r.amount);
-    }
+  async getTreasuryStatement(this: DatabaseStorage, params: { treasuryId: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{ transactions: TreasuryTransaction[]; total: number; page: number; pageSize: number; totalIn: string; totalOut: string; balance: string; pageOpeningBalance: number }> {
+    const page     = Math.max(1, params.page     ?? 1);
+    const pageSize = Math.min(500, Math.max(1, params.pageSize ?? 100));
+    const offset   = (page - 1) * pageSize;
+
+    const dateCondFrom = params.dateFrom ? sql`AND tt.transaction_date >= ${params.dateFrom}` : sql``;
+    const dateCondTo   = params.dateTo   ? sql`AND tt.transaction_date <= ${params.dateTo}`   : sql``;
+
+    const aggResult = await db.execute(sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN tt.type = 'in'  THEN tt.amount::numeric ELSE 0 END), 0) AS total_in,
+        COALESCE(SUM(CASE WHEN tt.type != 'in' THEN tt.amount::numeric ELSE 0 END), 0) AS total_out
+      FROM treasury_transactions tt
+      WHERE tt.treasury_id = ${params.treasuryId}
+        ${dateCondFrom}
+        ${dateCondTo}
+    `);
+    const agg = aggResult.rows[0] as any;
+    const totalIn  = parseFloat(agg?.total_in  ?? "0");
+    const totalOut = parseFloat(agg?.total_out ?? "0");
+
+    const openingResult = await db.execute(sql`
+      SELECT COALESCE(SUM(CASE WHEN type = 'in' THEN amount::numeric ELSE -amount::numeric END), 0) AS opening
+      FROM (
+        SELECT type, amount
+        FROM treasury_transactions
+        WHERE treasury_id = ${params.treasuryId}
+          ${dateCondFrom}
+          ${dateCondTo}
+        ORDER BY transaction_date ASC, created_at ASC
+        LIMIT ${offset}
+      ) pre
+    `);
+    const pageOpeningBalance = parseFloat((openingResult.rows[0] as any)?.opening ?? "0");
+
+    const listResult = await db.execute(sql`
+      SELECT id, treasury_id, type, amount, description, source_type, source_id, transaction_date, created_at
+      FROM treasury_transactions tt
+      WHERE tt.treasury_id = ${params.treasuryId}
+        ${dateCondFrom}
+        ${dateCondTo}
+      ORDER BY tt.transaction_date ASC, tt.created_at ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const countResult = await db.execute(sql`
+      SELECT COUNT(*) AS total
+      FROM treasury_transactions tt
+      WHERE tt.treasury_id = ${params.treasuryId}
+        ${dateCondFrom}
+        ${dateCondTo}
+    `);
+    const total = Number((countResult.rows[0] as any)?.total ?? 0);
+
     return {
-      transactions: rows,
-      totalIn:  totalIn.toFixed(2),
-      totalOut: totalOut.toFixed(2),
-      balance:  (totalIn - totalOut).toFixed(2),
+      transactions:        listResult.rows as TreasuryTransaction[],
+      total,
+      page,
+      pageSize,
+      totalIn:             totalIn.toFixed(2),
+      totalOut:            totalOut.toFixed(2),
+      balance:             (totalIn - totalOut).toFixed(2),
+      pageOpeningBalance,
     };
   },
 

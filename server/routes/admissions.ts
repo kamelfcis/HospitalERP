@@ -89,8 +89,12 @@ export function registerAdmissionsRoutes(app: Express) {
       if (req.query.dateFrom as string) filters.dateFrom = req.query.dateFrom as string;
       if (req.query.dateTo as string)   filters.dateTo   = req.query.dateTo as string;
       if (req.query.deptId as string)   filters.deptId   = req.query.deptId as string;
-      const list = await storage.getAdmissions(filters);
-      res.json(list);
+      if (req.query.page as string) {
+        filters.page     = parseInt(String(req.query.page))     || 1;
+        filters.pageSize = parseInt(String(req.query.pageSize || "50")) || 50;
+      }
+      const result = await storage.getAdmissions(filters);
+      res.json(result);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
       res.status(500).json({ message: _em });

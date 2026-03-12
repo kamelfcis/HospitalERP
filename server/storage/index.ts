@@ -467,7 +467,7 @@ export interface IStorage {
   // Patients
   getPatients(limit?: number): Promise<Patient[]>;
   searchPatients(search: string): Promise<Patient[]>;
-  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[] }): Promise<Record<string, unknown>[]>;
+  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }>;
   getPatient(id: string): Promise<Patient | undefined>;
   getPatientJourney(patientId: string): Promise<Record<string, unknown> | null>;
   getPatientTimeline(patientId: string): Promise<Record<string, unknown> | null>;
@@ -516,7 +516,7 @@ export interface IStorage {
   getDoctorStatement(params: { doctorName: string; dateFrom?: string; dateTo?: string }): Promise<Record<string, unknown>[]>;
 
   // Admissions
-  getAdmissions(filters?: { status?: string; search?: string }): Promise<Admission[]>;
+  getAdmissions(filters?: { status?: string; search?: string; dateFrom?: string; dateTo?: string; deptId?: string; page?: number; pageSize?: number }): Promise<any[] | { data: any[]; total: number; page: number; pageSize: number }>;
   getAdmission(id: string): Promise<Admission | undefined>;
   createAdmission(data: InsertAdmission): Promise<Admission>;
   updateAdmission(id: string, data: Partial<InsertAdmission>): Promise<Admission>;
@@ -550,7 +550,7 @@ export interface IStorage {
   transferToDoctorPayable(params: { invoiceId: string; doctorName: string; amount: string; clientRequestId: string; notes?: string }): Promise<DoctorTransfer>;
 
   // Doctor Settlements
-  getDoctorSettlements(params?: { doctorName?: string }): Promise<(DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]>;
+  getDoctorSettlements(params?: { doctorName?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{ data: (DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]; total: number; page: number; pageSize: number }>;
   getDoctorOutstandingTransfers(doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string })[]>;
   createDoctorSettlement(params: { doctorName: string; paymentDate: string; amount: string; paymentMethod: string; settlementUuid: string; notes?: string; allocations?: { transferId: string; amount: string }[] }): Promise<DoctorSettlement & { allocations: DoctorSettlementAllocation[] }>;
 
@@ -565,7 +565,7 @@ export interface IStorage {
   getAllUserTreasuries(): Promise<{ userId: string; treasuryId: string; treasuryName: string; userName: string }[]>;
   assignUserTreasury(userId: string, treasuryId: string): Promise<void>;
   removeUserTreasury(userId: string): Promise<void>;
-  getTreasuryStatement(params: { treasuryId: string; dateFrom?: string; dateTo?: string }): Promise<{ transactions: TreasuryTransaction[]; totalIn: string; totalOut: string; balance: string }>;
+  getTreasuryStatement(params: { treasuryId: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{ transactions: TreasuryTransaction[]; total: number; page: number; pageSize: number; totalIn: string; totalOut: string; balance: string; pageOpeningBalance: number }>;
   createTreasuryTransactionsForInvoice(invoiceId: string, finalizationDate: string): Promise<void>;
 
   // Account Mappings

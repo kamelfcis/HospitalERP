@@ -58,12 +58,26 @@ const methods = {
       .limit(50);
   },
 
-  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[] }): Promise<Record<string, unknown>[]> {
+  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }> {
     const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
 
+    const page     = Math.max(1, filters?.page     ?? 1);
+    const pageSize = Math.min(200, Math.max(1, filters?.pageSize ?? 50));
+    const offset   = (page - 1) * pageSize;
+
+    const hasDateFilter = !!(filters?.dateFrom || filters?.dateTo);
+
+    let effectiveDateFrom = filters?.dateFrom;
+    let effectiveDateTo   = filters?.dateTo;
+    if (!hasDateFilter) {
+      const d90 = new Date();
+      d90.setDate(d90.getDate() - 90);
+      effectiveDateFrom = d90.toISOString().slice(0, 10);
+    }
+
     const invConds: string[] = ["pih.status != 'cancelled'"];
-    if (filters?.dateFrom) invConds.push(`pih.invoice_date >= '${filters.dateFrom}'`);
-    if (filters?.dateTo)   invConds.push(`pih.invoice_date <= '${filters.dateTo}'`);
+    if (effectiveDateFrom) invConds.push(`pih.invoice_date >= '${effectiveDateFrom}'`);
+    if (effectiveDateTo)   invConds.push(`pih.invoice_date <= '${effectiveDateTo}'`);
     if (filters?.deptIds && filters.deptIds.length > 0) {
       const ids = filters.deptIds.map(d => `'${d.replace(/'/g, "''")}'`).join(", ");
       invConds.push(
@@ -74,8 +88,7 @@ const methods = {
     }
     const invFilter = invConds.join(" AND ");
 
-    const hasDateFilter = !!(filters?.dateFrom || filters?.dateTo);
-    const joinType = hasDateFilter ? "JOIN" : "LEFT JOIN";
+    const joinType = "JOIN";
 
     let patientFilter = "p.is_active = true";
     if (filters?.search?.trim()) {
@@ -117,7 +130,8 @@ const methods = {
         s.latest_invoice_id,
         s.latest_invoice_number,
         s.latest_invoice_status,
-        s.latest_doctor_name
+        s.latest_doctor_name,
+        COUNT(*) OVER()                    AS total_count
       FROM patients p
       ${sql.raw(joinType)} (
         SELECT
@@ -168,10 +182,17 @@ const methods = {
       ) s ON s.patient_name = p.full_name
       WHERE ${sql.raw(patientFilter)}
       ORDER BY p.created_at DESC
+      LIMIT ${pageSize} OFFSET ${offset}
     `);
-    return (result.rows as any[]).map(row =>
-      Object.fromEntries(Object.entries(row).map(([k, v]) => [toCamel(k), v]))
-    );
+
+    const rawRows = result.rows as any[];
+    const total   = rawRows.length > 0 ? Number(rawRows[0].total_count) : 0;
+    const rows    = rawRows.map(row => {
+      const { total_count, ...rest } = row;
+      return Object.fromEntries(Object.entries(rest).map(([k, v]) => [toCamel(k), v]));
+    });
+
+    return { rows, total, page, pageSize };
   },
 
   async getPatient(this: DatabaseStorage, id: string): Promise<Patient | undefined> {
@@ -601,11 +622,25 @@ const methods = {
     return true;
   },
 
-  async getAdmissions(this: DatabaseStorage, filters?: { status?: string; search?: string; dateFrom?: string; dateTo?: string; deptId?: string }): Promise<any[]> {
+  async getAdmissions(this: DatabaseStorage, filters?: { status?: string; search?: string; dateFrom?: string; dateTo?: string; deptId?: string; page?: number; pageSize?: number }): Promise<any[] | { data: any[]; total: number; page: number; pageSize: number }> {
+    const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    const paginate = filters?.page !== undefined;
+    const page     = Math.max(1, filters?.page ?? 1);
+    const pageSize = Math.min(200, Math.max(1, filters?.pageSize ?? 50));
+    const offset   = (page - 1) * pageSize;
+
     const conds: any[] = [];
-    if (filters?.status)   conds.push(sql`a.status = ${filters.status}`);
-    if (filters?.dateFrom) conds.push(sql`a.admission_date >= ${filters.dateFrom}`);
-    if (filters?.dateTo)   conds.push(sql`a.admission_date <= ${filters.dateTo}`);
+    if (filters?.status) conds.push(sql`a.status = ${filters.status}`);
+
+    if (filters?.dateFrom) {
+      conds.push(sql`a.admission_date >= ${filters.dateFrom}`);
+    } else if (paginate && !filters?.dateTo) {
+      const d30 = new Date();
+      d30.setDate(d30.getDate() - 30);
+      conds.push(sql`a.admission_date >= ${d30.toISOString().slice(0, 10)}`);
+    }
+    if (filters?.dateTo) conds.push(sql`a.admission_date <= ${filters.dateTo}`);
+
     if (filters?.search) {
       const s = `%${filters.search}%`;
       conds.push(sql`(a.patient_name ILIKE ${s} OR a.admission_number ILIKE ${s} OR a.patient_phone ILIKE ${s} OR a.doctor_name ILIKE ${s})`);
@@ -616,6 +651,14 @@ const methods = {
 
     const whereExpr = conds.length > 0
       ? sql`WHERE ${sql.join(conds, sql` AND `)}`
+      : sql``;
+
+    const limitClause = paginate
+      ? sql`LIMIT ${pageSize} OFFSET ${offset}`
+      : sql``;
+
+    const countCol = paginate
+      ? sql`, COUNT(*) OVER() AS total_count`
       : sql``;
 
     const result = await db.execute(sql`
@@ -629,6 +672,7 @@ const methods = {
         inv_agg.latest_invoice_status                   AS latest_invoice_status,
         inv_agg.latest_invoice_dept_id                  AS latest_invoice_dept_id,
         inv_agg.latest_invoice_dept_name                AS latest_invoice_dept_name
+        ${countCol}
       FROM admissions a
       LEFT JOIN (
         SELECT
@@ -659,12 +703,23 @@ const methods = {
       ) inv_agg ON inv_agg.eff_admission_id = a.id
       ${whereExpr}
       ORDER BY a.created_at DESC
+      ${limitClause}
     `);
 
-    const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-    return (result.rows as any[]).map(row =>
-      Object.fromEntries(Object.entries(row).map(([k, v]) => [toCamel(k), v]))
-    );
+    const rawRows = result.rows as any[];
+
+    if (!paginate) {
+      return rawRows.map(row =>
+        Object.fromEntries(Object.entries(row).map(([k, v]) => [toCamel(k), v]))
+      );
+    }
+
+    const total = rawRows.length > 0 ? Number(rawRows[0].total_count) : 0;
+    const data  = rawRows.map(row => {
+      const { total_count, ...rest } = row;
+      return Object.fromEntries(Object.entries(rest).map(([k, v]) => [toCamel(k), v]));
+    });
+    return { data, total, page, pageSize };
   },
 
   async getAdmission(this: DatabaseStorage, id: string): Promise<Admission | undefined> {

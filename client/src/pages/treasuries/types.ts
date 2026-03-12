@@ -37,9 +37,13 @@ export interface TreasuryTransaction {
 
 export interface TreasuryStatement {
   transactions: TreasuryTransaction[];
+  total: number;
+  page: number;
+  pageSize: number;
   totalIn: string;
   totalOut: string;
   balance: string;
+  pageOpeningBalance: number;
 }
 
 export const emptyForm = { name: "", glAccountId: "", isActive: true, notes: "" };

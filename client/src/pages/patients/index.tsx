@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -11,7 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, Users, FolderOpen, ArrowRight, Building2, AlertCircle } from "lucide-react";
+import { Plus, Search, Users, FolderOpen, ArrowRight, Building2, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
 import type { Patient } from "@shared/schema";
 import type { PatientStats, PrefilledPatient } from "./types";
 import { useDebounce } from "./useDebounce";
@@ -33,6 +33,8 @@ export default function Patients() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom,    setDateFrom]    = useState("");
   const [dateTo,      setDateTo]      = useState("");
+  const [page,        setPage]        = useState(1);
+  const PAGE_SIZE = 50;
   const [deptId,      setDeptId]      = useState("");
 
   const [dialogOpen,        setDialogOpen]        = useState(false);
@@ -44,6 +46,8 @@ export default function Patients() {
   const [selectedPatientRow, setSelectedPatientRow] = useState<PatientStats | null>(null);
 
   const debouncedSearch = useDebounce(searchQuery, 350);
+
+  useEffect(() => { setPage(1); }, [debouncedSearch, dateFrom, dateTo, deptId]);
 
   const { data: scope } = useQuery<PatientScope>({
     queryKey: ["/api/patient-scope"],
@@ -61,9 +65,11 @@ export default function Patients() {
   if (dateFrom) statsParams.set("dateFrom", dateFrom);
   if (dateTo)   statsParams.set("dateTo",   dateTo);
   if (isFullAccess && deptId) statsParams.set("deptId", deptId);
+  statsParams.set("page",     String(page));
+  statsParams.set("pageSize", String(PAGE_SIZE));
 
-  const { data: rows = [], isLoading, isError } = useQuery<PatientStats[]>({
-    queryKey: ["/api/patients/stats", debouncedSearch, dateFrom, dateTo, isFullAccess ? deptId : "__scoped__"],
+  const { data: statsResult, isLoading, isError } = useQuery<{ rows: PatientStats[]; total: number; page: number; pageSize: number }>({
+    queryKey: ["/api/patients/stats", debouncedSearch, dateFrom, dateTo, isFullAccess ? deptId : "__scoped__", page],
     queryFn: async () => {
       const res = await fetch(`/api/patients/stats?${statsParams}`, { credentials: "include" });
       if (!res.ok) {
@@ -74,6 +80,10 @@ export default function Patients() {
     },
     enabled: scope !== undefined,
   });
+
+  const rows       = statsResult?.rows       ?? [];
+  const totalCount = statsResult?.total      ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const hasFilter = isFullAccess ? !!(dateFrom || dateTo || deptId) : !!(dateFrom || dateTo);
 
@@ -130,6 +140,7 @@ export default function Patients() {
   function handleClearFilters() {
     setDateFrom(""); setDateTo("");
     if (isFullAccess) setDeptId("");
+    setPage(1);
   }
   function handleBackToList() {
     setActiveTab("list");
@@ -151,7 +162,7 @@ export default function Patients() {
                 سجل المرضى
               </h1>
               <p className="text-xs text-muted-foreground">
-                إدارة بيانات المرضى ({rows.length} مريض)
+                إدارة بيانات المرضى ({totalCount} مريض)
               </p>
             </div>
             <TabsList className="h-7 text-xs">
@@ -284,6 +295,33 @@ export default function Patients() {
               onNewVisit={handleNewVisit}
             />
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-1 py-1">
+              <span className="text-xs text-muted-foreground">
+                عرض {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, totalCount)} من {totalCount} مريض
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline" size="sm" className="h-6 px-2"
+                  disabled={page <= 1}
+                  onClick={() => setPage(p => p - 1)}
+                  data-testid="button-patients-prev-page"
+                >
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
+                <span className="text-xs px-2">صفحة {page} من {totalPages}</span>
+                <Button
+                  variant="outline" size="sm" className="h-6 px-2"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(p => p + 1)}
+                  data-testid="button-patients-next-page"
+                >
+                  <ChevronLeft className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
 
         </div>}
 

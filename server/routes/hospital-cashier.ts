@@ -368,7 +368,9 @@ export function registerCashierRoutes(app: Express) {
   app.get("/api/treasuries/:id/statement", requireAuth, async (req, res) => {
     try {
       const { dateFrom, dateTo } = req.query as Record<string, string>;
-      res.json(await storage.getTreasuryStatement({ treasuryId: req.params.id as string, dateFrom, dateTo }));
+      const page     = parseInt(String(req.query.page     || "1"))   || 1;
+      const pageSize = parseInt(String(req.query.pageSize || "100")) || 100;
+      res.json(await storage.getTreasuryStatement({ treasuryId: req.params.id as string, dateFrom, dateTo, page, pageSize }));
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 

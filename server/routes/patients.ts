@@ -70,7 +70,9 @@ export function registerPatientsRoutes(app: Express) {
   app.get("/api/patients/stats", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const { search, dateFrom, dateTo } = req.query as Record<string, string>;
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const page     = parseInt(String(req.query.page     || "1"))  || 1;
+      const pageSize = parseInt(String(req.query.pageSize || "50")) || 50;
+      const scope    = await storage.getUserCashierScope(req.session.userId!);
 
       let deptIds: string[] | undefined;
       if (!scope.isFullAccess) {
@@ -83,8 +85,8 @@ export function registerPatientsRoutes(app: Express) {
         if (adminDeptId) deptIds = [adminDeptId];
       }
 
-      const list = await storage.getPatientStats({ search, dateFrom, dateTo, deptIds });
-      return res.json(list);
+      const result = await storage.getPatientStats({ search, dateFrom, dateTo, deptIds, page, pageSize });
+      return res.json(result);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ message: _em });
@@ -238,9 +240,13 @@ export function registerPatientsRoutes(app: Express) {
 
   app.get("/api/doctor-settlements", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
-      const { doctorName } = req.query;
-      const data = await storage.getDoctorSettlements(doctorName ? { doctorName: String(doctorName) } : undefined);
-      res.json(data);
+      const doctorName = req.query.doctorName ? String(req.query.doctorName) : undefined;
+      const dateFrom   = req.query.dateFrom   ? String(req.query.dateFrom)   : undefined;
+      const dateTo     = req.query.dateTo     ? String(req.query.dateTo)     : undefined;
+      const page       = parseInt(String(req.query.page     || "1"))  || 1;
+      const pageSize   = parseInt(String(req.query.pageSize || "50")) || 50;
+      const result     = await storage.getDoctorSettlements({ doctorName, dateFrom, dateTo, page, pageSize });
+      res.json(result);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
