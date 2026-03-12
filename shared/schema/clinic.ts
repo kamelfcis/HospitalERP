@@ -53,6 +53,14 @@ export const clinicAppointments = pgTable("clinic_appointments", {
   invoiceId:       varchar("invoice_id"),
   accountingPostedAdvance: boolean("accounting_posted_advance").notNull().default(false),
   accountingPostedRevenue: boolean("accounting_posted_revenue").notNull().default(false),
+  // ── محاسبة متقدمة (OPD Engine v2) ──────────────────────────────────────
+  grossAmount:             decimal("gross_amount", { precision: 18, scale: 2 }).default("0"),
+  paidAmount:              decimal("paid_amount", { precision: 18, scale: 2 }).default("0"),
+  remainingAmount:         decimal("remaining_amount", { precision: 18, scale: 2 }).default("0"),
+  doctorDeductionAmount:   decimal("doctor_deduction_amount", { precision: 18, scale: 2 }).default("0"),
+  serviceDelivered:        boolean("service_delivered").notNull().default(false),
+  refundAmount:            decimal("refund_amount", { precision: 18, scale: 2 }).default("0"),
+  refundReason:            text("refund_reason"),
 }, (t) => [
   index("idx_clinic_appts_clinic_date").on(t.clinicId, t.appointmentDate),
   index("idx_clinic_appts_clinic_date_status").on(t.clinicId, t.appointmentDate, t.status),

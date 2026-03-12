@@ -14,32 +14,101 @@ import { sql } from "drizzle-orm";
 import type { DatabaseStorage, DeptServiceOrderInput, DeptServiceBatchInput } from "./index";
 import type { PoolClient } from "pg";
 
-const OPD_DEFERRED_ACCOUNT_CODE = '21163';
+// ═══════════════════════════════════════════════════════════════════════════
+//  OPD Accounting Engine v2 — IFRS + Partial Payment + Doctor Deduction
+// ═══════════════════════════════════════════════════════════════════════════
 
+const OPD_DEFERRED_ACCOUNT_CODE   = '21163';
+const OPD_DOCTOR_DEDUCTION_CODE   = '21850';
+const OPD_NO_SHOW_REVENUE_CODE    = '4172';
+
+type OpdEntryType =
+  | 'OPD_ADVANCE_RECEIPT'
+  | 'OPD_REVENUE_RECOGNITION'
+  | 'OPD_ADVANCE_REVERSAL'
+  | 'OPD_REVENUE_REFUND'
+  | 'OPD_NO_SHOW_REVENUE';
+
+/** Write one row to accounting_event_log (best-effort — does NOT throw) */
+async function logAccountingEvent(client: PoolClient, params: {
+  eventType: OpdEntryType;
+  sourceId:  string;
+  appointmentId: string;
+  postedByUser?: string | null;
+  status: 'success' | 'failure';
+  errorMessage?: string | null;
+}): Promise<void> {
+  try {
+    await client.query(
+      `INSERT INTO accounting_event_log
+         (event_type, source_id, appointment_id, posted_by_user, status, error_message)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [params.eventType, params.sourceId, params.appointmentId,
+       params.postedByUser ?? null, params.status, params.errorMessage ?? null]
+    );
+  } catch { /* never break the parent transaction over a log failure */ }
+}
+
+/**
+ * Post an OPD journal entry atomically within the parent transaction.
+ *
+ * Supports multi-debit entries (e.g. partial-payment revenue recognition):
+ *   debitLines = [{ accountId, amount }, ...]
+ *   creditAccountId = single credit account
+ *   Total debit must equal total credit (enforced by caller).
+ */
 async function postOpdJournalEntry(client: PoolClient, params: {
   appointmentId: string;
-  sourceEntryType: 'OPD_ADVANCE_RECEIPT' | 'OPD_REVENUE_RECOGNITION' | 'OPD_ADVANCE_REVERSAL';
-  debitAccountId: string;
+  sourceEntryType: OpdEntryType;
+  debitLines: Array<{ accountId: string; amount: number }>;
   creditAccountId: string;
-  amount: number;
+  creditAmount: number;
   description: string;
   entryDate: string;
   createdBy?: string | null;
 }): Promise<string> {
-  const idempotencyCheck = await client.query(
+  // ── Idempotency ──────────────────────────────────────────────────────────
+  const existing = await client.query(
     `SELECT id FROM journal_entries
-     WHERE source_type = 'clinic_appointment' AND source_document_id = $1 AND source_entry_type = $2`,
+     WHERE source_type = 'clinic_appointment'
+       AND source_document_id = $1
+       AND source_entry_type  = $2`,
     [params.appointmentId, params.sourceEntryType]
   );
-  if (idempotencyCheck.rows.length > 0) {
-    return idempotencyCheck.rows[0].id;
-  }
+  if (existing.rows.length > 0) return existing.rows[0].id;
 
+  // ── Period lock check ────────────────────────────────────────────────────
   const periodRes = await client.query(
-    `SELECT id FROM fiscal_periods WHERE is_closed = false AND start_date <= $1::date AND end_date >= $1::date LIMIT 1`,
+    `SELECT id FROM fiscal_periods
+     WHERE is_closed = false AND start_date <= $1::date AND end_date >= $1::date
+     LIMIT 1`,
     [params.entryDate]
   );
-  const periodId = periodRes.rows.length > 0 ? periodRes.rows[0].id : null;
+  let periodId: string | null = null;
+  if (periodRes.rows.length > 0) {
+    periodId = periodRes.rows[0].id;
+  } else {
+    // Check system setting
+    const settingRes = await client.query(
+      `SELECT value FROM system_settings WHERE key = 'allow_auto_next_period_posting'`
+    );
+    const allowFallforward = settingRes.rows[0]?.value === 'true';
+    if (allowFallforward) {
+      const nextPeriodRes = await client.query(
+        `SELECT id FROM fiscal_periods WHERE is_closed = false ORDER BY start_date ASC LIMIT 1`
+      );
+      if (nextPeriodRes.rows.length > 0) {
+        periodId = nextPeriodRes.rows[0].id;
+      } else {
+        throw new Error("الفترة المالية مغلقة — لا يمكن ترحيل قيد محاسبي");
+      }
+    } else {
+      throw new Error("الفترة المالية مغلقة — لا يمكن ترحيل قيد محاسبي");
+    }
+  }
+
+  const totalDebit  = params.debitLines.reduce((s, l) => s + l.amount, 0);
+  const totalCredit = params.creditAmount;
 
   const seqRes = await client.query(`SELECT nextval('journal_entry_number_seq') AS next_num`);
   const entryNumber = Number(seqRes.rows[0].next_num);
@@ -50,34 +119,48 @@ async function postOpdJournalEntry(client: PoolClient, params: {
        total_debit, total_credit, reference,
        source_type, source_document_id, source_entry_type,
        created_by, posted_by, posted_at)
-    VALUES ($1, $2::date, $3, 'posted', $4, $5, $5, $6,
-            'clinic_appointment', $7, $8, $9, $9, now())
+    VALUES ($1, $2::date, $3, 'posted', $4, $5, $6, $7,
+            'clinic_appointment', $8, $9, $10, $10, now())
     RETURNING id
   `, [
     entryNumber, params.entryDate, params.description, periodId,
-    params.amount.toFixed(2),
+    totalDebit.toFixed(2), totalCredit.toFixed(2),
     `OPD-${params.sourceEntryType}-${params.appointmentId.slice(0, 8)}`,
     params.appointmentId, params.sourceEntryType,
     params.createdBy ?? null,
   ]);
   const journalId = jeRes.rows[0].id;
 
-  await client.query(`
-    INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
-    VALUES ($1, 1, $2, $3, '0.00', $4),
-           ($1, 2, $5, '0.00', $3, $4)
-  `, [journalId, params.debitAccountId, params.amount.toFixed(2), params.description, params.creditAccountId]);
+  // ── Insert debit lines ───────────────────────────────────────────────────
+  for (let i = 0; i < params.debitLines.length; i++) {
+    const line = params.debitLines[i];
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
+       VALUES ($1, $2, $3, $4, '0.00', $5)`,
+      [journalId, i + 1, line.accountId, line.amount.toFixed(2), params.description]
+    );
+  }
+  // ── Insert single credit line ─────────────────────────────────────────────
+  await client.query(
+    `INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
+     VALUES ($1, $2, $3, '0.00', $4, $5)`,
+    [journalId, params.debitLines.length + 1, params.creditAccountId,
+     totalCredit.toFixed(2), params.description]
+  );
 
   return journalId;
 }
 
-async function getDeferredAccountId(client: PoolClient): Promise<string> {
+async function getAccountIdByCode(client: PoolClient, code: string): Promise<string> {
   const res = await client.query(
-    `SELECT id FROM accounts WHERE code = $1 AND is_active = true LIMIT 1`,
-    [OPD_DEFERRED_ACCOUNT_CODE]
+    `SELECT id FROM accounts WHERE code = $1 AND is_active = true LIMIT 1`, [code]
   );
-  if (!res.rows.length) throw new Error(`حساب الإيراد المؤجل (${OPD_DEFERRED_ACCOUNT_CODE}) غير موجود — يرجى إعداده أولاً`);
+  if (!res.rows.length) throw new Error(`الحساب (${code}) غير موجود أو غير نشط — يرجى إعداده أولاً`);
   return res.rows[0].id;
+}
+
+async function getDeferredAccountId(client: PoolClient): Promise<string> {
+  return getAccountIdByCode(client, OPD_DEFERRED_ACCOUNT_CODE);
 }
 
 async function getTreasuryGlAccountId(client: PoolClient, treasuryId: string): Promise<string> {
@@ -440,21 +523,40 @@ const methods = {
 
           // ── GL: قيد استلام مقدم (د. خزينة / ك. 21163) ──────────────────────
           const treasuryGlAccountId = await getTreasuryGlAccountId(client, resolvedTreasuryId);
-          const deferredAccountId = await getDeferredAccountId(client);
+          const deferredAccountId   = await getDeferredAccountId(client);
           const bookingDate = new Date().toISOString().slice(0, 10);
-          await postOpdJournalEntry(client, {
-            appointmentId: appointment.id,
-            sourceEntryType: 'OPD_ADVANCE_RECEIPT',
-            debitAccountId: treasuryGlAccountId,
-            creditAccountId: deferredAccountId,
-            amount: consultationFee,
-            description: `مقدم كشف عيادة: ${data.patientName} — ${clinic.name_ar ?? ''}`,
-            entryDate: bookingDate,
-            createdBy: data.createdBy,
-          });
+          try {
+            await postOpdJournalEntry(client, {
+              appointmentId: appointment.id,
+              sourceEntryType: 'OPD_ADVANCE_RECEIPT',
+              debitLines: [{ accountId: treasuryGlAccountId, amount: consultationFee }],
+              creditAccountId: deferredAccountId,
+              creditAmount: consultationFee,
+              description: `مقدم كشف عيادة: ${data.patientName} — ${clinic.name_ar ?? ''}`,
+              entryDate: bookingDate,
+              createdBy: data.createdBy,
+            });
+            await logAccountingEvent(client, {
+              eventType: 'OPD_ADVANCE_RECEIPT', sourceId: appointment.id,
+              appointmentId: appointment.id, postedByUser: data.createdBy,
+              status: 'success',
+            });
+          } catch (glErr) {
+            await logAccountingEvent(client, {
+              eventType: 'OPD_ADVANCE_RECEIPT', sourceId: appointment.id,
+              appointmentId: appointment.id, postedByUser: data.createdBy,
+              status: 'failure', errorMessage: String(glErr),
+            });
+            throw glErr;
+          }
           await client.query(
-            `UPDATE clinic_appointments SET accounting_posted_advance = TRUE WHERE id = $1`,
-            [appointment.id]
+            `UPDATE clinic_appointments
+             SET accounting_posted_advance = TRUE,
+                 gross_amount     = $2,
+                 paid_amount      = $2,
+                 remaining_amount = 0
+             WHERE id = $1`,
+            [appointment.id, consultationFee]
           );
         }
 
@@ -505,7 +607,7 @@ const methods = {
   },
 
   async updateAppointmentStatus(this: DatabaseStorage, id: string, status: string): Promise<void> {
-    if (status === 'done') {
+    if (status === 'done' || status === 'no_show') {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
@@ -513,46 +615,145 @@ const methods = {
         const aptRes = await client.query(
           `SELECT a.clinic_id, a.patient_name, a.appointment_date, a.payment_type,
                   a.accounting_posted_advance, a.accounting_posted_revenue, a.invoice_id,
+                  a.gross_amount, a.paid_amount, a.remaining_amount,
+                  a.service_delivered,
                   c.treasury_id, c.consultation_service_id
            FROM clinic_appointments a
            JOIN clinic_clinics c ON c.id = a.clinic_id
            WHERE a.id = $1 FOR UPDATE`, [id]
         );
+        if (!aptRes.rows.length) throw new Error("الموعد غير موجود");
         const apt = aptRes.rows[0];
 
-        await client.query(`UPDATE clinic_appointments SET status = 'done' WHERE id = $1`, [id]);
+        await client.query(
+          `UPDATE clinic_appointments SET status = $2 WHERE id = $1`, [id, status]
+        );
 
-        if (apt && apt.payment_type === 'CASH'
+        const today = new Date().toISOString().slice(0, 10);
+
+        // ── Event 2: REVENUE RECOGNITION (status = done) ─────────────────────
+        if (status === 'done'
+            && apt.payment_type === 'CASH'
             && apt.accounting_posted_advance === true
             && apt.accounting_posted_revenue === false
             && apt.consultation_service_id) {
+          // Gate: service must be marked delivered
+          if (!apt.service_delivered) {
+            // Skip GL silently — service not yet delivered
+          } else {
+            const svcRes = await client.query(
+              `SELECT revenue_account_id FROM services WHERE id = $1`, [apt.consultation_service_id]
+            );
+            const revenueAccountId = svcRes.rows[0]?.revenue_account_id;
+            if (!revenueAccountId) {
+              throw new Error("خدمة الكشف ليس لها حساب إيراد مرتبط — يرجى ضبط revenue_account_id في إعدادات الخدمة");
+            }
+
+            const grossAmount     = parseFloat(apt.gross_amount     || '0');
+            const paidAmount      = parseFloat(apt.paid_amount      || '0');
+            const remainingAmount = parseFloat(apt.remaining_amount  || '0');
+
+            if (grossAmount > 0) {
+              const deferredAccountId = await getDeferredAccountId(client);
+
+              // Build multi-debit lines: 21163 (paid) + 21850 (remaining, if > 0)
+              const debitLines: Array<{ accountId: string; amount: number }> = [];
+              if (paidAmount > 0) {
+                debitLines.push({ accountId: deferredAccountId, amount: paidAmount });
+              }
+              if (remainingAmount > 0) {
+                const doctorDeductionAccountId = await getAccountIdByCode(client, OPD_DOCTOR_DEDUCTION_CODE);
+                debitLines.push({ accountId: doctorDeductionAccountId, amount: remainingAmount });
+              }
+              if (debitLines.length === 0) {
+                debitLines.push({ accountId: deferredAccountId, amount: grossAmount });
+              }
+
+              try {
+                await postOpdJournalEntry(client, {
+                  appointmentId: id,
+                  sourceEntryType: 'OPD_REVENUE_RECOGNITION',
+                  debitLines,
+                  creditAccountId: revenueAccountId,
+                  creditAmount: grossAmount,
+                  description: `اعتراف إيراد كشف: ${apt.patient_name}`,
+                  entryDate: today,
+                });
+                await logAccountingEvent(client, {
+                  eventType: 'OPD_REVENUE_RECOGNITION', sourceId: id,
+                  appointmentId: id, status: 'success',
+                });
+              } catch (glErr) {
+                await logAccountingEvent(client, {
+                  eventType: 'OPD_REVENUE_RECOGNITION', sourceId: id,
+                  appointmentId: id, status: 'failure', errorMessage: String(glErr),
+                });
+                throw glErr;
+              }
+
+              // Update accounting flags and doctor deduction amount
+              await client.query(
+                `UPDATE clinic_appointments
+                 SET accounting_posted_revenue  = TRUE,
+                     doctor_deduction_amount     = $2
+                 WHERE id = $1`,
+                [id, remainingAmount]
+              );
+            } else {
+              // Zero-amount — mark flag anyway to prevent repeated attempts
+              await client.query(
+                `UPDATE clinic_appointments SET accounting_posted_revenue = TRUE WHERE id = $1`, [id]
+              );
+            }
+          }
+        }
+
+        // ── Event 3b: NO SHOW GL entry ────────────────────────────────────────
+        if (status === 'no_show'
+            && apt.payment_type === 'CASH'
+            && apt.accounting_posted_advance === true) {
+          const policyRes = await client.query(
+            `SELECT value FROM system_settings WHERE key = 'opd_no_show_policy'`
+          );
+          const policy = policyRes.rows[0]?.value ?? 'FORFEIT';
+
           const deferredAccountId = await getDeferredAccountId(client);
-          const svcRes = await client.query(
-            `SELECT revenue_account_id FROM services WHERE id = $1`, [apt.consultation_service_id]
-          );
-          const revenueAccountId = svcRes.rows[0]?.revenue_account_id;
-          if (!revenueAccountId) {
-            throw new Error("خدمة الكشف ليس لها حساب إيراد مرتبط — يرجى ضبط revenue_account_id في إعدادات الخدمة");
+          const paidAmount = parseFloat(apt.paid_amount || apt.gross_amount || '0');
+
+          if (paidAmount > 0) {
+            let creditAccountId: string;
+            if (policy === 'REFUND') {
+              // Return cash to patient: Dr 21163 / Cr Treasury
+              const treasury = apt.treasury_id;
+              if (!treasury) throw new Error("يجب تحديد الخزنة لعملية استرداد الغياب");
+              creditAccountId = await getTreasuryGlAccountId(client, treasury);
+            } else {
+              // FORFEIT: Dr 21163 / Cr 4172 (No-show revenue)
+              creditAccountId = await getAccountIdByCode(client, OPD_NO_SHOW_REVENUE_CODE);
+            }
+
+            try {
+              await postOpdJournalEntry(client, {
+                appointmentId: id,
+                sourceEntryType: 'OPD_NO_SHOW_REVENUE',
+                debitLines: [{ accountId: deferredAccountId, amount: paidAmount }],
+                creditAccountId,
+                creditAmount: paidAmount,
+                description: `غياب — ${policy === 'REFUND' ? 'استرداد' : 'إيراد غياب'}: ${apt.patient_name}`,
+                entryDate: today,
+              });
+              await logAccountingEvent(client, {
+                eventType: 'OPD_NO_SHOW_REVENUE', sourceId: id,
+                appointmentId: id, status: 'success',
+              });
+            } catch (glErr) {
+              await logAccountingEvent(client, {
+                eventType: 'OPD_NO_SHOW_REVENUE', sourceId: id,
+                appointmentId: id, status: 'failure', errorMessage: String(glErr),
+              });
+              throw glErr;
+            }
           }
-          const invRes = await client.query(
-            `SELECT net_amount FROM patient_invoice_headers WHERE id = $1`, [apt.invoice_id]
-          );
-          const amount = invRes.rows.length > 0 ? parseFloat(invRes.rows[0].net_amount || '0') : 0;
-          const completionDate = new Date().toISOString().slice(0, 10);
-          if (amount > 0) {
-            await postOpdJournalEntry(client, {
-              appointmentId: id,
-              sourceEntryType: 'OPD_REVENUE_RECOGNITION',
-              debitAccountId: deferredAccountId,
-              creditAccountId: revenueAccountId,
-              amount,
-              description: `اعتراف إيراد كشف: ${apt.patient_name}`,
-              entryDate: completionDate,
-            });
-          }
-          await client.query(
-            `UPDATE clinic_appointments SET accounting_posted_revenue = TRUE WHERE id = $1`, [id]
-          );
         }
 
         await client.query('COMMIT');
@@ -841,14 +1042,15 @@ const methods = {
     }
   },
 
-  async cancelAndRefundAppointment(this: DatabaseStorage, aptId: string, refundedBy: string, refundAmount?: number, cancelAppointment?: boolean): Promise<{ refundedAmount: string; patientName: string; isFullCancel: boolean }> {
+  async cancelAndRefundAppointment(this: DatabaseStorage, aptId: string, refundedBy: string, refundAmount?: number, cancelAppointment?: boolean, refundReason?: string): Promise<{ refundedAmount: string; patientName: string; isFullCancel: boolean }> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
       // ── 1. قفل وجلب الموعد والعيادة ────────────────────────────────────────
       const aptRes = await client.query(
-        `SELECT a.*, c.treasury_id AS clinic_treasury_id, c.id AS clinic_id_val
+        `SELECT a.*, c.treasury_id AS clinic_treasury_id, c.id AS clinic_id_val,
+                c.consultation_service_id AS clinic_consultation_service_id
          FROM clinic_appointments a
          JOIN clinic_clinics c ON c.id = a.clinic_id
          WHERE a.id = $1 FOR UPDATE`,
@@ -859,7 +1061,10 @@ const methods = {
 
       // ── 2. التحقق من حالة الموعد ─────────────────────────────────────────
       if (apt.status === 'cancelled') throw new Error("الموعد ملغى بالفعل");
-      if (apt.status === 'done') throw new Error("لا يمكن استرداد موعد منتهٍ");
+      // Allow 'done' only if revenue was recognized (OPD_REVENUE_REFUND path)
+      if (apt.status === 'done' && !apt.accounting_posted_revenue) {
+        throw new Error("لا يمكن استرداد موعد منتهٍ لم يُرحَّل له قيد إيراد");
+      }
       if (apt.payment_type !== 'CASH') throw new Error("هذا الموعد لا يحمل دفعة نقدية — لا يوجد مبلغ لإعادته");
       if (!apt.invoice_id) throw new Error("لم يتم ربط فاتورة بهذا الموعد — لا توجد دفعة مسجّلة");
 
@@ -980,21 +1185,79 @@ const methods = {
         }), refundedBy]
       );
 
-      // ── 11. GL: عكس قيد المقدم إن كان الإلغاء كاملاً (د. 21163 / ك. خزينة) ──
-      if (isFullCancel && apt.accounting_posted_advance === true) {
+      // ── 11. GL ────────────────────────────────────────────────────────────
+      const treasuryGlAccountId = await getTreasuryGlAccountId(client, treasuryId);
+
+      if (apt.accounting_posted_revenue === true) {
+        // ── Event 4: OPD_REVENUE_REFUND (رد بعد الاعتراف بالإيراد) ──────────
+        // Validation: refund cannot exceed paid_amount
+        const aptPaidAmount = parseFloat(apt.paid_amount || apt.gross_amount || '0');
+        if (actualRefund > aptPaidAmount) {
+          throw new Error(`قيمة الرد (${actualRefund}) أكبر من المبلغ المدفوع (${aptPaidAmount})`);
+        }
+        const consultationSvcId = apt.clinic_consultation_service_id;
+        const revenueAccountId = consultationSvcId
+          ? (await client.query(`SELECT revenue_account_id FROM services WHERE id = $1`, [consultationSvcId])).rows[0]?.revenue_account_id
+          : null;
+        if (!revenueAccountId) {
+          throw new Error("خدمة الكشف ليس لها حساب إيراد مرتبط — لا يمكن ترحيل قيد رد الإيراد");
+        }
+        try {
+          await postOpdJournalEntry(client, {
+            appointmentId: aptId,
+            sourceEntryType: 'OPD_REVENUE_REFUND',
+            debitLines: [{ accountId: revenueAccountId, amount: actualRefund }],
+            creditAccountId: treasuryGlAccountId,
+            creditAmount: actualRefund,
+            description: `رد إيراد كشف: ${apt.patient_name}${refundReason ? ` — ${refundReason}` : ''}`,
+            entryDate: today,
+            createdBy: refundedBy,
+          });
+          await logAccountingEvent(client, {
+            eventType: 'OPD_REVENUE_REFUND', sourceId: aptId,
+            appointmentId: aptId, postedByUser: refundedBy, status: 'success',
+          });
+        } catch (glErr) {
+          await logAccountingEvent(client, {
+            eventType: 'OPD_REVENUE_REFUND', sourceId: aptId,
+            appointmentId: aptId, postedByUser: refundedBy,
+            status: 'failure', errorMessage: String(glErr),
+          });
+          throw glErr;
+        }
+      } else if (isFullCancel && apt.accounting_posted_advance === true) {
+        // ── Event 3: OPD_ADVANCE_REVERSAL (إلغاء قبل الاعتراف بالإيراد) ──────
         const deferredAccountId = await getDeferredAccountId(client);
-        const treasuryGlAccountId = await getTreasuryGlAccountId(client, treasuryId);
-        await postOpdJournalEntry(client, {
-          appointmentId: aptId,
-          sourceEntryType: 'OPD_ADVANCE_REVERSAL',
-          debitAccountId: deferredAccountId,
-          creditAccountId: treasuryGlAccountId,
-          amount: actualRefund,
-          description: `عكس مقدم كشف (إلغاء): ${apt.patient_name}`,
-          entryDate: today,
-          createdBy: refundedBy,
-        });
+        try {
+          await postOpdJournalEntry(client, {
+            appointmentId: aptId,
+            sourceEntryType: 'OPD_ADVANCE_REVERSAL',
+            debitLines: [{ accountId: deferredAccountId, amount: actualRefund }],
+            creditAccountId: treasuryGlAccountId,
+            creditAmount: actualRefund,
+            description: `عكس مقدم كشف (إلغاء): ${apt.patient_name}`,
+            entryDate: today,
+            createdBy: refundedBy,
+          });
+          await logAccountingEvent(client, {
+            eventType: 'OPD_ADVANCE_REVERSAL', sourceId: aptId,
+            appointmentId: aptId, postedByUser: refundedBy, status: 'success',
+          });
+        } catch (glErr) {
+          await logAccountingEvent(client, {
+            eventType: 'OPD_ADVANCE_REVERSAL', sourceId: aptId,
+            appointmentId: aptId, postedByUser: refundedBy,
+            status: 'failure', errorMessage: String(glErr),
+          });
+          throw glErr;
+        }
       }
+
+      // ── 12. سجّل مبلغ الرد وسببه على صف الموعد ────────────────────────────
+      await client.query(
+        `UPDATE clinic_appointments SET refund_amount = $2, refund_reason = $3 WHERE id = $1`,
+        [aptId, actualRefund, refundReason ?? null]
+      );
 
       await client.query('COMMIT');
       return { refundedAmount: actualRefund.toFixed(2), patientName: apt.patient_name, isFullCancel };

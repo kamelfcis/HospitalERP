@@ -51,6 +51,16 @@ export function SettlementDialog({
       }).then(r => r.json()),
   });
 
+  const { data: opdDeductionsData } = useQuery<{ totalOpdDeductions: string; deductionCount: number }>({
+    queryKey: ["/api/doctor-settlements/opd-deductions", doctorName],
+    enabled: open && !!doctorName,
+    queryFn: () =>
+      fetch(`/api/doctor-settlements/opd-deductions?doctorName=${encodeURIComponent(doctorName)}`, {
+        credentials: "include",
+      }).then(r => r.json()),
+  });
+
+  const totalOpdDeductions = parseFloat(opdDeductionsData?.totalOpdDeductions ?? "0");
   const totalOutstanding = outstanding.reduce((s, t) => s + parseFloat(t.remaining), 0);
 
   const fifoAllocations = useMemo(() => {
@@ -186,6 +196,13 @@ export function SettlementDialog({
             <p className="text-xs text-muted-foreground">
               إجمالي المتبقي للطبيب: <span className="font-bold text-destructive">{formatCurrency(totalOutstanding)}</span>
             </p>
+            {totalOpdDeductions > 0 && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+                خصومات عيادات OPD مرحَّلة: <span className="font-bold">{formatCurrency(totalOpdDeductions)}</span>
+                {opdDeductionsData?.deductionCount ? ` (${opdDeductionsData.deductionCount} موعد)` : ""}
+                {" "}— للعلم عند التسوية
+              </p>
+            )}
           </div>
 
           {/* ── وضع التوزيع ── */}

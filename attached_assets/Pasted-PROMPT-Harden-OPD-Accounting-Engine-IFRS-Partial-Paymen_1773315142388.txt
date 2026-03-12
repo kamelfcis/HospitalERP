@@ -1,0 +1,306 @@
+PROMPT — Harden OPD Accounting Engine (IFRS + Partial Payment + Doctor Deduction)
+
+You are working on a hospital ERP system that already implemented OPD accounting with three events:
+
+1️⃣ OPD_ADVANCE_RECEIPT
+Dr Treasury / Cr 21163 (Deferred OPD Revenue)
+
+2️⃣ OPD_REVENUE_RECOGNITION
+Dr 21163 / Cr 4166 (OPD Consultation Revenue)
+
+3️⃣ OPD_ADVANCE_REVERSAL
+Dr 21163 / Cr Treasury (Full cancellation refund)
+
+This system must now be upgraded to support:
+
+• IFRS compliant revenue recognition
+• Partial payments
+• Doctor deduction for unpaid balances
+• No-show scenarios
+• Refund after service
+• Strong accounting integrity
+
+Do NOT redesign the system.
+Extend and harden the existing logic.
+
+OBJECTIVE
+
+Build a production-grade OPD accounting engine that handles real hospital scenarios safely and produces clean accounting entries.
+
+DATABASE CHANGES
+
+Add the following fields to:
+
+clinic_appointments
+gross_amount NUMERIC
+paid_amount NUMERIC DEFAULT 0
+remaining_amount NUMERIC DEFAULT 0
+doctor_deduction_amount NUMERIC DEFAULT 0
+service_delivered BOOLEAN DEFAULT false
+refund_amount NUMERIC DEFAULT 0
+STRICT RULE — WHEN REVENUE CAN BE RECOGNIZED
+
+Revenue recognition is allowed ONLY when:
+
+appointment.status = 'done'
+AND
+service_delivered = true
+
+If status becomes done but service_delivered = false
+🚫 DO NOT POST REVENUE
+
+EVENT 1 — ADVANCE RECEIPT (AT BOOKING)
+
+When payment is received during booking:
+
+Journal Entry:
+
+Dr Treasury
+Cr 21163  (OPD Advance Liability)
+
+Amount = paid_amount
+
+remaining_amount must be calculated:
+
+remaining_amount = gross_amount - paid_amount
+EVENT 2 — REVENUE RECOGNITION (WHEN VISIT COMPLETES)
+
+When appointment becomes DONE and service_delivered = true
+
+System must recognize full consultation revenue.
+
+Journal Entry:
+
+Dr 21163                 (amount already paid)
+Dr DoctorReceivable      (remaining unpaid)
+Cr 4166                  (Total consultation revenue)
+
+Where:
+
+DoctorReceivable = remaining_amount
+
+Explanation:
+
+• Paid part clears advance liability
+• Unpaid part becomes doctor deduction
+
+DOCTOR DEDUCTION LOGIC
+
+Remaining unpaid consultation must NOT become patient receivable.
+
+Instead it becomes deduction from doctor earnings.
+
+Account to use:
+
+DoctorReceivableAccount = 21850  (Doctor Settlement / Doctor Liability)
+
+So entry becomes:
+
+Example:
+
+Consultation fee = 300
+Paid by patient = 100
+Remaining = 200
+
+Journal Entry:
+
+Dr 21163 = 100
+Dr 21850 = 200
+Cr 4166 = 300
+
+Meaning:
+
+• Hospital recognizes full revenue
+• Doctor earnings will be reduced by 200
+
+DOCTOR SETTLEMENT INTEGRATION
+
+During doctor settlement calculation:
+
+DoctorReceivableAccount balance must be deducted from doctor payable.
+
+Example settlement entry:
+
+DoctorShare = 5000
+DoctorDeduction = 200
+NetPayable = 4800
+
+Journal:
+
+Dr DoctorExpense
+Cr DoctorPayable
+
+DoctorReceivableAccount must offset DoctorPayable during settlement.
+
+EVENT 3 — FULL CANCEL BEFORE SERVICE
+
+If appointment is cancelled before service_delivered:
+
+Refund entry:
+
+Dr 21163
+Cr Treasury
+
+Amount = paid_amount
+
+EVENT 4 — REFUND AFTER SERVICE
+
+If refund occurs after revenue recognition:
+
+Use new event:
+
+OPD_REVENUE_REFUND
+
+Entry:
+
+Dr 4166
+Cr Treasury
+
+Refund reason must be stored.
+
+Add field:
+
+refund_reason TEXT
+EVENT 5 — NO SHOW
+
+Add new status:
+
+status = 'no_show'
+
+System policy configurable:
+
+system_settings.opd_no_show_policy
+
+Values:
+
+REFUND
+FORFEIT
+
+If REFUND:
+
+Dr 21163
+Cr Treasury
+
+If FORFEIT:
+
+Dr 21163
+Cr 4172 (No Show Revenue)
+PARTIAL REFUND SUPPORT
+
+If refund_amount < paid_amount
+
+Journal:
+
+Dr 21163 refund_amount
+Cr Treasury refund_amount
+
+Remaining liability must remain in 21163.
+
+TREASURY INTEGRITY
+
+Every journal entry must include:
+
+treasury_id
+department_id
+clinic_id
+doctor_id
+patient_id
+appointment_id
+
+This is required for audit trail and reporting.
+
+PERIOD LOCK PROTECTION
+
+Before posting any journal entry:
+
+Check:
+
+financial_period.status != 'closed'
+
+If closed:
+
+Either:
+
+Reject posting
+
+or
+
+Post to next open period based on:
+
+system_settings.allow_auto_next_period_posting
+IDEMPOTENCY RULE
+
+Prevent duplicate GL entries using key:
+
+(source_id, source_entry_type)
+
+Allowed entry types:
+
+OPD_ADVANCE_RECEIPT
+OPD_REVENUE_RECOGNITION
+OPD_ADVANCE_REVERSAL
+OPD_REVENUE_REFUND
+OPD_NO_SHOW_REVENUE
+
+Each event must be posted once only.
+
+ACCOUNTING EVENT LOG
+
+Create table:
+
+accounting_event_log
+
+Columns:
+
+id
+event_type
+source_id
+appointment_id
+posted_by_user
+created_at
+status
+error_message
+
+All accounting attempts must be logged.
+
+VALIDATION RULES
+
+System must prevent:
+
+❌ Revenue recognized before advance receipt
+❌ Refund posted twice
+❌ Cancel after revenue recognition without reversal
+❌ Posting with missing treasury
+❌ Posting to closed period
+
+Throw hard errors.
+
+REQUIRED API
+
+Create endpoint:
+
+GET /api/appointments/:id/accounting
+
+Return:
+
+• advance receipt entry
+• revenue recognition entry
+• doctor deduction entry
+• refunds
+• reversals
+
+Full accounting trace.
+
+FINAL RESULT
+
+After implementation the OPD accounting engine must:
+
+• Follow IFRS revenue recognition
+• Support partial payments
+• Deduct unpaid balances from doctor settlement
+• Support no-show logic
+• Support refunds safely
+• Provide full audit trail
+• Prevent duplicate or invalid GL postings
+
+All accounting operations must remain fully atomic transactions.

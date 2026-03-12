@@ -200,12 +200,13 @@ export function registerClinicRoutes(app: Express) {
   // رد مبلغ موعد عيادة نقدي وإلغاؤه
   app.post("/api/clinic-appointments/:id/cancel-refund", requireAuth, checkPermission("clinic.book"), async (req, res) => {
     try {
-      const { refundAmount, cancelAppointment } = req.body;
+      const { refundAmount, cancelAppointment, refundReason } = req.body;
       const result = await storage.cancelAndRefundAppointment(
         req.params.id as string,
         req.session.userId!,
         refundAmount !== undefined ? parseFloat(refundAmount) : undefined,
-        cancelAppointment !== undefined ? Boolean(cancelAppointment) : undefined
+        cancelAppointment !== undefined ? Boolean(cancelAppointment) : undefined,
+        refundReason ? String(refundReason) : undefined
       );
       const clinicId = await storage.getAppointmentClinicId(req.params.id as string);
       if (clinicId) broadcastToClinic(clinicId, "appointment_changed", { ts: Date.now() });
@@ -230,12 +231,89 @@ export function registerClinicRoutes(app: Express) {
         }
       }
       const { status } = req.body;
-      const validStatuses = ['waiting', 'in_consultation', 'done', 'cancelled'];
+      const validStatuses = ['waiting', 'in_consultation', 'done', 'cancelled', 'no_show'];
       if (!validStatuses.includes(status)) return res.status(400).json({ message: "حالة غير صحيحة" });
       await storage.updateAppointmentStatus(req.params.id as string, status);
       const clinicIdForBroadcast = await storage.getAppointmentClinicId(req.params.id as string);
       if (clinicIdForBroadcast) broadcastToClinic(clinicIdForBroadcast, "appointment_changed", { ts: Date.now() });
       res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // تحديث حالة تسليم الخدمة (service_delivered) — يُفعّل الاعتراف بالإيراد إذا كان الموعد منتهياً
+  app.patch("/api/clinic-appointments/:id/service-delivered", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
+    try {
+      const { serviceDelivered } = req.body;
+      const aptId = req.params.id as string;
+      await db.execute(sql`
+        UPDATE clinic_appointments
+        SET service_delivered = ${Boolean(serviceDelivered)}
+        WHERE id = ${aptId}
+      `);
+      // If the appointment is already 'done' and advance was posted but revenue was not,
+      // trigger revenue recognition now (idempotent — safe to re-call)
+      if (Boolean(serviceDelivered)) {
+        const rows = await db.execute(sql`
+          SELECT status, accounting_posted_advance, accounting_posted_revenue
+          FROM clinic_appointments WHERE id = ${aptId}
+        `);
+        const apt = rows.rows[0] as { status: string; accounting_posted_advance: boolean; accounting_posted_revenue: boolean } | undefined;
+        if (apt && apt.status === 'done' && apt.accounting_posted_advance && !apt.accounting_posted_revenue) {
+          await storage.updateAppointmentStatus(aptId, 'done');
+        }
+      }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // سجل القيود المحاسبية الكامل لموعد معين
+  app.get("/api/appointments/:id/accounting", requireAuth, checkPermission("clinic.view_all"), async (req, res) => {
+    try {
+      const aptId = req.params.id as string;
+
+      const journalRows = await db.execute(sql`
+        SELECT
+          je.id, je.entry_number, je.entry_date, je.description,
+          je.source_entry_type, je.status AS journal_status,
+          je.total_debit, je.total_credit,
+          json_agg(
+            json_build_object(
+              'lineNumber', jl.line_number,
+              'accountCode', a.code,
+              'accountName', a.name,
+              'debit',       jl.debit,
+              'credit',      jl.credit
+            ) ORDER BY jl.line_number
+          ) AS lines
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'clinic_appointment'
+          AND je.source_document_id = ${aptId}
+        GROUP BY je.id
+        ORDER BY je.entry_number
+      `);
+
+      const eventLogRows = await db.execute(sql`
+        SELECT id, event_type, status, error_message, created_at, posted_by_user
+        FROM accounting_event_log
+        WHERE appointment_id = ${aptId}
+        ORDER BY created_at
+      `);
+
+      const aptRows = await db.execute(sql`
+        SELECT gross_amount, paid_amount, remaining_amount,
+               doctor_deduction_amount, service_delivered,
+               refund_amount, refund_reason,
+               accounting_posted_advance, accounting_posted_revenue
+        FROM clinic_appointments WHERE id = ${aptId}
+      `);
+
+      res.json({
+        appointment: aptRows.rows[0] ?? null,
+        journalEntries: journalRows.rows,
+        eventLog: eventLogRows.rows,
+      });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

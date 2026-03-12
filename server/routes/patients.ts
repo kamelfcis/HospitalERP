@@ -3,6 +3,8 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
+import { db } from "../db";
+import { sql } from "drizzle-orm";
 
 // ─── Fire-and-forget audit logger ────────────────────────────────────────────
 // Logs sensitive read access without blocking the response.
@@ -279,6 +281,31 @@ export function registerPatientsRoutes(app: Express) {
     } catch (error: unknown) {
       const code = (error as { statusCode?: number }).statusCode ?? 500;
       res.status(code).json({ message: (error instanceof Error ? error.message : String(error)) });
+    }
+  });
+
+  // GET /api/doctor-settlements/opd-deductions?doctorName=... — مجموع خصومات الأطباء من مواعيد العيادات
+  app.get("/api/doctor-settlements/opd-deductions", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
+    try {
+      const doctorName = String(req.query.doctorName || "").trim();
+      if (!doctorName) return res.status(400).json({ message: "doctorName مطلوب" });
+      const rows = await db.execute(sql`
+        SELECT
+          COALESCE(SUM(ca.doctor_deduction_amount), 0)::text AS "totalOpdDeductions",
+          COUNT(*) FILTER (WHERE ca.doctor_deduction_amount > 0) AS "deductionCount"
+        FROM clinic_appointments ca
+        JOIN doctors d ON d.id = ca.doctor_id
+        WHERE d.name = ${doctorName}
+          AND ca.accounting_posted_revenue = true
+          AND ca.doctor_deduction_amount > 0
+      `);
+      const row = rows.rows[0] as { totalOpdDeductions: string; deductionCount: string } | undefined;
+      res.json({
+        totalOpdDeductions: row?.totalOpdDeductions ?? "0",
+        deductionCount: parseInt(row?.deductionCount ?? "0", 10),
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
     }
   });
 

@@ -1,0 +1,135 @@
+PROMPT — Revenue Refund Policy (Reverse Revenue Directly)
+Objective
+
+Define the accounting policy for refunds issued after OPD consultation revenue has already been recognized, using a direct reversal of the original revenue account (4166) instead of a contra-revenue account.
+
+This policy intentionally keeps the accounting simple and aligned with the existing chart of accounts.
+
+Accounting Policy — Revenue Refunds
+
+For this system iteration, refunds after service delivery must reverse the original revenue directly.
+
+Do NOT introduce a new contra-revenue account such as "Sales Returns".
+
+The system must post the refund against the same revenue account used in the recognition entry.
+
+Revenue account used:
+
+4166 — إيراد كشوفات العيادات الخارجية
+Event Definition
+Event Type
+OPD_REVENUE_REFUND
+
+Triggered when:
+
+appointment.accounting_posted_revenue = TRUE
+AND
+refundAmount > 0
+Journal Entry
+
+If revenue was previously recognized, post the following entry:
+
+Dr 4166            refundAmount
+Cr Treasury GL     refundAmount
+
+Explanation:
+
+• Debit reduces previously recognized revenue
+• Credit returns cash to the patient
+
+This effectively reverses the original revenue entry.
+
+Validation Rules
+
+Before posting the refund entry:
+
+Ensure revenue has already been recognized:
+
+appointment.accounting_posted_revenue = TRUE
+
+If not:
+
+Throw error:
+
+"لا يمكن رد مبلغ قبل ترحيل إيراد الكشف"
+
+Refund cannot exceed paid amount:
+
+refundAmount <= paid_amount
+
+If violated:
+
+Throw error:
+
+"قيمة الرد أكبر من المبلغ المدفوع"
+
+Refund must include treasury:
+
+Treasury account is mandatory because cash is leaving the hospital.
+
+If treasury_id is missing:
+
+Throw error:
+
+"يجب تحديد الخزنة لعملية رد المبلغ"
+Data Recording
+
+When a refund occurs, update appointment row:
+
+refund_amount = refundAmount
+refund_reason = provided reason
+Idempotency
+
+Prevent duplicate refund postings using:
+
+(source_id, source_entry_type)
+
+Where:
+
+source_entry_type = OPD_REVENUE_REFUND
+
+Only one refund entry is allowed per refund operation.
+
+Audit Logging
+
+Log the operation in accounting_event_log:
+
+Fields:
+
+event_type = OPD_REVENUE_REFUND
+status = success / failure
+error_message
+
+Every attempt must be logged.
+
+Period Lock Protection
+
+Before posting the entry:
+
+Check fiscal period status.
+
+If closed:
+
+Throw hard Arabic error:
+
+"الفترة المالية مغلقة — لا يمكن ترحيل قيد رد الإيراد"
+Important Constraint
+
+Do NOT create or use any of the following:
+
+• Sales Returns account
+• Revenue adjustments account
+• Contra revenue accounts
+
+All refunds must directly reverse account 4166.
+
+Expected Result
+
+After implementation:
+
+Refunding a consultation that already posted revenue will produce:
+
+Dr 4166
+Cr Treasury
+
+Reducing total OPD revenue and returning cash to the patient.

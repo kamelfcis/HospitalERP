@@ -146,6 +146,25 @@ export const accountMappings = pgTable("account_mappings", {
   txTypeIdx: index("idx_acct_map_tx_type").on(table.transactionType),
 }));
 
+// ── سجل أحداث المحاسبة (OPD Engine Audit Log) ──────────────────────────────
+export const accountingEventLog = pgTable("accounting_event_log", {
+  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventType:     text("event_type").notNull(),
+  sourceId:      text("source_id"),
+  appointmentId: text("appointment_id"),
+  postedByUser:  text("posted_by_user"),
+  createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  status:        text("status").notNull().default("success"),
+  errorMessage:  text("error_message"),
+}, (t) => [
+  index("idx_ael_appointment_id").on(t.appointmentId),
+  index("idx_ael_event_type").on(t.eventType),
+]);
+
+export const insertAccountingEventLogSchema = createInsertSchema(accountingEventLog).omit({ id: true, createdAt: true });
+export type InsertAccountingEventLog = z.infer<typeof insertAccountingEventLogSchema>;
+export type AccountingEventLog = typeof accountingEventLog.$inferSelect;
+
 // Insert schemas
 export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true, closedAt: true });
 export const insertCostCenterSchema = createInsertSchema(costCenters).omit({ id: true, createdAt: true });
