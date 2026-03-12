@@ -200,9 +200,12 @@ export function registerClinicRoutes(app: Express) {
   // رد مبلغ موعد عيادة نقدي وإلغاؤه
   app.post("/api/clinic-appointments/:id/cancel-refund", requireAuth, checkPermission("clinic.book"), async (req, res) => {
     try {
+      const { refundAmount, cancelAppointment } = req.body;
       const result = await storage.cancelAndRefundAppointment(
         req.params.id as string,
-        req.session.userId!
+        req.session.userId!,
+        refundAmount !== undefined ? parseFloat(refundAmount) : undefined,
+        cancelAppointment !== undefined ? Boolean(cancelAppointment) : undefined
       );
       const clinicId = await storage.getAppointmentClinicId(req.params.id as string);
       if (clinicId) broadcastToClinic(clinicId, "appointment_changed", { ts: Date.now() });

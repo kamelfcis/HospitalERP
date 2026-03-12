@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { Stethoscope, Loader2, Trash2, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { ClinicAppointment } from "../types";
@@ -20,27 +20,44 @@ interface Props {
   onStatusChange: (id: string, status: string) => void;
   isChanging: boolean;
   onStartConsultation: (apt: ClinicAppointment) => void;
-  onCancelRefund: (id: string) => Promise<any>;
+  onCancelRefund: (id: string, refundAmount?: number, cancelAppointment?: boolean) => Promise<any>;
   isCancelRefunding: boolean;
+}
+
+interface RefundState {
+  apt: ClinicAppointment;
+  paidAmount: number;
+  refundAmount: string;
+  cancelAppointment: boolean;
 }
 
 export function AppointmentQueue({ appointments, isLoading, onStatusChange, isChanging, onStartConsultation, onCancelRefund, isCancelRefunding }: Props) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [refundTarget, setRefundTarget] = useState<ClinicAppointment | null>(null);
+  const [refund, setRefund] = useState<RefundState | null>(null);
+
+  function openRefundDialog(apt: ClinicAppointment) {
+    const paid = parseFloat(String(apt.invoicePaidAmount || 0));
+    setRefund({ apt, paidAmount: paid, refundAmount: String(paid), cancelAppointment: true });
+  }
 
   async function handleConfirmRefund() {
-    if (!refundTarget) return;
+    if (!refund) return;
+    const amount = parseFloat(refund.refundAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: "خطأ", description: "المبلغ يجب أن يكون أكبر من صفر", variant: "destructive" });
+      return;
+    }
     try {
-      const res = await onCancelRefund(refundTarget.id);
+      const res = await onCancelRefund(refund.apt.id, amount, refund.cancelAppointment);
+      const isPartial = amount < refund.paidAmount;
       toast({
-        title: "تم رد المبلغ",
-        description: `تم إلغاء الموعد وإعادة ${res?.refundedAmount ?? ""} جنيه للمريض ${res?.patientName ?? refundTarget.patientName}`,
+        title: isPartial ? "تم الاسترداد الجزئي" : "تم رد المبلغ",
+        description: `تم استرداد ${res?.refundedAmount ?? amount} جنيه للمريض ${res?.patientName ?? refund.apt.patientName}`,
       });
+      setRefund(null);
     } catch (e: any) {
-      toast({ title: "خطأ", description: e?.message ?? "حدث خطأ أثناء رد المبلغ", variant: "destructive" });
-    } finally {
-      setRefundTarget(null);
+      toast({ title: "خطأ", description: e?.message ?? "حدث خطأ أثناء الاسترداد", variant: "destructive" });
     }
   }
 
@@ -60,30 +77,67 @@ export function AppointmentQueue({ appointments, isLoading, onStatusChange, isCh
     );
   }
 
+  const isActive = (s: string) => s === "waiting" || s === "in_consultation";
+
   return (
     <>
-      <AlertDialog open={!!refundTarget} onOpenChange={(open) => { if (!open) setRefundTarget(null); }}>
-        <AlertDialogContent dir="rtl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>تأكيد إلغاء الموعد ورد المبلغ</AlertDialogTitle>
-            <AlertDialogDescription>
-              سيتم إلغاء موعد <strong>{refundTarget?.patientName}</strong> وإعادة مبلغ رسم الكشف نقداً.
-              هل أنت متأكد؟
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-row-reverse gap-2">
-            <AlertDialogCancel>إلغاء</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90"
+      <Dialog open={!!refund} onOpenChange={(open) => { if (!open) setRefund(null); }}>
+        <DialogContent dir="rtl" className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>رد مبلغ — {refund?.apt.patientName}</DialogTitle>
+          </DialogHeader>
+          {refund && (
+            <div className="space-y-4 py-1">
+              <div className="rounded-lg bg-muted/50 px-4 py-2 text-sm flex justify-between">
+                <span className="text-muted-foreground">المبلغ المحصّل:</span>
+                <span className="font-semibold">{refund.paidAmount.toFixed(2)} ج.م</span>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-sm">المبلغ المراد رده (ج.م) *</Label>
+                <Input
+                  type="number"
+                  min="0.01"
+                  max={refund.paidAmount}
+                  step="0.01"
+                  value={refund.refundAmount}
+                  onChange={(e) => setRefund({ ...refund, refundAmount: e.target.value })}
+                  className="text-lg font-semibold"
+                  autoFocus
+                  data-testid="input-refund-amount"
+                />
+                {parseFloat(refund.refundAmount) < refund.paidAmount && parseFloat(refund.refundAmount) > 0 && (
+                  <p className="text-xs text-amber-600">
+                    استرداد جزئي — المتبقي: {(refund.paidAmount - parseFloat(refund.refundAmount)).toFixed(2)} ج.م
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="cancel-apt"
+                  checked={refund.cancelAppointment}
+                  onCheckedChange={(v) => setRefund({ ...refund, cancelAppointment: !!v })}
+                  data-testid="checkbox-cancel-appointment"
+                />
+                <Label htmlFor="cancel-apt" className="text-sm cursor-pointer">
+                  إلغاء الموعد بالكامل بعد الاسترداد
+                </Label>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex-row-reverse gap-2">
+            <Button variant="outline" onClick={() => setRefund(null)}>إلغاء</Button>
+            <Button
+              variant="destructive"
               onClick={handleConfirmRefund}
+              disabled={isCancelRefunding}
               data-testid="button-confirm-refund"
             >
-              <RotateCcw className="h-4 w-4 ml-1" />
-              نعم، إلغاء ورد المبلغ
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              {isCancelRefunding ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <RotateCcw className="h-4 w-4 ml-1" />}
+              تأكيد الاسترداد
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="rounded-md border overflow-hidden">
         <Table>
@@ -94,12 +148,13 @@ export function AppointmentQueue({ appointments, isLoading, onStatusChange, isCh
               <TableHead className="text-right">الطبيب</TableHead>
               <TableHead className="text-right w-28">الوقت</TableHead>
               <TableHead className="text-right w-40">الحالة</TableHead>
-              <TableHead className="text-right w-40">إجراءات</TableHead>
+              <TableHead className="text-right w-52">إجراءات</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {appointments.map((apt) => {
               const isCashPaid = apt.paymentType === 'CASH' && apt.invoiceStatus === 'finalized';
+              const active = isActive(apt.status);
               return (
                 <TableRow
                   key={apt.id}
@@ -138,8 +193,8 @@ export function AppointmentQueue({ appointments, isLoading, onStatusChange, isCh
                     </Select>
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-1">
-                      {(apt.status === "waiting" || apt.status === "in_consultation") && (
+                    <div className="flex gap-1 flex-wrap">
+                      {active && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -151,18 +206,17 @@ export function AppointmentQueue({ appointments, isLoading, onStatusChange, isCh
                           بدء الكشف
                         </Button>
                       )}
-                      {apt.status === "waiting" && isCashPaid && (
+                      {active && isCashPaid && (
                         <Button
                           size="sm"
                           variant="ghost"
                           className="h-8 text-xs gap-1 text-amber-700 hover:text-amber-800 hover:bg-amber-50"
-                          onClick={() => setRefundTarget(apt)}
+                          onClick={() => openRefundDialog(apt)}
                           disabled={isCancelRefunding}
                           data-testid={`button-refund-${apt.id}`}
-                          title="إلغاء ورد المبلغ"
                         >
                           <RotateCcw className="h-3 w-3" />
-                          رد المبلغ
+                          رد مبلغ
                         </Button>
                       )}
                       {apt.status === "waiting" && !isCashPaid && (

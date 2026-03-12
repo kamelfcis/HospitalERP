@@ -61,7 +61,8 @@ export default function ClinicBooking() {
     onStatusChange:      (id: string, status: string) => statusMutation.mutate({ id, status }),
     isChangingStatus:    statusMutation.isPending,
     onStartConsultation: (apt: ClinicAppointment) => navigate(`/doctor-consultation/${apt.id}`),
-    onCancelRefund:      (id: string) => cancelRefundMutation.mutateAsync(id),
+    onCancelRefund:      (id: string, refundAmount?: number, cancelAppointment?: boolean) =>
+      cancelRefundMutation.mutateAsync({ aptId: id, refundAmount, cancelAppointment }),
     isCancelRefunding:   cancelRefundMutation.isPending,
   };
 

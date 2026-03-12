@@ -42,8 +42,8 @@ export function useAppointmentQueue(clinicId: string, date: string) {
   });
 
   const cancelRefundMutation = useMutation({
-    mutationFn: (aptId: string) =>
-      apiRequest("POST", `/api/clinic-appointments/${aptId}/cancel-refund`, {}).then((r) => r.json()),
+    mutationFn: ({ aptId, refundAmount, cancelAppointment }: { aptId: string; refundAmount?: number; cancelAppointment?: boolean }) =>
+      apiRequest("POST", `/api/clinic-appointments/${aptId}/cancel-refund`, { refundAmount, cancelAppointment }).then((r) => r.json()),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 

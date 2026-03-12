@@ -22,12 +22,12 @@ const methods = {
                w.name_ar AS pharmacy_name,
                sv.name_ar AS consultation_service_name,
                sv.base_price AS consultation_service_base_price,
-               (acc.code || ' - ' || acc.name) AS treasury_name
+               tr.name AS treasury_name
         FROM clinic_clinics c
         LEFT JOIN departments d ON d.id = c.department_id
         LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
         LEFT JOIN services sv ON sv.id = c.consultation_service_id
-        LEFT JOIN accounts acc ON acc.id = c.treasury_id
+        LEFT JOIN treasuries tr ON tr.id = c.treasury_id
         ORDER BY c.name_ar
       `);
       return rows.rows as Array<Record<string, unknown>>;
@@ -37,12 +37,12 @@ const methods = {
              w.name_ar AS pharmacy_name,
              sv.name_ar AS consultation_service_name,
              sv.base_price AS consultation_service_base_price,
-             (acc.code || ' - ' || acc.name) AS treasury_name
+             tr.name AS treasury_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
       LEFT JOIN services sv ON sv.id = c.consultation_service_id
-      LEFT JOIN accounts acc ON acc.id = c.treasury_id
+      LEFT JOIN treasuries tr ON tr.id = c.treasury_id
       JOIN clinic_user_clinic_assignments a ON a.clinic_id = c.id AND a.user_id = ${userId}
       ORDER BY c.name_ar
     `);
@@ -55,12 +55,12 @@ const methods = {
              w.name_ar AS pharmacy_name,
              sv.name_ar AS consultation_service_name,
              sv.base_price AS consultation_service_base_price,
-             (acc.code || ' - ' || acc.name) AS treasury_name
+             tr.name AS treasury_name
       FROM clinic_clinics c
       LEFT JOIN departments d ON d.id = c.department_id
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
       LEFT JOIN services sv ON sv.id = c.consultation_service_id
-      LEFT JOIN accounts acc ON acc.id = c.treasury_id
+      LEFT JOIN treasuries tr ON tr.id = c.treasury_id
       WHERE c.id = ${id}
     `);
     return (rows.rows[0] as Record<string, unknown>) ?? null;
@@ -138,10 +138,13 @@ const methods = {
       const rows = await db.execute(sql`
         SELECT a.*,
                d.name AS doctor_name, d.specialty AS doctor_specialty,
-               p.national_id AS patient_file_number
+               p.national_id AS patient_file_number,
+               ih.paid_amount AS invoice_paid_amount,
+               ih.status AS invoice_status
         FROM clinic_appointments a
         JOIN doctors d ON d.id = a.doctor_id
         LEFT JOIN patients p ON p.id = a.patient_id
+        LEFT JOIN patient_invoice_headers ih ON ih.id = a.invoice_id
         WHERE a.clinic_id = ${clinicId} AND a.appointment_date = ${date}::date
           AND a.doctor_id = ${filterDoctorId}
         ORDER BY a.turn_number
@@ -151,10 +154,13 @@ const methods = {
     const rows = await db.execute(sql`
       SELECT a.*,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
-             p.national_id AS patient_file_number
+             p.national_id AS patient_file_number,
+             ih.paid_amount AS invoice_paid_amount,
+             ih.status AS invoice_status
       FROM clinic_appointments a
       JOIN doctors d ON d.id = a.doctor_id
       LEFT JOIN patients p ON p.id = a.patient_id
+      LEFT JOIN patient_invoice_headers ih ON ih.id = a.invoice_id
       WHERE a.clinic_id = ${clinicId} AND a.appointment_date = ${date}::date
       ORDER BY a.turn_number
     `);
@@ -680,7 +686,7 @@ const methods = {
     }
   },
 
-  async cancelAndRefundAppointment(this: DatabaseStorage, aptId: string, refundedBy: string): Promise<{ refundedAmount: string; patientName: string }> {
+  async cancelAndRefundAppointment(this: DatabaseStorage, aptId: string, refundedBy: string, refundAmount?: number, cancelAppointment?: boolean): Promise<{ refundedAmount: string; patientName: string }> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -697,7 +703,7 @@ const methods = {
       const apt = aptRes.rows[0];
 
       if (apt.status === 'cancelled') throw new Error("الموعد ملغى بالفعل");
-      if (apt.status === 'done') throw new Error("لا يمكن إلغاء موعد منتهٍ");
+      if (apt.status === 'done') throw new Error("لا يمكن استرداد موعد منتهٍ");
       if (apt.payment_type !== 'CASH') throw new Error("هذا الموعد لا يحمل دفعة نقدية — لا يوجد مبلغ لإعادته");
       if (!apt.invoice_id) throw new Error("لم يتم ربط فاتورة بهذا الموعد");
 
@@ -710,11 +716,19 @@ const methods = {
       const inv = invRes.rows[0];
       if (inv.status === 'cancelled') throw new Error("الفاتورة ملغاة بالفعل");
 
-      const refundAmount = parseFloat(inv.paid_amount || inv.net_amount || '0');
-      if (refundAmount <= 0) throw new Error("لا يوجد مبلغ مدفوع لإعادته");
+      const paidAmount = parseFloat(inv.paid_amount || inv.net_amount || '0');
+      if (paidAmount <= 0) throw new Error("لا يوجد مبلغ مدفوع لإعادته");
+
+      // تحديد المبلغ المراد إعادته: إذا لم يُحدَّد يُعاد كامل المبلغ
+      const actualRefund = refundAmount !== undefined
+        ? Math.min(Math.max(parseFloat(refundAmount.toFixed(2)), 0), paidAmount)
+        : paidAmount;
+      if (actualRefund <= 0) throw new Error("مبلغ الاسترداد يجب أن يكون أكبر من صفر");
+
+      // هل هذا استرداد كامل + إلغاء؟
+      const isFullCancel = (cancelAppointment !== false) && (actualRefund >= paidAmount);
 
       // ── 3. احضر الخزينة ────────────────────────────────────────────────────
-      // نفس منطق createAppointment: أولاً فحص treasury_id مباشرة ثم by gl_account
       let treasuryId: string = apt.clinic_treasury_id;
       if (treasuryId) {
         const tRes = await client.query(`SELECT id FROM treasuries WHERE id = $1`, [treasuryId]);
@@ -730,29 +744,42 @@ const methods = {
         throw new Error("العيادة لا تملك خزينة مرتبطة");
       }
 
-      // ── 4. إلغاء الموعد ────────────────────────────────────────────────────
-      await client.query(
-        `UPDATE clinic_appointments SET status = 'cancelled' WHERE id = $1`,
-        [aptId]
-      );
+      // ── 4. تحديث الموعد ────────────────────────────────────────────────────
+      if (isFullCancel) {
+        await client.query(
+          `UPDATE clinic_appointments SET status = 'cancelled' WHERE id = $1`,
+          [aptId]
+        );
+      }
 
-      // ── 5. إلغاء الفاتورة ─────────────────────────────────────────────────
-      await client.query(
-        `UPDATE patient_invoice_headers SET status = 'cancelled', paid_amount = 0 WHERE id = $1`,
-        [apt.invoice_id]
-      );
+      // ── 5. تحديث الفاتورة ─────────────────────────────────────────────────
+      if (isFullCancel) {
+        await client.query(
+          `UPDATE patient_invoice_headers SET status = 'cancelled', paid_amount = 0 WHERE id = $1`,
+          [apt.invoice_id]
+        );
+      } else {
+        // استرداد جزئي: نقص المبلغ المدفوع فقط
+        const newPaid = Math.max(paidAmount - actualRefund, 0);
+        const newStatus = newPaid <= 0 ? 'draft' : 'finalized';
+        await client.query(
+          `UPDATE patient_invoice_headers SET paid_amount = $1, status = $2 WHERE id = $3`,
+          [newPaid, newStatus, apt.invoice_id]
+        );
+      }
 
-      // ── 6. قيد عكسي في الخزينة (استرداد) ──────────────────────────────────
+      // ── 6. قيد عكسي في الخزينة ────────────────────────────────────────────
       const today = new Date().toISOString().slice(0, 10);
+      const refundLabel = isFullCancel ? 'استرداد كامل' : 'استرداد جزئي';
       await client.query(
         `INSERT INTO treasury_transactions
            (treasury_id, type, amount, description, source_type, source_id, transaction_date)
          VALUES ($1, 'refund', $2, $3, 'clinic_appointment_refund', $4, $5::date)`,
-        [treasuryId, -refundAmount, `استرداد رسم كشف: ${apt.patient_name}`, aptId, today]
+        [treasuryId, -actualRefund, `${refundLabel} — رسم كشف: ${apt.patient_name}`, aptId, today]
       );
 
       await client.query('COMMIT');
-      return { refundedAmount: refundAmount.toFixed(2), patientName: apt.patient_name };
+      return { refundedAmount: actualRefund.toFixed(2), patientName: apt.patient_name };
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;

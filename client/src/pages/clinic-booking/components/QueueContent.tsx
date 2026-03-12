@@ -11,7 +11,7 @@ interface Props {
   onStatusChange:    (id: string, status: string) => void;
   isChangingStatus:  boolean;
   onStartConsultation: (apt: ClinicAppointment) => void;
-  onCancelRefund:    (id: string) => Promise<any>;
+  onCancelRefund:    (id: string, refundAmount?: number, cancelAppointment?: boolean) => Promise<any>;
   isCancelRefunding: boolean;
 }
 
