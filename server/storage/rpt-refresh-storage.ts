@@ -583,6 +583,147 @@ const methods = {
       ranAt: new Date().toISOString(),
     };
   },
+
+  // ─── rpt_item_movements_summary ────────────────────────────────────────────
+  //
+  // يُعيد بناء ملخّص حركات الأصناف من inventory_lot_movements.
+  //
+  // الحبوب (Grain): يوم × صنف × مخزن — UNIQUE(movement_date, item_id, warehouse_id)
+  //
+  // تصنيف الحركات:
+  //   received_qty / received_value : tx_type='in'  + reference_type='receiving'
+  //   issued_qty / issued_value     : tx_type='out' + reference_type IN ('sales_invoice','patient_invoice')
+  //   transfer_in_qty               : tx_type='in'  + reference_type='transfer'
+  //   transfer_out_qty              : tx_type='out' + reference_type='transfer'
+  //   return_in_qty                 : tx_type='in'  + reference_type='sales_return'
+  //   return_out_qty                : tx_type='out' + reference_type='sales_return'
+  //   adjustment_qty                : tx_type='adj' — إشارة مُحتفَظ بها (موجب=زيادة، سالب=نقص)
+  //   net_qty_change                : SUM(qty_change_in_minor) — المجموع الجبري لجميع الحركات
+  //
+  async refreshItemMovementsSummary(): Promise<RptRefreshResult> {
+    const start = Date.now();
+
+    const result = await db.execute(sql`
+      WITH src AS (
+        -- CTE: flatten joins + pre-cast tx_date to date so GROUP BY is clean
+        SELECT
+          ilm.tx_date::date   AS tx_day,
+          il.item_id,
+          i.name_ar           AS item_name,
+          i.category::text    AS item_category,
+          ilm.warehouse_id,
+          w.name_ar           AS warehouse_name,
+          ilm.tx_type,
+          ilm.reference_type,
+          ilm.qty_change_in_minor,
+          COALESCE(ilm.unit_cost, 0) AS unit_cost
+        FROM inventory_lot_movements ilm
+        JOIN inventory_lots  il ON il.id = ilm.lot_id
+        JOIN items           i  ON i.id  = il.item_id
+        JOIN warehouses      w  ON w.id  = ilm.warehouse_id
+      )
+      INSERT INTO rpt_item_movements_summary (
+        movement_date, period_year, period_month,
+        item_id, item_name, item_category,
+        warehouse_id, warehouse_name,
+        received_qty, received_value, receipt_tx_count,
+        issued_qty, issued_value, issue_tx_count,
+        transfer_in_qty, transfer_out_qty,
+        return_in_qty, return_out_qty,
+        adjustment_qty,
+        net_qty_change,
+        refreshed_at
+      )
+      SELECT
+        tx_day                                                           AS movement_date,
+        EXTRACT(YEAR  FROM tx_day)::smallint                            AS period_year,
+        EXTRACT(MONTH FROM tx_day)::smallint                            AS period_month,
+        item_id,
+        item_name,
+        item_category,
+        warehouse_id,
+        warehouse_name,
+
+        -- received_qty / received_value
+        SUM(CASE WHEN tx_type = 'in'  AND reference_type = 'receiving'
+                 THEN qty_change_in_minor ELSE 0 END)                   AS received_qty,
+        SUM(CASE WHEN tx_type = 'in'  AND reference_type = 'receiving'
+                 THEN qty_change_in_minor * unit_cost
+                 ELSE 0 END)                                             AS received_value,
+        COUNT(CASE WHEN tx_type = 'in'  AND reference_type = 'receiving'
+                   THEN 1 END)::integer                                  AS receipt_tx_count,
+
+        -- issued_qty / issued_value (sales + patient merged)
+        SUM(CASE WHEN tx_type = 'out'
+                  AND reference_type IN ('sales_invoice', 'patient_invoice')
+                 THEN -qty_change_in_minor ELSE 0 END)                  AS issued_qty,
+        SUM(CASE WHEN tx_type = 'out'
+                  AND reference_type IN ('sales_invoice', 'patient_invoice')
+                 THEN -qty_change_in_minor * unit_cost
+                 ELSE 0 END)                                             AS issued_value,
+        COUNT(CASE WHEN tx_type = 'out'
+                    AND reference_type IN ('sales_invoice', 'patient_invoice')
+                   THEN 1 END)::integer                                  AS issue_tx_count,
+
+        -- transfer_in_qty
+        SUM(CASE WHEN tx_type = 'in'  AND reference_type = 'transfer'
+                 THEN qty_change_in_minor ELSE 0 END)                   AS transfer_in_qty,
+
+        -- transfer_out_qty
+        SUM(CASE WHEN tx_type = 'out' AND reference_type = 'transfer'
+                 THEN -qty_change_in_minor ELSE 0 END)                  AS transfer_out_qty,
+
+        -- return_in_qty
+        SUM(CASE WHEN tx_type = 'in'  AND reference_type = 'sales_return'
+                 THEN qty_change_in_minor ELSE 0 END)                   AS return_in_qty,
+
+        -- return_out_qty
+        SUM(CASE WHEN tx_type = 'out' AND reference_type = 'sales_return'
+                 THEN -qty_change_in_minor ELSE 0 END)                  AS return_out_qty,
+
+        -- adjustment_qty — signed: positive=increase, negative=decrease
+        SUM(CASE WHEN tx_type = 'adj'
+                 THEN qty_change_in_minor ELSE 0 END)                   AS adjustment_qty,
+
+        -- net_qty_change — algebraic sum of all movements for the day
+        SUM(qty_change_in_minor)                                         AS net_qty_change,
+
+        NOW()                                                            AS refreshed_at
+
+      FROM src
+      GROUP BY
+        tx_day,
+        item_id, item_name, item_category,
+        warehouse_id, warehouse_name
+
+      ON CONFLICT (movement_date, item_id, warehouse_id) DO UPDATE SET
+        item_name        = EXCLUDED.item_name,
+        item_category    = EXCLUDED.item_category,
+        warehouse_name   = EXCLUDED.warehouse_name,
+        received_qty     = EXCLUDED.received_qty,
+        received_value   = EXCLUDED.received_value,
+        receipt_tx_count = EXCLUDED.receipt_tx_count,
+        issued_qty       = EXCLUDED.issued_qty,
+        issued_value     = EXCLUDED.issued_value,
+        issue_tx_count   = EXCLUDED.issue_tx_count,
+        transfer_in_qty  = EXCLUDED.transfer_in_qty,
+        transfer_out_qty = EXCLUDED.transfer_out_qty,
+        return_in_qty    = EXCLUDED.return_in_qty,
+        return_out_qty   = EXCLUDED.return_out_qty,
+        adjustment_qty   = EXCLUDED.adjustment_qty,
+        net_qty_change   = EXCLUDED.net_qty_change,
+        refreshed_at     = EXCLUDED.refreshed_at
+    `);
+
+    const durationMs = Date.now() - start;
+    const upserted   = Number((result as any).rowCount ?? 0);
+
+    return {
+      upserted,
+      durationMs,
+      ranAt: new Date().toISOString(),
+    };
+  },
 };
 
 export default methods;

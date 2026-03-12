@@ -29,6 +29,7 @@ import { registerInvoicingRoutes } from "./invoicing";
 import { registerHospitalRoutes } from "./hospital";
 import { registerSystemRoutes } from "./system";
 import { registerClinicRoutes } from "./clinic";
+import { registerReportsRoutes } from "./reports";
 
 export { broadcastToPharmacy, broadcastBedBoardUpdate } from "./_shared";
 
@@ -43,6 +44,7 @@ export async function registerRoutes(
   registerHospitalRoutes(app, httpServer);
   registerSystemRoutes(app);
   registerClinicRoutes(app);
+  registerReportsRoutes(app);
 
   return httpServer;
 }

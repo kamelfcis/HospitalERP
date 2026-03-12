@@ -1,7 +1,9 @@
 /**
  * inventory-snapshot-scheduler.ts
  *
- * مُجدِّد مركزي لتحديث rpt_inventory_snapshot بعد أحداث تغيير المخزون.
+ * مُجدِّد مركزي لتحديث جداول التقارير المخزنية بعد أحداث تغيير المخزون:
+ *   - rpt_inventory_snapshot
+ *   - rpt_item_movements_summary
  *
  * المشكلة التي يحلّها:
  *   الـ polling كل 15 دقيقة يُبقي snapshot قديمًا بعد استلام بضاعة / بيع / مرتجع /
@@ -62,10 +64,16 @@ async function runRefresh(reason: string): Promise<void> {
   isRunning = true;
   const t0 = Date.now();
   try {
-    const result = await storage.refreshInventorySnapshot();
+    const [snapResult, movResult] = await Promise.all([
+      storage.refreshInventorySnapshot(),
+      storage.refreshItemMovementsSummary(),
+    ]);
     const dur = Date.now() - t0;
     console.log(
-      `[SNAP_SCHED] done reason=${reason} upserted=${result.upserted} duration=${dur}ms`
+      `[SNAP_SCHED] done reason=${reason}` +
+      ` snap.upserted=${snapResult.upserted}` +
+      ` mov.upserted=${movResult.upserted}` +
+      ` duration=${dur}ms`
     );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

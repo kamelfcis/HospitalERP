@@ -1,0 +1,190 @@
+#10 - P3-C.1 / P3-C.2 — Implement rpt_item_movements_summary refresh and item movements report endpoint
+
+Objective
+Implement the item movements reporting path based on the already-locked design:
+1) fix and complete `rpt_item_movements_summary` refresh logic
+2) build `GET /api/reports/item-movements`
+Do not guess any semantics beyond the locked design below.
+
+Locked design
+- Grain of `rpt_item_movements_summary` = one row per calendar day × item × warehouse
+- Source of truth = `inventory_lot_movements` joined to `inventory_lots` for item_id
+- Grouping for V1 endpoint = item × warehouse only for the requested date range
+- No daily timeline output in V1
+- No extra grouping modes in V1
+- No schema changes required unless a hard blocker is discovered
+
+Source classification rules
+Use these exact mappings:
+
+1) received_qty / received_value
+- tx_type = 'in'
+- reference_type = 'receiving'
+
+2) issued_qty / issued_value
+- tx_type = 'out'
+- reference_type IN ('sales_invoice', 'patient_invoice')
+
+3) transfer_in_qty
+- tx_type = 'in'
+- reference_type = 'transfer'
+
+4) transfer_out_qty
+- tx_type = 'out'
+- reference_type = 'transfer'
+
+5) return_in_qty
+- tx_type = 'in'
+- reference_type = 'sales_return'
+
+6) return_out_qty
+- tx_type = 'out'
+- reference_type = 'sales_return'
+
+7) adjustment_qty
+- tx_type = 'adj'
+- signed quantity:
+  - positive adjustment increases stock
+  - negative adjustment decreases stock
+
+8) net_qty_change
+- signed net movement for the day
+- must remain mathematically consistent with the categorized movement columns
+
+Current problem to fix
+The current table writes `net_qty_change` correctly but leaves the categorized columns at zero.
+Fix this in refresh logic only; the schema already has the required columns.
+
+In scope
+1) Implement `refreshItemMovementsSummary()` in the reporting refresh layer
+2) Populate all categorized quantity/value columns correctly
+3) Wire refresh scheduling safely after the same stock-changing event sources already used for inventory snapshot refresh, or through the same central orchestration path if appropriate
+4) Build `GET /api/reports/item-movements`
+5) Compute opening_qty and closing_qty at query time using rpt + snapshot
+
+Out of scope
+- Do NOT build frontend in this phase
+- Do NOT redesign inventory architecture
+- Do NOT add new grouping modes
+- Do NOT add timeline/day-by-day output in V1
+- Do NOT touch unrelated search/inventory code
+- Do NOT change route contracts outside the new endpoint
+
+Refresh implementation requirements
+Implement `refreshItemMovementsSummary()` using:
+- `inventory_lot_movements`
+- JOIN `inventory_lots` to get `item_id`
+- GROUP BY:
+  - movement_date::date
+  - item_id
+  - inventory_lot_movements.warehouse_id
+
+Populate at least:
+- received_qty
+- received_value
+- issued_qty
+- issued_value
+- transfer_in_qty
+- transfer_out_qty
+- return_in_qty
+- return_out_qty
+- adjustment_qty
+- net_qty_change
+- receipt_tx_count
+- issue_tx_count
+
+Use SQL CASE aggregation only.
+Do not guess movement semantics.
+
+Endpoint contract
+Create:
+- GET /api/reports/item-movements?fromDate&toDate&itemId&warehouseId
+
+Filters:
+- fromDate: required
+- toDate: required
+- itemId: optional
+- warehouseId: optional
+
+V1 response grouping:
+- one row per item × warehouse in the requested date range
+
+Required response fields per row:
+- itemId
+- itemName
+- warehouseId
+- warehouseName
+- opening_qty
+- received_qty
+- received_value
+- issued_qty
+- issued_value
+- transfer_in_qty
+- transfer_out_qty
+- return_in_qty
+- return_out_qty
+- adjustment_qty
+- net_qty_change
+- closing_qty
+- current_qty
+
+Opening / closing logic
+Use the locked walk-back approach:
+
+- current_qty = `rpt_inventory_snapshot.qty_in_minor` as of now
+- net_after_toDate = SUM(`rpt_item_movements_summary.net_qty_change`) where movement_date > toDate
+- closing_qty = current_qty - net_after_toDate
+- in_period_net = SUM(net_qty_change) where fromDate <= movement_date <= toDate
+- opening_qty = closing_qty - in_period_net
+
+This logic is locked. Do not replace it with another approach unless you find a correctness blocker, in which case stop and report it.
+
+Critical requirements
+1) Preserve exact movement semantics.
+2) No schema changes unless a real blocker is found.
+3) No frontend work.
+4) No extra grouping/report modes in V1.
+5) No timeline output in V1.
+6) Keep implementation bounded and reviewable.
+7) If a movement type is missing in current data (returns/adjustments), still implement the mapping correctly.
+8) `adjustment_qty` must be signed.
+9) `patient_invoice` issues must be merged into `issued_qty`.
+10) Use authoritative warehouse key from `inventory_lot_movements.warehouse_id`.
+
+Verification requirements
+Return proof for:
+
+1) refresh correctness
+- categorized columns now populated
+- sample rows no longer all zeros
+- net_qty_change still matches source truth
+
+2) source reconciliation
+- compare rpt totals vs direct source aggregation for a sample period
+- quantities match
+- values match where applicable
+
+3) endpoint correctness
+- opening_qty / closing_qty math checks out
+- current_qty matches snapshot
+- item/warehouse grouping is correct
+- filters work correctly
+
+4) operational safety
+- refresh wiring does not add heavy synchronous work inside transactions
+- reuse central scheduling/orchestration where appropriate
+
+Definition of done
+This phase is complete only if:
+- `rpt_item_movements_summary` is meaningfully populated by refresh logic
+- categorized movement columns are correct
+- `GET /api/reports/item-movements` works for date range + optional item/warehouse filters
+- opening/closing/current quantities reconcile correctly
+- implementation matches the locked design with no guessing
+
+Return exactly:
+1) refresh logic implemented
+2) endpoint implemented
+3) verification results
+4) sample reconciliation
+5) remaining risks / assumptions
