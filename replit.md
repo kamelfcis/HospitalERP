@@ -42,6 +42,45 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Audit Trail**: Captures audit entries for critical financial and system operations.
 - **Lot Recosting on Invoice Approval**: Performs final lot recosting within the same DB transaction.
 
+### OPD Billing Workflow (Phase 3 — Final)
+
+Reception is the sole financial entry point for outpatient consultations. The doctor consultation screen is purely clinical.
+
+**Ownership of billing**
+- `createAppointment` (called at booking) creates the consultation invoice, the service-order audit row, and — for cash — the payment and treasury transaction, all within a single atomic DB transaction.
+- `saveConsultation` (called repeatedly by the doctor during the visit) writes only to `clinic_consultations`, `clinic_consultation_drugs`, and `clinic_orders` linked to the consultation record. It does not touch any invoice, payment, or treasury table.
+
+**Invoice status mapping**
+- `finalized` = paid in full (cash booking: `paid_amount = net_amount`, `finalized_at` is set)
+- `draft` = unpaid / pending collection (insurance or contract booking)
+- `cancelled` = voided
+
+**Payment type behavior**
+
+| Payment type | Invoice created | `patient_invoice_payments` | `treasury_transactions` | Invoice status |
+|---|---|---|---|---|
+| CASH | Yes | Yes (immediate) | Yes (immediate) | `finalized` |
+| INSURANCE | Yes | No | No | `draft` |
+| CONTRACT | Yes | No | No | `draft` |
+
+For INSURANCE, `contract_name` = insurance company name; `patient_type = 'contract'`.
+For CONTRACT, `contract_name` = payer/entity name; `patient_type = 'contract'`.
+
+**Consultation-fee `clinic_orders` row**
+One `clinic_orders` row is created at booking time with `status = 'executed'` and `consultation_id = NULL`. This row is for audit and financial linkage only. It is permanently excluded from every operational execution queue by the base filter in `getClinicOrders`:
+```sql
+(cl.consultation_service_id IS NULL OR o.service_id IS DISTINCT FROM cl.consultation_service_id)
+```
+Departments and pharmacy screens never see this row. It cannot be re-executed or re-billed.
+
+**Duplicate-booking safeguard**
+Before inserting a new appointment, `createAppointment` checks for any existing non-cancelled appointment with the same `patient_id + clinic_id + doctor_id + appointment_date`. If one exists, the transaction is aborted with an Arabic error message that includes the conflicting turn number. This prevents duplicate invoices from reception mistakes. Walk-in bookings (no `patient_id`) are exempt from this check.
+
+**Doctor queue filtering**
+- Users with `clinic.view_all` permission see all appointments for the selected clinic.
+- Users with `doctor.consultation` but without `clinic.view_all` are filtered to their linked doctor record only (`clinic_user_doctor_assignments`).
+- If a doctor-role user has no linked doctor record, the API returns `{ appointments: [], noDoctorLinked: true }` and the frontend displays an amber warning banner instead of the queue.
+
 ### Centralized Lookup Architecture
 All shared-entity lookups (doctors, departments, accounts, treasuries, clinics, services) are handled by a unified architecture:
 - **Hooks**: `client/src/hooks/lookups/` (one hook per entity)
