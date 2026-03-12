@@ -1,0 +1,195 @@
+OBJECTIVE
+Implement a robust accounting workflow for OPD clinic consultations to ensure correct revenue recognition and prevent premature revenue posting. The system must treat clinic consultation payments as **deferred revenue (advance from patient)** until the consultation is completed.
+
+This workflow must be atomic, idempotent, and fully auditable.
+
+---
+
+ACCOUNTING DESIGN
+
+Accounts involved:
+
+Revenue Account
+4166 — OPD Consultation Revenue
+
+Deferred Revenue Account
+21163 — OPD Consultation Advances (Clinic Booking Advances)
+
+Treasury / Cash Accounts
+Example:
+12129 — Internal Medicine Clinic Treasury
+12130 — Cardiology Clinic Treasury
+
+Treasury accounts are retrieved dynamically from the clinic configuration.
+
+---
+
+EVENT 1 — APPOINTMENT BOOKED AND PAID (CASH)
+
+Trigger condition:
+
+* appointment created
+* payment_type = CASH
+* payment_status = PAID
+
+Accounting entry must be generated immediately.
+
+Entry:
+
+Dr  Treasury GL Account (clinic treasury)
+Cr  21163 OPD Consultation Advances
+
+Example:
+
+Dr 12129 Clinic Treasury
+Cr 21163 OPD Consultation Advances
+
+Important rule:
+Revenue MUST NOT be recognized at booking time.
+
+---
+
+EVENT 2 — CONSULTATION COMPLETED
+
+Trigger condition:
+consultation_status = COMPLETED
+
+System must convert the deferred revenue to real revenue.
+
+Entry:
+
+Dr 21163 OPD Consultation Advances
+Cr 4166 OPD Consultation Revenue
+
+Example:
+
+Dr 21163 OPD Consultation Advances
+Cr 4166 OPD Consultation Revenue
+
+This event represents actual service delivery and therefore triggers revenue recognition.
+
+---
+
+EVENT 3 — APPOINTMENT CANCELLED AFTER PAYMENT
+
+Trigger condition:
+appointment_status = CANCELLED
+AND payment already exists
+
+Refund must be issued and accounting entry reversed.
+
+Entry:
+
+Dr 21163 OPD Consultation Advances
+Cr Treasury GL Account
+
+Example:
+
+Dr 21163 OPD Consultation Advances
+Cr 12129 Clinic Treasury
+
+---
+
+EVENT 4 — PATIENT NO-SHOW
+
+If patient does not attend and no refund is issued:
+
+NO accounting conversion occurs.
+
+Advance remains in:
+21163 OPD Consultation Advances
+
+This allows either:
+
+* refund later
+* rescheduling
+* administrative decision
+
+---
+
+TECHNICAL IMPLEMENTATION REQUIREMENTS
+
+1. Posting must occur inside the same database transaction as the operational event.
+
+2. Accounting entries must be idempotent.
+
+Add unique constraint:
+
+unique(source_type, source_id, entry_type)
+
+Example values:
+
+source_type = CLINIC_APPOINTMENT
+source_id = appointment_id
+entry_type = OPD_ADVANCE_RECEIPT
+
+and
+
+entry_type = OPD_REVENUE_RECOGNITION
+
+This prevents duplicate journal entries even if the event fires twice.
+
+3. Each appointment must contain:
+
+accounting_posted_advance (boolean)
+accounting_posted_revenue (boolean)
+
+These flags prevent repeated posting.
+
+4. Revenue recognition must only happen if:
+
+consultation_status = COMPLETED
+AND accounting_posted_revenue = false
+
+5. Refund posting must only occur if:
+
+appointment_status = CANCELLED
+AND accounting_posted_advance = true
+
+---
+
+DATA SOURCES
+
+Revenue account:
+services.revenue_account_id
+
+Treasury account:
+clinics.treasury_id → treasuries.gl_account_id
+
+---
+
+STRICT RULES
+
+1. Appointment booking must NEVER generate revenue directly.
+
+2. Consultation completion is the ONLY event that generates OPD revenue.
+
+3. Insurance or contract appointments do not generate treasury entries at booking.
+
+4. Accounting entries must reference:
+
+source_type
+source_id
+clinic_id
+patient_id
+appointment_id
+
+for full audit traceability.
+
+---
+
+EXPECTED RESULT
+
+This implementation guarantees:
+
+* IFRS-compliant revenue recognition
+* no premature revenue
+* safe handling of cancellations
+* prevention of duplicate journal entries
+* clean audit trail between medical events and accounting
+
+---
+
+FINAL NOTE
+
+This workflow must be treated as a core financial rule of the system and must not be bypassed or replaced by manual accounting posting.
