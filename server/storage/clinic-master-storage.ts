@@ -439,29 +439,22 @@ const methods = {
           `, [invoiceId, consultationFee]);
 
           // ── GL: قيد استلام مقدم (د. خزينة / ك. 21163) ──────────────────────
-          try {
-            await client.query('SAVEPOINT gl_advance');
-            const treasuryGlAccountId = await getTreasuryGlAccountId(client, resolvedTreasuryId);
-            const deferredAccountId = await getDeferredAccountId(client);
-            await postOpdJournalEntry(client, {
-              appointmentId: appointment.id,
-              sourceEntryType: 'OPD_ADVANCE_RECEIPT',
-              debitAccountId: treasuryGlAccountId,
-              creditAccountId: deferredAccountId,
-              amount: consultationFee,
-              description: `مقدم كشف عيادة: ${data.patientName} — ${clinic.name_ar ?? ''}`,
-              entryDate: data.appointmentDate,
-              createdBy: data.createdBy,
-            });
-            await client.query(
-              `UPDATE clinic_appointments SET accounting_posted_advance = TRUE WHERE id = $1`,
-              [appointment.id]
-            );
-            await client.query('RELEASE SAVEPOINT gl_advance');
-          } catch (glErr) {
-            await client.query('ROLLBACK TO SAVEPOINT gl_advance');
-            console.error('[GL] OPD_ADVANCE_RECEIPT failed (non-blocking):', glErr);
-          }
+          const treasuryGlAccountId = await getTreasuryGlAccountId(client, resolvedTreasuryId);
+          const deferredAccountId = await getDeferredAccountId(client);
+          await postOpdJournalEntry(client, {
+            appointmentId: appointment.id,
+            sourceEntryType: 'OPD_ADVANCE_RECEIPT',
+            debitAccountId: treasuryGlAccountId,
+            creditAccountId: deferredAccountId,
+            amount: consultationFee,
+            description: `مقدم كشف عيادة: ${data.patientName} — ${clinic.name_ar ?? ''}`,
+            entryDate: data.appointmentDate,
+            createdBy: data.createdBy,
+          });
+          await client.query(
+            `UPDATE clinic_appointments SET accounting_posted_advance = TRUE WHERE id = $1`,
+            [appointment.id]
+          );
         }
 
         // ── INSURANCE / CONTRACT: الفاتورة تبقى draft (لا دفع) ──────────────
@@ -532,37 +525,31 @@ const methods = {
             && apt.accounting_posted_advance === true
             && apt.accounting_posted_revenue === false
             && apt.consultation_service_id) {
-          try {
-            await client.query('SAVEPOINT gl_revenue');
-            const deferredAccountId = await getDeferredAccountId(client);
-            const svcRes = await client.query(
-              `SELECT revenue_account_id FROM services WHERE id = $1`, [apt.consultation_service_id]
+          const deferredAccountId = await getDeferredAccountId(client);
+          const svcRes = await client.query(
+            `SELECT revenue_account_id FROM services WHERE id = $1`, [apt.consultation_service_id]
+          );
+          const revenueAccountId = svcRes.rows[0]?.revenue_account_id;
+          if (!revenueAccountId) {
+            throw new Error("خدمة الكشف ليس لها حساب إيراد مرتبط — يرجى ضبط revenue_account_id في إعدادات الخدمة");
+          }
+          const invRes = await client.query(
+            `SELECT net_amount FROM patient_invoice_headers WHERE id = $1`, [apt.invoice_id]
+          );
+          const amount = invRes.rows.length > 0 ? parseFloat(invRes.rows[0].net_amount || '0') : 0;
+          if (amount > 0) {
+            await postOpdJournalEntry(client, {
+              appointmentId: id,
+              sourceEntryType: 'OPD_REVENUE_RECOGNITION',
+              debitAccountId: deferredAccountId,
+              creditAccountId: revenueAccountId,
+              amount,
+              description: `اعتراف إيراد كشف: ${apt.patient_name}`,
+              entryDate: apt.appointment_date,
+            });
+            await client.query(
+              `UPDATE clinic_appointments SET accounting_posted_revenue = TRUE WHERE id = $1`, [id]
             );
-            const revenueAccountId = svcRes.rows[0]?.revenue_account_id;
-            if (revenueAccountId) {
-              const invRes = await client.query(
-                `SELECT net_amount FROM patient_invoice_headers WHERE id = $1`, [apt.invoice_id]
-              );
-              const amount = invRes.rows.length > 0 ? parseFloat(invRes.rows[0].net_amount || '0') : 0;
-              if (amount > 0) {
-                await postOpdJournalEntry(client, {
-                  appointmentId: id,
-                  sourceEntryType: 'OPD_REVENUE_RECOGNITION',
-                  debitAccountId: deferredAccountId,
-                  creditAccountId: revenueAccountId,
-                  amount,
-                  description: `اعتراف إيراد كشف: ${apt.patient_name}`,
-                  entryDate: apt.appointment_date,
-                });
-                await client.query(
-                  `UPDATE clinic_appointments SET accounting_posted_revenue = TRUE WHERE id = $1`, [id]
-                );
-              }
-            }
-            await client.query('RELEASE SAVEPOINT gl_revenue');
-          } catch (glErr) {
-            await client.query('ROLLBACK TO SAVEPOINT gl_revenue');
-            console.error('[GL] OPD_REVENUE_RECOGNITION failed (non-blocking):', glErr);
           }
         }
 
@@ -993,25 +980,18 @@ const methods = {
 
       // ── 11. GL: عكس قيد المقدم إن كان الإلغاء كاملاً (د. 21163 / ك. خزينة) ──
       if (isFullCancel && apt.accounting_posted_advance === true) {
-        try {
-          await client.query('SAVEPOINT gl_reversal');
-          const deferredAccountId = await getDeferredAccountId(client);
-          const treasuryGlAccountId = await getTreasuryGlAccountId(client, treasuryId);
-          await postOpdJournalEntry(client, {
-            appointmentId: aptId,
-            sourceEntryType: 'OPD_ADVANCE_REVERSAL',
-            debitAccountId: deferredAccountId,
-            creditAccountId: treasuryGlAccountId,
-            amount: actualRefund,
-            description: `عكس مقدم كشف (إلغاء): ${apt.patient_name}`,
-            entryDate: today,
-            createdBy: refundedBy,
-          });
-          await client.query('RELEASE SAVEPOINT gl_reversal');
-        } catch (glErr) {
-          await client.query('ROLLBACK TO SAVEPOINT gl_reversal');
-          console.error('[GL] OPD_ADVANCE_REVERSAL failed (non-blocking):', glErr);
-        }
+        const deferredAccountId = await getDeferredAccountId(client);
+        const treasuryGlAccountId = await getTreasuryGlAccountId(client, treasuryId);
+        await postOpdJournalEntry(client, {
+          appointmentId: aptId,
+          sourceEntryType: 'OPD_ADVANCE_REVERSAL',
+          debitAccountId: deferredAccountId,
+          creditAccountId: treasuryGlAccountId,
+          amount: actualRefund,
+          description: `عكس مقدم كشف (إلغاء): ${apt.patient_name}`,
+          entryDate: today,
+          createdBy: refundedBy,
+        });
       }
 
       await client.query('COMMIT');

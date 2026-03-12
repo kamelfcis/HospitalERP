@@ -118,7 +118,7 @@ Clinic consultation payments use deferred revenue (21163) until service delivery
 
 **Idempotency**: `UNIQUE(source_type, source_document_id, source_entry_type)` partial index prevents duplicate entries. The helper function `postOpdJournalEntry` checks for existing entries before inserting.
 
-**Safety net**: Each GL block uses PostgreSQL `SAVEPOINT` so GL failures don't abort the main operational transaction.
+**Atomicity**: GL posting is fully atomic with the operational event. If GL posting fails (e.g., missing revenue account, missing deferred account, missing treasury GL), the entire transaction rolls back. Missing `revenue_account_id` on the consultation service is a hard error that prevents status→done.
 
 **DB columns added**: `clinic_appointments.accounting_posted_advance`, `clinic_appointments.accounting_posted_revenue`, `journal_entries.source_entry_type`
 
