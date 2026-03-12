@@ -214,6 +214,7 @@ const methods = {
         or_room_total, transferred_total,
         latest_invoice_id, latest_invoice_number,
         latest_invoice_status, latest_doctor_name,
+        latest_invoice_created_at,
         refreshed_at
       )
       SELECT
@@ -263,6 +264,7 @@ const methods = {
         hdr_agg.latest_invoice_number                                 AS latest_invoice_number,
         hdr_agg.latest_invoice_status                                 AS latest_invoice_status,
         hdr_agg.latest_doctor_name                                    AS latest_doctor_name,
+        hdr_agg.latest_invoice_created_at                             AS latest_invoice_created_at,
         NOW()                                                         AS refreshed_at
 
       FROM admissions a
@@ -281,7 +283,8 @@ const methods = {
           (ARRAY_AGG(pih.id             ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_id,
           (ARRAY_AGG(pih.invoice_number ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_number,
           (ARRAY_AGG(pih.status         ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_status,
-          (ARRAY_AGG(pih.doctor_name    ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_doctor_name
+          (ARRAY_AGG(pih.doctor_name    ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_doctor_name,
+          (ARRAY_AGG(pih.created_at     ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_created_at
         FROM patient_invoice_headers pih
         WHERE pih.status != 'cancelled'
           AND pih.admission_id IS NOT NULL
@@ -384,15 +387,190 @@ const methods = {
         latest_invoice_number  = EXCLUDED.latest_invoice_number,
         latest_invoice_status  = EXCLUDED.latest_invoice_status,
         latest_doctor_name     = EXCLUDED.latest_doctor_name,
+        latest_invoice_created_at = EXCLUDED.latest_invoice_created_at,
         refreshed_at           = EXCLUDED.refreshed_at
     `);
 
-    // حذف صفوف rpt التي حُذف سجل الإقامة المصدر لها
+    // ── UPSERT — الفواتير المستقلة (source_type = 'patient_invoice') ──────────
+    //
+    // كل فاتورة مستقلة (admission_id IS NULL, status != 'cancelled') تُمثَّل
+    // بصف واحد. حقول latest_invoice_* = بيانات الفاتورة نفسها (grain = الفاتورة).
+    // department_id: COALESCE(pih.department_id, warehouse.department_id) لضمان
+    // تعبئته حتى عند غياب pih.department_id المباشر.
+    //
+    await db.execute(sql`
+      INSERT INTO rpt_patient_visit_summary (
+        source_type, source_id,
+        visit_type, visit_date, discharge_date, los_days,
+        period_year, period_month, period_week,
+        patient_id, patient_name, patient_type,
+        insurance_company, payment_type,
+        department_id, department_name, doctor_name,
+        surgery_type_id, surgery_type_name, admission_status,
+        invoice_count, total_invoiced, total_discount, net_amount,
+        total_paid, outstanding_balance,
+        service_revenue, drug_revenue, consumable_revenue, stay_revenue,
+        service_line_count, drug_line_count, consumable_line_count,
+        or_room_total, transferred_total,
+        latest_invoice_id, latest_invoice_number,
+        latest_invoice_status, latest_doctor_name,
+        latest_invoice_created_at,
+        refreshed_at
+      )
+      SELECT
+        'patient_invoice'                                              AS source_type,
+        pih.id                                                         AS source_id,
+        'outpatient'                                                   AS visit_type,
+        pih.invoice_date                                               AS visit_date,
+        NULL::date                                                     AS discharge_date,
+        0::numeric                                                     AS los_days,
+        EXTRACT(YEAR  FROM pih.invoice_date)::smallint                AS period_year,
+        EXTRACT(MONTH FROM pih.invoice_date)::smallint                AS period_month,
+        EXTRACT(WEEK  FROM pih.invoice_date)::smallint                AS period_week,
+        pat.id                                                         AS patient_id,
+        pih.patient_name,
+        pih.patient_type::text                                         AS patient_type,
+        NULL::varchar                                                  AS insurance_company,
+        pih.patient_type::text                                         AS payment_type,
+        COALESCE(pih.department_id, w.department_id)                  AS department_id,
+        d.name_ar                                                      AS department_name,
+        pih.doctor_name,
+        NULL::varchar                                                  AS surgery_type_id,
+        NULL::text                                                     AS surgery_type_name,
+        NULL::varchar                                                  AS admission_status,
+        1::smallint                                                    AS invoice_count,
+        pih.total_amount::numeric                                      AS total_invoiced,
+        pih.discount_amount::numeric                                   AS total_discount,
+        pih.net_amount::numeric                                        AS net_amount,
+        pih.paid_amount::numeric                                       AS total_paid,
+        GREATEST(0, pih.net_amount::numeric - pih.paid_amount::numeric) AS outstanding_balance,
+        COALESCE(la.service_revenue,       0)                         AS service_revenue,
+        COALESCE(la.drug_revenue,          0)                         AS drug_revenue,
+        COALESCE(la.consumable_revenue,    0)                         AS consumable_revenue,
+        COALESCE(la.stay_revenue,          0)                         AS stay_revenue,
+        COALESCE(la.service_line_count,    0)                         AS service_line_count,
+        COALESCE(la.drug_line_count,       0)                         AS drug_line_count,
+        COALESCE(la.consumable_line_count, 0)                         AS consumable_line_count,
+        COALESCE(la.or_room_total,         0)                         AS or_room_total,
+        COALESCE(ta.transferred_total,     0)                         AS transferred_total,
+        -- أحدث فاتورة = الفاتورة نفسها (grain = فاتورة واحدة)
+        pih.id                                                         AS latest_invoice_id,
+        pih.invoice_number                                             AS latest_invoice_number,
+        pih.status::text                                               AS latest_invoice_status,
+        pih.doctor_name                                                AS latest_doctor_name,
+        pih.created_at                                                 AS latest_invoice_created_at,
+        NOW()                                                          AS refreshed_at
+
+      FROM patient_invoice_headers pih
+
+      -- ── تجميع بنود هذه الفاتورة (per invoice_id) ─────────────────────────
+      LEFT JOIN (
+        SELECT
+          pil.header_id,
+          SUM(CASE
+            WHEN pil.source_type IS NULL AND pil.line_type = 'service'
+                 AND NOT pil.is_void
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS service_revenue,
+          SUM(CASE
+            WHEN pil.line_type = 'drug' AND NOT pil.is_void
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS drug_revenue,
+          SUM(CASE
+            WHEN pil.line_type = 'consumable' AND NOT pil.is_void
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS consumable_revenue,
+          SUM(CASE
+            WHEN pil.source_type = 'STAY_ENGINE' AND NOT pil.is_void
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS stay_revenue,
+          SUM(CASE
+            WHEN pil.source_type = 'OR_ROOM' AND NOT pil.is_void
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS or_room_total,
+          COUNT(CASE
+            WHEN pil.source_type IS NULL AND pil.line_type = 'service'
+                 AND NOT pil.is_void THEN 1
+          END)                                                        AS service_line_count,
+          COUNT(CASE
+            WHEN pil.line_type = 'drug' AND NOT pil.is_void THEN 1
+          END)                                                        AS drug_line_count,
+          COUNT(CASE
+            WHEN pil.line_type = 'consumable' AND NOT pil.is_void THEN 1
+          END)                                                        AS consumable_line_count
+        FROM patient_invoice_lines pil
+        GROUP BY pil.header_id
+      ) la ON la.header_id = pih.id
+
+      -- ── تجميع تحويلات الأطباء لهذه الفاتورة ─────────────────────────────
+      LEFT JOIN (
+        SELECT invoice_id, SUM(amount::numeric) AS transferred_total
+        FROM doctor_transfers
+        GROUP BY invoice_id
+      ) ta ON ta.invoice_id = pih.id
+
+      -- ── القسم من المخزن إذا لم يكن department_id مباشراً على الفاتورة ─────
+      LEFT JOIN warehouses  w   ON w.id   = pih.warehouse_id
+      LEFT JOIN departments d   ON d.id   = COALESCE(pih.department_id, w.department_id)
+      -- ── بحث عن patient_id بالاسم (best-effort) ──────────────────────────
+      LEFT JOIN patients    pat ON pat.full_name = pih.patient_name
+
+      WHERE pih.admission_id IS NULL
+        AND pih.status != 'cancelled'
+
+      ON CONFLICT (source_type, source_id) DO UPDATE SET
+        visit_date             = EXCLUDED.visit_date,
+        period_year            = EXCLUDED.period_year,
+        period_month           = EXCLUDED.period_month,
+        period_week            = EXCLUDED.period_week,
+        patient_id             = EXCLUDED.patient_id,
+        patient_name           = EXCLUDED.patient_name,
+        patient_type           = EXCLUDED.patient_type,
+        payment_type           = EXCLUDED.payment_type,
+        department_id          = EXCLUDED.department_id,
+        department_name        = EXCLUDED.department_name,
+        doctor_name            = EXCLUDED.doctor_name,
+        invoice_count          = EXCLUDED.invoice_count,
+        total_invoiced         = EXCLUDED.total_invoiced,
+        total_discount         = EXCLUDED.total_discount,
+        net_amount             = EXCLUDED.net_amount,
+        total_paid             = EXCLUDED.total_paid,
+        outstanding_balance    = EXCLUDED.outstanding_balance,
+        service_revenue        = EXCLUDED.service_revenue,
+        drug_revenue           = EXCLUDED.drug_revenue,
+        consumable_revenue     = EXCLUDED.consumable_revenue,
+        stay_revenue           = EXCLUDED.stay_revenue,
+        service_line_count     = EXCLUDED.service_line_count,
+        drug_line_count        = EXCLUDED.drug_line_count,
+        consumable_line_count  = EXCLUDED.consumable_line_count,
+        or_room_total          = EXCLUDED.or_room_total,
+        transferred_total      = EXCLUDED.transferred_total,
+        latest_invoice_id      = EXCLUDED.latest_invoice_id,
+        latest_invoice_number  = EXCLUDED.latest_invoice_number,
+        latest_invoice_status  = EXCLUDED.latest_invoice_status,
+        latest_doctor_name     = EXCLUDED.latest_doctor_name,
+        latest_invoice_created_at = EXCLUDED.latest_invoice_created_at,
+        refreshed_at           = EXCLUDED.refreshed_at
+    `);
+
+    // ── CLEANUP ───────────────────────────────────────────────────────────────
+    // حذف صفوف admission: حين يُحذف سجل الإقامة
     await db.execute(sql`
       DELETE FROM rpt_patient_visit_summary rpt
       WHERE rpt.source_type = 'admission'
         AND NOT EXISTS (
           SELECT 1 FROM admissions a WHERE a.id = rpt.source_id
+        )
+    `);
+
+    // حذف صفوف patient_invoice: حين تصبح الفاتورة ملغاة أو محذوفة
+    await db.execute(sql`
+      DELETE FROM rpt_patient_visit_summary rpt
+      WHERE rpt.source_type = 'patient_invoice'
+        AND NOT EXISTS (
+          SELECT 1 FROM patient_invoice_headers pih
+          WHERE pih.id = rpt.source_id
+            AND pih.status != 'cancelled'
         )
     `);
 
