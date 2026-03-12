@@ -13,6 +13,8 @@ import type { Department, PatientInvoiceHeader } from "@shared/schema";
 import type { AdmissionWithLatestInvoice } from "./admission-types";
 import { AdmissionList }   from "./AdmissionList";
 import { AdmissionDetail } from "./AdmissionDetail";
+import { Button } from "@/components/ui/button";
+import { ChevronRight, ChevronLeft } from "lucide-react";
 
 // ─── Props Interface ───────────────────────────────────────────────────────────
 
@@ -44,6 +46,12 @@ interface AdmissionsTabProps {
   // ── قائمة الإقامات (وضع القائمة) ─────────────────────
   admAllAdmissions: AdmissionWithLatestInvoice[] | undefined;
   admListLoading: boolean;
+
+  // ── ترقيم الصفحات ──────────────────────────────────────
+  admPage?: number;
+  setAdmPage?: (p: number | ((prev: number) => number)) => void;
+  admTotal?: number;
+  admTotalPages?: number;
 
   // ── فلاتر القائمة ──────────────────────────────────────
   admSearchQuery:   string;
@@ -91,6 +99,7 @@ export function AdmissionsTab({
   admInvoicesByDepartment, admTotalAllInvoices, admFilteredPrintInvoices,
   admPrintRef,
   admAllAdmissions, admListLoading,
+  admPage, setAdmPage, admTotal = 0, admTotalPages = 1,
   admSearchQuery, setAdmSearchQuery,
   admStatusFilter, setAdmStatusFilter,
   admDeptFilter, setAdmDeptFilter,
@@ -98,6 +107,8 @@ export function AdmissionsTab({
   admDateTo, setAdmDateTo,
   admGetStatusBadgeClass, admStatusLabels,
 }: AdmissionsTabProps) {
+
+  const showPagination = admTotalPages > 1 && setAdmPage !== undefined && admPage !== undefined;
 
   return (
     <>
@@ -144,22 +155,50 @@ export function AdmissionsTab({
             admGetStatusBadgeClass={admGetStatusBadgeClass}
             admStatusLabels={admStatusLabels}
           />
-        : <AdmissionList
-            rows={admAllAdmissions}
-            loading={admListLoading}
-            searchQuery={admSearchQuery}
-            onSearchChange={setAdmSearchQuery}
-            statusFilter={admStatusFilter}
-            onStatusChange={setAdmStatusFilter}
-            deptFilter={admDeptFilter}
-            onDeptChange={setAdmDeptFilter}
-            departments={departments}
-            dateFrom={admDateFrom}
-            onDateFromChange={setAdmDateFrom}
-            dateTo={admDateTo}
-            onDateToChange={setAdmDateTo}
-            onSelect={setAdmSelectedAdmission}
-          />
+        : <>
+            <AdmissionList
+              rows={admAllAdmissions}
+              loading={admListLoading}
+              searchQuery={admSearchQuery}
+              onSearchChange={setAdmSearchQuery}
+              statusFilter={admStatusFilter}
+              onStatusChange={setAdmStatusFilter}
+              deptFilter={admDeptFilter}
+              onDeptChange={setAdmDeptFilter}
+              departments={departments}
+              dateFrom={admDateFrom}
+              onDateFromChange={setAdmDateFrom}
+              dateTo={admDateTo}
+              onDateToChange={setAdmDateTo}
+              onSelect={setAdmSelectedAdmission}
+            />
+            {showPagination && (
+              <div className="flex items-center justify-between px-2 py-1 border-t no-print" dir="rtl">
+                <span className="text-xs text-muted-foreground">
+                  عرض {((admPage! - 1) * 50) + 1}–{Math.min(admPage! * 50, admTotal)} من {admTotal} إقامة
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline" size="sm" className="h-6 px-2"
+                    disabled={admPage! <= 1}
+                    onClick={() => setAdmPage!(p => p - 1)}
+                    data-testid="button-admissions-prev-page"
+                  >
+                    <ChevronRight className="h-3 w-3" />
+                  </Button>
+                  <span className="text-xs px-2">صفحة {admPage} من {admTotalPages}</span>
+                  <Button
+                    variant="outline" size="sm" className="h-6 px-2"
+                    disabled={admPage! >= admTotalPages!}
+                    onClick={() => setAdmPage!(p => p + 1)}
+                    data-testid="button-admissions-next-page"
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
       }
     </>
   );

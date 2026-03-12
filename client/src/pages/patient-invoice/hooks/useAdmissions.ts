@@ -1,18 +1,22 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Admission, Patient } from "@shared/schema";
+import type { Patient } from "@shared/schema";
+import type { AdmissionWithLatestInvoice } from "../tabs/admission-types";
 import { useDebounce } from "../utils/debounce";
 
 const todayStr = () => new Date().toISOString().split("T")[0];
 
+const ADM_PAGE_SIZE = 50;
+
 export function useAdmissions(mainTab: string) {
-  const [admSelectedAdmission, setAdmSelectedAdmission] = useState<Admission | null>(null);
+  const [admSelectedAdmission, setAdmSelectedAdmission] = useState<AdmissionWithLatestInvoice | null>(null);
   const [admIsCreateOpen, setAdmIsCreateOpen] = useState(false);
   const [admSearchQuery, setAdmSearchQuery] = useState("");
   const [admStatusFilter, setAdmStatusFilter] = useState("all");
   const [admDeptFilter, setAdmDeptFilter] = useState("all");
   const [admDateFrom, setAdmDateFrom] = useState(todayStr());
   const [admDateTo, setAdmDateTo] = useState(todayStr());
+  const [admPage, setAdmPage] = useState(1);
   const debouncedAdmSearch = useDebounce(admSearchQuery, 300);
 
   const [admPatientSearch, setAdmPatientSearch] = useState("");
@@ -31,6 +35,13 @@ export function useAdmissions(mainTab: string) {
   const [admPrintDeptId, setAdmPrintDeptId] = useState("all");
   const admPrintRef = useRef<HTMLDivElement>(null);
 
+  const admFilterKey = useMemo(
+    () => [admStatusFilter, admDeptFilter, debouncedAdmSearch, admDateFrom, admDateTo].join("|"),
+    [admStatusFilter, admDeptFilter, debouncedAdmSearch, admDateFrom, admDateTo],
+  );
+
+  useEffect(() => { setAdmPage(1); }, [admFilterKey]);
+
   const admQueryParams = useMemo(() => {
     const params = new URLSearchParams();
     if (admStatusFilter !== "all") params.set("status", admStatusFilter);
@@ -38,10 +49,14 @@ export function useAdmissions(mainTab: string) {
     if (debouncedAdmSearch.trim()) params.set("search", debouncedAdmSearch.trim());
     if (admDateFrom) params.set("dateFrom", admDateFrom);
     if (admDateTo)   params.set("dateTo",   admDateTo);
+    params.set("page",     String(admPage));
+    params.set("pageSize", String(ADM_PAGE_SIZE));
     return params.toString();
-  }, [admStatusFilter, admDeptFilter, debouncedAdmSearch, admDateFrom, admDateTo]);
+  }, [admStatusFilter, admDeptFilter, debouncedAdmSearch, admDateFrom, admDateTo, admPage]);
 
-  const { data: admAllAdmissions, isLoading: admListLoading } = useQuery<Admission[]>({
+  type PaginatedAdmissions = { data: AdmissionWithLatestInvoice[]; total: number; page: number; pageSize: number };
+
+  const { data: admResult, isLoading: admListLoading } = useQuery<PaginatedAdmissions>({
     queryKey: ["/api/admissions", admQueryParams],
     queryFn: async () => {
       const qs = admQueryParams ? `?${admQueryParams}` : "";
@@ -52,7 +67,11 @@ export function useAdmissions(mainTab: string) {
     enabled: mainTab === "admission",
   });
 
-  const { data: admDetail } = useQuery<Admission>({
+  const admAllAdmissions = admResult?.data;
+  const admTotal     = admResult?.total     ?? 0;
+  const admTotalPages = Math.max(1, Math.ceil(admTotal / ADM_PAGE_SIZE));
+
+  const { data: admDetail } = useQuery<AdmissionWithLatestInvoice>({
     queryKey: ["/api/admissions", admSelectedAdmission?.id],
     queryFn: async () => {
       const res = await fetch(`/api/admissions/${admSelectedAdmission!.id}`, { credentials: "include" });
@@ -180,6 +199,8 @@ export function useAdmissions(mainTab: string) {
     admDeptFilter, setAdmDeptFilter,
     admDateFrom, setAdmDateFrom,
     admDateTo, setAdmDateTo,
+    admPage, setAdmPage,
+    admTotal, admTotalPages,
     admPatientSearch, setAdmPatientSearch,
     admPatientResults,
     admSearchingPatients,

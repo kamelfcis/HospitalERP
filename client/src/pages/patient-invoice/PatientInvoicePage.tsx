@@ -129,6 +129,7 @@ export default function PatientInvoice() {
     admFormData, setAdmFormData,
     admPrintDeptId, setAdmPrintDeptId, admPrintRef,
     admAllAdmissions, admListLoading,
+    admPage, setAdmPage, admTotal, admTotalPages,
     admDetail, admInvoices, admInvoicesLoading,
     admReportData, admReportLoading,
     admInvoicesByDepartment, admFilteredPrintInvoices, admTotalAllInvoices,
@@ -389,6 +390,10 @@ export default function PatientInvoice() {
             admPrintRef={admPrintRef}
             admAllAdmissions={admAllAdmissions}
             admListLoading={admListLoading}
+            admPage={admPage}
+            setAdmPage={setAdmPage}
+            admTotal={admTotal}
+            admTotalPages={admTotalPages}
             admSearchQuery={admSearchQuery}
             setAdmSearchQuery={setAdmSearchQuery}
             admStatusFilter={admStatusFilter}
