@@ -1,0 +1,142 @@
+#10 - P3-C.0 — Lock the grain and report contract for rpt_item_movements_summary before any implementation
+
+Objective
+Do NOT start coding the item movements consumer or endpoint yet.
+First, perform a strict design audit to lock the correct grain, business meaning, and report contract for `rpt_item_movements_summary` before any refresh logic or endpoint is built.
+
+Why this phase
+`rpt_item_movements_summary` currently exists but has:
+- incomplete data
+- no active consumer
+- no refresh logic
+- no locked reporting contract
+
+Building refresh logic or an endpoint before defining the exact grain and semantics would create rework risk and possible reporting errors.
+
+Scope
+This phase is design + audit only.
+
+In scope:
+1) Audit current table structure and existing sample rows
+2) Audit source-of-truth movement tables
+3) Define the correct grain for the summary table
+4) Define the exact report contract for the future endpoint
+5) Decide whether the current table shape is sufficient or needs adjustment before implementation
+
+Out of scope:
+- Do NOT build refresh logic yet
+- Do NOT build the endpoint yet
+- Do NOT build frontend yet
+- Do NOT introduce background jobs yet
+- Do NOT modify unrelated inventory/search code
+
+Questions that must be answered
+
+1) What should one row in `rpt_item_movements_summary` represent exactly?
+Choose and justify one of these or a better alternative:
+- one row per day + item + warehouse
+- one row per day + item + warehouse + movement_type
+- one row per item + warehouse for a date range snapshot
+- another clearly justified grain
+
+2) What should the future report return?
+Lock the intended endpoint/report semantics:
+- opening_qty
+- received_qty
+- issued_qty
+- transfer_in_qty
+- transfer_out_qty
+- return_in_qty
+- return_out_qty
+- adjustment_qty
+- closing_qty
+- optional values as well as quantities
+- whether grouping is by item only, warehouse only, item+warehouse, or daily timeline
+
+3) What is the source of truth for each metric?
+Map each report field to real source tables such as:
+- inventory_lot_movements
+- inventory lots
+- stock documents
+- transfer records
+- receiving records
+- sales issue records
+- return records
+- adjustment records
+
+Do not guess.
+If any metric is ambiguous, document it explicitly.
+
+4) How should movement types be classified?
+Define exact classification rules for:
+- purchase receiving
+- sales issue
+- sales return
+- stock transfer in
+- stock transfer out
+- adjustment increase
+- adjustment decrease
+- internal consumption if applicable
+- expired / damaged write-off if applicable
+
+5) What is the correct opening/closing logic?
+Define:
+- opening quantity/value = all movement effect before fromDate
+- period movement = all movement effect within range
+- closing = opening + in - out ± adjustments
+State exactly how this should work.
+
+6) Is the current rpt_item_movements_summary schema sufficient?
+Decide clearly:
+- keep as-is
+- extend it
+- redesign it
+Explain why.
+
+Deliverables required
+Return exactly:
+
+1) current table audit
+- current columns
+- current sample data quality
+- why the current 6 rows are insufficient
+
+2) source mapping
+- which source tables drive which metrics
+- which movement types exist
+- which keys are reliable
+
+3) grain decision
+- exact grain chosen
+- why this grain is correct
+- what alternatives were rejected
+
+4) report contract
+- exact fields the future endpoint should return
+- exact filter set:
+  - from
+  - to
+  - itemId
+  - warehouseId
+  - maybe movementType if justified
+- exact grouping semantics
+
+5) schema sufficiency decision
+- whether current rpt table can support the report safely
+- whether schema changes are required before implementation
+
+6) recommended implementation plan
+- P3-C.1 refresh logic
+- P3-C.2 endpoint
+- P3-C.3 optional frontend
+Keep this short and concrete
+
+Critical requirements
+- Do not code yet
+- Do not assume semantics
+- Do not optimize prematurely
+- Correctness of inventory movement meaning is more important than speed
+- The next implementation phase must be based on this locked design only
+
+Definition of done
+This phase is complete only if the report grain and contract are locked clearly enough that the next phase can implement refresh + endpoint without guessing.
