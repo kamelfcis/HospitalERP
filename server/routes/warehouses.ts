@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
+import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
@@ -225,6 +226,7 @@ export function registerWarehousesRoutes(app: Express) {
 
       const transfer = await storage.postTransfer(req.params.id as string);
       await storage.createAuditLog({ tableName: "store_transfers", recordId: req.params.id as string, action: "post", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "posted" }) });
+      scheduleInventorySnapshotRefresh("transfer_posted");
       res.json(transfer);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

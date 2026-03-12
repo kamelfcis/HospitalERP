@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
+import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
 import { requireAuth, checkPermission } from "./_shared";
@@ -235,6 +236,7 @@ export function registerAdmissionsRoutes(app: Express) {
         newValues: { originalInvoiceId, linesCount: activeLines.length },
         userId: req.session.userId,
       }).catch(err => console.error("[Audit] sales return:", err));
+      scheduleInventorySnapshotRefresh("sales_return");
       res.json(result);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

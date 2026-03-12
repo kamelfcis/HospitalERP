@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
+import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { db, pool } from "../db";
 import { eq } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
@@ -189,6 +190,7 @@ export function registerSalesInvoicesRoutes(app: Express) {
 
       const invoice = await storage.finalizeSalesInvoice(req.params.id as string);
       await storage.createAuditLog({ tableName: "sales_invoice_headers", recordId: req.params.id as string, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });
+      scheduleInventorySnapshotRefresh("sales_finalized");
       if (invoice.clinicOrderId) {
         try {
           const orderIds = invoice.clinicOrderId.split(",").filter(Boolean);

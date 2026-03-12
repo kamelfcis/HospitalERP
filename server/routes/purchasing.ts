@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { PERMISSIONS } from "@shared/permissions";
+import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { auditLog } from "../route-helpers";
 import {
   requireAuth,
@@ -442,6 +443,7 @@ export function registerPurchasingRoutes(app: Express) {
       }
       const result = await storage.approvePurchaseInvoice(req.params.id as string);
       await storage.createAuditLog({ tableName: "purchase_invoice_headers", recordId: req.params.id as string, action: "approve", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "approved" }) });
+      scheduleInventorySnapshotRefresh("purchase_approved");
       res.json(result);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

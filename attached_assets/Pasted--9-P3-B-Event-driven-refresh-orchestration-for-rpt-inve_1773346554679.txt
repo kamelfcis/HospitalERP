@@ -1,0 +1,103 @@
+#9 - P3-B — Event-driven refresh orchestration for rpt_inventory_snapshot
+
+Objective
+Replace snapshot staleness caused by pure polling with a safe event-driven refresh orchestration for `rpt_inventory_snapshot`, without adding heavy synchronous work inside inventory-changing transactions.
+
+Why this phase
+`rpt_inventory_snapshot` is now actively used by `searchItemsAdvanced`.
+The current 15-minute polling timer can leave stock search stale for many minutes after:
+- supplier receiving
+- sales invoice stock deduction
+- sales return
+- stock transfer
+
+We need fresher snapshot behavior, but without harming transaction safety or performance.
+
+In scope
+1) Introduce a centralized inventory snapshot refresh scheduler/orchestrator
+2) Trigger it from stock-changing write paths after successful commit
+3) Prevent duplicate/overlapping refresh runs
+4) Preserve the existing timed refresh as fallback if appropriate
+5) Keep refresh execution safe, bounded, and observable
+
+Out of scope
+- Do NOT redesign inventory architecture broadly
+- Do NOT build item movements reporting in this phase
+- Do NOT introduce frontend changes
+- Do NOT change route contracts
+- Do NOT add heavy synchronous refresh logic inside active DB transactions
+- Do NOT scatter raw setTimeout logic independently in multiple files
+
+Critical requirements
+1) Refresh must be scheduled only after successful stock-changing operations complete.
+2) Do not run refresh inline inside the same transaction that writes stock.
+3) Use one centralized scheduler function, not ad hoc timers everywhere.
+4) Prevent overlapping refreshes.
+5) Prevent burst duplicate refreshes when several stock events happen close together.
+6) Preserve operational safety first; freshness second.
+7) Keep behavior reviewable and well-logged.
+
+Required design
+Create a central helper such as:
+- scheduleInventorySnapshotRefresh(...)
+- enqueueInventorySnapshotRefresh(...)
+- runInventorySnapshotRefreshIfIdle(...)
+
+This helper must:
+- debounce repeated requests
+- avoid overlapping refresh executions
+- coalesce multiple events into one bounded refresh
+- log scheduling and execution clearly
+- optionally support future targeted refresh, but do not force it now if full refresh is the safe current option
+
+Event sources to wire
+Trigger the scheduler after successful completion of stock-changing operations in these paths:
+- supplier receiving approval
+- sales invoice finalization / stock deduction
+- sales return / stock return
+- stock transfer approval
+
+If there are helper/service boundaries already handling these operations, prefer wiring there instead of scattering calls deeper in many layers.
+
+Implementation rules
+1) If targeted refresh by warehouse/item is easy and correct, support it.
+2) If targeted refresh is risky or semantically incomplete, schedule a bounded full snapshot refresh instead.
+3) Keep the current periodic refresh as a fallback safety net unless there is a strong reason to remove it.
+4) Do not degrade transaction response times noticeably.
+5) Do not silently swallow refresh errors; log them clearly.
+
+Verification requirements
+Return proof for:
+1) scheduler behavior
+- duplicate events coalesced
+- overlapping runs prevented
+- refresh runs only after stock-changing actions complete
+
+2) operational safety
+- no refresh inside active transaction path
+- no new transaction failures introduced
+
+3) data freshness
+- after receiving/sale/return/transfer, snapshot updates shortly after event
+- `searchItemsAdvanced` reflects the new stock state much faster than before
+
+4) performance impact
+- no harmful write-path slowdown
+- refresh frequency remains bounded
+- logs confirm execution timing
+
+Definition of done
+P3-B is complete only if:
+- a centralized event-driven refresh scheduler exists
+- stock-changing operations trigger it after successful completion
+- duplicate/overlapping refreshes are controlled
+- snapshot freshness improves materially
+- operational transactions remain safe and fast
+
+Return exactly:
+1) scheduler design implemented
+2) event sources wired
+3) overlap/debounce protection used
+4) verification results
+5) performance/operational impact
+6) remaining risks / future enhancement notes
