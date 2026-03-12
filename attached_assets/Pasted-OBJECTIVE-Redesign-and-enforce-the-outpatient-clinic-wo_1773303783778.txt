@@ -1,0 +1,339 @@
+OBJECTIVE
+
+Redesign and enforce the outpatient clinic workflow so that:
+
+1) Reception is the only role that creates the clinic visit and collects the consultation fee.
+2) Doctors do not collect money and do not create billing manually.
+3) Doctors only see their own clinic/day queue and perform the medical consultation.
+4) Reception users only see their assigned clinic(s).
+5) Doctors only see patients that were transferred from reception into their clinic queue.
+6) The workflow must be role-separated, auditable, and operationally clean.
+
+IMPORTANT
+Do not start random refactoring.
+First implement this workflow carefully and preserve existing working parts where possible.
+Keep the code modular and avoid giant files.
+
+==================================================
+TARGET BUSINESS WORKFLOW
+==================================================
+
+A) RECEPTION FLOW
+
+Reception user responsibilities:
+- search existing patient or create new patient
+- choose visit reason = outpatient clinic consultation
+- select clinic
+- select doctor
+- select visit type (new / follow-up if applicable)
+- capture payer/payment context
+- collect consultation fee at reception
+- create the visit / queue entry
+- send patient to the doctor queue
+
+Reception must be the financial entry point for the consultation fee.
+
+Reception must NOT:
+- enter diagnosis
+- prescribe medication
+- request medical services on behalf of the doctor
+- close the consultation medically
+
+--------------------------------------------------
+
+B) DOCTOR FLOW
+
+Doctor responsibilities:
+- open only today’s assigned patients for their clinic/queue
+- start consultation
+- record complaint
+- record diagnosis
+- record notes
+- prescribe medications
+- request services (lab / radiology / procedures)
+- save / complete consultation
+- review their own doctor statement / consultation activity if applicable
+
+Doctor must NOT:
+- collect cash
+- choose treasury
+- perform cashier actions
+- create consultation billing manually
+- see unrelated clinics or unrelated reception queues
+
+--------------------------------------------------
+
+C) QUEUE VISIBILITY RULES
+
+1. Reception user visibility:
+- a reception/secretary user must see only the clinic(s) assigned to them
+- they must not see all clinics unless admin
+- they must manage only the queue for their assigned clinic(s)
+
+2. Doctor visibility:
+- a doctor must see only:
+  - the clinic(s) assigned to them
+  - the appointments/visits sent to that clinic
+  - preferably only their own patients if doctor-specific queueing is enabled
+
+3. Admin visibility:
+- admin/supervisor can view all clinics and all queues
+
+==================================================
+REQUIRED ARCHITECTURE CHANGES
+==================================================
+
+1) MAKE RECEPTION THE OWNER OF CONSULTATION BILLING
+
+The consultation fee must be created and collected at reception before the patient goes to the doctor.
+
+Required behavior:
+- when reception confirms the clinic booking / visit creation:
+  - create clinic visit / queue entry
+  - generate consultation invoice line automatically
+  - assign the correct treasury/payment method
+  - record payment immediately if workflow is prepaid
+  - mark consultation fee as paid (or partially paid only if allowed by policy)
+
+The doctor consultation screen must no longer create the consultation fee as a financial action.
+
+If the current system creates consultation fee when doctor saves consultation, change this behavior so billing ownership is at reception.
+
+But preserve idempotency:
+- consultation fee must never be duplicated
+- if reception already created the consultation fee, doctor save must not create it again
+
+2) DEFINE CLEAR VISIT LIFECYCLE
+
+Use a clean visit status flow like:
+
+booked / waiting_for_doctor
+→ in_consultation
+→ consultation_completed
+→ services_ordered (if applicable)
+→ completed
+→ cancelled
+
+If needed, keep existing statuses but normalize the behavior clearly.
+
+3) CAPTURE PAYMENT CONTEXT EARLY
+
+At reception, save:
+- payment category: cash / insurance / contract / company
+- payer / company if applicable
+- treasury used
+- payment status
+- invoice reference
+
+This context must flow into the resulting invoice/payment records.
+
+Do not let payment type be selected at reception and then lost before billing.
+
+4) DOCTOR SCREEN MUST BE PURELY CLINICAL
+
+Doctor consultation screen should contain only:
+- patient header
+- visit details
+- complaint
+- diagnosis
+- notes
+- medication/prescription
+- service requests
+- save / complete consultation
+- optional doctor statement shortcut
+
+Doctor screen must not contain:
+- treasury selection
+- cashier controls
+- manual consultation fee posting
+- unrelated admin controls
+
+5) CLINIC-BASED ACCESS CONTROL
+
+Implement and enforce:
+- reception users are assigned to clinic(s)
+- doctors are assigned to clinic(s)
+- queue queries must filter by clinic assignment
+- non-admin users must never see all clinics by default
+
+If current code uses weak filtering, tighten it.
+
+6) DOCTOR QUEUE FILTERING
+
+Doctor queue should show only:
+- patients whose visit was created by reception for that clinic
+- today’s patients by default
+- relevant statuses only (waiting / in_consultation / maybe completed today)
+- optionally filtered by the doctor assigned to the visit
+
+7) RECEPTION SCREENS
+
+Ensure the following reception screens/workflows are clear:
+
+Reception Dashboard
+- only assigned clinic(s)
+- today queue counts
+- waiting patients
+- paid / unpaid consultation counts if useful
+
+Patient Search / Registration
+- search patient
+- create patient if new
+
+Create Clinic Visit / Booking
+- select clinic
+- select doctor
+- visit type
+- payment category
+- consultation fee
+- treasury/payment method
+- confirm + collect + send to queue
+
+Queue Management
+- waiting patients
+- status
+- send/open to doctor
+
+8) DOCTOR SCREENS
+
+Ensure the following doctor screens/workflows are clear:
+
+Doctor Queue
+- only assigned clinic / doctor queue
+- today’s patients only by default
+- open consultation
+
+Doctor Consultation Screen
+- complaint
+- diagnosis
+- notes
+- prescription
+- service orders
+- complete consultation
+
+Doctor Statement / Activity
+- if present, keep it read/report oriented
+- no cashier actions
+
+==================================================
+DATA / ENTITY REQUIREMENTS
+==================================================
+
+Review the relevant entities and align them with this workflow:
+
+- patients
+- clinic appointments / visits
+- clinic consultations
+- clinic orders
+- patient invoice headers
+- patient invoice lines
+- patient invoice payments
+- clinic assignments
+- doctor schedules
+- treasuries
+
+Enforce these principles:
+- consultation fee originates from reception
+- consultation clinical record originates from doctor
+- service orders originate from doctor
+- service execution originates from the target department
+- payment originates from reception/cashier, not doctor
+
+==================================================
+IDEMPOTENCY / SAFETY RULES
+==================================================
+
+1. Consultation fee must not be duplicated.
+2. Re-opening consultation must not create a second consultation fee.
+3. Editing consultation must not duplicate service orders unless explicitly re-added.
+4. Role permissions must be enforced both in UI and backend.
+5. Queue/status transitions must be controlled and auditable.
+
+==================================================
+PERMISSION MODEL
+==================================================
+
+Define / verify permissions such as:
+
+Reception:
+- clinic.view_own
+- clinic.book
+- clinic.collect_consultation_fee
+- clinic.queue_manage
+
+Doctor:
+- doctor.consultation
+- doctor.view_own_queue
+- doctor.view_statement
+
+Cashier (if separate from reception):
+- cashier.collect
+- cashier.refund
+- cashier.shift
+
+Admin:
+- clinic.view_all
+- clinic.manage_all
+- doctor.view_all_queues
+
+If equivalent permissions already exist, reuse them consistently.
+
+==================================================
+IMPLEMENTATION INSTRUCTIONS
+==================================================
+
+PHASE 1 — ANALYZE CURRENT CODE
+Inspect current implementation of:
+- patient registration / booking
+- clinic queue
+- doctor consultation
+- consultation fee generation
+- payment handling
+- clinic-based filtering
+- doctor-based filtering
+
+Identify exactly where:
+- consultation fee is currently created
+- queue entries are created
+- role filtering is weak or missing
+- doctor currently sees too much
+- reception currently sees too much
+
+PHASE 2 — PRESENT EXECUTION PLAN FIRST
+Before coding, return a precise implementation plan that includes:
+1) current behavior summary
+2) gaps against the target workflow
+3) files to change
+4) backend logic to move from doctor to reception
+5) permission/filter changes required
+6) status flow changes required
+7) risks and edge cases
+
+Do not implement before presenting this plan.
+
+PHASE 3 — IMPLEMENT AFTER APPROVAL
+Once the plan is approved:
+- move consultation fee creation/collection to reception flow
+- remove consultation billing from doctor flow
+- enforce clinic-based visibility
+- enforce doctor queue filtering
+- keep code modular and refactored
+- avoid giant files
+- delete replaced code paths safely
+
+==================================================
+FINAL DELIVERABLE FORMAT FOR PHASE 2 PLAN
+==================================================
+
+Return exactly:
+
+1) Current behavior
+2) Target behavior
+3) Gaps to close
+4) Files to modify
+5) Backend changes
+6) Frontend changes
+7) Permission/filtering changes
+8) Status flow changes
+9) Risks / edge cases
+10) Recommended implementation order
