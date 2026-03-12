@@ -174,13 +174,19 @@ const methods = {
       await client.query('BEGIN');
 
       // ── 1. احضر بيانات العيادة والخدمة ────────────────────────────────────
+      // قفل صف العيادة أولاً ثم جلب البيانات المرتبطة (FOR UPDATE لا يعمل مع LEFT JOIN)
+      const lockRes = await client.query(
+        `SELECT id FROM clinic_clinics WHERE id = $1 FOR UPDATE`, [data.clinicId]
+      );
+      if (!lockRes.rows.length) throw new Error("العيادة غير موجودة");
+
       const clinicRes = await client.query(`
         SELECT c.*, s.name_ar AS svc_name, s.base_price AS svc_base_price,
                s.department_id AS svc_dept_id, dep.name_ar AS svc_dept_name
         FROM clinic_clinics c
         LEFT JOIN services s ON s.id = c.consultation_service_id
         LEFT JOIN departments dep ON dep.id = s.department_id
-        WHERE c.id = $1 FOR UPDATE
+        WHERE c.id = $1
       `, [data.clinicId]);
       const clinic = clinicRes.rows[0];
       if (!clinic) throw new Error("العيادة غير موجودة");
@@ -210,6 +216,23 @@ const methods = {
       }
       if (paymentType === 'CONTRACT' && !data.payerReference?.trim()) {
         throw new Error("اسم الجهة المتعاقدة مطلوب");
+      }
+
+      // ── 2b. حماية من الحجز المكرر ─────────────────────────────────────────
+      // نرفض إنشاء موعد ثانٍ لنفس المريض + العيادة + الطبيب + التاريخ
+      // إذا كان هناك موعد قائم (غير ملغى) — يمنع تضاعف الفاتورة
+      if (data.patientId) {
+        const dupCheck = await client.query(`
+          SELECT id, turn_number FROM clinic_appointments
+          WHERE clinic_id = $1 AND doctor_id = $2 AND patient_id = $3
+            AND appointment_date = $4::date AND status != 'cancelled'
+          LIMIT 1
+        `, [data.clinicId, data.doctorId, data.patientId, data.appointmentDate]);
+        if (dupCheck.rows.length > 0) {
+          throw new Error(
+            `يوجد حجز قائم بالفعل لهذا المريض مع نفس الطبيب في هذا اليوم (دور #${dupCheck.rows[0].turn_number}) — يُرجى الإلغاء أولاً إن كان مطلوباً إعادة الحجز`
+          );
+        }
       }
 
       // ── 3. احسب رقم الدور ──────────────────────────────────────────────────
@@ -316,8 +339,9 @@ const methods = {
             INSERT INTO treasury_transactions
               (treasury_id, type, amount, description, source_type, source_id, transaction_date)
             VALUES ($1, 'receipt', $2, $3, 'clinic_appointment', $4, CURRENT_DATE)
-            ON CONFLICT (source_type, source_id, treasury_id) DO UPDATE
-              SET amount = EXCLUDED.amount, description = EXCLUDED.description
+            ON CONFLICT (source_type, source_id, treasury_id)
+              WHERE source_type IS NOT NULL AND source_id IS NOT NULL
+            DO UPDATE SET amount = EXCLUDED.amount, description = EXCLUDED.description
           `, [
             resolvedTreasuryId,
             consultationFee,

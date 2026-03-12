@@ -1,0 +1,52 @@
+The implementation looks strong, but final approval is blocked until these 4 items are clarified/fixed.
+
+1) Invoice status mapping
+The approved plan expected:
+- CASH -> paid
+- INSURANCE / CONTRACT -> pending
+
+But your implementation report says:
+- CASH -> finalized
+- INSURANCE / CONTRACT -> draft
+
+Clarify whether this is the correct existing invoice lifecycle in the system.
+If yes, document the exact mapping:
+- finalized = paid?
+- draft = pending/unpaid?
+If not, align the implementation to the approved business meaning.
+
+2) Consultation service order visibility
+You reported that the consultation service creates a clinic_orders row with status='executed' and said it is visible to department.
+Clarify and fix if needed:
+- this consultation-fee order must not appear as a department-executable operational order
+- it must not be re-executed or re-billed
+- if it exists only for audit linkage, document that clearly and ensure operational screens exclude it
+
+3) Double-booking / duplicate billing protection
+Current report says a duplicate reception mistake can still create two appointments and two invoices.
+This needs an operational safeguard now.
+Implement at least one safe guardrail:
+- validation to detect an existing open appointment for same patient + clinic + doctor + date
+- warning/block before creating another consultation invoice
+Explain exactly what safeguard you apply.
+
+4) Runtime verification, not code-traced only
+Run real end-to-end verification for these scenarios and report actual observed DB/results:
+A) CASH booking
+B) INSURANCE booking
+C) CONTRACT booking
+D) doctor opens and saves consultation after booking
+Confirm actual rows created / not created in:
+- clinic_appointments
+- patient_invoice_headers
+- patient_invoice_lines
+- patient_invoice_payments
+- treasury_transactions
+- clinic_orders
+
+Return exactly:
+1) Invoice status clarification/fix
+2) Consultation-order visibility clarification/fix
+3) Duplicate-billing safeguard applied
+4) Runtime scenario verification results
+5) Remaining risks / assumptions
