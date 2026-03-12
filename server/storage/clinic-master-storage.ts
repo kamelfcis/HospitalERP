@@ -441,6 +441,7 @@ const methods = {
           // ── GL: قيد استلام مقدم (د. خزينة / ك. 21163) ──────────────────────
           const treasuryGlAccountId = await getTreasuryGlAccountId(client, resolvedTreasuryId);
           const deferredAccountId = await getDeferredAccountId(client);
+          const bookingDate = new Date().toISOString().slice(0, 10);
           await postOpdJournalEntry(client, {
             appointmentId: appointment.id,
             sourceEntryType: 'OPD_ADVANCE_RECEIPT',
@@ -448,7 +449,7 @@ const methods = {
             creditAccountId: deferredAccountId,
             amount: consultationFee,
             description: `مقدم كشف عيادة: ${data.patientName} — ${clinic.name_ar ?? ''}`,
-            entryDate: data.appointmentDate,
+            entryDate: bookingDate,
             createdBy: data.createdBy,
           });
           await client.query(
@@ -537,6 +538,7 @@ const methods = {
             `SELECT net_amount FROM patient_invoice_headers WHERE id = $1`, [apt.invoice_id]
           );
           const amount = invRes.rows.length > 0 ? parseFloat(invRes.rows[0].net_amount || '0') : 0;
+          const completionDate = new Date().toISOString().slice(0, 10);
           if (amount > 0) {
             await postOpdJournalEntry(client, {
               appointmentId: id,
@@ -545,12 +547,12 @@ const methods = {
               creditAccountId: revenueAccountId,
               amount,
               description: `اعتراف إيراد كشف: ${apt.patient_name}`,
-              entryDate: apt.appointment_date,
+              entryDate: completionDate,
             });
-            await client.query(
-              `UPDATE clinic_appointments SET accounting_posted_revenue = TRUE WHERE id = $1`, [id]
-            );
           }
+          await client.query(
+            `UPDATE clinic_appointments SET accounting_posted_revenue = TRUE WHERE id = $1`, [id]
+          );
         }
 
         await client.query('COMMIT');
