@@ -89,6 +89,39 @@ All shared-entity lookups (doctors, departments, accounts, treasuries, clinics, 
 - **Base component**: `client/src/components/lookups/BaseLookupCombobox.tsx`
 This architecture enforces consistent data fetching and display patterns, preventing direct `fetch()` calls or `useQuery` outside designated lookup modules for these entities.
 
+### OPD Refund Workflow — Final Rules
+
+Refunds on clinic appointments are handled by `cancelAndRefundAppointment` (storage) via `POST /api/clinic-appointments/:id/cancel-refund` (guarded by `checkPermission("clinic.book")`).
+
+**Behavioral rules**
+
+1. **Partial refund** — `cancelAppointment` omitted or `false`, `refundAmount < paidAmount`: reduces `paid_amount` on the invoice, invoice stays `finalized`, appointment stays active.
+2. **Full-cancel refund** — `cancelAppointment=true`: always refunds the full remaining `paid_amount` automatically (any `refundAmount` in the request is ignored). Invoice moves to `cancelled` (`paid_amount=0`), appointment moves to `cancelled`.
+3. **No partial-cancel hybrid** — there is no path that cancels an appointment while retaining any cash. `cancelAppointment=true` always equals a full refund of whatever remains.
+
+**Database writes per refund (single atomic transaction)**
+
+4. Every refund — partial or full — creates:
+   - A negative row in `patient_invoice_payments` (`amount = -actualRefund`, `payment_method='cash'`)
+   - A row in `treasury_transactions` (`type='refund'`, `amount=-actualRefund`, `source_type='clinic_appointment_refund'`, `source_id=gen_random_uuid()`)
+   - A row in `audit_log` (`action='refund'`, `new_values` includes `aptId`, `invoiceId`, `patientName`, `refundAmount`, `paidAmountBefore`, `isFullCancel`, `type`, `treasuryId`, `clinicId`, `refundedBy`, `timestamp`)
+
+**Access control**
+
+5. Only users with `clinic.book` permission (reception / admin) can execute refunds.
+6. Doctors (`doctor.consultation` only) cannot execute refunds — the route returns 403.
+7. Non-cash appointments (`payment_type != 'CASH'`) are hard-blocked with an Arabic error.
+8. Appointments with `status='done'` are hard-blocked and cannot be refunded.
+
+**Hard validation (throws, does not silently clamp)**
+
+- `refundAmount > paid_amount` → error
+- `refundAmount <= 0` → error
+- `paid_amount = 0` → error
+- Invoice already `cancelled` → error
+- Appointment already `cancelled` or `done` → error
+- Clinic has no active treasury → error
+
 ## External Dependencies
 ### Database
 - PostgreSQL
