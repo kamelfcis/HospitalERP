@@ -1,0 +1,940 @@
+PROMPT FOR REPLIT AGENT
+Existing Patient Reception Screen — In-Place UX/UI Enhancement + Strong Safe Refactor + Code Structure Cleanup
+
+You are working on an existing Patient Reception Screen in a Hospital ERP / HMIS system.
+
+This screen is one of the highest-priority and highest-usage screens in the entire system. It is used constantly by front-desk / reception staff, so it must become:
+
+wider
+
+smoother
+
+more flexible
+
+faster in search and selection
+
+easier for repetitive daily use
+
+more visually strong
+
+more enjoyable and less tiring
+
+better structured internally for long-term maintainability
+
+1) CRITICAL NON-NEGOTIABLE RULE — PRESERVE THE EXISTING FOUNDATION
+
+This is NOT a rebuild-from-scratch task.
+This is NOT a “create a new replacement screen” task.
+
+You must improve and refactor the existing Patient Reception Screen in-place.
+
+You MUST preserve:
+
+the current screen route
+
+the current main screen file unless safe extraction is needed
+
+existing business logic
+
+existing submission flow
+
+existing API integrations
+
+existing backend request/response contracts
+
+existing permissions / role-based behavior
+
+existing validation rules unless a clearly safe improvement is required
+
+existing important fields and data bindings
+
+existing functional behavior from the user/business perspective
+
+You MUST NOT:
+
+create a parallel replacement screen
+
+throw away the current working implementation
+
+casually rewrite the entire screen from zero
+
+break the current route
+
+break the current payload shape
+
+break current backend compatibility
+
+break current hooks/state flow
+
+break permissions/RBAC behavior
+
+rename backend-bound fields without necessity
+
+remove important fields or existing working behaviors
+
+This task is a safe in-place enhancement + strong refactor over the current working base.
+
+2) PRIMARY OBJECTIVE
+
+Upgrade the current Patient Reception Screen so it feels like a professional hospital front-desk screen that is:
+
+fast
+
+clear
+
+comfortable
+
+modern
+
+efficient
+
+stable
+
+maintainable
+
+The receptionist/front-desk user should be able to:
+
+search patients quickly
+
+choose the correct patient quickly
+
+move through the form smoothly
+
+understand the next step immediately
+
+enter data with minimal friction
+
+use the screen for long periods without fatigue
+
+enjoy a cleaner and more practical experience
+
+All of this must happen without losing the current foundation and logic.
+
+3) REQUIRED EXECUTION STRATEGY
+
+Follow this sequence exactly.
+
+Phase A — Inspect first, do not rewrite blindly
+
+Before changing anything, inspect and understand the current implementation.
+
+Review:
+
+the existing Patient Reception screen component
+
+its JSX/layout structure
+
+imported child components
+
+hooks and local state
+
+form state management
+
+submit handlers
+
+API calls
+
+validation rules
+
+permissions / role behavior
+
+conditional rendering logic
+
+current patient search flow
+
+current selection flow
+
+current keyboard flow
+
+current layout pain points
+
+current UX pain points
+
+current performance bottlenecks
+
+current code readability and maintainability problems
+
+Before major edits, print a short technical summary:
+
+which file(s) are involved
+
+what currently exists
+
+what must remain logically unchanged
+
+what can be improved visually
+
+what can be improved in usability
+
+what can be improved in search/selection speed
+
+what can be safely refactored
+
+what is low-risk vs higher-risk
+
+Phase B — Improve in place, not by replacement
+
+Refactor and improve the current screen on top of the existing implementation.
+
+Priority order:
+
+preserve logic
+
+improve layout
+
+improve search speed and selection UX
+
+improve keyboard flow
+
+improve visual hierarchy
+
+improve actions area
+
+improve responsiveness/performance
+
+apply strong but safe refactor
+
+improve code organization and readability
+
+add clear structural indexing/comments in code
+
+Do not jump directly to a rewrite.
+
+4) UX / UI TARGET
+
+The final screen must feel:
+
+Wide and spacious
+
+better desktop width usage
+
+reduced unnecessary side margins
+
+reduced cramped feeling
+
+better horizontal grouping
+
+less excessive vertical stacking
+
+less unnecessary scrolling
+
+Smooth
+
+easy movement between fields
+
+natural field order
+
+responsive search
+
+fast result selection
+
+no awkward spacing
+
+no jumpy layout behavior
+
+no clumsy dropdown interaction
+
+Flexible
+
+handles optional/conditional sections gracefully
+
+remains organized when more visit details appear
+
+adapts intelligently to desktop space
+
+maintains usability across different visit scenarios
+
+Easy and enjoyable
+
+The user should feel:
+
+the next step is obvious
+
+the screen helps rather than resists
+
+important actions are easy to reach
+
+daily repeated use is comfortable
+
+visual fatigue is reduced
+
+the interface feels professional and practical
+
+5) SEARCH AND SELECTION SPEED — HIGH PRIORITY
+
+This is a major requirement.
+
+Improve patient search so it becomes very fast and clear
+
+Enhance the existing patient search without breaking current logic.
+
+The search should feel:
+
+responsive
+
+keyboard-friendly
+
+easy to scan
+
+easy to select from
+
+tolerant of normal real-world user search behavior
+
+If already compatible with existing logic and APIs, support search by:
+
+patient name
+
+mobile number
+
+national ID
+
+patient code / file number
+
+Search UX requirements
+
+autofocus the main search field on screen load if safe
+
+typing should feel immediate
+
+use debounce for remote search if needed
+
+avoid unnecessary API calls
+
+preserve current API contract
+
+show lightweight loading state
+
+show clean empty state
+
+show results in a compact readable way
+
+show useful identifying fields without clutter
+
+Search result row content can include, when available and cheap:
+
+patient name
+
+patient code/file number
+
+mobile
+
+national ID
+
+age / gender
+
+last visit / contract / balance only if already supported and not expensive
+
+Keep result rows compact, readable, and fast to scan.
+
+Keyboard support for search results
+
+If safe and practical:
+
+Arrow Down / Arrow Up to move through results
+
+Enter to select highlighted result
+
+Escape to close result list if applicable
+
+clear visual highlight for current row
+
+6) FAST SELECTION UX FOR IMPORTANT FIELDS
+
+Any selection field such as:
+
+patient
+
+department
+
+clinic
+
+doctor
+
+visit type
+
+insurance / contract
+
+payment-related selection
+
+must be reviewed and improved to feel faster and clearer.
+
+Improve:
+
+dropdown readability
+
+searchable options where relevant
+
+highlighted active option
+
+keyboard accessibility
+
+visible selected state
+
+reduced clicks/time-to-select
+
+If current implementation uses simple selects and replacing them is risky, improve them safely instead of forcing risky architecture changes.
+
+7) DATA ENTRY FLOW IMPROVEMENT
+
+Make the form faster and more comfortable for repeated daily entry.
+
+Required:
+
+logical tab order following real front-desk workflow
+
+smart focus progression
+
+autofocus on the first important field
+
+improve Enter behavior only where safe
+
+reduce unnecessary mouse dependence
+
+keep frequent fields easy to reach
+
+reduce repetitive friction
+
+required fields must be clearly visible
+
+validation messages should be clean and non-noisy
+
+The user should be able to move through the screen with a keyboard-first workflow comfortably.
+
+8) LAYOUT IMPROVEMENT REQUIREMENTS
+
+Improve the existing layout so it feels more like a strong hospital ERP front-desk screen.
+
+Preferred layout behavior
+
+use a wider container or near full-width layout
+
+use horizontal grid intelligently on desktop
+
+reduce wasted whitespace
+
+create clear visual grouping
+
+reduce long exhausting form blocks
+
+keep important actions easy to find
+
+avoid overstacking everything vertically when desktop width is available
+
+Suggested visual grouping
+
+Use the existing fields and regroup them into logical sections such as:
+
+Section 1 — Patient Search / Identification
+
+patient search input
+
+national ID / mobile / patient code / file number
+
+existing patient match area
+
+quick selection area
+
+Section 2 — Patient Basic Data
+
+patient name
+
+gender
+
+DOB / age
+
+phone
+
+address
+
+main demographic details
+
+Section 3 — Visit / Encounter Details
+
+visit type
+
+department
+
+clinic
+
+doctor
+
+appointment / visit timing
+
+priority / urgency if applicable
+
+Section 4 — Financial / Contract / Insurance
+
+payment type
+
+contract / insurance
+
+pricing category if exists
+
+financial notes if exists
+
+Section 5 — Summary + Actions
+
+quick summary of chosen patient and visit
+
+Create / Save / Save & Print / Cancel buttons
+
+Do not force bad structure if existing logic suggests a better grouping.
+Adapt intelligently to the current implementation.
+
+9) VISUAL HIERARCHY REQUIREMENTS
+
+The most important fields and actions must stand out clearly.
+
+These must be visually prominent:
+
+patient search / identification
+
+patient name
+
+visit type
+
+department / clinic / doctor
+
+required fields
+
+primary action button
+
+Improve:
+
+section titles
+
+spacing
+
+label clarity
+
+typography hierarchy
+
+field grouping
+
+action emphasis
+
+summary visibility
+
+Use a professional HMIS / ERP style:
+
+clean panels/cards
+
+calm and modern
+
+readable
+
+not flashy
+
+not crowded
+
+10) ACTION AREA REQUIREMENTS
+
+Primary actions must be obvious and easy to reach.
+
+Review and improve buttons like:
+
+Create Visit
+
+Save
+
+Save & Print
+
+Cancel
+
+They should be:
+
+clearly grouped
+
+visually balanced
+
+properly prioritized
+
+easy to access
+
+not buried under long content
+
+Primary action must stand out strongly.
+Secondary actions should remain clear but not visually dominant.
+
+11) MICRO-INTERACTIONS AND SCREEN FEEL
+
+Improve the feel of the screen in useful subtle ways.
+
+Examples:
+
+better hover/focus states
+
+better selected-result state
+
+clearer active input feel
+
+smoother grouping of related fields
+
+cleaner loading states
+
+reduced visual noise
+
+stronger confidence in search and selection
+
+Do not add decorative fluff.
+Only add micro-improvements that genuinely improve usability and comfort.
+
+12) PERFORMANCE REQUIREMENTS
+
+This screen must remain fast.
+
+While refactoring:
+
+avoid unnecessary rerenders
+
+memoize expensive derived values when useful
+
+debounce search where appropriate
+
+avoid heavy filtering on every keystroke if not needed
+
+keep typing responsive
+
+keep search and dropdown interactions fast
+
+preserve correctness
+
+If lookup lists are large:
+
+optimize rendering safely
+
+lazy-load when appropriate
+
+avoid repeated heavy calculations during render
+
+13) STRONG SAFE REFACTOR REQUIREMENTS
+
+Perform a strong refactor, but a safe one.
+
+Refactor goals
+
+reduce component complexity
+
+reduce JSX clutter
+
+improve readability
+
+improve separation of concerns
+
+improve maintainability
+
+reduce repeated code
+
+clarify responsibilities
+
+keep behavior stable
+
+Refactor style
+
+Prefer:
+
+extracting safe presentational subcomponents
+
+extracting repetitive UI blocks
+
+extracting derived UI helpers
+
+cleaning up conditional rendering
+
+grouping related logic
+
+naming variables/functions more clearly where safe
+
+organizing handlers logically
+
+reducing inline anonymous complexity where it hurts readability
+
+But do NOT:
+
+refactor in a way that breaks existing logic ownership
+
+spread business logic across files unnecessarily
+
+introduce a brand-new architecture without strong need
+
+change external behavior casually
+
+14) CODE ORGANIZATION + “INDEXING” / STRUCTURAL CLARITY
+
+A very important requirement:
+Make the code easier to understand for future developers.
+
+Add strong code organization and clear “indexes” / structure markers
+
+The code should become easy to navigate.
+
+Use:
+
+clear section headers in code comments
+
+clear grouping of imports
+
+clear grouping of constants
+
+clear grouping of hooks/state
+
+clear grouping of derived values
+
+clear grouping of handlers
+
+clear grouping of effects
+
+clear grouping of render sections
+
+clear naming for extracted components
+
+Example desired internal structure
+
+Use a clear structure like:
+
+Imports
+
+Types / interfaces
+
+Constants
+
+Utility helpers
+
+Main component start
+
+State / refs
+
+Data fetching / hooks
+
+Derived values
+
+Event handlers
+
+Effects
+
+Render helper sections
+
+Main JSX return
+
+Add clear code section comments such as:
+
+// ===== Imports =====
+
+// ===== Types =====
+
+// ===== Local State =====
+
+// ===== Derived Data =====
+
+// ===== Handlers =====
+
+// ===== Effects =====
+
+// ===== Search Logic =====
+
+// ===== Layout Sections =====
+
+// ===== Action Area =====
+
+Do not over-comment trivial lines.
+Use comments to create navigational clarity, not noise.
+
+15) COMPONENT EXTRACTION GUIDANCE
+
+You may extract smaller components only if it improves readability and keeps behavior intact.
+
+Possible safe extraction areas:
+
+patient search area
+
+patient summary card
+
+patient quick match list
+
+visit details panel
+
+financial/contract panel
+
+quick summary panel
+
+actions area
+
+But do not extract just for the sake of extraction.
+Only extract where it improves readability and reduces clutter safely.
+
+Keep logic centralized where needed and avoid unnecessary fragmentation.
+
+16) DESKTOP-FIRST REQUIREMENT
+
+This is mainly a desktop hospital workstation screen.
+
+Optimize first for:
+
+reception/front-desk desktop usage
+
+high-frequency repetitive use
+
+quick scan and quick data entry
+
+Ensure acceptable responsiveness on smaller widths, but desktop workflow is the main priority.
+
+17) CODE SAFETY RULES
+
+You must preserve:
+
+current routes
+
+backend compatibility
+
+current payload shape
+
+current submit behavior
+
+permissions / RBAC behavior
+
+important field bindings
+
+business rules
+
+validation logic unless a clearly safe improvement is needed
+
+If any risky change is required:
+
+explain why it is needed
+
+isolate it carefully
+
+keep external behavior unchanged
+
+minimize the scope of change
+
+18) PREFERRED IMPLEMENTATION ORDER
+
+Implement in this order:
+
+inspect current code deeply
+
+summarize existing behavior and constraints
+
+improve layout using current structure
+
+improve patient search UX and search result selection
+
+improve width/grid/grouping
+
+improve action area
+
+improve keyboard flow and focus behavior
+
+improve selection controls/dropdowns
+
+perform strong but safe refactor
+
+reorganize code structure clearly
+
+add code section indexing/comments
+
+apply light performance optimizations
+
+verify no functional regressions
+
+Do not jump straight to a rewrite.
+
+19) FINAL OUTPUT REQUIREMENTS
+
+Before finishing, provide a concise implementation summary with:
+
+A. What was preserved
+
+route
+
+existing business logic
+
+submit flow
+
+API contracts
+
+permissions
+
+validation
+
+important fields
+
+B. What was improved
+
+layout
+
+width usage
+
+visual grouping
+
+search speed/UX
+
+selection UX
+
+keyboard flow
+
+action area
+
+performance improvements
+
+refactor improvements
+
+code organization improvements
+
+C. What was refactored
+
+files touched
+
+components extracted
+
+duplicated logic reduced
+
+structure improvements made
+
+section indexing/comments added
+
+D. Verification checklist
+
+Confirm explicitly that:
+
+existing behavior still works
+
+no backend contract was broken
+
+no route was broken
+
+no key field was removed
+
+no permission behavior was broken
+
+search still works correctly
+
+selection still works correctly
+
+submit flow still works correctly
+
+20) FINAL QUALITY STANDARD
+
+The final result should feel like:
+
+the same screen, not a different screen
+
+the same working foundation, but much better
+
+wider and cleaner
+
+smoother and more flexible
+
+faster in search and selection
+
+easier and more enjoyable to use
+
+more maintainable internally
+
+more readable for future developers
+
+professionally refactored without breaking behavior
+
+Do not optimize for flashy design.
+Optimize for real hospital front-desk productivity, comfort, stability, and code clarity.
