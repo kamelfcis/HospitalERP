@@ -1,0 +1,233 @@
+PROMPT FOR REPLIT AGENT
+Bed Board Card UI Redesign (Visual Only – Preserve Logic)
+
+You are working on the Hospital Bed Board screen.
+
+The current implementation works functionally, but the bed cards visually look weak, unbalanced, and not optimized for usability.
+
+Your task is to redesign the Bed Cards UI only, while preserving 100% of the existing logic and behavior.
+
+STRICT RULES
+
+Do NOT change:
+
+any backend logic
+
+any API contracts
+
+any routes
+
+any data models
+
+any event handlers
+
+any permission behavior
+
+any business logic
+
+any bed state logic (occupied / empty / cleaning)
+
+any patient data handling
+
+Only improve visual design, layout, and information hierarchy.
+
+IMPORTANT
+
+If a design agent or UI generation capability exists, use it to generate a better card layout proposal before implementing.
+
+The goal is a modern hospital bed board card UI similar to systems used in:
+
+Epic
+
+Cerner
+
+Oracle Health
+
+CURRENT PROBLEMS (From the Screenshot)
+
+The current cards have the following issues:
+
+Too much empty space
+
+Weak visual hierarchy
+
+Bed information not visually prioritized
+
+Patient information is small and poorly aligned
+
+Bed status color is not clearly emphasized
+
+Icons and labels are not balanced
+
+The card does not visually scale well inside the room row
+
+The layout wastes horizontal space
+
+DESIGN GOALS
+
+The bed card should become:
+
+cleaner
+
+visually structured
+
+easier to scan quickly
+
+more compact but clearer
+
+visually aligned with hospital dashboards
+
+A nurse or admin should be able to understand the bed state in under 1 second.
+
+INFORMATION HIERARCHY
+
+The bed card must clearly show, in this order of importance:
+
+1️⃣ Bed Label (A / B / B1 etc.)
+2️⃣ Status (Occupied / Empty / Needs Cleaning)
+3️⃣ Patient Name (if occupied)
+4️⃣ Patient ID / Admission Number
+5️⃣ Quick actions menu
+
+STATUS VISUAL SYSTEM
+
+Use strong visual status cues:
+
+Occupied → blue
+Empty → green
+Cleaning → yellow/orange
+
+The status badge should be clearly visible.
+
+CARD LAYOUT PROPOSAL
+
+Each Bed Card should contain:
+
+Top Row
+
+Bed label
+
+small bed icon
+
+menu button
+
+Middle Area
+
+Patient name (large)
+
+Patient ID below
+
+Bottom Area
+
+Status badge
+
+subtle metadata if needed
+
+CARD SIZE
+
+Cards should be:
+
+slightly larger
+
+more balanced
+
+consistent width
+
+responsive inside the room container
+
+Avoid large empty zones.
+
+ROOM ROW LAYOUT
+
+Within each room row:
+
+beds should align horizontally
+
+spacing should be consistent
+
+cards should visually feel like part of the same room
+
+MICRO UX IMPROVEMENTS
+
+Improve:
+
+hover state
+focus state
+selected state
+
+Add subtle shadow or border emphasis.
+
+ACCESSIBILITY
+
+Maintain:
+
+ARIA roles
+keyboard navigation
+focus-visible rings
+
+Do not remove accessibility attributes.
+
+IMPLEMENTATION STRATEGY
+
+Inspect the current bed card component.
+
+Preserve its logic.
+
+Improve the JSX structure for visual clarity.
+
+Improve spacing and layout.
+
+Improve typography hierarchy.
+
+Improve status visibility.
+
+Improve responsiveness.
+
+Do NOT rewrite the entire component unnecessarily.
+
+OPTIONAL IMPROVEMENT
+
+If useful, extract a small BedCard component for visual clarity while preserving existing behavior.
+
+OUTPUT REQUIRED
+
+Return:
+
+1. Before vs After layout description
+
+Explain the layout improvements.
+
+2. UI changes made
+
+List visual improvements.
+
+3. Components modified
+
+List files touched.
+
+4. Confirmation
+
+Explicitly confirm:
+
+no backend changes
+
+no logic changes
+
+no API changes
+
+no route changes
+
+no state changes
+
+only UI improvements
+
+DESIGN STANDARD
+
+The final Bed Cards should feel like a professional hospital bed board dashboard, not generic boxes.
+
+Focus on:
+
+clarity
+scan speed
+clean layout
+visual balance
