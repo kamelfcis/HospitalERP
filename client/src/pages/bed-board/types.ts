@@ -11,6 +11,10 @@ export interface BedData {
   roomServiceId?: string | null;
   roomServiceNameAr?: string | null;
   roomServicePrice?: string | null;
+  /* enriched by FloorSection for ticket printing */
+  roomNameAr?: string | null;
+  roomNumber?: string | null;
+  floorNameAr?: string | null;
 }
 
 export interface RoomData {

@@ -25,7 +25,8 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import { DoctorLookup, DepartmentLookup } from "@/components/lookups";
-import { Tag, UserCheck, Search, Loader2 } from "lucide-react";
+import { Tag, UserCheck, Search, Loader2, Printer } from "lucide-react";
+import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
 import type { SurgeryType }               from "@shared/schema";
 import { surgeryCategoryLabels }          from "@shared/schema";
 import type { BedData }                   from "../types";
@@ -138,6 +139,9 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   const [insuranceCompany, setInsuranceCompany] = useState("");
   const [highlightedIdx,   setHighlightedIdx]   = useState(-1);
 
+  /* printing */
+  const [printTicket, setPrintTicket] = useState(true);
+
   const searchInputRef    = useRef<HTMLInputElement>(null);
   const patientNameRef    = useRef<HTMLInputElement>(null);
   const patientPhoneRef   = useRef<HTMLInputElement>(null);
@@ -247,6 +251,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     setPaymentType("cash");
     setInsuranceCompany("");
     setHighlightedIdx(-1);
+    setPrintTicket(true);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -348,6 +353,22 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
           ? "تمت إضافة بند الإقامة وفتح غرفة العمليات فوراً"
           : "تمت إضافة بند الإقامة فوراً للفاتورة",
       });
+      if (printTicket && bed) {
+        printReceptionTicket({
+          patientName:    effectiveName,
+          visitType:      "admission",
+          departmentName: "القسم الداخلي",
+          floorName:      bed.floorNameAr ?? null,
+          roomName:       bed.roomNameAr ?? null,
+          roomNumber:     bed.roomNumber ?? null,
+          roomGrade:      bed.roomServiceNameAr ?? null,
+          bedNumber:      bed.bedNumber,
+          doctorName:     selectedDoctor?.name ?? null,
+          surgeryType:    selectedSurgery?.nameAr ?? null,
+          paymentType,
+          contractName:   paymentType === "contract" ? insuranceCompany || null : null,
+        });
+      }
       handleClose();
     },
     onError: (err: Error) => {
@@ -757,26 +778,43 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
           {/* ╔══════════════════════════════════════════════════════════════╗ */}
           {/* ║  ACTIONS                                                     ║ */}
           {/* ╚══════════════════════════════════════════════════════════════╝ */}
-          <div className="flex gap-3 pt-3 border-t sticky bottom-0 bg-background pb-1">
-            <Button
-              data-testid="button-admit-submit"
-              className="flex-1"
-              disabled={!canSubmit || admitMutation.isPending}
-              onClick={() => admitMutation.mutate()}
+          <div className="pt-3 border-t sticky bottom-0 bg-background pb-1 space-y-2">
+            {/* Print ticket toggle */}
+            <label
+              className="flex items-center gap-2 cursor-pointer select-none text-sm text-muted-foreground"
+              data-testid="label-print-ticket-toggle"
             >
-              {admitMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 animate-spin ml-1" aria-hidden="true" /> جارٍ الاستقبال...</>
-              ) : (
-                "استقبال المريض"
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              data-testid="button-admit-cancel"
-              onClick={handleClose}
-            >
-              إلغاء
-            </Button>
+              <input
+                type="checkbox"
+                checked={printTicket}
+                onChange={e => setPrintTicket(e.target.checked)}
+                className="h-4 w-4 accent-primary cursor-pointer"
+                data-testid="checkbox-print-ticket"
+              />
+              <Printer className="h-3.5 w-3.5" />
+              طباعة تذكرة المريض
+            </label>
+            <div className="flex gap-3">
+              <Button
+                data-testid="button-admit-submit"
+                className="flex-1"
+                disabled={!canSubmit || admitMutation.isPending}
+                onClick={() => admitMutation.mutate()}
+              >
+                {admitMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 animate-spin ml-1" aria-hidden="true" /> جارٍ الاستقبال...</>
+                ) : (
+                  "استقبال المريض"
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                data-testid="button-admit-cancel"
+                onClick={handleClose}
+              >
+                إلغاء
+              </Button>
+            </div>
           </div>
 
         </div>

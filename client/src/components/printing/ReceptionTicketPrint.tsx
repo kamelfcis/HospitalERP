@@ -4,20 +4,36 @@
  * Prints a queue / reception slip on a small thermal printer (80mm / 58mm).
  * Opens a dedicated popup window so nothing on the main page is hidden/affected.
  *
+ * Used in two contexts:
+ *  1. PatientFormDialog (OPD consultation / lab / radiology)
+ *  2. ReceptionSheet (inpatient admission)
+ *
  * Usage:
  *   import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
  *   printReceptionTicket({ ... });
  */
 
 export interface ReceptionTicketData {
-  patientName:   string;
-  visitType:     "consultation" | "lab" | "radiology" | "admission" | string;
+  patientName:    string;
+  visitType:      "consultation" | "lab" | "radiology" | "admission" | string;
   departmentName: string;
-  clinicName?:   string | null;
-  doctorName?:   string | null;
-  turnNumber?:   number | string | null;
-  paymentType?:  "CASH" | "INSURANCE" | "CONTRACT" | string;
-  contractName?: string | null;
+
+  /* OPD-specific */
+  clinicName?:    string | null;
+  doctorName?:    string | null;
+  turnNumber?:    number | string | null;
+
+  /* Admission-specific */
+  floorName?:     string | null;
+  roomName?:      string | null;
+  roomNumber?:    string | null;
+  roomGrade?:     string | null;   /* درجة الغرفة */
+  bedNumber?:     string | null;
+  surgeryType?:   string | null;
+
+  /* Shared */
+  paymentType?:   "CASH" | "INSURANCE" | "CONTRACT" | "cash" | "contract" | string;
+  contractName?:  string | null;
 }
 
 const VISIT_LABELS: Record<string, string> = {
@@ -28,10 +44,17 @@ const VISIT_LABELS: Record<string, string> = {
 };
 
 const PAYMENT_LABELS: Record<string, string> = {
-  CASH:      "نقدي",
+  CASH:     "نقدي",
+  cash:     "نقدي",
   INSURANCE: "تأمين",
   CONTRACT:  "تعاقد",
+  contract:  "تعاقد / تأمين",
 };
+
+function esc(s: string | null | undefined): string {
+  if (!s) return "";
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 function formatDate(d: Date): string {
   const day   = String(d.getDate()).padStart(2, "0");
@@ -41,11 +64,16 @@ function formatDate(d: Date): string {
 }
 
 function formatTime(d: Date): string {
-  let hours   = d.getHours();
-  const mins  = String(d.getMinutes()).padStart(2, "0");
-  const ampm  = hours >= 12 ? "م" : "ص";
-  hours       = hours % 12 || 12;
+  let hours  = d.getHours();
+  const mins = String(d.getMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "م" : "ص";
+  hours      = hours % 12 || 12;
   return `${hours}:${mins} ${ampm}`;
+}
+
+function row(label: string, value: string | null | undefined): string {
+  if (!value) return "";
+  return `<div class="row"><span class="lbl">${label}</span><span class="val">${esc(value)}</span></div>`;
 }
 
 export function printReceptionTicket(data: ReceptionTicketData): void {
@@ -54,23 +82,48 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
   const timeStr    = formatTime(now);
   const visitLabel = VISIT_LABELS[data.visitType] ?? data.visitType ?? "زيارة";
   const payLabel   = PAYMENT_LABELS[data.paymentType ?? ""] ?? "";
-  const turnNum    = data.turnNumber ?? null;
 
-  const clinicRow = data.clinicName
-    ? `<div class="row"><span class="lbl">العيادة</span><span class="val">${data.clinicName}</span></div>`
+  /* ── OPD queue box (only for consultation with turn number) ── */
+  const queueRow = data.visitType === "consultation" && data.turnNumber != null
+    ? `<div class="queue-box">
+         <span class="queue-label">رقم دورك في الطابور</span>
+         <span class="queue-num">${esc(String(data.turnNumber))}</span>
+       </div>`
     : "";
 
-  const doctorRow = data.doctorName
-    ? `<div class="row"><span class="lbl">الطبيب</span><span class="val">${data.doctorName}</span></div>`
+  /* ── Admission bed box ── */
+  const bedBox = data.visitType === "admission" && (data.roomName || data.bedNumber)
+    ? `<div class="bed-box">
+         <span class="bed-label">السرير المخصص</span>
+         <span class="bed-num">${esc(data.bedNumber ?? "—")}</span>
+         ${data.roomName
+           ? `<span class="bed-room">${esc(data.roomName)}${data.roomNumber ? ` (${esc(data.roomNumber)})` : ""}</span>`
+           : ""}
+       </div>`
     : "";
 
-  const queueRow = data.visitType === "consultation" && turnNum != null
-    ? `<div class="queue-box"><span class="queue-label">رقم دورك في الطابور</span><span class="queue-num">${turnNum}</span></div>`
-    : "";
-
-  const paymentRow = payLabel
-    ? `<div class="row"><span class="lbl">الدفع</span><span class="val">${payLabel}${data.contractName ? ` — ${data.contractName}` : ""}</span></div>`
-    : "";
+  /* ── Details section rows ── */
+  const detailsRows = data.visitType === "admission"
+    ? [
+        row("الطابق",       data.floorName),
+        row("الغرفة",       data.roomName
+              ? `${data.roomName}${data.roomNumber ? ` (${data.roomNumber})` : ""}`
+              : null),
+        row("درجة الغرفة",  data.roomGrade ?? (data.roomGrade === null ? "بدون درجة" : null)),
+        row("الطبيب",       data.doctorName),
+        row("نوع العملية",  data.surgeryType),
+        row("الدفع",        payLabel
+              ? `${payLabel}${data.contractName ? ` — ${esc(data.contractName)}` : ""}`
+              : null),
+      ].join("")
+    : [
+        row("القسم",        data.departmentName),
+        row("العيادة",      data.clinicName),
+        row("الطبيب",       data.doctorName),
+        row("الدفع",        payLabel
+              ? `${payLabel}${data.contractName ? ` — ${esc(data.contractName)}` : ""}`
+              : null),
+      ].join("");
 
   const html = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -95,11 +148,10 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
     .ticket {
       width: 72mm;
       max-width: 100%;
-      padding: 0;
       text-align: center;
     }
 
-    /* ─── Header ─── */
+    /* ─── Hospital header ─── */
     .header {
       border-top:    2px dashed #333;
       border-bottom: 2px dashed #333;
@@ -110,7 +162,6 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
       font-size: 13pt;
       font-weight: 900;
       line-height: 1.3;
-      letter-spacing: 0.02em;
     }
     .hospital-name-en {
       font-size: 7.5pt;
@@ -119,7 +170,7 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
       letter-spacing: 0.04em;
     }
 
-    /* ─── Queue box ─── */
+    /* ─── OPD queue box ─── */
     .queue-box {
       background: #f0f4ff;
       border: 1.5px solid #334;
@@ -140,7 +191,36 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
       line-height: 1;
       color: #111;
       display: block;
-      letter-spacing: 0.05em;
+    }
+
+    /* ─── Admission bed box ─── */
+    .bed-box {
+      background: #fff8f0;
+      border: 1.5px solid #a05a00;
+      border-radius: 6px;
+      padding: 8px 6px 6px;
+      margin: 8px 0 10px;
+      text-align: center;
+    }
+    .bed-label {
+      font-size: 7.5pt;
+      color: #7a4500;
+      display: block;
+      margin-bottom: 2px;
+    }
+    .bed-num {
+      font-size: 26pt;
+      font-weight: 900;
+      line-height: 1;
+      color: #7a4500;
+      display: block;
+    }
+    .bed-room {
+      font-size: 8pt;
+      color: #7a4500;
+      display: block;
+      margin-top: 3px;
+      font-weight: 600;
     }
 
     /* ─── Patient name ─── */
@@ -151,7 +231,7 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
       line-height: 1.3;
     }
 
-    /* ─── Rows ─── */
+    /* ─── Details rows ─── */
     .section {
       border-top: 1px dashed #aaa;
       padding-top: 6px;
@@ -203,14 +283,10 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
       justify-content: space-between;
     }
 
-    /* ─── Print ─── */
     @media print {
       body { padding: 0; }
       .ticket { width: 72mm; }
-      @page {
-        margin: 4mm;
-        size: 80mm auto;
-      }
+      @page { margin: 4mm; size: 80mm auto; }
     }
   </style>
 </head>
@@ -223,17 +299,12 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
     </div>
 
     ${queueRow}
+    ${bedBox}
 
-    <div class="patient-name">${data.patientName}</div>
+    <div class="patient-name">${esc(data.patientName)}</div>
 
     <div class="section">
-      <div class="row">
-        <span class="lbl">القسم</span>
-        <span class="val">${data.departmentName || "غير محدد"}</span>
-      </div>
-      ${clinicRow}
-      ${doctorRow}
-      ${paymentRow}
+      ${detailsRows}
     </div>
 
     <div style="margin-top:8px;">
@@ -254,9 +325,9 @@ export function printReceptionTicket(data: ReceptionTicketData): void {
 </body>
 </html>`;
 
-  const popup = window.open("", "_blank", "width=400,height=600,scrollbars=no,toolbar=no,menubar=no");
+  const popup = window.open("", "_blank", "width=400,height=650,scrollbars=no,toolbar=no,menubar=no");
   if (!popup) {
-    console.warn("[ReceptionTicketPrint] Popup blocked — ask user to allow popups.");
+    console.warn("[ReceptionTicketPrint] Popup blocked — allow popups for this site.");
     return;
   }
   popup.document.write(html);

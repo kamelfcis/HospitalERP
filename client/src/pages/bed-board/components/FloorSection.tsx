@@ -59,9 +59,12 @@ export function FloorSection({ floor, onAction }: Props) {
                   key={bed.id}
                   bed={{
                     ...bed,
-                    roomServiceId: room.serviceId,
+                    roomServiceId:    room.serviceId,
                     roomServiceNameAr: room.serviceNameAr,
                     roomServicePrice: room.servicePrice,
+                    roomNameAr:       room.nameAr,
+                    roomNumber:       room.roomNumber ?? null,
+                    floorNameAr:      floor.nameAr,
                   }}
                   onAction={onAction}
                 />
