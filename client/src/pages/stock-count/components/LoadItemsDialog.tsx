@@ -33,6 +33,7 @@ interface LoadedItem {
   itemId:         string;
   itemCode:       string;
   itemNameAr:     string;
+  itemNameEn:     string | null;
   itemCategory:   string;
   lotId:          string | null;
   expiryDate:     string | null;
@@ -194,7 +195,7 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
               <Search className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 className="pr-8 h-8 text-sm"
-                placeholder="اسم الصنف..."
+                placeholder="اسم الصنف (عربي / English)..."
                 value={nameQ}
                 onChange={e => setNameQ(e.target.value)}
                 data-testid="input-load-name"
@@ -329,6 +330,9 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
                     <TableCell className="font-mono text-sm">{item.itemCode}</TableCell>
                     <TableCell>
                       <p className="text-sm font-medium leading-tight">{item.itemNameAr}</p>
+                      {item.itemNameEn && (
+                        <p className="text-xs text-muted-foreground leading-tight">{item.itemNameEn}</p>
+                      )}
                       {item.majorUnitName && (
                         <p className="text-xs text-muted-foreground">
                           {[item.majorUnitName, item.mediumUnitName, item.minorUnitName].filter(Boolean).join(" / ")}

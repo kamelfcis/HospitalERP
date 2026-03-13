@@ -1,0 +1,289 @@
+PROMPT — ADD ARABIC & ENGLISH NAME SEARCH TO STOCK COUNT ITEM SEARCH
+Context
+
+The stock count module is already implemented and functional.
+
+The LoadItemsDialog inside the stock count session allows loading items into a count session using several filters such as:
+
+barcode
+
+item code
+
+category
+
+zero stock toggle
+
+counted-since-date exclusion
+
+warehouse filter
+
+However, a key usability feature is missing.
+
+Users must be able to search items by name, using either:
+
+Arabic item name
+
+English item name
+
+This search must be integrated directly into the LoadItemsDialog filter bar used during stock counting.
+
+This must be implemented without degrading performance and must remain fully server-side filtered.
+
+Goal
+
+Enable fast search by item name (Arabic or English) inside the stock count item picker.
+
+Users should be able to type any part of the item name and retrieve matching results instantly.
+
+Functional Requirements
+
+Add a new search field in LoadItemsDialog.
+
+Label:
+
+Search by item name (Arabic / English)
+
+This field must allow searching using:
+
+Arabic name
+
+English name
+
+partial words
+
+prefix search
+
+substring search
+
+Examples
+
+User types:
+
+بارا
+
+Results should include:
+
+باراسيتامول
+بارافين
+
+User types:
+
+para
+
+Results should include:
+
+Paracetamol
+Parafon
+
+User types:
+
+seta
+
+Results should include:
+
+Paracetamol
+Acetaminophen
+Backend Query Logic
+
+Extend the existing loadItemsForSession query.
+
+Add item name filtering using both Arabic and English fields.
+
+Example logic:
+
+AND (
+items.name_ar ILIKE '%' || :search || '%'
+OR
+items.name_en ILIKE '%' || :search || '%'
+)
+
+If the database uses different field names (example: name, name_ar, name_en), adapt accordingly.
+
+Integration With Existing Filters
+
+The new name filter must work together with all current filters.
+
+The final query must support combinations such as:
+
+warehouse = X
+AND name search
+AND category
+AND barcode
+AND zero-stock toggle
+AND counted-since-date exclusion
+LIMIT 200
+
+Do not disable any existing filter.
+
+Frontend Changes
+
+Modify LoadItemsDialog.tsx.
+
+Add a new input field in the filter section.
+
+Example UI layout:
+
+[Search by name] [Barcode] [Item Code] [Category] [Exclude counted since date]
+
+Behavior:
+
+search is debounced (350ms)
+
+triggers API query
+
+server returns filtered items
+
+results update immediately
+
+Important:
+
+Do NOT perform client-side filtering.
+
+Performance Requirements
+
+The search must remain fast even if the item table contains tens of thousands of records.
+
+Rules:
+
+search must run on the server
+
+result set must remain limited (default 200, max 500)
+
+search must reuse existing pagination/limit logic
+
+avoid full table scans if possible
+
+Index Optimization
+
+To maintain performance, add an index for name search.
+
+Preferred (PostgreSQL):
+
+Enable trigram search:
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX idx_items_name_trgm
+ON items
+USING gin ((name_ar || ' ' || name_en) gin_trgm_ops);
+
+Alternative:
+
+CREATE INDEX idx_items_name_ar ON items(name_ar);
+CREATE INDEX idx_items_name_en ON items(name_en);
+
+Choose the most appropriate based on current DB configuration.
+
+UX Requirements
+
+The name search must support:
+
+Arabic typing
+
+English typing
+
+mixed typing
+
+paste values
+
+keyboard-only usage
+
+The search must feel instant and responsive.
+
+Safety Requirements
+
+Do not:
+
+break existing barcode search
+
+break item code search
+
+load full item lists
+
+perform client filtering
+
+modify existing API contracts unnecessarily
+
+Extend the existing API safely.
+
+Validation Scenarios
+
+Before marking complete, test:
+
+Arabic Search
+
+Input:
+
+بارا
+
+Expected:
+
+Arabic items matching the word appear.
+
+English Search
+
+Input:
+
+para
+
+Expected:
+
+English names appear.
+
+Partial Search
+
+Input:
+
+seta
+
+Expected:
+
+Paracetamol appears.
+
+Combined Filters
+
+Input:
+
+para
+
+Category = drug
+Zero stock = false
+
+Results must match both filters.
+
+Performance
+
+Search must remain smooth with large item datasets.
+
+Required Output Before Implementation
+
+Print:
+
+1️⃣ item name columns in database
+2️⃣ modified SQL query
+3️⃣ indexing strategy
+4️⃣ frontend changes
+
+Then implement.
+
+نصيحة أخيرة مهمة
+
+لو حابب نرفع مستوى البحث أكثر، ممكن نضيف ميزة قوية جدًا تستخدمها الأنظمة الكبيرة وهي:
+
+البحث الموحد
+
+يعني المستخدم يكتب في حقل واحد:
+
+para
+
+السيستم يبحث تلقائيًا في:
+
+الاسم العربي
+
+الاسم الإنجليزي
+
+الباركود
+
+كود الصنف
+
+وده يخلي البحث أسرع وأسهل للمستخدم.

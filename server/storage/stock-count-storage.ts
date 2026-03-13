@@ -55,6 +55,7 @@ async function getNextSessionNumber(): Promise<number> {
 export interface StockCountLineRow extends StockCountLine {
   itemCode:       string;
   itemNameAr:     string;
+  itemNameEn:     string | null;
   itemCategory:   string;
   // unit conversion (null = item has only one unit level)
   majorUnitName:  string | null;
@@ -74,6 +75,7 @@ export interface LoadedItem {
   itemId:         string;
   itemCode:       string;
   itemNameAr:     string;
+  itemNameEn:     string | null;
   itemCategory:   string;
   lotId:          string | null;
   expiryDate:     string | null;
@@ -205,6 +207,7 @@ const stockCountStorage = {
         l.*,
         i.item_code,
         i.name_ar          AS item_name_ar,
+        i.name_en          AS item_name_en,
         i.category         AS item_category,
         i.major_unit_name,
         i.medium_unit_name,
@@ -233,6 +236,7 @@ const stockCountStorage = {
       updatedAt:       r.updated_at,
       itemCode:        r.item_code,
       itemNameAr:      r.item_name_ar,
+      itemNameEn:      r.item_name_en ?? null,
       itemCategory:    r.item_category,
       majorUnitName:   r.major_unit_name   ?? null,
       mediumUnitName:  r.medium_unit_name  ?? null,
@@ -378,6 +382,7 @@ const stockCountStorage = {
         i.id               AS item_id,
         i.item_code,
         i.name_ar          AS item_name_ar,
+        i.name_en          AS item_name_en,
         i.category         AS item_category,
         i.major_unit_name,
         i.medium_unit_name,
@@ -409,7 +414,7 @@ const stockCountStorage = {
       WHERE l.warehouse_id = ${warehouseId}
         AND l.is_active    = TRUE
         ${!opts.includeAll ? sql`AND l.qty_in_minor > 0` : sql``}
-        ${opts.itemNameQ  ? sql`AND (i.name_ar ILIKE ${'%' + opts.itemNameQ + '%'} OR i.item_code ILIKE ${'%' + opts.itemNameQ + '%'})` : sql``}
+        ${opts.itemNameQ  ? sql`AND (i.name_ar ILIKE ${'%' + opts.itemNameQ + '%'} OR i.name_en ILIKE ${'%' + opts.itemNameQ + '%'})` : sql``}
         ${opts.itemCode   ? sql`AND i.item_code ILIKE ${opts.itemCode + '%'}` : sql``}
         ${opts.itemCategory ? sql`AND i.category::text = ${opts.itemCategory}` : sql``}
       ORDER BY i.name_ar, l.expiry_year ASC NULLS LAST, l.expiry_month ASC NULLS LAST
@@ -420,6 +425,7 @@ const stockCountStorage = {
       itemId:         r.item_id,
       itemCode:       r.item_code,
       itemNameAr:     r.item_name_ar,
+      itemNameEn:     r.item_name_en ?? null,
       itemCategory:   r.item_category,
       lotId:          r.lot_id,
       expiryDate:     r.expiry_date,
@@ -448,6 +454,7 @@ const stockCountStorage = {
         i.id               AS item_id,
         i.item_code,
         i.name_ar          AS item_name_ar,
+        i.name_en          AS item_name_en,
         i.category         AS item_category,
         i.major_unit_name,
         i.medium_unit_name,
@@ -479,6 +486,7 @@ const stockCountStorage = {
       itemId:         r.item_id,
       itemCode:       r.item_code,
       itemNameAr:     r.item_name_ar,
+      itemNameEn:     r.item_name_en ?? null,
       itemCategory:   r.item_category,
       lotId:          r.lot_id,
       expiryDate:     r.expiry_date,
