@@ -28,7 +28,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Stethoscope, Bed, FlaskConical, Radiation,
@@ -116,6 +116,15 @@ function CandidateList({ candidates, onSelect }: { candidates: DuplicateCandidat
   );
 }
 
+// ── Section label (matches ReceptionSheet standard) ──────────────────────────
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest pt-1 pb-0.5 border-b select-none">
+      {children}
+    </p>
+  );
+}
+
 // ===== Main Component =====
 
 export default function PatientFormDialog({ open, onClose, editingPatient, prefilledPatient }: PatientFormDialogProps) {
@@ -131,7 +140,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   const [age,             setAge]             = useState("");
   const [existingPatient, setExistingPatient] = useState<PatientSuggest | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [highlightedIdx,  setHighlightedIdx]  = useState(0);
+  const [highlightedIdx,  setHighlightedIdx]  = useState(-1);
 
   /* duplicate detection */
   const [overrideReason, setOverrideReason] = useState("");
@@ -614,6 +623,13 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
           <DialogTitle className="text-sm font-bold">
             {isEdit ? "تعديل بيانات مريض" : prefilledPatient ? "تذكرة جديدة" : "استقبال مريض"}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {isEdit
+              ? "تعديل بيانات المريض الموجود"
+              : prefilledPatient
+                ? "تذكرة زيارة جديدة لمريض مسجل"
+                : "استقبال مريض جديد وتسجيل سبب الزيارة"}
+          </DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[80vh]">
@@ -622,10 +638,8 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
             {/* ╔══════════════════════════════════════════════════════════════╗ */}
             {/* ║  SECTION 1 — PATIENT IDENTITY                               ║ */}
             {/* ╚══════════════════════════════════════════════════════════════╝ */}
-            <section className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1">
-                بيانات المريض
-              </p>
+            <section aria-label="بيانات المريض" className="space-y-2">
+              <SectionLabel>بيانات المريض</SectionLabel>
 
               {/* ── Name field with patient search ─────────────────────────────── */}
               <div className="space-y-1">
@@ -852,10 +866,8 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
             {/* ╔══════════════════════════════════════════════════════════════╗ */}
             {/* ║  SECTION 3 — PAYMENT TYPE                                   ║ */}
             {/* ╚══════════════════════════════════════════════════════════════╝ */}
-            <section className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1">
-                نوع الدفع
-              </p>
+            <section aria-label="نوع الدفع" className="space-y-2">
+              <SectionLabel>نوع الدفع</SectionLabel>
               <div className="flex gap-2" role="group" aria-label="نوع الدفع">
                 {PAYMENT_TYPES.map(({ value, label, Icon }) => (
                   <button
@@ -908,10 +920,8 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
             {/* ╔══════════════════════════════════════════════════════════════╗ */}
             {/* ║  SECTION 4 — VISIT REASON                                   ║ */}
             {/* ╚══════════════════════════════════════════════════════════════╝ */}
-            <section className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1">
-                سبب الزيارة
-              </p>
+            <section aria-label="سبب الزيارة" className="space-y-2">
+              <SectionLabel>سبب الزيارة</SectionLabel>
               <div className="grid grid-cols-2 gap-2" role="group" aria-label="سبب الزيارة">
                 {VISIT_TYPES.map(({ value, label, sub, Icon, color, bg, border }) => (
                   <button
