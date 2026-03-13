@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Search, BedDouble } from "lucide-react";
+import { FileText, Search, BedDouble, Building2, Stethoscope, UserCheck, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -38,6 +38,16 @@ export default function PatientInvoice() {
   const [subTab,  setSubTab]  = useState("services");
   const [distOpen, setDistOpen]               = useState(false);
   const [showDiscountDialog, setShowDiscountDialog] = useState(false);
+
+  // ── OPD Appointment context (populated when loading an OPD-linked invoice) ──
+  const [opdContext, setOpdContext] = useState<{
+    appointmentId: string;
+    aptStatus: string;
+    paymentType: string;
+    clinicName: string | null;
+    doctorName: string | null;
+    departmentName: string | null;
+  } | null>(null);
 
   // ── Shared data ─────────────────────────────────────────────────────────────
   const { nextNumber, departments, warehouses, activeAdmissions } = useInvoiceBootstrap();
@@ -198,6 +208,7 @@ export default function PatientInvoice() {
 
       lm.loadLines(data.lines || []);
       payments.loadPayments(data.payments || []);
+      setOpdContext(data.opdContext ?? null);
 
       setMainTab("invoice");
       setSubTab("services");
@@ -262,6 +273,40 @@ export default function PatientInvoice() {
               onInvoiceReload={() => loadInvoice(form.invoiceId!)}
             />
           )}
+
+          {/* ── OPD Context Banner — يظهر فقط للفواتير المرتبطة بموعد عيادة ── */}
+          {opdContext && (
+            <div className="flex items-center gap-3 flex-wrap bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-2 text-xs text-blue-800" dir="rtl">
+              <Info className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+              <span className="font-semibold">فاتورة عيادة خارجية</span>
+              <span className="text-blue-400">·</span>
+              {opdContext.departmentName && (
+                <span className="flex items-center gap-1">
+                  <Building2 className="h-3 w-3" />
+                  {opdContext.departmentName}
+                </span>
+              )}
+              {opdContext.clinicName && (
+                <span className="flex items-center gap-1">
+                  <Stethoscope className="h-3 w-3" />
+                  {opdContext.clinicName}
+                </span>
+              )}
+              {opdContext.doctorName && (
+                <span className="flex items-center gap-1">
+                  <UserCheck className="h-3 w-3" />
+                  د. {opdContext.doctorName}
+                </span>
+              )}
+              {opdContext.paymentType === "CONTRACT" && (
+                <span className="mr-auto bg-amber-100 text-amber-700 border border-amber-300 rounded px-1.5 py-0.5">تعاقد</span>
+              )}
+              {opdContext.paymentType === "INSURANCE" && (
+                <span className="mr-auto bg-purple-100 text-purple-700 border border-purple-300 rounded px-1.5 py-0.5">تأمين</span>
+              )}
+            </div>
+          )}
+
           <InvoiceTab
             invoiceId={form.invoiceId}
             invoiceNumber={form.invoiceNumber}

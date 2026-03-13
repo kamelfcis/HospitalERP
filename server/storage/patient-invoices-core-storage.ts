@@ -111,11 +111,37 @@ const methods = {
       .where(eq(patientInvoicePayments.headerId, id))
       .orderBy(asc(patientInvoicePayments.createdAt));
 
+    // جلب سياق موعد OPD المرتبط بالفاتورة (إن وُجد)
+    const aptCtxRes = await db.execute(sql`
+      SELECT
+        ca.id          AS opd_appointment_id,
+        ca.status      AS opd_apt_status,
+        ca.payment_type AS opd_payment_type,
+        cl.name_ar     AS opd_clinic_name,
+        dr.name        AS opd_doctor_name,
+        dp.name_ar     AS opd_department_name
+      FROM clinic_appointments ca
+      LEFT JOIN clinic_clinics cl ON cl.id = ca.clinic_id
+      LEFT JOIN doctors        dr ON dr.id = ca.doctor_id
+      LEFT JOIN departments    dp ON dp.id = cl.department_id
+      WHERE ca.invoice_id = ${id}
+      LIMIT 1
+    `);
+    const aptRow = (aptCtxRes.rows as Array<Record<string, unknown>>)[0] ?? null;
+
     return {
       ...headerRow.header,
       department: headerRow.department || undefined,
       lines: lines.map(l => ({ ...l.line, service: l.service || undefined, item: l.item || undefined })),
       payments,
+      opdContext: aptRow ? {
+        appointmentId:  String(aptRow.opd_appointment_id),
+        aptStatus:      String(aptRow.opd_apt_status   ?? ""),
+        paymentType:    String(aptRow.opd_payment_type  ?? ""),
+        clinicName:     aptRow.opd_clinic_name     ? String(aptRow.opd_clinic_name)     : null,
+        doctorName:     aptRow.opd_doctor_name     ? String(aptRow.opd_doctor_name)     : null,
+        departmentName: aptRow.opd_department_name ? String(aptRow.opd_department_name) : null,
+      } : null,
     };
   },
 

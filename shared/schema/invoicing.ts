@@ -297,10 +297,20 @@ export type PatientInvoiceLineWithDetails = PatientInvoiceLine & {
   item?: import("./inventory").Item;
 };
 
+export type OpdInvoiceContext = {
+  appointmentId:  string;
+  aptStatus:      string;
+  paymentType:    string;
+  clinicName:     string | null;
+  doctorName:     string | null;
+  departmentName: string | null;
+};
+
 export type PatientInvoiceWithDetails = PatientInvoiceHeader & {
   department?: import("./inventory").Department;
   lines?: PatientInvoiceLineWithDetails[];
   payments?: PatientInvoicePayment[];
+  opdContext?: OpdInvoiceContext | null;
 };
 
 // Labels
