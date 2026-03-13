@@ -58,6 +58,8 @@ const DoctorOrders = lazy(() => import("@/pages/doctor-orders"));
 const DeptServicesPage = lazy(() => import("@/pages/dept-services"));
 const PerfDiagnostics = lazy(() => import("@/pages/PerfDiagnostics"));
 const DuplicatePatients = lazy(() => import("@/pages/duplicate-patients"));
+const StockCount = lazy(() => import("@/pages/stock-count/index"));
+const StockCountDetail = lazy(() => import("@/pages/stock-count/session-detail"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -110,6 +112,8 @@ function Router() {
           <Route path="/items/:id">{(params) => <G p="items.view"><ItemCard /></G>}</Route>
           <Route path="/store-transfers">{() => <G p="transfers.view"><StoreTransfers /></G>}</Route>
           <Route path="/transfer-preparation">{() => <G p="transfers.view"><TransferPreparation /></G>}</Route>
+          <Route path="/stock-count">{() => <G p="stock_count.view"><StockCount /></G>}</Route>
+          <Route path="/stock-count/:id">{() => <G p="stock_count.view"><StockCountDetail /></G>}</Route>
           <Route path="/supplier-receiving">{() => <G p="receiving.view"><SupplierReceiving /></G>}</Route>
           <Route path="/purchase-invoices">{() => <G p="purchase_invoices.view"><PurchaseInvoice /></G>}</Route>
           <Route path="/sales-invoices">{() => <G p="sales.view"><SalesInvoices /></G>}</Route>

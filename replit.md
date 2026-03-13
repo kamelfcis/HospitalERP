@@ -21,6 +21,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **User Experience**: Professional UI with a collapsible sidebar, A4 print styles, and visual auto-save indicators.
 - **Department Services Orders**: Unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
 - **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine for patient accommodation, Bed Board with real-time updates, and Surgery Types System.
+- **Stock Cycle Count (جرد الأصناف)**: Full inventory reconciliation module — create sessions, load warehouse lots, enter counted quantities inline, post with atomic GL journal generation (surplus/shortage accounts from `account_mappings`) and lot adjustments, with audit trail and snapshot refresh.
 
 ### Technical Implementations
 - **API**: RESTful JSON API.

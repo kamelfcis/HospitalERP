@@ -690,6 +690,18 @@ export interface IStorage {
   refreshInventorySnapshot(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
   refreshItemMovementsSummary(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
 
+  // Stock Count (جرد الأصناف)
+  createStockCountSession(data: { warehouseId: string; countDate: string; notes?: string; createdBy: string }): Promise<import("@shared/schema").StockCountSession>;
+  getStockCountSessions(opts: { warehouseId?: string; status?: string; page?: number; pageSize?: number }): Promise<{ sessions: any[]; total: number }>;
+  getStockCountSessionWithLines(id: string): Promise<any | null>;
+  updateStockCountHeader(id: string, data: { countDate?: string; notes?: string }): Promise<import("@shared/schema").StockCountSession>;
+  cancelStockCountSession(id: string): Promise<void>;
+  upsertStockCountLines(sessionId: string, lines: import("./stock-count-storage").UpsertCountLine[]): Promise<import("@shared/schema").StockCountLine[]>;
+  deleteStockCountLine(lineId: string): Promise<void>;
+  deleteZeroLines(sessionId: string): Promise<number>;
+  loadItemsForSession(warehouseId: string, sessionId: string, opts: { includeAll?: boolean; itemNameQ?: string; itemCategory?: string }): Promise<import("./stock-count-storage").LoadedItem[]>;
+  postStockCountSession(sessionId: string, userId: string): Promise<import("@shared/schema").StockCountSession>;
+
   [key: string]: unknown;
 }
 
@@ -736,6 +748,7 @@ import { bedboardStaysMethods, bedboardBedsMethods } from "./bedboard-stay-stora
 import treasuriesMethods from "./treasuries-storage";
 import { clinicMasterMethods, clinicOrdersMethods } from "./clinic-storage";
 import rptRefreshMethods from "./rpt-refresh-storage";
+import stockCountMethods from "./stock-count-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -766,6 +779,7 @@ Object.assign(
   clinicMasterMethods,
   clinicOrdersMethods,
   rptRefreshMethods,
+  stockCountMethods,
 );
 
 export const storage = new DatabaseStorage();

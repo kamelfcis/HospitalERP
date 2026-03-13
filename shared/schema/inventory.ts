@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { itemCategoryEnum, unitLevelEnum, lotTxTypeEnum, transferStatusEnum } from "./enums";
 import { users } from "./users";
-import { accounts, costCenters } from "./finance";
+import { accounts, costCenters, journalEntries } from "./finance";
 
 export const itemFormTypes = pgTable("item_form_types", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -390,6 +390,63 @@ export type StoreTransferWithDetails = StoreTransfer & {
   sourceWarehouse?: Warehouse;
   destinationWarehouse?: Warehouse;
   lines?: TransferLineWithItem[];
+};
+
+// ── جداول جرد الأصناف (Stock Cycle Count) ──────────────────────────────────
+
+export const stockCountSessions = pgTable("stock_count_sessions", {
+  id:             varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionNumber:  integer("session_number").notNull().unique(),
+  warehouseId:    varchar("warehouse_id").notNull().references(() => warehouses.id),
+  countDate:      date("count_date").notNull(),
+  status:         text("status").notNull().default("draft"),
+  notes:          text("notes"),
+  createdBy:      varchar("created_by").references(() => users.id),
+  createdAt:      timestamp("created_at").notNull().defaultNow(),
+  postedBy:       varchar("posted_by").references(() => users.id),
+  postedAt:       timestamp("posted_at"),
+  journalEntryId: varchar("journal_entry_id").references(() => journalEntries.id),
+}, (t) => ({
+  whDateIdx:      index("idx_stock_count_sessions_wh_date").on(t.warehouseId, t.countDate),
+  statusIdx:      index("idx_stock_count_sessions_status").on(t.status),
+}));
+
+export const stockCountLines = pgTable("stock_count_lines", {
+  id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId:       varchar("session_id").notNull().references(() => stockCountSessions.id, { onDelete: "cascade" }),
+  itemId:          varchar("item_id").notNull().references(() => items.id),
+  lotId:           varchar("lot_id").references(() => inventoryLots.id),
+  expiryDate:      date("expiry_date"),
+  systemQtyMinor:  decimal("system_qty_minor", { precision: 18, scale: 4 }).notNull().default("0"),
+  countedQtyMinor: decimal("counted_qty_minor", { precision: 18, scale: 4 }).notNull().default("0"),
+  differenceMinor: decimal("difference_minor", { precision: 18, scale: 4 }).notNull().default("0"),
+  unitCost:        decimal("unit_cost", { precision: 18, scale: 4 }).notNull().default("0"),
+  differenceValue: decimal("difference_value", { precision: 18, scale: 2 }).notNull().default("0"),
+  createdAt:       timestamp("created_at").notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  sessionItemLotUniq: uniqueIndex("idx_stock_count_lines_uniq").on(t.sessionId, t.itemId, t.lotId),
+  sessionIdx:         index("idx_stock_count_lines_session").on(t.sessionId),
+  itemIdx:            index("idx_stock_count_lines_item").on(t.itemId),
+  lotIdx:             index("idx_stock_count_lines_lot").on(t.lotId),
+}));
+
+export const insertStockCountSessionSchema = createInsertSchema(stockCountSessions).omit({
+  id: true, sessionNumber: true, createdAt: true, postedAt: true,
+});
+export const insertStockCountLineSchema = createInsertSchema(stockCountLines).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+
+export type StockCountSession    = typeof stockCountSessions.$inferSelect;
+export type InsertStockCountSession = z.infer<typeof insertStockCountSessionSchema>;
+export type StockCountLine       = typeof stockCountLines.$inferSelect;
+export type InsertStockCountLine = z.infer<typeof insertStockCountLineSchema>;
+
+export const stockCountStatusLabels: Record<string, string> = {
+  draft:     "مسودة",
+  posted:    "مُرحَّل",
+  cancelled: "مُلغى",
 };
 
 // Labels

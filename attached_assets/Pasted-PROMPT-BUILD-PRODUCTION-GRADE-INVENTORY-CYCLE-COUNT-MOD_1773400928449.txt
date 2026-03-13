@@ -1,0 +1,468 @@
+PROMPT — BUILD PRODUCTION-GRADE INVENTORY CYCLE COUNT MODULE
+Context
+
+نقوم ببناء Stock Cycle Count / Inventory Counting module داخل نظام ERP للمستشفى.
+
+هذا الموديول يجب أن يكون:
+
+سريع جداً
+
+قابل للعمل مع بيانات كبيرة
+
+متكامل محاسبياً
+
+يدعم batch / expiry
+
+يدعم barcode
+
+يدعم استكمال الجرد على عدة أيام
+
+يعتمد على إعادة استخدام الكمبوننتات الموجودة مع refactor نظيف
+
+لا نريد implementation سريع أو تجريبي.
+
+نريد Production-grade implementation متوافق مع الأنماط الموجودة في المشروع.
+
+PHASE 0 — ANALYZE EXISTING SYSTEM (MANDATORY BEFORE CODING)
+
+قبل كتابة أي كود، افحص المشروع وحدد:
+
+existing reusable components
+
+BaseLookupCombobox
+
+item search components
+
+supplier-receiving page pattern (header + lines + draft/post)
+
+AccountLookup
+
+table/grid components
+
+barcode input patterns
+
+bulk action toolbars
+
+backend patterns
+
+storage layer pattern
+
+journal generation pattern (transfers-core-storage)
+
+audit_log helper
+
+scheduleInventorySnapshotRefresh()
+
+database tables already available
+table	purpose
+warehouses	warehouse + gl_account_id
+items	item master
+inventory_lots	real stock balances per lot
+rpt_inventory_snapshot	fast summarized balances
+inventory_lot_movements	stock movement history
+journal_entries	GL header
+journal_entry_lines	GL lines
+account_mappings	GL mapping rules
+fiscal_periods	open/closed period validation
+audit_log	system audit
+
+Print a short system compatibility report before coding.
+
+PHASE 1 — DATABASE DESIGN
+
+Use existing tables where possible.
+
+Create ONLY TWO NEW TABLES.
+
+Table 1 — stock_count_sessions
+
+Represents a counting session.
+
+Fields:
+
+id
+session_number
+warehouse_id
+count_date
+status (draft | posted | cancelled)
+
+notes
+created_by
+created_at
+
+posted_by
+posted_at
+journal_entry_id
+
+Constraints:
+
+unique(session_number)
+
+index(warehouse_id, count_date)
+
+foreign key warehouse_id
+
+Table 2 — stock_count_lines
+
+Represents counted item lines.
+
+id
+session_id
+item_id
+lot_id nullable
+expiry_date nullable
+
+system_qty_minor
+counted_qty_minor
+
+difference_minor
+
+unit_cost
+difference_value
+
+created_at
+updated_at
+
+Constraints:
+
+unique(session_id, item_id, lot_id)
+
+Indexes:
+
+session_id
+item_id
+lot_id
+PHASE 2 — INVENTORY COUNT WORKFLOW
+Step 1 — Create Count Session
+
+User selects:
+
+warehouse
+
+count date
+
+System loads automatically:
+
+items + balances from rpt_inventory_snapshot
+
+Fields populated:
+
+system_qty_minor
+unit_cost (moving average or batch cost)
+
+Session status:
+
+draft
+Step 2 — Item Selection (Advanced Search)
+
+Do NOT load all items blindly.
+
+Use the existing item search component and extend it.
+
+Search filters must support
+
+item name prefix
+
+item code
+
+barcode
+
+category (drug / consumable)
+
+dosage form (ampoule / tablet / syrup / etc.)
+
+warehouse
+
+show items with stock only
+
+show all items
+
+Important
+
+Search results must support:
+
+checkbox per row
+select all results
+bulk add to count
+
+Search must be server-side filtering.
+
+PHASE 3 — LOT / EXPIRY HANDLING
+
+If item has multiple lots:
+
+Each lot becomes separate line.
+
+Example:
+
+Item A
+Lot1 exp 2026 → line 1
+Lot2 exp 2027 → line 2
+
+If item not lot controlled:
+
+single line
+PHASE 4 — COUNT ENTRY
+
+User enters counted quantity.
+
+Fields:
+
+field	description
+system_qty	quantity from system
+counted_qty	entered by user
+difference	counted − system
+unit_cost	cost
+difference_value	difference × cost
+
+Calculations happen in real time.
+
+PHASE 5 — "UNCOUTED ITEMS AS OF DATE"
+
+Feature required for multi-day counting.
+
+User can filter:
+
+Items NOT counted in date X
+
+Logic:
+
+Item is considered counted only if it has saved line in stock_count_lines.
+
+Temporary UI entries do not count.
+
+This feature allows:
+
+Day 1 → count some items
+Day 2 → load only uncounted items
+PHASE 6 — BARCODE COUNTING
+
+Add barcode input box.
+
+When scanning:
+
+If item exists in count
+
+Focus the row.
+
+If item not in count
+
+Automatically add it.
+
+If barcode unknown
+
+Show warning.
+
+Must support rapid scanning workflow.
+
+PHASE 7 — POSTING LOGIC
+
+Posting must be atomic database transaction.
+
+Steps:
+
+1️⃣ Validate fiscal period open
+
+2️⃣ Prevent duplicate posting
+
+no two posted counts
+for same warehouse
+same date
+
+3️⃣ Process differences
+
+For each line:
+
+Shortage
+Dr Stock Count Loss
+Cr Warehouse Inventory
+Surplus
+Dr Warehouse Inventory
+Cr Stock Count Gain
+
+Accounts retrieved from:
+
+account_mappings
+transaction_type = stock_count_adjustment
+PHASE 8 — LOT ADJUSTMENT LOGIC
+
+For shortages:
+
+Remove from oldest expiry lot first (FEFO reverse).
+
+For surplus:
+
+Create adjustment lot entry.
+
+Insert into:
+
+inventory_lot_movements
+tx_type = 'adj'
+PHASE 9 — JOURNAL ENTRY
+
+Generate one journal entry per session.
+
+Using existing journal pattern.
+
+Structure:
+
+journal_entries
+journal_entry_lines
+PHASE 10 — SNAPSHOT REFRESH
+
+After posting:
+
+scheduleInventorySnapshotRefresh()
+PHASE 11 — AUDIT
+
+Insert into
+
+audit_log
+
+Include:
+
+session id
+
+warehouse
+
+user
+
+totals
+
+journal id
+
+PHASE 12 — UI DESIGN
+
+Use pattern similar to supplier receiving screen.
+
+Header
+session number
+warehouse
+count date
+status
+notes
+
+Buttons:
+
+save
+add items
+delete zero lines
+post
+cancel
+Count Grid
+
+Columns:
+
+item code
+item name
+lot
+expiry
+system qty
+counted qty
+difference
+unit cost
+difference value
+
+Features:
+
+inline editing
+keyboard navigation
+color highlight differences
+Totals Footer
+
+Display:
+
+total lines
+total surplus
+total shortage
+net adjustment
+PHASE 13 — ZERO BALANCE CLEANUP
+
+Button:
+
+Delete zero-balance lines
+
+Deletes lines where:
+
+system = 0
+counted = 0
+PHASE 14 — PERFORMANCE REQUIREMENTS
+
+Must support large datasets.
+
+Backend:
+
+indexed queries
+server-side filtering
+bulk inserts
+bulk updates
+
+Frontend:
+
+virtualized table
+debounced search
+no full dataset loads
+PHASE 15 — REFACTOR REQUIREMENT
+
+Do NOT create giant files.
+
+Refactor to reuse components.
+
+Split logic into:
+
+hooks
+services
+utils
+components
+
+Example components:
+
+StockCountHeader
+StockCountLinesGrid
+ItemSearchModal
+BarcodeScanInput
+CountTotalsFooter
+
+Do not duplicate logic.
+
+Reuse existing components safely.
+
+PHASE 16 — TASK BREAKDOWN
+T1
+
+Create DB schema.
+
+T2
+
+Implement backend APIs.
+
+T3
+
+Implement frontend screen.
+
+T4
+
+Add account mapping UI update.
+
+FINAL VALIDATION
+
+Before finishing ensure:
+
+✔ no duplicate lines
+✔ atomic posting
+✔ GL balanced
+✔ performance acceptable
+✔ barcode workflow works
+✔ uncounted items logic correct
+
+FINAL OUTPUT REQUIRED BEFORE CODING
+
+Before writing code print:
+
+1️⃣ Functional understanding
+2️⃣ Technical architecture
+3️⃣ Tables to modify
+4️⃣ APIs to implement
+5️⃣ Refactor plan
+
+Then begin implementation.

@@ -116,6 +116,11 @@ export const PERMISSIONS = {
   DEPT_SERVICES_CREATE:  "dept_services.create",
   DEPT_SERVICES_BATCH:   "dept_services.batch",
   DEPT_SERVICES_DISCOUNT: "dept_services.discount",
+
+  // ── جرد الأصناف ────────────────────────────────────────────────────────
+  STOCK_COUNT_VIEW:   "stock_count.view",
+  STOCK_COUNT_CREATE: "stock_count.create",
+  STOCK_COUNT_POST:   "stock_count.post",
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -180,6 +185,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.DEPT_SERVICES_CREATE,
     PERMISSIONS.DEPT_SERVICES_BATCH,
     PERMISSIONS.DEPT_SERVICES_DISCOUNT,
+    PERMISSIONS.STOCK_COUNT_VIEW,
+    PERMISSIONS.STOCK_COUNT_CREATE,
+    PERMISSIONS.STOCK_COUNT_POST,
   ],
 
   admin: Object.values(PERMISSIONS),
@@ -231,6 +239,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.TRANSFERS_VIEW,
     PERMISSIONS.TRANSFERS_CREATE,
     PERMISSIONS.TRANSFERS_EXECUTE,
+    PERMISSIONS.STOCK_COUNT_VIEW,
+    PERMISSIONS.STOCK_COUNT_CREATE,
+    PERMISSIONS.STOCK_COUNT_POST,
   ],
 
   data_entry: [
@@ -280,6 +291,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.RECEIVING_POST,
     PERMISSIONS.WAREHOUSES_VIEW,
     PERMISSIONS.TRANSFERS_VIEW,
+    PERMISSIONS.STOCK_COUNT_VIEW,
+    PERMISSIONS.STOCK_COUNT_CREATE,
+    PERMISSIONS.STOCK_COUNT_POST,
   ],
 
   cashier: [
@@ -549,6 +563,14 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.DEPT_SERVICES_CREATE,  label: "إنشاء طلب خدمة" },
       { key: PERMISSIONS.DEPT_SERVICES_BATCH,   label: "إدخال جماعي" },
       { key: PERMISSIONS.DEPT_SERVICES_DISCOUNT, label: "خصم على الخدمات" },
+    ],
+  },
+  {
+    label: "جرد الأصناف",
+    permissions: [
+      { key: PERMISSIONS.STOCK_COUNT_VIEW,   label: "عرض" },
+      { key: PERMISSIONS.STOCK_COUNT_CREATE, label: "إنشاء" },
+      { key: PERMISSIONS.STOCK_COUNT_POST,   label: "ترحيل" },
     ],
   },
 ];
