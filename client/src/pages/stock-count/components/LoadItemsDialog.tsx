@@ -55,7 +55,7 @@ interface Props {
 }
 
 function fmtQty(v: string | number) {
-  return (Number(v) / 1000).toLocaleString("ar-EG", { minimumFractionDigits: 3 });
+  return Number(v).toLocaleString("ar-EG", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
