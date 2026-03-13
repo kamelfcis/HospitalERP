@@ -75,6 +75,16 @@ export interface LoadedItem {
   alreadyCounted: boolean;
 }
 
+export interface LoadItemsOpts {
+  includeAll?:             boolean;
+  itemNameQ?:              string;
+  itemCategory?:           string;
+  itemCode?:               string;
+  barcode?:                string;
+  acrossSessionsOnDate?:   boolean;  // check all sessions in same warehouse/date scope
+  limit?:                  number;   // default 200
+}
+
 export interface UpsertCountLine {
   itemId:          string;
   lotId:           string | null;
@@ -329,36 +339,99 @@ const stockCountStorage = {
   },
 
   // ── loadItemsForSession ────────────────────────────────────────────────────
-  // تحميل أصناف المستودع مع أرصدة الـ lots الفعلية + علامة هل تم جردها أم لا
   async loadItemsForSession(
     this: DatabaseStorage,
     warehouseId: string,
     sessionId: string,
-    opts: { includeAll?: boolean; itemNameQ?: string; itemCategory?: string }
+    opts: LoadItemsOpts
   ): Promise<LoadedItem[]> {
+    const lim = Math.min(opts.limit ?? 200, 500);
+
+    // For cross-session uncounted check, look at all sessions for same warehouse+date
+    const sessionRaw = opts.acrossSessionsOnDate
+      ? await db.execute(sql`SELECT count_date FROM stock_count_sessions WHERE id = ${sessionId}`)
+      : null;
+    const countDate = sessionRaw ? (sessionRaw as any).rows[0]?.count_date : null;
+
     const rows = await db.execute(sql`
       SELECT
-        i.id            AS item_id,
+        i.id             AS item_id,
         i.item_code,
-        i.name_ar       AS item_name_ar,
-        i.category      AS item_category,
-        l.id            AS lot_id,
+        i.name_ar        AS item_name_ar,
+        i.category       AS item_category,
+        l.id             AS lot_id,
         l.expiry_date,
-        l.qty_in_minor  AS system_qty_minor,
+        l.qty_in_minor   AS system_qty_minor,
         l.purchase_price AS unit_cost,
         CASE WHEN cl.id IS NOT NULL THEN TRUE ELSE FALSE END AS already_counted
       FROM inventory_lots l
       JOIN items i ON i.id = l.item_id
+      ${opts.barcode ? sql`
+        JOIN item_barcodes ib ON ib.item_id = i.id AND ib.barcode_value = ${opts.barcode}
+      ` : sql``}
       LEFT JOIN stock_count_lines cl
-        ON cl.session_id = ${sessionId}
-       AND cl.item_id    = l.item_id
-       AND cl.lot_id     = l.id
+        ON cl.item_id = l.item_id
+        AND cl.lot_id = l.id
+        AND ${opts.acrossSessionsOnDate && countDate ? sql`cl.session_id IN (
+              SELECT id FROM stock_count_sessions
+              WHERE warehouse_id = ${warehouseId}
+                AND count_date   = ${countDate}::date
+              )` : sql`cl.session_id = ${sessionId}`}
       WHERE l.warehouse_id = ${warehouseId}
         AND l.is_active    = TRUE
         ${!opts.includeAll ? sql`AND l.qty_in_minor > 0` : sql``}
-        ${opts.itemNameQ ? sql`AND (i.name_ar ILIKE ${'%' + opts.itemNameQ + '%'} OR i.item_code ILIKE ${'%' + opts.itemNameQ + '%'})` : sql``}
-        ${opts.itemCategory ? sql`AND i.category = ${opts.itemCategory}` : sql``}
+        ${opts.itemNameQ  ? sql`AND (i.name_ar ILIKE ${'%' + opts.itemNameQ + '%'} OR i.item_code ILIKE ${'%' + opts.itemNameQ + '%'})` : sql``}
+        ${opts.itemCode   ? sql`AND i.item_code ILIKE ${opts.itemCode + '%'}` : sql``}
+        ${opts.itemCategory ? sql`AND i.category::text = ${opts.itemCategory}` : sql``}
       ORDER BY i.name_ar, l.expiry_year ASC NULLS LAST, l.expiry_month ASC NULLS LAST
+      LIMIT ${lim}
+    `);
+
+    return ((rows as any).rows as any[]).map((r: any) => ({
+      itemId:         r.item_id,
+      itemCode:       r.item_code,
+      itemNameAr:     r.item_name_ar,
+      itemCategory:   r.item_category,
+      lotId:          r.lot_id,
+      expiryDate:     r.expiry_date,
+      systemQtyMinor: String(r.system_qty_minor ?? "0"),
+      unitCost:       String(r.unit_cost ?? "0"),
+      alreadyCounted: Boolean(r.already_counted),
+    }));
+  },
+
+  // ── lookupBarcodeForSession ────────────────────────────────────────────────
+  // بحث بالباركود داخل مستودع الجلسة — يُعيد الـ lots مع علامة "في الجلسة"
+  async lookupBarcodeForSession(
+    this: DatabaseStorage,
+    barcode: string,
+    warehouseId: string,
+    sessionId: string
+  ): Promise<LoadedItem[]> {
+    const rows = await db.execute(sql`
+      SELECT
+        i.id             AS item_id,
+        i.item_code,
+        i.name_ar        AS item_name_ar,
+        i.category       AS item_category,
+        l.id             AS lot_id,
+        l.expiry_date,
+        l.qty_in_minor   AS system_qty_minor,
+        l.purchase_price AS unit_cost,
+        CASE WHEN cl.id IS NOT NULL THEN TRUE ELSE FALSE END AS already_counted
+      FROM item_barcodes ib
+      JOIN items i ON i.id = ib.item_id
+      LEFT JOIN inventory_lots l
+        ON l.item_id     = i.id
+        AND l.warehouse_id = ${warehouseId}
+        AND l.is_active  = TRUE
+        AND l.qty_in_minor > 0
+      LEFT JOIN stock_count_lines cl
+        ON cl.session_id = ${sessionId}
+        AND cl.item_id   = i.id
+        AND cl.lot_id    = l.id
+      WHERE ib.barcode_value = ${barcode}
+      ORDER BY l.expiry_year ASC NULLS LAST, l.expiry_month ASC NULLS LAST
     `);
 
     return ((rows as any).rows as any[]).map((r: any) => ({

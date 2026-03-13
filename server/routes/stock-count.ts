@@ -133,24 +133,45 @@ export function registerStockCountRoutes(app: Express) {
   });
 
   // ── GET /api/stock-count/sessions/:id/load-items ──────────────────────────
-  // تحميل أصناف المستودع مع رصيد الـ lots وعلامة هل جُردت أم لا
   app.get("/api/stock-count/sessions/:id/load-items", requireAuth, checkPermission(PERMISSIONS.STOCK_COUNT_VIEW), async (req, res) => {
     try {
       const session = await storage.getStockCountSessionWithLines(req.params.id as string);
       if (!session) return res.status(404).json({ message: "جلسة الجرد غير موجودة" });
 
-      const { includeAll, q, category } = req.query as Record<string, string | undefined>;
+      const { includeAll, q, category, code, barcode, acrossSessionsOnDate, limit } = req.query as Record<string, string | undefined>;
 
       const items = await storage.loadItemsForSession(
         session.warehouseId,
         req.params.id as string,
         {
-          includeAll:   includeAll === "true",
-          itemNameQ:    q,
-          itemCategory: category,
+          includeAll:           includeAll === "true",
+          itemNameQ:            q,
+          itemCategory:         category,
+          itemCode:             code,
+          barcode:              barcode,
+          acrossSessionsOnDate: acrossSessionsOnDate === "true",
+          limit:                limit ? parseInt(limit) : undefined,
         }
       );
       return res.json(items);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ message: msg });
+    }
+  });
+
+  // ── GET /api/stock-count/sessions/:id/lookup-barcode ──────────────────────
+  // بحث بالباركود مباشرة داخل مستودع الجلسة
+  app.get("/api/stock-count/sessions/:id/lookup-barcode", requireAuth, checkPermission(PERMISSIONS.STOCK_COUNT_VIEW), async (req, res) => {
+    try {
+      const session = await storage.getStockCountSessionWithLines(req.params.id as string);
+      if (!session) return res.status(404).json({ message: "جلسة الجرد غير موجودة" });
+
+      const { barcode } = req.query as Record<string, string | undefined>;
+      if (!barcode) return res.status(400).json({ message: "الباركود مطلوب" });
+
+      const lots = await storage.lookupBarcodeForSession(barcode, session.warehouseId, req.params.id as string);
+      return res.json({ found: lots.length > 0, lots });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return res.status(500).json({ message: msg });

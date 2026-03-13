@@ -699,7 +699,8 @@ export interface IStorage {
   upsertStockCountLines(sessionId: string, lines: import("./stock-count-storage").UpsertCountLine[]): Promise<import("@shared/schema").StockCountLine[]>;
   deleteStockCountLine(lineId: string): Promise<void>;
   deleteZeroLines(sessionId: string): Promise<number>;
-  loadItemsForSession(warehouseId: string, sessionId: string, opts: { includeAll?: boolean; itemNameQ?: string; itemCategory?: string }): Promise<import("./stock-count-storage").LoadedItem[]>;
+  loadItemsForSession(warehouseId: string, sessionId: string, opts: import("./stock-count-storage").LoadItemsOpts): Promise<import("./stock-count-storage").LoadedItem[]>;
+  lookupBarcodeForSession(barcode: string, warehouseId: string, sessionId: string): Promise<import("./stock-count-storage").LoadedItem[]>;
   postStockCountSession(sessionId: string, userId: string): Promise<import("@shared/schema").StockCountSession>;
 
   [key: string]: unknown;

@@ -1,0 +1,323 @@
+PROMPT — STOCK COUNT MODULE HARDENING & GAP CLOSURE
+
+The stock count module is now functional, but it is not yet considered complete against the full business requirements.
+Do NOT rebuild it from scratch.
+Perform a gap-closure pass + refactor pass on top of the existing implementation.
+
+Your task now is to audit the current stock count implementation against the following missing/required features, then implement the missing pieces cleanly and safely.
+
+Phase 0 — Audit First
+
+Before coding, inspect the current implementation and print a structured gap report with 3 sections:
+
+Already implemented correctly
+
+Partially implemented / needs hardening
+
+Missing features
+
+Specifically audit these requirements:
+
+advanced reusable item search
+
+filters by:
+
+item name prefix
+
+item code
+
+barcode
+
+category
+
+dosage form
+
+warehouse
+
+multi-select + select all results
+
+bulk add from search results
+
+item/lot/expiry line splitting
+
+strict duplicate prevention per session
+
+uncounted items as-of-date logic
+
+barcode-first workflow
+
+zero-balance / zero-diff cleanup
+
+keyboard-friendly counting flow
+
+sticky totals/footer
+
+show variance-only filter
+
+show uncounted-only filter
+
+performance for large datasets
+
+refactor quality / file size / code reuse
+
+Do not skip the audit.
+
+Phase 1 — Advanced Item Search Hardening
+
+Extend the existing item search component instead of creating a parallel implementation.
+
+Required filters:
+
+item name starts with / prefix search
+
+item code
+
+barcode
+
+category (drug / consumable / etc.)
+
+dosage form (ampoule / tablet / syrup / cream / other)
+
+warehouse
+
+in-stock only toggle
+
+all items toggle
+
+Required selection behavior:
+
+checkbox per row
+
+select all current results
+
+bulk add selected results to stock count session
+
+Important:
+
+all filtering must be server-side
+
+do not load huge datasets into the browser
+
+use debounced search
+
+support large result sets safely
+
+Phase 2 — Uncounted Items As Of Date (Complete Business Logic)
+
+Implement the business feature:
+
+Items not counted as of date
+
+This must work correctly for multi-day counting.
+
+Rules:
+
+an item is considered counted only if it has a saved line in stock_count_lines
+
+temporary unsaved UI rows do not count
+
+the comparison must support:
+
+same warehouse
+
+specified date
+
+optionally same session or previous sessions in that warehouse/date scope
+
+Required use case:
+
+day 1: user counts part of warehouse items
+
+day 2: user reopens counting flow and loads only items not previously counted
+
+This logic must be precise and query-efficient.
+
+Phase 3 — Barcode Workflow
+
+Add barcode scanning support directly inside the stock count detail page.
+
+Required behavior:
+
+barcode input optimized for scanner use
+
+when scanning barcode:
+
+if matching line already exists in session → focus that row
+
+if not present → auto-add item into session
+
+if item has lot/expiry-controlled stock:
+
+apply existing lot-loading logic correctly
+
+if barcode unknown:
+
+show clear warning
+
+support rapid repeated scanning without lag
+
+This must be keyboard-first and warehouse-user friendly.
+
+Phase 4 — UI/UX Completion
+
+Add the missing practical warehouse features:
+
+filter: show only lines with variance
+
+filter: show only uncounted lines
+
+sticky totals footer
+
+keyboard-friendly inline editing
+
+visual highlight for:
+
+surplus
+
+shortage
+
+zero difference
+
+search inside session lines
+
+optional quick jump/focus to scanned or edited line
+
+Phase 5 — Strict Duplicate Prevention
+
+Enforce duplicate safety in both backend and frontend.
+
+Rules:
+
+no duplicate line for same:
+
+session_id
+
+item_id
+
+lot_id / expiry combination
+
+duplicate attempts must not create extra rows
+
+if duplicate add happens:
+
+either ignore safely
+
+or focus existing row
+
+review DB constraints and upsert behavior
+
+Phase 6 — Performance Hardening
+
+Audit and optimize performance for large datasets.
+
+Backend
+
+verify search uses indexes
+
+verify warehouse item loading is paginated or chunked where needed
+
+verify uncounted-items query is efficient
+
+verify bulk add / bulk upsert are efficient
+
+avoid N+1 queries
+
+Frontend
+
+add debounced search
+
+add virtualization where useful
+
+prevent unnecessary rerenders
+
+ensure select-all and bulk-add do not freeze the UI
+
+Print the performance strategy you used.
+
+Phase 7 — Refactor Pass
+
+Do a focused refactor without changing working behavior.
+
+Requirements:
+
+reduce oversized files where possible
+
+extract reusable logic into hooks/services/utils
+
+reuse existing shared components safely
+
+avoid copy/paste logic
+
+keep implementation backward-compatible
+
+do not break working posting / GL logic
+
+Suggested separation:
+
+stock-count-search logic
+
+stock-count-line table logic
+
+barcode logic
+
+totals logic
+
+uncounted-items logic
+
+API hooks
+
+mapper/util functions
+
+If the current storage layer or screen files are too large, split them cleanly.
+
+Phase 8 — Data Accuracy & Auditability
+
+Verify and harden these points:
+
+each lot/expiry appears as separate line when required
+
+no posting if warehouse GL account missing
+
+no posting if stock gain/loss mappings missing
+
+no posting in closed fiscal period
+
+no double-posting for same warehouse/date
+
+audit log includes enough detail
+
+snapshot refresh still runs correctly after posting
+
+Phase 9 — Final Validation
+
+Before marking complete, print:
+
+A. Implemented gaps closed
+B. Refactor summary
+C. Performance summary
+D. Remaining limitations, if any
+
+Then run a final regression check for:
+
+create draft
+
+load filtered items
+
+bulk add
+
+inline count edit
+
+uncounted as-of-date
+
+barcode add/focus
+
+delete zero lines
+
+post session
+
+journal creation
+
+no duplicate lines
+
+Important:
+This is a hardening and completion pass, not a rewrite.
