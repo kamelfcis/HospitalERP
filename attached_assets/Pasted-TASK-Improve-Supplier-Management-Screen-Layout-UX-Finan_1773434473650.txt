@@ -1,0 +1,243 @@
+TASK — Improve Supplier Management Screen Layout (UX + Financial View)
+Objective
+
+Refactor the Suppliers Management screen to improve usability, layout balance, and financial visibility.
+
+The current layout divides the screen roughly 25% form / 75% list, which is not optimal.
+
+The new layout must be:
+
+Left panel (Supplier Form): 1/3 width
+Right panel (Supplier List): 2/3 width
+
+Because most user interaction occurs in the supplier list.
+
+1 — Layout Redesign
+
+File:
+
+client/src/pages/suppliers/index.tsx
+
+Refactor the page layout to use a 2/3 – 1/3 split layout.
+
+New layout
+| Supplier Form | Supplier List |
+|     33%       |     67%       |
+
+Implementation suggestion:
+
+Use a flex layout or grid layout.
+
+Example concept:
+
+grid-template-columns: 1fr 2fr
+
+or
+
+flex: 1
+flex: 2
+
+Ensure:
+
+responsive behavior
+
+smooth resizing
+
+no horizontal overflow
+
+2 — Supplier List Enhancement
+
+The supplier list must become a financial overview table, not just a basic list.
+
+Add these columns:
+
+Column	Description
+Code	supplier code
+Supplier Name	Arabic name
+Supplier Type	drugs / consumables
+Payment Mode	cash / credit / mixed
+Credit Limit	configured limit
+Opening Balance	opening balance field
+Current Balance	calculated payable balance
+Status	active / inactive
+3 — Current Balance Logic
+
+The Current Balance should represent supplier payable balance.
+
+If supplier has a specific AP account:
+
+supplier.glAccountId
+
+Use it to calculate balance.
+
+Otherwise fallback to:
+
+payables_drugs
+payables_consumables
+
+Balance should reflect:
+
+total purchases
+minus payments
+
+If computing the balance in this task is heavy, temporarily show:
+
+openingBalance
+
+with placeholder logic.
+
+But structure the UI to support real balances later.
+
+4 — Visual Improvements
+
+Improve readability of the supplier list.
+
+Add
+
+zebra rows
+
+hover highlight
+
+selected row highlight
+
+currency formatting
+
+Example:
+
+1,250,000 ج.م
+Balance coloring
+
+Use colors for quick financial reading.
+
+Positive balance → red (payable)
+Zero → neutral
+Credit balance → green
+5 — Header Improvements
+
+Add a clear header above the supplier list.
+
+Example:
+
+إدارة الموردين
+عدد الموردين: 13
+
+Add quick actions:
+
++ مورد جديد
+6 — Search Improvements
+
+Improve search bar behavior.
+
+Search should match:
+
+supplier name
+supplier code
+phone
+tax id
+
+Debounce search to avoid excessive queries.
+
+7 — Financial Information Panel
+
+When a supplier is selected, the left form should also show a financial summary block.
+
+Example:
+
+ملخص المورد
+
+الرصيد الافتتاحي: 0 ج.م
+الرصيد الحالي: 12,400 ج.م
+الحد الائتماني: 50,000 ج.م
+أيام السداد: 30 يوم
+
+This gives accounting users quick financial context.
+
+8 — UX Improvements
+
+Improve usability:
+
+Add
+
+row click → load supplier into form
+
+selected supplier highlight
+
+smooth scroll to selected row
+
+9 — Reusable Components Rule
+
+Before creating any:
+
+search
+
+lookup
+
+selector
+
+dropdown
+
+table filter
+
+Check if a reusable component already exists.
+
+Examples:
+
+AccountLookup.tsx
+SearchInput
+DataTable
+
+Reuse existing components to avoid duplicated code.
+
+Do NOT create duplicate search components.
+
+10 — Code Refactor
+
+While implementing the layout change:
+
+Refactor the file for clarity.
+
+Add structural sections like:
+
+===== Imports =====
+===== Types =====
+===== State =====
+===== Derived Values =====
+===== Event Handlers =====
+===== Supplier List Table =====
+===== Supplier Form =====
+===== Layout =====
+
+Remove duplicated logic where possible.
+
+11 — Completion Criteria
+
+The task is complete when:
+
+layout becomes 1/3 form – 2/3 supplier list
+
+supplier list includes financial columns
+
+search works for name/code/phone
+
+supplier selection loads data in the form
+
+UI is visually cleaner
+
+existing supplier CRUD still works
+
+no TypeScript errors are introduced
+
+النتيجة المتوقعة
+
+الشاشة ستتحول من شاشة بسيطة إلى شاشة أقرب لواجهات ERP مثل:
+
+SAP Business One
+
+Odoo
+
+Microsoft Dynamics
+
+وسيصبح عندك:
+
+Supplier Control Panel
+وليس مجرد شاشة إدخال بيانات.
