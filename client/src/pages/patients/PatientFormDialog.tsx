@@ -33,8 +33,9 @@ import {
 import {
   Stethoscope, Bed, FlaskConical, Radiation,
   Search, Loader2, Banknote, ShieldCheck, FileSignature,
-  UserCheck, X, AlertTriangle, Lock, Info,
+  UserCheck, X, AlertTriangle, Lock, Info, Printer,
 } from "lucide-react";
+import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
 import { ClinicLookup, DoctorLookup } from "@/components/lookups";
 import type { LookupItem }            from "@/lib/lookupTypes";
 import type { InsertPatient }         from "@shared/schema";
@@ -173,6 +174,9 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   /* lab / radiology */
   const [serviceNotes, setServiceNotes] = useState("");
 
+  /* printing */
+  const [printTicket, setPrintTicket] = useState(true);
+
   /* refs */
   const nameInputRef     = useRef<HTMLInputElement>(null);
   const phoneInputRef    = useRef<HTMLInputElement>(null);
@@ -200,6 +204,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     setServiceNotes("");
     setOverrideReason(""); setDupDismissed(false);
     setHighlightedIdx(0); setHighlightedSurgery(0);
+    setPrintTicket(true);
 
     if (editingPatient) {
       setFullName(editingPatient.fullName);
@@ -587,14 +592,44 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
           title: existingPatient ? "تم حجز زيارة جديدة" : "تم إضافة المريض وحجز الكشف",
           description: `${selectedClinic.name} — رقم الدور: ${apt.turnNumber}${invoicePart}${paymentPart}`,
         });
+        if (printTicket) {
+          printReceptionTicket({
+            patientName:    fullName.trim(),
+            visitType:      "consultation",
+            departmentName: "العيادات الخارجية",
+            clinicName:     selectedClinic?.name ?? null,
+            doctorName:     selectedDoctor?.name ?? null,
+            turnNumber:     apt.turnNumber ?? null,
+            paymentType,
+            contractName:   paymentType === "INSURANCE" ? insuranceCo.trim() || null
+                          : paymentType === "CONTRACT"  ? payerReference.trim() || null
+                          : null,
+          });
+        }
       } catch (e: any) {
         toast({ title: "خطأ في الحجز", description: e?.message || "فشل حجز الكشف — يمكنك المحاولة مجدداً", variant: "destructive" });
         return;
       }
     } else if (visitReason === "lab") {
       toast({ title: existingPatient ? "تم تسجيل زيارة تحاليل" : "تم إضافة المريض", description: serviceNotes || "سبب الزيارة: تحاليل" });
+      if (printTicket) {
+        printReceptionTicket({
+          patientName:    fullName.trim(),
+          visitType:      "lab",
+          departmentName: "المختبر",
+          paymentType,
+        });
+      }
     } else if (visitReason === "radiology") {
       toast({ title: existingPatient ? "تم تسجيل زيارة أشعة" : "تم إضافة المريض", description: serviceNotes || "سبب الزيارة: أشعة" });
+      if (printTicket) {
+        printReceptionTicket({
+          patientName:    fullName.trim(),
+          visitType:      "radiology",
+          departmentName: "الأشعة",
+          paymentType,
+        });
+      }
     } else {
       toast({ title: existingPatient ? "تم تسجيل الزيارة" : "تم إضافة المريض بنجاح" });
     }
@@ -1155,7 +1190,24 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
         {/* ╔══════════════════════════════════════════════════════════════╗ */}
         {/* ║  ACTIONS                                                     ║ */}
         {/* ╚══════════════════════════════════════════════════════════════╝ */}
-        <DialogFooter className="px-4 py-3 border-t gap-1">
+        <DialogFooter className="px-4 py-3 border-t gap-1 flex-wrap">
+          {/* Print ticket toggle — only for new reception (not edit, not admission) */}
+          {!isEdit && visitReason !== "admission" && visitReason !== "" && (
+            <label
+              className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-muted-foreground me-auto"
+              data-testid="label-print-ticket-toggle"
+            >
+              <input
+                type="checkbox"
+                checked={printTicket}
+                onChange={e => setPrintTicket(e.target.checked)}
+                className="h-3.5 w-3.5 accent-primary cursor-pointer"
+                data-testid="checkbox-print-ticket"
+              />
+              <Printer className="h-3 w-3" />
+              طباعة تذكرة المريض
+            </label>
+          )}
           <Button
             variant="outline"
             size="sm"

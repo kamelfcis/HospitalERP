@@ -1,0 +1,303 @@
+PROMPT FOR REPLIT AGENT
+Add Professional Queue / Reception Ticket Printing (Patient Reception Only)
+
+You are implementing a small professional reception ticket printing feature in the Hospital ERP system.
+
+This feature is for Patient Reception inside the Patient Record / Patient Registry workflow, NOT for bed-board admission.
+
+The ticket is intended for quick printing on a small thermal printer (80mm or 58mm).
+
+The purpose is to give the patient a queue / reception slip that shows key visit information in a clean minimal layout.
+
+CRITICAL RULES
+
+Do NOT change:
+
+appointment creation logic
+
+billing logic
+
+OPD accounting logic
+
+invoice generation
+
+GL logic
+
+API payload shapes
+
+patient reception flow
+
+This task is UI + printing only.
+
+LOCATION OF FEATURE
+
+Add this option only inside:
+
+Patient reception screen in the patient record workflow
+
+Example:
+
+PatientFormDialog
+or
+Reception form used in Patient Registry
+
+Do NOT add this to:
+
+Bed Board
+
+Inpatient admission
+
+Ward admission screens
+
+FEATURE
+
+Add a toggle option during reception:
+
+[ ] Print reception ticket
+
+Arabic label example:
+
+☑ طباعة تذكرة المريض
+
+Default state: ON
+
+When enabled, the system prints a small ticket immediately after reception is saved.
+
+TICKET CONTENT
+
+The printed ticket must include the following information:
+
+Header
+
+Hospital name centered.
+
+Example:
+
+مستشفى النيل التخصصي
+Nile Specialized Hospital
+Visit information
+رقم التذكرة : 104
+اسم المريض : محمد أحمد علي
+Department
+
+Always show department.
+
+Example:
+
+القسم : العيادات الخارجية
+Clinic (if exists)
+
+Show only if visit type = OPD.
+
+Example:
+
+العيادة : عيادة الباطنة
+Doctor (if exists)
+
+Example:
+
+الطبيب : د. أحمد محمد
+Service Type
+
+Show visit type clearly:
+
+Possible values:
+
+كشف
+تحاليل
+أشعة
+تسكين
+
+Example:
+
+نوع الزيارة : كشف
+Waiting count
+
+Show estimated queue count.
+
+Example:
+
+عدد المنتظرين قبلك : 7
+
+If unavailable:
+
+عدد المنتظرين : -
+Date and Time
+
+Example:
+
+التاريخ : 12-03-2026
+الوقت : 11:42 ص
+VISUAL DESIGN REQUIREMENTS
+
+The ticket must be:
+
+narrow
+
+centered
+
+readable
+
+minimal
+
+optimized for thermal printing
+
+Use this layout:
+
+--------------------------------
+        مستشفى النيل التخصصي
+--------------------------------
+
+رقم التذكرة : 104
+
+اسم المريض
+محمد أحمد علي
+
+القسم
+العيادات الخارجية
+
+العيادة
+عيادة الباطنة
+
+الطبيب
+د. أحمد محمد
+
+نوع الزيارة
+كشف
+
+عدد المنتظرين قبلك : 7
+
+--------------------------------
+12-03-2026   11:42 ص
+--------------------------------
+DESIGN STANDARDS
+
+Apply:
+
+strong spacing
+
+center alignment
+
+bold labels
+
+readable Arabic font
+
+clean hierarchy
+
+Use CSS print styling.
+
+Suggested fonts:
+
+Cairo
+Noto Sans Arabic
+Tajawal
+PRINT IMPLEMENTATION
+
+Implement using:
+
+window.print()
+
+But render the ticket inside a dedicated printable component:
+
+Example:
+
+ReceptionTicketPrint.tsx
+PRINT CSS
+
+Use print-only CSS:
+
+@media print
+
+Hide everything except the ticket.
+
+Set width to thermal format:
+
+width: 72mm
+
+or
+
+max-width: 280px
+
+Center content.
+
+FILE STRUCTURE
+
+Add new component:
+
+client/src/components/printing/ReceptionTicketPrint.tsx
+
+Update reception screen:
+
+PatientFormDialog.tsx
+
+Add print toggle and call print after successful reception.
+
+SAFETY RULES
+
+The ticket must:
+
+work even if clinic or doctor is missing
+
+show fallback labels
+
+never crash
+
+Fallbacks:
+
+العيادة : غير محددة
+الطبيب : غير محدد
+USER EXPERIENCE
+
+Reception flow:
+
+Receptionist fills patient reception form
+
+Clicks Save / Confirm
+
+System completes reception
+
+If toggle enabled → ticket automatically opens print dialog
+
+PROFESSIONAL TOUCH
+
+Add subtle queue ticket styling:
+
+dashed separators
+
+centered title
+
+slightly larger ticket number
+
+Example:
+
+رقم التذكرة
+104
+DO NOT
+
+Do NOT:
+
+generate new invoice
+
+modify appointment logic
+
+modify queue system
+
+modify patient timeline
+
+modify OPD billing
+
+This is display + printing only.
+
+EXPECTED RESULT
+
+Receptionist workflow becomes:
+
+استقبال المريض
+↓
+حفظ
+↓
+طباعة تذكرة صغيرة
+↓
+المريض يأخذها وينتظر دوره
+
+The printed ticket should look like a professional clinic queue slip similar to modern hospital systems.
