@@ -67,7 +67,7 @@ interface Props {
 //  Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function fmtQty(minor: string | number) {
-  return (Number(minor) / 1000).toLocaleString("ar-EG", { minimumFractionDigits: 3 });
+  return Number(minor).toLocaleString("ar-EG", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 }
 function fmtMoney(v: number) {
   return v.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -186,12 +186,12 @@ function SingleQtyCell({
   onLocalChange:  (lineId: string, newMinor: string) => void;
 }) {
   const [editing,  setEditing]  = useState(false);
-  const [localVal, setLocalVal] = useState(() => (Number(line.countedQtyMinor) / 1000).toFixed(3));
+  const [localVal, setLocalVal] = useState(() => parseFloat(line.countedQtyMinor).toString());
   const { toast } = useToast();
   const inputRef  = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!editing) setLocalVal((Number(line.countedQtyMinor) / 1000).toFixed(3));
+    if (!editing) setLocalVal(parseFloat(line.countedQtyMinor).toString());
   }, [line.countedQtyMinor, editing]);
 
   useEffect(() => {
@@ -209,9 +209,8 @@ function SingleQtyCell({
       toast({ title: "تحذير", description: "الكمية يجب أن تكون رقماً غير سالب", variant: "destructive" });
       return;
     }
-    const minor = String(Math.round(num * 1000));
     setEditing(false);
-    onSave(minor);
+    onSave(num.toFixed(4));
   };
 
   if (editing) {
@@ -225,7 +224,7 @@ function SingleQtyCell({
             setLocalVal(e.target.value);
             const num = parseFloat(e.target.value.replace(/,/g, "."));
             if (!isNaN(num) && num >= 0) {
-              onLocalChange(line.id, String(Math.round(num * 1000)));
+              onLocalChange(line.id, String(num));
             }
           }}
           onKeyDown={e => {
@@ -492,7 +491,7 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
     for (const l of lines) {
       const counted = parseFloat(localCounts.get(l.id) ?? l.countedQtyMinor);
       const diffMinor = counted - parseFloat(l.systemQtyMinor);
-      const val = (diffMinor / 1000) * parseFloat(l.unitCost);
+      const val = diffMinor * parseFloat(l.unitCost);
       net += val;
       if (val > 0) surplus += val;
       else if (val < 0) shortage += Math.abs(val);
@@ -583,7 +582,7 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
                 const countedMinor = parseFloat(localCounts.get(line.id) ?? line.countedQtyMinor);
                 const systemMinor  = parseFloat(line.systemQtyMinor);
                 const diff         = countedMinor - systemMinor;
-                const diffVal      = (diff / 1000) * parseFloat(line.unitCost);
+                const diffVal      = diff * parseFloat(line.unitCost);
 
                 const rowColor =
                   diff > 0.0001   ? "bg-green-500/5 hover:bg-green-500/10" :
