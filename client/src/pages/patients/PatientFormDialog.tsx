@@ -615,8 +615,8 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      {/* Increased from max-w-xl to max-w-2xl for more comfortable layout */}
-      <DialogContent className="max-w-2xl p-0" dir="rtl">
+      {/* Increased from max-w-xl to max-w-3xl for more comfortable layout */}
+      <DialogContent className="max-w-3xl p-0" dir="rtl">
 
         {/* ── Header ─────────────────────────────────────────────────────────── */}
         <DialogHeader className="px-4 pt-4 pb-2 border-b">
