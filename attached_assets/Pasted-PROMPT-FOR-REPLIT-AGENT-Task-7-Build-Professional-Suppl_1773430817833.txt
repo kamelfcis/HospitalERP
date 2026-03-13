@@ -1,0 +1,724 @@
+PROMPT FOR REPLIT AGENT
+Task #7 — Build Professional Supplier Management Screen + Financial Controls + Safe AP Extension + Strong Refactor
+
+You already analyzed the current purchasing/accounting architecture.
+Now implement the supplier enhancement plan on top of the existing system with a professional, safe, accounting-aware design.
+
+This task must include:
+
+supplier schema extension
+
+backend CRUD extension
+
+optional supplier AP account linkage
+
+professional Supplier Management screen
+
+QuickSupplierDialog enhancement
+
+route/sidebar wiring
+
+strong safe refactor
+
+clear code organization
+
+structural indexing/comments
+
+better readability for future maintenance
+
+This is a safe extension task, not a rewrite.
+
+1) NON-NEGOTIABLE RULES
+
+Do NOT redesign the purchasing architecture from scratch.
+Do NOT break the current purchase invoice lifecycle.
+Do NOT break journal posting logic.
+Do NOT break the current grouped AP model.
+Do NOT casually change API contracts beyond the required safe schema extensions.
+Do NOT remove or weaken current purchasing functionality.
+Do NOT introduce speculative redesigns that conflict with the current codebase.
+
+This implementation must be architecture-aware, safe, and maintainable.
+
+2) CONFIRMED CURRENT SYSTEM FACTS
+
+The existing system already contains:
+
+Suppliers table
+
+Existing fields:
+
+id
+
+code
+
+nameAr
+
+nameEn
+
+phone
+
+taxId
+
+address
+
+supplierType (drugs / consumables)
+
+isActive
+
+createdAt
+
+Missing supplier financial fields:
+
+paymentMode
+
+creditLimit
+
+defaultPaymentTerms
+
+glAccountId
+
+contactPerson
+
+openingBalance
+
+Purchase invoice header
+
+Already exists and is mature:
+
+invoiceNumber
+
+supplierId
+
+supplierInvoiceNo
+
+warehouseId
+
+receivingId
+
+invoiceDate
+
+status (draft / approved_costed / cancelled)
+
+discountType
+
+discountValue
+
+totalBeforeVat
+
+totalVat
+
+totalAfterVat
+
+netPayable
+
+approvedAt
+
+approvedBy
+
+Missing:
+
+claimNumber
+
+Current AP model
+
+The system currently uses grouped AP accounts:
+
+payables_drugs
+
+payables_consumables
+
+These are resolved from account_mappings using supplierType.
+
+This behavior must remain the default fallback.
+
+3) PRIMARY OBJECTIVE
+
+Implement a professional Supplier Management module that supports:
+
+full supplier master data
+
+financial settings
+
+payment mode
+
+credit limit
+
+payment terms
+
+optional AP account linkage to chart of accounts
+
+opening balance
+
+better supplier control for future decision-making
+
+Also prepare the system so it can later support:
+
+supplier balances
+
+supplier movement
+
+aging
+
+payable exposure
+
+purchase planning
+
+supplier-level decision support
+
+Do not build all those reports now unless already trivial.
+But the design must be ready for later reporting.
+
+4) REQUIRED SCHEMA CHANGES
+
+File:
+shared/schema/purchasing.ts
+
+Add these fields to the suppliers table:
+
+paymentMode: text("payment_mode").notNull().default("cash")
+
+allowed values: cash | credit | mixed
+
+creditLimit: decimal("credit_limit", { precision: 18, scale: 2 })
+
+nullable
+
+defaultPaymentTerms: integer("default_payment_terms")
+
+nullable
+
+stores days
+
+glAccountId: varchar("gl_account_id")
+
+nullable
+
+optional FK to accounts.id
+
+no cascade delete
+
+contactPerson: text("contact_person")
+
+nullable
+
+openingBalance: decimal("opening_balance", { precision: 18, scale: 2 }).default("0")
+
+nullable-safe, but default "0"
+
+Then run the DB sync/update safely.
+
+Important:
+
+backward-compatible
+
+do not break existing supplier rows
+
+use nullable/default strategy safely
+
+5) REQUIRED BACKEND CHANGES
+A. Supplier CRUD extension
+
+Update supplier validation/storage/API to fully support the new fields.
+
+Files likely involved:
+
+server/storage/purchasing-receivings-storage.ts
+
+server/routes/purchasing.ts
+
+Update:
+
+insertSupplierSchema
+
+getSupplier
+
+createSupplier
+
+updateSupplier
+
+any supplier list/detail API that needs the new fields
+
+Use safe validation:
+
+paymentMode enum validation
+
+creditLimit non-negative if provided
+
+defaultPaymentTerms non-negative integer if provided
+
+openingBalance numeric if provided
+
+B. AP journal posting extension
+
+File:
+server/storage/purchasing-invoices-journal-storage.ts
+
+In the journal logic for purchase invoice posting:
+
+Required behavior
+
+If supplier.glAccountId exists:
+
+use it as the AP / credit account
+
+Else:
+
+fall back to current grouped AP mapping behavior
+
+payables_drugs / payables_consumables
+
+This must be safe and backward-compatible.
+
+Do NOT remove current grouped AP logic.
+Do NOT force supplier-specific accounts for all suppliers.
+Do NOT change the existing posting architecture beyond this override mechanism.
+
+6) REQUIRED FRONTEND — NEW SUPPLIER MANAGEMENT SCREEN
+
+Create a new screen:
+
+client/src/pages/suppliers/index.tsx
+
+This must be a professional supplier management page, not a basic CRUD page.
+
+Main layout
+
+Use a two-panel layout:
+
+Right side — Supplier list / table
+
+Show:
+
+supplier code
+
+supplier name
+
+supplier type
+
+payment mode
+
+active/inactive
+
+phone if useful
+
+linked account status if useful
+
+Add:
+
+search
+
+type filter
+
+active/inactive filter
+
+Left side — Supplier details / edit form
+
+Split into 3 clear sections:
+
+Section 1 — Basic Data
+
+code
+
+Arabic name
+
+English name
+
+supplier type
+
+phone
+
+tax ID
+
+address
+
+contact person
+
+notes if already available or easy to add safely
+
+Section 2 — Financial Settings
+
+payment mode
+
+credit limit
+
+default payment terms
+
+opening balance
+
+Section 3 — Account Linkage
+
+optional AP account lookup
+
+reuse the existing account picker / account lookup pattern already used elsewhere in the system if available
+
+UX goals
+
+The screen should feel:
+
+professional
+
+accounting-aware
+
+structured
+
+clean
+
+useful for accountants and purchasing users
+
+ready for future reporting
+
+7) ADD TO NAVIGATION
+
+Add the new Suppliers screen to the sidebar/navigation.
+
+Likely file:
+
+client/src/components/layout/AppLayout.tsx
+
+Place it under the purchasing section.
+
+Also wire the route in:
+
+client/src/App.tsx
+
+Follow existing route/sidebar patterns consistently.
+
+8) UPDATE QUICK SUPPLIER DIALOG
+
+File:
+client/src/pages/supplier-receiving/components/QuickSupplierDialog.tsx
+
+Extend the quick-add dialog with only two simple extra fields:
+
+paymentMode
+
+creditLimit
+
+Do NOT overload the quick dialog with the full advanced form.
+
+Keep QuickSupplierDialog fast and practical.
+The full professional maintenance stays in the new Supplier Management screen.
+
+9) STRONG SAFE REFACTOR — MANDATORY
+
+This task must include a strong but safe refactor.
+
+Refactor goals
+
+improve readability
+
+reduce clutter
+
+reduce duplication
+
+group related logic clearly
+
+improve naming clarity
+
+improve maintainability
+
+make future debugging easier
+
+make accounting logic easier to follow safely
+
+Refactor constraints
+
+Do NOT perform a reckless rewrite.
+Do NOT move logic around without reason.
+Do NOT split files excessively.
+Do NOT break current behavior.
+
+Refactor style to follow
+
+Prefer:
+
+extracting small safe helpers
+
+grouping validation rules clearly
+
+grouping supplier financial logic clearly
+
+grouping AP override logic clearly
+
+organizing form sections and mutations cleanly
+
+centralizing repeated supplier field mappings where safe
+
+10) CODE ORGANIZATION / INDEXING / STRUCTURAL COMMENTS — MANDATORY
+
+You must add strong code organization and navigational clarity in all changed files.
+
+Use clear structural section comments such as:
+
+// ===== Imports =====
+
+// ===== Types / Interfaces =====
+
+// ===== Constants =====
+
+// ===== Validation Schema =====
+
+// ===== Supplier Financial Fields =====
+
+// ===== Supplier Account Linkage Logic =====
+
+// ===== Queries / Mutations =====
+
+// ===== Form State =====
+
+// ===== Derived Values =====
+
+// ===== Event Handlers =====
+
+// ===== Journal Posting Override =====
+
+// ===== Layout / Form Sections =====
+
+// ===== Sidebar / Route Wiring =====
+
+Do NOT add noisy comments on trivial lines.
+Use comments as navigation markers and code understanding aids.
+
+11) CODE EXPLANATORY CLARITY
+
+In the changed code, make the business intent understandable.
+
+Examples:
+
+clearly indicate where paymentMode is stored and why
+
+clearly indicate why glAccountId is optional
+
+clearly indicate why grouped AP remains the fallback
+
+clearly indicate that supplier-specific AP is an override, not a replacement of the current model
+
+Keep the code self-explanatory through:
+
+better naming
+
+better grouping
+
+short structural comments
+
+small helpers where useful
+
+12) IMPORTANT ACCOUNTING RULES
+
+Follow these accounting design rules:
+
+Supplier AP account logic
+
+default system behavior remains grouped AP by supplierType
+
+supplier-specific AP account is optional
+
+if supplier-specific AP account is set, it overrides the grouped AP account in journal posting
+
+if not set, current behavior remains unchanged
+
+This is the safest path and must be preserved.
+
+Payment mode meaning
+
+Support:
+
+cash
+
+credit
+
+mixed
+
+Do NOT force business logic yet that blocks purchase invoices solely by paymentMode unless already required by current architecture.
+For now, store and display it cleanly and prepare for future workflow decisions.
+
+13) CLAIM NUMBER — ANALYZE AND PREPARE, DO NOT FORCE RISKY IMPLEMENTATION
+
+For this task, the main focus is the supplier module and AP linkage.
+
+But before finishing, inspect the purchase invoice form/header implementation and tell me:
+
+where claimNumber would best be added later
+
+whether it should be:
+
+indexed
+
+regex validated with ^\d{1,2}-\d{4}$
+
+unique or non-unique
+
+whether uniqueness should be:
+
+global
+
+per supplier
+
+or just validated + indexed
+
+Do NOT make risky assumptions.
+If safe and trivial, you may prepare a plan note only.
+Do not mix a second risky feature into this task unless clearly safe.
+
+14) PHASED IMPLEMENTATION ORDER
+
+Implement in this order:
+
+Phase 1
+
+Schema additions for suppliers
+
+Phase 2
+
+Backend CRUD and validation updates
+
+Phase 3
+
+Journal override logic using supplier.glAccountId
+
+Phase 4
+
+New Supplier Management screen
+
+Phase 5
+
+QuickSupplierDialog enhancement
+
+Phase 6
+
+Sidebar and route wiring
+
+Phase 7
+
+Strong safe refactor and code indexing cleanup
+
+Phase 8
+
+Final verification + future note for claimNumber
+
+Do not jump randomly between files without structure.
+
+15) DONE LOOKS LIKE
+
+The task is complete when:
+
+supplier records support the new financial fields
+
+supplier create/update works safely
+
+new Supplier Management screen exists and is usable
+
+QuickSupplierDialog supports payment mode + credit limit
+
+optional supplier AP account can override grouped AP in new journal postings
+
+existing grouped AP behavior still works when no supplier account is set
+
+code is more organized and easier to understand
+
+changed files contain clear structural section comments
+
+no TypeScript errors are introduced in changed files
+
+no current purchasing flows are broken
+
+route and navigation are wired cleanly
+
+a brief note is returned about the safest future design for claimNumber
+
+16) FINAL OUTPUT REQUIRED
+
+Return exactly:
+
+A. Files modified
+
+List all changed files.
+
+B. Schema changes applied
+
+List the new supplier fields added.
+
+C. Backend changes
+
+List:
+
+validation changes
+
+CRUD changes
+
+journal posting override logic
+
+D. Frontend changes
+
+List:
+
+new Supplier Management screen
+
+QuickSupplierDialog changes
+
+route/sidebar changes
+
+E. Refactor and code-organization summary
+
+List:
+
+helpers extracted
+
+repeated logic reduced
+
+structural comments/indexing added
+
+readability improvements
+
+any safe cleanup done
+
+F. Accounting compatibility confirmation
+
+Confirm clearly:
+
+grouped AP fallback is preserved
+
+supplier-specific AP override is optional
+
+no existing purchasing/accounting logic was broken
+
+G. Future claimNumber note
+
+Briefly state:
+
+best location for claimNumber
+
+safest validation rule
+
+recommended uniqueness approach
+
+whether it should be indexed
+
+17) FINAL QUALITY STANDARD
+
+The final result should feel like a professional ERP supplier module, not a quick patch.
+
+It must be:
+
+practical for accountants
+
+useful for purchasing
+
+compatible with the current accounting model
+
+extensible for future supplier reports
+
+cleaner and easier for developers to maintain
+
+Focus on:
+
+safety
+
+accounting correctness
+
+maintainability
+
+clarity
+
+structured implementation

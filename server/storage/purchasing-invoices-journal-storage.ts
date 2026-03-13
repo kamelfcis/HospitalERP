@@ -111,11 +111,18 @@ async function generatePurchaseInvoiceJournalInTx(
     mappingMap.set(m.lineType, m);
   }
 
-  // Step C: Load supplier to determine payables line type
+  // Step C: Load supplier — determine payables line type AND check for optional AP override
   const [supplier] = await tx.select().from(suppliers)
     .where(eq(suppliers.id, invoice.supplierId));
   const supplierType     = supplier?.supplierType || "drugs";
   const payablesLineType = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
+
+  // ===== Supplier Account Linkage Logic =====
+  // If the supplier has a dedicated GL account (glAccountId), use it as the AP/payables credit account.
+  // This is OPTIONAL and PER-SUPPLIER — it overrides the grouped account_mappings model only when set.
+  // If glAccountId is null/undefined, the system falls back to the grouped mapping (payables_drugs /
+  // payables_consumables), which remains the permanent default for all suppliers without a specific account.
+  const supplierSpecificApAccountId = supplier?.glAccountId || null;
 
   // Step D: Build journal lines — REQUIRED mappings throw, CONDITIONAL throw when condition exists
 
@@ -180,19 +187,33 @@ async function generatePurchaseInvoiceJournalInTx(
     });
   }
 
-  // payables — REQUIRED (throw was already there, kept)
+  // ===== Journal Posting Override: Payables / AP Account =====
+  // Resolution order:
+  //   1. supplierSpecificApAccountId  — set on the supplier record (optional override)
+  //   2. payablesMapping.creditAccountId — from account_mappings (grouped AP, permanent default)
+  // The grouped AP model is NEVER removed; it is the fallback for all suppliers without a specific account.
   const payablesMapping = mappingMap.get(payablesLineType) || mappingMap.get("payables");
-  if (!payablesMapping?.creditAccountId) {
+
+  // Determine the effective AP credit account
+  const effectiveApAccountId = supplierSpecificApAccountId ?? payablesMapping?.creditAccountId ?? null;
+
+  if (!effectiveApAccountId) {
     throw new Error(`حساب ذمم الموردين (${payablesLineType}) غير مُعرَّف في ربط الحسابات. يرجى إضافة حساب الدائن له.`);
   }
+
   if (netPayable > 0) {
+    const apDescription = supplierSpecificApAccountId
+      ? `ذمم مورد - ${supplier?.nameAr || "مورد"}`           // supplier-specific AP account
+      : supplierType === "consumables"
+        ? "موردين مستلزمات"                                    // grouped AP fallback
+        : "موردين أدوية";                                      // grouped AP fallback
     journalLineData.push({
       journalEntryId: "",
       lineNumber:     0,
-      accountId:      payablesMapping.creditAccountId,
+      accountId:      effectiveApAccountId,
       debit:          "0",
       credit:         String(netPayable.toFixed(2)),
-      description:    supplierType === "consumables" ? "موردين مستلزمات" : "موردين أدوية",
+      description:    apDescription,
     });
   }
 

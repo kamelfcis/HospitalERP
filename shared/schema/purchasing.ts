@@ -16,8 +16,26 @@ export const suppliers = pgTable("suppliers", {
   supplierType: text("supplier_type").notNull().default("drugs"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+
+  // ===== Supplier Financial Fields (Phase 1 additions) =====
+  // paymentMode: طريقة الدفع الافتراضية — cash | credit | mixed
+  paymentMode: text("payment_mode").notNull().default("cash"),
+  // creditLimit: الحد الائتماني بالجنيه — null = بلا حد
+  creditLimit: decimal("credit_limit", { precision: 18, scale: 2 }),
+  // defaultPaymentTerms: أيام الاستحقاق الافتراضية — null = غير محدد
+  defaultPaymentTerms: integer("default_payment_terms"),
+  // contactPerson: الشخص المسؤول لدى المورد
+  contactPerson: text("contact_person"),
+  // openingBalance: الرصيد الافتتاحي — master data فقط، لا يولّد قيود تلقائياً
+  openingBalance: decimal("opening_balance", { precision: 18, scale: 2 }).default("0"),
+
+  // ===== Supplier Account Linkage =====
+  // glAccountId: حساب ذمم مورد خاص — OPTIONAL OVERRIDE لنموذج AP المجمّع
+  // إذا كان محدداً → يُستخدم بدلاً من payables_drugs/payables_consumables في القيود
+  // إذا كان null    → يعود النظام للنموذج المجمّع الحالي (الـ fallback الدائم)
+  glAccountId: varchar("gl_account_id"),
 }, (table) => ({
-  codeIdx: index("idx_suppliers_code").on(table.code),
+  codeIdx:   index("idx_suppliers_code").on(table.code),
   nameArIdx: index("idx_suppliers_name_ar").on(table.nameAr),
 }));
 
@@ -129,8 +147,22 @@ export const purchaseInvoiceLines = pgTable("purchase_invoice_lines", {
   itemIdx: index("idx_pi_lines_item").on(table.itemId),
 }));
 
-// Insert schemas
-export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
+// ===== Insert Schemas =====
+
+// insertSupplierSchema: validates all supplier fields with safe coercion for financial inputs
+export const insertSupplierSchema = createInsertSchema(suppliers)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    // ===== Supplier Financial Field Validation =====
+    paymentMode: z.enum(["cash", "credit", "mixed"]).default("cash"),
+    creditLimit: z.coerce.number().nonnegative("الحد الائتماني يجب أن يكون صفراً أو أكبر").optional().nullable(),
+    defaultPaymentTerms: z.coerce.number().int().nonnegative("أيام السداد يجب أن تكون صفراً أو أكبر").optional().nullable(),
+    openingBalance: z.coerce.number().optional().nullable(),
+    // ===== Supplier Account Linkage Validation =====
+    // glAccountId is optional — null means use grouped AP fallback
+    glAccountId: z.string().optional().nullable(),
+    contactPerson: z.string().optional().nullable(),
+  });
 export const insertReceivingHeaderSchema = createInsertSchema(receivingHeaders).omit({ id: true, receivingNumber: true, createdAt: true, updatedAt: true, postedAt: true, convertedToInvoiceId: true, convertedAt: true, correctionOfId: true, correctedById: true, correctionStatus: true });
 export const insertReceivingLineSchema = createInsertSchema(receivingLines).omit({ id: true, createdAt: true });
 export const insertPurchaseInvoiceHeaderSchema = createInsertSchema(purchaseInvoiceHeaders).omit({ id: true, invoiceNumber: true, createdAt: true, updatedAt: true, approvedAt: true, approvedBy: true });

@@ -1,0 +1,455 @@
+TASK #7 — Professional Supplier Management Module + Financial Fields + Optional AP Account + Strong Refactor
+الهدف
+
+بناء شاشة إدارة موردين احترافية وتوسيع جدول suppliers بالحقول المالية الضرورية، مع:
+
+دعم طريقة الدفع
+
+حد ائتماني
+
+شروط الدفع
+
+ربط اختياري بحساب المورد في دليل الحسابات
+
+تحسين قابلية اتخاذ القرار بخصوص الموردين
+
+مع الحفاظ على:
+
+نموذج AP الحالي
+
+دورة فاتورة الشراء
+
+منطق القيود المحاسبية
+
+ويجب تنفيذ المهمة مع:
+
+Refactor قوي
+
+تنظيم الكود
+
+فهرسة واضحة
+
+إعادة استخدام الكمبوننت
+
+منع تكرار الكود
+
+القواعد المعمارية الصارمة
+
+لا تكسر:
+
+lifecycle فاتورة الشراء
+
+journal posting logic
+
+grouped AP fallback
+
+لا تغيّر:
+
+API contracts الحالية
+
+architecture المشتريات
+
+لا تحذف:
+
+أي وظيفة موجودة
+
+كل الأعمدة الجديدة:
+
+nullable
+
+أو لها default
+
+لضمان التوافق مع البيانات الحالية.
+
+الوضع الحالي في النظام
+جدول الموردين
+suppliers
+
+الحقول الموجودة:
+
+id
+code
+nameAr
+nameEn
+phone
+taxId
+address
+supplierType (drugs / consumables)
+isActive
+createdAt
+
+الحقول الغائبة:
+
+paymentMode
+creditLimit
+defaultPaymentTerms
+glAccountId
+contactPerson
+openingBalance
+نموذج الذمم الحالي (AP)
+
+النظام يستخدم حسابات مجمّعة:
+
+payables_drugs
+payables_consumables
+
+يتم تحديد الحساب من:
+
+account_mappings
+
+حسب:
+
+supplierType
+
+هذا النموذج يجب أن يبقى الـ default fallback.
+
+الهدف المحاسبي
+
+السماح بوجود:
+
+Supplier-specific AP account
+
+لكن اختياري فقط.
+
+المنطق
+
+إذا كان المورد لديه:
+
+glAccountId
+
+يستخدم الحساب الخاص.
+
+وإذا لم يكن:
+
+يعود للنموذج الحالي:
+
+payables_drugs / payables_consumables
+Phase 1 — Schema
+
+الملف:
+
+shared/schema/purchasing.ts
+
+إضافة الأعمدة التالية:
+
+paymentMode: text("payment_mode").notNull().default("cash")
+
+القيم:
+
+cash
+credit
+mixed
+creditLimit:
+decimal("credit_limit", { precision:18, scale:2 })
+
+nullable.
+
+defaultPaymentTerms:
+integer("default_payment_terms")
+
+عدد الأيام.
+
+glAccountId:
+varchar("gl_account_id")
+
+FK إلى:
+
+accounts.id
+
+nullable.
+
+contactPerson:
+text("contact_person")
+
+nullable.
+
+openingBalance:
+decimal("opening_balance", { precision:18, scale:2 }).default("0")
+
+ملاحظة:
+
+openingBalance هو master data فقط حالياً
+ولا يولد قيود افتتاحية تلقائياً.
+
+بعد التعديل:
+
+npm run db:push
+Phase 2 — Validation
+
+تحديث:
+
+insertSupplierSchema
+paymentMode → enum validation
+creditLimit:
+z.coerce.number().nonnegative().optional().nullable()
+defaultPaymentTerms:
+z.coerce.number().int().nonnegative().optional().nullable()
+openingBalance:
+z.coerce.number().optional().nullable()
+Phase 3 — Backend CRUD
+
+الملف:
+
+server/storage/purchasing-receivings-storage.ts
+
+تحديث:
+
+createSupplier
+updateSupplier
+getSupplier
+getSuppliers
+
+لتشمل الحقول الجديدة.
+
+تأكد من:
+
+creditLimit >= 0
+defaultPaymentTerms >= 0
+Phase 4 — Journal Override Logic
+
+الملف:
+
+server/storage/purchasing-invoices-journal-storage.ts
+Step C
+const supplierApAccountId = supplier?.glAccountId || null;
+Step D
+const creditAccountId =
+supplierApAccountId ?? payablesMapping.creditAccountId;
+
+مع تعليق واضح:
+
+Supplier-specific AP override.
+Fallback to grouped AP mapping if supplier account not configured.
+Phase 5 — شاشة إدارة الموردين
+
+ملف جديد:
+
+client/src/pages/suppliers/index.tsx
+Layout
+
+لوحتان RTL.
+
+اللوحة اليمنى
+
+قائمة الموردين.
+
+الأعمدة:
+
+Supplier Code
+Supplier Name
+Supplier Type
+Payment Mode
+Credit Limit
+AP Account
+Active Status
+
+مع:
+
+Search
+Type filter
+Active filter
+
+وزر:
+
+New Supplier
+اللوحة اليسرى
+
+نموذج التعديل.
+
+Section 1 — Basic Data
+code
+nameAr
+nameEn
+supplierType
+phone
+taxId
+address
+contactPerson
+Section 2 — Financial Settings
+paymentMode
+creditLimit
+defaultPaymentTerms
+openingBalance
+Section 3 — Account Linkage
+
+استخدام الكمبوننت الموجود:
+
+client/src/components/lookups/AccountLookup.tsx
+
+لاختيار:
+
+glAccountId
+
+يفضل إن أمكن فلترة الحسابات إلى:
+
+liability / payable accounts
+Phase 6 — QuickSupplierDialog
+
+الملف:
+
+client/src/pages/supplier-receiving/components/QuickSupplierDialog.tsx
+
+إضافة حقلين فقط:
+
+paymentMode
+creditLimit
+
+لا تثقل النافذة.
+
+Phase 7 — Navigation
+
+تحديث:
+
+client/src/components/layout/AppLayout.tsx
+
+إضافة:
+
+إدارة الموردين
+
+تحت:
+
+المشتريات
+
+إضافة route:
+
+/suppliers
+
+في:
+
+client/src/App.tsx
+قاعدة إعادة استخدام الكمبوننت (مهم جداً)
+
+قبل إنشاء أي:
+
+Search
+Lookup
+Selector
+Dropdown
+
+يجب أولاً البحث في المشروع عن كمبوننت جاهز.
+
+أمثلة
+
+اختيار الحساب:
+
+AccountLookup.tsx
+
+لا يتم إنشاء lookup جديد.
+
+القاعدة
+
+لا تكرر الكود.
+
+إذا كان هناك:
+
+Reusable component
+
+يجب استخدامه.
+
+مثال
+
+عند بناء:
+
+Supplier Account Lookup
+
+يجب استخدام:
+
+AccountLookup.tsx
+
+وليس إنشاء lookup جديد.
+
+إنشاء كمبوننت جديد مسموح فقط إذا
+
+لا يوجد أي كمبوننت مشابه.
+
+ويجب وضعه في:
+
+client/src/components/lookups
+
+أو
+
+client/src/components/inputs
+
+ويكون reusable.
+
+Phase 8 — Strong Safe Refactor
+
+إعادة تنظيم الكود في الملفات المعدلة.
+
+إضافة فهارس تنظيمية مثل:
+
+===== Imports =====
+===== Types =====
+===== Constants =====
+===== Validation Schema =====
+===== Supplier Financial Fields =====
+===== Supplier Account Linkage Logic =====
+===== Journal Posting Override =====
+===== Queries / Mutations =====
+===== Form State =====
+===== Event Handlers =====
+===== Layout / Form Sections =====
+
+الهدف:
+
+تقليل التكرار
+
+تحسين القراءة
+
+تسهيل الصيانة
+
+ملاحظة مستقبلية — Claim Number
+
+ليست جزء من هذه المهمة.
+
+الموقع المقترح:
+
+purchase_invoice_headers
+
+الحقل:
+
+claim_number
+
+التحقق:
+
+^\d{1,2}-\d{4}$
+
+مثال:
+
+3-2026
+
+غير فريد.
+
+لكن يجب فهرسته:
+
+idx_purchase_invoice_claim_number
+الملفات المتوقع تعديلها
+shared/schema/purchasing.ts
+server/storage/purchasing-receivings-storage.ts
+server/storage/purchasing-invoices-journal-storage.ts
+server/routes/purchasing.ts
+client/src/pages/suppliers/index.tsx
+client/src/pages/supplier-receiving/components/QuickSupplierDialog.tsx
+client/src/components/layout/AppLayout.tsx
+client/src/App.tsx
+معايير الاكتمال
+
+المهمة مكتملة عندما:
+
+الحقول الجديدة محفوظة وتُسترجع
+
+شاشة إدارة الموردين تعمل
+
+CRUD المورد يعمل
+
+ربط حساب المورد يعمل
+
+fallback grouped AP يعمل
+
+QuickSupplierDialog محدث
+
+navigation مضاف
+
+لا أخطاء TypeScript
+
+لا كسر في workflows الحالية

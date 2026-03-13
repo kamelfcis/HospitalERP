@@ -79,6 +79,7 @@ const mainNavItems: NavItem[] = [
   { title: "الفترات المحاسبية",        href: "/fiscal-periods",     icon: Calendar,          permission: "fiscal_periods.view" },
   { title: "نماذج القيود",            href: "/templates",          icon: ClipboardList,     permission: "templates.view" },
   { title: "الأصناف",                href: "/items",              icon: Package,           permission: "items.view" },
+  { title: "إدارة الموردين",           href: "/suppliers",          icon: Building2,         permission: "receiving.view" },
   { title: "استلام من مورد",          href: "/supplier-receiving", icon: Truck,             permission: "receiving.view" },
   { title: "فواتير الشراء",           href: "/purchase-invoices",  icon: Receipt,           permission: "purchase_invoices.view" },
   { title: "تحويل مخزني",            href: "/store-transfers",    icon: ArrowLeftRight,    permission: "transfers.view" },

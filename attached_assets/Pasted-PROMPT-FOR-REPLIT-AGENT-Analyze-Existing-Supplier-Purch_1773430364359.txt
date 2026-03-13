@@ -1,0 +1,500 @@
+PROMPT FOR REPLIT AGENT
+Analyze Existing Supplier / Purchase Architecture First, Then Propose a Professional Supplier Management Design
+
+You are working on an existing Hospital ERP / HMIS / Accounting system.
+
+I want to build a professional Supplier Management module and improve the Purchase Invoice workflow, but before suggesting implementation, you must first inspect the current system deeply and understand how suppliers, purchasing, accounting, and reports are already designed.
+
+This is an analysis-first task.
+Do NOT jump into coding immediately.
+First inspect the existing system and propose a design/plan that fits the current architecture.
+
+1) PRIMARY OBJECTIVE
+
+We want to build or improve a Supplier Screen / Supplier Master that supports:
+
+adding supplier data professionally
+
+supplier payment mode:
+
+cash
+
+credit
+
+mixed/flexible if needed
+
+supplier credit limit
+
+linking each supplier to a main account in the chart of accounts
+
+making supplier data useful for:
+
+purchase control
+
+AP follow-up
+
+decision-making
+
+aging / exposure / payment planning
+
+future reporting
+
+We also want to improve the Purchase Invoice by adding a Claim / Demand Number field in the format:
+
+3-2026
+
+Meaning:
+
+month-year
+
+easy to filter/report by
+
+must not be duplicated incorrectly if uniqueness rules apply
+
+But before implementing anything, you must inspect how the current system already works.
+
+2) VERY IMPORTANT — INSPECT CURRENT SYSTEM FIRST
+
+Before proposing any implementation, inspect the existing codebase and determine:
+
+Supplier / Vendor side
+
+Is there already a suppliers table or vendor table?
+
+Is there already a purchase supplier concept under another name?
+
+What fields already exist?
+
+Are suppliers linked to purchase invoices today?
+
+Are suppliers linked to accounting accounts today?
+
+Is there already AP / liability logic?
+
+Purchase Invoice side
+
+How are purchase invoices stored now?
+
+What fields already exist in purchase invoice header?
+
+Is there an invoice number / external supplier invoice number / reference number already present?
+
+Is there already any month-based reference field?
+
+How are purchase invoices approved / posted / journalized today?
+
+Are there status values already in place?
+
+What is the current purchase invoice lifecycle?
+
+Accounting integration
+
+How are purchase invoices linked to the chart of accounts today?
+
+Is there already a supplier liability account logic?
+
+Does the system use one AP control account or supplier-specific subaccounts?
+
+Are there existing account selection components?
+
+Is there an existing account picker / COA lookup / account tree integration?
+
+Reporting / decision support
+
+Are there existing purchase reports?
+
+Are there supplier balance reports?
+
+Are there aging / payable reports?
+
+Are there supplier transaction history screens?
+
+Are there dashboard/reporting hooks we should reuse later?
+
+3) DESIGN GOALS FOR THE NEW / IMPROVED SUPPLIER SCREEN
+
+The Supplier Screen should be designed professionally and help both:
+
+day-to-day data entry
+
+financial control
+
+management decision-making
+
+The screen should support at least:
+
+Basic supplier master data
+
+supplier code
+
+supplier Arabic name
+
+supplier English name (optional)
+
+category / type
+
+contact person
+
+phone numbers
+
+address
+
+tax number / registration number if relevant
+
+notes
+
+active/inactive
+
+Commercial / financial controls
+
+payment mode:
+
+cash
+
+credit
+
+flexible / both if the architecture supports it
+
+credit limit
+
+default payment terms
+
+opening balance if applicable
+
+linked account in chart of accounts
+
+maybe default expense / inventory context if already relevant
+
+Decision-support information
+
+Think beyond data entry:
+the supplier screen should later support useful operational and management decisions such as:
+
+current balance
+
+available credit headroom
+
+total purchases
+
+overdue invoices
+
+average payment period
+
+last purchase date
+
+purchase concentration / top suppliers
+
+Do NOT implement all reports immediately unless already easy to support, but the supplier design should be ready for these future capabilities.
+
+4) PURCHASE INVOICE IMPROVEMENT — CLAIM / DEMAND NUMBER
+
+We want to add a field to the purchase invoice such as:
+
+claim_number = 3-2026
+
+This is a business reference field used to group or track claims/demand documents by month and year.
+
+Requirements
+
+format should be month-year, like:
+
+1-2026
+
+3-2026
+
+12-2026
+
+it must be easy to search and report by
+
+it must not be duplicated incorrectly depending on business rules
+
+before deciding uniqueness, inspect the current system and propose what is safest:
+
+globally unique?
+
+unique per supplier?
+
+unique per purchase invoice type?
+
+not unique, but validated and indexed?
+
+Do NOT assume the rule.
+Inspect existing purchase workflow first, then recommend the safest approach.
+
+5) DO NOT ASSUME — ASK THE CODEBASE FIRST
+
+Before proposing final architecture, answer these questions from the existing system:
+
+Where are suppliers currently represented?
+
+Where are purchase invoices currently stored?
+
+How are purchase invoices linked to accounting entries today?
+
+How are journal entries generated for purchase invoices today?
+
+Is there already a supplier account relationship or account_id field?
+
+What purchase statuses already exist?
+
+Is there already a reference / external invoice / claim field we can reuse?
+
+How do approvals/posting currently happen?
+
+Is there a current purchase invoice screen we must extend instead of redesign?
+
+Which reports already exist that future supplier enhancements should integrate with?
+
+6) WHAT I WANT FROM YOU FIRST — ANALYSIS OUTPUT, NOT CODE
+
+Before implementing, return a structured analysis with:
+
+A. Current architecture discovered from the code
+
+supplier-related tables/files/routes/components
+
+purchase invoice tables/files/routes/components
+
+accounting integration points
+
+reporting integration points
+
+B. What already exists vs what is missing
+
+Show clearly:
+
+what the current system already supports
+
+what gaps remain for a professional supplier module
+
+C. Recommended design that fits the existing system
+
+Propose:
+
+supplier master design
+
+how to store payment mode and credit limit
+
+how to link supplier to chart of accounts
+
+how to add claim_number to purchase invoice safely
+
+how the screen should help future reporting and management decisions
+
+D. Risk assessment
+
+Explain what would be:
+
+low risk
+
+medium risk
+
+high risk
+to change in the current codebase
+
+E. Implementation plan
+
+Provide a phased plan:
+
+Phase 1: analysis-confirmed schema additions
+
+Phase 2: supplier screen
+
+Phase 3: purchase invoice enhancement
+
+Phase 4: accounting/report integration
+
+Phase 5: future reporting / decision-support improvements
+
+Do not implement yet until the analysis is complete.
+
+7) PROFESSIONAL ACCOUNTING DIRECTION
+
+When recommending the design, follow strong accounting governance.
+
+Think carefully about the supplier-to-account relationship:
+
+Possible models to evaluate based on the current system:
+
+one AP control account + supplier subledger
+
+dedicated supplier account per supplier in chart of accounts
+
+linked payable account field on supplier master
+
+parent/synthetic account with supplier children
+
+Do NOT hardcode a model without inspecting the current chart-of-accounts/accounting architecture first.
+
+The recommendation must align with:
+
+current system architecture
+
+maintainability
+
+reporting clarity
+
+financial control
+
+future AP reporting
+
+8) UI/UX EXPECTATION FOR SUPPLIER SCREEN
+
+After analysis, propose a supplier screen that feels professional and practical.
+
+The screen should be suitable for:
+
+accountants
+
+purchasing users
+
+finance managers
+
+The design should be:
+
+clean
+
+structured
+
+form-driven
+
+decision-supportive
+
+not just a basic CRUD page
+
+Possible sections:
+
+supplier basic info
+
+financial settings
+
+account linkage
+
+payment/credit settings
+
+quick summary / purchase history snapshot if already possible
+
+But again: inspect the system first and then recommend the best fit.
+
+9) STRONG SAFE REFACTOR / CODE QUALITY EXPECTATION
+
+If implementation is later approved, the work should include:
+
+strong safe refactor
+
+clear code organization
+
+structural comments / indexing
+
+no messy duplication
+
+reuse of existing patterns in the system
+
+When you later propose files to touch, be explicit and organized.
+
+Use structured sections such as:
+
+// ===== Imports =====
+
+// ===== Types / Interfaces =====
+
+// ===== Validation Schema =====
+
+// ===== Supplier Financial Rules =====
+
+// ===== Claim Number Logic =====
+
+// ===== Handlers =====
+
+// ===== Form Sections =====
+
+But for now, analysis first.
+
+10) IMPORTANT IMPLEMENTATION CONSTRAINTS
+
+Do NOT:
+
+invent a totally new architecture if current system already has a pattern
+
+break purchase invoice posting
+
+break accounting logic
+
+break existing reports
+
+break routes or payloads casually
+
+assume fields exist without verifying code
+
+write a plan that ignores the current implementation
+
+The goal is to build on the existing system safely and professionally.
+
+11) FINAL RESPONSE FORMAT REQUIRED
+
+Return your answer in this exact structure:
+
+1. Current System Discovery
+
+supplier-related structures found
+
+purchase invoice structures found
+
+accounting link points found
+
+report link points found
+
+2. Gaps Identified
+
+what is missing for a professional supplier module
+
+what is missing in purchase invoice claim tracking
+
+3. Recommended Supplier Module Design
+
+supplier fields
+
+payment mode model
+
+credit limit model
+
+chart of accounts linkage model
+
+how this helps decision-making later
+
+4. Recommended Purchase Invoice Claim Number Design
+
+where to store it
+
+validation rule
+
+uniqueness recommendation
+
+indexing/search recommendation
+
+UI placement
+
+5. Proposed Phased Plan
+
+phase-by-phase implementation that fits the current system
+
+6. Risk / Compatibility Notes
+
+what must remain untouched
+
+what can be safely extended
+
+Do NOT code yet.
+Analyze first and propose the best fit for the existing system.
+
+12) EXTRA GOAL
+
+If, during analysis, you discover that there are already partially built supplier or purchase-accounting structures in the system, do NOT ignore them.
+
+Instead:
+
+surface them clearly
+
+explain whether they should be reused, extended, or replaced
+
+recommend the least disruptive professional path

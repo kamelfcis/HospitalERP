@@ -45,6 +45,20 @@ import {
 import type { DatabaseStorage } from "./index";
 import { roundMoney } from "../finance-helpers";
 
+// ===== Supplier Financial Fields — DB Payload Helper =====
+// Converts numeric financial fields from the Zod schema (number | null) to
+// the string form that Drizzle expects for decimal/integer DB columns.
+function toSupplierDbPayload(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...data };
+  if (typeof out.creditLimit === "number") out.creditLimit = String(out.creditLimit);
+  else if (out.creditLimit === undefined) delete out.creditLimit;
+  if (typeof out.openingBalance === "number") out.openingBalance = String(out.openingBalance);
+  else if (out.openingBalance === undefined) delete out.openingBalance;
+  if (typeof out.defaultPaymentTerms === "number") out.defaultPaymentTerms = out.defaultPaymentTerms;
+  else if (out.defaultPaymentTerms === undefined) delete out.defaultPaymentTerms;
+  return out;
+}
+
 function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
   if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
     return enteredPrice / parseFloat(item.majorToMinor);
@@ -56,10 +70,33 @@ function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: 
 }
 
 const methods = {
-  async getSuppliers(this: DatabaseStorage, params: { search?: string; page: number; pageSize: number }): Promise<{ suppliers: Supplier[]; total: number }> {
-    const { search, page = 1, pageSize = 50 } = params;
+  // ===== Suppliers List =====
+  // Supports optional filters: supplierType, isActive (default: active only), search
+  async getSuppliers(this: DatabaseStorage, params: {
+    search?: string;
+    page: number;
+    pageSize: number;
+    supplierType?: string;
+    isActive?: boolean | null;   // null = all, true = active only (default), false = inactive only
+  }): Promise<{ suppliers: Supplier[]; total: number }> {
+    const { search, page = 1, pageSize = 50, supplierType, isActive } = params;
     const offset = (page - 1) * pageSize;
-    const conditions = [eq(suppliers.isActive, true)];
+
+    const conditions: ReturnType<typeof eq>[] = [];
+
+    // Active filter: default to active-only when isActive is not explicitly null
+    if (isActive === null || isActive === undefined) {
+      conditions.push(eq(suppliers.isActive, true));
+    } else {
+      conditions.push(eq(suppliers.isActive, isActive));
+    }
+
+    // Optional supplier type filter
+    if (supplierType) {
+      conditions.push(eq(suppliers.supplierType, supplierType) as any);
+    }
+
+    // Free-text search across name, code, phone, taxId
     if (search) {
       const pattern = `%${search}%`;
       conditions.push(or(
@@ -67,8 +104,9 @@ const methods = {
         ilike(suppliers.code, pattern),
         ilike(suppliers.phone, pattern),
         ilike(suppliers.taxId, pattern)
-      )!);
+      )! as any);
     }
+
     const where = and(...conditions)!;
     const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(suppliers).where(where);
     const results = await db.select().from(suppliers).where(where).orderBy(suppliers.nameAr).limit(pageSize).offset(offset);
@@ -108,12 +146,16 @@ const methods = {
   },
 
   async createSupplier(this: DatabaseStorage, supplier: InsertSupplier): Promise<Supplier> {
-    const [s] = await db.insert(suppliers).values(supplier).returning();
+    // Convert numeric financial fields to strings for Drizzle decimal columns
+    const dbPayload = toSupplierDbPayload(supplier);
+    const [s] = await db.insert(suppliers).values(dbPayload as any).returning();
     return s;
   },
 
   async updateSupplier(this: DatabaseStorage, id: string, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined> {
-    const [s] = await db.update(suppliers).set(supplier).where(eq(suppliers.id, id)).returning();
+    // Convert numeric financial fields to strings for Drizzle decimal columns
+    const dbPayload = toSupplierDbPayload(supplier);
+    const [s] = await db.update(suppliers).set(dbPayload as any).where(eq(suppliers.id, id)).returning();
     return s;
   },
 
