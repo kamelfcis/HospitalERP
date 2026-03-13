@@ -352,8 +352,21 @@ const methods = {
         pih.paid_amount,
         pih.status,
         pih.patient_type,
-        pih.admission_id
+        pih.admission_id,
+        pih.created_at,
+        ca.id            AS appointment_id,
+        ca.status        AS apt_status,
+        ca.payment_type,
+        ca.accounting_posted_advance,
+        ca.accounting_posted_revenue,
+        cl.name_ar       AS clinic_name,
+        dr.name          AS doctor_name,
+        dp.name_ar       AS department_name
       FROM patient_invoice_headers pih
+      LEFT JOIN clinic_appointments ca ON ca.invoice_id = pih.id
+      LEFT JOIN clinic_clinics      cl ON cl.id = ca.clinic_id
+      LEFT JOIN doctors             dr ON dr.id = ca.doctor_id
+      LEFT JOIN departments         dp ON dp.id = cl.department_id
       WHERE (
         pih.patient_id = ${patientId}
         OR (pih.patient_id IS NULL AND pih.patient_name = ${patient.full_name as string})
@@ -424,13 +437,23 @@ const methods = {
     });
 
     const invoiceEvents = (invoiceRes.rows as Array<Record<string, unknown>>).map(row => ({
-      eventType:     "invoice",
-      eventId:       row.event_id,
-      eventDate:     row.event_date,
-      invoiceNumber: row.invoice_number,
-      amount:        row.amount,
-      paidAmount:    row.paid_amount,
-      status:        row.status,
+      eventType:                "invoice",
+      eventId:                  row.event_id,
+      eventDate:                row.event_date,
+      invoiceNumber:            row.invoice_number,
+      amount:                   row.amount,
+      paidAmount:               row.paid_amount,
+      status:                   row.status,
+      patientType:              row.patient_type,
+      createdAt:                row.created_at,
+      appointmentId:            row.appointment_id,
+      aptStatus:                row.apt_status,
+      paymentType:              row.payment_type,
+      accountingPostedAdvance:  row.accounting_posted_advance,
+      accountingPostedRevenue:  row.accounting_posted_revenue,
+      clinicName:               row.clinic_name,
+      doctorName:               row.doctor_name,
+      departmentName:           row.department_name,
     }));
 
     const allEvents = [...clinicEvents, ...admissionEvents, ...invoiceEvents].sort((a, b) => {

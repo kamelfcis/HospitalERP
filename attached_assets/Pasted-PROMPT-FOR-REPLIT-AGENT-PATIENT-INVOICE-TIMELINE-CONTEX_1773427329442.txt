@@ -1,0 +1,355 @@
+PROMPT FOR REPLIT AGENT — PATIENT INVOICE TIMELINE CONTEXT + OPD CLASSIFICATION + SAFE REFACTOR
+
+You are implementing a focused cleanup of the patient timeline invoice cards in the Hospital ERP / HMIS system.
+
+This is a UI/context clarification task to eliminate confusion in the patient file invoice timeline.
+
+Absolute rules
+
+Do NOT change:
+
+accounting logic
+
+GL posting
+
+deferred revenue logic
+
+revenue recognition logic
+
+invoice status enum values
+
+routes
+
+API contracts
+
+payload shapes
+
+permission/RBAC behavior
+
+appointment lifecycle logic
+
+This task is:
+
+query enrichment
+
+frontend display clarity
+
+OPD context visibility
+
+invoice classification
+
+safe refactor only
+
+Confirmed weaknesses from current code
+
+The current invoice timeline query returns only minimal invoice fields and is missing important context:
+
+Missing today:
+
+clinic_id / clinic_name
+
+department_name
+
+doctor_name
+
+payment_type
+
+appointment_id
+
+apt_status
+
+accounting_posted_advance
+
+accounting_posted_revenue
+
+created_at
+
+Current InvoiceEventCard shows only:
+
+invoice number
+
+generic status badge (draft/finalized)
+
+amount
+
+This creates operational confusion because the UI does not distinguish:
+
+old manual draft invoice
+
+contract draft
+
+OPD paid but waiting consultation
+
+OPD completed
+
+OPD no-show
+
+OPD cancelled
+
+Implementation plan
+Step 1 — Expand invoice timeline query (backend)
+
+File:
+server/storage/patients-doctors-storage.ts
+
+In getPatientTimeline, expand the invoice query with safe LEFT JOINs:
+
+LEFT JOIN clinic_appointments ca ON ca.invoice_id = pih.id
+
+LEFT JOIN clinic_clinics cl ON cl.id = ca.clinic_id
+
+LEFT JOIN doctors dr ON dr.id = ca.doctor_id
+
+LEFT JOIN departments dp ON dp.id = cl.department_id
+
+Add these fields to the result:
+
+ca.id AS appointment_id
+
+ca.status AS apt_status
+
+ca.payment_type
+
+ca.accounting_posted_advance
+
+ca.accounting_posted_revenue
+
+cl.name_ar AS clinic_name
+
+dr.name AS doctor_name
+
+dp.name_ar AS department_name
+
+pih.created_at
+
+Then update the invoice event mapper to return all these fields.
+
+Important:
+
+preserve existing response structure
+
+only extend safely
+
+ensure no row duplication occurs from joins
+
+Step 2 — Expand frontend InvoiceEvent type
+
+File:
+client/src/pages/patients/components/PatientFilePanel.tsx
+
+Extend InvoiceEvent with:
+
+appointmentId?: string | null
+
+aptStatus?: string | null
+
+paymentType?: string | null
+
+accountingPostedAdvance?: boolean | null
+
+accountingPostedRevenue?: boolean | null
+
+clinicName?: string | null
+
+doctorName?: string | null
+
+departmentName?: string | null
+
+createdAt?: string | null
+
+patientType?: string | null
+
+Step 3 — Separate source resolution from classification
+
+Do NOT put all logic into one giant function.
+
+Create:
+
+A. resolveInvoiceSource(ev)
+
+Returns a normalized source/category such as:
+
+OPD
+
+MANUAL
+
+INPATIENT_SERVICES
+
+CANCELLED
+
+CONTRACT_INSURANCE
+
+OTHER
+
+B. classifyInvoice(ev)
+
+Returns:
+
+business label in Arabic
+
+badge class
+
+border class
+
+optional warning
+
+optional icon key
+
+This classification must distinguish at least:
+
+OPD CASH + waiting/in_consultation → عيادة — بانتظار الكشف
+
+OPD CASH + done + revenue recognized → عيادة — اكتمل الكشف
+
+OPD CASH + no_show → عيادة — لم يحضر المريض
+
+OPD cancelled → عيادة — ملغاة
+
+OPD CONTRACT/INSURANCE + draft → عيادة — تعاقد / تأمين لم يُسدد
+
+manual draft older than threshold → فاتورة يدوية قديمة — تحتاج مراجعة
+
+manual recent draft → مسودة يدوية
+
+manual/services finalized → خدمات / إقامة — معتمدة
+
+cancelled → ملغاة
+
+Add:
+
+const STALE_MANUAL_DRAFT_DAYS = 7;
+Step 4 — Redesign InvoiceEventCard
+
+Update the card so it shows meaningful business context.
+
+Required structure:
+
+Row 1
+
+business classification badge
+
+invoice number
+
+Row 2
+
+For OPD invoices:
+
+department name
+
+clinic name
+
+doctor name
+
+Do not leave these visually blank if data exists.
+
+Use safe display fallbacks:
+
+قسم غير محدد
+
+عيادة غير محددة
+
+طبيب غير محدد
+
+Row 3
+
+date
+
+total
+
+paid
+
+remaining
+
+Extra warning row
+
+For stale manual draft:
+
+⚠ فاتورة يدوية قديمة تحتاج مراجعة أو إلغاء
+
+Visual styling
+
+left border / accent color by classification
+
+better hierarchy than generic draft/finalized badge
+
+Step 5 — Safe display rules
+
+For OPD invoices:
+
+always try to show department, clinic, and doctor if available through joins
+
+do not show a confusing blank department field when it can be resolved from clinic relation
+
+do not invent data, but do provide clear fallback labels instead of empty UI
+
+Step 6 — Strong safe refactor
+
+In PatientFilePanel.tsx, perform a safe refactor:
+
+reduce conditional clutter
+
+centralize classification logic
+
+centralize display derivation logic
+
+improve naming
+
+add structural section comments
+
+Required comment sections:
+
+// ===== Imports =====
+
+// ===== Types / Interfaces =====
+
+// ===== Constants =====
+
+// ===== Source Resolution Helpers =====
+
+// ===== Invoice Classification Helpers =====
+
+// ===== Display Derivation Helpers =====
+
+// ===== Local State =====
+
+// ===== Derived Values =====
+
+// ===== Event Handlers =====
+
+// ===== Timeline Card Rendering =====
+
+Do not add noisy comments.
+
+Done looks like
+
+OPD invoice cards clearly show department + clinic + doctor
+
+users can immediately distinguish OPD waiting vs completed vs contract vs cancelled vs old manual draft
+
+old manual drafts are visibly flagged
+
+no misleading empty OPD fields
+
+no TypeScript errors
+
+no accounting logic changed
+
+no API contract changed
+
+no payload shape changed
+
+no route changed
+
+Return:
+
+files modified
+
+fields added to the query
+
+classification rules implemented
+
+fallback display rules used
+
+refactor summary
+
+confirmation that accounting/business logic was untouched

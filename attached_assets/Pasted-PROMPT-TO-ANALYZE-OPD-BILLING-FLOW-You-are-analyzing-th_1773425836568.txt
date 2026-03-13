@@ -1,0 +1,121 @@
+PROMPT TO ANALYZE OPD BILLING FLOW
+
+You are analyzing the OPD (Outpatient Clinic) billing flow in a Hospital ERP system.
+
+Your task is to understand how the current system behaves and then help reorganize it to follow proper hospital workflow and accounting best practices.
+
+Do NOT implement changes yet — first analyze the current flow.
+
+Current Workflow (How the system currently works)
+
+In our system the OPD process currently works like this:
+
+Step 1 — Reception creates appointment
+
+The receptionist creates an appointment using:
+
+createAppointment()
+
+At that same moment the system also:
+
+• creates an OPD invoice
+• links the invoice to the appointment
+
+Step 2 — Payment at reception
+
+If the visit type is cash:
+
+• payment is collected immediately
+• the invoice becomes finalized immediately
+
+So the flow is currently:
+
+Appointment Created
+→ Invoice Created
+→ Payment Collected
+→ Invoice Finalized
+
+If the visit type is insurance or contract:
+
+Appointment Created
+→ Invoice Created
+→ status = draft
+Step 3 — Doctor consultation
+
+The doctor later performs the consultation.
+
+But currently:
+
+• the invoice is already finalized (for cash visits)
+• the doctor finishing the consultation does not change the invoice state
+
+Problem we want to analyze
+
+We want to verify if this is the correct workflow or if the better workflow should be:
+
+Appointment Created
+→ Invoice Created
+→ Payment Collected (if cash)
+→ Invoice remains OPEN
+
+Doctor finishes consultation
+→ Invoice becomes FINALIZED
+→ Revenue recognized
+Key Question
+
+Should the invoice finalization happen:
+
+A) at appointment booking time, or
+B) when the doctor completes the consultation
+
+What we want from you
+
+Analyze the current OPD billing design.
+
+Identify where revenue recognition currently happens.
+
+Compare it with hospital ERP best practices.
+
+Suggest the best workflow design that keeps the system simple but correct.
+
+Constraints
+
+Do NOT break:
+
+• existing API contracts
+• existing appointment logic
+• existing payment logic
+• existing reports
+
+Any proposed change must be safe and backward compatible.
+
+Expected Output
+
+Return:
+
+1️⃣ Current OPD billing flow (as implemented)
+
+Explain step-by-step what happens.
+
+2️⃣ Risks of the current design
+
+Operational or accounting risks.
+
+3️⃣ Recommended OPD billing flow
+
+Provide a clearer step-by-step lifecycle.
+
+4️⃣ Minimal safe change required
+
+What small change would align the system with best practice.
+
+Context
+
+This is a hospital ERP system handling:
+
+• OPD consultations
+• inpatient billing
+• pharmacy POS
+• insurance claims
+
+The goal is to maintain correct accounting and correct hospital workflow.

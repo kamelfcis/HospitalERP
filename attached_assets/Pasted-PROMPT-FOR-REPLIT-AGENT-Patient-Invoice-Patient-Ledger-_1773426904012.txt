@@ -1,0 +1,623 @@
+PROMPT FOR REPLIT AGENT
+Patient Invoice / Patient Ledger Cleanup + OPD Visibility + Strong Safe Refactor
+
+You are working on a Hospital ERP / HMIS system that already has a functioning billing lifecycle.
+
+Your task is to improve the patient invoice / patient ledger / patient invoice listing experience and eliminate confusion and operational clutter without changing the current accounting logic.
+
+This is a high-priority cleanup + UX clarification + safe refactor task.
+
+1) CRITICAL RULE — DO NOT BREAK THE CURRENT ACCOUNTING CYCLE
+
+The current OPD accounting cycle is already correct and must remain unchanged.
+
+Current OPD accounting behavior that must stay exactly as-is:
+Cash OPD appointment booking
+
+invoice is created
+
+payment is recorded
+
+treasury transaction is created
+
+invoice becomes operationally finalized
+
+GL entry is posted:
+
+Dr Treasury
+
+Cr 21163 (OPD advance / deferred revenue)
+
+accounting_posted_advance = true
+
+Doctor marks consultation as done
+
+revenue recognition GL entry is posted:
+
+Dr 21163
+
+Cr OPD consultation revenue account
+
+accounting_posted_revenue = true
+
+This accounting behavior is correct and must NOT be changed.
+
+Do NOT change:
+
+invoice status enum values
+
+GL posting logic
+
+treasury logic
+
+payment posting logic
+
+revenue recognition logic
+
+appointment lifecycle logic
+
+API contracts
+
+backend accounting behavior
+
+existing permissions / RBAC
+
+existing reports unless explicitly enhanced safely
+
+This task is primarily:
+
+UI clarification
+
+patient ledger cleanup
+
+invoice visibility improvement
+
+stale/manual-draft control
+
+strong safe refactor
+
+2) BUSINESS PROBLEM TO SOLVE
+
+The current patient record / invoice listing creates confusion because different invoice types are shown together without enough context.
+
+Users currently see:
+
+manual invoices
+
+OPD invoices
+
+contract invoices
+
+cancelled invoices
+
+done / waiting / no_show OPD states
+
+But the screen does not clearly explain:
+
+what kind of invoice this is
+
+whether it came from OPD booking
+
+whether it is manual
+
+whether it is still waiting for service
+
+whether it is contract/insurance
+
+whether blank department is intentional
+
+whether action is required or not
+
+This causes operational confusion and makes users think there is a bug even when the workflow is correct.
+
+3) PRIMARY OBJECTIVES
+
+You must improve the patient invoice / ledger experience so that:
+
+OPD invoices are visually understandable immediately
+
+No important context is hidden
+
+Manual forgotten draft invoices become obvious
+
+Users can distinguish:
+
+manual draft invoices
+
+OPD waiting invoices
+
+OPD done invoices
+
+cancelled invoices
+
+no-show invoices
+
+contract/insurance invoices
+
+No field should appear confusingly empty when relevant data actually exists
+
+The screen should become cleaner, safer, and more maintainable
+
+The code should receive a strong safe refactor with clear structure and indexing comments
+
+4) HIGH-PRIORITY UX REQUIREMENT — FOR OPD INVOICES, DO NOT LEAVE IMPORTANT FIELDS EMPTY
+
+This is critical.
+
+For any invoice that came from an outpatient clinic booking (OPD):
+
+Do NOT leave the user facing invoice view with confusing empty values if the data already exists in the system.
+
+If the invoice is OPD-related and the data exists through linked records, the screen must clearly display:
+
+Department
+
+Clinic
+
+Doctor
+
+Even if the invoice itself is linked primarily by clinic_id and not department_id, the user must still see a meaningful filled display.
+
+Required display logic for OPD invoices
+
+If invoice is linked to appointment / clinic / doctor data:
+
+show the department name derived from clinic/appointment relationship
+
+show clinic name
+
+show doctor name
+
+show the OPD context clearly
+
+Do not show a blank “department” field when the clinic belongs to a known department.
+Do not make the user guess whether the invoice is from OPD.
+Do not leave clinic/doctor hidden if already available through joins/relations.
+
+This is a display/clarification enhancement.
+Do NOT change the accounting logic or invoice generation logic.
+
+5) REQUIRED INVOICE CLASSIFICATION / VISUAL CLARITY
+
+The patient invoice listing must visually classify invoices clearly.
+
+Add clear visual classification so the user can quickly understand what they are looking at.
+
+Suggested categories / labels
+
+For example, classify rows/cards with a clear badge/tag such as:
+
+Manual Draft
+
+OPD – Paid Awaiting Consultation
+
+OPD – Consultation Completed
+
+OPD – Cancelled
+
+OPD – No Show
+
+Contract / Insurance Draft
+
+Inpatient / Services Invoice
+
+Pharmacy / Sales Invoice
+
+Use Arabic labels in the UI if that is the current screen language.
+
+Important
+
+Do not rely only on raw status like:
+
+draft
+
+finalized
+
+cancelled
+
+That is not enough.
+
+The UI should show a more meaningful business-level label derived from:
+
+invoice source
+
+payment type
+
+appointment status
+
+accounting flags
+
+cancellation state
+
+relation to appointment / clinic / doctor
+
+6) STALE / FORGOTTEN MANUAL DRAFT CONTROL
+
+A major source of confusion is old manual draft invoices that were started and abandoned.
+
+You must make these visible and controlled.
+
+Requirements
+
+Detect invoices that are:
+
+manual
+
+draft
+
+not linked to appointment
+
+old / stale
+
+Then improve UX around them.
+
+Safe improvements allowed
+
+add a visible “Old Manual Draft” / “فاتورة يدوية غير مكتملة” badge
+
+highlight draft age
+
+show creation date clearly
+
+show whether action is needed
+
+optionally add filter / warning / grouping
+
+Do NOT auto-delete anything.
+Do NOT auto-cancel anything without explicit approval.
+Only improve visibility, filtering, and operational control.
+
+7) ADD SAFE OPERATIONAL FILTERS / GROUPING TO REDUCE CHAOS
+
+Improve the patient invoice listing with practical grouping and filtering.
+
+Suggested safe grouping/filtering options:
+
+All invoices
+
+OPD invoices
+
+Manual invoices
+
+Draft only
+
+Stale draft only
+
+Contract / insurance
+
+Cancelled
+
+Requires action
+
+No-show / pending completion
+
+If the screen already has filters, enhance them safely.
+
+The goal is to reduce clutter and let the user quickly isolate problem items.
+
+8) ADD CLEAR ACTION STATE / WARNING MESSAGES
+
+The UI must help users know whether to act or not.
+
+Examples:
+
+For cash OPD invoice waiting for consultation completion
+
+Show a clear passive badge such as:
+
+"تم السداد - بانتظار الكشف"
+or equivalent
+
+This must communicate:
+
+payment is done
+
+no manual approval is needed from the invoice screen
+
+revenue recognition will happen when consultation is completed
+
+For old manual draft invoices
+
+Show a warning state such as:
+
+"فاتورة يدوية قديمة تحتاج مراجعة"
+or equivalent
+
+For contract draft
+
+Show:
+
+"تعاقد / لم يتم التحصيل بعد"
+or equivalent
+
+The goal is to prevent the user from randomly pressing “approve” on the wrong invoice.
+
+9) PATIENT INVOICE DETAIL VIEW — REQUIRED OPD CONTEXT
+
+When opening a patient invoice detail page/view/dialog for an OPD invoice, the header/details section must clearly show:
+
+invoice source = OPD / outpatient clinic
+
+department
+
+clinic
+
+doctor
+
+appointment status (waiting / done / cancelled / no_show if available)
+
+payment type
+
+whether payment has been collected
+
+whether revenue has already been recognized or still pending service completion (if such info already exists safely for display)
+
+Again:
+Do NOT invent data.
+Do NOT fake values.
+But if the data exists in linked tables, surface it clearly.
+
+No more confusing blank department field for OPD when the relationship can be resolved safely.
+
+10) STRONG SAFE REFACTOR REQUIREMENTS
+
+Perform a strong refactor, but keep it safe and behavior-preserving.
+
+Refactor goals
+
+improve readability
+
+reduce UI logic clutter
+
+centralize invoice classification logic
+
+centralize display derivation logic for OPD metadata
+
+reduce duplicated conditionals
+
+improve naming clarity
+
+improve maintainability
+
+make future debugging easier
+
+Preferred refactor style
+
+extract derived helper functions for invoice classification
+
+extract display mappers for source/type/state labeling
+
+extract safe presentational components for badges/metadata blocks
+
+group related logic clearly
+
+reduce scattered conditional rendering
+
+Do NOT do a reckless architecture rewrite.
+
+11) CODE INDEXING / STRUCTURAL COMMENTS / MAINTAINABILITY
+
+This is mandatory.
+
+Add strong structure and code navigation aids.
+
+Use clear section comments such as:
+
+// ===== Imports =====
+
+// ===== Types / Interfaces =====
+
+// ===== Status / Source Classification Helpers =====
+
+// ===== Display Derivation Helpers =====
+
+// ===== Filters / Grouping Logic =====
+
+// ===== Local State =====
+
+// ===== Derived Values =====
+
+// ===== Event Handlers =====
+
+// ===== Effects =====
+
+// ===== Table / Card Presentation =====
+
+// ===== Detail View / Invoice Header Metadata =====
+
+Do not over-comment trivial lines.
+Use comments to create navigation clarity for future developers.
+
+12) PRIORITY ORDER — IMPLEMENT IN THIS ORDER
+
+Follow this exact order:
+
+Priority 1 — Analysis first
+
+Inspect the existing patient invoice / patient ledger UI and identify:
+
+which screens/files show the patient’s invoices
+
+where invoice source/type is derived today
+
+where OPD invoices are displayed
+
+where department/clinic/doctor can be resolved from existing relations
+
+where draft/manual invoices are shown
+
+where classification logic is currently weak or duplicated
+
+Before major edits, return a short implementation summary:
+
+files involved
+
+current weak points
+
+what can be improved safely
+
+what must remain unchanged
+
+Priority 2 — OPD context visibility
+
+Make sure OPD invoice rows/details clearly show:
+
+department
+
+clinic
+
+doctor
+
+business label / status meaning
+
+Priority 3 — confusion-reduction in invoice list
+
+Add meaningful visual labels, filters, warnings, and stale draft visibility.
+
+Priority 4 — detail view cleanup
+
+Improve invoice detail display so no OPD invoice feels ambiguous.
+
+Priority 5 — strong safe refactor
+
+Refactor after behavior is clarified, not before.
+
+Priority 6 — final verification
+
+Confirm no accounting logic or contracts changed.
+
+13) DO NOT CHANGE THESE BEHAVIORS
+
+Repeat: do NOT change:
+
+OPD accounting logic
+
+deferred revenue logic
+
+appointment done → revenue recognition logic
+
+refund/reversal logic
+
+existing invoice payload shape
+
+route behavior
+
+backend storage behavior
+
+treasury transaction behavior
+
+GL event design
+
+permission behavior
+
+This task is to make the UI reflect the truth more clearly and reduce operational confusion.
+
+14) EXPECTED DELIVERABLES
+
+At the end, return exactly:
+
+A. Files analyzed
+
+List the exact files/screens involved.
+
+B. What was improved
+
+List improvements under:
+
+OPD metadata visibility
+
+patient invoice list clarity
+
+stale manual draft control
+
+filters/grouping
+
+detail view clarity
+
+refactor/code quality
+
+C. What OPD fields are now shown explicitly
+
+Confirm whether:
+
+department is shown
+
+clinic is shown
+
+doctor is shown
+
+appointment context is shown
+
+D. What was intentionally NOT changed
+
+Confirm:
+
+no accounting logic changed
+
+no backend logic changed
+
+no API contract changed
+
+no payload shape changed
+
+no route changed
+
+no permission behavior changed
+
+E. Refactor summary
+
+List:
+
+helpers extracted
+
+repeated logic reduced
+
+structural comments/indexing added
+
+components extracted if any
+
+F. Operational result
+
+Explain how the new UI now prevents confusion between:
+
+manual draft invoice
+
+OPD waiting invoice
+
+OPD done invoice
+
+contract draft
+
+cancelled invoice
+
+no_show invoice
+
+15) FINAL QUALITY STANDARD
+
+The final result should feel like a professional hospital financial / patient ledger screen:
+
+no ambiguity
+
+no unexplained blank fields
+
+no chaotic mixed invoice list
+
+no hidden OPD context
+
+no misleading draft/finalized confusion
+
+better control for finance and reception users
+
+cleaner, more maintainable code
+
+Focus on:
+
+clarity
+
+safe behavior-preserving improvements
+
+operational control
+
+accounting-aware UI
+
+maintainability

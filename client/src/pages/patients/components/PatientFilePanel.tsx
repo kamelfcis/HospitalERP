@@ -1,3 +1,4 @@
+// ===== Imports =====
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -5,10 +6,13 @@ import {
   Loader2, Printer, User, Phone, CreditCard, CalendarDays,
   Stethoscope, Pill, FlaskConical, Receipt, ChevronDown, ChevronUp,
   XCircle, Banknote, Bed, TrendingUp, TrendingDown, Activity,
+  AlertTriangle, Building2, UserCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+
+// ===== Types / Interfaces =====
 
 interface PatientSummary {
   totalClinicVisits: number;
@@ -81,6 +85,17 @@ interface InvoiceEvent {
   amount: string;
   paidAmount: string;
   status: string;
+  // OPD context fields
+  patientType?: string | null;
+  createdAt?: string | null;
+  appointmentId?: string | null;
+  aptStatus?: string | null;               // waiting | in_consultation | done | no_show | cancelled
+  paymentType?: string | null;             // CASH | INSURANCE | CONTRACT
+  accountingPostedAdvance?: boolean | null;
+  accountingPostedRevenue?: boolean | null;
+  clinicName?: string | null;
+  doctorName?: string | null;
+  departmentName?: string | null;
 }
 
 type TimelineEvent = ClinicEvent | AdmissionEvent | InvoiceEvent;
@@ -101,17 +116,11 @@ interface PatientTimeline {
 
 type TabFilter = "all" | "clinic_visit" | "admission" | "invoice";
 
-function fmtDate(d?: string | null, opts?: Intl.DateTimeFormatOptions) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("ar-EG", opts ?? { year: "numeric", month: "short", day: "numeric" });
-}
+// ===== Constants =====
 
-function fmtMoney(v?: string | number | null) {
-  const n = parseFloat(String(v ?? 0));
-  return isNaN(n) ? "0" : n.toLocaleString("ar-EG");
-}
+const STALE_MANUAL_DRAFT_DAYS = 7;
 
-const STATUS_MAP: Record<string, { label: string; className: string }> = {
+const CLINIC_STATUS_MAP: Record<string, { label: string; className: string }> = {
   done:             { label: "مكتمل",      className: "bg-green-50 text-green-700 border-green-200" },
   waiting:          { label: "في الانتظار", className: "bg-yellow-50 text-yellow-700 border-yellow-200" },
   in_consultation:  { label: "داخل الكشف", className: "bg-blue-50 text-blue-700 border-blue-200" },
@@ -126,11 +135,144 @@ const STATUS_MAP: Record<string, { label: string; className: string }> = {
   finalized:        { label: "معتمد",      className: "bg-green-50 text-green-700 border-green-200" },
 };
 
+// ===== Source Resolution Helpers =====
+
+type InvoiceSource = "OPD" | "MANUAL" | "INPATIENT_SERVICES" | "CANCELLED" | "CONTRACT_INSURANCE" | "OTHER";
+
+function resolveInvoiceSource(ev: InvoiceEvent): InvoiceSource {
+  if (ev.status === "cancelled") return "CANCELLED";
+  if (ev.appointmentId) {
+    const pt = ev.paymentType ?? "";
+    if (pt === "INSURANCE" || pt === "CONTRACT") return "CONTRACT_INSURANCE";
+    return "OPD";
+  }
+  if (ev.patientType === "contract") return "CONTRACT_INSURANCE";
+  if (ev.status === "draft") return "MANUAL";
+  return "MANUAL";
+}
+
+// ===== Invoice Classification Helpers =====
+
+type InvoiceClassification = {
+  label: string;
+  badgeClass: string;
+  borderClass: string;
+  warning?: string;
+};
+
+function classifyInvoice(ev: InvoiceEvent): InvoiceClassification {
+  const source = resolveInvoiceSource(ev);
+
+  if (source === "CANCELLED") {
+    return {
+      label: "ملغاة",
+      badgeClass: "bg-gray-100 text-gray-600 border-gray-300",
+      borderClass: "border-r-gray-300",
+    };
+  }
+
+  if (source === "OPD") {
+    const apt = ev.aptStatus ?? "";
+    if (apt === "no_show") {
+      return {
+        label: "عيادة — لم يحضر المريض",
+        badgeClass: "bg-gray-100 text-gray-600 border-gray-300",
+        borderClass: "border-r-gray-400",
+      };
+    }
+    if (apt === "cancelled") {
+      return {
+        label: "عيادة — ملغاة",
+        badgeClass: "bg-gray-100 text-gray-500 border-gray-300",
+        borderClass: "border-r-gray-300",
+      };
+    }
+    if (apt === "done") {
+      if (ev.accountingPostedRevenue) {
+        return {
+          label: "عيادة — اكتمل الكشف",
+          badgeClass: "bg-green-50 text-green-700 border-green-300",
+          borderClass: "border-r-green-500",
+        };
+      }
+      return {
+        label: "عيادة — اكتمل الكشف",
+        badgeClass: "bg-green-50 text-green-700 border-green-300",
+        borderClass: "border-r-green-400",
+      };
+    }
+    return {
+      label: "عيادة — بانتظار الكشف",
+      badgeClass: "bg-blue-50 text-blue-700 border-blue-300",
+      borderClass: "border-r-blue-400",
+    };
+  }
+
+  if (source === "CONTRACT_INSURANCE") {
+    return {
+      label: "عيادة — تعاقد / تأمين لم يُسدد",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-300",
+      borderClass: "border-r-amber-400",
+    };
+  }
+
+  if (source === "MANUAL") {
+    if (ev.status === "finalized") {
+      return {
+        label: "خدمات / إقامة — معتمدة",
+        badgeClass: "bg-green-50 text-green-700 border-green-300",
+        borderClass: "border-r-purple-400",
+      };
+    }
+    const isStale = isManualDraftStale(ev);
+    if (isStale) {
+      return {
+        label: "فاتورة يدوية قديمة",
+        badgeClass: "bg-red-50 text-red-700 border-red-300",
+        borderClass: "border-r-red-400",
+        warning: "فاتورة يدوية قديمة تحتاج مراجعة أو إلغاء",
+      };
+    }
+    return {
+      label: "مسودة يدوية",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-300",
+      borderClass: "border-r-amber-300",
+    };
+  }
+
+  return {
+    label: "فاتورة",
+    badgeClass: "bg-gray-50 text-gray-600 border-gray-300",
+    borderClass: "border-r-gray-300",
+  };
+}
+
+// ===== Display Derivation Helpers =====
+
+function fmtDate(d?: string | null, opts?: Intl.DateTimeFormatOptions) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("ar-EG", opts ?? { year: "numeric", month: "short", day: "numeric" });
+}
+
+function fmtMoney(v?: string | number | null) {
+  const n = parseFloat(String(v ?? 0));
+  return isNaN(n) ? "0" : n.toLocaleString("ar-EG");
+}
+
+function isManualDraftStale(ev: InvoiceEvent): boolean {
+  const ref = ev.createdAt ?? ev.eventDate;
+  if (!ref) return false;
+  const ageMs = Date.now() - new Date(ref).getTime();
+  return ageMs > STALE_MANUAL_DRAFT_DAYS * 24 * 60 * 60 * 1000;
+}
+
 function StatusBadge({ status }: { status?: string }) {
   if (!status) return null;
-  const s = STATUS_MAP[status] ?? { label: status, className: "bg-gray-50 text-gray-700 border-gray-200" };
+  const s = CLINIC_STATUS_MAP[status] ?? { label: status, className: "bg-gray-50 text-gray-700 border-gray-200" };
   return <Badge variant="outline" className={`text-xs ${s.className}`}>{s.label}</Badge>;
 }
+
+// ===== Timeline Card Rendering =====
 
 function ClinicEventCard({ ev }: { ev: ClinicEvent }) {
   const [open, setOpen] = useState(true);
@@ -268,27 +410,76 @@ function AdmissionEventCard({ ev }: { ev: AdmissionEvent }) {
 }
 
 function InvoiceEventCard({ ev }: { ev: InvoiceEvent }) {
-  const amount = parseFloat(String(ev.amount || 0));
-  const paid   = parseFloat(String(ev.paidAmount || 0));
+  const cls     = classifyInvoice(ev);
+  const source  = resolveInvoiceSource(ev);
+  const isOPD   = source === "OPD" || source === "CONTRACT_INSURANCE";
+
+  const amount      = parseFloat(String(ev.amount ?? 0));
+  const paid        = parseFloat(String(ev.paidAmount ?? 0));
   const outstanding = Math.max(0, amount - paid);
+
+  const dept   = ev.departmentName  || (isOPD ? "قسم غير محدد"   : null);
+  const clinic = ev.clinicName      || (isOPD ? "عيادة غير محددة" : null);
+  const doctor = ev.doctorName      || (isOPD ? "طبيب غير محدد"  : null);
+
   return (
-    <Card className="border-r-4 border-r-gray-300 shadow-sm" data-testid={`event-invoice-${ev.eventId}`}>
-      <CardContent className="px-4 py-3 flex items-center gap-3">
-        <Receipt className="h-4 w-4 text-gray-500 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">#{ev.invoiceNumber}</span>
-            <StatusBadge status={ev.status} />
-          </div>
-          <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
-            <span>{fmtDate(ev.eventDate)}</span>
-            <span>الإجمالي: <span className="text-foreground font-medium">{fmtMoney(amount)} ج.م</span></span>
-            <span>المسدد: <span className="text-green-700 font-medium">{fmtMoney(paid)} ج.م</span></span>
-            {outstanding > 0 && (
-              <span>المتبقي: <span className="text-red-600 font-medium">{fmtMoney(outstanding)} ج.م</span></span>
+    <Card
+      className={`border-r-4 ${cls.borderClass} shadow-sm`}
+      data-testid={`event-invoice-${ev.eventId}`}
+    >
+      <CardContent className="px-4 py-3 space-y-1.5">
+
+        {/* Row 1 — classification badge + invoice number */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Receipt className="h-4 w-4 text-muted-foreground shrink-0" />
+          <Badge variant="outline" className={`text-xs ${cls.badgeClass}`}>
+            {cls.label}
+          </Badge>
+          <span className="font-mono text-xs text-muted-foreground">#{ev.invoiceNumber}</span>
+        </div>
+
+        {/* Row 2 — OPD context: department · clinic · doctor */}
+        {isOPD && (
+          <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground pr-6">
+            {dept && (
+              <span className="flex items-center gap-1">
+                <Building2 className="h-3 w-3" />
+                {dept}
+              </span>
+            )}
+            {clinic && (
+              <span className="flex items-center gap-1">
+                <Stethoscope className="h-3 w-3" />
+                {clinic}
+              </span>
+            )}
+            {doctor && (
+              <span className="flex items-center gap-1">
+                <UserCheck className="h-3 w-3" />
+                د. {doctor}
+              </span>
             )}
           </div>
+        )}
+
+        {/* Row 3 — date + financial details */}
+        <div className="flex gap-4 text-xs text-muted-foreground flex-wrap pr-6">
+          <span>{fmtDate(ev.eventDate)}</span>
+          <span>الإجمالي: <span className="text-foreground font-medium">{fmtMoney(amount)} ج.م</span></span>
+          <span>المسدد: <span className="text-green-700 font-medium">{fmtMoney(paid)} ج.م</span></span>
+          {outstanding > 0 && (
+            <span>المتبقي: <span className="text-red-600 font-medium">{fmtMoney(outstanding)} ج.م</span></span>
+          )}
         </div>
+
+        {/* Row 4 — stale draft warning */}
+        {cls.warning && (
+          <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-2.5 py-1.5 mt-1">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {cls.warning}
+          </div>
+        )}
+
       </CardContent>
     </Card>
   );
@@ -300,20 +491,24 @@ function TimelineEventCard({ ev }: { ev: TimelineEvent }) {
   return <InvoiceEventCard ev={ev as InvoiceEvent} />;
 }
 
+// ===== Local State =====
+
 interface PatientFilePanelProps {
   patientId: string;
   showPrint?: boolean;
 }
 
 const TABS: { key: TabFilter; label: string; icon: React.ReactNode }[] = [
-  { key: "all",         label: "كل الأحداث",  icon: <Activity className="h-3.5 w-3.5" /> },
-  { key: "clinic_visit",label: "زيارات العيادة", icon: <Stethoscope className="h-3.5 w-3.5" /> },
-  { key: "admission",   label: "التسكين",      icon: <Bed className="h-3.5 w-3.5" /> },
-  { key: "invoice",     label: "الفواتير",     icon: <Receipt className="h-3.5 w-3.5" /> },
+  { key: "all",         label: "كل الأحداث",     icon: <Activity className="h-3.5 w-3.5" /> },
+  { key: "clinic_visit",label: "زيارات العيادة",  icon: <Stethoscope className="h-3.5 w-3.5" /> },
+  { key: "admission",   label: "التسكين",         icon: <Bed className="h-3.5 w-3.5" /> },
+  { key: "invoice",     label: "الفواتير",        icon: <Receipt className="h-3.5 w-3.5" /> },
 ];
 
 export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePanelProps) {
   const [activeTab, setActiveTab] = useState<TabFilter>("all");
+
+  // ===== Derived Values =====
 
   const { data, isLoading, isError } = useQuery<PatientTimeline>({
     queryKey: ["/api/patients", patientId, "timeline"],
