@@ -1,0 +1,269 @@
+STRICT FOLLOW-UP PROMPT FOR REPLIT AGENT — DO NOT REBUILD, ONLY HARDEN THE EXISTING RECEPTION SHEET
+
+You already updated the existing ReceptionSheet.tsx.
+
+Now perform a strict second-pass hardening, polish, and safe refactor of the same existing screen.
+
+Absolute rules
+
+Do NOT rebuild the screen
+
+Do NOT create a replacement screen
+
+Do NOT change the route
+
+Do NOT change backend contracts
+
+Do NOT change payload shape
+
+Do NOT change business logic
+
+Do NOT change permission behavior
+
+Do NOT change validation behavior unless the improvement is clearly safe and behavior-preserving
+
+Do NOT remove important fields
+
+Do NOT break the opening flow from bed-board
+
+Do NOT replace DoctorLookup or DepartmentLookup with new behavior unless strictly necessary
+
+Must preserve exactly
+
+same route
+
+same endpoint
+
+same admitMutation payload shape
+
+same validation logic
+
+same permission context
+
+same close/cancel behavior
+
+same open flow from bed-board
+
+same core business behavior
+
+Your task
+
+Take the already-improved ReceptionSheet.tsx and make it:
+
+fully verified
+
+keyboard-efficient
+
+edge-case safe
+
+visually polished
+
+structurally cleaner
+
+fast and responsive
+
+easier to maintain
+
+Required work
+1. Verify full workflow end-to-end
+
+Confirm:
+
+sheet opens correctly from bed-board
+
+autofocus works
+
+debounce works correctly
+
+search works correctly
+
+ArrowUp/Down/Enter/Escape work correctly
+
+mouse selection and keyboard selection both work correctly
+
+selected patient state is correct
+
+focus progression after patient selection is logical
+
+department and doctor selection still work
+
+submit still works
+
+close/cancel still works
+
+validation still works
+
+2. Improve full keyboard workflow
+
+Do not stop at search only.
+
+Review and improve:
+
+full Tab order across the form
+
+safe Enter behavior
+
+focus progression between key fields
+
+visible focus states
+
+keyboard usability of payment toggle and key controls
+
+3. Harden search and result selection
+
+Improve:
+
+highlighted result visibility
+
+duplicate-name disambiguation
+
+compact but clear result rows
+
+stale highlighted-index handling
+
+reset/change-patient flow
+
+empty state / no-results state
+
+blur/click race-condition safety
+
+long-name / long-ID handling
+
+4. Keep performance tight
+
+avoid unnecessary rerenders
+
+memoize where useful
+
+keep typing responsive
+
+keep search responsive
+
+keep render path light
+
+avoid unnecessary state churn
+
+5. Apply stronger safe refactor
+
+Improve code quality without changing external behavior:
+
+cleaner section organization
+
+cleaner handlers
+
+clearer derived values
+
+reduced JSX clutter
+
+extract only safe small presentational pieces where useful
+
+improve naming clarity where safe
+
+6. Add structural code indexing comments
+
+Use clear navigation comments such as:
+
+// ===== Imports =====
+
+// ===== Types =====
+
+// ===== State / Refs =====
+
+// ===== Derived Values =====
+
+// ===== Search Logic =====
+
+// ===== Handlers =====
+
+// ===== Effects =====
+
+// ===== Layout Sections =====
+
+// ===== Actions =====
+
+Do not add noisy comments. Add only structural comments that improve navigation.
+
+Implementation constraint
+
+This must remain the same screen with the same foundation, only stronger, cleaner, safer, and more polished.
+
+Final output format
+
+Return exactly:
+
+Preserved
+
+route
+
+endpoint
+
+payload shape
+
+validation behavior
+
+permission behavior
+
+open/close behavior
+
+core business logic
+
+Verified
+
+open flow
+
+search flow
+
+keyboard flow
+
+selection flow
+
+submit flow
+
+validation
+
+cancel/close flow
+
+Improved
+
+keyboard UX
+
+search/result UX
+
+visual polish
+
+edge-case handling
+
+performance
+
+maintainability
+
+Refactored
+
+files touched
+
+components extracted
+
+structure cleanup done
+
+comments/indexing added
+
+Explicit confirmation
+
+Confirm clearly:
+
+no backend contract changed
+
+no payload shape changed
+
+no route changed
+
+no permission behavior changed
+
+no business rule changed
+
+no important field was removed
+
+Do not over-explain.
+Do not redesign from scratch.
+Do not drift.
+Execute a focused hardening pass on the existing screen only.
