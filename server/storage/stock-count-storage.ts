@@ -53,9 +53,16 @@ async function getNextSessionNumber(): Promise<number> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface StockCountLineRow extends StockCountLine {
-  itemCode:   string;
-  itemNameAr: string;
-  itemCategory: string;
+  itemCode:       string;
+  itemNameAr:     string;
+  itemCategory:   string;
+  // unit conversion (null = item has only one unit level)
+  majorUnitName:  string | null;
+  mediumUnitName: string | null;
+  minorUnitName:  string | null;
+  majorToMedium:  string | null;
+  majorToMinor:   string | null;
+  mediumToMinor:  string | null;
 }
 
 export interface StockCountSessionWithLines extends StockCountSession {
@@ -73,16 +80,23 @@ export interface LoadedItem {
   systemQtyMinor: string;
   unitCost:       string;
   alreadyCounted: boolean;
+  // unit conversion (null = item has only one unit level)
+  majorUnitName:  string | null;
+  mediumUnitName: string | null;
+  minorUnitName:  string | null;
+  majorToMedium:  string | null;
+  majorToMinor:   string | null;
+  mediumToMinor:  string | null;
 }
 
 export interface LoadItemsOpts {
-  includeAll?:             boolean;
-  itemNameQ?:              string;
-  itemCategory?:           string;
-  itemCode?:               string;
-  barcode?:                string;
-  acrossSessionsOnDate?:   boolean;  // check all sessions in same warehouse/date scope
-  limit?:                  number;   // default 200
+  includeAll?:              boolean;
+  itemNameQ?:               string;
+  itemCategory?:            string;
+  itemCode?:                string;
+  barcode?:                 string;
+  excludeCountedSinceDate?: string;  // ISO date — exclude lots in posted sessions ≥ this date
+  limit?:                   number;  // default 200
 }
 
 export interface UpsertCountLine {
@@ -190,8 +204,14 @@ const stockCountStorage = {
       SELECT
         l.*,
         i.item_code,
-        i.name_ar   AS item_name_ar,
-        i.category  AS item_category
+        i.name_ar          AS item_name_ar,
+        i.category         AS item_category,
+        i.major_unit_name,
+        i.medium_unit_name,
+        i.minor_unit_name,
+        i.major_to_medium,
+        i.major_to_minor,
+        i.medium_to_minor
       FROM stock_count_lines l
       JOIN items i ON i.id = l.item_id
       WHERE l.session_id = ${id}
@@ -214,6 +234,12 @@ const stockCountStorage = {
       itemCode:        r.item_code,
       itemNameAr:      r.item_name_ar,
       itemCategory:    r.item_category,
+      majorUnitName:   r.major_unit_name   ?? null,
+      mediumUnitName:  r.medium_unit_name  ?? null,
+      minorUnitName:   r.minor_unit_name   ?? null,
+      majorToMedium:   r.major_to_medium   != null ? String(r.major_to_medium)  : null,
+      majorToMinor:    r.major_to_minor    != null ? String(r.major_to_minor)   : null,
+      mediumToMinor:   r.medium_to_minor   != null ? String(r.medium_to_minor)  : null,
     }));
 
     return {
@@ -347,22 +373,22 @@ const stockCountStorage = {
   ): Promise<LoadedItem[]> {
     const lim = Math.min(opts.limit ?? 200, 500);
 
-    // For cross-session uncounted check, look at all sessions for same warehouse+date
-    const sessionRaw = opts.acrossSessionsOnDate
-      ? await db.execute(sql`SELECT count_date FROM stock_count_sessions WHERE id = ${sessionId}`)
-      : null;
-    const countDate = sessionRaw ? (sessionRaw as any).rows[0]?.count_date : null;
-
     const rows = await db.execute(sql`
       SELECT
-        i.id             AS item_id,
+        i.id               AS item_id,
         i.item_code,
-        i.name_ar        AS item_name_ar,
-        i.category       AS item_category,
-        l.id             AS lot_id,
+        i.name_ar          AS item_name_ar,
+        i.category         AS item_category,
+        i.major_unit_name,
+        i.medium_unit_name,
+        i.minor_unit_name,
+        i.major_to_medium,
+        i.major_to_minor,
+        i.medium_to_minor,
+        l.id               AS lot_id,
         l.expiry_date,
-        l.qty_in_minor   AS system_qty_minor,
-        l.purchase_price AS unit_cost,
+        l.qty_in_minor     AS system_qty_minor,
+        l.purchase_price   AS unit_cost,
         CASE WHEN cl.id IS NOT NULL THEN TRUE ELSE FALSE END AS already_counted
       FROM inventory_lots l
       JOIN items i ON i.id = l.item_id
@@ -370,13 +396,16 @@ const stockCountStorage = {
         JOIN item_barcodes ib ON ib.item_id = i.id AND ib.barcode_value = ${opts.barcode}
       ` : sql``}
       LEFT JOIN stock_count_lines cl
-        ON cl.item_id = l.item_id
-        AND cl.lot_id = l.id
-        AND ${opts.acrossSessionsOnDate && countDate ? sql`cl.session_id IN (
-              SELECT id FROM stock_count_sessions
-              WHERE warehouse_id = ${warehouseId}
-                AND count_date   = ${countDate}::date
-              )` : sql`cl.session_id = ${sessionId}`}
+        ON cl.item_id   = l.item_id
+        AND cl.lot_id   = l.id
+        AND cl.session_id IN (
+          SELECT id FROM stock_count_sessions
+          WHERE warehouse_id = ${warehouseId}
+            AND status       = 'posted'
+            ${opts.excludeCountedSinceDate
+              ? sql`AND count_date >= ${opts.excludeCountedSinceDate}::date`
+              : sql`AND id = ${sessionId}`}
+        )
       WHERE l.warehouse_id = ${warehouseId}
         AND l.is_active    = TRUE
         ${!opts.includeAll ? sql`AND l.qty_in_minor > 0` : sql``}
@@ -397,6 +426,12 @@ const stockCountStorage = {
       systemQtyMinor: String(r.system_qty_minor ?? "0"),
       unitCost:       String(r.unit_cost ?? "0"),
       alreadyCounted: Boolean(r.already_counted),
+      majorUnitName:  r.major_unit_name  ?? null,
+      mediumUnitName: r.medium_unit_name ?? null,
+      minorUnitName:  r.minor_unit_name  ?? null,
+      majorToMedium:  r.major_to_medium  != null ? String(r.major_to_medium)  : null,
+      majorToMinor:   r.major_to_minor   != null ? String(r.major_to_minor)   : null,
+      mediumToMinor:  r.medium_to_minor  != null ? String(r.medium_to_minor)  : null,
     }));
   },
 
@@ -410,26 +445,32 @@ const stockCountStorage = {
   ): Promise<LoadedItem[]> {
     const rows = await db.execute(sql`
       SELECT
-        i.id             AS item_id,
+        i.id               AS item_id,
         i.item_code,
-        i.name_ar        AS item_name_ar,
-        i.category       AS item_category,
-        l.id             AS lot_id,
+        i.name_ar          AS item_name_ar,
+        i.category         AS item_category,
+        i.major_unit_name,
+        i.medium_unit_name,
+        i.minor_unit_name,
+        i.major_to_medium,
+        i.major_to_minor,
+        i.medium_to_minor,
+        l.id               AS lot_id,
         l.expiry_date,
-        l.qty_in_minor   AS system_qty_minor,
-        l.purchase_price AS unit_cost,
+        l.qty_in_minor     AS system_qty_minor,
+        l.purchase_price   AS unit_cost,
         CASE WHEN cl.id IS NOT NULL THEN TRUE ELSE FALSE END AS already_counted
       FROM item_barcodes ib
       JOIN items i ON i.id = ib.item_id
       LEFT JOIN inventory_lots l
-        ON l.item_id     = i.id
+        ON l.item_id       = i.id
         AND l.warehouse_id = ${warehouseId}
-        AND l.is_active  = TRUE
+        AND l.is_active    = TRUE
         AND l.qty_in_minor > 0
       LEFT JOIN stock_count_lines cl
-        ON cl.session_id = ${sessionId}
-        AND cl.item_id   = i.id
-        AND cl.lot_id    = l.id
+        ON cl.session_id   = ${sessionId}
+        AND cl.item_id     = i.id
+        AND cl.lot_id      = l.id
       WHERE ib.barcode_value = ${barcode}
       ORDER BY l.expiry_year ASC NULLS LAST, l.expiry_month ASC NULLS LAST
     `);
@@ -444,6 +485,12 @@ const stockCountStorage = {
       systemQtyMinor: String(r.system_qty_minor ?? "0"),
       unitCost:       String(r.unit_cost ?? "0"),
       alreadyCounted: Boolean(r.already_counted),
+      majorUnitName:  r.major_unit_name  ?? null,
+      mediumUnitName: r.medium_unit_name ?? null,
+      minorUnitName:  r.minor_unit_name  ?? null,
+      majorToMedium:  r.major_to_medium  != null ? String(r.major_to_medium)  : null,
+      majorToMinor:   r.major_to_minor   != null ? String(r.major_to_minor)   : null,
+      mediumToMinor:  r.medium_to_minor  != null ? String(r.medium_to_minor)  : null,
     }));
   },
 

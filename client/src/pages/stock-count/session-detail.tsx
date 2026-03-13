@@ -42,15 +42,15 @@ interface LoadedItem {
 }
 
 interface Session {
-  id:             string;
-  sessionNumber:  number;
-  warehouseId:    string;
-  warehouseName:  string;
-  countDate:      string;
-  status:         string;
-  notes:          string | null;
-  journalEntryId: string | null;
-  lines:          SessionLine[];
+  id:              string;
+  sessionNumber:   number;
+  warehouseId:     string;
+  warehouseName:   string;
+  countDate:       string;
+  status:          string;
+  notes:           string | null;
+  journalEntryId:  string | null;
+  lines:           SessionLine[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

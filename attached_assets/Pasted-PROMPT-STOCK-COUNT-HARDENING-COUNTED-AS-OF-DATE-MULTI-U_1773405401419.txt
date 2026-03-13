@@ -1,0 +1,367 @@
+PROMPT — STOCK COUNT HARDENING: COUNTED-AS-OF-DATE + MULTI-UOM COUNT ENTRY
+
+The current stock count module is functional, but two important real-world warehouse requirements must now be implemented and hardened properly.
+
+Do NOT rebuild the module.
+Apply these changes on top of the existing implementation safely and cleanly.
+
+FEATURE 1 — COUNTED ITEMS AS OF DATE (STRICT FINAL-SAVED LOGIC)
+Business requirement
+
+I need a strict and practical definition for:
+
+"Items already counted as of date X"
+
+The correct behavior is:
+
+If I specify a date such as:
+
+10-03-2026
+
+then any item/lot that was counted in any stock count session from that date onward, and was saved finally / persisted in completed saved sessions, must be considered already counted and therefore excluded from the "load uncounted items" results.
+
+Important clarification
+
+This is NOT limited to one session only.
+
+The exclusion must check across:
+
+all stock count sessions
+
+same warehouse
+
+from the selected date onward
+
+only sessions that are genuinely saved/finalized in a valid saved state
+
+only persisted lines in the database
+
+not temporary UI rows
+
+not unsaved draft rows still only on screen
+
+Required behavior
+
+When user loads items with option such as:
+
+uncounted from date
+
+exclude already counted since date
+
+the system must return only items/lots that have NOT been counted in any valid saved session from that date onward.
+
+Matching granularity
+
+The check must happen at the correct business granularity:
+
+if stock count is lot-based:
+
+compare by warehouse + item + lot (+ expiry if needed)
+
+if stock count is non-lot:
+
+compare by warehouse + item
+
+Rules
+
+An item is considered already counted only if:
+
+a line exists in stock_count_lines
+
+tied to a real stock_count_session
+
+session is in a valid saved state that should count for exclusion
+
+line was persisted in DB
+
+An item is NOT considered counted if:
+
+user loaded it into UI but never saved
+
+line was deleted before save
+
+session was cancelled
+
+session is not in a state that should count toward exclusion
+
+Required implementation
+
+Add a new filter input in the load-items dialog:
+
+Exclude items counted since date
+
+date picker input
+
+The backend query must:
+
+filter by warehouse
+
+exclude items/lots already counted from the selected date onward
+
+be efficient
+
+be fully server-side
+
+avoid N+1
+
+use correct indexes
+
+Required output behavior
+
+Example:
+
+If I choose warehouse A, and date = 10-03-2026,
+then any item/lot already counted in saved sessions on:
+
+10-03-2026
+
+11-03-2026
+
+12-03-2026
+
+etc.
+
+must be excluded.
+
+This is the correct business behavior.
+
+FEATURE 2 — MULTI-UOM COUNT ENTRY (BOX / STRIP / PIECE)
+Business requirement
+
+Some items are counted in more than one unit, for example:
+
+Box
+
+Strip
+
+Piece
+
+I need the stock count screen to support entering count in multiple units for the same item, not only one raw quantity field.
+
+Example
+
+If item has conversion like:
+
+1 box = 10 strips
+
+1 strip = 10 pieces
+
+then user may physically count:
+
+2 boxes
+
+3 strips
+
+4 pieces
+
+The system must convert that immediately into the base/minor quantity internally.
+
+Required behavior
+
+For eligible items, the stock count line must allow entry in multiple units:
+
+box quantity
+
+strip quantity
+
+piece quantity
+
+or whatever configured units exist for the item
+
+Then the system must calculate in real time:
+
+total counted quantity in minor/base unit
+
+update difference immediately
+
+update difference value immediately
+
+update totals immediately
+
+Important rule
+
+Internal storage must remain consistent:
+
+persist final counted quantity in minor/base unit
+
+all calculations and posting logic continue using base/minor quantity
+
+UI is what allows multi-unit entry
+
+database accounting logic must remain clean
+
+Required UOM logic
+
+If item has unit hierarchy / conversion rules already in master data, reuse them.
+
+Do NOT hardcode only box/strip.
+Support configured unit conversions generically if the system already has this structure.
+
+If only one unit exists for item, keep current simple quantity behavior.
+
+Instant UI update
+
+When user changes:
+
+box count
+
+strip count
+
+piece count
+
+the following must update instantly on the same row:
+
+counted quantity
+
+available/system quantity display if needed in equivalent units
+
+difference
+
+difference value
+
+Validation rules
+
+prevent invalid mixed-unit entries
+
+prevent broken conversions
+
+prevent non-numeric values
+
+handle decimal rules correctly according to UOM policy
+
+clearly display the conversion basis to user
+
+Suggested UI behavior
+
+For items with multi-UOM support, line may show:
+
+System qty
+
+Counted:
+
+Boxes
+
+Strips
+
+Pieces
+
+Total counted in base unit
+
+Difference
+
+Difference value
+
+Or another compact UI pattern consistent with current design.
+
+Very important
+
+This must feel natural for real warehouse usage.
+
+The user should not need to manually calculate:
+
+total strips
+
+total pieces
+
+final quantity
+
+The system must do that automatically and instantly.
+
+TECHNICAL / ARCHITECTURAL REQUIREMENTS
+Reuse + Refactor
+
+build on top of current stock count implementation
+
+reuse current line table and load-items dialog patterns
+
+extend cleanly
+
+do not create duplicate logic
+
+keep backward compatibility
+
+Performance
+
+all counted-since-date filtering must be server-side
+
+use indexed queries
+
+do not fetch all sessions then filter in frontend
+
+multi-UOM UI must not create lag in large grids
+
+Data integrity
+
+posting still uses base/minor quantity only
+
+journal logic must remain unchanged mathematically
+
+lot adjustment logic must remain correct
+
+no duplicate rows
+
+no corruption of count quantities
+
+REQUIRED AUDIT BEFORE CODING
+
+Before implementing, print:
+
+1. Current behavior
+
+how uncounted filtering works today
+
+how saved session states are interpreted today
+
+how quantity/unit entry works today
+
+2. Gap analysis
+
+what is missing for counted-since-date
+
+what is missing for multi-UOM count entry
+
+3. Implementation plan
+
+backend query changes
+
+frontend dialog changes
+
+line table changes
+
+UOM conversion source
+
+validation logic
+
+performance/index plan
+
+Then implement.
+
+REQUIRED FINAL VALIDATION
+
+Before marking complete, verify:
+
+Counted-since-date
+
+item counted in saved session after chosen date is excluded
+
+item only loaded in UI but not saved is NOT excluded
+
+item in cancelled session is NOT excluded
+
+exclusion works across multiple sessions, not one session only
+
+Multi-UOM
+
+user can enter box + strip + piece on same line
+
+total base quantity recalculates instantly
+
+difference recalculates instantly
+
+difference value recalculates instantly
+
+posting still uses correct minor/base quantity
+
+no regression for single-unit items
+
+Do not consider this complete unless all above scenarios pass.

@@ -2,24 +2,18 @@
  * LoadItemsDialog — نافذة تحميل أصناف المستودع للجرد
  *
  * فلاتر:
- *  • اسم الصنف (بحث جزئي)
- *  • كود الصنف (prefix)
- *  • باركود (مطابقة دقيقة)
+ *  • اسم الصنف (بحث جزئي)        → q
+ *  • كود الصنف (prefix)           → code
+ *  • باركود (مطابقة دقيقة)        → barcode
  *  • الفئة (drug / supply / service)
- *  • رصيد صفر
- *  • غير مُجرَد في نطاق التاريخ
- *
- * السلوك:
- *  • فلترة server-side + debounce 350ms
- *  • تحديد مفرد أو كل النتائج
- *  • bulk add
- *  • LIMIT 200 server-side
+ *  • تضمين الصفري الرصيد          → includeAll
+ *  • استثناء المجرود منذ تاريخ     → excludeCountedSinceDate
+ *    (يستثني الـ lots الموجودة في أي جلسة مرحّلة من ذلك التاريخ فصاعداً)
  */
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -30,7 +24,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Loader2, CheckCircle2, Search, ScanBarcode } from "lucide-react";
+import { Loader2, CheckCircle2, Search, ScanBarcode, CalendarDays } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { formatDate } from "@/lib/formatters";
@@ -45,13 +39,19 @@ interface LoadedItem {
   systemQtyMinor: string;
   unitCost:       string;
   alreadyCounted: boolean;
+  majorUnitName:  string | null;
+  mediumUnitName: string | null;
+  minorUnitName:  string | null;
+  majorToMedium:  string | null;
+  majorToMinor:   string | null;
+  mediumToMinor:  string | null;
 }
 
 interface Props {
-  open:       boolean;
-  onClose:    () => void;
-  sessionId:  string;
-  onLoaded:   () => void;
+  open:      boolean;
+  onClose:   () => void;
+  sessionId: string;
+  onLoaded:  () => void;
 }
 
 function fmtQty(v: string | number) {
@@ -69,58 +69,61 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
   const queryClient = useQueryClient();
 
   // ── filters ──────────────────────────────────────────────────────────────
-  const [nameQ,       setNameQ]       = useState("");
-  const [codeQ,       setCodeQ]       = useState("");
-  const [barcodeQ,    setBarcodeQ]    = useState("");
-  const [category,    setCategory]    = useState("all");
-  const [includeAll,  setIncludeAll]  = useState(false);
-  const [acrossDate,  setAcrossDate]  = useState(false);
+  const [nameQ,        setNameQ]        = useState("");
+  const [codeQ,        setCodeQ]        = useState("");
+  const [barcodeQ,     setBarcodeQ]     = useState("");
+  const [category,     setCategory]     = useState("all");
+  const [includeAll,   setIncludeAll]   = useState(false);
+  const [sinceDate,    setSinceDate]    = useState("");   // ISO date e.g. "2026-03-10"
 
   // debounced values
-  const [debouncedName,    setDebouncedName]    = useState("");
-  const [debouncedCode,    setDebouncedCode]    = useState("");
-  const [debouncedBarcode, setDebouncedBarcode] = useState("");
+  const [dName,    setDName]    = useState("");
+  const [dCode,    setDCode]    = useState("");
+  const [dBarcode, setDBarcode] = useState("");
 
-  const nameTimer    = useRef<ReturnType<typeof setTimeout>>();
-  const codeTimer    = useRef<ReturnType<typeof setTimeout>>();
-  const barcodeTimer = useRef<ReturnType<typeof setTimeout>>();
+  const tName    = useRef<ReturnType<typeof setTimeout>>();
+  const tCode    = useRef<ReturnType<typeof setTimeout>>();
+  const tBarcode = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
-    clearTimeout(nameTimer.current);
-    nameTimer.current = setTimeout(() => setDebouncedName(nameQ), 350);
-    return () => clearTimeout(nameTimer.current);
+    clearTimeout(tName.current);
+    tName.current = setTimeout(() => setDName(nameQ), 350);
+    return () => clearTimeout(tName.current);
   }, [nameQ]);
   useEffect(() => {
-    clearTimeout(codeTimer.current);
-    codeTimer.current = setTimeout(() => setDebouncedCode(codeQ), 350);
-    return () => clearTimeout(codeTimer.current);
+    clearTimeout(tCode.current);
+    tCode.current = setTimeout(() => setDCode(codeQ), 350);
+    return () => clearTimeout(tCode.current);
   }, [codeQ]);
   useEffect(() => {
-    clearTimeout(barcodeTimer.current);
-    barcodeTimer.current = setTimeout(() => setDebouncedBarcode(barcodeQ), 350);
-    return () => clearTimeout(barcodeTimer.current);
+    clearTimeout(tBarcode.current);
+    tBarcode.current = setTimeout(() => setDBarcode(barcodeQ), 350);
+    return () => clearTimeout(tBarcode.current);
   }, [barcodeQ]);
 
   // ── selection ─────────────────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  const key = (i: LoadedItem) => `${i.itemId}|${i.lotId ?? ""}`;
+
   // ── server query ─────────────────────────────────────────────────────────
   const { data: items = [], isFetching } = useQuery<LoadedItem[]>({
     queryKey: [
       "/api/stock-count/load-items", sessionId,
-      debouncedName, debouncedCode, debouncedBarcode, category, includeAll, acrossDate,
+      dName, dCode, dBarcode, category, includeAll, sinceDate,
     ],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (debouncedName)    params.set("q",                debouncedName);
-      if (debouncedCode)    params.set("code",             debouncedCode);
-      if (debouncedBarcode) params.set("barcode",          debouncedBarcode);
-      if (category !== "all") params.set("category",       category);
-      if (includeAll)       params.set("includeAll",       "true");
-      if (acrossDate)       params.set("acrossSessionsOnDate", "true");
-      const res = await fetch(`/api/stock-count/sessions/${sessionId}/load-items?${params}`, {
-        credentials: "include",
-      });
+      const p = new URLSearchParams();
+      if (dName)     p.set("q",                     dName);
+      if (dCode)     p.set("code",                  dCode);
+      if (dBarcode)  p.set("barcode",               dBarcode);
+      if (category !== "all") p.set("category",     category);
+      if (includeAll)         p.set("includeAll",   "true");
+      if (sinceDate)  p.set("excludeCountedSinceDate", sinceDate);
+      const res = await fetch(
+        `/api/stock-count/sessions/${sessionId}/load-items?${p}`,
+        { credentials: "include" }
+      );
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -128,46 +131,36 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
     staleTime: 30_000,
   });
 
-  // Auto-select uncounted when items change
-  const itemKeys = items.map(i => `${i.itemId}|${i.lotId ?? ""}`);
+  // Auto-select uncounted on every items change
+  const itemKeys = items.map(key).join(",");
   useEffect(() => {
     if (!open) return;
-    const uncounted = items.filter(i => !i.alreadyCounted);
-    setSelected(new Set(uncounted.map(i => `${i.itemId}|${i.lotId ?? ""}`)));
+    setSelected(new Set(items.filter(i => !i.alreadyCounted).map(key)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(itemKeys), open]);
+  }, [itemKeys, open]);
 
-  const key = (i: LoadedItem) => `${i.itemId}|${i.lotId ?? ""}`;
   const isSelected = (i: LoadedItem) => selected.has(key(i));
-  const toggle = (i: LoadedItem) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.has(key(i)) ? next.delete(key(i)) : next.add(key(i));
-      return next;
-    });
-  };
-  const toggleAll = () => {
-    if (selected.size === items.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(items.map(key)));
-    }
-  };
+  const toggle     = (i: LoadedItem) => setSelected(prev => {
+    const n = new Set(prev);
+    n.has(key(i)) ? n.delete(key(i)) : n.add(key(i));
+    return n;
+  });
+  const toggleAll = () =>
+    setSelected(selected.size === items.length ? new Set() : new Set(items.map(key)));
   const allChecked = items.length > 0 && selected.size === items.length;
 
   // ── save mutation ─────────────────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: () => {
-      const selectedItems = items.filter(i => isSelected(i));
-      const lines = selectedItems.map(i => ({
+      const body = items.filter(i => isSelected(i)).map(i => ({
         itemId:          i.itemId,
         lotId:           i.lotId,
         expiryDate:      i.expiryDate,
         systemQtyMinor:  i.systemQtyMinor,
-        countedQtyMinor: i.systemQtyMinor, // default = system qty (user changes inline)
+        countedQtyMinor: i.systemQtyMinor,
         unitCost:        i.unitCost,
       }));
-      return apiRequest("POST", `/api/stock-count/sessions/${sessionId}/lines`, lines);
+      return apiRequest("POST", `/api/stock-count/sessions/${sessionId}/lines`, body);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/stock-count/sessions", sessionId] });
@@ -182,7 +175,7 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
 
   const handleClose = () => {
     setNameQ(""); setCodeQ(""); setBarcodeQ(""); setCategory("all");
-    setIncludeAll(false); setAcrossDate(false); setSelected(new Set());
+    setIncludeAll(false); setSinceDate(""); setSelected(new Set());
     onClose();
   };
 
@@ -194,72 +187,98 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
         </DialogHeader>
 
         {/* ── Filters ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-muted/30 p-3 rounded-lg">
-          {/* Name */}
-          <div className="relative col-span-2 md:col-span-1">
-            <Search className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              className="pr-8 h-8 text-sm"
-              placeholder="اسم الصنف..."
-              value={nameQ}
-              onChange={e => setNameQ(e.target.value)}
-              data-testid="input-load-name"
-            />
-          </div>
-          {/* Code */}
-          <Input
-            className="h-8 text-sm font-mono"
-            placeholder="كود الصنف..."
-            value={codeQ}
-            onChange={e => setCodeQ(e.target.value)}
-            data-testid="input-load-code"
-          />
-          {/* Barcode */}
-          <div className="relative">
-            <ScanBarcode className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              className="pr-8 h-8 text-sm font-mono"
-              placeholder="باركود..."
-              value={barcodeQ}
-              onChange={e => setBarcodeQ(e.target.value)}
-              data-testid="input-load-barcode"
-            />
-          </div>
-          {/* Category */}
-          <Select value={category} onValueChange={setCategory} dir="rtl">
-            <SelectTrigger className="h-8 text-sm" data-testid="select-load-category">
-              <SelectValue placeholder="الفئة" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل الفئات</SelectItem>
-              <SelectItem value="drug">دواء</SelectItem>
-              <SelectItem value="supply">مستلزم</SelectItem>
-              <SelectItem value="service">خدمة</SelectItem>
-            </SelectContent>
-          </Select>
-          {/* Toggles */}
-          <label className="flex items-center gap-1.5 text-sm cursor-pointer col-span-2 md:col-span-1">
-            <input
-              type="checkbox"
-              checked={includeAll}
-              onChange={e => setIncludeAll(e.target.checked)}
-              data-testid="chk-include-all"
-            />
-            عرض الصفري الرصيد أيضاً
-          </label>
-          <label className="flex items-center gap-1.5 text-sm cursor-pointer col-span-2 md:col-span-1">
-            <input
-              type="checkbox"
-              checked={acrossDate}
-              onChange={e => setAcrossDate(e.target.checked)}
-              data-testid="chk-across-date"
-            />
-            غير مُجرَد في نطاق التاريخ
-          </label>
-          {isFetching && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-2">
-              <Loader2 className="h-3 w-3 animate-spin" /> جاري البحث...
+        <div className="bg-muted/30 p-3 rounded-lg space-y-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {/* Name */}
+            <div className="relative col-span-2 md:col-span-1">
+              <Search className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                className="pr-8 h-8 text-sm"
+                placeholder="اسم الصنف..."
+                value={nameQ}
+                onChange={e => setNameQ(e.target.value)}
+                data-testid="input-load-name"
+              />
             </div>
+            {/* Code */}
+            <Input
+              className="h-8 text-sm font-mono"
+              placeholder="كود الصنف..."
+              value={codeQ}
+              onChange={e => setCodeQ(e.target.value)}
+              data-testid="input-load-code"
+            />
+            {/* Barcode */}
+            <div className="relative">
+              <ScanBarcode className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                className="pr-8 h-8 text-sm font-mono"
+                placeholder="باركود..."
+                value={barcodeQ}
+                onChange={e => setBarcodeQ(e.target.value)}
+                data-testid="input-load-barcode"
+              />
+            </div>
+            {/* Category */}
+            <Select value={category} onValueChange={setCategory} dir="rtl">
+              <SelectTrigger className="h-8 text-sm" data-testid="select-load-category">
+                <SelectValue placeholder="الفئة" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل الفئات</SelectItem>
+                <SelectItem value="drug">دواء</SelectItem>
+                <SelectItem value="supply">مستلزم</SelectItem>
+                <SelectItem value="service">خدمة</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Toggles row */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeAll}
+                onChange={e => setIncludeAll(e.target.checked)}
+                data-testid="chk-include-all"
+              />
+              عرض صفري الرصيد أيضاً
+            </label>
+
+            {/* Exclude-counted-since date */}
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">استثناء المجرود منذ:</span>
+              <Input
+                type="date"
+                className="h-7 w-36 text-sm"
+                value={sinceDate}
+                onChange={e => setSinceDate(e.target.value)}
+                data-testid="input-since-date"
+                dir="ltr"
+              />
+              {sinceDate && (
+                <button
+                  className="text-xs text-muted-foreground underline"
+                  onClick={() => setSinceDate("")}
+                >
+                  إلغاء
+                </button>
+              )}
+            </div>
+
+            {isFetching && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> جاري البحث...
+              </div>
+            )}
+          </div>
+
+          {/* Hint when sinceDate is set */}
+          {sinceDate && (
+            <p className="text-xs text-amber-600 bg-amber-500/10 rounded px-2 py-1">
+              سيتم استثناء الأصناف المجرودة في جلسات مرحّلة بدءاً من {sinceDate}
+            </p>
           )}
         </div>
 
@@ -289,6 +308,7 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
                     لا توجد أصناف مطابقة
+                    {sinceDate && " — جميع الأصناف مجرودة منذ " + sinceDate}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -309,6 +329,11 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
                     <TableCell className="font-mono text-sm">{item.itemCode}</TableCell>
                     <TableCell>
                       <p className="text-sm font-medium leading-tight">{item.itemNameAr}</p>
+                      {item.majorUnitName && (
+                        <p className="text-xs text-muted-foreground">
+                          {[item.majorUnitName, item.mediumUnitName, item.minorUnitName].filter(Boolean).join(" / ")}
+                        </p>
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
                       <Badge variant="outline" className="text-xs">
@@ -320,6 +345,9 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
                     </TableCell>
                     <TableCell className="text-center font-mono text-sm">
                       {fmtQty(item.systemQtyMinor)}
+                      {item.minorUnitName && (
+                        <span className="text-xs text-muted-foreground mr-0.5">{item.minorUnitName}</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
                       {item.alreadyCounted

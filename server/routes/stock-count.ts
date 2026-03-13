@@ -138,19 +138,19 @@ export function registerStockCountRoutes(app: Express) {
       const session = await storage.getStockCountSessionWithLines(req.params.id as string);
       if (!session) return res.status(404).json({ message: "جلسة الجرد غير موجودة" });
 
-      const { includeAll, q, category, code, barcode, acrossSessionsOnDate, limit } = req.query as Record<string, string | undefined>;
+      const { includeAll, q, category, code, barcode, excludeCountedSinceDate, limit } = req.query as Record<string, string | undefined>;
 
       const items = await storage.loadItemsForSession(
         session.warehouseId,
         req.params.id as string,
         {
-          includeAll:           includeAll === "true",
-          itemNameQ:            q,
-          itemCategory:         category,
-          itemCode:             code,
-          barcode:              barcode,
-          acrossSessionsOnDate: acrossSessionsOnDate === "true",
-          limit:                limit ? parseInt(limit) : undefined,
+          includeAll:              includeAll === "true",
+          itemNameQ:               q,
+          itemCategory:            category,
+          itemCode:                code,
+          barcode:                 barcode,
+          excludeCountedSinceDate: excludeCountedSinceDate || undefined,
+          limit:                   limit ? parseInt(limit) : undefined,
         }
       );
       return res.json(items);
