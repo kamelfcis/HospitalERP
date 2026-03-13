@@ -1,0 +1,267 @@
+PROMPT — ENABLE FULL KEYBOARD NAVIGATION IN STOCK COUNT SEARCH AND COUNT GRID
+Context
+
+The stock count module is now functional and includes:
+
+LoadItemsDialog (item search dialog)
+
+LineTable (count lines grid)
+
+barcode input
+
+inline quantity editing
+
+multi-UOM inputs
+
+variance calculations
+
+However, warehouse users must be able to operate the stock count workflow almost entirely with the keyboard, without constantly using the mouse.
+
+This is critical for speed and efficiency during real physical counting.
+
+Goal
+
+Implement complete keyboard navigation across:
+
+1️⃣ LoadItemsDialog (search results)
+2️⃣ LineTable (stock count grid)
+3️⃣ quantity inputs and multi-UOM inputs
+
+The system should allow smooth navigation using arrow keys and standard keyboard shortcuts.
+
+Part 1 — Keyboard Navigation in LoadItemsDialog (Search Results)
+Behavior
+
+User should be able to navigate search results using:
+
+ArrowDown
+ArrowUp
+
+These keys move the highlight between rows.
+
+The highlighted row must have a visual focus state.
+
+Select Item
+
+Pressing:
+
+Enter
+
+should:
+
+select the highlighted row
+
+add it to the stock count session
+
+Multi Selection
+
+Pressing:
+
+Space
+
+should toggle the checkbox on the highlighted row.
+
+Quick Select All
+
+Pressing:
+
+Ctrl + A
+
+should select all visible results.
+
+Exit Search Dialog
+
+Pressing:
+
+Esc
+
+should close the dialog.
+
+Focus Behavior
+
+When the dialog opens:
+
+focus automatically moves to the search input field
+
+When search results load:
+
+first row becomes highlighted automatically.
+
+Part 2 — Keyboard Navigation in LineTable (Stock Count Grid)
+
+The count grid must behave similar to spreadsheet navigation.
+
+Row Navigation
+ArrowDown
+ArrowUp
+
+moves focus between rows.
+
+Column Navigation
+ArrowRight
+ArrowLeft
+
+moves between editable cells.
+
+Enter Key
+
+Pressing:
+
+Enter
+
+should:
+
+confirm current input
+
+move to the next row same column.
+
+Tab Key
+
+Pressing:
+
+Tab
+
+moves to the next editable field.
+
+Shift + Tab
+
+moves to the previous editable field.
+
+Part 3 — Multi-UOM Inputs Navigation
+
+For items with multiple units:
+
+Example:
+
+علبة
+شريط
+قرص
+
+User should be able to navigate between them with:
+
+ArrowRight
+ArrowLeft
+Tab
+
+Example flow:
+
+Box → Strip → Piece
+Part 4 — Quick Row Actions
+Delete Line
+
+Press:
+
+Delete
+
+to delete the focused row.
+
+Must show confirmation if row contains data.
+
+Focus Search Inside Table
+
+Press:
+
+Ctrl + F
+
+to focus the quick search input for filtering lines.
+
+Part 5 — Barcode Interaction
+
+If barcode scan occurs:
+
+the row must automatically receive focus
+
+keyboard navigation must continue normally.
+
+Part 6 — Visual Feedback
+
+Focused row must be clearly visible.
+
+Suggested styles:
+
+light highlight background
+
+left border indicator
+
+focus ring on active cell.
+
+Part 7 — Implementation Notes
+
+Do not implement global keyboard listeners that break other screens.
+
+Keyboard handling must be scoped to:
+
+LoadItemsDialog
+LineTable
+
+Use React event handlers such as:
+
+onKeyDown
+
+or a controlled keyboard navigation hook.
+
+Part 8 — Performance Safety
+
+Keyboard navigation must not trigger unnecessary re-renders.
+
+Use:
+
+row index tracking
+
+refs for focus control
+
+minimal state updates
+
+The grid must remain responsive with hundreds of rows.
+
+Part 9 — Validation Scenarios
+
+Before marking complete, verify:
+
+Search Dialog
+
+User types search term
+
+ArrowDown
+ArrowDown
+Enter
+
+Item is added.
+
+Grid Navigation
+
+User edits quantity
+
+Enter
+
+moves to next row.
+
+Multi-UOM
+
+User enters:
+
+2 boxes
+Tab
+3 strips
+Tab
+5 pieces
+
+Total updates correctly.
+
+Row Delete
+
+Focus row
+
+Delete
+
+row removed.
+
+Final Output
+
+Before implementation print:
+
+1️⃣ current navigation behavior
+2️⃣ proposed keyboard navigation design
+3️⃣ components that will be modified
+
+Then implement.

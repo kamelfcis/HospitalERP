@@ -2,13 +2,19 @@
  * LoadItemsDialog — نافذة تحميل أصناف المستودع للجرد
  *
  * فلاتر:
- *  • اسم الصنف (بحث جزئي)        → q
- *  • كود الصنف (prefix)           → code
- *  • باركود (مطابقة دقيقة)        → barcode
+ *  • اسم الصنف (بحث جزئي — عربي أو English)  → q
+ *  • كود الصنف (prefix)                       → code
+ *  • باركود (مطابقة دقيقة)                    → barcode
  *  • الفئة (drug / supply / service)
- *  • تضمين الصفري الرصيد          → includeAll
- *  • استثناء المجرود منذ تاريخ     → excludeCountedSinceDate
- *    (يستثني الـ lots الموجودة في أي جلسة مرحّلة من ذلك التاريخ فصاعداً)
+ *  • تضمين الصفري الرصيد                      → includeAll
+ *  • استثناء المجرود منذ تاريخ                → excludeCountedSinceDate
+ *
+ * لوحة المفاتيح:
+ *  • ArrowDown/Up  → تنقل التمييز بين الصفوف
+ *  • Space         → تبديل تحديد الصف الممُيَّز
+ *  • Enter         → تأكيد تحميل الأصناف المحددة
+ *  • Ctrl+A        → تحديد الكل / إلغاء الكل
+ *  • Esc           → إغلاق
  */
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -75,7 +81,7 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
   const [barcodeQ,     setBarcodeQ]     = useState("");
   const [category,     setCategory]     = useState("all");
   const [includeAll,   setIncludeAll]   = useState(false);
-  const [sinceDate,    setSinceDate]    = useState("");   // ISO date e.g. "2026-03-10"
+  const [sinceDate,    setSinceDate]    = useState("");
 
   // debounced values
   const [dName,    setDName]    = useState("");
@@ -107,6 +113,11 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
 
   const key = (i: LoadedItem) => `${i.itemId}|${i.lotId ?? ""}`;
 
+  // ── keyboard navigation ───────────────────────────────────────────────────
+  const [highlightedIdx, setHighlightedIdx] = useState(-1);
+  const highlightRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const searchInputRef   = useRef<HTMLInputElement>(null);
+
   // ── server query ─────────────────────────────────────────────────────────
   const { data: items = [], isFetching } = useQuery<LoadedItem[]>({
     queryKey: [
@@ -132,13 +143,20 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
     staleTime: 30_000,
   });
 
-  // Auto-select uncounted on every items change
+  // Auto-select uncounted + reset highlight when items change
   const itemKeys = items.map(key).join(",");
   useEffect(() => {
     if (!open) return;
     setSelected(new Set(items.filter(i => !i.alreadyCounted).map(key)));
+    setHighlightedIdx(items.length > 0 ? 0 : -1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemKeys, open]);
+
+  // Scroll highlighted row into view
+  useEffect(() => {
+    if (highlightedIdx < 0) return;
+    highlightRowRefs.current.get(highlightedIdx)?.scrollIntoView({ block: "nearest" });
+  }, [highlightedIdx]);
 
   const isSelected = (i: LoadedItem) => selected.has(key(i));
   const toggle     = (i: LoadedItem) => setSelected(prev => {
@@ -149,6 +167,32 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
   const toggleAll = () =>
     setSelected(selected.size === items.length ? new Set() : new Set(items.map(key)));
   const allChecked = items.length > 0 && selected.size === items.length;
+
+  // ── search input keyboard handler ─────────────────────────────────────────
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIdx(prev => Math.min(prev + 1, items.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIdx(prev => Math.max(prev - 1, 0));
+    } else if (e.key === " ") {
+      if (highlightedIdx >= 0 && highlightedIdx < items.length) {
+        e.preventDefault();
+        toggle(items[highlightedIdx]);
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (selected.size > 0 && !saveMutation.isPending) {
+        saveMutation.mutate();
+      } else if (highlightedIdx >= 0 && highlightedIdx < items.length) {
+        toggle(items[highlightedIdx]);
+      }
+    } else if (e.key === "a" && e.ctrlKey) {
+      e.preventDefault();
+      toggleAll();
+    }
+  };
 
   // ── save mutation ─────────────────────────────────────────────────────────
   const saveMutation = useMutation({
@@ -177,6 +221,7 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
   const handleClose = () => {
     setNameQ(""); setCodeQ(""); setBarcodeQ(""); setCategory("all");
     setIncludeAll(false); setSinceDate(""); setSelected(new Set());
+    setHighlightedIdx(-1);
     onClose();
   };
 
@@ -190,14 +235,17 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
         {/* ── Filters ── */}
         <div className="bg-muted/30 p-3 rounded-lg space-y-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {/* Name */}
+            {/* Name — auto-focused, keyboard-navigable */}
             <div className="relative col-span-2 md:col-span-1">
               <Search className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
+                ref={searchInputRef}
+                autoFocus
                 className="pr-8 h-8 text-sm"
                 placeholder="اسم الصنف (عربي / English)..."
                 value={nameQ}
                 onChange={e => setNameQ(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 data-testid="input-load-name"
               />
             </div>
@@ -281,6 +329,11 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
               سيتم استثناء الأصناف المجرودة في جلسات مرحّلة بدءاً من {sinceDate}
             </p>
           )}
+
+          {/* Keyboard hint */}
+          <p className="text-xs text-muted-foreground/70">
+            ↑↓ تنقل · Space تحديد · Enter تأكيد · Ctrl+A الكل
+          </p>
         </div>
 
         {/* ── Results table ── */}
@@ -313,53 +366,70 @@ export function LoadItemsDialog({ open, onClose, sessionId, onLoaded }: Props) {
                   </TableCell>
                 </TableRow>
               ) : (
-                items.map((item, idx) => (
-                  <TableRow
-                    key={`${item.itemId}-${item.lotId ?? idx}`}
-                    className={`cursor-pointer hover:bg-muted/40 ${item.alreadyCounted ? "opacity-50" : ""}`}
-                    onClick={() => toggle(item)}
-                    data-testid={`row-load-${item.itemId}-${idx}`}
-                  >
-                    <TableCell className="p-2" onClick={e => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={isSelected(item)}
-                        onChange={() => toggle(item)}
-                      />
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{item.itemCode}</TableCell>
-                    <TableCell>
-                      <p className="text-sm font-medium leading-tight">{item.itemNameAr}</p>
-                      {item.itemNameEn && (
-                        <p className="text-xs text-muted-foreground leading-tight">{item.itemNameEn}</p>
-                      )}
-                      {item.majorUnitName && (
-                        <p className="text-xs text-muted-foreground">
-                          {[item.majorUnitName, item.mediumUnitName, item.minorUnitName].filter(Boolean).join(" / ")}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className="text-xs">
-                        {CATEGORY_LABELS[item.itemCategory] ?? item.itemCategory}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center text-sm">
-                      {item.expiryDate ? formatDate(item.expiryDate) : "—"}
-                    </TableCell>
-                    <TableCell className="text-center font-mono text-sm">
-                      {fmtQty(item.systemQtyMinor)}
-                      {item.minorUnitName && (
-                        <span className="text-xs text-muted-foreground mr-0.5">{item.minorUnitName}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {item.alreadyCounted
-                        ? <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))
+                items.map((item, idx) => {
+                  const isHighlighted = highlightedIdx === idx;
+                  return (
+                    <TableRow
+                      key={`${item.itemId}-${item.lotId ?? idx}`}
+                      ref={el => {
+                        if (el) highlightRowRefs.current.set(idx, el);
+                        else highlightRowRefs.current.delete(idx);
+                      }}
+                      className={[
+                        "cursor-pointer transition-colors",
+                        item.alreadyCounted ? "opacity-50" : "",
+                        isHighlighted
+                          ? "bg-primary/10 ring-1 ring-inset ring-primary"
+                          : "hover:bg-muted/40",
+                      ].join(" ")}
+                      onClick={() => {
+                        setHighlightedIdx(idx);
+                        toggle(item);
+                        searchInputRef.current?.focus();
+                      }}
+                      data-testid={`row-load-${item.itemId}-${idx}`}
+                    >
+                      <TableCell className="p-2" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected(item)}
+                          onChange={() => toggle(item)}
+                        />
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{item.itemCode}</TableCell>
+                      <TableCell>
+                        <p className="text-sm font-medium leading-tight">{item.itemNameAr}</p>
+                        {item.itemNameEn && (
+                          <p className="text-xs text-muted-foreground leading-tight">{item.itemNameEn}</p>
+                        )}
+                        {item.majorUnitName && (
+                          <p className="text-xs text-muted-foreground">
+                            {[item.majorUnitName, item.mediumUnitName, item.minorUnitName].filter(Boolean).join(" / ")}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="text-xs">
+                          {CATEGORY_LABELS[item.itemCategory] ?? item.itemCategory}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {item.expiryDate ? formatDate(item.expiryDate) : "—"}
+                      </TableCell>
+                      <TableCell className="text-center font-mono text-sm">
+                        {fmtQty(item.systemQtyMinor)}
+                        {item.minorUnitName && (
+                          <span className="text-xs text-muted-foreground mr-0.5">{item.minorUnitName}</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {item.alreadyCounted
+                          ? <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>

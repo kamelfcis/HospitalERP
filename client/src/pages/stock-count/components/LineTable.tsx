@@ -11,6 +11,13 @@
  *  • تذييل ثابت بالمجاميع
  *  • حذف سطر مفرد
  *  • التمرير التلقائي للصف المُحدَّد عبر الباركود
+ *
+ * لوحة المفاتيح (Draft فقط):
+ *  • ArrowDown/Up  → تنقل الصفوف
+ *  • Enter         → فتح تعديل الكمية على الصف المُركَّز
+ *  • Delete        → حذف الصف المُركَّز
+ *  • Ctrl+F        → التركيز على حقل البحث السريع
+ *  • Enter داخل حقل الكمية → حفظ والانتقال للصف التالي
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -73,7 +80,6 @@ function fmtMoney(v: number) {
   return v.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Decompose minor qty into major/medium/minor unit quantities
 function decomposeMinor(
   totalMinor: number,
   majorToMinor: number,
@@ -99,16 +105,291 @@ function calcMinorFromUom(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  SingleQtyCell
+// ─────────────────────────────────────────────────────────────────────────────
+function SingleQtyCell({
+  line, onSave, isPending, onLocalChange,
+  shouldActivate, onActivated, onEnterConfirm,
+}: {
+  line:            SessionLine;
+  onSave:          (minor: string) => void;
+  isPending:       boolean;
+  onLocalChange:   (lineId: string, newMinor: string) => void;
+  shouldActivate?: boolean;
+  onActivated?:    () => void;
+  onEnterConfirm?: () => void;
+}) {
+  const [editing,  setEditing]  = useState(false);
+  const [localVal, setLocalVal] = useState(() => parseFloat(line.countedQtyMinor).toString());
+  const { toast } = useToast();
+  const inputRef  = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) setLocalVal(parseFloat(line.countedQtyMinor).toString());
+  }, [line.countedQtyMinor, editing]);
+
+  // Open editor when parent requests activation (keyboard Enter on focused row)
+  useEffect(() => {
+    if (shouldActivate && !editing) {
+      setEditing(true);
+      onActivated?.();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldActivate]);
+
+  useEffect(() => {
+    if (editing) {
+      setTimeout(() => {
+        inputRef.current?.select();
+        inputRef.current?.focus();
+      }, 10);
+    }
+  }, [editing]);
+
+  const confirm = () => {
+    const num = parseFloat(localVal.replace(/,/g, "."));
+    if (isNaN(num) || num < 0) {
+      toast({ title: "تحذير", description: "الكمية يجب أن تكون رقماً غير سالب", variant: "destructive" });
+      return;
+    }
+    setEditing(false);
+    onSave(num.toFixed(4));
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          ref={inputRef}
+          className="h-7 w-24 text-left text-sm font-mono"
+          value={localVal}
+          onChange={e => {
+            setLocalVal(e.target.value);
+            const num = parseFloat(e.target.value.replace(/,/g, "."));
+            if (!isNaN(num) && num >= 0) {
+              onLocalChange(line.id, String(num));
+            }
+          }}
+          onKeyDown={e => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              confirm();
+              onEnterConfirm?.();
+            }
+            if (e.key === "Escape") setEditing(false);
+          }}
+          onBlur={confirm}
+          dir="ltr"
+          data-testid={`qty-input-${line.id}`}
+        />
+        {isPending && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className="font-mono text-sm hover:text-primary hover:underline focus:outline-none flex items-center gap-1 group"
+      onClick={() => setEditing(true)}
+      data-testid={`qty-cell-${line.id}`}
+    >
+      {fmtQty(line.countedQtyMinor)}
+      {line.minorUnitName && (
+        <span className="text-xs text-muted-foreground">{line.minorUnitName}</span>
+      )}
+      <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-40 transition-opacity" />
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MultiUomCell
+// ─────────────────────────────────────────────────────────────────────────────
+function MultiUomCell({
+  line, majorToMinor, mediumToMinor,
+  hasMajor, hasMedium, hasMinor,
+  onSave, isPending, onLocalChange,
+  shouldActivate, onActivated, onEnterConfirm,
+}: {
+  line:            SessionLine;
+  majorToMinor:    number;
+  mediumToMinor:   number;
+  hasMajor:        boolean;
+  hasMedium:       boolean;
+  hasMinor:        boolean;
+  onSave:          (minor: string) => void;
+  isPending:       boolean;
+  onLocalChange:   (lineId: string, newMinor: string) => void;
+  shouldActivate?: boolean;
+  onActivated?:    () => void;
+  onEnterConfirm?: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const { toast } = useToast();
+
+  const currentMinor = parseFloat(line.countedQtyMinor);
+  const decomposed = decomposeMinor(currentMinor, majorToMinor, mediumToMinor);
+
+  const [majVal, setMajVal] = useState(hasMajor  ? String(decomposed.maj || "") : "");
+  const [medVal, setMedVal] = useState(hasMedium ? String(decomposed.med || "") : "");
+  const [minVal, setMinVal] = useState(String(decomposed.min || ""));
+
+  useEffect(() => {
+    if (!editing) {
+      const d = decomposeMinor(parseFloat(line.countedQtyMinor), majorToMinor, mediumToMinor);
+      if (hasMajor)  setMajVal(d.maj > 0 ? String(d.maj) : "");
+      if (hasMedium) setMedVal(d.med > 0 ? String(d.med) : "");
+      setMinVal(d.min > 0 ? String(d.min) : "");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [line.countedQtyMinor, editing]);
+
+  // Open editor when parent requests activation
+  useEffect(() => {
+    if (shouldActivate && !editing) {
+      setEditing(true);
+      onActivated?.();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldActivate]);
+
+  const calcTotal = (mj = majVal, md = medVal, mn = minVal) => {
+    return calcMinorFromUom(
+      parseFloat(mj) || 0, hasMajor  ? majorToMinor  : 0,
+      parseFloat(md) || 0, hasMedium ? mediumToMinor : 0,
+      parseFloat(mn) || 0
+    );
+  };
+
+  const handleChange = (field: "maj" | "med" | "min", val: string) => {
+    const mj = field === "maj" ? val : majVal;
+    const md = field === "med" ? val : medVal;
+    const mn = field === "min" ? val : minVal;
+    if (field === "maj") setMajVal(val);
+    if (field === "med") setMedVal(val);
+    if (field === "min") setMinVal(val);
+    const total = calcTotal(mj, md, mn);
+    onLocalChange(line.id, String(total));
+  };
+
+  const confirm = () => {
+    const total = calcTotal();
+    if (total < 0) {
+      toast({ title: "تحذير", description: "الكمية يجب أن تكون غير سالبة", variant: "destructive" });
+      return;
+    }
+    setEditing(false);
+    onSave(String(total));
+  };
+
+  // Shared keydown for all sub-inputs: Enter confirms + advances to next row
+  const handleSubKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      confirm();
+      onEnterConfirm?.();
+    }
+    if (e.key === "Escape") {
+      setEditing(false);
+    }
+  };
+
+  const displayParts: string[] = [];
+  if (hasMajor  && decomposed.maj > 0) displayParts.push(`${decomposed.maj} ${line.majorUnitName}`);
+  if (hasMedium && decomposed.med > 0) displayParts.push(`${decomposed.med} ${line.mediumUnitName}`);
+  const minPart = hasMajor ? decomposed.min : Math.round(currentMinor);
+  if (minPart > 0 || displayParts.length === 0) {
+    displayParts.push(`${minPart} ${line.minorUnitName ?? ""}`);
+  }
+
+  if (!editing) {
+    return (
+      <button
+        className="text-sm hover:text-primary focus:outline-none flex items-center gap-1 group text-start"
+        onClick={() => setEditing(true)}
+        data-testid={`qty-cell-${line.id}`}
+      >
+        <span className="font-medium">{displayParts.join(" + ") || "0"}</span>
+        <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-40 transition-opacity flex-shrink-0" />
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-1 py-0.5"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          confirm();
+        }
+      }}
+    >
+      {hasMajor && (
+        <div className="flex items-center gap-1">
+          <Input
+            autoFocus
+            className="h-6 w-16 text-left text-xs font-mono"
+            placeholder="0"
+            value={majVal}
+            onChange={e => handleChange("maj", e.target.value)}
+            onKeyDown={handleSubKeyDown}
+            dir="ltr"
+            data-testid={`qty-maj-${line.id}`}
+          />
+          <span className="text-xs text-muted-foreground">{line.majorUnitName}</span>
+        </div>
+      )}
+      {hasMedium && (
+        <div className="flex items-center gap-1">
+          <Input
+            className="h-6 w-16 text-left text-xs font-mono"
+            placeholder="0"
+            value={medVal}
+            onChange={e => handleChange("med", e.target.value)}
+            onKeyDown={handleSubKeyDown}
+            dir="ltr"
+            data-testid={`qty-med-${line.id}`}
+          />
+          <span className="text-xs text-muted-foreground">{line.mediumUnitName}</span>
+        </div>
+      )}
+      {(hasMinor || !hasMedium) && (
+        <div className="flex items-center gap-1">
+          <Input
+            className="h-6 w-16 text-left text-xs font-mono"
+            placeholder="0"
+            value={minVal}
+            onChange={e => handleChange("min", e.target.value)}
+            onKeyDown={handleSubKeyDown}
+            dir="ltr"
+            data-testid={`qty-min-${line.id}`}
+          />
+          <span className="text-xs text-muted-foreground">{line.minorUnitName ?? "وحدة"}</span>
+        </div>
+      )}
+      {isPending && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      <p className="text-xs text-muted-foreground font-mono">
+        = {fmtQty(calcTotal())} {line.minorUnitName ?? ""}
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  SmartQtyCell — single OR multi-UOM input
 // ─────────────────────────────────────────────────────────────────────────────
 function SmartQtyCell({
   line, sessionId, disabled,
   onLocalChange,
+  shouldActivate, onActivated, onEnterConfirm,
 }: {
-  line:           SessionLine;
-  sessionId:      string;
-  disabled:       boolean;
-  onLocalChange:  (lineId: string, newMinor: string) => void;
+  line:            SessionLine;
+  sessionId:       string;
+  disabled:        boolean;
+  onLocalChange:   (lineId: string, newMinor: string) => void;
+  shouldActivate?: boolean;
+  onActivated?:    () => void;
+  onEnterConfirm?: () => void;
 }) {
   const { toast }   = useToast();
   const queryClient = useQueryClient();
@@ -118,8 +399,7 @@ function SmartQtyCell({
   const hasMajor      = !!line.majorUnitName && majorToMinor > 0;
   const hasMedium     = !!line.mediumUnitName && mediumToMinor > 0;
   const hasMinor      = !!line.minorUnitName;
-
-  const isMultiUom = hasMajor; // has at least a major-to-minor conversion
+  const isMultiUom    = hasMajor;
 
   const saveMutation = useMutation({
     mutationFn: (countedQtyMinor: string) =>
@@ -157,6 +437,9 @@ function SmartQtyCell({
         onSave={(v) => saveMutation.mutate(v)}
         isPending={saveMutation.isPending}
         onLocalChange={onLocalChange}
+        shouldActivate={shouldActivate}
+        onActivated={onActivated}
+        onEnterConfirm={onEnterConfirm}
       />
     );
   }
@@ -172,237 +455,10 @@ function SmartQtyCell({
       onSave={(v) => saveMutation.mutate(v)}
       isPending={saveMutation.isPending}
       onLocalChange={onLocalChange}
+      shouldActivate={shouldActivate}
+      onActivated={onActivated}
+      onEnterConfirm={onEnterConfirm}
     />
-  );
-}
-
-// ── SingleQtyCell ──────────────────────────────────────────────────────────
-function SingleQtyCell({
-  line, onSave, isPending, onLocalChange,
-}: {
-  line:           SessionLine;
-  onSave:         (minor: string) => void;
-  isPending:      boolean;
-  onLocalChange:  (lineId: string, newMinor: string) => void;
-}) {
-  const [editing,  setEditing]  = useState(false);
-  const [localVal, setLocalVal] = useState(() => parseFloat(line.countedQtyMinor).toString());
-  const { toast } = useToast();
-  const inputRef  = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!editing) setLocalVal(parseFloat(line.countedQtyMinor).toString());
-  }, [line.countedQtyMinor, editing]);
-
-  useEffect(() => {
-    if (editing) {
-      setTimeout(() => {
-        inputRef.current?.select();
-        inputRef.current?.focus();
-      }, 10);
-    }
-  }, [editing]);
-
-  const confirm = () => {
-    const num = parseFloat(localVal.replace(/,/g, "."));
-    if (isNaN(num) || num < 0) {
-      toast({ title: "تحذير", description: "الكمية يجب أن تكون رقماً غير سالب", variant: "destructive" });
-      return;
-    }
-    setEditing(false);
-    onSave(num.toFixed(4));
-  };
-
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1">
-        <Input
-          ref={inputRef}
-          className="h-7 w-24 text-left text-sm font-mono"
-          value={localVal}
-          onChange={e => {
-            setLocalVal(e.target.value);
-            const num = parseFloat(e.target.value.replace(/,/g, "."));
-            if (!isNaN(num) && num >= 0) {
-              onLocalChange(line.id, String(num));
-            }
-          }}
-          onKeyDown={e => {
-            if (e.key === "Enter") { e.preventDefault(); confirm(); }
-            if (e.key === "Escape") setEditing(false);
-          }}
-          onBlur={confirm}
-          dir="ltr"
-          data-testid={`qty-input-${line.id}`}
-        />
-        {isPending && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-      </div>
-    );
-  }
-
-  return (
-    <button
-      className="font-mono text-sm hover:text-primary hover:underline focus:outline-none flex items-center gap-1 group"
-      onClick={() => setEditing(true)}
-      data-testid={`qty-cell-${line.id}`}
-    >
-      {fmtQty(line.countedQtyMinor)}
-      {line.minorUnitName && (
-        <span className="text-xs text-muted-foreground">{line.minorUnitName}</span>
-      )}
-      <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-40 transition-opacity" />
-    </button>
-  );
-}
-
-// ── MultiUomCell ──────────────────────────────────────────────────────────
-function MultiUomCell({
-  line, majorToMinor, mediumToMinor,
-  hasMajor, hasMedium, hasMinor,
-  onSave, isPending, onLocalChange,
-}: {
-  line:           SessionLine;
-  majorToMinor:   number;
-  mediumToMinor:  number;
-  hasMajor:       boolean;
-  hasMedium:      boolean;
-  hasMinor:       boolean;
-  onSave:         (minor: string) => void;
-  isPending:      boolean;
-  onLocalChange:  (lineId: string, newMinor: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const { toast } = useToast();
-
-  // Decompose current countedQtyMinor into maj/med/min
-  const currentMinor = parseFloat(line.countedQtyMinor);
-  const decomposed = decomposeMinor(currentMinor, majorToMinor, mediumToMinor);
-
-  const [majVal, setMajVal] = useState(hasMajor  ? String(decomposed.maj || "") : "");
-  const [medVal, setMedVal] = useState(hasMedium ? String(decomposed.med || "") : "");
-  const [minVal, setMinVal] = useState(String(decomposed.min || ""));
-
-  // Reset local when server value changes
-  useEffect(() => {
-    if (!editing) {
-      const d = decomposeMinor(parseFloat(line.countedQtyMinor), majorToMinor, mediumToMinor);
-      if (hasMajor)  setMajVal(d.maj > 0 ? String(d.maj) : "");
-      if (hasMedium) setMedVal(d.med > 0 ? String(d.med) : "");
-      setMinVal(d.min > 0 ? String(d.min) : "");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [line.countedQtyMinor, editing]);
-
-  const calcTotal = (mj = majVal, md = medVal, mn = minVal) => {
-    return calcMinorFromUom(
-      parseFloat(mj) || 0, hasMajor  ? majorToMinor  : 0,
-      parseFloat(md) || 0, hasMedium ? mediumToMinor : 0,
-      parseFloat(mn) || 0
-    );
-  };
-
-  const handleChange = (
-    field: "maj" | "med" | "min",
-    val: string
-  ) => {
-    const mj = field === "maj" ? val : majVal;
-    const md = field === "med" ? val : medVal;
-    const mn = field === "min" ? val : minVal;
-    if (field === "maj") setMajVal(val);
-    if (field === "med") setMedVal(val);
-    if (field === "min") setMinVal(val);
-    const total = calcTotal(mj, md, mn);
-    onLocalChange(line.id, String(total));
-  };
-
-  const confirm = () => {
-    const total = calcTotal();
-    if (total < 0) {
-      toast({ title: "تحذير", description: "الكمية يجب أن تكون غير سالبة", variant: "destructive" });
-      return;
-    }
-    setEditing(false);
-    onSave(String(total));
-  };
-
-  // Display text (not editing)
-  const displayParts: string[] = [];
-  if (hasMajor  && decomposed.maj > 0) displayParts.push(`${decomposed.maj} ${line.majorUnitName}`);
-  if (hasMedium && decomposed.med > 0) displayParts.push(`${decomposed.med} ${line.mediumUnitName}`);
-  const minPart = hasMajor ? decomposed.min : Math.round(currentMinor);
-  if (minPart > 0 || displayParts.length === 0) {
-    displayParts.push(`${minPart} ${line.minorUnitName ?? ""}`);
-  }
-
-  if (!editing) {
-    return (
-      <button
-        className="text-sm hover:text-primary focus:outline-none flex items-center gap-1 group text-start"
-        onClick={() => setEditing(true)}
-        data-testid={`qty-cell-${line.id}`}
-      >
-        <span className="font-medium">{displayParts.join(" + ") || "0"}</span>
-        <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-40 transition-opacity flex-shrink-0" />
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1 py-0.5" onBlur={(e) => {
-      // blur the whole group if focus leaves the container
-      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-        confirm();
-      }
-    }}>
-      {hasMajor && (
-        <div className="flex items-center gap-1">
-          <Input
-            autoFocus
-            className="h-6 w-16 text-left text-xs font-mono"
-            placeholder="0"
-            value={majVal}
-            onChange={e => handleChange("maj", e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") confirm(); if (e.key === "Escape") setEditing(false); }}
-            dir="ltr"
-            data-testid={`qty-maj-${line.id}`}
-          />
-          <span className="text-xs text-muted-foreground">{line.majorUnitName}</span>
-        </div>
-      )}
-      {hasMedium && (
-        <div className="flex items-center gap-1">
-          <Input
-            className="h-6 w-16 text-left text-xs font-mono"
-            placeholder="0"
-            value={medVal}
-            onChange={e => handleChange("med", e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") confirm(); if (e.key === "Escape") setEditing(false); }}
-            dir="ltr"
-            data-testid={`qty-med-${line.id}`}
-          />
-          <span className="text-xs text-muted-foreground">{line.mediumUnitName}</span>
-        </div>
-      )}
-      {(hasMinor || !hasMedium) && (
-        <div className="flex items-center gap-1">
-          <Input
-            className="h-6 w-16 text-left text-xs font-mono"
-            placeholder="0"
-            value={minVal}
-            onChange={e => handleChange("min", e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") confirm(); if (e.key === "Escape") setEditing(false); }}
-            dir="ltr"
-            data-testid={`qty-min-${line.id}`}
-          />
-          <span className="text-xs text-muted-foreground">{line.minorUnitName ?? "وحدة"}</span>
-        </div>
-      )}
-      {isPending && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-      {/* instant total preview */}
-      <p className="text-xs text-muted-foreground font-mono">
-        = {fmtQty(calcTotal())} {line.minorUnitName ?? ""}
-      </p>
-    </div>
   );
 }
 
@@ -417,9 +473,8 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
   const [showVariance,  setShowVariance]  = useState(false);
   const [showUncounted, setShowUncounted] = useState(false);
 
-  // local counts: Map<lineId, countedMinorString> — updated on every keystroke for instant diff
+  // local counts: instant feedback before server round-trip
   const [localCounts, setLocalCounts] = useState<Map<string, string>>(new Map());
-
   const onLocalChange = useCallback((lineId: string, newMinor: string) => {
     setLocalCounts(prev => {
       const next = new Map(prev);
@@ -427,15 +482,17 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
       return next;
     });
   }, []);
-
-  // Clear local counts when server data changes (after save)
   useEffect(() => {
     setLocalCounts(new Map());
   }, [lines]);
 
-  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  // ── keyboard navigation state ─────────────────────────────────────────────
+  const [focusedRowIdx,    setFocusedRowIdx]    = useState<number | null>(null);
+  const [pendingActivateId, setPendingActivateId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const rowRefs        = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
-  // Auto-scroll to focused line (from barcode scan)
+  // Auto-scroll barcode-focused line
   useEffect(() => {
     if (!focusLineId) return;
     const el = rowRefs.current.get(focusLineId);
@@ -485,6 +542,64 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
     return result;
   }, [lines, searchTerm, showVariance, showUncounted, localCounts]);
 
+  // Clamp focusedRowIdx when filteredLines shrinks
+  const safeFocusedIdx =
+    focusedRowIdx !== null && focusedRowIdx < filteredLines.length ? focusedRowIdx : null;
+
+  // Auto-scroll focused row into view
+  useEffect(() => {
+    if (safeFocusedIdx === null) return;
+    const lineId = filteredLines[safeFocusedIdx]?.id;
+    if (!lineId) return;
+    rowRefs.current.get(lineId)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [safeFocusedIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Keyboard handler on the table container ───────────────────────────────
+  const handleTableKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const inInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA";
+
+    // Ctrl+F always focuses search (scoped to this component)
+    if (e.ctrlKey && e.key === "f") {
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      return;
+    }
+
+    // Arrow navigation only when not inside a text input
+    if (!inInput) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocusedRowIdx(prev =>
+          prev === null ? 0 : Math.min(prev + 1, filteredLines.length - 1)
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocusedRowIdx(prev =>
+          prev === null ? 0 : Math.max(prev - 1, 0)
+        );
+        return;
+      }
+      if (e.key === "Enter" && safeFocusedIdx !== null && isDraft) {
+        e.preventDefault();
+        const lineId = filteredLines[safeFocusedIdx]?.id;
+        if (lineId) setPendingActivateId(lineId);
+        return;
+      }
+      if (e.key === "Delete" && safeFocusedIdx !== null && isDraft) {
+        e.preventDefault();
+        const line = filteredLines[safeFocusedIdx];
+        if (line && !deleteLineMutation.isPending) {
+          deleteLineMutation.mutate(line.id);
+          // keep focus at same index (will point to next item after delete)
+        }
+        return;
+      }
+    }
+  }, [filteredLines, safeFocusedIdx, isDraft, deleteLineMutation]);
+
   // ── Totals (using localCounts for instant updates) ──────────────────────
   const totals = useMemo(() => {
     let surplus = 0, shortage = 0, net = 0;
@@ -500,17 +615,35 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
   }, [lines, localCounts]);
 
   return (
-    <div className="flex flex-col h-full gap-2">
+    <div
+      className="flex flex-col h-full gap-2 outline-none"
+      onKeyDown={handleTableKeyDown}
+      // tabIndex allows receiving keydown when user clicks inside the table area
+      // but outside any focusable element
+      tabIndex={-1}
+    >
       {/* ── Toolbar ── */}
       {lines.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               className="pr-8 h-8 text-sm"
-              placeholder="بحث سريع..."
+              placeholder="بحث سريع... (Ctrl+F)"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setFocusedRowIdx(prev => prev === null ? 0 : Math.min(prev + 1, filteredLines.length - 1));
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setFocusedRowIdx(prev => prev === null ? 0 : Math.max(prev - 1, 0));
+                } else if (e.key === "Escape") {
+                  setSearchTerm("");
+                }
+              }}
               data-testid="input-line-search"
             />
           </div>
@@ -538,6 +671,9 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
           </div>
           <span className="text-xs text-muted-foreground mr-auto">
             {filteredLines.length} من {lines.length} سطر
+            {isDraft && (
+              <span className="mr-2 text-muted-foreground/60">· ↑↓ تنقل · Enter تعديل · Del حذف</span>
+            )}
           </span>
         </div>
       )}
@@ -578,16 +714,19 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
               </TableRow>
             ) : (
               filteredLines.map((line, idx) => {
-                // Use localCounts for instant feedback
                 const countedMinor = parseFloat(localCounts.get(line.id) ?? line.countedQtyMinor);
                 const systemMinor  = parseFloat(line.systemQtyMinor);
                 const diff         = countedMinor - systemMinor;
                 const diffVal      = diff * parseFloat(line.unitCost);
 
+                const isFocusedRow = safeFocusedIdx === idx;
+
                 const rowColor =
                   diff > 0.0001   ? "bg-green-500/5 hover:bg-green-500/10" :
                   diff < -0.0001  ? "bg-destructive/5 hover:bg-destructive/10" :
                                     "hover:bg-muted/40";
+
+                const isBeingActivated = pendingActivateId === line.id;
 
                 return (
                   <TableRow
@@ -596,7 +735,14 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
                       if (el) rowRefs.current.set(line.id, el);
                       else rowRefs.current.delete(line.id);
                     }}
-                    className={`transition-colors ${rowColor}`}
+                    onClick={() => setFocusedRowIdx(idx)}
+                    className={[
+                      "transition-colors cursor-default",
+                      rowColor,
+                      isFocusedRow
+                        ? "ring-1 ring-inset ring-primary bg-primary/5"
+                        : "",
+                    ].join(" ")}
                     data-testid={`row-line-${line.id}`}
                   >
                     <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
@@ -631,6 +777,18 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
                         sessionId={sessionId}
                         disabled={!isDraft}
                         onLocalChange={onLocalChange}
+                        shouldActivate={isBeingActivated}
+                        onActivated={() => setPendingActivateId(null)}
+                        onEnterConfirm={() => {
+                          // advance to next row and activate its qty cell
+                          const nextIdx = idx + 1;
+                          if (nextIdx < filteredLines.length) {
+                            setFocusedRowIdx(nextIdx);
+                            setPendingActivateId(filteredLines[nextIdx].id);
+                          } else {
+                            setFocusedRowIdx(idx);
+                          }
+                        }}
                       />
                     </TableCell>
                     <TableCell className={`text-center font-mono text-sm font-semibold ${
@@ -654,7 +812,10 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
                             <Button
                               variant="ghost" size="icon"
                               className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => deleteLineMutation.mutate(line.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteLineMutation.mutate(line.id);
+                              }}
                               disabled={deleteLineMutation.isPending}
                               data-testid={`btn-delete-line-${line.id}`}
                             >
@@ -677,31 +838,27 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
       {lines.length > 0 && (
         <div className="sticky bottom-0 bg-background border-t rounded-b-md grid grid-cols-2 md:grid-cols-4 divide-x divide-x-reverse text-sm z-10 shadow-sm flex-shrink-0">
           <div className="px-4 py-2 text-center">
-            <p className="text-xs text-muted-foreground">إجمالي الأصناف</p>
-            <p className="font-bold">{totals.count}</p>
+            <p className="text-xs text-muted-foreground">الأصناف</p>
+            <p className="font-semibold font-mono">{totals.count}</p>
           </div>
           <div className="px-4 py-2 text-center">
-            <p className="text-xs text-muted-foreground">فوائض</p>
-            <p className="font-bold text-green-600">
-              +{fmtMoney(totals.surplus)} ج.م
+            <p className="text-xs text-muted-foreground">فائض</p>
+            <p className="font-semibold font-mono text-green-600">
+              {totals.surplus > 0 ? `+${fmtMoney(totals.surplus)}` : "—"}
             </p>
           </div>
           <div className="px-4 py-2 text-center">
             <p className="text-xs text-muted-foreground">عجز</p>
-            <p className="font-bold text-destructive">
-              -{fmtMoney(totals.shortage)} ج.م
+            <p className="font-semibold font-mono text-destructive">
+              {totals.shortage > 0 ? `-${fmtMoney(totals.shortage)}` : "—"}
             </p>
           </div>
-          <div className={`px-4 py-2 text-center ${
-            totals.net > 0  ? "bg-green-500/5" :
-            totals.net < 0  ? "bg-destructive/5" : ""
-          }`}>
-            <p className="text-xs text-muted-foreground">صافي الفرق</p>
-            <p className={`font-bold ${
-              totals.net > 0  ? "text-green-600" :
-              totals.net < 0  ? "text-destructive" : ""
+          <div className="px-4 py-2 text-center">
+            <p className="text-xs text-muted-foreground">صافي</p>
+            <p className={`font-semibold font-mono ${
+              totals.net > 0 ? "text-green-600" : totals.net < 0 ? "text-destructive" : "text-muted-foreground"
             }`}>
-              {totals.net > 0 ? "+" : ""}{fmtMoney(totals.net)} ج.م
+              {totals.net > 0 ? "+" : ""}{fmtMoney(totals.net)}
             </p>
           </div>
         </div>
