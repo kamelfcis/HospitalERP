@@ -10,6 +10,7 @@ import {
   checkPermission,
   addFormattedNumber,
   addFormattedNumbers,
+  broadcastToUnit,
 } from "./_shared";
 import {
   insertPatientInvoiceHeaderSchema,
@@ -246,6 +247,18 @@ export function registerPatientInvoicesRoutes(app: Express) {
         ? new Date(result.finalizedAt).toISOString().split("T")[0]
         : result.invoiceDate
       ).catch(err => console.error("[Treasury] patient invoice finalize:", err));
+
+      // بث SSE: تحديث الكاشير الفوري عند تسوية فاتورة مريض
+      if (existing.departmentId) {
+        broadcastToUnit(existing.departmentId, "invoice_finalized", {
+          id: result.id,
+          invoiceNumber: result.invoiceNumber,
+          netTotal: result.netAmount,
+          isReturn: false,
+          departmentId: existing.departmentId,
+          type: "patient_invoice",
+        });
+      }
 
       res.json(result);
     } catch (error: unknown) {

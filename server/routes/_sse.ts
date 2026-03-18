@@ -29,11 +29,23 @@ import type { Response } from "express";
 export const sseClients = new Map<string, Set<Response>>();
 
 export function broadcastToPharmacy(pharmacyId: string, event: string, data: unknown) {
-  const clients = sseClients.get(pharmacyId);
-  if (!clients) return;
+  broadcastToUnit(pharmacyId, event, data);
+}
+
+/**
+ * broadcastToUnit — البث إلى أي وحدة (صيدلية أو قسم) بنفس مفتاح اشتراك SSE
+ * المفتاح هو pharmacyId للصيدليات أو departmentId للأقسام
+ */
+export function broadcastToUnit(unitId: string, event: string, data: unknown) {
+  const clients = sseClients.get(unitId);
+  if (!clients || clients.size === 0) return;
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  console.log(`[SSE] broadcast event="${event}" unitId=${unitId} clients=${clients.size}`);
   clients.forEach((res) => {
-    try { res.write(payload); } catch { clients.delete(res); }
+    try {
+      res.write(payload);
+      (res as any).flush?.();
+    } catch { clients.delete(res); }
   });
 }
 

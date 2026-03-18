@@ -22,7 +22,7 @@ import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { users } from "@shared/schema";
-import { requireAuth, sseClients, broadcastToPharmacy } from "./_shared";
+import { requireAuth, sseClients, broadcastToUnit } from "./_shared";
 
 export function registerCashierRoutes(app: Express) {
   // ── Pharmacies ──────────────────────────────────────────────
@@ -45,26 +45,42 @@ export function registerCashierRoutes(app: Express) {
   });
 
   // ── SSE: تحديثات الفواتير الفورية ──────────────────────────
+  // الاسم :pharmacyId محافظ عليه للتوافق — لكنه يحمل unitId الفعلي (pharmacyId أو departmentId)
   app.get("/api/cashier/sse/:pharmacyId", (req, res) => {
-    const { pharmacyId } = req.params;
+    const unitId = req.params.pharmacyId;
+
+    // no-transform يُخبر compression middleware بعدم ضغط هذه الاستجابة
+    // X-Accel-Buffering: no يُخبر nginx بعدم تخزين الـ stream مؤقتاً
     res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
+      "Content-Type":    "text/event-stream",
+      "Cache-Control":   "no-cache, no-transform",
+      "Connection":      "keep-alive",
       "X-Accel-Buffering": "no",
     });
-    res.write(`event: connected\ndata: ${JSON.stringify({ pharmacyId })}\n\n`);
-    if (!sseClients.has(pharmacyId)) sseClients.set(pharmacyId, new Set());
-    sseClients.get(pharmacyId)!.add(res);
+
+    const sseWrite = (data: string) => {
+      res.write(data);
+      (res as any).flush?.();
+    };
+
+    sseWrite(`event: connected\ndata: ${JSON.stringify({ unitId })}\n\n`);
+    console.log(`[SSE] client connected unitId=${unitId}`);
+
+    if (!sseClients.has(unitId)) sseClients.set(unitId, new Set());
+    sseClients.get(unitId)!.add(res);
 
     const keepAlive = setInterval(() => {
-      try { res.write(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
+      try { sseWrite(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
     }, 15_000);
 
     req.on("close", () => {
       clearInterval(keepAlive);
-      const clients = sseClients.get(pharmacyId);
-      if (clients) { clients.delete(res); if (clients.size === 0) sseClients.delete(pharmacyId); }
+      const clients = sseClients.get(unitId);
+      if (clients) {
+        clients.delete(res);
+        if (clients.size === 0) sseClients.delete(unitId);
+      }
+      console.log(`[SSE] client disconnected unitId=${unitId}`);
     });
   });
 
@@ -255,7 +271,9 @@ export function registerCashierRoutes(app: Express) {
       const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy, txnDate);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "collect", newValues: JSON.stringify({ invoiceIds, collectedBy }) });
       const shift = await storage.getShiftById(shiftId);
-      if (shift?.pharmacyId) broadcastToPharmacy(shift.pharmacyId, "invoice_collected", { invoiceIds });
+      // unitKey = pharmacyId للصيدليات أو departmentId للأقسام — يطابق مفتاح SSE عند الكاشير
+      const unitKey = shift?.pharmacyId || shift?.departmentId;
+      if (unitKey) broadcastToUnit(unitKey, "invoice_collected", { invoiceIds, shiftId });
       res.json(result);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -274,7 +292,8 @@ export function registerCashierRoutes(app: Express) {
       const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy, txnDate);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "refund", newValues: JSON.stringify({ invoiceIds, refundedBy }) });
       const shift = await storage.getShiftById(shiftId);
-      if (shift?.pharmacyId) broadcastToPharmacy(shift.pharmacyId, "invoice_refunded", { invoiceIds });
+      const unitKey = shift?.pharmacyId || shift?.departmentId;
+      if (unitKey) broadcastToUnit(unitKey, "invoice_refunded", { invoiceIds, shiftId });
       res.json(result);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

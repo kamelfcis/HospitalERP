@@ -1,0 +1,102 @@
+TASK: Implement the confirmed cashier SSE fixes now, with minimal safe changes and without changing cashier isolation rules
+
+Context:
+We now have conclusive diagnosis.
+
+Confirmed findings:
+1) DB save/finalization is correct:
+   - transaction commits before broadcast
+   - no race between commit and emit
+
+2) Backend SSE delivery is broken mainly because:
+   - compression middleware is applied globally
+   - text/event-stream is being treated as compressible
+   - SSE writes are buffered inside gzip unless explicitly flushed
+   - current SSE endpoint does not flush after writes
+
+3) Frontend SSE subscription is broken because:
+   - onerror calls es.close()
+   - this kills automatic reconnect permanently
+   - after one disconnect, realtime dies until page refresh
+
+4) Department and patient invoice broadcasting is incomplete:
+   - department invoice finalize does not always broadcast to the correct unit key
+   - patient invoice finalize currently does not broadcast
+   - collect/refund for department shifts uses pharmacyId-only logic
+
+Critical business rule:
+Do NOT change authorization or cashier visibility scope.
+Each cashier must continue seeing only invoices for their own current allowed scope.
+No global broadcast.
+No widened access.
+Any fix must preserve existing cashier isolation exactly.
+
+Implement these changes:
+
+1) server/routes/hospital-cashier.ts
+A. SSE endpoint:
+- Ensure SSE route is not buffered by compression
+- Prefer excluding /api/cashier/sse/:unitId from compression entirely
+- Also add res.flush?.() after each res.write() event if applicable
+- Keep SSE headers correct for streaming
+
+B. collect/refund broadcast:
+- stop using pharmacyId-only logic
+- resolve the scoped target key using current cashier visibility model
+- use shift.pharmacyId || shift.departmentId only if that exactly matches current subscription/data scope
+- preserve existing cashier isolation
+
+2) server/routes/sales-invoices.ts
+- Fix finalize broadcast for department flows
+- if invoice.pharmacyId exists, use it
+- otherwise resolve the correct department/unit target from the same actual business scope used by cashier subscription
+- if warehouse.departmentId is used as fallback, confirm it exactly matches cashier scope logic before applying
+
+3) server/routes/patient-invoices.ts
+- Add missing broadcast after finalize/approval
+- use the correct scoped department/unit key
+- do not broadcast globally
+
+4) client/src/pages/cashier/hooks/usePendingInvoices.ts
+- Fix EventSource error handling
+- remove the behavior that permanently kills reconnect
+- do not call es.close() inside onerror in a way that prevents browser auto-reconnect
+- only close on cleanup/unmount
+- keep invalidate/refetch behavior compatible with current UI
+
+5) Scope alignment check before finalizing
+Confirm these three are exactly aligned:
+- cashier data visibility scope
+- SSE subscription key
+- SSE broadcast target key
+
+If there is any mismatch, fix it with the smallest safe change.
+Do not broaden scope.
+
+6) Keep concise debug logs during verification
+Log only:
+- event name
+- resolved scoped unit key
+- invoiceId / patientInvoiceId / shiftId when relevant
+- client count reached
+
+Validation scenarios required:
+1. Pharmacy invoice finalize appears instantly in the correct cashier screen only
+2. Department invoice finalize appears instantly in the correct cashier screen only
+3. Patient invoice finalize appears instantly in the correct cashier screen only
+4. Collect updates instantly in the correct cashier screen only
+5. Refund updates instantly in the correct cashier screen only
+6. Simulate temporary disconnect and confirm SSE reconnect continues without manual refresh
+7. Confirm unrelated cashier screens do not receive invoices outside their scope
+8. Confirm normal realtime flow no longer requires page refresh
+
+Output format required:
+At the end, print exactly:
+1) Files changed
+2) Exact functions changed
+3) Whether SSE compression was bypassed or flushed and how
+4) How reconnect behavior was fixed
+5) How scoped broadcast target is now resolved
+6) Tested scenarios and results
+7) Explicit confirmation that cashier isolation rules remain unchanged
+8) Any remaining assumptions or risks

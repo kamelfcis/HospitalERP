@@ -10,9 +10,9 @@ import {
   checkPermission,
   addFormattedNumber,
   addFormattedNumbers,
-  broadcastToPharmacy,
+  broadcastToUnit,
 } from "./_shared";
-import { salesInvoiceHeaders } from "@shared/schema";
+import { salesInvoiceHeaders, warehouses } from "@shared/schema";
 import { runPharmacyDemoSeed } from "../seeds/pharmacy-demo";
 
 export function registerSalesInvoicesRoutes(app: Express) {
@@ -204,14 +204,23 @@ export function registerSalesInvoicesRoutes(app: Express) {
           console.error('[CLINIC_ORDER_LINK]', e.message);
         }
       }
+      // بث SSE: للصيدليات نستخدم pharmacyId مباشرة،
+      // للأقسام (pharmacy=null) نحصل على departmentId من المخزن
+      const broadcastPayload = {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        netTotal: invoice.netTotal,
+        isReturn: invoice.isReturn,
+        pharmacyId: invoice.pharmacyId,
+      };
       if (invoice.pharmacyId) {
-        broadcastToPharmacy(invoice.pharmacyId, "invoice_finalized", {
-          id: invoice.id,
-          invoiceNumber: invoice.invoiceNumber,
-          netTotal: invoice.netTotal,
-          isReturn: invoice.isReturn,
-          pharmacyId: invoice.pharmacyId,
-        });
+        broadcastToUnit(invoice.pharmacyId, "invoice_finalized", broadcastPayload);
+      } else if (invoice.warehouseId) {
+        const [wh] = await db.select({ departmentId: warehouses.departmentId })
+          .from(warehouses)
+          .where(eq(warehouses.id, invoice.warehouseId))
+          .limit(1);
+        if (wh?.departmentId) broadcastToUnit(wh.departmentId, "invoice_finalized", broadcastPayload);
       }
       res.json(invoice);
     } catch (error: unknown) {

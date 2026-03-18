@@ -76,14 +76,15 @@ export function usePendingInvoices({
     es.addEventListener("invoice_collected", () => { invalidateSales();  invalidateTotals(); });
     es.addEventListener("invoice_refunded",  () => { invalidateReturns(); invalidateTotals(); });
 
-    // عند انقطاع الاتصال: إعادة جلب بعد 3 ثوان
+    // عند انقطاع الاتصال: لا نُغلق EventSource — نتركه يُعيد الاتصال تلقائياً
+    // فقط نُعيد جلب البيانات مرة لضمان تزامن الحالة
     es.onerror = () => {
-      es.close();
       setTimeout(() => {
         if (hasActiveShift) { invalidateSales(); invalidateReturns(); }
       }, 3000);
     };
 
+    // الإغلاق يحدث فقط عند unmount أو تغيير الوردية
     return () => { es.close(); sseRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasActiveShift, shiftUnitId, shiftUnitType, shiftId]);

@@ -1,0 +1,129 @@
+TASK: Perform full end-to-end diagnosis of cashier real-time invoice updates (all 4 links in the chain) before applying any fix
+
+Context:
+We now have evidence that the issue is NOT limited to department invoices.
+A pharmacy invoice was created, but it still did NOT appear in the cashier screen until manual refresh.
+
+Therefore, do NOT assume the bug is only in broadcast targeting.
+We need a full diagnosis of the 4 real-time links end-to-end.
+
+Goal:
+Trace and verify the entire real-time cashier flow for newly created/finalized invoices and for collect/refund actions.
+
+The 4 links that MUST be checked:
+1) Business action succeeds and invoice state is actually saved/finalized in DB
+2) Backend sends SSE broadcast for the correct event at the correct moment
+3) Cashier frontend subscribes to the correct SSE channel / unit key
+4) Frontend actually handles the event by updating state, invalidating cache, refetching, or patching UI
+
+What to inspect:
+A) Backend business flow
+- Find the exact code path when a pharmacy invoice is created/finalized
+- Confirm whether the invoice is committed successfully before any SSE event
+- Confirm the invoice becomes eligible to appear in cashier queries immediately after commit
+- Check for transaction timing issues:
+  - broadcast before commit
+  - async race between commit and client refetch
+  - event emitted on failure path
+- Identify exact event names emitted in:
+  - sales-invoices.ts
+  - patient-invoices.ts
+  - hospital-cashier.ts collect
+  - hospital-cashier.ts refund
+
+B) SSE backend infrastructure
+- Inspect the SSE route and sseClients map logic
+- Confirm how clients are registered:
+  - what key is used exactly? pharmacyId? departmentId? generic unitId?
+- Confirm broadcast function uses the same key format as subscription
+- Verify whether pharmacy cashier clients are actually stored in the map under the expected key
+- Check whether events are written/flushed correctly to EventSource clients
+- Check heartbeat, disconnect cleanup, reconnect handling, and whether stale clients are removed incorrectly
+- Add temporary concise debug logs around:
+  - client subscription
+  - resolved channel key
+  - broadcast event name
+  - broadcast payload summary
+  - number of connected clients reached
+
+C) Cashier frontend subscription
+- Find exactly where cashier screen opens EventSource / subscribes to SSE
+- Identify:
+  - URL used
+  - query params used
+  - key/unitId used for subscription
+  - event names listened for
+- Verify whether cashier page subscribes immediately on mount
+- Verify whether the subscription key matches backend broadcast key exactly
+- Check whether the cashier page is subscribing using pharmacyId, shift.pharmacyId, departmentId, or another field
+- Check if there is any condition that prevents subscription until after manual interaction
+- Check if the EventSource is silently failing or reconnecting endlessly
+
+D) Frontend event handling
+- After event reception, verify what happens:
+  - invalidateQueries?
+  - refetch?
+  - local state patch?
+  - no-op?
+- Inspect whether the event name received matches the event name the UI listens to
+- Inspect React Query keys for cashier pending invoices / queue / collections
+- Verify whether the invalidated query key matches the displayed cashier list query key exactly
+- Check whether staleTime/cacheTime or memoization prevents visible refresh
+- Check whether the UI updates only after focus/refetch/manual refresh
+
+Required debugging method:
+1. Do NOT jump straight into fixing
+2. First, trace one real pharmacy invoice from creation to cashier screen
+3. Add temporary logs in backend and frontend where needed
+4. Produce a root-cause report for each of the 4 links:
+   - PASS
+   - FAIL
+   - PARTIAL / UNCERTAIN
+5. Only after diagnosis, propose the minimal targeted fix
+
+Minimum scenarios to test:
+1. Create/finalize a pharmacy invoice and verify whether it appears instantly in cashier
+2. Create/finalize a department invoice and verify whether it appears instantly in cashier
+3. Collect an invoice and verify cashier updates instantly
+4. Refund an invoice and verify cashier updates instantly
+5. Reload cashier page and compare loaded data vs real-time update path
+6. Verify whether the invoice already exists in the DB before refresh but UI does not update
+7. Verify whether an SSE event is emitted but ignored by frontend
+8. Verify whether no SSE event is emitted at all
+
+Expected output format:
+At the end, print a structured report exactly in this format:
+
+1) Real-time chain diagnosis
+- Link 1: DB save/finalization = PASS/FAIL + explanation
+- Link 2: Backend SSE broadcast = PASS/FAIL + explanation
+- Link 3: Frontend subscription = PASS/FAIL + explanation
+- Link 4: Frontend event handling/UI refresh = PASS/FAIL + explanation
+
+2) Exact root cause
+- one primary root cause if confirmed
+- secondary contributing causes if any
+
+3) Evidence
+- files inspected
+- functions involved
+- event names found
+- subscription key used
+- broadcast key used
+- query keys invalidated
+- mismatch found (if any)
+
+4) Minimal fix plan
+- exact files to change
+- exact functions to change
+- why this is the smallest safe fix
+
+5) Validation
+- list the tested scenarios and whether each one passed
+
+Important constraints:
+- Reuse the current architecture
+- Do not redesign the whole SSE system unless absolutely necessary
+- Prefer minimal production-safe changes
+- If multiple issues are found, separate root cause from side issues
+- Be explicit if the issue is backend-only, frontend-only, or both
