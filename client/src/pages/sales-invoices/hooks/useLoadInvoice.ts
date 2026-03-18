@@ -54,20 +54,31 @@ export function useLoadInvoice({
     });
 
     // تحويل سطور الفاتورة
-    const mapped: SalesLineLocal[] = (invoiceDetail.lines || []).map((ln: any) => ({
+    const mapped: SalesLineLocal[] = (invoiceDetail.lines || []).map((ln: any) => {
+      // baseSalePrice يجب أن يكون دائماً سعر الوحدة الكبرى (salePriceCurrent من بيانات الصنف)
+      // وليس السعر المُخزَّن في سطر الفاتورة (salePrice) الذي قد يكون سعر وحدة أصغر
+      // مثال: إذا كان salePrice = 50 (سعر شريط) و salePriceCurrent = 500 (سعر علبة)
+      // فيجب استخدام 500 كأساس للحسابات، وإلا عند التبديل للوحدة الكبرى يبقى السعر 50 خطأً
+      const itemBaseSalePrice =
+        parseFloat(String(ln.item?.salePriceCurrent)) > 0
+          ? parseFloat(String(ln.item.salePriceCurrent))
+          : parseFloat(String(ln.salePrice)) || 0;
+
+      return {
       tempId:           ln.id || genId(),
       itemId:           ln.itemId,
       item:             ln.item || null,
       unitLevel:        ln.unitLevel || "major",
       qty:              parseFloat(String(ln.qty))       || 0,
       salePrice:        parseFloat(String(ln.salePrice)) || 0,
-      baseSalePrice:    parseFloat(String(ln.salePrice)) || 0,
+      baseSalePrice:    itemBaseSalePrice,
       lineTotal:        parseFloat(String(ln.lineTotal)) || 0,
       expiryMonth:      ln.expiryMonth ?? null,
       expiryYear:       ln.expiryYear  ?? null,
       lotId:            ln.lotId       ?? null,
       fefoLocked:       !!(ln.expiryMonth && ln.expiryYear),
-    }));
+      };
+    });
     setLines(mapped);
 
     // بيانات مكملة فقط للمسودات

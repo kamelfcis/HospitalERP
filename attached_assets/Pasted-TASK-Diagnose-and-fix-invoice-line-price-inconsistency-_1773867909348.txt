@@ -1,0 +1,137 @@
+TASK: Diagnose and fix invoice line price inconsistency after page refresh when changing item unit back to major
+
+Context:
+There is a reproducible pricing/state bug in sales invoices.
+
+Observed behavior:
+1. User selects an item in sales invoice
+2. Changes unit from major to minor (example: strip)
+3. Price updates correctly
+4. User refreshes the page
+5. After refresh, user changes unit back to major
+6. Price stays at the minor-unit price instead of returning to the correct major-unit price
+
+This means the unit-change pricing logic is not stable across refresh / reload / rehydration.
+
+This is a core sales/pricing integrity issue.
+Do NOT treat this as only a UI glitch.
+I need exact diagnosis of what state is being loaded incorrectly and what source-of-truth is being used incorrectly after refresh.
+
+Main goals:
+1. Trace exactly how invoice lines are loaded after refresh
+2. Identify which price value is persisted, reloaded, and used as the base for later unit recalculation
+3. Explain why changing unit back to major after refresh keeps the minor price
+4. Apply the smallest safe fix so unit switching remains correct before and after refresh
+
+What to inspect in detail:
+
+A) Invoice line source of truth after refresh
+- Inspect how sales invoice lines are fetched from backend after page refresh
+- Identify exactly which fields are returned for each line:
+  - itemId
+  - unitLevel
+  - unitPrice / price
+  - baseSalePrice / major price if present
+  - quantity
+  - any snapshot fields
+- Determine whether backend returns:
+  - only the currently saved line price
+  - or also a stable base price for recomputation
+- Identify whether the frontend rebuilds lines from saved line price only
+
+B) Rehydration flow
+- Trace the exact flow after browser refresh:
+  - route load
+  - invoice detail query
+  - useLoadInvoice / mapping layer
+  - line state initialization
+- Show exactly how loaded backend data becomes frontend line state
+- Confirm whether line.unitLevel and line.unitPrice stay consistent after reload
+- Check whether any hidden field such as baseSalePrice, originalPrice, lastMajorPrice, or item.sellPriceCurrent is missing after reload
+
+C) Unit-change recalculation path
+- Trace the exact handler when user changes unit after refresh
+- Confirm what value is used as the input/base for recomputation:
+  - current line price?
+  - item default sell price?
+  - stored base price?
+  - loaded invoice price snapshot?
+- Identify the exact bug:
+  - recomputation using minor price as if it were major base price
+  - no recomputation on major selection
+  - stale memoized line state
+  - overwritten line state after refresh
+  - line stores display price only, not base price
+
+D) Compare before refresh vs after refresh
+Use one real failing item and trace both cases:
+1. without page refresh
+2. after page refresh
+
+For both, print:
+- line state before unit change
+- line state after unit change to minor
+- line state immediately after page refresh load
+- line state after changing back to major
+- exact field values used in recomputation
+
+E) Determine the correct source-of-truth rule
+I need a clear decision:
+When switching unit, the system must recompute price from a stable source-of-truth, not from a previously converted display price.
+
+Determine what that stable source should be:
+- original major-unit sales price snapshot saved on line
+- item master/base sale price
+- department pricing base price
+- another dedicated persisted field
+
+State clearly which source is correct for financial consistency.
+
+F) Fix requirements
+Implement the smallest safe fix so that:
+- changing major → minor works
+- changing minor → major works
+- same behavior remains correct after page refresh
+- saved invoice lines reload consistently
+- no drift happens after repeated unit changes
+
+Preferred direction:
+- persist or reconstruct a stable base price for each invoice line
+- do not derive future conversions from already converted current unit price
+- line state after refresh must contain everything required for deterministic recomputation
+
+Validation scenarios required:
+1. New invoice → major to minor → major again
+2. New invoice → major to minor → refresh → minor to major
+3. Existing saved invoice already on minor unit → refresh → switch to major
+4. Switch units multiple times repeatedly and confirm no price drift
+5. Verify quantity and totals remain correct
+6. Verify autosave/reload does not corrupt pricing state
+
+Expected output format:
+At the end, print exactly:
+
+1) Root cause
+- exact reason price stays on minor after refresh when switching back to major
+
+2) Files/functions involved
+- backend load path
+- frontend rehydration path
+- unit-change handler
+
+3) Source-of-truth decision
+- which field/value must be the stable base for recomputation
+
+4) Minimal safe fix plan
+- exact files to change
+- exact fields to add/change if needed
+- whether fix is frontend only or backend + frontend
+
+5) Validation results
+- each tested scenario and outcome
+
+Important constraints:
+- Do not guess
+- Do not apply a cosmetic patch only
+- This is a financial workflow, so price conversion must remain deterministic across refresh and save/load cycles
+- If the line currently lacks a stable base price field, state that explicitly and fix it properly
