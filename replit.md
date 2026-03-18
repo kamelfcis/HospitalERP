@@ -22,6 +22,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Department Services Orders**: Unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
 - **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine for patient accommodation, Bed Board with real-time updates, and Surgery Types System.
 - **Stock Cycle Count (جرد الأصناف)**: Full inventory reconciliation module — create sessions, load warehouse lots, enter counted quantities inline, post with atomic GL journal generation (surplus/shortage accounts from `account_mappings`) and lot adjustments, with audit trail and snapshot refresh.
+- **Permission Groups Management (مجموعات الصلاحيات)**: Admin UI at `/permission-groups` for creating/editing groups, managing group members (assign/unassign users), and controlling per-module permissions via a full matrix view using `PERMISSION_GROUPS` from `shared/permissions.ts` as source of truth. System groups (is_system=true) are read-only. Backed by 7 REST endpoints with full RBAC enforcement.
 
 ### Technical Implementations
 - **API**: RESTful JSON API.

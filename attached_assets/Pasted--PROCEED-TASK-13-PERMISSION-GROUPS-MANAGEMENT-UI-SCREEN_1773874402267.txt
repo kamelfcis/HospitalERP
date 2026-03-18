@@ -1,0 +1,368 @@
+✅ PROCEED — TASK #13 (PERMISSION GROUPS MANAGEMENT UI + SCREEN/ACTION MATRIX)
+
+Task #12 is approved.
+Proceed with Task #13: build the Permission Groups Management UI.
+
+🎯 OBJECTIVE
+
+Create a management UI for permission groups that allows admins to:
+
+create groups
+
+edit groups
+
+assign users to groups
+
+manage group permissions
+
+control screen visibility
+
+control allowed actions inside each screen
+
+This must improve the current system without breaking existing permission behavior.
+
+🔒 CORE RULE
+
+This is an extension of the existing permission system, not a rewrite.
+
+preserve current working behavior
+
+preserve backward compatibility
+
+do not break existing auth / permission checks
+
+keep system stable while adding a clearer admin UI
+
+🧩 REQUIRED UI SCOPE
+
+Build a Permission Groups management area that includes:
+
+1. Groups List
+
+Show:
+
+group name
+
+description
+
+system/custom flag
+
+members count
+
+permissions count
+
+Actions:
+
+view
+
+edit
+
+manage permissions
+
+manage members
+
+delete (only if allowed)
+
+2. Group Details / Edit Screen
+
+Allow:
+
+create new custom group
+
+edit custom group
+
+view system group details
+
+rename custom group only
+
+update description
+
+assign / unassign users
+
+Restrictions:
+
+system groups must not be deleted
+
+system groups must not be renamed unless explicitly allowed by backend rules
+
+3. Screen Visibility Matrix (IMPORTANT)
+
+For each group, define exactly which screens:
+
+appear in menu
+
+are hidden from menu
+
+are accessible directly
+
+are completely blocked
+
+This must be clear and manageable in UI.
+
+Examples:
+
+Cashier sees:
+
+cashier collection
+
+cashier shift
+
+treasury view
+
+Cashier does not see:
+
+accounting setup
+
+item master
+
+pricing configuration
+
+4. Action-Level Permission Matrix (VERY IMPORTANT)
+
+Inside each screen, define allowed actions separately.
+
+Per screen, support action permissions such as:
+
+view
+
+create
+
+edit
+
+delete
+
+save
+
+approve
+
+print
+
+cancel
+
+post
+
+reverse
+
+Example:
+Group: Assistant Pharmacist
+
+Screen: Pharmacy Sales
+
+view ✅
+
+create ✅
+
+edit ✅
+
+delete ❌
+
+approve ❌
+
+pricing override ❌
+
+Screen: Item Master
+
+view ✅
+
+create ❌
+
+edit ❌
+
+delete ❌
+
+This screen/action matrix is mandatory.
+
+🧠 PERMISSION MODEL REQUIREMENT
+
+The UI must clearly distinguish between:
+
+A. Screen Visibility
+
+Whether the user can see/open the screen at all
+
+B. Screen Actions
+
+What the user can do inside that screen
+
+Do NOT mix both concepts together.
+
+A user may:
+
+see a screen but not edit
+
+view data but not delete
+
+create but not approve
+
+⚠️ CRITICAL SECURITY / CONTROL RULES
+1. Privilege Escalation Protection
+
+Do not allow lower-level admins to:
+
+assign higher-privileged groups unsafely
+
+modify critical system groups unsafely
+
+move protected users into stronger groups without proper authority
+
+Review and enforce safe handling for:
+
+owner
+
+admin
+
+system-critical groups
+
+2. System Group Protection
+
+is_system = true groups must be visually marked
+
+delete action must be disabled
+
+rename must be disabled if backend forbids it
+
+3. Source of Truth
+
+UI must reflect backend permission registry only.
+Do not invent permission names in frontend.
+
+4. No Scattered Permission Logic
+
+Keep screen/action mapping organized and centralized.
+Avoid random hardcoded checks across components.
+
+🖥️ UX REQUIREMENTS
+
+The screen must be easy for admins to manage.
+
+Recommended UI structure:
+
+left panel: groups list
+
+right panel: selected group details
+
+tabs or sections:
+
+General
+
+Members
+
+Screens
+
+Actions / Permissions
+
+For the permissions section, use a clean matrix/table layout.
+
+Example columns:
+
+Screen
+
+Visible in menu
+
+Open
+
+View
+
+Add
+
+Edit
+
+Delete
+
+Save
+
+Approve
+
+Print
+
+This should be practical for real ERP administration.
+
+📌 IMPORTANT BEHAVIOR RULE
+
+When a permission is changed for a group:
+
+all users assigned to that group inherit it automatically
+
+no per-user manual reconfiguration required
+
+The UI must make this behavior clear.
+
+🧪 REQUIRED TESTING
+
+Return a test checklist covering at least:
+
+A. Group Management
+
+create custom group
+
+edit custom group
+
+assign users
+
+prevent duplicate names
+
+B. Protection Rules
+
+system group cannot be deleted
+
+system group rename blocked if protected
+
+unauthorized user cannot access page
+
+C. Screen Visibility
+
+assigned group sees only allowed screens
+
+hidden screens do not appear in menu
+
+blocked screens cannot be opened directly
+
+D. Action Permissions
+
+user can open screen but cannot edit
+
+user can create but cannot delete
+
+user can view but cannot approve
+
+E. Regression Safety
+
+current users keep working correctly
+
+no existing role/group loses access unexpectedly
+
+📦 OUTPUT REQUIRED
+
+Return:
+
+pages/components created
+
+permission matrix design
+
+affected files
+
+protection logic applied
+
+test checklist
+
+risks / follow-up notes
+
+⚠️ CONSTRAINTS
+
+do not break existing routes
+
+do not rename existing permission strings arbitrarily
+
+do not weaken current protections
+
+keep architecture clean and centralized
+
+⏳ EXECUTION RULE
+
+Proceed carefully.
+
+This UI must make permission groups easier to manage while preserving the current system and adding clear control over:
+
+which screens each group can see
+
+which actions each group can perform inside each screen
