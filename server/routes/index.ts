@@ -31,6 +31,7 @@ import { registerSystemRoutes } from "./system";
 import { registerClinicRoutes } from "./clinic";
 import { registerReportsRoutes } from "./reports";
 import { registerStockCountRoutes } from "./stock-count";
+import { registerPermissionGroupRoutes } from "./permission-groups";
 
 export { broadcastToPharmacy, broadcastBedBoardUpdate } from "./_shared";
 
@@ -47,6 +48,7 @@ export async function registerRoutes(
   registerClinicRoutes(app);
   registerReportsRoutes(app);
   registerStockCountRoutes(app);
+  registerPermissionGroupRoutes(app);
 
   return httpServer;
 }

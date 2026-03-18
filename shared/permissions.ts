@@ -121,6 +121,10 @@ export const PERMISSIONS = {
   STOCK_COUNT_VIEW:   "stock_count.view",
   STOCK_COUNT_CREATE: "stock_count.create",
   STOCK_COUNT_POST:   "stock_count.post",
+
+  // ── مجموعات الصلاحيات ─────────────────────────────────────────────────
+  PERMISSION_GROUPS_VIEW:   "permission_groups.view",
+  PERMISSION_GROUPS_MANAGE: "permission_groups.manage",
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -188,6 +192,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.STOCK_COUNT_VIEW,
     PERMISSIONS.STOCK_COUNT_CREATE,
     PERMISSIONS.STOCK_COUNT_POST,
+    PERMISSIONS.PERMISSION_GROUPS_VIEW,
+    PERMISSIONS.PERMISSION_GROUPS_MANAGE,
   ],
 
   admin: Object.values(PERMISSIONS),
@@ -571,6 +577,13 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.STOCK_COUNT_VIEW,   label: "عرض" },
       { key: PERMISSIONS.STOCK_COUNT_CREATE, label: "إنشاء" },
       { key: PERMISSIONS.STOCK_COUNT_POST,   label: "ترحيل" },
+    ],
+  },
+  {
+    label: "مجموعات الصلاحيات",
+    permissions: [
+      { key: PERMISSIONS.PERMISSION_GROUPS_VIEW,   label: "عرض" },
+      { key: PERMISSIONS.PERMISSION_GROUPS_MANAGE, label: "إدارة" },
     ],
   },
 ];

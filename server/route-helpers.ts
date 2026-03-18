@@ -33,6 +33,16 @@ export function asyncHandler(fn: AsyncRouteHandler): RequestHandler {
         return apiError(res, 404, message, "NOT_FOUND");
       }
       if (
+        message.includes("لا يمكن حذف") ||
+        message.includes("لا يمكن تعديل") ||
+        message.includes("لا يمكنك")
+      ) {
+        return apiError(res, 403, message, "FORBIDDEN");
+      }
+      if (message.includes("بالفعل") && !message.includes("مُرحّل") && !message.includes("محصّلة")) {
+        return apiError(res, 409, message, "CONFLICT");
+      }
+      if (
         message.includes("غير كافية") ||
         message.includes("غير صحيح") ||
         message.includes("مطلوب") ||
