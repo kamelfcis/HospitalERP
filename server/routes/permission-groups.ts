@@ -199,11 +199,6 @@ export function registerPermissionGroupRoutes(app: Express) {
         return res.status(404).json({ message: "المجموعة غير موجودة" });
       }
 
-      // حماية المجموعات النظامية — لا يمكن تعديل صلاحياتها أبداً
-      if (before.isSystem) {
-        return res.status(403).json({ message: "لا يمكن تعديل صلاحيات مجموعة نظامية" });
-      }
-
       await storage.setGroupPermissions(req.params.id, parsed.data.permissions);
 
       auditLog({

@@ -235,7 +235,8 @@ export function PermissionsMatrixTab({
     setDirty(false);
   }, [groupId, initialPermissions.join(",")]);
 
-  const canEdit = canManage && !isSystem;
+  // المجموعات النظامية: الاسم والوصف محميان، لكن الصلاحيات قابلة للتعديل من الأدمن
+  const canEdit = canManage;
 
   // ── مساعدات التعديل ────────────────────────────────────────────────────────
 
@@ -291,7 +292,7 @@ export function PermissionsMatrixTab({
             {selected.size} / {totalAll}
           </Badge>
           <span className="text-xs text-muted-foreground">صلاحية مفعّلة</span>
-          {isSystem && (
+          {!canManage && (
             <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs">
               للعرض فقط
             </Badge>
