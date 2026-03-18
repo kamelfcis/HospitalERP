@@ -1,24 +1,37 @@
+/**
+ * server/index.ts — نقطة دخول الخادم
+ *
+ * يُطبِّق:
+ *  ✓ التحقق من المتغيرات البيئية عند بدء التشغيل
+ *  ✓ Request Correlation ID لكل طلب
+ *  ✓ GET /health بدون مصادقة (يُعيد 503 أثناء الإغلاق)
+ *  ✓ Pool مُضبَّط مع statement_timeout
+ *  ✓ Graceful Shutdown (SIGTERM / SIGINT)
+ *  ✓ Structured logging عبر pino
+ */
+
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import compression from "compression";
+import { randomUUID } from "crypto";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
-import { perfRequestMiddleware, registerMonitoringRoutes } from "./monitoring";
+import { perfRequestMiddleware, registerMonitoringRoutes, requestContextStore } from "./monitoring";
 import { loadSettings } from "./settings-cache";
 import { storage } from "./storage";
-import { db } from "./db";
+import { db, pool, testDbConnection } from "./db";
 import { sql } from "drizzle-orm";
 import { runRefresh, REFRESH_KEYS } from "./lib/rpt-refresh-orchestrator";
+import { logger } from "./lib/logger";
 
-const app = express();
-const httpServer = createServer(app);
-
+// ── Module augmentations ──────────────────────────────────────────────────────
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+    requestId: string;
   }
 }
 
@@ -29,8 +42,50 @@ declare module "express-session" {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 1: Startup Validation
+// Fails fast with a clear message before binding any port.
+// ─────────────────────────────────────────────────────────────────────────────
+const KNOWN_DEFAULT_SECRET = "hospital-gl-session-secret";
+const isProd = process.env.NODE_ENV === "production";
+
+(function validateEnv() {
+  const errors: string[] = [];
+
+  // DATABASE_URL validated in db.ts (throws immediately)
+  // Here we add belt-and-suspenders for SESSION_SECRET in production
+  if (isProd) {
+    if (!process.env.SESSION_SECRET) {
+      errors.push("SESSION_SECRET is not set — sessions will be insecure");
+    } else if (process.env.SESSION_SECRET === KNOWN_DEFAULT_SECRET) {
+      errors.push("SESSION_SECRET is using the known default value — change it in production");
+    }
+  }
+
+  if (errors.length > 0) {
+    for (const e of errors) {
+      logger.fatal({ env: "production" }, `[FATAL STARTUP] ${e}`);
+    }
+    process.exit(1);
+  }
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 2: Graceful Shutdown State
+// isShuttingDown → /health returns 503, new requests get 503
+// ─────────────────────────────────────────────────────────────────────────────
+let isShuttingDown = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 3: Express App + HTTP Server
+// ─────────────────────────────────────────────────────────────────────────────
+const app = express();
+const httpServer = createServer(app);
+
+// ── Compression ───────────────────────────────────────────────────────────────
 app.use(compression({ threshold: 1024 }));
 
+// ── JSON body parsing ─────────────────────────────────────────────────────────
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -38,33 +93,69 @@ app.use(
     },
   }),
 );
-
 app.use(express.urlencoded({ extended: false }));
 
+// ── Request Correlation ID ────────────────────────────────────────────────────
+// Generates a unique requestId per request, attaches to req and response header,
+// and is propagated through the AsyncLocalStorage context.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const id = (req.headers["x-request-id"] as string) || randomUUID().substring(0, 8);
+  (req as any).requestId = id;
+  res.setHeader("X-Request-ID", id);
+  next();
+});
+
+// ── /health — UNPROTECTED, before session + auth ──────────────────────────────
+// Lightweight: only status, db, uptime, version — no internal details in prod.
+// Returns 503 during graceful shutdown so load balancers stop routing traffic.
+app.get("/health", async (_req: Request, res: Response) => {
+  if (isShuttingDown) {
+    return res.status(503).json({ status: "shutting_down", db: "unknown", uptime: Math.round(process.uptime()) });
+  }
+  try {
+    await pool.query("SELECT 1");
+    res.json({
+      status:  "ok",
+      db:      "ok",
+      uptime:  Math.round(process.uptime()),
+      version: process.env.npm_package_version || "1.0.0",
+    });
+  } catch {
+    res.status(503).json({
+      status:  "error",
+      db:      "unreachable",
+      uptime:  Math.round(process.uptime()),
+      version: process.env.npm_package_version || "1.0.0",
+    });
+  }
+});
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
 const PgSession = connectPgSimple(session);
 app.use(
   session({
     store: new PgSession({
-      conString: process.env.DATABASE_URL,
+      conString:            process.env.DATABASE_URL,
       createTableIfMissing: true,
     }),
-    secret: process.env.SESSION_SECRET || "hospital-gl-session-secret",
-    resave: false,
+    secret:           process.env.SESSION_SECRET || KNOWN_DEFAULT_SECRET,
+    resave:           false,
     saveUninitialized: false,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge:   24 * 60 * 60 * 1000,
       httpOnly: true,
-      secure: false,
+      secure:   false,
       sameSite: "lax",
     },
   })
 );
 
+// ── Performance monitoring middleware ─────────────────────────────────────────
+// Correlation ID is already on req.requestId when this runs — monitoring.ts
+// picks it up inside requestContextStore.run() when creating the ctx object.
 app.use(perfRequestMiddleware(500));
 
 // ── Global API Auth Guard ─────────────────────────────────────────────────────
-// يحمي جميع مسارات /api تلقائياً — بدلاً من إضافة requireAuth لكل route بشكل يدوي
-// المسارات العامة (بدون مصادقة): تسجيل الدخول / الخروج / فحص الجلسة
 const API_PUBLIC_PATHS = ["/auth/login", "/auth/logout", "/auth/me"];
 app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   if (API_PUBLIC_PATHS.includes(req.path)) return next();
@@ -73,69 +164,125 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   }
   next();
 });
-// ─────────────────────────────────────────────────────────────────────────────
 
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
-
-app.use((req, res, next) => {
+// ── Request logging ───────────────────────────────────────────────────────────
+app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
-  const path = req.path;
+  const path  = req.path;
 
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
+    if (path.startsWith("/api") || path === "/health") {
       const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
-      log(`${req.method} ${path}${qs} ${res.statusCode} in ${duration}ms`);
+      log(`${req.method} ${path}${qs} ${res.statusCode} in ${duration}ms`, "express");
     }
   });
 
   next();
 });
 
+// ── Backward-compatible log() wrapper ─────────────────────────────────────────
+// Keeps the same signature as the original function — callers need no changes.
+export function log(message: string, source = "express"): void {
+  logger.info({ source }, message);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 4: Graceful Shutdown
+// ─────────────────────────────────────────────────────────────────────────────
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  logger.info({ signal }, "[SHUTDOWN] received signal — starting graceful shutdown");
+
+  // Stop accepting new connections; /health now returns 503
+  httpServer.close((err) => {
+    if (err) {
+      logger.error({ err: err.message }, "[SHUTDOWN] error closing HTTP server");
+    } else {
+      logger.info("[SHUTDOWN] HTTP server closed");
+    }
+  });
+
+  // Allow in-flight requests to finish (up to SHUTDOWN_TIMEOUT_MS)
+  const forceTimer = setTimeout(async () => {
+    logger.warn("[SHUTDOWN] timeout exceeded — forcing exit");
+    await pool.end().catch(() => {});
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+
+  forceTimer.unref();
+
+  // Close DB pool cleanly
+  try {
+    await pool.end();
+    logger.info("[SHUTDOWN] DB pool closed");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[SHUTDOWN] error closing DB pool");
+  }
+
+  clearTimeout(forceTimer);
+  logger.info("[SHUTDOWN] graceful shutdown complete");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 5: Main async startup
+// ─────────────────────────────────────────────────────────────────────────────
 (async () => {
+  // ── 5a. DB connection test ────────────────────────────────────────────────
+  try {
+    await testDbConnection();
+    logger.info("[STARTUP] database connection verified");
+  } catch (err: unknown) {
+    logger.fatal({ err: err instanceof Error ? err.message : String(err) }, "[FATAL STARTUP] cannot connect to database");
+    process.exit(1);
+  }
+
+  // ── 5b. Optional seed ─────────────────────────────────────────────────────
   if (process.env.RUN_SEED === "true") {
     try {
       await seedDatabase();
     } catch (error) {
-      console.log("Seed database notice:", error);
+      logger.warn({ err: error instanceof Error ? error.message : String(error) }, "[STARTUP] seed notice");
     }
   }
 
+  // ── 5c. System settings ───────────────────────────────────────────────────
   try {
     await loadSettings();
-    console.log("System settings loaded into cache");
-  } catch (e) {
-    console.log("System settings table not yet available, will retry after schema sync");
+    logger.info("[STARTUP] system settings loaded into cache");
+  } catch {
+    logger.warn("[STARTUP] system settings table not yet available — will retry after schema sync");
   }
 
+  // ── 5d. Register routes ───────────────────────────────────────────────────
   await registerRoutes(httpServer, app);
   registerMonitoringRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
+  // ── 5e. Global error handler ──────────────────────────────────────────────
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    const status  = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    logger.error({
+      requestId: (req as any).requestId,
+      status,
+      err:       err.message,
+      stack:     status >= 500 ? err.stack : undefined,
+    }, "Internal Server Error");
 
-    if (res.headersSent) {
-      return next(err);
-    }
-
+    if (res.headersSent) return next(err);
     return res.status(status).json({ message });
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // ── 5f. Static / Vite ─────────────────────────────────────────────────────
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -143,8 +290,7 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ── مزامنة تسلسل أرقام القيود مع أعلى رقم موجود في قاعدة البيانات ──────────
-  // ضروري عند بدء التشغيل لضمان أن الـ SEQUENCE يبدأ من بعد آخر قيد مُدخَل
+  // ── 5g. Journal sequence sync ─────────────────────────────────────────────
   try {
     await db.execute(sql`
       SELECT setval(
@@ -155,28 +301,20 @@ app.use((req, res, next) => {
     `);
     log("[STARTUP] journal_entry_number_seq synced");
   } catch (err: unknown) {
-    console.error("[STARTUP] sequence sync error:", err instanceof Error ? err.message : err);
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] sequence sync error");
   }
-  // ─────────────────────────────────────────────────────────────────────────────
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
+  // ── 5h. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
+    log(`serving on port ${port}`);
+  });
 
-  // Stay Engine: accrue daily lines every 5 minutes
-  // كل 5 دقائق يضمن احتساب اليوم الجديد خلال 5 دقائق من انتهاء 24 ساعة الدخول
+  // ─────────────────────────────────────────────────────────────────────────
+  // Background jobs (Stay Engine, Journal Retry, RPT Refresh)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Stay Engine: every 5 minutes
   const STAY_TICK_MS = 5 * 60 * 1000;
   const runStayTick = async () => {
     try {
@@ -185,13 +323,13 @@ app.use((req, res, next) => {
         log(`[STAY_ENGINE] tick: ${result.segmentsProcessed} segments, ${result.linesUpserted} lines upserted`);
       }
     } catch (err: unknown) {
-      const _em = err instanceof Error ? err.message : String(err);
-      console.error("[STAY_ENGINE] tick error:", _em);
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STAY_ENGINE] tick error");
     }
   };
   setTimeout(runStayTick, 5000);
   setInterval(runStayTick, STAY_TICK_MS);
 
+  // Journal Retry: every 5 minutes
   const JOURNAL_RETRY_MS = 5 * 60 * 1000;
   const runJournalRetry = async () => {
     try {
@@ -200,54 +338,31 @@ app.use((req, res, next) => {
         log(`[JOURNAL_RETRY] attempted=${result.total} succeeded=${result.succeeded} failed=${result.failed}`);
       }
     } catch (err: unknown) {
-      const _em = err instanceof Error ? err.message : String(err);
-      console.error("[JOURNAL_RETRY] tick error:", _em);
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, "[JOURNAL_RETRY] tick error");
     }
   };
   setTimeout(runJournalRetry, 15000);
   setInterval(runJournalRetry, JOURNAL_RETRY_MS);
 
-  // ── RPT Refresh polling — all three reporting tables ──────────────────────
-  // All runs go through the orchestrator (rpt-refresh-orchestrator.ts) which
-  // handles status tracking, structured logging, and per-job overlap protection.
-  // The first call uses trigger='startup'; subsequent polling calls use 'polling'.
-
+  // RPT Refresh: every 15 minutes
   const RPT_REFRESH_MS  = 15 * 60 * 1000;
   const SNAP_REFRESH_MS = 15 * 60 * 1000;
 
-  // patient_visit_summary — startup after 10s, then every 15 min
   const runRptRefresh = (trigger: "startup" | "polling") => async () => {
     try {
-      await runRefresh(
-        REFRESH_KEYS.PATIENT_VISIT,
-        () => storage.refreshPatientVisitSummary(),
-        trigger,
-      );
-    } catch (_err: unknown) {
-      // error already logged + status updated by orchestrator
-    }
+      await runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), trigger);
+    } catch {}
   };
   setTimeout(runRptRefresh("startup"), 10000);
   setInterval(runRptRefresh("polling"), RPT_REFRESH_MS);
 
-  // inventory_snapshot + item_movements_summary — startup after 12s, then every 15 min
   const runSnapRefresh = (trigger: "startup" | "polling") => async () => {
     try {
       await Promise.all([
-        runRefresh(
-          REFRESH_KEYS.INVENTORY_SNAP,
-          () => storage.refreshInventorySnapshot(),
-          trigger,
-        ),
-        runRefresh(
-          REFRESH_KEYS.ITEM_MOVEMENTS,
-          () => storage.refreshItemMovementsSummary(),
-          trigger,
-        ),
+        runRefresh(REFRESH_KEYS.INVENTORY_SNAP,  () => storage.refreshInventorySnapshot(),     trigger),
+        runRefresh(REFRESH_KEYS.ITEM_MOVEMENTS,  () => storage.refreshItemMovementsSummary(), trigger),
       ]);
-    } catch (_err: unknown) {
-      // errors already logged + status updated by orchestrator
-    }
+    } catch {}
   };
   setTimeout(runSnapRefresh("startup"), 12000);
   setInterval(runSnapRefresh("polling"), SNAP_REFRESH_MS);

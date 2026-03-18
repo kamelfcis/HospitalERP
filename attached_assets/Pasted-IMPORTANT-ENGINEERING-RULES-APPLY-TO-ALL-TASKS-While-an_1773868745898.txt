@@ -1,0 +1,135 @@
+IMPORTANT ENGINEERING RULES (APPLY TO ALL TASKS)
+
+While analyzing or implementing any fix, follow these mandatory rules:
+
+1. Refactor Discipline
+   Do not only patch issues. When needed, refactor code to improve clarity and safety.
+
+Required:
+
+* reduce duplicated logic
+* split large functions
+* improve naming clarity
+* separate business logic from UI logic
+* separate API transport from domain logic
+* keep invoice logic isolated
+* keep cashier logic isolated
+* keep pharmacy logic isolated
+
+2. Code Organization
+   Maintain clean project structure:
+
+* group related logic
+* avoid scattered validation
+* move reusable logic to shared services/helpers
+* reduce hidden side effects
+
+3. Indexing & Performance Awareness
+   Review database performance and indexing.
+
+Especially for:
+
+* invoices
+* cashier queues
+* pending invoices
+* stock lookups
+* pharmacy batches
+* shift operations
+* treasury validation
+
+Suggest indexes when missing.
+
+4. Human-Readable Explanation
+   A weaker human maintainer will continue after this work.
+
+For every fix explain:
+
+* what was wrong
+* root cause
+* what changed
+* why solution is safer
+* affected files/modules
+* DB/index impact
+
+5. Output Format
+   Each task must produce:
+
+* findings
+* root causes
+* refactor opportunities
+* affected modules/files
+* DB/index impact
+* implementation order
+* risks
+* test checklist
+
+---
+
+SYSTEM FOUNDATION TASK
+
+Objective:
+Stabilize backend infrastructure and verify core system architecture before business logic fixes.
+
+Requirements:
+
+Database Layer
+Ensure:
+
+* database connection pooling
+* safe transactions
+* indexing review
+* query timeout protection
+
+API Layer
+Ensure:
+
+* API response compression
+* efficient request handling
+* stable middleware
+
+Logging System
+Use structured logging:
+
+* pino OR winston
+
+Logs must include:
+
+* API requests
+* system errors
+* startup logs
+* database errors
+* invoice operations
+* cashier operations
+
+Health Monitoring Endpoint
+
+GET /health
+
+Return:
+
+* database connection status
+* server status
+* uptime
+* system version
+
+Startup Validation
+
+At startup verify:
+
+* database connection
+* required environment variables
+* configuration validity
+* migration status
+
+Startup must fail if critical dependencies are missing.
+
+---
+
+AGENT TASK
+
+1. Analyze current infrastructure.
+2. Identify missing components.
+3. Produce FOUNDATION FIX PLAN.
+
+DO NOT IMPLEMENT YET.
+Wait for approval.
