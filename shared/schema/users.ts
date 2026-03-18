@@ -15,6 +15,7 @@ export const permissionGroups = pgTable("permission_groups", {
   name:        text("name").notNull().unique(),
   description: text("description"),
   isSystem:    boolean("is_system").notNull().default(false),
+  systemKey:   varchar("system_key"),           // مفتاح الدور الأصلي (owner, admin, pharmacist…) — للمجموعات النظامية فقط
   sortOrder:   integer("sort_order").notNull().default(0),
   createdAt:   timestamp("created_at").notNull().defaultNow(),
 });

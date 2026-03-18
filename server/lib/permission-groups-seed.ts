@@ -9,6 +9,13 @@
  *  [ب] إذا المجموعات موجودة → delta sync فقط:
  *      • يضيف الصلاحيات الجديدة التي أُضيفت لـ DEFAULT_ROLE_PERMISSIONS لاحقاً
  *        إلى المجموعات النظامية المقابلة (مثلاً admin يحصل على أي permission جديدة)
+ *  [ج] backfill system_key للمجموعات النظامية القديمة التي لا تملكه بعد (مرة واحدة)
+ *  [د] استعادة طوارئ: أي مجموعة نظامية فقدت كل صلاحياتها تُستعاد تلقائياً
+ *
+ *  التعرّف على المجموعات النظامية:
+ *  ──────────────────────────────
+ *  يعتمد على system_key (VARCHAR) المخزَّن في الجدول.
+ *  النسخ القديمة (قبل إضافة system_key) تُعرَّف مرة واحدة بالـ description للـ backfill.
  *
  *  ضمانات:
  *  ───────
@@ -49,10 +56,12 @@ export async function seedPermissionGroups(): Promise<void> {
   if (existing === 0) {
     await _initialSeed();
   } else {
+    // [ج] backfill system_key للنسخ القديمة (قبل إضافة العمود)
+    await _backfillSystemKeys();
     await _deltaSyncPermissions();
   }
 
-  // تحقق طوارئ: استعادة أي مجموعة نظامية فقدت صلاحياتها
+  // [د] تحقق طوارئ: استعادة أي مجموعة نظامية فقدت صلاحياتها
   await restoreMissingSystemGroupPermissions();
 }
 
@@ -67,14 +76,22 @@ async function _initialSeed(): Promise<void> {
 
     const groupIdByRole: Record<string, string> = {};
 
-    // الخطوة 1: إنشاء مجموعة نظامية لكل دور
+    // الخطوة 1: إنشاء مجموعة نظامية لكل دور مع system_key
     for (const [roleKey, roleLabel] of Object.entries(ROLE_LABELS)) {
       const sortOrder = ROLE_SORT_ORDER[roleKey] ?? 99;
 
       const insertedRows = await tx.execute(sql`
-        INSERT INTO permission_groups (name, description, is_system, sort_order)
-        VALUES (${roleLabel}, ${`مجموعة النظام: ${roleKey}`}, TRUE, ${sortOrder})
-        ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description
+        INSERT INTO permission_groups (name, description, is_system, system_key, sort_order)
+        VALUES (
+          ${roleLabel},
+          ${'مجموعة النظام: ' + roleKey},
+          TRUE,
+          ${roleKey},
+          ${sortOrder}
+        )
+        ON CONFLICT (name) DO UPDATE
+          SET description = EXCLUDED.description,
+              system_key  = EXCLUDED.system_key
         RETURNING id
       `);
       const groupId = (insertedRows as any).rows[0]?.id as string;
@@ -124,7 +141,34 @@ async function _initialSeed(): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  [ج] Backfill system_key — يعمل مرة واحدة للنسخ القديمة
+//  يستخدم description pattern للتعرف على المجموعة ثم يكتب system_key
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function _backfillSystemKeys(): Promise<void> {
+  let totalBackfilled = 0;
+
+  for (const roleKey of Object.keys(DEFAULT_ROLE_PERMISSIONS)) {
+    // البحث بـ description للمجموعات التي لا تملك system_key بعد
+    const result = await db.execute(sql`
+      UPDATE permission_groups
+      SET    system_key = ${roleKey}
+      WHERE  is_system  = true
+        AND  system_key IS NULL
+        AND  description = ${'مجموعة النظام: ' + roleKey}
+      RETURNING id
+    `);
+    totalBackfilled += (result as any).rows.length;
+  }
+
+  if (totalBackfilled > 0) {
+    logger.info(`[PERM_GROUPS_SEED] backfill: set system_key for ${totalBackfilled} system groups`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  [ب] Delta Sync — يضيف الصلاحيات الجديدة التي أُضيفت للـ code بعد الـ seed الأول
+//  يعتمد على system_key أساساً، بعد الـ backfill
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function _deltaSyncPermissions(): Promise<void> {
@@ -133,12 +177,11 @@ async function _deltaSyncPermissions(): Promise<void> {
   for (const [roleKey, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
     if (perms.length === 0) continue;
 
-    // ابحث عن المجموعة النظامية المطابقة للدور (is_system = true)
+    // ابحث عن المجموعة النظامية باستخدام system_key (المفتاح الثابت)
     const grpRows = await db.execute(sql`
-      SELECT pg.id
-      FROM permission_groups pg
-      WHERE pg.is_system = true
-        AND pg.description = ${'مجموعة النظام: ' + roleKey}
+      SELECT id FROM permission_groups
+      WHERE  is_system  = true
+        AND  system_key = ${roleKey}
       LIMIT 1
     `);
     const groupId = (grpRows as any).rows[0]?.id as string | undefined;
@@ -152,7 +195,7 @@ async function _deltaSyncPermissions(): Promise<void> {
       ((existingRows as any).rows as any[]).map((r: any) => r.permission as string)
     );
 
-    const unique = [...new Set(perms)];
+    const unique  = [...new Set(perms)];
     const missing = unique.filter(p => !existingSet.has(p));
 
     if (missing.length > 0) {
@@ -176,8 +219,8 @@ async function _deltaSyncPermissions(): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Emergency restore — يُستدعى إذا تم اكتشاف مجموعة نظامية بدون صلاحيات
-//  ملاحظة: دالة مساعدة تُستدعى من seedPermissionGroups فقط إذا لزم
+//  [د] Emergency Restore — استعادة المجموعات النظامية التي فقدت صلاحياتها
+//  يعتمد على system_key أساساً، بعد الـ backfill
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function restoreMissingSystemGroupPermissions(): Promise<void> {
@@ -186,11 +229,11 @@ export async function restoreMissingSystemGroupPermissions(): Promise<void> {
   for (const [roleKey, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
     if (perms.length === 0) continue;
 
+    // البحث بـ system_key
     const grpRows = await db.execute(sql`
-      SELECT pg.id, pg.name
-      FROM permission_groups pg
-      WHERE pg.is_system = true
-        AND pg.description = ${'مجموعة النظام: ' + roleKey}
+      SELECT id, name FROM permission_groups
+      WHERE  is_system  = true
+        AND  system_key = ${roleKey}
       LIMIT 1
     `);
     const row = (grpRows as any).rows[0] as { id: string; name: string } | undefined;

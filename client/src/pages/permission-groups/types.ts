@@ -3,6 +3,7 @@ export interface GroupSummary {
   name:            string;
   description:     string | null;
   isSystem:        boolean;
+  systemKey:       string | null;   // مفتاح الدور الأصلي (owner, pharmacist…)
   memberCount:     number;
   permissionCount: number;
   createdAt:       string;

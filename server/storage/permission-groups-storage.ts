@@ -29,11 +29,13 @@ import { clearAllPermissionCache, clearPermissionCacheForUser } from "./users-st
 export interface PermissionGroupWithStats extends PermissionGroup {
   permissionCount: number;
   memberCount:     number;
+  systemKey:       string | null;
 }
 
 export interface PermissionGroupDetail extends PermissionGroup {
   permissions: string[];
-  members: { id: string; fullName: string; username: string }[];
+  members:     { id: string; fullName: string; username: string }[];
+  systemKey:   string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ const permissionGroupsMethods = {
         pg.name,
         pg.description,
         pg.is_system,
+        pg.system_key,
         pg.sort_order,
         pg.created_at,
         COUNT(DISTINCT gp.id)::int  AS permission_count,
@@ -76,6 +79,7 @@ const permissionGroupsMethods = {
       name:            r.name,
       description:     r.description ?? null,
       isSystem:        Boolean(r.is_system),
+      systemKey:       r.system_key ?? null,
       sortOrder:       Number(r.sort_order ?? 0),
       createdAt:       r.created_at,
       permissionCount: Number(r.permission_count ?? 0),
@@ -88,7 +92,7 @@ const permissionGroupsMethods = {
     id: string
   ): Promise<PermissionGroupDetail | null> {
     const grpRows = await db.execute(sql`
-      SELECT id, name, description, is_system, sort_order, created_at
+      SELECT id, name, description, is_system, system_key, sort_order, created_at
       FROM permission_groups WHERE id = ${id}
     `);
     const g = (grpRows as any).rows[0];
@@ -116,6 +120,7 @@ const permissionGroupsMethods = {
       name:        g.name,
       description: g.description ?? null,
       isSystem:    Boolean(g.is_system),
+      systemKey:   g.system_key ?? null,
       sortOrder:   Number(g.sort_order ?? 0),
       createdAt:   g.created_at,
       permissions,
