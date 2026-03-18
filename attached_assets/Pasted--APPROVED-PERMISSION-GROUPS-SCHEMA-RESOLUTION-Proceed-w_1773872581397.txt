@@ -1,0 +1,260 @@
+✅ APPROVED — PERMISSION GROUPS (SCHEMA + RESOLUTION)
+
+Proceed with implementation with strict backward compatibility and controlled refactor.
+
+🎯 CORE PRINCIPLE
+
+This is a safe evolution, NOT a rewrite.
+
+Preserve ALL existing behavior
+
+Do NOT break current permission logic
+
+Introduce permission groups as a new abstraction layer
+
+Old system remains as fallback until fully migrated
+
+🔒 NON-BREAKING GUARANTEE (CRITICAL)
+
+You MUST guarantee:
+
+Every existing user keeps EXACT same permissions after migration
+
+No screen access changes
+
+No action access changes
+
+No regression in cashier, pharmacy, or accounting flows
+
+If any behavior changes → STOP and report.
+
+🧠 MIGRATION STRATEGY (STRICT)
+1. System Groups Creation
+
+Create groups matching existing roles (1:1 mapping)
+
+Use:
+
+is_system = true
+
+normalized unique names (case-insensitive, trimmed)
+
+Examples:
+
+Admin
+
+Pharmacist
+
+Cashier
+
+2. Permissions Copy (Lossless)
+
+Copy ALL existing role_permissions into group_permissions
+
+Ensure:
+
+no missing permissions
+
+no duplicates
+
+exact equivalence
+
+3. User Assignment (Atomic)
+
+Assign each user:
+
+users.permission_group_id = matching role group
+
+Must be done in one consistent migration pass
+
+4. Safe Execution Rule
+
+Seed MUST run only if:
+
+permission_groups is empty
+
+MUST be idempotent (safe if re-run)
+
+⚙️ PERMISSION RESOLUTION (MANDATORY ORDER)
+
+Define explicit resolution order:
+
+Group permissions (primary source)
+
+User overrides (grant/revoke)
+
+Fallback (ONLY if no group assigned): role_permissions
+
+No ambiguity allowed.
+
+🧩 SCHEMA REQUIREMENTS
+permission_groups
+
+id (PK)
+
+name (UNIQUE, normalized)
+
+description
+
+is_system (boolean)
+
+sort_order
+
+group_permissions
+
+id (PK)
+
+group_id (FK)
+
+permission (string)
+
+users
+
+permission_group_id (nullable FK)
+
+🛡️ DATA SAFETY RULES
+
+DO NOT delete:
+
+users.role
+
+role_permissions
+
+DO NOT modify:
+
+permission strings
+
+DO NOT rename existing roles
+
+These remain as safety fallback.
+
+🧱 CENTRALIZATION REQUIREMENT
+
+Permission resolution must be centralized:
+
+Single source: getUserEffectivePermissions
+
+NO scattered checks across:
+
+frontend
+
+API routes
+
+random helpers
+
+⚠️ HARDENING RULES
+1. Unique Group Names
+
+Enforce case-insensitive uniqueness
+
+Trim whitespace
+
+Prevent duplicates like:
+
+"Cashier"
+
+"cashier"
+
+" Cashier "
+
+2. System Group Protection
+
+is_system = true groups:
+
+cannot be deleted
+
+cannot be renamed (future enforcement)
+
+3. Deterministic Behavior
+
+Permission resolution MUST be predictable
+
+No hidden overrides
+
+No silent conflicts
+
+4. Zero Permission Drift
+
+After migration:
+
+Old role-based permissions == new group-based permissions
+
+Must match 100%
+
+🧪 VALIDATION REQUIREMENTS
+
+After implementation, verify:
+
+A. Before vs After Comparison
+
+Pick sample users (Admin, Pharmacist, Cashier)
+
+Compare:
+
+permissions BEFORE migration
+
+permissions AFTER migration
+
+Must be identical
+
+B. Functional Testing
+
+Verify:
+
+Cashier cannot access accounting screens
+
+Pharmacist cannot access treasury config
+
+Admin has full access
+
+C. Fallback Safety
+
+Temporarily set permission_group_id = null for a user
+
+System MUST fall back to role_permissions
+
+D. No Performance Regression
+
+Permission resolution must remain fast
+
+No N+1 queries
+
+Prefer batching / joins
+
+📦 STORAGE INTERFACE (PREP ONLY)
+
+Add methods (no full implementation yet):
+
+getPermissionGroups
+
+getPermissionGroup
+
+createPermissionGroup
+
+updatePermissionGroup
+
+deletePermissionGroup
+
+setGroupPermissions
+
+assignUserToGroup
+
+Must include proper TypeScript typing.
+
+⚠️ STRICT CONSTRAINTS
+
+NO UI changes
+
+NO API changes
+
+NO permission string changes
+
+NO removal of legacy tables
+
+NO refactor outside permission scope
+
+⏳ EXECUTION RULE
+
+Proceed with implementation ONLY after confirming:
+
+"Migration will preserve exact permission behavior and is fully backward compatible."

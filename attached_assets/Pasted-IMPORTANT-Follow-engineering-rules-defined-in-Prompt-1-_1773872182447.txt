@@ -1,0 +1,150 @@
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+
+---
+
+OBJECTIVE
+
+Redesign the permission system using Role-Based Permission Groups.
+
+The current system requires configuring permissions per user, which is inefficient and error-prone.
+
+We need a group-based permission structure.
+
+---
+
+REQUIRED MODEL
+
+Create Permission Groups.
+
+Examples:
+
+* Pharmacist
+* Assistant Pharmacist
+* Cashier
+* Admin
+* Inventory Manager
+
+Each group will contain multiple users.
+
+Users inherit permissions from their group.
+
+---
+
+GROUP STRUCTURE
+
+Each group must define:
+
+* allowed screens
+* hidden screens
+* allowed actions
+* restricted actions
+
+Example:
+
+Cashier group:
+
+Visible Screens:
+
+* cashier collection
+* cashier shift
+* treasury view
+
+Hidden Screens:
+
+* accounting configuration
+* stock master setup
+
+---
+
+USER ASSIGNMENT
+
+Users must belong to a group.
+
+Example:
+
+User:
+Ahmed
+
+Group:
+Pharmacist
+
+Ahmed automatically inherits all permissions of Pharmacist group.
+
+No need to configure permissions individually.
+
+---
+
+PERMISSION INHERITANCE
+
+If a permission is added or removed from a group:
+
+All users under that group must automatically inherit the change.
+
+---
+
+SCREEN VISIBILITY CONTROL
+
+The group must control:
+
+* which screens appear in menu
+* which screens are hidden
+* which actions inside screen are allowed
+
+Example:
+
+Assistant Pharmacist:
+
+Allowed:
+
+* pharmacy sales
+* stock search
+
+Restricted:
+
+* item master editing
+* accounting settings
+
+---
+
+DATABASE DESIGN REVIEW
+
+Review or suggest tables such as:
+
+permission_groups
+group_users
+group_permissions
+screen_permissions
+
+Ensure clear mapping:
+
+Group → Screens → Actions.
+
+---
+
+REFACTOR REQUIREMENT
+
+If current permission logic is scattered across:
+
+* frontend checks
+* API checks
+* database flags
+
+Propose centralized permission logic.
+
+---
+
+AGENT TASK
+
+Produce:
+
+* permission system findings
+* root causes of complexity
+* proposed role-based model
+* affected modules/files
+* database schema suggestion
+* PERMISSION SYSTEM REFACTOR PLAN
+* test checklist
+
+DO NOT IMPLEMENT YET.
+Wait for approval.
