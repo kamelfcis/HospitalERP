@@ -39,6 +39,7 @@ import {
 import type { DatabaseStorage } from "./index";
 import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { auditLog } from "../route-helpers";
+import { logger } from "../lib/logger";
 
 // ── رقم تسلسلي لجلسات الجرد ─────────────────────────────────────────────────
 async function getNextSessionNumber(): Promise<number> {
@@ -285,16 +286,26 @@ const stockCountStorage = {
   },
 
   // ── cancelStockCountSession ────────────────────────────────────────────────
-  async cancelStockCountSession(this: DatabaseStorage, id: string): Promise<void> {
+  async cancelStockCountSession(this: DatabaseStorage, id: string, userId?: string): Promise<void> {
     const [session] = await db.select().from(stockCountSessions).where(eq(stockCountSessions.id, id));
     if (!session) throw new Error("جلسة الجرد غير موجودة");
     if (session.status !== "draft") throw new Error("لا يمكن إلغاء جلسة مُرحَّلة");
     await db.update(stockCountSessions)
       .set({ status: "cancelled" })
       .where(eq(stockCountSessions.id, id));
+
+    auditLog({
+      tableName: "stock_count_sessions",
+      recordId:  id,
+      action:    "cancel",
+      userId,
+      oldValues: { status: "draft" },
+      newValues: { status: "cancelled", sessionNumber: session.sessionNumber },
+    }).catch(() => {});
   },
 
   // ── upsertStockCountLines ──────────────────────────────────────────────────
+  // الحماية: unit_cost يُقرأ من DB (لا يُقبل من العميل لمنع التلاعب)
   async upsertStockCountLines(
     this: DatabaseStorage,
     sessionId: string,
@@ -308,8 +319,40 @@ const stockCountStorage = {
     const results: StockCountLine[] = [];
 
     for (const line of lines) {
+      // ── التحقق من أن lot ينتمي لمستودع الجلسة ──────────────────────────
+      let serverUnitCost = "0";
+      if (line.lotId) {
+        const lotRaw = await db.execute(sql`
+          SELECT purchase_price, warehouse_id
+          FROM inventory_lots
+          WHERE id = ${line.lotId}
+          LIMIT 1
+        `);
+        const lot = (lotRaw as any).rows[0];
+        if (!lot) throw new Error(`الـ lot المحدد غير موجود (id: ${line.lotId})`);
+        if (lot.warehouse_id !== session.warehouseId) {
+          throw new Error(
+            `الـ lot المحدد (${line.lotId}) لا ينتمي لمستودع الجلسة. ` +
+            `لا يُسمح بإضافة أصناف من مستودع آخر.`
+          );
+        }
+        serverUnitCost = String(lot.purchase_price ?? "0");
+      } else {
+        // بدون lot: اقرأ أحدث سعر شراء للصنف في هذا المستودع
+        const priceRaw = await db.execute(sql`
+          SELECT purchase_price FROM inventory_lots
+          WHERE item_id     = ${line.itemId}
+            AND warehouse_id = ${session.warehouseId}
+            AND is_active   = TRUE
+          ORDER BY received_date DESC, created_at DESC
+          LIMIT 1
+        `);
+        const pr = (priceRaw as any).rows[0];
+        serverUnitCost = pr ? String(pr.purchase_price ?? "0") : "0";
+      }
+
       const diff  = parseFloat(line.countedQtyMinor) - parseFloat(line.systemQtyMinor);
-      const value = diff * parseFloat(line.unitCost);
+      const value = diff * parseFloat(serverUnitCost);
 
       const existing = await db.select({ id: stockCountLines.id })
         .from(stockCountLines)
@@ -326,7 +369,7 @@ const stockCountStorage = {
           systemQtyMinor:  line.systemQtyMinor,
           countedQtyMinor: line.countedQtyMinor,
           differenceMinor: diff.toFixed(4),
-          unitCost:        line.unitCost,
+          unitCost:        serverUnitCost,
           differenceValue: value.toFixed(2),
           updatedAt:       new Date(),
         })
@@ -342,7 +385,7 @@ const stockCountStorage = {
           systemQtyMinor:  line.systemQtyMinor,
           countedQtyMinor: line.countedQtyMinor,
           differenceMinor: diff.toFixed(4),
-          unitCost:        line.unitCost,
+          unitCost:        serverUnitCost,
           differenceValue: value.toFixed(2),
         }).returning();
         results.push(inserted);
@@ -354,11 +397,26 @@ const stockCountStorage = {
 
   // ── deleteStockCountLine ───────────────────────────────────────────────────
   async deleteStockCountLine(this: DatabaseStorage, lineId: string): Promise<void> {
+    // تحقق من أن الجلسة ما زالت مسودة قبل الحذف
+    const lineRaw = await db.execute(sql`
+      SELECT s.status FROM stock_count_lines l
+      JOIN stock_count_sessions s ON s.id = l.session_id
+      WHERE l.id = ${lineId}
+    `);
+    const row = (lineRaw as any).rows[0];
+    if (!row) throw new Error("السطر غير موجود");
+    if (row.status !== "draft") throw new Error("لا يمكن حذف سطور من جلسة مُرحَّلة أو مُلغاة");
     await db.delete(stockCountLines).where(eq(stockCountLines.id, lineId));
   },
 
   // ── deleteZeroLines ────────────────────────────────────────────────────────
   async deleteZeroLines(this: DatabaseStorage, sessionId: string): Promise<number> {
+    // تحقق من أن الجلسة ما زالت مسودة قبل الحذف
+    const [session] = await db.select({ status: stockCountSessions.status })
+      .from(stockCountSessions).where(eq(stockCountSessions.id, sessionId));
+    if (!session) throw new Error("جلسة الجرد غير موجودة");
+    if (session.status !== "draft") throw new Error("لا يمكن حذف سطور من جلسة مُرحَّلة أو مُلغاة");
+
     const result = await db.execute(sql`
       DELETE FROM stock_count_lines
       WHERE session_id = ${sessionId}
@@ -503,15 +561,15 @@ const stockCountStorage = {
   },
 
   // ── postStockCountSession ──────────────────────────────────────────────────
-  // الترحيل الذري الكامل:
-  //  1. التحقق من حالة الجلسة
-  //  2. التحقق من الفترة المحاسبية
-  //  3. منع التكرار (جرد مُرحَّل آخر لنفس المستودع + اليوم)
-  //  4. تسوية lots
-  //  5. توليد inventory_lot_movements
-  //  6. توليد journal_entry واحد
+  // الترحيل الذري الكامل (مع كل ضمانات الأمان):
+  //  1. قفل الجلسة (FOR UPDATE) — يمنع الترحيل المتزامن لنفس الجلسة
+  //  2. التحقق من الحالة وعدد السطور
+  //  3. التحقق من الفترة المحاسبية
+  //  4. منع التكرار (partial UNIQUE INDEX على DB + SELECT مصدّق)
+  //  5. تسوية lots — فائض: أحدث lot / عجز: FEFO مع رصيد حقيقي متبقٍّ
+  //  6. توليد journal_entry واحد متوازن (debit == credit مُتحقَّق منه)
   //  7. تحديث الجلسة → posted
-  //  8. scheduleInventorySnapshotRefresh()
+  //  8. audit + scheduleInventorySnapshotRefresh
   async postStockCountSession(
     this: DatabaseStorage,
     sessionId: string,
@@ -529,15 +587,22 @@ const stockCountStorage = {
       `);
       const s = (sessionRaw as any).rows[0];
       if (!s) throw new Error("جلسة الجرد غير موجودة");
-      if (s.status !== "draft") throw new Error(`لا يمكن ترحيل جلسة بحالة "${s.status}"`);
+      if (s.status !== "draft") throw new Error(`لا يمكن ترحيل جلسة بحالة "${s.status}" — ربما تم ترحيلها بالفعل.`);
 
-      // ── 2. التحقق من الفترة المحاسبية ───────────────────────────────────
+      // ── 2. تحقق من وجود سطور على الأقل ─────────────────────────────────
+      const totalLinesRaw = await tx.execute(sql`
+        SELECT COUNT(*)::int AS cnt FROM stock_count_lines WHERE session_id = ${sessionId}
+      `);
+      const totalLines = Number((totalLinesRaw as any).rows[0]?.cnt ?? 0);
+      if (totalLines === 0) throw new Error("لا يمكن ترحيل جلسة جرد فارغة — أضف أصنافاً أولاً.");
+
+      // ── 3. التحقق من الفترة المحاسبية ───────────────────────────────────
       const whHasGL = !!s.wh_gl_account_id;
-      const linesWithDiff = await tx.execute(sql`
+      const linesWithDiffRaw = await tx.execute(sql`
         SELECT COUNT(*)::int AS cnt FROM stock_count_lines
         WHERE session_id = ${sessionId} AND ABS(difference_minor::numeric) > 0.0001
       `);
-      const hasDifferences = Number((linesWithDiff as any).rows[0]?.cnt ?? 0) > 0;
+      const hasDifferences = Number((linesWithDiffRaw as any).rows[0]?.cnt ?? 0) > 0;
 
       let periodId: string | null = null;
       if (whHasGL && hasDifferences) {
@@ -558,9 +623,11 @@ const stockCountStorage = {
         periodId = period.id;
       }
 
-      // ── 3. منع التكرار ───────────────────────────────────────────────────
+      // ── 4. منع التكرار (صريح — قبل الـ UNIQUE INDEX على DB) ─────────────
+      // ملاحظة: الـ partial UNIQUE INDEX على (warehouse_id, count_date WHERE status='posted')
+      // هو خط الدفاع الأخير ضد race conditions. هذا الـ check مبكر لرسالة أوضح.
       const dupRaw = await tx.execute(sql`
-        SELECT id FROM stock_count_sessions
+        SELECT session_number FROM stock_count_sessions
         WHERE warehouse_id = ${s.warehouse_id}
           AND count_date   = ${s.count_date}::date
           AND status       = 'posted'
@@ -568,13 +635,14 @@ const stockCountStorage = {
         LIMIT 1
       `);
       if ((dupRaw as any).rows.length > 0) {
+        const dupNum = (dupRaw as any).rows[0].session_number;
         throw new Error(
-          `يوجد جرد مُرحَّل لنفس المستودع في تاريخ ${s.count_date}. ` +
+          `يوجد جرد مُرحَّل (#${dupNum}) لنفس المستودع في تاريخ ${s.count_date}. ` +
           `لا يمكن ترحيل جردين لنفس المستودع في يوم واحد.`
         );
       }
 
-      // ── 4+5. تسوية lots وتسجيل حركات ────────────────────────────────────
+      // ── 5. تسوية lots وتسجيل حركات ───────────────────────────────────────
       const lineRaw = await tx.execute(sql`
         SELECT l.*, i.name_ar AS item_name
         FROM stock_count_lines l
@@ -585,9 +653,9 @@ const stockCountStorage = {
       const diffLines = (lineRaw as any).rows as any[];
 
       for (const line of diffLines) {
-        const diff     = parseFloat(line.difference_minor);
-        const absDiff  = Math.abs(diff);
-        const isSurplus  = diff > 0;
+        const diff      = parseFloat(line.difference_minor);
+        const absDiff   = Math.abs(diff);
+        const isSurplus = diff > 0;
 
         if (line.lot_id) {
           // ── سطر له lot محدد → تسوية مباشرة ─────────────────────────────
@@ -607,73 +675,85 @@ const stockCountStorage = {
             referenceType:     "stock_count",
             referenceId:       sessionId,
           });
+
+        } else if (isSurplus) {
+          // ── فائض بدون lot → أضف للـ lot الأحدث استلاماً ────────────────
+          const latestLotRaw = await tx.execute(sql`
+            SELECT id FROM inventory_lots
+            WHERE item_id      = ${line.item_id}
+              AND warehouse_id = ${s.warehouse_id}
+              AND is_active    = TRUE
+            ORDER BY received_date DESC, created_at DESC
+            LIMIT 1
+            FOR UPDATE
+          `);
+          const targetLotId = (latestLotRaw as any).rows[0]?.id;
+          if (!targetLotId) {
+            throw new Error(
+              `لا يوجد lot نشط للصنف "${line.item_name}" في المستودع لإضافة الفائض إليه. ` +
+              `حدّد lot بشكل صريح عند إدخال سطر الجرد.`
+            );
+          }
+          await tx.execute(sql`
+            UPDATE inventory_lots
+            SET qty_in_minor = qty_in_minor + ${absDiff.toFixed(4)}::numeric,
+                updated_at   = NOW()
+            WHERE id = ${targetLotId}
+          `);
+          await tx.insert(inventoryLotMovements).values({
+            lotId:            targetLotId,
+            warehouseId:      s.warehouse_id,
+            txDate:           new Date(s.count_date),
+            txType:           "adj" as const,
+            qtyChangeInMinor: absDiff.toFixed(4),
+            unitCost:         line.unit_cost,
+            referenceType:    "stock_count",
+            referenceId:      sessionId,
+          });
+
         } else {
-          // ── سطر بدون lot → FEFO للنقص أو تسوية آخر lot للفائض ──────────
-          if (isSurplus) {
-            // أضف للـ lot الأحدث استلاماً في المستودع
-            const latestLotRaw = await tx.execute(sql`
-              SELECT id FROM inventory_lots
-              WHERE item_id     = ${line.item_id}
-                AND warehouse_id = ${s.warehouse_id}
-                AND is_active   = TRUE
-              ORDER BY received_date DESC, created_at DESC
-              LIMIT 1
+          // ── عجز بدون lot → FEFO: اخصم من أقدم lot أولاً ─────────────────
+          let remaining = absDiff;
+          const fefoLotsRaw = await tx.execute(sql`
+            SELECT id, qty_in_minor FROM inventory_lots
+            WHERE item_id      = ${line.item_id}
+              AND warehouse_id = ${s.warehouse_id}
+              AND is_active    = TRUE
+              AND qty_in_minor > 0
+            ORDER BY expiry_year  ASC NULLS FIRST,
+                     expiry_month ASC NULLS FIRST,
+                     received_date ASC
+            FOR UPDATE
+          `);
+          for (const lot of (fefoLotsRaw as any).rows as any[]) {
+            if (remaining <= 0.0001) break;
+            const available = parseFloat(lot.qty_in_minor);
+            const deduct    = Math.min(remaining, available);
+            await tx.execute(sql`
+              UPDATE inventory_lots
+              SET qty_in_minor = qty_in_minor - ${deduct.toFixed(4)}::numeric,
+                  updated_at   = NOW()
+              WHERE id = ${lot.id}
             `);
-            const targetLotId = (latestLotRaw as any).rows[0]?.id;
-            if (targetLotId) {
-              await tx.execute(sql`
-                UPDATE inventory_lots
-                SET qty_in_minor = qty_in_minor + ${absDiff.toFixed(4)}::numeric,
-                    updated_at   = NOW()
-                WHERE id = ${targetLotId}
-              `);
-              await tx.insert(inventoryLotMovements).values({
-                lotId:            targetLotId,
-                warehouseId:      s.warehouse_id,
-                txDate:           new Date(s.count_date),
-                txType:           "adj" as const,
-                qtyChangeInMinor: absDiff.toFixed(4),
-                unitCost:         line.unit_cost,
-                referenceType:    "stock_count",
-                referenceId:      sessionId,
-              });
-            }
-          } else {
-            // FEFO: احذف من أقدم lot أولاً
-            let remaining = absDiff;
-            const fefoLotsRaw = await tx.execute(sql`
-              SELECT id, qty_in_minor FROM inventory_lots
-              WHERE item_id     = ${line.item_id}
-                AND warehouse_id = ${s.warehouse_id}
-                AND is_active   = TRUE
-                AND qty_in_minor > 0
-              ORDER BY expiry_year ASC NULLS FIRST,
-                       expiry_month ASC NULLS FIRST,
-                       received_date ASC
-              FOR UPDATE
-            `);
-            for (const lot of (fefoLotsRaw as any).rows as any[]) {
-              if (remaining <= 0) break;
-              const available = parseFloat(lot.qty_in_minor);
-              const deduct    = Math.min(remaining, available);
-              await tx.execute(sql`
-                UPDATE inventory_lots
-                SET qty_in_minor = qty_in_minor - ${deduct.toFixed(4)}::numeric,
-                    updated_at   = NOW()
-                WHERE id = ${lot.id}
-              `);
-              await tx.insert(inventoryLotMovements).values({
-                lotId:            lot.id,
-                warehouseId:      s.warehouse_id,
-                txDate:           new Date(s.count_date),
-                txType:           "adj" as const,
-                qtyChangeInMinor: (-deduct).toFixed(4),
-                unitCost:         line.unit_cost,
-                referenceType:    "stock_count",
-                referenceId:      sessionId,
-              });
-              remaining -= deduct;
-            }
+            await tx.insert(inventoryLotMovements).values({
+              lotId:            lot.id,
+              warehouseId:      s.warehouse_id,
+              txDate:           new Date(s.count_date),
+              txType:           "adj" as const,
+              qtyChangeInMinor: (-deduct).toFixed(4),
+              unitCost:         line.unit_cost,
+              referenceType:    "stock_count",
+              referenceId:      sessionId,
+            });
+            remaining -= deduct;
+          }
+          // إذا تجاوز العجز الرصيد الفعلي: أوقف — حقن العجز المتبقي يُخرب الميزانية
+          if (remaining > 0.0001) {
+            throw new Error(
+              `الرصيد الفعلي للصنف "${line.item_name}" في المستودع أقل من العجز المُسجَّل ` +
+              `(متبقٍّ بدون تسوية: ${remaining.toFixed(4)}). ` +
+              `راجع سطور الجرد أو حدّد lot بشكل صريح.`
+            );
           }
         }
       }
@@ -682,7 +762,6 @@ const stockCountStorage = {
       let journalEntryId: string | null = null;
 
       if (whHasGL && hasDifferences && periodId) {
-        // حساب إجمالي الفوائض والعجز
         const totalsRaw = await tx.execute(sql`
           SELECT
             COALESCE(SUM(CASE WHEN difference_minor::numeric > 0 THEN ABS(difference_value::numeric) ELSE 0 END), 0) AS surplus_value,
@@ -690,8 +769,8 @@ const stockCountStorage = {
           FROM stock_count_lines
           WHERE session_id = ${sessionId}
         `);
-        const totals    = (totalsRaw as any).rows[0];
-        const surplusVal = parseFloat(totals.surplus_value);
+        const totals      = (totalsRaw as any).rows[0];
+        const surplusVal  = parseFloat(totals.surplus_value);
         const shortageVal = parseFloat(totals.shortage_value);
 
         if (surplusVal > 0 || shortageVal > 0) {
@@ -709,8 +788,8 @@ const stockCountStorage = {
             };
           }
 
-          const gainMapping  = mappings["stock_gain"];
-          const lossMapping  = mappings["stock_loss"];
+          const gainMapping = mappings["stock_gain"];
+          const lossMapping = mappings["stock_loss"];
 
           if (!gainMapping?.creditAccountId && surplusVal > 0) {
             throw new Error(
@@ -728,45 +807,27 @@ const stockCountStorage = {
           }
 
           // بناء سطور القيد
-          const jLines: any[] = [];
+          const jLines: { lineNumber: number; accountId: string; debit: string; credit: string; description: string }[] = [];
           let lineNum = 1;
 
           if (surplusVal > 0) {
-            jLines.push({
-              lineNumber:  lineNum++,
-              accountId:   s.wh_gl_account_id,
-              debit:       surplusVal.toFixed(2),
-              credit:      "0.00",
-              description: `فوائض جرد مخزن — جلسة #${s.session_number}`,
-            });
-            jLines.push({
-              lineNumber:  lineNum++,
-              accountId:   gainMapping!.creditAccountId,
-              debit:       "0.00",
-              credit:      surplusVal.toFixed(2),
-              description: `إيراد فوائض جرد — جلسة #${s.session_number}`,
-            });
+            jLines.push({ lineNumber: lineNum++, accountId: s.wh_gl_account_id,           debit: surplusVal.toFixed(2), credit: "0.00",                  description: `فوائض جرد مخزن — جلسة #${s.session_number}` });
+            jLines.push({ lineNumber: lineNum++, accountId: gainMapping!.creditAccountId!, debit: "0.00",                credit: surplusVal.toFixed(2),  description: `إيراد فوائض جرد — جلسة #${s.session_number}` });
           }
-
           if (shortageVal > 0) {
-            jLines.push({
-              lineNumber:  lineNum++,
-              accountId:   lossMapping!.debitAccountId,
-              debit:       shortageVal.toFixed(2),
-              credit:      "0.00",
-              description: `خسائر عجز جرد — جلسة #${s.session_number}`,
-            });
-            jLines.push({
-              lineNumber:  lineNum++,
-              accountId:   s.wh_gl_account_id,
-              debit:       "0.00",
-              credit:      shortageVal.toFixed(2),
-              description: `عجز مخزن — جلسة #${s.session_number}`,
-            });
+            jLines.push({ lineNumber: lineNum++, accountId: lossMapping!.debitAccountId!,  debit: shortageVal.toFixed(2), credit: "0.00",                 description: `خسائر عجز جرد — جلسة #${s.session_number}` });
+            jLines.push({ lineNumber: lineNum++, accountId: s.wh_gl_account_id,            debit: "0.00",                 credit: shortageVal.toFixed(2), description: `عجز مخزن — جلسة #${s.session_number}` });
           }
 
-          const totalDebit  = (surplusVal + shortageVal).toFixed(2);
-          const totalCredit = totalDebit;
+          // ── تحقق صريح من توازن القيد قبل الإدراج ──────────────────────
+          const totalDebit  = jLines.reduce((s, l) => s + parseFloat(l.debit),  0);
+          const totalCredit = jLines.reduce((s, l) => s + parseFloat(l.credit), 0);
+          if (Math.abs(totalDebit - totalCredit) > 0.005) {
+            throw new Error(
+              `القيد المحاسبي غير متوازن: مدين=${totalDebit.toFixed(2)} دائن=${totalCredit.toFixed(2)}. ` +
+              `يرجى مراجعة المنطق المحاسبي.`
+            );
+          }
 
           const entryNumber = await this.getNextEntryNumber();
           const [entry] = await tx.insert(journalEntries).values({
@@ -778,8 +839,8 @@ const stockCountStorage = {
             sourceType:       "stock_count",
             sourceDocumentId: sessionId,
             status:           "posted" as const,
-            totalDebit,
-            totalCredit,
+            totalDebit:       totalDebit.toFixed(2),
+            totalCredit:      totalCredit.toFixed(2),
           }).returning();
 
           await tx.insert(journalLines).values(
@@ -795,7 +856,10 @@ const stockCountStorage = {
           );
 
           journalEntryId = entry.id;
-          console.log(`[STOCK_COUNT] Journal posted: #${entryNumber}, surplus=${surplusVal}, shortage=${shortageVal}`);
+          logger.info(
+            { sessionId, sessionNumber: s.session_number, surplusVal, shortageVal, journalEntryId, entryNumber },
+            "[STOCK_COUNT] journal posted"
+          );
         }
       }
 
@@ -810,7 +874,10 @@ const stockCountStorage = {
         .where(eq(stockCountSessions.id, sessionId))
         .returning();
 
-      console.log(`[STOCK_COUNT] Session #${s.session_number} posted by ${userId}`);
+      logger.info(
+        { sessionId, sessionNumber: s.session_number, userId, journalEntryId, totalLines, diffLines: diffLines.length },
+        "[STOCK_COUNT] session posted"
+      );
       return updated;
     });
 

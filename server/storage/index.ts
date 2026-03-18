@@ -707,7 +707,7 @@ export interface IStorage {
   getStockCountSessions(opts: { warehouseId?: string; status?: string; page?: number; pageSize?: number }): Promise<{ sessions: any[]; total: number }>;
   getStockCountSessionWithLines(id: string): Promise<any | null>;
   updateStockCountHeader(id: string, data: { countDate?: string; notes?: string }): Promise<import("@shared/schema").StockCountSession>;
-  cancelStockCountSession(id: string): Promise<void>;
+  cancelStockCountSession(id: string, userId?: string): Promise<void>;
   upsertStockCountLines(sessionId: string, lines: import("./stock-count-storage").UpsertCountLine[]): Promise<import("@shared/schema").StockCountLine[]>;
   deleteStockCountLine(lineId: string): Promise<void>;
   deleteZeroLines(sessionId: string): Promise<number>;

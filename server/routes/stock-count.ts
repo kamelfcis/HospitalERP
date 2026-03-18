@@ -88,7 +88,7 @@ export function registerStockCountRoutes(app: Express) {
   // ── POST /api/stock-count/sessions/:id/cancel ─────────────────────────────
   app.post("/api/stock-count/sessions/:id/cancel", requireAuth, checkPermission(PERMISSIONS.STOCK_COUNT_CREATE), async (req, res) => {
     try {
-      await storage.cancelStockCountSession(req.params.id as string);
+      await storage.cancelStockCountSession(req.params.id as string, req.session.userId!);
       return res.json({ ok: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
