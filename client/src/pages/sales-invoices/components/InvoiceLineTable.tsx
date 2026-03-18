@@ -150,7 +150,14 @@ export function InvoiceLineTable({
                       data-testid={`select-unit-${i}`}
                     >
                       {getUnitOptions(ln.item).map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        <option
+                          key={opt.value}
+                          value={opt.value}
+                          disabled={!opt.priceable}
+                          title={!opt.priceable ? "معامل التحويل غير معرّف لهذه الوحدة — يجب إعداد الصنف أولاً" : undefined}
+                        >
+                          {opt.priceable ? opt.label : `${opt.label} (غير معرّف)`}
+                        </option>
                       ))}
                     </select>
                   ) : (

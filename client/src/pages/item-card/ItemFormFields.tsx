@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, Barcode, CalendarClock } from "lucide-react";
+import { Plus, Trash2, Barcode, CalendarClock, Lock } from "lucide-react";
 import { formatDateShort } from "@/lib/formatters";
 import type { InsertItem, ItemFormType, ItemBarcode, ItemUom } from "@shared/schema";
 import type { ItemWithFormType } from "./types";
@@ -31,6 +31,7 @@ interface ItemFormFieldsProps {
   isExpiryLocked: boolean;
   activeBarcodes: ItemBarcode[];
   itemId: string | null;
+  hasTransactions?: boolean;
   setShowFormTypeDialog: (v: boolean) => void;
   setShowUomDialog: (v: boolean) => void;
   setShowBarcodeDialog: (v: boolean) => void;
@@ -56,6 +57,7 @@ export default function ItemFormFields({
   isExpiryLocked,
   activeBarcodes,
   itemId,
+  hasTransactions = false,
   setShowFormTypeDialog,
   setShowUomDialog,
   setShowBarcodeDialog,
@@ -64,6 +66,7 @@ export default function ItemFormFields({
   onDeleteBarcode,
   deletingBarcode,
 }: ItemFormFieldsProps) {
+  const conversionLocked = !isNew && hasTransactions;
   const profitMargin = () => {
     const purchase = parseFloat(formData.purchasePriceLast || "0");
     const sale = parseFloat(formData.salePriceCurrent || "0");
@@ -371,7 +374,18 @@ export default function ItemFormFields({
 
       {!isService && (hasMediumUnit || hasMinorUnit) && (
         <fieldset className="peachtree-grid p-2 flex-shrink-0">
-          <legend className="text-[11px] font-semibold px-1 text-primary">معاملات التحويل</legend>
+          <legend className="text-[11px] font-semibold px-1 text-primary flex items-center gap-1">
+            معاملات التحويل
+            {conversionLocked && (
+              <span
+                className="inline-flex items-center gap-0.5 text-[9px] text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 rounded px-1 py-0.5 font-normal"
+                title="لا يمكن تعديل معاملات التحويل — يوجد حركات تاريخية على هذا الصنف (دفعات / مشتريات / مبيعات)"
+              >
+                <Lock className="h-2.5 w-2.5" />
+                مقفول — توجد حركات تاريخية
+              </span>
+            )}
+          </legend>
           <div className="grid grid-cols-4 gap-3 items-center">
             {hasMediumUnit && (
               <div>
@@ -381,7 +395,7 @@ export default function ItemFormFields({
                   step="0.0001"
                   value={formData.majorToMedium || ""}
                   onChange={(e) => setFormData({ ...formData, majorToMedium: e.target.value || null })}
-                  disabled={!isEditing}
+                  disabled={!isEditing || conversionLocked}
                   placeholder="3"
                   className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMedium ? "border-destructive" : ""}`}
                   dir="ltr"
@@ -398,7 +412,7 @@ export default function ItemFormFields({
                   step="0.0001"
                   value={formData.majorToMinor || ""}
                   onChange={(e) => setFormData({ ...formData, majorToMinor: e.target.value || null })}
-                  disabled={!isEditing}
+                  disabled={!isEditing || conversionLocked}
                   placeholder="30"
                   className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMinor ? "border-destructive" : ""}`}
                   dir="ltr"
@@ -415,7 +429,7 @@ export default function ItemFormFields({
                   step="0.0001"
                   value={formData.majorToMinor || ""}
                   onChange={(e) => setFormData({ ...formData, majorToMinor: e.target.value || null })}
-                  disabled={!isEditing}
+                  disabled={!isEditing || conversionLocked}
                   placeholder="10"
                   className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMinor ? "border-destructive" : ""}`}
                   dir="ltr"
@@ -432,7 +446,7 @@ export default function ItemFormFields({
                   step="0.0001"
                   value={formData.mediumToMinor || ""}
                   onChange={(e) => setFormData({ ...formData, mediumToMinor: e.target.value || null })}
-                  disabled={!isEditing}
+                  disabled={!isEditing || conversionLocked}
                   placeholder="10"
                   className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.mediumToMinor ? "border-destructive" : ""}`}
                   dir="ltr"

@@ -1,7 +1,10 @@
 import { Express } from "express";
 import { z } from "zod";
+import { sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
+import { auditLog } from "../route-helpers";
+import { db } from "../db";
 import {
   insertItemSchema,
   insertItemFormTypeSchema,
@@ -149,7 +152,17 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
       if (!item) {
         return res.status(404).json({ message: "الصنف غير موجود" });
       }
-      res.json(item);
+      const txResult = await db.execute(sql`
+        SELECT EXISTS (
+          SELECT 1 FROM inventory_lots       WHERE item_id = ${req.params.id}
+          UNION ALL
+          SELECT 1 FROM purchase_transactions WHERE item_id = ${req.params.id}
+          UNION ALL
+          SELECT 1 FROM sales_transactions    WHERE item_id = ${req.params.id}
+        ) AS has_transactions
+      `);
+      const txRow = (txResult as any).rows?.[0];
+      res.json({ ...item, hasTransactions: txRow?.has_transactions === true || txRow?.has_transactions === "true" });
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
@@ -236,10 +249,94 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
 
   app.put("/api/items/:id", requireAuth, checkPermission(PERMISSIONS.ITEMS_EDIT), async (req, res) => {
     try {
+      const itemId = req.params.id as string;
       const parsed = insertItemSchema.partial().parse(req.body);
 
+      // ── جلب الصنف الحالي ─────────────────────────────────────────────────
+      const currentItem = await storage.getItem(itemId);
+      if (!currentItem) return res.status(404).json({ message: "الصنف غير موجود" });
+
+      // ── حماية معاملات التحويل: منع التعديل إذا وُجدت حركات تاريخية ─────
+      const conversionFields = ["majorToMinor", "majorToMedium", "mediumToMinor"] as const;
+      const conversionChanged = conversionFields.some((f) => {
+        if (!(f in parsed)) return false;
+        const requested = parsed[f] != null ? String(parsed[f]).trim() : null;
+        const current   = currentItem[f]   != null ? String(currentItem[f]).trim()   : null;
+        return requested !== current;
+      });
+
+      if (conversionChanged) {
+        const countsResult = await db.execute(sql`
+          SELECT
+            (SELECT COUNT(*)::int FROM inventory_lots        WHERE item_id = ${itemId}) AS lot_count,
+            (SELECT COUNT(*)::int FROM purchase_transactions  WHERE item_id = ${itemId}) AS purchase_count,
+            (SELECT COUNT(*)::int FROM sales_transactions     WHERE item_id = ${itemId}) AS sales_count
+        `);
+        const counts = (countsResult as any).rows?.[0];
+
+        const lotCount      = parseInt(String(counts?.lot_count      ?? "0"), 10);
+        const purchaseCount = parseInt(String(counts?.purchase_count ?? "0"), 10);
+        const salesCount    = parseInt(String(counts?.sales_count    ?? "0"), 10);
+        const total = lotCount + purchaseCount + salesCount;
+
+        if (total > 0) {
+          await auditLog({
+            tableName: "items",
+            recordId: itemId,
+            action: "CONVERSION_EDIT_BLOCKED",
+            oldValues: {
+              majorToMinor:  currentItem.majorToMinor,
+              majorToMedium: currentItem.majorToMedium,
+              mediumToMinor: currentItem.mediumToMinor,
+            },
+            newValues: {
+              majorToMinor:  parsed.majorToMinor,
+              majorToMedium: parsed.majorToMedium,
+              mediumToMinor: parsed.mediumToMinor,
+              lotCount, purchaseCount, salesCount,
+            },
+            userId: (req as any).session?.userId,
+          });
+          return res.status(409).json({
+            message: `لا يمكن تعديل معاملات التحويل — يوجد ${lotCount} دفعة، ${purchaseCount} حركة شراء، ${salesCount} حركة بيع على هذا الصنف`,
+          });
+        }
+      }
+
+      // ── Validation صارم: المعاملات مقابل الوحدات المعرّفة ────────────────
+      // نجمع الوحدات الفعلية (من الطلب إن وُجدت، وإلا من الصنف الحالي)
+      const effectiveMediumName = parsed.mediumUnitName !== undefined
+        ? parsed.mediumUnitName : currentItem.mediumUnitName;
+      const effectiveMinorName  = parsed.minorUnitName  !== undefined
+        ? parsed.minorUnitName  : currentItem.minorUnitName;
+      const effectiveMajorToMedium = parsed.majorToMedium !== undefined
+        ? parsed.majorToMedium : currentItem.majorToMedium;
+      const effectiveMajorToMinor  = parsed.majorToMinor  !== undefined
+        ? parsed.majorToMinor  : currentItem.majorToMinor;
+      const effectiveMediumToMinor = parsed.mediumToMinor !== undefined
+        ? parsed.mediumToMinor : currentItem.mediumToMinor;
+
+      const isService = (parsed.category ?? currentItem.category) === "service";
+      if (!isService) {
+        const convErrors: string[] = [];
+        if (effectiveMediumName?.trim()) {
+          const v = parseFloat(String(effectiveMajorToMedium ?? "0"));
+          if (!(v > 0)) convErrors.push(`الوحدة المتوسطة "${effectiveMediumName}" محددة — يجب إدخال معامل التحويل (كبرى ← متوسطة) بقيمة أكبر من صفر`);
+        }
+        if (effectiveMinorName?.trim()) {
+          const v = parseFloat(String(effectiveMajorToMinor ?? "0"));
+          if (!(v > 0)) convErrors.push(`الوحدة الصغرى "${effectiveMinorName}" محددة — يجب إدخال معامل التحويل (كبرى ← صغرى) بقيمة أكبر من صفر`);
+          if (effectiveMediumName?.trim()) {
+            const v2 = parseFloat(String(effectiveMediumToMinor ?? "0"));
+            if (!(v2 > 0)) convErrors.push(`الوحدتان المتوسطة والصغرى محددتان — يجب إدخال معامل التحويل (متوسطة ← صغرى) بقيمة أكبر من صفر`);
+          }
+        }
+        if (convErrors.length > 0) return res.status(400).json({ message: convErrors.join("، ") });
+      }
+
+      // ── تنظيف القيم قبل الحفظ ────────────────────────────────────────────
       if (parsed.itemCode || parsed.nameAr || parsed.nameEn) {
-        const uniqueness = await storage.checkItemUniqueness(parsed.itemCode ?? undefined, parsed.nameAr ?? undefined, parsed.nameEn ?? undefined, req.params.id as string);
+        const uniqueness = await storage.checkItemUniqueness(parsed.itemCode ?? undefined, parsed.nameAr ?? undefined, parsed.nameEn ?? undefined, itemId);
         const uniqueErrors: string[] = [];
         if (parsed.itemCode && !uniqueness.codeUnique) uniqueErrors.push("كود الصنف مسجل بالفعل");
         if (parsed.nameAr && !uniqueness.nameArUnique) uniqueErrors.push("الاسم العربي مسجل بالفعل");
@@ -259,7 +356,7 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
         parsed.mediumToMinor = null;
       }
 
-      const item = await storage.updateItem(req.params.id as string, parsed);
+      const item = await storage.updateItem(itemId, parsed);
       if (!item) return res.status(404).json({ message: "الصنف غير موجود" });
       res.json(item);
     } catch (error: unknown) {

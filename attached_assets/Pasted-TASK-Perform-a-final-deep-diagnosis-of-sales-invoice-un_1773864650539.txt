@@ -1,0 +1,206 @@
+TASK: Perform a final deep diagnosis of sales invoice unit-change pricing behavior, explain exactly why some items update price on unit change and others do not, then propose the treatment plan, including unit conversion integrity rules
+
+Context:
+This is a core financial and inventory integrity issue.
+
+In sales invoices:
+- Some items (example: Adolor) do NOT change price when the sales unit is changed
+- Other items DO change price correctly
+
+Additionally:
+There is a critical control requirement:
+If an item has any historical transactions (sales, purchases, stock movements), its unit conversion setup MUST NOT be editable in a way that changes conversion rates.
+
+Example:
+If an item is defined as:
+1 box = 2 strips
+and transactions already exist,
+it must NOT be allowed to change it to:
+1 box = 3 strips
+
+This would break:
+- cost of goods sold (COGS)
+- stock valuation
+- historical pricing consistency
+
+Important:
+Do NOT jump into random fixes.
+First explain exactly what is happening, item by item, path by path.
+I want a root-cause analysis with evidence, then a minimal safe treatment plan.
+
+Main goals:
+1. Trace the exact pricing flow when a user changes item unit in a sales invoice line
+2. Explain why some items update price correctly and some do not
+3. Identify whether the issue is caused by:
+   - item master data
+   - item stock units configuration
+   - conversion rate setup
+   - ItemsPrice / ItemsPriceBySellUnit / price list logic
+   - invoice line state handling
+   - stale form state
+   - autosave side effects
+   - fallback pricing logic
+   - async race conditions
+   - unit-change handler inconsistency
+4. Enforce unit conversion integrity rules for items with existing transactions
+
+--------------------------------------------------
+A) Pricing sources and data model
+--------------------------------------------------
+- Identify every possible source that can determine line sell price when item/unit changes
+- Inspect all relevant tables / APIs / storage / frontend mappings, including:
+  - item master sell price
+  - price by sell unit
+  - conversion rate
+  - stock unit setup
+  - any invoice-time price snapshot
+  - backend pricing resolver if exists
+
+- List the CURRENT priority order used by the system to determine price
+
+--------------------------------------------------
+B) Unit-change execution path
+--------------------------------------------------
+Trace:
+user changes unit → handler → state update → price recalculation (or not)
+
+Explain:
+- which function/hook/component is responsible
+- whether recalculation is:
+  - always triggered
+  - conditionally skipped
+  - overwritten later
+
+--------------------------------------------------
+C) Real comparison (MANDATORY)
+--------------------------------------------------
+Use:
+1) failing item (example: Adolor)
+2) working item
+
+Compare:
+- item master
+- stock units
+- conversion rates
+- price-by-unit records
+- backend payload
+- frontend line state before/after change
+- selected price source
+
+Explain EXACTLY why behavior differs
+
+--------------------------------------------------
+D) Root cause classification
+--------------------------------------------------
+Classify clearly:
+- data issue (missing price-by-unit, wrong setup)
+- code issue (handler not updating price)
+- mixed issue
+
+Examples to check:
+- fallback keeps old price
+- conversion applied but price not recalculated
+- UI overwrites recalculated price
+- manual vs auto price conflict
+
+--------------------------------------------------
+E) Manual vs automatic pricing rules
+--------------------------------------------------
+Check:
+- هل النظام بيفرق بين:
+  - سعر تلقائي
+  - سعر تم تعديله يدويًا
+
+- هل تغيير الوحدة:
+  - يجب أن يعيد حساب السعر دائمًا؟
+  - أم فقط لو السعر لم يتم تعديله يدويًا؟
+
+- لو لا يوجد rule واضح → اعتبرها مشكلة تصميم
+
+--------------------------------------------------
+F) Invoice state integrity
+--------------------------------------------------
+- تحقق أن autosave أو refetch لا يعيد overwrite للسعر بعد تغييره
+- تأكد أن مشكلة flicker/reset السابقة لا تزال تؤثر أو تم حلها
+- افصل بين:
+  - مشاكل التسعير
+  - مشاكل إعادة تحميل الشاشة
+
+--------------------------------------------------
+G) CRITICAL — Unit conversion integrity control
+--------------------------------------------------
+Implement and verify strict rule:
+
+IF item has ANY transactions (sales, purchase, stock movement):
+THEN unit conversion MUST NOT be editable in a way that changes conversion ratios
+
+Tasks:
+1. Identify where unit conversion is defined (tables / APIs)
+2. Check if system currently allows editing conversion rates after transactions
+3. If allowed → this is a CRITICAL BUG
+
+Required fix:
+- Prevent editing conversion rate if transactions exist
+OR
+- Version the unit definition instead of modifying it (advanced option)
+
+Validation:
+- Attempt to modify conversion rate for item with transactions → must be blocked
+- Attempt to modify for item without transactions → allowed
+
+Explain impact:
+- on stock
+- on COGS
+- on historical pricing
+
+--------------------------------------------------
+Required output format:
+--------------------------------------------------
+
+1) Current pricing behavior on unit change
+- step-by-step flow
+- functions/files involved
+
+2) Source-of-truth matrix
+- all price sources
+- priority order
+
+3) Real comparison
+- failing item (Adolor)
+- working item
+For each:
+- units
+- conversion
+- prices
+- expected vs actual
+- reason
+
+4) Root cause classification
+- primary cause
+- secondary causes
+- data / code / mixed
+
+5) Unit conversion integrity status
+- is system safe or not
+- where it can break
+- required fix
+
+6) Treatment plan
+- exact files/functions to change
+- minimal safe fix
+- additional hardening
+
+7) Validation scenarios
+- unit change
+- multiple units
+- manual price
+- autosave
+- existing vs new invoice
+- conversion edit attempt after transactions
+
+Important constraints:
+- This is a financial-critical flow
+- No guessing
+- No broad refactoring without justification
+- Separate clearly between data issues and code issues
+- Explicitly explain why Adolor behaves differently

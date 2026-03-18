@@ -39,12 +39,37 @@ export function getUnitName(item: ItemLike | null | undefined, unitLevel: string
   return item?.minorUnitName || "وحدة صغرى";
 }
 
-export function getUnitOptions(item: ItemLike | null | undefined): { value: string; label: string }[] {
-  const opts: { value: string; label: string }[] = [];
-  if (item?.majorUnitName)  opts.push({ value: "major",  label: item.majorUnitName });
-  if (item?.mediumUnitName) opts.push({ value: "medium", label: item.mediumUnitName });
-  if (item?.minorUnitName)  opts.push({ value: "minor",  label: item.minorUnitName });
-  if (opts.length === 0)    opts.push({ value: "major",  label: "وحدة" });
+export interface UnitOption {
+  value: string;
+  label: string;
+  /** صريح: هل يملك الصنف معامل التحويل اللازم لحساب السعر لهذه الوحدة؟ */
+  priceable: boolean;
+}
+
+/**
+ * فحص صريح لقابلية التسعير بناءً على وجود معاملات التحويل.
+ * لا يعتمد على مقارنة السعر — يقرأ المعاملات مباشرةً.
+ */
+export function isUnitPriceable(unitLevel: string, item: ItemLike | null | undefined): boolean {
+  if (unitLevel === "major" || !unitLevel) return true;
+  const m2med = parseFloat(String(item?.majorToMedium ?? "0")) || 0;
+  const m2min = parseFloat(String(item?.majorToMinor  ?? "0")) || 0;
+  const med2m = parseFloat(String(item?.mediumToMinor ?? "0")) || 0;
+  if (unitLevel === "medium") return m2med > 0;
+  if (unitLevel === "minor")  return m2min > 0 || (m2med > 0 && med2m > 0);
+  return true;
+}
+
+export function getUnitOptions(item: ItemLike | null | undefined): UnitOption[] {
+  const m2med = parseFloat(String(item?.majorToMedium ?? "0")) || 0;
+  const m2min = parseFloat(String(item?.majorToMinor  ?? "0")) || 0;
+  const med2m = parseFloat(String(item?.mediumToMinor ?? "0")) || 0;
+
+  const opts: UnitOption[] = [];
+  if (item?.majorUnitName)  opts.push({ value: "major",  label: item.majorUnitName,  priceable: true });
+  if (item?.mediumUnitName) opts.push({ value: "medium", label: item.mediumUnitName, priceable: m2med > 0 });
+  if (item?.minorUnitName)  opts.push({ value: "minor",  label: item.minorUnitName,  priceable: m2min > 0 || (m2med > 0 && med2m > 0) });
+  if (opts.length === 0)    opts.push({ value: "major",  label: "وحدة",              priceable: true });
   return opts;
 }
 

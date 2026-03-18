@@ -3,7 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { db, pool } from "../db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import {
   requireAuth,
@@ -178,6 +178,60 @@ export function registerSalesInvoicesRoutes(app: Express) {
       if (existing.status !== "draft") return res.status(409).json({ message: "الفاتورة ليست مسودة", code: "ALREADY_FINALIZED" });
 
       await storage.assertPeriodOpen(existing.invoiceDate);
+
+      // ── فحص قابلية التسعير لكل سطر قبل الاعتماد ─────────────────────────
+      {
+        type LineWithItem = {
+          unit_level: string;
+          name_ar: string;
+          major_unit_name: string | null;
+          medium_unit_name: string | null;
+          minor_unit_name: string | null;
+          major_to_medium: string | null;
+          major_to_minor: string | null;
+          medium_to_minor: string | null;
+        };
+        const linesResult = await db.execute(sql`
+          SELECT
+            sil.unit_level,
+            i.name_ar,
+            i.major_unit_name,
+            i.medium_unit_name,
+            i.minor_unit_name,
+            i.major_to_medium,
+            i.major_to_minor,
+            i.medium_to_minor
+          FROM sales_invoice_lines sil
+          JOIN items i ON i.id = sil.item_id
+          WHERE sil.invoice_id = ${req.params.id}
+        `);
+        const linesWithItems = (linesResult as any).rows as LineWithItem[];
+
+        for (const ln of linesWithItems) {
+          const m2med = parseFloat(String(ln.major_to_medium ?? "0")) || 0;
+          const m2min = parseFloat(String(ln.major_to_minor  ?? "0")) || 0;
+          const med2m = parseFloat(String(ln.medium_to_minor ?? "0")) || 0;
+
+          let priceable = true;
+          let unitDisplayName = ln.unit_level;
+          if (ln.unit_level === "medium") {
+            priceable = m2med > 0;
+            unitDisplayName = ln.medium_unit_name || "متوسطة";
+          } else if (ln.unit_level === "minor") {
+            priceable = m2min > 0 || (m2med > 0 && med2m > 0);
+            unitDisplayName = ln.minor_unit_name || "صغرى";
+          } else {
+            unitDisplayName = ln.major_unit_name || "كبرى";
+          }
+
+          if (!priceable) {
+            return res.status(400).json({
+              message: `الصنف "${ln.name_ar}" بوحدة "${unitDisplayName}": معامل التحويل غير معرّف — لا يمكن اعتماد الفاتورة`,
+              code: "UNIT_CONVERSION_MISSING",
+            });
+          }
+        }
+      }
 
       const readiness = await storage.checkJournalReadiness(req.params.id as string);
       if (!readiness.ready) {

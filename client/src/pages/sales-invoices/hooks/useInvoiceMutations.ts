@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getUnitOptions } from "@/lib/invoice-lines";
 import type { SalesLineLocal } from "../types";
 
 interface MutationParams {
@@ -89,6 +90,19 @@ export function useInvoiceMutations(p: MutationParams) {
 
   const finalizeMutation = useMutation({
     mutationFn: async () => {
+      // ── فحص أمامي: منع الاعتماد إذا كانت أي وحدة غير قابلة للتسعير ──
+      for (const ln of p.lines) {
+        const opts = getUnitOptions(ln.item);
+        const chosen = opts.find((o) => o.value === ln.unitLevel);
+        if (chosen && !chosen.priceable) {
+          const unitName = chosen.label;
+          const itemName = ln.item?.nameAr || ln.itemId;
+          throw new Error(
+            `الصنف "${itemName}" بوحدة "${unitName}": معامل التحويل غير معرّف — يجب إعداد الصنف قبل الاعتماد`
+          );
+        }
+      }
+
       if (p.isNew) {
         const saveRes = await saveMutation.mutateAsync();
         const id = saveRes?.id || p.editId;

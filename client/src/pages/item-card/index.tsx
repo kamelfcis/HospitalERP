@@ -170,6 +170,7 @@ export default function ItemCard() {
               isExpiryLocked={isExpiryLocked}
               activeBarcodes={activeBarcodes}
               itemId={itemId}
+              hasTransactions={(item as any)?.hasTransactions === true}
               setShowFormTypeDialog={setShowFormTypeDialog}
               setShowUomDialog={setShowUomDialog}
               setShowBarcodeDialog={setShowBarcodeDialog}
