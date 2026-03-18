@@ -117,6 +117,9 @@ import {
   type InsertAccountMapping,
   type RolePermission,
   type UserPermission,
+  type PermissionGroup,
+  type GroupPermission,
+  type InsertPermissionGroup,
   type StockMovementHeader,
   type StockMovementAllocation,
   type StaySegment,
@@ -191,6 +194,15 @@ export interface IStorage {
   setRolePermissions(role: string, permissions: string[]): Promise<void>;
   getUserPermissions(userId: string): Promise<UserPermission[]>;
   setUserPermissions(userId: string, permissions: { permission: string; granted: boolean }[]): Promise<void>;
+
+  // Permission Groups
+  getPermissionGroups(): Promise<import("./permission-groups-storage").PermissionGroupWithStats[]>;
+  getPermissionGroup(id: string): Promise<import("./permission-groups-storage").PermissionGroupDetail | null>;
+  createPermissionGroup(data: { name: string; description?: string; sortOrder?: number }): Promise<PermissionGroup>;
+  updatePermissionGroup(id: string, data: { name?: string; description?: string }): Promise<PermissionGroup>;
+  deletePermissionGroup(id: string): Promise<void>;
+  setGroupPermissions(groupId: string, permissions: string[]): Promise<void>;
+  assignUserToGroup(userId: string, groupId: string | null): Promise<void>;
   
   // Accounts
   getAccounts(): Promise<Account[]>;
@@ -750,10 +762,12 @@ import treasuriesMethods from "./treasuries-storage";
 import { clinicMasterMethods, clinicOrdersMethods } from "./clinic-storage";
 import rptRefreshMethods from "./rpt-refresh-storage";
 import stockCountMethods from "./stock-count-storage";
+import permissionGroupsMethods from "./permission-groups-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
   usersMethods,
+  permissionGroupsMethods,
   financeAccountsMethods,
   financeReportsMethods,
   financeJournalMethods,

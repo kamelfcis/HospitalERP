@@ -19,6 +19,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
+import { seedPermissionGroups } from "./lib/permission-groups-seed";
 import { perfRequestMiddleware, registerMonitoringRoutes, requestContextStore } from "./monitoring";
 import { loadSettings } from "./settings-cache";
 import { storage } from "./storage";
@@ -254,6 +255,13 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     } catch (error) {
       logger.warn({ err: error instanceof Error ? error.message : String(error) }, "[STARTUP] seed notice");
     }
+  }
+
+  // ── 5b-2. Permission Groups seed (idempotent — skips if already seeded) ──
+  try {
+    await seedPermissionGroups();
+  } catch (error) {
+    logger.warn({ err: error instanceof Error ? error.message : String(error) }, "[STARTUP] permission groups seed warning");
   }
 
   // ── 5c. System settings ───────────────────────────────────────────────────

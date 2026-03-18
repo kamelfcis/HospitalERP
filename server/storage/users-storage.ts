@@ -3,13 +3,16 @@
  *  Users & RBAC Storage — طبقة تخزين المستخدمين والصلاحيات
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- *  This module contains all database operations related to users, roles,
- *  permissions (RBAC), user-department/warehouse assignments, cashier scope,
- *  and chat user queries.
+ *  ترتيب حل الصلاحيات (Permission Resolution Order):
+ *  ──────────────────────────────────────────────────
+ *  1. group_permissions  (المجموعة المُعيَّنة للمستخدم — المصدر الأساسي)
+ *  2. user_permissions   (overrides فردية — منح أو سحب)
+ *  3. role_permissions   (fallback للمستخدمين بدون مجموعة — backward compat)
  *
- *  يحتوي هذا الملف على جميع عمليات قاعدة البيانات المتعلقة بالمستخدمين،
- *  الأدوار، الصلاحيات، ربط المستخدمين بالأقسام/المخازن، نطاق الكاشير،
- *  واستعلامات مستخدمي المحادثة.
+ *  القاعدة:
+ *   - إذا كان للمستخدم permission_group_id → استخدم group_permissions
+ *   - إذا لم يكن → fallback إلى role_permissions حسب users.role
+ *   - في الحالتين: طبِّق user_permissions overrides فوقها
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -19,6 +22,7 @@ import {
   users,
   rolePermissions,
   userPermissions,
+  groupPermissions,
   userDepartments,
   userWarehouses,
   userClinics,
@@ -36,16 +40,15 @@ import type {
 import type { DatabaseStorage } from "./index";
 
 // ── Permission Cache ──────────────────────────────────────────────────────────
-// تخزين مؤقت لصلاحيات المستخدمين لتقليل استعلامات قاعدة البيانات
-// TTL: 60 ثانية — يُلغى عند تعديل صلاحيات أي دور أو مستخدم
+// TTL: 60 ثانية — يُلغى عند تعديل أي مجموعة أو صلاحيات مستخدم
 const _permCache = new Map<string, { perms: string[]; expiresAt: number }>();
 const PERM_CACHE_TTL_MS = 60_000;
 
-function clearPermissionCacheForUser(userId: string): void {
+export function clearPermissionCacheForUser(userId: string): void {
   _permCache.delete(userId);
 }
 
-function clearAllPermissionCache(): void {
+export function clearAllPermissionCache(): void {
   _permCache.clear();
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,6 +71,7 @@ const methods = {
 
   async updateUser(this: DatabaseStorage, id: string, data: Partial<InsertUser>): Promise<User | undefined> {
     const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    if (user) clearPermissionCacheForUser(id);
     return user;
   },
 
@@ -80,6 +84,11 @@ const methods = {
     return db.select().from(users).orderBy(desc(users.createdAt));
   },
 
+  // ── Permission Resolution ──────────────────────────────────────────────────
+  // الترتيب الصارم:
+  //  1. إذا permission_group_id مضبوط → اقرأ group_permissions
+  //  2. وإلا                          → اقرأ role_permissions (fallback)
+  //  3. طبِّق user_permissions overrides (grant/revoke) فوق الخطوة 1 أو 2
   async getUserEffectivePermissions(this: DatabaseStorage, userId: string): Promise<string[]> {
     const cached = _permCache.get(userId);
     if (cached && cached.expiresAt > Date.now()) return cached.perms;
@@ -87,21 +96,37 @@ const methods = {
     const user = await this.getUser(userId);
     if (!user) return [];
 
-    // استخدام raw SQL لتجنب مشكلة pgEnum cast مع أدوار غير معرّفة في الـ Drizzle schema
-    const rolPermsRaw = await db.execute(sql`SELECT permission FROM role_permissions WHERE role = ${user.role}`);
-    const rolePermSet = new Set((rolPermsRaw.rows as { permission: string }[]).map(r => r.permission));
+    let basePermSet: Set<string>;
 
+    if (user.permissionGroupId) {
+      // ── المسار الأساسي: قرأ من group_permissions ──────────────────────────
+      const groupPermsRaw = await db.execute(sql`
+        SELECT permission FROM group_permissions WHERE group_id = ${user.permissionGroupId}
+      `);
+      basePermSet = new Set(
+        (groupPermsRaw.rows as { permission: string }[]).map(r => r.permission)
+      );
+    } else {
+      // ── Fallback: role_permissions للمستخدمين بدون مجموعة ─────────────────
+      const rolePermsRaw = await db.execute(sql`
+        SELECT permission FROM role_permissions WHERE role = ${user.role}
+      `);
+      basePermSet = new Set(
+        (rolePermsRaw.rows as { permission: string }[]).map(r => r.permission)
+      );
+    }
+
+    // ── user_permissions overrides (grant / revoke) ────────────────────────
     const userPerms = await db.select().from(userPermissions).where(eq(userPermissions.userId, userId));
-
     for (const up of userPerms) {
       if (up.granted) {
-        rolePermSet.add(up.permission);
+        basePermSet.add(up.permission);
       } else {
-        rolePermSet.delete(up.permission);
+        basePermSet.delete(up.permission);
       }
     }
 
-    const perms = Array.from(rolePermSet);
+    const perms = Array.from(basePermSet);
     _permCache.set(userId, { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS });
     return perms;
   },
@@ -121,7 +146,6 @@ const methods = {
         );
       }
     });
-    // تعديل دور يؤثر على جميع المستخدمين بهذا الدور — امسح الـ cache كله
     clearAllPermissionCache();
   },
 
@@ -138,7 +162,6 @@ const methods = {
         );
       }
     });
-    // تعديل صلاحيات مستخدم بعينه — امسح cache هذا المستخدم فقط
     clearPermissionCacheForUser(userId);
   },
 
