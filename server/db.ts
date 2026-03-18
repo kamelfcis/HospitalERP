@@ -33,14 +33,24 @@ export const pool = new Pool({
 // يُلغي تلقائياً أي استعلام يتجاوز 30 ثانية على مستوى قاعدة البيانات.
 // المسارات الثقيلة تُجاوزه داخل transaction:  SET LOCAL statement_timeout = '0'
 pool.on("connect", (client) => {
-  client.query("SET statement_timeout = '30s'").catch(() => {
-    // نتجاهل الخطأ هنا — الـ pool error handler يلتقطه
+  client.query("SET statement_timeout = '30s'").catch((err: Error) => {
+    // فشل SET statement_timeout — نسجِّله بدل البلع الصامت
+    import("./lib/logger").then(({ logger }) => {
+      logger.warn({ err: err.message }, "[DB_POOL] failed to set statement_timeout on new connection");
+    }).catch(() => {
+      process.stderr.write(`[DB_POOL] failed to set statement_timeout: ${err.message}\n`);
+    });
   });
 });
 
 pool.on("error", (err) => {
-  // تسجيل أخطاء pool غير المتوقعة دون إيقاف العملية
-  console.error("[DB_POOL] unexpected error:", err.message);
+  // أخطاء pool غير المتوقعة لا توقف العملية — تُسجَّل فقط
+  // نستورد logger بشكل آمن لتجنب circular imports
+  import("./lib/logger").then(({ logger }) => {
+    logger.error({ err: err.message }, "[DB_POOL] unexpected pool error");
+  }).catch(() => {
+    process.stderr.write(`[DB_POOL] unexpected pool error: ${err.message}\n`);
+  });
 });
 
 // ── تعديل query لرصد الأداء ────────────────────────────────────────────────

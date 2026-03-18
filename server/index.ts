@@ -198,25 +198,28 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
   logger.info({ signal }, "[SHUTDOWN] received signal — starting graceful shutdown");
 
-  // Stop accepting new connections; /health now returns 503
-  httpServer.close((err) => {
-    if (err) {
-      logger.error({ err: err.message }, "[SHUTDOWN] error closing HTTP server");
-    } else {
-      logger.info("[SHUTDOWN] HTTP server closed");
-    }
+  // Phase 1: Stop accepting new connections (/health now returns 503).
+  // Wait for in-flight requests to finish BEFORE closing the DB pool.
+  // A race between pool.end() and active DB queries is the critical bug this fixes.
+  const DRAIN_TIMEOUT_MS = SHUTDOWN_TIMEOUT_MS - 1_000; // 9s drain, 1s for pool close
+  await new Promise<void>((resolve) => {
+    const drainTimer = setTimeout(() => {
+      logger.warn("[SHUTDOWN] drain timeout — proceeding to pool close with active connections");
+      resolve();
+    }, DRAIN_TIMEOUT_MS);
+
+    httpServer.close((err) => {
+      clearTimeout(drainTimer);
+      if (err) {
+        logger.error({ err: err.message }, "[SHUTDOWN] error closing HTTP server");
+      } else {
+        logger.info("[SHUTDOWN] HTTP server drained — all in-flight requests complete");
+      }
+      resolve();
+    });
   });
 
-  // Allow in-flight requests to finish (up to SHUTDOWN_TIMEOUT_MS)
-  const forceTimer = setTimeout(async () => {
-    logger.warn("[SHUTDOWN] timeout exceeded — forcing exit");
-    await pool.end().catch(() => {});
-    process.exit(1);
-  }, SHUTDOWN_TIMEOUT_MS);
-
-  forceTimer.unref();
-
-  // Close DB pool cleanly
+  // Phase 2: Now it is safe to close the DB pool — no active requests remain.
   try {
     await pool.end();
     logger.info("[SHUTDOWN] DB pool closed");
@@ -224,7 +227,6 @@ async function gracefulShutdown(signal: string): Promise<void> {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[SHUTDOWN] error closing DB pool");
   }
 
-  clearTimeout(forceTimer);
   logger.info("[SHUTDOWN] graceful shutdown complete");
   process.exit(0);
 }

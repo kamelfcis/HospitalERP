@@ -1,0 +1,160 @@
+🔍 POST-IMPLEMENTATION VERIFICATION & HARDENING
+
+The Server Infrastructure Hardening implementation is complete.
+Perform a strict verification and apply fixes ONLY if gaps are found.
+
+🎯 Objective
+
+Validate correctness, safety, and production-readiness of the implementation without altering architecture.
+
+✅ REQUIRED CHECKS
+1. Health Endpoint Placement
+
+Verify that:
+
+GET /health is registered before any auth/session middleware
+
+It is fully unauthenticated
+
+It executes a real DB check (SELECT 1)
+
+It returns:
+
+{ "status": "ok", "db": "ok", "uptime": N, "version": "..." }
+
+During shutdown, it returns HTTP 503
+
+Fix if any condition is not satisfied.
+
+2. DB Pool Timeout Enforcement
+
+Verify that:
+
+statement_timeout = 30s is applied to every new connection
+
+Implementation uses:
+
+pool.on('connect', ...)
+
+Not only applied once at startup
+
+Fix if missing or incorrectly scoped.
+
+3. Sensitive Data Redaction (Deep)
+
+Verify redaction logic:
+
+Must handle:
+
+nested objects
+
+arrays
+
+headers
+
+request/response payloads
+
+Must redact:
+
+password, secret, token, cookie, authorization, session
+
+patient-sensitive fields (national_id, phone, etc.)
+
+Ensure:
+
+both key-based AND pattern-based redaction
+
+no sensitive data appears in logs
+
+Fix gaps if found.
+
+4. Request Correlation ID Propagation
+
+Verify:
+
+every request generates requestId
+
+X-Request-ID header is:
+
+returned in response
+
+accessible in logs
+
+propagated via AsyncLocalStorage
+
+included in DB and system logs
+
+Fix if any missing propagation.
+
+5. Graceful Shutdown Behavior
+
+Verify full shutdown sequence:
+
+SIGTERM / SIGINT stops accepting new requests
+
+allows in-flight requests (~10 seconds)
+
+closes DB pool cleanly
+
+logs shutdown phases
+
+/health returns 503 during shutdown
+
+Fix if incomplete or unsafe.
+
+6. Logging Consistency
+
+Verify:
+
+NO console.log / console.error remains
+
+all logs use central logger
+
+log() wrapper delegates correctly
+
+no duplicate logging sources
+
+Fix any violations.
+
+7. Response Safety
+
+Verify:
+
+/health does NOT expose internal details
+
+no DB connection strings, stack traces, or secrets leak
+
+production output is minimal
+
+Fix if needed.
+
+📦 OUTPUT FORMAT
+
+Produce:
+
+verification results per check
+
+any issues found
+
+applied fixes (if any)
+
+affected files
+
+risk assessment (low/medium/high)
+
+final status: SAFE / NEEDS ATTENTION
+
+⚠️ RULES
+
+Do NOT refactor unrelated code
+
+Do NOT change API behavior
+
+Do NOT introduce new features
+
+Only verify and fix gaps
+
+⏳ EXECUTION
+
+Run verification immediately.
+Apply minimal fixes only if required.
