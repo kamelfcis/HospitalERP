@@ -1,0 +1,111 @@
+TASK: Diagnose and fix unexpected UI refresh/remount causing invoice entry instability, unit mismatch, and price corruption
+
+Context:
+When running the system outside Replit in temporary development, the UI shows visible refresh flashes / page flicker while the user is working on screens.
+This happens even during active data entry.
+
+Observed symptoms:
+- While staying on any screen, the page visibly flashes / reloads / remounts
+- This interrupts current user actions
+- In sales invoice entry, if a product is selected and the flash happens:
+  - changing the item unit may stop responding correctly
+  - price may become inconsistent
+  - price may be recalculated incorrectly
+  - invoice line state becomes unstable
+
+This is a high-priority UX and transactional integrity issue.
+Do NOT treat this as only a pricing bug.
+First identify what is causing the screen/page/component to refresh unexpectedly.
+
+Main diagnosis goals:
+1. Determine whether the issue is caused by:
+   - full page reload
+   - React remount
+   - route remount
+   - hot module reload / development overlay
+   - aggressive React Query invalidation/refetch
+   - SSE-triggered global refresh
+   - websocket/dev-server reconnect
+   - unhandled runtime error causing rerender/remount
+   - auth/session refresh
+   - layout-level state reset
+
+2. Identify exactly which screens/components are being remounted
+3. Identify how invoice line state, selected unit, and sell price are being overwritten after the refresh/flicker
+4. Fix the root cause with minimal safe changes
+
+What to inspect:
+
+A) App-level behavior
+- Check whether the browser is doing actual full page reloads or only React remounts
+- Inspect App.tsx, AppLayout, routing, auth guards, dev wrappers, and any global providers
+- Check for global query invalidation or app-wide state resets
+- Check whether SSE handlers or reconnect logic are causing broad invalidation across the app
+- Check for any setInterval / polling / heartbeat logic triggering refetches or remounts
+- Check console errors and network failures that may trigger rerenders
+
+B) Development environment behavior
+- Verify whether temporary development mode / dev server / HMR is causing hot reload flashes
+- Distinguish between:
+  - normal dev hot reload behavior
+  - actual application bug
+- If dev-only behavior exists, isolate it clearly from production/runtime behavior
+
+C) Invoice screen state integrity
+- Inspect the sales invoice page/component and line item editor logic
+- Trace how item selection, unit selection, and price are stored:
+  - local component state
+  - form state
+  - React Query cache
+  - server responses
+- Identify whether any refetch/remount overwrites:
+  - selected line
+  - selected unit
+  - calculated sell price
+  - user edits
+- Identify whether useEffect/useMemo/query success handlers are resetting line state after refetch
+
+D) Price/unit recalculation logic
+- Trace exactly what happens when user changes stock unit for an invoice line
+- Identify all price sources involved:
+  - item master price
+  - price by sell unit
+  - conversion rate
+  - backend recalculation
+  - defaults reapplied after rerender
+- Confirm whether the wrong price comes from:
+  - stale state
+  - duplicated recalculation
+  - race between async fetch and user input
+  - line object replacement after rerender/remount
+
+Required output:
+At the end, print exactly:
+
+1) Refresh/flicker root cause
+- full page reload / React remount / hot reload / query refetch / other
+- exact file and function causing it
+
+2) Why invoice entry is affected
+- how selected item/unit/price state gets lost or overwritten
+
+3) Exact pricing/unit bug mechanism
+- what sequence causes incorrect price after the flicker
+
+4) Minimal safe fix plan
+- exact files to change
+- exact functions/hooks/effects to change
+- how the fix avoids disrupting active data entry
+
+5) Validation scenarios
+- add item to sales invoice
+- change unit
+- verify price stays correct
+- leave screen open and confirm no flash/remount interrupts entry
+- confirm unrelated SSE/query updates do not reset invoice editing state
+
+Important constraints:
+- Do not redesign the invoice module from scratch
+- Prefer minimal production-safe changes
+- Preserve current authorization and business rules
+- Active user input must never be lost due to background realtime updates or query refetches

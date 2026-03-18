@@ -20,11 +20,17 @@ export function useRoleRouter(editId: string | null, navigate: (path: string) =>
   const [permissionsReady, setPermissionsReady] = useState(false);
 
   useEffect(() => {
-    // أعد الجلب وانتظر الانتهاء — يضمن عدم استخدام cache قديم
+    // أعد الجلب فقط إذا كانت بيانات الـ auth غائبة تماماً عن الكاش
+    // (حالة أول تحميل) — تجنباً لإعادة طلبات غير ضرورية تُسبب إعادة تصيير
+    const cached = queryClient.getQueryData(["/api/auth/me"]);
+    if (cached) {
+      setPermissionsReady(true);
+      return;
+    }
     queryClient
       .refetchQueries({ queryKey: ["/api/auth/me"] })
       .then(() => setPermissionsReady(true))
-      .catch(() => setPermissionsReady(true)); // في حالة خطأ، نتابع بالبيانات الموجودة
+      .catch(() => setPermissionsReady(true));
   }, []);
 
   useEffect(() => {

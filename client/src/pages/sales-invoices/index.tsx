@@ -71,7 +71,7 @@ export default function SalesInvoices() {
   const netTotal = useMemo(() => +(subtotal - form.discountValue).toFixed(2), [subtotal, form.discountValue]);
 
   // ── تحميل الفاتورة الموجودة ───────────────────────────────────────────────
-  useLoadInvoice({ invoiceDetail, isNew, warehouses, form, setLines });
+  const { loadedIdRef } = useLoadInvoice({ invoiceDetail, isNew, warehouses, form, setLines });
 
   // ── hooks الميزات ────────────────────────────────────────────────────────
   const registry       = useRegistry(today, !editId);
@@ -93,6 +93,10 @@ export default function SalesInvoices() {
     subtotal, netTotal,
     notes:           form.notes,
     lines, editId, isNew,
+    // عند أول auto-save لفاتورة جديدة: سجّل الـ ID الجديد في loadedIdRef
+    // قبل أن يُغيّر window.history.replaceState الـ URL، حتى لا تُعيد
+    // useLoadInvoice ضبط الـ lines عند وصول detail query
+    onNewInvoiceSaved: (newId) => { loadedIdRef.current = newId; },
   });
 
   const clinicOrderId = params.get("clinicOrderId");

@@ -17,6 +17,11 @@ interface AutoSaveParams {
   lines: SalesLineLocal[];
   editId: string | null;
   isNew: boolean;
+  /**
+   * يُستدعى عند أول حفظ تلقائي لفاتورة جديدة، ويمرر الـ ID الحقيقي.
+   * يُستخدم لتحديث loadedIdRef حتى لا تُعيد useLoadInvoice ضبط الحالة.
+   */
+  onNewInvoiceSaved?: (id: string) => void;
 }
 
 export function useAutoSave(params: AutoSaveParams) {
@@ -28,7 +33,10 @@ export function useAutoSave(params: AutoSaveParams) {
   const {
     isDraft, warehouseId, invoiceDate, customerType, customerName, contractCompany,
     discountPct, discountValue, subtotal, netTotal, notes, lines, editId, isNew,
+    onNewInvoiceSaved,
   } = params;
+  const onNewInvoiceSavedRef = useRef(onNewInvoiceSaved);
+  onNewInvoiceSavedRef.current = onNewInvoiceSaved;
 
   useEffect(() => {
     if (isNew) {
@@ -86,9 +94,25 @@ export function useAutoSave(params: AutoSaveParams) {
       setAutoSaveStatus("saved");
       if (isNew && !autoSaveIdRef.current && data?.id) {
         autoSaveIdRef.current = data.id;
+        // أبلغ useLoadInvoice بالـ ID الجديد قبل تغيير الـ URL
+        // حتى تتجاهل الـ detail query المقبلة ولا تُعيد ضبط الحالة
+        onNewInvoiceSavedRef.current?.(data.id);
         window.history.replaceState(null, "", `/sales-invoices?id=${data.id}`);
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
+      // لا نُبطل detail query الفاتورة الحالية — الـ auto-save حفظها للتو
+      // نُبطل القائمة فقط إذا لم يكن المستخدم في وضع التحرير
+      // (القائمة تعرض فقط عندما editId غير موجود، لذا الإبطال آمن)
+      queryClient.invalidateQueries({
+        queryKey: ["/api/sales-invoices"],
+        predicate: (query) => {
+          const key = query.queryKey as unknown[];
+          // أبطل القائمة (مفاتيح تحتوي على أرقام/فلاتر) لكن ليس الـ detail (مفتاح ثانٍ = UUID)
+          // تمييز detail: المفتاح الثاني هو string يشبه UUID أو "new"
+          const second = key[1];
+          if (typeof second === "string" && second.length > 10) return false;
+          return true;
+        },
+      });
     } catch {
       setAutoSaveStatus("error");
     }
