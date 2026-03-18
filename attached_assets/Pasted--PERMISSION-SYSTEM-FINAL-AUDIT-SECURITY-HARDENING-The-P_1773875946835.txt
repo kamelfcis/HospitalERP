@@ -1,0 +1,279 @@
+✅ PERMISSION SYSTEM FINAL AUDIT + SECURITY HARDENING
+
+The Permission Groups project is now functionally complete.
+
+We now need a final verification and hardening phase before production rollout.
+
+This is NOT a feature-building task.
+This is a security, control, and audit task.
+
+🎯 OBJECTIVE
+
+Verify that the new permission-group system is:
+
+secure
+
+consistent
+
+non-breaking
+
+auditable
+
+resistant to privilege escalation
+
+aligned with ERP internal-control expectations
+
+🔒 AUDIT SCOPE
+
+Perform a full audit of the permission system across:
+
+database mapping
+
+permission resolution
+
+backend route protection
+
+frontend visibility rules
+
+screen/action matrix behavior
+
+user/group assignment rules
+
+system-group protection
+
+privilege escalation risks
+
+audit logging coverage
+
+✅ REQUIRED VERIFICATION AREAS
+1. Permission Resolution Integrity
+
+Verify that permission resolution is exactly:
+
+if permission_group_id exists → use group_permissions
+
+then apply user_permissions overrides
+
+else fallback to role_permissions
+
+then apply user_permissions overrides
+
+Confirm:
+
+no hidden alternate paths
+
+no duplicated logic
+
+no inconsistent permission checks
+
+2. Privilege Escalation Review
+
+Audit for all escalation risks.
+
+Examples to test:
+
+can a lower-level admin assign a higher-privileged group?
+
+can a user move themselves into a stronger group?
+
+can someone edit system-critical groups indirectly?
+
+can a route be called directly even if UI blocks it?
+
+can screen access exist without action restriction?
+
+can action access exist without proper screen access?
+
+Flag every escalation path.
+
+3. System Group Protection Audit
+
+Verify that is_system = true groups are fully protected.
+
+Confirm:
+
+cannot be deleted
+
+cannot be renamed if policy forbids it
+
+cannot be modified by insufficiently privileged users
+
+UI and backend protections are consistent
+
+4. Screen Visibility + Action Matrix Consistency
+
+Audit whether the matrix behaves correctly.
+
+Verify:
+
+hidden screens do not appear in menu
+
+blocked screens cannot be opened directly
+
+users can only perform allowed actions
+
+disabled actions are enforced in backend, not UI only
+
+matrix mapping in screen-definitions.ts matches actual permission enforcement
+
+5. Backend Route Protection Audit
+
+Review all routes related to:
+
+permission groups
+
+user-group assignment
+
+protected screens/actions
+
+Confirm:
+
+every sensitive route has correct permission guard
+
+no route is exposed with weak permission
+
+no missing validation
+
+no inconsistent status codes
+
+6. Audit Logging Coverage
+
+Verify all critical permission events are logged.
+
+At minimum:
+
+create group
+
+update group
+
+delete group
+
+assign user to group
+
+remove user from group
+
+update group permissions
+
+blocked security attempts (if implemented)
+
+Confirm logs contain enough context for audit review.
+
+7. Regression Safety
+
+Confirm existing users still behave correctly.
+
+Test at least:
+
+Owner
+
+Admin
+
+Pharmacist
+
+Assistant Pharmacist
+
+Cashier
+
+Inventory Manager
+
+For each:
+
+visible screens
+
+blocked screens
+
+allowed actions
+
+restricted actions
+
+No existing user should gain unintended access.
+
+8. Data Integrity + DB Review
+
+Review DB-level integrity:
+
+FK correctness
+
+duplicate group name protection
+
+duplicate group-permission rows
+
+orphaned assignments
+
+deletion safety
+
+migration safety / idempotency
+
+Suggest any missing constraints or indexes.
+
+📦 REQUIRED OUTPUT
+
+Produce a structured report with:
+
+findings
+
+confirmed safe areas
+
+detected risks
+
+privilege escalation issues
+
+missing protections
+
+logging gaps
+
+DB integrity notes
+
+recommended fixes
+
+severity level for each issue
+
+final status:
+
+SAFE FOR PRODUCTION
+
+SAFE WITH MINOR FIXES
+
+NEEDS ATTENTION
+
+⚠️ RULES
+
+Do NOT build unrelated new features
+
+Do NOT refactor broad unrelated code
+
+Only audit and harden
+
+If a gap is found, apply minimal safe fixes only
+
+Preserve backward compatibility
+
+Preserve current working behavior unless a security/control correction is required
+
+🧪 REQUIRED TEST STYLE
+
+Use real scenario-based validation, not only code inspection.
+
+Examples:
+
+cashier user tries to open restricted accounting screen
+
+assistant pharmacist tries to edit item master
+
+admin tries to delete a system group
+
+lower-level manager tries to assign owner/admin group
+
+hidden screen accessed directly by URL
+
+⏳ EXECUTION RULE
+
+Run the final audit now.
+
+If issues are found:
+
+fix only the required gaps
+
+then re-run verification
+
+then return the final production-readiness status

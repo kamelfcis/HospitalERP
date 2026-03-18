@@ -132,15 +132,13 @@ export function registerPermissionGroupRoutes(app: Express) {
         return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "بيانات غير صحيحة" });
       }
 
-      // حماية إضافية: المجموعات النظامية لا يُعدَّل اسمها
-      if (parsed.data.name !== undefined) {
-        const existing = await storage.getPermissionGroup(req.params.id);
-        if (!existing) {
-          return res.status(404).json({ message: "المجموعة غير موجودة" });
-        }
-        if (existing.isSystem) {
-          return res.status(403).json({ message: "لا يمكن تعديل اسم مجموعة نظامية" });
-        }
+      // حماية المجموعات النظامية — لا يُعدَّل أي حقل (اسم أو وصف)
+      const existing = await storage.getPermissionGroup(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "المجموعة غير موجودة" });
+      }
+      if (existing.isSystem) {
+        return res.status(403).json({ message: "لا يمكن تعديل مجموعة نظامية" });
       }
 
       const group = await storage.updatePermissionGroup(req.params.id, parsed.data);
@@ -199,6 +197,11 @@ export function registerPermissionGroupRoutes(app: Express) {
       const before = await storage.getPermissionGroup(req.params.id);
       if (!before) {
         return res.status(404).json({ message: "المجموعة غير موجودة" });
+      }
+
+      // حماية المجموعات النظامية — لا يمكن تعديل صلاحياتها أبداً
+      if (before.isSystem) {
+        return res.status(403).json({ message: "لا يمكن تعديل صلاحيات مجموعة نظامية" });
       }
 
       await storage.setGroupPermissions(req.params.id, parsed.data.permissions);

@@ -154,6 +154,7 @@ const permissionGroupsMethods = {
   ): Promise<PermissionGroup> {
     const [existing] = await db.select().from(permissionGroups).where(eq(permissionGroups.id, id));
     if (!existing) throw new Error("المجموعة غير موجودة");
+    if (existing.isSystem) throw new Error("لا يمكن تعديل مجموعة نظامية");
 
     const updates: Record<string, unknown> = {};
 
@@ -213,6 +214,7 @@ const permissionGroupsMethods = {
   ): Promise<void> {
     const [group] = await db.select().from(permissionGroups).where(eq(permissionGroups.id, groupId));
     if (!group) throw new Error("المجموعة غير موجودة");
+    if (group.isSystem) throw new Error("لا يمكن تعديل صلاحيات مجموعة نظامية");
 
     // استبدال ذري كامل
     await db.transaction(async (tx) => {

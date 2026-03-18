@@ -51,6 +51,9 @@ export async function seedPermissionGroups(): Promise<void> {
   } else {
     await _deltaSyncPermissions();
   }
+
+  // تحقق طوارئ: استعادة أي مجموعة نظامية فقدت صلاحياتها
+  await restoreMissingSystemGroupPermissions();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +91,7 @@ async function _initialSeed(): Promise<void> {
         await tx.execute(sql`
           INSERT INTO group_permissions (group_id, permission)
           VALUES (${groupId}, ${permission})
-          ON CONFLICT DO NOTHING
+          ON CONFLICT (group_id, permission) DO NOTHING
         `);
       }
 
@@ -157,7 +160,7 @@ async function _deltaSyncPermissions(): Promise<void> {
         await db.execute(sql`
           INSERT INTO group_permissions (group_id, permission)
           VALUES (${groupId}, ${permission})
-          ON CONFLICT DO NOTHING
+          ON CONFLICT (group_id, permission) DO NOTHING
         `);
       }
       logger.info(`[PERM_GROUPS_SEED] delta: added ${missing.length} new permissions to "${roleKey}" group`);
@@ -169,5 +172,50 @@ async function _deltaSyncPermissions(): Promise<void> {
     logger.info(`[PERM_GROUPS_SEED] delta sync complete — ${totalAdded} permissions added across all groups`);
   } else {
     logger.info("[PERM_GROUPS_SEED] delta sync: all groups up to date, nothing to add");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Emergency restore — يُستدعى إذا تم اكتشاف مجموعة نظامية بدون صلاحيات
+//  ملاحظة: دالة مساعدة تُستدعى من seedPermissionGroups فقط إذا لزم
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function restoreMissingSystemGroupPermissions(): Promise<void> {
+  let totalRestored = 0;
+
+  for (const [roleKey, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+    if (perms.length === 0) continue;
+
+    const grpRows = await db.execute(sql`
+      SELECT pg.id, pg.name
+      FROM permission_groups pg
+      WHERE pg.is_system = true
+        AND pg.description = ${'مجموعة النظام: ' + roleKey}
+      LIMIT 1
+    `);
+    const row = (grpRows as any).rows[0] as { id: string; name: string } | undefined;
+    if (!row) continue;
+
+    const countRows = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM group_permissions WHERE group_id = ${row.id}
+    `);
+    const cnt = Number((countRows as any).rows[0]?.cnt ?? 0);
+
+    if (cnt === 0 && perms.length > 0) {
+      logger.warn(`[PERM_GROUPS_SEED] restoring ${perms.length} permissions for system group "${row.name}" (${roleKey})`);
+      const unique = [...new Set(perms)];
+      for (const permission of unique) {
+        await db.execute(sql`
+          INSERT INTO group_permissions (group_id, permission)
+          VALUES (${row.id}, ${permission})
+          ON CONFLICT (group_id, permission) DO NOTHING
+        `);
+      }
+      totalRestored += unique.length;
+    }
+  }
+
+  if (totalRestored > 0) {
+    logger.info(`[PERM_GROUPS_SEED] restore complete — ${totalRestored} permissions restored`);
   }
 }

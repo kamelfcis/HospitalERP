@@ -24,7 +24,9 @@ export const groupPermissions = pgTable("group_permissions", {
   groupId:   varchar("group_id").notNull().references(() => permissionGroups.id, { onDelete: "cascade" }),
   permission: text("permission").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  groupPermIdx: uniqueIndex("idx_group_perm_unique").on(table.groupId, table.permission),
+}));
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Users
