@@ -337,9 +337,9 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: any) {
       const msg  = e instanceof Error ? e.message : String(e);
       const code = e?.status || 500;
-      if (msg.includes("الفترة المحاسبية"))                            return res.status(403).json({ message: msg });
-      if (msg.includes("محصّلة") || msg.includes("نهائي") || msg.includes("محجوزة")) return res.status(409).json({ message: msg });
-      if (msg.includes("منتهية الصلاحية"))                             return res.status(409).json({ message: msg });
+      if (msg.includes("الفترة المحاسبية"))                                                     return res.status(403).json({ message: msg });
+      if (msg.includes("محصّلة") || msg.includes("نهائي") || msg.includes("محجوزة"))          return res.status(409).json({ message: msg });
+      if (msg.includes("منتهية الصلاحية") || msg.includes("ليست مفتوحة") || msg.includes("مفتوح")) return res.status(409).json({ message: msg });
       if (code === 403) return res.status(403).json({ message: msg });
       res.status(500).json({ message: msg });
     }
@@ -372,7 +372,7 @@ export function registerCashierRoutes(app: Express) {
       if (msg.includes("الفترة المحاسبية"))                           return res.status(403).json({ message: msg });
       if (msg.includes("رصيد الخزنة غير كافٍ"))                       return res.status(422).json({ message: msg });
       if (msg.includes("مصروف") || msg.includes("نهائي") || msg.includes("محجوز")) return res.status(409).json({ message: msg });
-      if (msg.includes("منتهية الصلاحية"))                            return res.status(409).json({ message: msg });
+      if (msg.includes("منتهية الصلاحية") || msg.includes("ليست مفتوحة") || msg.includes("مفتوح")) return res.status(409).json({ message: msg });
       if (code === 403) return res.status(403).json({ message: msg });
       res.status(500).json({ message: msg });
     }

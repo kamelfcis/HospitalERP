@@ -341,7 +341,8 @@ const methods = {
       const hoursOpen = parseFloat(row.hours_open || "0");
 
       if (row.status === "closed") throw new Error("الوردية مغلقة بالفعل");
-      if (row.status === "stale" || hoursOpen > MAX_SHIFT_HOURS) {
+      const isStaleNow = row.status === "stale" || hoursOpen > MAX_SHIFT_HOURS;
+      if (isStaleNow && !isSupervisorOverride) {
         // تسجيل stale إذا لم تُسجَّل بعد
         await tx.execute(sql`
           UPDATE cashier_shifts
@@ -351,7 +352,16 @@ const methods = {
         `);
         throw new Error(`الوردية منتهية الصلاحية — مضى عليها ${hoursOpen.toFixed(1)} ساعة (الحد: ${MAX_SHIFT_HOURS})`);
       }
-      if (row.status !== "open") throw new Error("الوردية ليست في حالة مفتوحة");
+      if (isStaleNow && isSupervisorOverride) {
+        // تسجيل تدخل المشرف لإغلاق وردية عتيقة
+        await tx.execute(sql`
+          INSERT INTO cashier_audit_log (shift_id, action, entity_type, entity_id, details, performed_by)
+          VALUES (${shiftId}, 'supervisor_override_close', 'shift', ${shiftId},
+                  ${"إغلاق قسري بواسطة مشرف للوردية العتيقة التي مضى عليها " + hoursOpen.toFixed(1) + " ساعة"},
+                  ${closedByName})
+        `);
+      }
+      if (row.status !== "open" && row.status !== "stale") throw new Error("الوردية ليست في حالة مفتوحة");
 
       // نبني كائن shift من نتيجة SQL الخام
       const shift: CashierShift = {

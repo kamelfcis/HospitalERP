@@ -1,0 +1,229 @@
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+Do NOT modify business logic. This is a TEST + VALIDATION task only.
+
+OBJECTIVE
+Validate cashier screen behavior under real-world operational scenarios.
+
+SYSTEM UNDER TEST
+Cashier Shift Lifecycle (Task #19) including:
+- business_date (SQL Cairo)
+- stale detection (elapsed duration only)
+- ownership enforcement
+- atomic close
+- claim logic (transaction-only)
+- multi-shift support
+
+TEST TYPE
+End-to-End + Concurrency + State Validation
+
+---
+
+GLOBAL RULES
+
+- Use REAL API endpoints (no mocks)
+- Use database reads for verification (read-only)
+- Capture logs for each step
+- Each scenario must end with PASS or FAIL
+- If FAIL → include exact reason + violating rule
+
+---
+
+SCENARIO 1 — Night Shift (Midnight Crossing)
+
+Steps:
+1) Open shift at 23:00 (simulate if needed via DB timestamp override)
+2) At 00:30 next day:
+   - load cashier screen
+   - fetch pending invoices
+   - perform collect on 1 invoice
+
+Expected:
+- shift.status = "open"
+- isStale = false
+- business_date unchanged (same as opening day)
+- collect succeeds normally
+
+FAIL if:
+- shift becomes stale after midnight
+- business_date changes
+- collect blocked
+
+---
+
+SCENARIO 2 — Two Active Shifts Same Unit
+
+Steps:
+1) Open Shift A (Cashier 1)
+2) Open Shift B (Cashier 2) same unit
+3) Load cashier screens on both
+4) Fetch pending invoices
+
+Expected:
+- both shifts see same pending invoices
+- no claim occurs on read
+- claimed_by_shift_id remains NULL
+
+Then:
+5) Cashier 1 collects invoice X
+
+Expected:
+- claimed_by_shift_id = Shift A
+- Cashier 2 cannot collect same invoice
+- receives clear error: "invoice already claimed"
+
+---
+
+SCENARIO 3 — Concurrent Collection (Race Condition)
+
+Steps:
+1) Same invoice visible on two cashier sessions
+2) Trigger collect at SAME TIME (parallel requests)
+
+Expected:
+- only ONE succeeds
+- second fails with:
+  - clear error message
+  - no duplicate receipt
+- DB:
+  - only one receipt row
+  - claimed_by_shift_id set once
+
+FAIL if:
+- duplicate collection
+- silent overwrite
+- both succeed
+
+---
+
+SCENARIO 4 — Close Shift With Pending Invoices
+
+Case A — single shift:
+
+Steps:
+1) Only one shift open
+2) invoices pending exist
+3) attempt close
+
+Expected:
+- close rejected
+- clear Arabic error
+- no state change
+
+---
+
+Case B — two shifts:
+
+Steps:
+1) Shift A + Shift B open
+2) pending invoices exist
+3) close Shift A
+
+Expected:
+- transfer_log created
+- invoices reassigned logically to Shift B
+- Shift A closes successfully
+- target shift = oldest open shift (ORDER BY opened_at ASC)
+
+FAIL if:
+- no transfer log
+- invoices lost
+- non-deterministic target
+
+---
+
+SCENARIO 5 — Stale Shift Behavior
+
+Steps:
+1) simulate shift older than MAX_SHIFT_HOURS
+2) load cashier screen
+
+Expected:
+- isStale = true
+- warning banner visible
+- collect/refund buttons disabled
+
+Then:
+3) try collect
+
+Expected:
+- rejected (400)
+- message: shift is stale
+
+Then:
+4) supervisor attempts close
+
+Expected:
+- allowed
+- audit log created (supervisor_override_close)
+
+---
+
+SCENARIO 6 — Ownership Enforcement
+
+Steps:
+1) Cashier A opens shift
+2) Cashier B tries:
+   - collect
+   - refund
+   - close
+
+Expected:
+- all rejected (403)
+
+Then:
+3) Supervisor performs same actions
+
+Expected:
+- allowed
+- audit logs recorded
+
+---
+
+SCENARIO 7 — No Claim on Read
+
+Steps:
+1) Load pending invoices multiple times
+2) open invoice details
+3) refresh screen
+
+Expected:
+- claimed_by_shift_id remains NULL
+- no DB updates occur
+
+FAIL if:
+- any claim occurs without collect/refund
+
+---
+
+OUTPUT FORMAT
+
+Return structured report:
+
+SCENARIO NAME: [name]
+
+RESULT: PASS / FAIL
+
+STEPS EXECUTED:
+- ...
+
+DB VALIDATION:
+- key fields (status, claimed_by_shift_id, transfer_log, etc.)
+
+ERRORS (if any):
+- ...
+
+---
+
+FINAL SUMMARY
+
+- total scenarios: 7
+- passed: X
+- failed: X
+
+If ANY FAIL:
+→ mark Task #19 as NOT COMPLETE
+
+If ALL PASS:
+→ confirm:
+"Cashier lifecycle is production-safe"
