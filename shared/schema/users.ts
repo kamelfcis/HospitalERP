@@ -52,7 +52,7 @@ export const users = pgTable("users", {
 // ─────────────────────────────────────────────────────────────────────────────
 export const rolePermissions = pgTable("role_permissions", {
   id:        varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  role:      userRoleEnum("role").notNull(),
+  role:      text("role").notNull(),
   permission: text("permission").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

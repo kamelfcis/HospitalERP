@@ -1,10 +1,14 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex, pgSequence } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { itemCategoryEnum, unitLevelEnum, lotTxTypeEnum, transferStatusEnum } from "./enums";
 import { users } from "./users";
 import { accounts, costCenters, journalEntries } from "./finance";
+
+// ── Sequences managed outside Drizzle but declared here to prevent drizzle-kit from dropping them ──
+export const patientCodeSeq              = pgSequence("patient_code_seq",              { startWith: 1, increment: 1 });
+export const stockCountSessionNumberSeq  = pgSequence("stock_count_session_number_seq", { startWith: 1, increment: 1 });
 
 export const itemFormTypes = pgTable("item_form_types", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

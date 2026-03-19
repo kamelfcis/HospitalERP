@@ -1,8 +1,11 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, pgSequence } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./users";
+
+// Sequence owned by rpt_refresh_log (excluded table) — declared to prevent drizzle-kit from dropping it
+export const rptRefreshLogIdSeq = pgSequence("rpt_refresh_log_id_seq", { startWith: 1, increment: 1 });
 
 export const systemSettings = pgTable("system_settings", {
   key: varchar("key", { length: 100 }).primaryKey(),

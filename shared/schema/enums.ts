@@ -28,7 +28,7 @@ export const unitLevelEnum = pgEnum("unit_level", [
 
 export const lotTxTypeEnum = pgEnum("lot_tx_type", ["in", "out", "adj"]);
 export const transferStatusEnum = pgEnum("transfer_status", ["draft", "executed", "cancelled"]);
-export const salesInvoiceStatusEnum = pgEnum("sales_invoice_status", ["draft", "finalized", "collected", "cancelled"]);
+export const salesInvoiceStatusEnum = pgEnum("sales_invoice_status", ["draft", "finalized", "cancelled", "collected"]);
 export const cashierShiftStatusEnum = pgEnum("cashier_shift_status", ["open", "closed"]);
 export const customerTypeEnum = pgEnum("customer_type", ["cash", "credit", "contract"]);
 export const patientInvoiceStatusEnum = pgEnum("patient_invoice_status", ["draft", "finalized", "cancelled"]);
@@ -38,18 +38,18 @@ export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank
 export const admissionStatusEnum = pgEnum("admission_status", ["active", "discharged", "cancelled"]);
 
 export const userRoleEnum = pgEnum("user_role", [
+  "owner",
   "admin",
-  "accountant",
+  "accounts_manager",
+  "purchase_manager",
+  "data_entry",
   "pharmacist",
+  "pharmacy_assistant",
+  "warehouse_assistant",
   "cashier",
+  "department_admin",
+  "reception",
   "doctor",
-  "nurse",
-  "receptionist",
-  "warehouse",
-  "viewer",
-  "lab",
-  "radiology",
-  "it"
 ]);
 
 export const transactionTypeEnum = pgEnum("transaction_type", ["sales_invoice", "patient_invoice", "receiving", "purchase_invoice", "cashier_collection", "cashier_refund"]);
