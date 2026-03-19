@@ -20,6 +20,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Services & Price Lists**: CRUD for department-scoped services and price lists with inline editing and bulk adjustments.
 - **Multi-Pharmacy Support**: Isolation for invoicing and cashier operations across multiple pharmacies.
 - **Cashier & Security**: Real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, two-stage journal entry system for sales, and robust Role-Based Access Control (RBAC).
+- **Cashier Shift Lifecycle (Task #19 — COMPLETE & VERIFIED)**: Full shift lifecycle with `business_date` (Cairo TZ), stale detection by elapsed duration only (MAX_SHIFT_HOURS=24), atomic close with pending-invoice transfer log, invoice claim inside collect/refund transaction only, concurrent collection protection via `FOR UPDATE` row locks, supervisor override with `supervisor_override_close` audit entry, and 7-scenario end-to-end verification suite (all PASS).
 - **Outpatient Clinic Module**: Clinic booking, doctor consultations, doctor orders, integration with sales invoices and service orders, doctor-specific pricing, and clinic-scoped drug favorites.
 - **Reporting & Audit**: Balanced financial reports, RBAC enforcement, comprehensive audit trail, and strict validation.
 - **Department Services Orders**: Unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
