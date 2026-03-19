@@ -4,7 +4,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth }    from "@/hooks/use-auth";
 import { useToast }   from "@/hooks/use-toast";
 import { Button }     from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -97,40 +96,38 @@ export function MembersTab({ groupId, members, canManage }: Props) {
       </p>
 
       {/* قائمة الأعضاء */}
-      <ScrollArea className="flex-1">
-        {members.length === 0 ? (
-          <div className="text-center py-10 text-muted-foreground text-sm">
-            <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            لا يوجد أعضاء في هذه المجموعة
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {members.map(m => (
-              <div
-                key={m.id}
-                data-testid={`member-row-${m.id}`}
-                className="flex items-center justify-between px-3 py-2 rounded-lg border bg-card flex-row-reverse"
-              >
-                <div className="flex flex-col text-right">
-                  <span className="text-sm font-medium">{m.fullName}</span>
-                  <span className="text-xs text-muted-foreground">{m.username}</span>
-                </div>
-                {canManage && m.id !== me?.id && (
-                  <Button
-                    variant="ghost" size="icon"
-                    className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                    onClick={() => removeMember(m.id)}
-                    disabled={assignMutation.isPending}
-                    data-testid={`button-remove-member-${m.id}`}
-                  >
-                    <UserMinus className="h-3.5 w-3.5" />
-                  </Button>
-                )}
+      {members.length === 0 ? (
+        <div className="text-center py-10 text-muted-foreground text-sm">
+          <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          لا يوجد أعضاء في هذه المجموعة
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {members.map(m => (
+            <div
+              key={m.id}
+              data-testid={`member-row-${m.id}`}
+              className="flex items-center justify-between px-3 py-2 rounded-lg border bg-card flex-row-reverse"
+            >
+              <div className="flex flex-col text-right">
+                <span className="text-sm font-medium">{m.fullName}</span>
+                <span className="text-xs text-muted-foreground">{m.username}</span>
               </div>
-            ))}
-          </div>
-        )}
-      </ScrollArea>
+              {canManage && m.id !== me?.id && (
+                <Button
+                  variant="ghost" size="icon"
+                  className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                  onClick={() => removeMember(m.id)}
+                  disabled={assignMutation.isPending}
+                  data-testid={`button-remove-member-${m.id}`}
+                >
+                  <UserMinus className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

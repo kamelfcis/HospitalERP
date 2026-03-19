@@ -59,7 +59,7 @@ export default function PermissionGroupsPage() {
       </div>
 
       {/* ── اللوح الأيسر: تفاصيل المجموعة ──────────────────────────────── */}
-      <div className="flex-1 min-w-0 overflow-hidden p-4">
+      <div className="flex-1 min-w-0 overflow-auto p-4">
         {selectedId ? (
           <GroupDetail
             key={selectedId}

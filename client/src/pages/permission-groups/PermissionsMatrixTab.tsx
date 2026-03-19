@@ -283,7 +283,7 @@ export function PermissionsMatrixTab({
   const totalAll = PERM_MODULES.reduce((s, m) => s + m.permissions.length, 0);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col" style={{ height: "calc(100vh - 200px)" }}>
       {/* شريط الأدوات */}
       <div className="flex items-center justify-between pb-3 border-b mb-3 flex-row-reverse gap-2 flex-wrap">
         {/* إحصاء + حالة */}

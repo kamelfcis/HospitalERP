@@ -24,7 +24,7 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center py-20">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -32,16 +32,16 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
 
   if (isError || !group) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+      <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
         تعذّر تحميل بيانات المجموعة
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col gap-4">
       {/* رأس المجموعة */}
-      <div className="flex items-center gap-2 pb-3 border-b mb-4 flex-row-reverse">
+      <div className="flex items-center gap-2 pb-3 border-b flex-row-reverse">
         {group.isSystem
           ? <ShieldCheck className="h-5 w-5 text-amber-500" />
           : <Shield      className="h-5 w-5 text-primary" />}
@@ -59,8 +59,8 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
       </div>
 
       {/* التبويبات */}
-      <Tabs defaultValue="matrix" className="flex flex-col flex-1 min-h-0">
-        <TabsList className="mb-3 w-full justify-start flex-row-reverse shrink-0">
+      <Tabs defaultValue="matrix">
+        <TabsList className="mb-1 w-full justify-start flex-row-reverse">
           <TabsTrigger value="matrix" data-testid="tab-matrix">
             مصفوفة الشاشات
           </TabsTrigger>
@@ -77,7 +77,7 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="matrix" className="flex-1 min-h-0 overflow-hidden mt-0 flex flex-col">
+        <TabsContent value="matrix" className="mt-0">
           <PermissionsMatrixTab
             key={groupId}
             groupId={groupId}
@@ -87,7 +87,7 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
           />
         </TabsContent>
 
-        <TabsContent value="members" className="overflow-auto mt-0">
+        <TabsContent value="members" className="mt-0">
           <MembersTab
             groupId={groupId}
             members={group.members}
@@ -95,7 +95,7 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
           />
         </TabsContent>
 
-        <TabsContent value="general" className="overflow-auto mt-0">
+        <TabsContent value="general" className="mt-0">
           <GeneralTab
             group={group}
             canManage={canManage}
