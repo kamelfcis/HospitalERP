@@ -1,0 +1,281 @@
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+
+OBJECTIVE
+
+Review and redesign cashier shift lifecycle and shift-assignment logic to eliminate ambiguity, cross-shift confusion, stale open shifts, and incorrect transfer behavior.
+
+THIS TASK IS ANALYSIS + PLAN ONLY.
+DO NOT IMPLEMENT YET.
+
+---
+
+PRIMARY GOAL
+
+Produce a strict SHIFT CONTROL FIX PLAN that first audits the CURRENT LOGIC, identifies all failure points, then proposes a corrected lifecycle and assignment model.
+
+Do NOT jump directly to coding ideas.
+First review the current logic and current database/application behavior.
+
+---
+
+OBSERVED ISSUES
+
+1) Shift opened by one cashier, but during closing the system suggests transferring invoices to the same cashier / same shift.
+This is incorrect.
+
+2) The system has confusion around:
+- who opened the shift
+- which shifts are truly active
+- which user is currently responsible
+- which shift should receive pending invoices
+
+3) It is possible for a user to leave a shift open for 1–2 days and return to continue using it normally.
+This is incorrect because cashier shifts are day-based and must not remain operational across days without strict rollover rules.
+
+4) There is existing business behavior:
+- If more than one shift is open, a shift may close even if it has pending invoices, as long as another valid open shift exists to receive them.
+- If only one shift is open and it has pending invoices, closing must be blocked.
+
+This rule must be preserved, but validated more strictly.
+
+---
+
+CRITICAL BUSINESS RULES
+
+The system must support MULTI-CASHIER and MULTI-SHIFT operation.
+
+Example:
+- Shift A → Cashier 1
+- Shift B → Cashier 2
+
+Both shifts may be open at the same time.
+
+This is VALID and must be handled correctly.
+
+Each shift must maintain complete separation for:
+- invoices
+- treasury/cash movements
+- closing report
+- transfer logic
+- audit trail
+
+No ambiguity is allowed between concurrent open shifts.
+
+---
+
+INVOICE ASSIGNMENT RULE
+
+When two shifts are open at the same time, invoice receipt / cashier assignment must work safely and deterministically.
+
+Required principle:
+- invoices may be received normally on both open shifts
+- the shift that actually receives/processes the invoice first is the shift that owns it
+- ownership must be determined by strong server-side logic, not by weak UI timing only
+
+The plan must propose a STRONG ANTI-CONFUSION assignment model that prevents:
+- duplicate claiming
+- race conditions
+- invoice appearing owned by two shifts
+- reassignment without audit trail
+- stale session confusion
+- refresh-based inconsistency
+
+This must include:
+- locking or equivalent concurrency protection
+- idempotent claim/receive behavior
+- explicit ownership timestamps
+- clear source of truth in backend
+
+---
+
+SHIFT CLOSING RULES
+
+Shift closing must verify at minimum:
+- current_user
+- current_shift
+- target_shift
+- active_shifts
+
+Additional strict rules required:
+
+1) target_shift must never equal current_shift
+2) target_shift must be actually open and valid
+3) if there are pending invoices:
+   - closing is allowed only if another valid open shift exists
+   - otherwise closing is blocked
+4) if only one shift is open and pending invoices exist:
+   - do NOT allow close
+5) if multiple shifts are open:
+   - transfer must go only to a valid receiving shift
+   - never to same cashier by mistake
+   - never to a stale/inactive shift
+
+---
+
+DAY-BOUNDARY / STALE SHIFT RULES
+
+Cashier shift is a day-based operational entity.
+
+A shift must not continue normally across multiple days without explicit control.
+
+The review must inspect current logic for:
+- shift open date
+- business date vs calendar date
+- user session vs shift state
+- stale open shifts left overnight
+- resuming old shifts next day as if nothing happened
+
+The fix plan must define strict behavior for stale shifts, including:
+- how to detect stale open shifts
+- whether they should be auto-blocked, auto-expired, or require supervisor resolution
+- whether login should refuse continuing an old shift
+- whether shift close/open rollover is required at day boundary
+- how pending invoices behave if a stale shift exists
+
+The system must no longer allow a cashier to casually continue a two-day-old shift.
+
+---
+
+CURRENT LOGIC REVIEW REQUIRED FIRST
+
+Before proposing the fix, audit and explain the current lifecycle:
+
+1) How shift open is determined
+2) How active/open shifts are determined
+3) How cashier ownership is determined
+4) How invoice-to-shift assignment currently works
+5) How transfer target is selected during closing
+6) How pending invoices are detected
+7) How date/day logic is currently handled
+8) How old open shifts remain usable
+9) What race conditions or ambiguous states currently exist
+
+Output must clearly separate:
+- CURRENT LOGIC
+- OBSERVED FAILURES
+- PROPOSED FIXED MODEL
+
+---
+
+REQUIRED PLAN CONTENT
+
+Produce a strict SHIFT CONTROL FIX PLAN with these sections:
+
+1) Current Lifecycle Audit
+- summarize how the system currently behaves
+- identify exact ambiguity points
+- identify incorrect assumptions in current design
+
+2) Failure Scenarios
+Include at least:
+- same-user transfer suggestion
+- two open shifts receiving invoices concurrently
+- close with pending invoices and one open shift only
+- close with pending invoices and another open shift available
+- stale shift left open overnight
+- user logs in next day and continues old shift
+- invoice ownership race between two open shifts
+
+3) Corrected Shift Lifecycle Model
+Define the proper states and transitions, for example:
+- open
+- active
+- suspended
+- stale
+- closing
+- closed
+- transferred
+
+Do not implement, but define the logic strictly.
+
+4) Invoice Ownership Model
+Define exact rules for:
+- how invoice becomes owned by a shift
+- first-valid-receiver logic
+- server-side source of truth
+- concurrency/race protection
+- reassignment rules
+- audit trail
+
+5) Closing & Transfer Validation Model
+Define:
+- when close is allowed
+- when close is blocked
+- how valid target shift is chosen
+- how same-shift/self-transfer is prevented
+- how pending invoices are handled safely
+
+6) Stale Shift / Day Boundary Policy
+Define:
+- what counts as stale
+- what happens next day
+- supervisor override rules if needed
+- what UI/backend validations must exist
+
+7) Data Integrity / Audit Controls
+Plan must include:
+- who opened shift
+- who closed shift
+- who received invoice
+- transfer from / to
+- timestamps
+- immutable audit events
+- no silent reassignment
+
+8) Recommended Backend Checks
+List validations only, no implementation yet.
+
+9) Recommended Frontend Safeguards
+List UI restrictions/warnings only, no implementation yet.
+
+10) Test Matrix
+Include concrete test cases for:
+- one open shift
+- two open shifts
+- stale shift
+- blocked close
+- valid transfer
+- invalid self-transfer
+- concurrent invoice receipt
+
+---
+
+ENGINEERING CONSTRAINTS
+
+- Preserve clean refactoring
+- Avoid duplicated shift logic across routes/services/UI
+- Centralize source of truth in backend
+- Treat concurrency as a first-class requirement
+- No refresh-dependent ownership logic
+- No weak client-only decision making
+- No silent fallback behavior
+- No hidden auto-transfer without audit trail
+- Every critical decision must be deterministic and explainable
+
+---
+
+SAFETY / CONSISTENCY REQUIREMENTS
+
+- Shift ownership must be unambiguous
+- Invoice ownership must be unambiguous
+- Treasury separation must remain intact per shift
+- Closing report must remain isolated per shift
+- A user session must not be mistaken for an active valid shift
+- An old open shift must not continue normally across days
+- If multiple shifts are open, the system must still remain deterministic and conflict-free
+
+---
+
+OUTPUT STYLE
+
+Be strict and concrete.
+Do not give generic advice.
+Do not implement code.
+Do not change schema yet unless the plan explicitly identifies schema gaps as recommendations only.
+
+AGENT TASK
+
+Produce SHIFT CONTROL FIX PLAN.
+
+DO NOT IMPLEMENT YET.

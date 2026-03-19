@@ -1,0 +1,247 @@
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+
+OBJECTIVE
+
+Enforce strict, audit-safe cashier shift lifecycle with correct day-boundary handling and support for shifts crossing midnight.
+
+THIS TASK IS ANALYSIS + PLAN ONLY.
+DO NOT IMPLEMENT YET.
+
+---
+
+CRITICAL BUSINESS PRINCIPLE
+
+Cashier shift is a BUSINESS-DAY entity, not a calendar-day entity.
+
+Shifts may legally cross midnight (e.g., 11 PM → 7 AM), but must still belong to a single logical business day.
+
+---
+
+BUSINESS DATE RULE (STRICT)
+
+Each shift MUST have:
+
+business_date = logical operating day (not system date at every moment)
+
+Definition:
+
+- business_date is assigned ON SHIFT OPEN
+- it NEVER changes during the shift lifecycle
+- it does NOT auto-update at midnight
+
+---
+
+MIDNIGHT CROSSING RULE
+
+System must correctly handle shifts that cross midnight.
+
+Valid examples:
+- Shift opens at 23:00 → closes at 07:00 next day → SAME business_date
+- Shift opens at 16:00 → closes at 01:00 next day → SAME business_date
+
+STRICT RULES:
+
+- A shift must NOT become stale just because system date changed
+- A shift becomes stale ONLY if:
+  - business_date < current business day
+  - AND shift is still open beyond allowed boundary
+
+---
+
+STALE DETECTION (CORRECTED)
+
+System must NOT use naive:
+
+system_date > shift_date → stale
+
+Instead must use:
+
+- configurable business boundary OR
+- logical comparison based on business_date
+
+REQUIRED BEHAVIOR:
+
+- If shift started yesterday but is still within allowed operating window → NOT stale
+- If shift remained open beyond acceptable duration (e.g., next business cycle) → mark as stale
+
+---
+
+FORBIDDEN BEHAVIOR
+
+- Marking a valid overnight shift as stale at 00:00
+- Forcing shift closure just because of date change
+- Allowing a shift to continue indefinitely across multiple days
+
+---
+
+REQUIRED DESIGN IN PLAN
+
+Plan must define:
+
+1) Business Day Model
+- what defines a business day
+- how system determines "today" vs "shift business day"
+
+2) Midnight Handling Logic
+- how shift behaves across 00:00
+- when shift is still valid vs stale
+
+3) Stale Criteria (STRICT)
+- clear rule when shift becomes stale
+- must include time-based + business_date logic
+
+4) Maximum Shift Duration Rule
+- define safe max duration (e.g., 12–18 hours or configurable)
+- prevent 2-day open shift scenario
+
+5) Safe Close Behavior Across Midnight
+- closing after midnight must still be valid
+- must not require forced transfer due to date only
+
+---
+
+SHIFT OWNERSHIP RULE (STRICT)
+
+Every shift operation must validate:
+
+assertShiftOwnership(shiftId, userId)
+
+If violated:
+→ 403 Forbidden
+
+No exception.
+
+---
+
+MULTI-SHIFT RULE
+
+System must support multiple active shifts simultaneously.
+
+- Shift A → Cashier 1
+- Shift B → Cashier 2
+
+Both may operate concurrently without conflict.
+
+---
+
+INVOICE OWNERSHIP RULE (STRICT)
+
+Invoices must be assigned deterministically:
+
+- first valid claim wins
+- ownership is atomic
+- no duplicate ownership
+- no UI-based race decisions
+
+Use:
+
+claimed_by_shift_id
+claimed_at
+
+---
+
+CLOSING RULES (STRICT)
+
+1) target_shift must NOT equal current_shift
+2) target_shift must be OPEN and VALID
+3) if pending invoices exist:
+   - closing allowed ONLY if another valid shift exists
+4) if only one shift exists:
+   - closing MUST be blocked
+5) no silent transfer
+6) every transfer must be logged
+
+---
+
+ATOMIC CLOSING (MANDATORY)
+
+Close operation must be atomic:
+
+- UPDATE status = "closing"
+- revalidate
+- commit OR rollback
+
+No TOCTOU allowed.
+
+---
+
+TRANSFER LOG (MANDATORY)
+
+Every transfer must be recorded:
+
+cashier_transfer_log:
+- from_shift_id
+- to_shift_id
+- invoice_ids
+- transferred_at
+- transferred_by
+- reason
+
+No implicit transfers.
+
+---
+
+CURRENT SYSTEM AUDIT (REQUIRED FIRST)
+
+Agent MUST:
+
+- analyze current shift lifecycle
+- identify where midnight logic is broken
+- identify stale misclassification
+- identify cross-day inconsistencies
+
+Do NOT skip this step.
+
+---
+
+OUTPUT REQUIREMENT
+
+Produce:
+
+SHIFT CONTROL FIX PLAN
+
+Must include:
+
+- current logic analysis
+- failure scenarios
+- corrected lifecycle model
+- business_date handling
+- midnight crossing logic
+- stale detection rules
+- ownership model
+- atomic closing design
+- audit trail design
+- test matrix (including overnight shifts)
+
+---
+
+ENGINEERING CONSTRAINTS
+
+- no duplicated logic
+- backend is single source of truth
+- deterministic behavior only
+- no hidden fallback
+- no time-based bugs
+- no reliance on client timing
+
+---
+
+SAFETY GUARANTEE
+
+System MUST ensure:
+
+- overnight shifts work correctly
+- no shift continues across multiple business days silently
+- no shift is incorrectly marked stale at midnight
+- no ambiguity in shift ownership
+- no ambiguity in invoice ownership
+- full audit trace for every action
+
+---
+
+AGENT TASK
+
+Produce SHIFT CONTROL FIX PLAN.
+
+DO NOT IMPLEMENT YET.
