@@ -130,7 +130,10 @@ export async function registerAuthRoutes(app: Express) {
       }
       const permissions = await storage.getUserEffectivePermissions(user.id);
       const { password: _, ...safeUser } = user;
-      res.json({ user: safeUser, permissions });
+      const isAdminRole = user.role === "admin" || (user.role as string) === "owner";
+      const allowedWarehouses = isAdminRole ? [] : await storage.getUserWarehouses(user.id);
+      const allowedWarehouseIds = allowedWarehouses.map(w => w.id);
+      res.json({ user: safeUser, permissions, allowedWarehouseIds });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
