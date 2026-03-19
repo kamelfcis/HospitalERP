@@ -275,7 +275,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: any) {
       const msg  = e instanceof Error ? e.message : String(e);
       const code = e?.status || 500;
-      if (msg.includes("معلق") || msg.includes("مغلق") || msg.includes("منتهية")) return res.status(409).json({ message: msg });
+      if (msg.includes("معلق") || msg.includes("معلّق") || msg.includes("مغلق") || msg.includes("منتهية") || msg.includes("لا يمكن إغلاق")) return res.status(409).json({ message: msg });
       if (code === 403) return res.status(403).json({ message: msg });
       if (code === 404) return res.status(404).json({ message: msg });
       res.status(code === 500 ? 500 : code).json({ message: msg });
