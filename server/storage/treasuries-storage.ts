@@ -477,6 +477,10 @@ const methods = {
     const invNum = row?.invoice_number ?? invoiceId;
     const patientName = row?.patient_name ?? "";
     for (const p of payments.rows as any[]) {
+      if (parseFloat(p.amount) <= 0) {
+        console.warn(`[Treasury] skipping zero-value payment row id=${p.id} amount=${p.amount} for invoice=${invoiceId}`);
+        continue;
+      }
       const ref = p.reference_number ? `[${p.reference_number}] ` : "";
       const desc = `${ref}تحصيل فاتورة مريض رقم ${invNum}${patientName ? ` - ${patientName}` : ""}`;
       await db.execute(sql`

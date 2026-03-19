@@ -125,6 +125,9 @@ export const PERMISSIONS = {
   // ── مجموعات الصلاحيات ─────────────────────────────────────────────────
   PERMISSION_GROUPS_VIEW:   "permission_groups.view",
   PERMISSION_GROUPS_MANAGE: "permission_groups.manage",
+
+  // ── فواتير: موافقة سعر الصفر ──────────────────────────────────────────
+  INVOICE_APPROVE_ZERO_PRICE: "invoice.approve_zero_price",
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -194,6 +197,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.STOCK_COUNT_POST,
     PERMISSIONS.PERMISSION_GROUPS_VIEW,
     PERMISSIONS.PERMISSION_GROUPS_MANAGE,
+    PERMISSIONS.INVOICE_APPROVE_ZERO_PRICE,
   ],
 
   admin: Object.values(PERMISSIONS),

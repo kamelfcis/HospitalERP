@@ -74,7 +74,7 @@ export default function SalesReturnsPage() {
         <Card>
           <CardContent className="py-8 text-center">
             <AlertCircle className="h-8 w-8 mx-auto text-destructive mb-2" />
-            <p className="text-sm text-muted-foreground">الفاتورة غير موجودة أو غير مرحّلة</p>
+            <p className="text-sm text-muted-foreground">الفاتورة غير موجودة، أو لم تُحصَّل من الخزنة بعد، أو لم يكتمل قيدها المحاسبي</p>
           </CardContent>
         </Card>
       )}

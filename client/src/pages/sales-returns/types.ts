@@ -69,6 +69,10 @@ export interface ReturnInvoiceData {
   discountPercent: string;
   discountValue: string;
   netTotal: string;
+  /** حالة الفاتورة — يجب أن تكون 'collected' */
+  status: string;
+  /** حالة القيد المحاسبي — يجب أن تكون 'completed' */
+  journalStatus: string;
   lines: OriginalLine[];
 }
 

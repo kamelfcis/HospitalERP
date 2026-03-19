@@ -1,0 +1,211 @@
+🔥 FINAL PROMPT — INVOICE FINANCIAL SAFETY HARDENING (NON-BREAKING)
+
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+
+This patch is an extension of existing return / invoice logic.
+DO NOT introduce new workflow, routes, or architectural patterns.
+DO NOT break or bypass current "Sales Return" screen behavior.
+
+All changes must:
+
+Extend current logic
+
+Reuse existing functions/services
+
+Respect current data flow and UI
+
+Be backward-compatible
+
+🎯 OBJECTIVE
+
+Strengthen financial integrity of invoice workflow
+WITHOUT altering existing user flow or screen behavior.
+
+🛑 1. RETURN VALIDATION — SAFE EXTENSION ONLY
+⚠️ RULE: DO NOT CHANGE FLOW
+
+Keep current createSalesReturn flow intact
+
+Add validation inside existing logic only
+
+✅ Financial Guard (Backend)
+
+Before allowing return:
+
+Block if:
+- orig.status ≠ 'collected'
+OR
+- orig.journal_status ≠ 'completed'
+OR
+- orig.is_void = true
+OR
+- orig.is_cancelled = true
+🧾 Arabic Errors
+لا يمكن إنشاء مرتجع لأن الفاتورة الأصلية لم تُحصّل بالكامل من الخزنة
+لا يمكن إنشاء مرتجع قبل اكتمال القيد المالي للفاتورة الأصلية
+📦 Quantity Validation (CRITICAL)
+
+Inside SAME transaction:
+
+available_qty =
+    original_qty
+  - sum(previous_returns)
+
+IF return_qty > available_qty → BLOCK
+
+Error:
+
+لا يمكن إرجاع كمية أكبر من الكمية المتاحة بعد احتساب المرتجعات السابقة
+🔒 Concurrency
+
+Use existing transaction
+
+Keep existing FOR UPDATE
+
+Ensure quantity validation runs inside same transaction scope
+
+Add comment only (no redesign):
+
+// ensure return validation and insert run atomically to prevent double return
+🖥️ Frontend (NO NEW FLOW)
+
+DO NOT create new screens
+
+DO NOT change UX pattern
+
+ONLY:
+
+Disable return button if:
+
+status ≠ collected
+
+OR journal_status ≠ completed
+
+💰 2. ZERO PRICE — CONTROL WITHOUT BREAKING FLOW
+⚠️ RULE
+
+DO NOT change invoice lifecycle
+
+DO NOT break current save behavior
+
+✅ Backend Validation
+IF unit_price ≤ 0
+AND allowZeroPrice ≠ true
+→ HTTP 422
+🔐 Permission
+
+Require:
+
+invoice.approve_zero_price
+
+IF missing → HTTP 403
+
+🧾 Reason Code (MANDATORY)
+reasonCode (ENUM)
+
+Allowed:
+
+FREE_SAMPLE
+MANAGEMENT_APPROVAL
+CHARITY_CASE
+PROMOTIONAL_ITEM
+DATA_CORRECTION
+📝 Audit Log
+{
+  "action": "ZERO_PRICE_APPROVAL",
+  "invoiceId": "...",
+  "lineId": "...",
+  "itemId": "...",
+  "enteredUnitPrice": 0,
+  "originalPrice": "...",
+  "reasonCode": "...",
+  "userId": "...",
+  "datetime": "..."
+}
+🖥️ Frontend
+
+Use current UI
+
+Add confirmation dialog only
+
+Pass allowZeroPrice = true on confirm
+
+NO redesign
+
+🏦 3. TREASURY ZERO-VALUE — SAFE PATCH
+
+Inside existing function:
+
+createTreasuryTransactionsForInvoice
+✅ Rule
+if (parseFloat(amount) <= 0) {
+  logger.warn(
+    { invoiceId, paymentId, amount },
+    "[TREASURY] skipped zero-value transaction"
+  );
+  continue;
+}
+⚠️ IMPORTANT
+
+Do NOT insert row
+
+Do NOT change treasury logic flow
+
+Only guard invalid case
+
+⚡ 4. INDEXES — NON-BREAKING ADDITION
+
+Add ONLY if not exists:
+
+CREATE NONCLUSTERED INDEX idx_sales_inv_original_invoice_id
+ON sales_invoice_headers(original_invoice_id);
+
+CREATE NONCLUSTERED INDEX idx_sales_inv_lines_return_check
+ON sales_invoice_lines(invoice_id, item_id, lot_id)
+INCLUDE (qty_in_minor);
+⚠️ RULE
+
+Do not drop existing indexes
+
+Do not modify existing ones
+
+Only add missing
+
+🔁 5. APPLY CONSISTENTLY
+
+Apply same logic to:
+
+- sales invoices
+- patient invoices
+
+Without duplication or divergence
+
+🧠 FINAL CONTROL RULE
+Backend validation is the source of truth.
+Frontend is advisory only.
+🚀 EXECUTION RULES
+
+Extend existing code only
+
+No new APIs unless strictly required
+
+No schema redesign
+
+No workflow changes
+
+No UI redesign
+
+Keep backward compatibility
+
+✅ EXPECTED RESULT
+
+No return before financial completion
+
+No over-return quantities
+
+No zero-price without approval
+
+No treasury zero-value errors
+
+No impact on current user workflow

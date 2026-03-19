@@ -18,6 +18,36 @@ import {
   insertPatientInvoicePaymentSchema,
 } from "@shared/schema";
 
+async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Promise<boolean> {
+  const hasZeroPrice = linesParsed.some(l => parseFloat(String(l.unitPrice ?? 0)) <= 0);
+  if (!hasZeroPrice) return true;
+
+  const allowZeroPrice = req.body.allowZeroPrice === true;
+  if (!allowZeroPrice) {
+    res.status(422).json({ code: "ZERO_PRICE_LINES", message: "بعض بنود الفاتورة بها سعر صفري — تأكيد الحفظ؟" });
+    return false;
+  }
+
+  const perms = await storage.getUserEffectivePermissions(req.session.userId);
+  if (!perms.includes(PERMISSIONS.INVOICE_APPROVE_ZERO_PRICE)) {
+    res.status(403).json({ message: "ليس لديك صلاحية اعتماد بنود بسعر صفري" });
+    return false;
+  }
+
+  auditLog({
+    tableName: "patient_invoice_headers",
+    recordId: req.params?.id ?? "new",
+    action: "zero_price_approved",
+    newValues: JSON.stringify({
+      reason: req.body.zeroPriceReason ?? "unspecified",
+      zeroLines: linesParsed.filter(l => parseFloat(String(l.unitPrice ?? 0)) <= 0).map(l => l.description),
+    }),
+    userId: req.session.userId,
+  }).catch(() => {});
+
+  return true;
+}
+
 export function registerPatientInvoicesRoutes(app: Express) {
   // ============= Patient Invoices =============
 
@@ -81,6 +111,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
 
+      if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
+
       const result = await storage.createPatientInvoice(headerParsed, linesParsed, paymentsParsed);
       res.status(201).json(result);
     } catch (error: unknown) {
@@ -101,6 +133,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const headerParsed = insertPatientInvoiceHeaderSchema.partial().parse(header);
       const linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
+
+      if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
       const result = await storage.updatePatientInvoice(req.params.id as string, headerParsed, linesParsed, paymentsParsed, expectedVersion != null ? Number(expectedVersion) : undefined);
       res.json(result);

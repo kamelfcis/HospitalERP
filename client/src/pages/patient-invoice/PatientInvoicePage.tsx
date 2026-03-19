@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileText, Search, BedDouble, Building2, Stethoscope, UserCheck, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -103,7 +106,9 @@ export default function PatientInvoice() {
   const stats    = useStatsDialog();
   const validate = useInvoiceValidation();
 
-  const { saveMutation, finalizeMutation } = useInvoiceMutations({
+  const [zeroPriceReason, setZeroPriceReason] = useState("sample");
+
+  const { saveMutation, finalizeMutation, zeroPriceOpen, setZeroPriceOpen, confirmZeroPrice } = useInvoiceMutations({
     invoiceId:    form.invoiceId,
     invoiceNumber: form.invoiceNumber,
     invoiceDate:  form.invoiceDate,
@@ -524,6 +529,42 @@ export default function PatientInvoice() {
         isLoading={stats.statsLoading}
         onClose={stats.closeStatsDialog}
       />
+
+      {/* ── Zero-price confirmation dialog ───────────────────────────────────── */}
+      <Dialog open={zeroPriceOpen} onOpenChange={setZeroPriceOpen}>
+        <DialogContent className="max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-amber-600">بنود بسعر صفري</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            بعض بنود الفاتورة تحتوي على سعر صفري. يرجى اختيار سبب الموافقة قبل الحفظ.
+          </p>
+          <Select value={zeroPriceReason} onValueChange={setZeroPriceReason} dir="rtl">
+            <SelectTrigger data-testid="select-zero-price-reason">
+              <SelectValue placeholder="اختر السبب" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sample">عينة مجانية</SelectItem>
+              <SelectItem value="promotional">عرض ترويجي</SelectItem>
+              <SelectItem value="charity">خيري / إعانة</SelectItem>
+              <SelectItem value="correction">تصحيح خطأ</SelectItem>
+              <SelectItem value="other">أخرى</SelectItem>
+            </SelectContent>
+          </Select>
+          <DialogFooter className="flex gap-2 mt-2">
+            <Button variant="outline" onClick={() => setZeroPriceOpen(false)} data-testid="button-cancel-zero-price">
+              إلغاء
+            </Button>
+            <Button
+              onClick={() => confirmZeroPrice(zeroPriceReason)}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              data-testid="button-confirm-zero-price"
+            >
+              تأكيد الحفظ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

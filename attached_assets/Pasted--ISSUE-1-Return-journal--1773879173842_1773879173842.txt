@@ -1,0 +1,221 @@
+🔴 أولاً: ملاحظات على ISSUE 1 (Return قبل التحصيل)
+❗ المشكلة في البرومبت الحالي
+
+هو بيقول:
+
+journal_status ≠ completed → امنع
+
+بس ده مش كفاية محاسبيًا 👇
+
+⚠️ الثغرة
+
+ممكن:
+
+journal_status = completed
+لكن:
+
+مفيش Cash فعلي (PaidInvoice = 0)
+
+👉 يعني GL اتسجل لكن الكاشير ما قبضش
+
+✅ التعديل المقترح
+
+أضف شرط تاني:
+
+Block return if:
+- journal_status ≠ completed
+OR
+- cashier_collection_status ≠ collected
+💡 كده انت ضمنت:
+
+✔ GL
+✔ Cash
+
+✍️ تعديل البرومبت
+
+بدل:
+
+journal_status ≠ completed
+
+خليها:
+
+journal_status ≠ completed
+OR cashier_collection_status ≠ collected
+🔴 ثانياً: ISSUE 2 (Zero Price)
+❗ المشكلة
+
+البرومبت قال:
+
+unit_price ≤ 0
+
+بس مفرقش بين:
+
+Discount 100%
+
+Free item (عروض)
+
+Error
+
+⚠️ الثغرة
+
+ممكن حد يستغل:
+👉 يعمل سعر = 0 بدل خصم
+
+✅ التعديل المقترح
+
+أضف:
+
+1️⃣ Mandatory reason
+If allowZeroPrice = true → require:
+- reason_code
+- user_id
+2️⃣ Role-based permission
+Only users with role:
+FINANCE_MANAGER or SUPERVISOR
+can approve zero price
+3️⃣ Audit log
+Log:
+- user
+- datetime
+- item
+- original price
+- reason
+💡 ده مهم جدًا علشان:
+
+✔ منع التلاعب
+✔ مراجعة لاحقة
+
+🔴 ثالثاً: ISSUE 3 (Treasury = 0)
+❗ المشكلة
+
+البرومبت قال:
+
+skip if amount ≤ 0
+
+⚠️ الثغرة
+
+في حالة:
+
+amount = 0 بسبب bug
+
+👉 انت كده “خبّيت المشكلة”
+
+✅ التعديل الأفضل
+
+بدل skip بس:
+
+If amount ≤ 0:
+- skip insert
+- AND log warning
+💡 مثال Log:
+Skipped zero-value treasury transaction for invoice X
+🔴 رابعاً: INDEXES
+❗ المشكلة
+
+البرومبت قال تضيف index بس
+ما قالش نوعه
+
+✅ التعديل
+
+حدد:
+
+CREATE NONCLUSTERED INDEX IX_sales_invoice_headers_original_invoice
+ON sales_invoice_headers(original_invoice_id);
+
+CREATE NONCLUSTERED INDEX IX_sales_invoice_lines_return_check
+ON sales_invoice_lines(invoice_id, item_id, lot_id);
+💡 مهم جدًا:
+
+قول:
+
+Include columns if needed (qty, returned_qty)
+
+علشان performance يبقى أعلى
+
+🔴 خامساً: Missing Critical Rule 🚨
+❗ البرومبت ناقص أهم نقطة
+❌ Partial Return Control
+
+مفيش Validation يمنع:
+
+👉 ترجع كمية أكبر من المباعة
+
+✅ لازم تضيف:
+Returned quantity must not exceed original sold quantity
+considering previous returns
+💡 ده مهم جدًا:
+
+علشان:
+✔ تمنع stock corruption
+✔ تمنع duplicate returns
+
+🔴 سادساً: Concurrency (مهم جدًا عندك)
+❗ المشكلة
+
+مفيش حماية لو:
+
+2 users عملوا return في نفس الوقت
+
+✅ التعديل
+
+أضف:
+
+Return validation must run inside a DB transaction
+with proper locking
+💡 أو:
+
+optimistic lock
+
+version column
+
+🔴 سابعاً: UX (تحسين مهم)
+❗ البرومبت كويس بس ناقص
+قبل ما المستخدم يبدأ:
+
+أضف:
+
+Frontend must disable return button
+if invoice is not financially completed
+🔴 ثامناً: رسائل الأخطاء
+❗ محتاجة توحيد
+
+اقترح:
+
+Return:
+لا يمكن إنشاء مرتجع قبل اكتمال التحصيل المالي (الخزنة + القيود)
+Zero price:
+يوجد صنف بسعر صفر، يجب التأكيد مع تحديد السبب
+🔥 الشكل النهائي بعد التعديلات
+
+لو هتسلمه للديفيلوبر، ضيف:
+
+✅ إضافات مهمة للبرومبت
+1️⃣ Financial validation extended
+
+journal_status
+
+cashier_collection_status
+
+2️⃣ Zero price governance
+
+reason_code
+
+role permission
+
+audit log
+
+3️⃣ Treasury safeguard
+
+skip + log
+
+4️⃣ Return quantity validation
+
+cumulative return check
+
+5️⃣ Concurrency control
+
+transaction / locking
+
+6️⃣ UX prevention
+
+disable return early

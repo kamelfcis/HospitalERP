@@ -32,6 +32,12 @@ import type { DatabaseStorage } from "./index";
 import { roundMoney, parseMoney } from "../finance-helpers";
 
 const methods = {
+  /*
+   * ملاحظة أمنية: فواتير المبيعات المؤهلة للمرتجع يجب أن تكون:
+   *   status = 'collected'  → الكاشير حصّل الكاش فعلياً
+   *   journal_status = 'completed' → القيد المحاسبي مكتمل
+   * لا يجوز مرتجع على فاتورة مرحّلة (finalized) لم يُحصَّل بعد.
+   */
   async searchSaleInvoicesForReturn(this: DatabaseStorage, params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]> {
     let resolvedItemId: string | null = null;
 
@@ -83,7 +89,9 @@ const methods = {
              (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id) AS "itemCount"
       FROM sales_invoice_headers h
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
-      WHERE h.is_return = false AND h.status = 'finalized'${whereExtra}
+      WHERE h.is_return = false
+        AND h.status = 'collected'
+        AND h.journal_status = 'completed'${whereExtra}
       ORDER BY h.invoice_date DESC, h.invoice_number DESC
       LIMIT 50
     `;
@@ -97,10 +105,12 @@ const methods = {
              h.warehouse_id AS "warehouseId", w.name_ar AS "warehouseName",
              h.customer_type AS "customerType", h.customer_name AS "customerName",
              h.subtotal, h.discount_percent AS "discountPercent",
-             h.discount_value AS "discountValue", h.net_total AS "netTotal"
+             h.discount_value AS "discountValue", h.net_total AS "netTotal",
+             h.status, h.journal_status AS "journalStatus"
       FROM sales_invoice_headers h
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
-      WHERE h.id = ${invoiceId} AND h.is_return = false AND h.status = 'finalized'
+      WHERE h.id = ${invoiceId} AND h.is_return = false
+        AND h.status = 'collected' AND h.journal_status = 'completed'
     `);
     if (!hdr.rows.length) return null;
     const header = hdr.rows[0] as Record<string, unknown>;
@@ -139,14 +149,21 @@ const methods = {
     discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string;
   }): Promise<any> {
     return await db.transaction(async (tx) => {
+      // ensure return validation and insert run atomically to prevent double return
       const origHeader = await tx.execute(sql`
-        SELECT id, invoice_date, warehouse_id, customer_type, customer_name, contract_company, pharmacy_id, status, is_return
+        SELECT id, invoice_date, warehouse_id, customer_type, customer_name, contract_company, pharmacy_id,
+               status, is_return, journal_status
         FROM sales_invoice_headers WHERE id = ${data.originalInvoiceId} FOR UPDATE
       `);
       const orig = origHeader.rows[0] as Record<string, unknown>;
       if (!orig) throw new Error("الفاتورة الأصلية غير موجودة");
       if (orig.is_return) throw new Error("لا يمكن إرجاع فاتورة مرتجع");
-      if (orig.status !== "finalized") throw new Error("الفاتورة الأصلية غير مرحّلة");
+      if (orig.status !== "collected") {
+        throw new Error("لا يمكن إنشاء مرتجع لأن الفاتورة الأصلية لم تُحصّل بالكامل من الخزنة");
+      }
+      if (orig.journal_status !== "completed") {
+        throw new Error("لا يمكن إنشاء مرتجع قبل اكتمال القيد المالي للفاتورة الأصلية");
+      }
       if (orig.warehouse_id !== data.warehouseId) throw new Error("المخزن لا يتطابق مع فاتورة البيع الأصلية");
 
       const origLines = await tx.execute(sql`
@@ -173,17 +190,22 @@ const methods = {
         if (origLine.item_id !== rl.itemId) throw new Error(`الصنف لا يتطابق مع السطر الأصلي`);
 
         const availMinor = parseFloat(origLine.qty_in_minor as string) - parseFloat(origLine.previouslyReturnedMinor as string);
-        let returnMinor = parseFloat(rl.qtyInMinor);
+        const returnMinor = parseFloat(rl.qtyInMinor);
         if (returnMinor <= 0) continue;
-        if (returnMinor > availMinor) returnMinor = availMinor;
-        if (returnMinor <= 0) continue;
+        if (returnMinor > availMinor + 0.0001) {
+          throw new Error(
+            `لا يمكن إرجاع كمية أكبر من الكمية المتاحة بعد احتساب المرتجعات السابقة (الصنف: ${rl.itemId})`
+          );
+        }
+        const clampedMinor = Math.min(returnMinor, availMinor);
+        if (clampedMinor <= 0) continue;
 
         const pricePerMinor = parseFloat(origLine.line_total as string) / (parseFloat(origLine.qty_in_minor as string) || 1);
-        const lineTotal = Math.round(returnMinor * pricePerMinor * 100) / 100;
+        const lineTotal = Math.round(clampedMinor * pricePerMinor * 100) / 100;
 
         validatedLines.push({
           ...rl,
-          qtyInMinor: String(returnMinor),
+          qtyInMinor: String(clampedMinor),
           salePrice: origLine.sale_price as string,
           lineTotal: lineTotal.toFixed(2),
           lotId: origLine.lot_id as string | null,

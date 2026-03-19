@@ -121,6 +121,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   isReturnIdx: index("idx_sales_inv_is_return").on(table.isReturn),
   pharmacyIdx: index("idx_sales_inv_pharmacy").on(table.pharmacyId),
   journalStatusIdx: index("idx_sales_inv_journal_status").on(table.journalStatus),
+  originalInvoiceIdx: index("idx_sales_inv_original_invoice_id").on(table.originalInvoiceId),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {
@@ -137,7 +138,9 @@ export const salesInvoiceLines = pgTable("sales_invoice_lines", {
   expiryYear: integer("expiry_year"),
   lotId: varchar("lot_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  returnCheckIdx: index("idx_sales_lines_return_check").on(table.invoiceId, table.itemId, table.lotId),
+}));
 
 export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
