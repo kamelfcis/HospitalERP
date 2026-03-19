@@ -113,6 +113,9 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   journalStatus: text("journal_status").default("none"),
   journalError: text("journal_error"),
   journalRetries: integer("journal_retries").default(0),
+  // ── Cashier ownership (concurrency control + visual display) ───────────────
+  claimedByShiftId: varchar("claimed_by_shift_id"),
+  claimedAt: timestamp("claimed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -122,6 +125,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   pharmacyIdx: index("idx_sales_inv_pharmacy").on(table.pharmacyId),
   journalStatusIdx: index("idx_sales_inv_journal_status").on(table.journalStatus),
   originalInvoiceIdx: index("idx_sales_inv_original_invoice_id").on(table.originalInvoiceId),
+  claimedByShiftIdx: index("idx_sales_inv_claimed_shift").on(table.claimedByShiftId),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {

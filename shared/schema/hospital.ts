@@ -94,11 +94,30 @@ export const cashierShifts = pgTable("cashier_shifts", {
   variance: decimal("variance", { precision: 18, scale: 2 }).notNull().default("0"),
   openedAt: timestamp("opened_at").notNull().defaultNow(),
   closedAt: timestamp("closed_at"),
+  // ── Day-boundary & stale tracking ─────────────────────────────────────────
+  businessDate: date("business_date"),
+  closedBy: varchar("closed_by"),
+  staleAt: timestamp("stale_at"),
+  staleReason: text("stale_reason"),
 }, (table) => ({
   cashierIdx: index("idx_cashier_shifts_cashier").on(table.cashierId),
   statusIdx: index("idx_cashier_shifts_status").on(table.status),
   openedAtIdx: index("idx_cashier_shifts_opened").on(table.openedAt),
   pharmacyIdx: index("idx_cashier_shifts_pharmacy").on(table.pharmacyId),
+  businessDateIdx: index("idx_cashier_shifts_biz_date").on(table.businessDate),
+}));
+
+export const cashierTransferLog = pgTable("cashier_transfer_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fromShiftId: varchar("from_shift_id").notNull().references(() => cashierShifts.id),
+  toShiftId: varchar("to_shift_id").notNull().references(() => cashierShifts.id),
+  invoiceIds: text("invoice_ids").notNull(),
+  transferredAt: timestamp("transferred_at").notNull().defaultNow(),
+  transferredBy: text("transferred_by").notNull(),
+  reason: text("reason"),
+}, (table) => ({
+  fromShiftIdx: index("idx_cashier_transfer_from").on(table.fromShiftId),
+  toShiftIdx: index("idx_cashier_transfer_to").on(table.toShiftId),
 }));
 
 export const cashierReceipts = pgTable("cashier_receipts", {
@@ -342,7 +361,8 @@ export const treasuryTransactions = pgTable("treasury_transactions", {
 // Insert schemas
 export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true });
 export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true, createdAt: true });
-export const insertCashierShiftSchema = createInsertSchema(cashierShifts).omit({ id: true, openedAt: true, closedAt: true });
+export const insertCashierShiftSchema = createInsertSchema(cashierShifts).omit({ id: true, openedAt: true, closedAt: true, staleAt: true });
+export const insertCashierTransferLogSchema = createInsertSchema(cashierTransferLog).omit({ id: true, transferredAt: true });
 export const insertCashierReceiptSchema = createInsertSchema(cashierReceipts).omit({ id: true, collectedAt: true });
 export const insertCashierRefundReceiptSchema = createInsertSchema(cashierRefundReceipts).omit({ id: true, refundedAt: true });
 export const insertCashierAuditLogSchema = createInsertSchema(cashierAuditLog).omit({ id: true, performedAt: true });
