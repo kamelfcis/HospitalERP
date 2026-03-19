@@ -261,7 +261,9 @@ const methods = {
         if (item && item.allowFractionalSale === false) {
           const epsilon = 0.0001;
           if (Math.abs(qtyInMinor - Math.round(qtyInMinor)) > epsilon) {
-            throw new Error(`الصنف "${item.nameAr}" لا يسمح بالبيع بكميات كسرية`);
+            const err: any = new Error(`الصنف "${item.nameAr}" لا يسمح بالبيع بكميات كسرية`);
+            err.httpStatus = 400;
+            throw err;
           }
         }
 

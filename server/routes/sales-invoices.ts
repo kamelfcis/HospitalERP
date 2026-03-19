@@ -132,8 +132,9 @@ export function registerSalesInvoicesRoutes(app: Express) {
         return res.status(201).json(invoice);
       }
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
-      res.status(500).json({ message: _em });
+      const _em = error instanceof Error ? error.message : String(error);
+      const status = (error as any)?.httpStatus || 500;
+      res.status(status).json({ message: _em });
     }
   });
 
@@ -155,8 +156,9 @@ export function registerSalesInvoicesRoutes(app: Express) {
       const invoice = await storage.createSalesInvoice(enriched, lines);
       res.status(201).json(invoice);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
-      res.status(500).json({ message: _em });
+      const _em = error instanceof Error ? error.message : String(error);
+      const status = (error as any)?.httpStatus || 500;
+      res.status(status).json({ message: _em });
     }
   });
 

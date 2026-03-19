@@ -1,21 +1,15 @@
 import { useState, useEffect, useRef, memo } from "react";
 import { Button } from "@/components/ui/button";
-import { X, BarChart3 } from "lucide-react";
+import { X, BarChart3, Lock } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import {
   formatAvailability, getUnitOptions,
-  computeUnitPriceFromBase, computeLineTotal,
+  computeUnitPriceFromBase, computeLineTotal, computeBaseFromUnitPrice,
 } from "@/lib/invoice-lines";
 import type { SalesLineLocal } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QtyCell — controlled input محمي من double-call
-//
-// السبب: defaultValue (uncontrolled) لا يتحدث عند تغيير الوحدة.
-//         onKeyDown + setTimeout(focus) كان يُطلق onBlur مرة ثانية → FEFO ×2
-// الحل:
-//   - value مُتحكَّم به من useState مع useEffect يمسح عند تغيير unitLevel/qty
-//   - onKeyDown يحرّك التركيز فقط → onBlur يتولى الـ confirm (مرة واحدة فقط)
 // ─────────────────────────────────────────────────────────────────────────────
 interface QtyCellProps {
   line:           SalesLineLocal;
@@ -31,7 +25,6 @@ const QtyCell = memo(function QtyCell({
 }: QtyCellProps) {
   const [localVal, setLocalVal] = useState(String(line.qty));
 
-  // متزامن مع تغيير الوحدة أو الكمية — يمسح القيمة المعلقة ويعرض الكمية الجديدة
   useEffect(() => {
     setLocalVal(String(line.qty));
     pendingQtyRef.current.delete(line.tempId);
@@ -47,19 +40,62 @@ const QtyCell = memo(function QtyCell({
         setLocalVal(e.target.value);
         pendingQtyRef.current.set(line.tempId, e.target.value);
       }}
-      onBlur={() => {
-        // نقطة الدخول الوحيدة لـ onQtyConfirm — تعمل لكل الأصناف
-        onQtyConfirm(line.tempId);
-      }}
+      onBlur={() => onQtyConfirm(line.tempId)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === "Tab") {
           e.preventDefault();
-          // نحرّك التركيز فقط → onBlur يتولى الـ confirm تلقائياً (مرة واحدة)
           barcodeInputRef.current?.focus();
         }
       }}
       className="peachtree-input w-[64px] text-center"
       disabled={fefoLoading}
+      data-testid={testId}
+    />
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PriceCell — حقل سعر البيع القابل للتعديل (عندما لا يكون مقيّداً بدُفعة)
+// ─────────────────────────────────────────────────────────────────────────────
+interface PriceCellProps {
+  line:         SalesLineLocal;
+  index:        number;
+  onUpdateLine: (index: number, patch: Partial<SalesLineLocal>) => void;
+  testId:       string;
+}
+
+const PriceCell = memo(function PriceCell({ line, index, onUpdateLine, testId }: PriceCellProps) {
+  const [localVal, setLocalVal] = useState(String(line.salePrice));
+
+  useEffect(() => {
+    setLocalVal(String(line.salePrice));
+  }, [line.salePrice, line.unitLevel]);
+
+  return (
+    <input
+      type="number"
+      step="0.01"
+      min="0"
+      value={localVal}
+      onChange={(e) => setLocalVal(e.target.value)}
+      onBlur={() => {
+        const newPrice = parseFloat(localVal);
+        if (!newPrice || newPrice <= 0) {
+          setLocalVal(String(line.salePrice));
+          return;
+        }
+        const newBase  = computeBaseFromUnitPrice(newPrice, line.unitLevel, line.item);
+        onUpdateLine(index, {
+          salePrice:    newPrice,
+          baseSalePrice: newBase,
+          lineTotal:    computeLineTotal(line.qty, newBase, line.unitLevel, line.item),
+          priceSource:  "manual",
+        });
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === "Tab") e.currentTarget.blur();
+      }}
+      className="peachtree-input w-[80px] text-center"
       data-testid={testId}
     />
   );
@@ -88,19 +124,6 @@ export function InvoiceLineTable({
   onUpdateLine, onRemoveLine, onQtyConfirm, onOpenStats, barcodeInputRef,
 }: Props) {
 
-  const multiPriceItems = new Set<string>();
-  lines.forEach((ln) => {
-    if (ln.expiryOptions && ln.expiryOptions.length > 1) {
-      const prices = new Set(ln.expiryOptions.map((o) => parseFloat(o.lotSalePrice || "0")));
-      if (prices.size > 1) multiPriceItems.add(ln.itemId);
-    }
-    const sameLinesForItem = lines.filter((l) => l.itemId === ln.itemId);
-    if (sameLinesForItem.length > 1) {
-      const linePrices = new Set(sameLinesForItem.map((l) => l.baseSalePrice));
-      if (linePrices.size > 1) multiPriceItems.add(ln.itemId);
-    }
-  });
-
   return (
     <div className="flex-1 overflow-auto p-2">
       <table className="peachtree-grid w-full text-[12px]" data-testid="table-lines">
@@ -110,7 +133,7 @@ export function InvoiceLineTable({
             <th>الصنف</th>
             <th className="w-[100px]">الوحدة</th>
             <th className="w-[72px]">الكمية</th>
-            <th className="w-[90px]">سعر البيع</th>
+            <th className="w-[96px]">سعر البيع</th>
             <th className="w-[90px]">إجمالي السطر</th>
             <th className="w-[110px]">الصلاحية</th>
             <th className="w-[100px]">الرصيد المتاح</th>
@@ -121,6 +144,7 @@ export function InvoiceLineTable({
         <tbody>
           {lines.map((ln, i) => {
             const needsExpiry = ln.item?.hasExpiry && !ln.expiryMonth;
+            const priceLocked = isDraft && ln.priceSource === "lot";
             return (
               <tr
                 key={ln.tempId}
@@ -130,14 +154,43 @@ export function InvoiceLineTable({
                 {/* # */}
                 <td className="text-center text-muted-foreground">{i + 1}</td>
 
-                {/* اسم الصنف */}
-                <td className="max-w-[200px]" title={`${ln.item?.nameAr || ""} — ${ln.item?.itemCode || ""}`}>
-                  <span className="line-entry-name">{ln.item?.nameAr || ln.itemId}</span>
-                  {ln.item?.itemCode && (
-                    <span className="block text-[10px] text-muted-foreground font-mono leading-none mt-0.5">
-                      {ln.item.itemCode}
+                {/* ── اسم الصنف — Item Card ──────────────────────────── */}
+                <td className="max-w-[200px]">
+                  <div className="flex flex-col gap-0.5">
+                    <span
+                      className="line-entry-name truncate"
+                      title={`${ln.item?.nameAr || ""} — ${ln.item?.itemCode || ""}`}
+                    >
+                      {ln.item?.nameAr || ln.itemId}
                     </span>
-                  )}
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {ln.item?.itemCode && (
+                        <span className="text-[10px] text-muted-foreground font-mono leading-none">
+                          {ln.item.itemCode}
+                        </span>
+                      )}
+                      {ln.item?.allowFractionalSale === false && (
+                        <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded leading-none dark:bg-amber-900/30 dark:text-amber-300">
+                          كامل فقط
+                        </span>
+                      )}
+                      {ln.priceSource === "department" && (
+                        <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded leading-none dark:bg-blue-900/30 dark:text-blue-300">
+                          سعر قسم
+                        </span>
+                      )}
+                      {ln.priceSource === "lot" && (
+                        <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded leading-none dark:bg-green-900/30 dark:text-green-300">
+                          سعر دُفعة
+                        </span>
+                      )}
+                      {ln.priceSource === "manual" && (
+                        <span className="text-[9px] bg-purple-100 text-purple-700 px-1 rounded leading-none dark:bg-purple-900/30 dark:text-purple-300">
+                          يدوي
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </td>
 
                 {/* الوحدة */}
@@ -185,11 +238,31 @@ export function InvoiceLineTable({
                   )}
                 </td>
 
-                {/* سعر البيع */}
+                {/* ── سعر البيع — Price Lock ─────────────────────────── */}
                 <td className="text-center">
-                  <span className="peachtree-amount" data-testid={`text-sale-price-${i}`}>
-                    {formatNumber(ln.salePrice)}
-                  </span>
+                  {priceLocked ? (
+                    /* سعر مقيّد بدُفعة — عرض مع أيقونة قفل */
+                    <span
+                      className="flex items-center justify-center gap-0.5 peachtree-amount text-muted-foreground"
+                      title="السعر محدد من الدُفعة ولا يمكن تعديله"
+                      data-testid={`text-sale-price-${i}`}
+                    >
+                      <Lock className="h-3 w-3 shrink-0" />
+                      {formatNumber(ln.salePrice)}
+                    </span>
+                  ) : isDraft ? (
+                    /* سعر قابل للتعديل */
+                    <PriceCell
+                      line={ln}
+                      index={i}
+                      onUpdateLine={onUpdateLine}
+                      testId={`input-price-${i}`}
+                    />
+                  ) : (
+                    <span className="peachtree-amount" data-testid={`text-sale-price-${i}`}>
+                      {formatNumber(ln.salePrice)}
+                    </span>
+                  )}
                 </td>
 
                 {/* إجمالي السطر */}
@@ -197,7 +270,7 @@ export function InvoiceLineTable({
                   {formatNumber(ln.lineTotal)}
                 </td>
 
-                {/* الصلاحية */}
+                {/* ── الصلاحية — FEFO onChange ─────────────────────── */}
                 <td className="text-center text-[11px]">
                   <ExpiryCell
                     line={ln}
@@ -256,7 +329,7 @@ export function InvoiceLineTable({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ExpiryCell — خلية الصلاحية
+// ExpiryCell — خلية الصلاحية مع إصلاح FEFO onChange
 // ─────────────────────────────────────────────────────────────────────────────
 interface ExpiryCellProps {
   line:         SalesLineLocal;
@@ -269,7 +342,8 @@ interface ExpiryCellProps {
 function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: ExpiryCellProps) {
   if (!ln.item?.hasExpiry) return <span className="text-muted-foreground">—</span>;
 
-  // منتج بصلاحية ومقيّد بـ FEFO — يُتيح تغيير الدُفعة يدوياً
+  // ── حالة 1: fefoLocked — سطور موزّعة تلقائياً بـ FEFO ───────────────────
+  // يتيح تبديل الدُفعة مع تحديث السعر تلقائياً من lotSalePrice
   if (isDraft && ln.fefoLocked && ln.expiryOptions && ln.expiryOptions.length > 0) {
     return (
       <select
@@ -287,6 +361,7 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
             updates.baseSalePrice = newBase;
             updates.salePrice     = computeUnitPriceFromBase(newBase, ln.unitLevel, ln.item);
             updates.lineTotal     = computeLineTotal(ln.qty, newBase, ln.unitLevel, ln.item);
+            updates.priceSource   = "lot";
           }
           onUpdateLine(i, updates);
         }}
@@ -305,14 +380,36 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
     );
   }
 
-  // منتج بصلاحية — اختيار يدوي من قائمة
+  // ── حالة 2: اختيار يدوي من قائمة الدُفعات المتاحة ───────────────────────
+  // إصلاح: onChange يُحدّث lotId + سعر الدُفعة (priceSource="lot") عند الاختيار
   if (isDraft && ln.expiryOptions && ln.expiryOptions.length > 0) {
     return (
       <select
         value={ln.expiryMonth && ln.expiryYear ? `${ln.expiryMonth}-${ln.expiryYear}` : ""}
         onChange={(e) => {
+          if (!e.target.value) {
+            // إلغاء تحديد الدُفعة → إعادة فتح السعر للتعديل اليدوي
+            onUpdateLine(i, { expiryMonth: null, expiryYear: null, lotId: null, priceSource: "item" });
+            return;
+          }
           const [m, y] = e.target.value.split("-").map(Number);
-          onUpdateLine(i, { expiryMonth: m || null, expiryYear: y || null });
+          const opt = ln.expiryOptions?.find(
+            (o) => o.expiryMonth === m && o.expiryYear === y,
+          );
+          const updates: Partial<SalesLineLocal> = {
+            expiryMonth: m || null,
+            expiryYear:  y || null,
+            lotId:       opt?.lotId || null,
+          };
+          // تحديث السعر من سعر الدُفعة عند الاختيار (إذا لم يكن سعر قسم)
+          if (opt?.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
+            const newBase = parseFloat(opt.lotSalePrice);
+            updates.baseSalePrice = newBase;
+            updates.salePrice     = computeUnitPriceFromBase(newBase, ln.unitLevel, ln.item);
+            updates.lineTotal     = computeLineTotal(ln.qty, newBase, ln.unitLevel, ln.item);
+            updates.priceSource   = "lot";
+          }
+          onUpdateLine(i, updates);
         }}
         className={`peachtree-select w-full ${needsExpiry ? "border-yellow-400" : ""}`}
         data-testid={`select-expiry-${i}`}
@@ -327,7 +424,7 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
     );
   }
 
-  // عرض ثابت
+  // ── عرض ثابت ─────────────────────────────────────────────────────────────
   if (ln.expiryMonth && ln.expiryYear) {
     return (
       <span className="font-mono text-[12px] text-foreground" data-testid={`text-expiry-${i}`}>

@@ -167,6 +167,35 @@ export function computeUnitPriceFromBase(baseSalePrice: number, unitLevel: strin
 }
 
 /**
+ * عكس computeUnitPriceFromBase:
+ * يحوّل سعر وحدة العرض → baseSalePrice (سعر الوحدة الكبرى).
+ *
+ * يُستخدم عندما يُدخل المستخدم يدوياً سعر وحدة وسطى أو صغرى،
+ * ونريد حفظ baseSalePrice بالوحدة الكبرى.
+ */
+export function computeBaseFromUnitPrice(unitPrice: number, unitLevel: string, item: ItemLike | null | undefined): number {
+  if (!item || !unitPrice) return unitPrice || 0;
+  if (unitLevel === "major" || !unitLevel) return unitPrice;
+
+  const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
+  const majorToMinor  = parseFloat(String(item.majorToMinor))  || 0;
+  const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
+
+  if (unitLevel === "medium") {
+    if (majorToMedium > 0) return +(unitPrice * majorToMedium).toFixed(4);
+    if (majorToMinor > 0 && mediumToMinor > 0) return +(unitPrice * (majorToMinor / mediumToMinor)).toFixed(4);
+    return unitPrice;
+  }
+  if (unitLevel === "minor") {
+    if (majorToMinor > 0) return +(unitPrice * majorToMinor).toFixed(4);
+    if (majorToMedium > 0 && mediumToMinor > 0) return +(unitPrice * majorToMedium * mediumToMinor).toFixed(4);
+    if (majorToMedium > 0) return +(unitPrice * majorToMedium).toFixed(4);
+    return unitPrice;
+  }
+  return unitPrice;
+}
+
+/**
  * إجمالي السطر يُحسب من السعر الخام لتجنب تراكم أخطاء التقريب.
  *
  * مثال: 3 شرائط × (500÷3) = 500.00 (صحيح)
