@@ -116,15 +116,17 @@ const permissionGroupsMethods = {
     }));
 
     return {
-      id:          g.id,
-      name:        g.name,
-      description: g.description ?? null,
-      isSystem:    Boolean(g.is_system),
-      systemKey:   g.system_key ?? null,
-      sortOrder:   Number(g.sort_order ?? 0),
-      createdAt:   g.created_at,
+      id:              g.id,
+      name:            g.name,
+      description:     g.description ?? null,
+      isSystem:        Boolean(g.is_system),
+      systemKey:       g.system_key ?? null,
+      sortOrder:       Number(g.sort_order ?? 0),
+      createdAt:       g.created_at,
       permissions,
       members,
+      memberCount:     members.length,
+      permissionCount: permissions.length,
     };
   },
 

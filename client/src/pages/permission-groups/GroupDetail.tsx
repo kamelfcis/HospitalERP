@@ -60,15 +60,15 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
 
       {/* التبويبات */}
       <Tabs defaultValue="matrix" className="flex flex-col flex-1 min-h-0">
-        <TabsList className="mb-3 w-full justify-start flex-row-reverse">
+        <TabsList className="mb-3 w-full justify-start flex-row-reverse shrink-0">
           <TabsTrigger value="matrix" data-testid="tab-matrix">
             مصفوفة الشاشات
           </TabsTrigger>
           <TabsTrigger value="members" data-testid="tab-members">
             الأعضاء
-            {group.memberCount > 0 && (
+            {(group.memberCount ?? group.members.length) > 0 && (
               <Badge variant="secondary" className="mr-1.5 h-4 px-1 text-[10px]">
-                {group.memberCount}
+                {group.memberCount ?? group.members.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -77,33 +77,31 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
           </TabsTrigger>
         </TabsList>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <TabsContent value="matrix" className="h-full overflow-hidden mt-0 flex flex-col">
-            <PermissionsMatrixTab
-              key={groupId}
-              groupId={groupId}
-              isSystem={group.isSystem}
-              initialPermissions={group.permissions}
-              canManage={canManage}
-            />
-          </TabsContent>
+        <TabsContent value="matrix" className="flex-1 min-h-0 overflow-hidden mt-0 flex flex-col">
+          <PermissionsMatrixTab
+            key={groupId}
+            groupId={groupId}
+            isSystem={group.isSystem}
+            initialPermissions={group.permissions}
+            canManage={canManage}
+          />
+        </TabsContent>
 
-          <TabsContent value="members" className="h-full overflow-hidden mt-0 flex flex-col">
-            <MembersTab
-              groupId={groupId}
-              members={group.members}
-              canManage={canManage}
-            />
-          </TabsContent>
+        <TabsContent value="members" className="flex-1 min-h-0 overflow-auto mt-0">
+          <MembersTab
+            groupId={groupId}
+            members={group.members}
+            canManage={canManage}
+          />
+        </TabsContent>
 
-          <TabsContent value="general" className="h-full overflow-auto mt-0">
-            <GeneralTab
-              group={group}
-              canManage={canManage}
-              onDeleted={onDeleted}
-            />
-          </TabsContent>
-        </div>
+        <TabsContent value="general" className="flex-1 min-h-0 overflow-auto mt-0">
+          <GeneralTab
+            group={group}
+            canManage={canManage}
+            onDeleted={onDeleted}
+          />
+        </TabsContent>
       </Tabs>
     </div>
   );
