@@ -4,7 +4,7 @@ import { X, BarChart3, Lock } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import {
   formatAvailability, getUnitOptions,
-  computeUnitPriceFromBase, computeLineTotal, computeBaseFromUnitPrice,
+  computeUnitPriceFromBase, computeLineTotal,
 } from "@/lib/invoice-lines";
 import type { SalesLineLocal } from "../types";
 
@@ -55,53 +55,6 @@ const QtyCell = memo(function QtyCell({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PriceCell — حقل سعر البيع القابل للتعديل (عندما لا يكون مقيّداً بدُفعة)
-// ─────────────────────────────────────────────────────────────────────────────
-interface PriceCellProps {
-  line:         SalesLineLocal;
-  index:        number;
-  onUpdateLine: (index: number, patch: Partial<SalesLineLocal>) => void;
-  testId:       string;
-}
-
-const PriceCell = memo(function PriceCell({ line, index, onUpdateLine, testId }: PriceCellProps) {
-  const [localVal, setLocalVal] = useState(String(line.salePrice));
-
-  useEffect(() => {
-    setLocalVal(String(line.salePrice));
-  }, [line.salePrice, line.unitLevel]);
-
-  return (
-    <input
-      type="number"
-      step="0.01"
-      min="0"
-      value={localVal}
-      onChange={(e) => setLocalVal(e.target.value)}
-      onBlur={() => {
-        const newPrice = parseFloat(localVal);
-        if (!newPrice || newPrice <= 0) {
-          setLocalVal(String(line.salePrice));
-          return;
-        }
-        const newBase  = computeBaseFromUnitPrice(newPrice, line.unitLevel, line.item);
-        onUpdateLine(index, {
-          salePrice:    newPrice,
-          baseSalePrice: newBase,
-          lineTotal:    computeLineTotal(line.qty, newBase, line.unitLevel, line.item),
-          priceSource:  "manual",
-        });
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === "Tab") e.currentTarget.blur();
-      }}
-      className="peachtree-input w-[80px] text-center"
-      data-testid={testId}
-    />
-  );
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Props
 // ─────────────────────────────────────────────────────────────────────────────
 interface Props {
@@ -144,7 +97,6 @@ export function InvoiceLineTable({
         <tbody>
           {lines.map((ln, i) => {
             const needsExpiry = ln.item?.hasExpiry && !ln.expiryMonth;
-            const priceLocked = isDraft && ln.priceSource === "lot";
             return (
               <tr
                 key={ln.tempId}
@@ -182,11 +134,6 @@ export function InvoiceLineTable({
                       {ln.priceSource === "lot" && (
                         <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded leading-none dark:bg-green-900/30 dark:text-green-300">
                           سعر دُفعة
-                        </span>
-                      )}
-                      {ln.priceSource === "manual" && (
-                        <span className="text-[9px] bg-purple-100 text-purple-700 px-1 rounded leading-none dark:bg-purple-900/30 dark:text-purple-300">
-                          يدوي
                         </span>
                       )}
                     </div>
@@ -238,31 +185,16 @@ export function InvoiceLineTable({
                   )}
                 </td>
 
-                {/* ── سعر البيع — Price Lock ─────────────────────────── */}
+                {/* ── سعر البيع — دائماً للقراءة فقط (سعر النظام) ─────── */}
                 <td className="text-center">
-                  {priceLocked ? (
-                    /* سعر مقيّد بدُفعة — عرض مع أيقونة قفل */
-                    <span
-                      className="flex items-center justify-center gap-0.5 peachtree-amount text-muted-foreground"
-                      title="السعر محدد من الدُفعة ولا يمكن تعديله"
-                      data-testid={`text-sale-price-${i}`}
-                    >
-                      <Lock className="h-3 w-3 shrink-0" />
-                      {formatNumber(ln.salePrice)}
-                    </span>
-                  ) : isDraft ? (
-                    /* سعر قابل للتعديل */
-                    <PriceCell
-                      line={ln}
-                      index={i}
-                      onUpdateLine={onUpdateLine}
-                      testId={`input-price-${i}`}
-                    />
-                  ) : (
-                    <span className="peachtree-amount" data-testid={`text-sale-price-${i}`}>
-                      {formatNumber(ln.salePrice)}
-                    </span>
-                  )}
+                  <span
+                    className="flex items-center justify-center gap-0.5 peachtree-amount"
+                    title="سعر النظام — يتحدد تلقائياً بناءً على الصنف أو الدُفعة أو القسم"
+                    data-testid={`text-sale-price-${i}`}
+                  >
+                    {isDraft && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
+                    {formatNumber(ln.salePrice)}
+                  </span>
                 </td>
 
                 {/* إجمالي السطر */}
@@ -270,7 +202,7 @@ export function InvoiceLineTable({
                   {formatNumber(ln.lineTotal)}
                 </td>
 
-                {/* ── الصلاحية — FEFO onChange ─────────────────────── */}
+                {/* ── الصلاحية — FEFO onChange ─────────────────────────── */}
                 <td className="text-center text-[11px]">
                   <ExpiryCell
                     line={ln}
@@ -329,7 +261,7 @@ export function InvoiceLineTable({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ExpiryCell — خلية الصلاحية مع إصلاح FEFO onChange
+// ExpiryCell — خلية الصلاحية مع FEFO onChange (تحديث السعر من الدُفعة)
 // ─────────────────────────────────────────────────────────────────────────────
 interface ExpiryCellProps {
   line:         SalesLineLocal;
@@ -343,7 +275,6 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
   if (!ln.item?.hasExpiry) return <span className="text-muted-foreground">—</span>;
 
   // ── حالة 1: fefoLocked — سطور موزّعة تلقائياً بـ FEFO ───────────────────
-  // يتيح تبديل الدُفعة مع تحديث السعر تلقائياً من lotSalePrice
   if (isDraft && ln.fefoLocked && ln.expiryOptions && ln.expiryOptions.length > 0) {
     return (
       <select
@@ -356,6 +287,7 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
             expiryYear:  opt.expiryYear,
             lotId:       opt.lotId || null,
           };
+          // تحديث السعر من الدُفعة — حدث نظامي لا إدخال مستخدم
           if (opt.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
             const newBase  = parseFloat(opt.lotSalePrice);
             updates.baseSalePrice = newBase;
@@ -381,15 +313,14 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
   }
 
   // ── حالة 2: اختيار يدوي من قائمة الدُفعات المتاحة ───────────────────────
-  // إصلاح: onChange يُحدّث lotId + سعر الدُفعة (priceSource="lot") عند الاختيار
+  // يُحدّث السعر تلقائياً من سعر الدُفعة — حدث نظامي
   if (isDraft && ln.expiryOptions && ln.expiryOptions.length > 0) {
     return (
       <select
         value={ln.expiryMonth && ln.expiryYear ? `${ln.expiryMonth}-${ln.expiryYear}` : ""}
         onChange={(e) => {
           if (!e.target.value) {
-            // إلغاء تحديد الدُفعة → إعادة فتح السعر للتعديل اليدوي
-            onUpdateLine(i, { expiryMonth: null, expiryYear: null, lotId: null, priceSource: "item" });
+            onUpdateLine(i, { expiryMonth: null, expiryYear: null, lotId: null });
             return;
           }
           const [m, y] = e.target.value.split("-").map(Number);
@@ -401,7 +332,7 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
             expiryYear:  y || null,
             lotId:       opt?.lotId || null,
           };
-          // تحديث السعر من سعر الدُفعة عند الاختيار (إذا لم يكن سعر قسم)
+          // تحديث السعر من الدُفعة — حدث نظامي
           if (opt?.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
             const newBase = parseFloat(opt.lotSalePrice);
             updates.baseSalePrice = newBase;

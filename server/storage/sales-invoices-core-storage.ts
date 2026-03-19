@@ -216,30 +216,40 @@ const methods = {
         const qty = parseFloat(line.qty || "0") || 0;
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId!));
 
-        let salePrice = parseFloat(line.salePrice || "0") || 0;
+        // ── تسعير النظام: الباكند يُحدّد السعر دائماً — لا يثق بالعميل ──────
+        // الأولوية: سعر الدُفعة (lotId) → سعر الصنف الحالي (salePriceCurrent)
+        let salePrice = 0;
         if (item) {
-          const masterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
+          let baseMasterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
+          if (line.lotId) {
+            const [lot] = await tx
+              .select({ salePrice: inventoryLots.salePrice })
+              .from(inventoryLots)
+              .where(eq(inventoryLots.id, line.lotId));
+            const lotPrice = parseFloat(String(lot?.salePrice || "0")) || 0;
+            if (lotPrice > 0) baseMasterPrice = lotPrice;
+          }
           const majorToMedium = parseFloat(item.majorToMedium || "0") || 0;
           const majorToMinor  = parseFloat(item.majorToMinor  || "0") || 0;
           const mediumToMinor = parseFloat(item.mediumToMinor || "0") || 0;
           if (line.unitLevel === "medium") {
             if (majorToMedium > 0) {
-              salePrice = masterPrice / majorToMedium;
+              salePrice = baseMasterPrice / majorToMedium;
             } else if (majorToMinor > 0 && mediumToMinor > 0) {
-              salePrice = masterPrice / (majorToMinor / mediumToMinor);
+              salePrice = baseMasterPrice / (majorToMinor / mediumToMinor);
             } else {
-              salePrice = masterPrice;
+              salePrice = baseMasterPrice;
             }
           } else if (line.unitLevel === "minor") {
             if (majorToMinor > 0) {
-              salePrice = masterPrice / majorToMinor;
+              salePrice = baseMasterPrice / majorToMinor;
             } else if (majorToMedium > 0 && mediumToMinor > 0) {
-              salePrice = masterPrice / (majorToMedium * mediumToMinor);
+              salePrice = baseMasterPrice / (majorToMedium * mediumToMinor);
             } else {
-              salePrice = masterPrice;
+              salePrice = baseMasterPrice;
             }
           } else {
-            salePrice = masterPrice;
+            salePrice = baseMasterPrice;
           }
         }
 
@@ -344,30 +354,40 @@ const methods = {
         const qty = parseFloat(line.qty || "0") || 0;
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId!));
 
-        let salePrice = parseFloat(line.salePrice || "0") || 0;
+        // ── تسعير النظام: الباكند يُحدّد السعر دائماً — لا يثق بالعميل ──────
+        // الأولوية: سعر الدُفعة (lotId) → سعر الصنف الحالي (salePriceCurrent)
+        let salePrice = 0;
         if (item) {
-          const masterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
+          let baseMasterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
+          if (line.lotId) {
+            const [lot] = await tx
+              .select({ salePrice: inventoryLots.salePrice })
+              .from(inventoryLots)
+              .where(eq(inventoryLots.id, line.lotId));
+            const lotPrice = parseFloat(String(lot?.salePrice || "0")) || 0;
+            if (lotPrice > 0) baseMasterPrice = lotPrice;
+          }
           const majorToMedium = parseFloat(item.majorToMedium || "0") || 0;
           const majorToMinor  = parseFloat(item.majorToMinor  || "0") || 0;
           const mediumToMinor = parseFloat(item.mediumToMinor || "0") || 0;
           if (line.unitLevel === "medium") {
             if (majorToMedium > 0) {
-              salePrice = masterPrice / majorToMedium;
+              salePrice = baseMasterPrice / majorToMedium;
             } else if (majorToMinor > 0 && mediumToMinor > 0) {
-              salePrice = masterPrice / (majorToMinor / mediumToMinor);
+              salePrice = baseMasterPrice / (majorToMinor / mediumToMinor);
             } else {
-              salePrice = masterPrice;
+              salePrice = baseMasterPrice;
             }
           } else if (line.unitLevel === "minor") {
             if (majorToMinor > 0) {
-              salePrice = masterPrice / majorToMinor;
+              salePrice = baseMasterPrice / majorToMinor;
             } else if (majorToMedium > 0 && mediumToMinor > 0) {
-              salePrice = masterPrice / (majorToMedium * mediumToMinor);
+              salePrice = baseMasterPrice / (majorToMedium * mediumToMinor);
             } else {
-              salePrice = masterPrice;
+              salePrice = baseMasterPrice;
             }
           } else {
-            salePrice = masterPrice;
+            salePrice = baseMasterPrice;
           }
         }
 
