@@ -52,7 +52,7 @@ export function MembersTab({ groupId, members, canManage }: Props) {
   function removeMember(id: string) { assignMutation.mutate({ userId: id, gid: null }); }
 
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className="flex flex-col gap-4 py-1">
       {/* إضافة عضو */}
       {canManage && (
         <div className="flex items-center gap-2 flex-row-reverse">

@@ -87,7 +87,7 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
           />
         </TabsContent>
 
-        <TabsContent value="members" className="flex-1 min-h-0 overflow-auto mt-0">
+        <TabsContent value="members" className="overflow-auto mt-0">
           <MembersTab
             groupId={groupId}
             members={group.members}
@@ -95,7 +95,7 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
           />
         </TabsContent>
 
-        <TabsContent value="general" className="flex-1 min-h-0 overflow-auto mt-0">
+        <TabsContent value="general" className="overflow-auto mt-0">
           <GeneralTab
             group={group}
             canManage={canManage}
