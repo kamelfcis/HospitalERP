@@ -8,6 +8,8 @@ import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
   TooltipProvider, Tooltip, TooltipTrigger, TooltipContent,
 } from "@/components/ui/tooltip";
@@ -17,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ArrowRight, Loader2, Trash2, CheckCircle2, ClipboardList, ZapIcon,
+  Lock, TrendingUp, TrendingDown, Scale, Printer, BookOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -50,6 +53,10 @@ interface Session {
   status:          string;
   notes:           string | null;
   journalEntryId:  string | null;
+  createdByName:   string | null;
+  postedByName:    string | null;
+  postedAt:        string | null;
+  createdAt:       string;
   lines:           SessionLine[];
 }
 
@@ -59,11 +66,164 @@ interface Session {
 function fmtMoney(v: number) {
   return v.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function fmtDateTime(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("ar-EG", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
 function statusLabel(s: string) {
   return ({ draft: "مسودة", posted: "مرحّل", cancelled: "ملغي" } as Record<string, string>)[s] ?? s;
 }
 function statusVariant(s: string): "default" | "secondary" | "destructive" | "outline" {
   return ({ draft: "secondary", posted: "default", cancelled: "destructive" } as Record<string, any>)[s] ?? "outline";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PostedSummaryCard — تقرير مصادقة الترحيل (يظهر عند status = posted)
+// ─────────────────────────────────────────────────────────────────────────────
+function PostedSummaryCard({
+  session,
+  lines,
+  onViewJournal,
+}: {
+  session:      Session;
+  lines:        SessionLine[];
+  onViewJournal: () => void;
+}) {
+  const surplus  = lines.reduce((s, l) => {
+    const d = parseFloat(l.differenceMinor);
+    return d > 0.0001 ? s + parseFloat(l.differenceValue) : s;
+  }, 0);
+  const shortage = lines.reduce((s, l) => {
+    const d = parseFloat(l.differenceMinor);
+    return d < -0.0001 ? s + Math.abs(parseFloat(l.differenceValue)) : s;
+  }, 0);
+  const net      = surplus - shortage;
+  const zeroCount    = lines.filter(l => Math.abs(parseFloat(l.differenceMinor)) <= 0.0001).length;
+  const surplusCount = lines.filter(l => parseFloat(l.differenceMinor) >  0.0001).length;
+  const shortageCount= lines.filter(l => parseFloat(l.differenceMinor) < -0.0001).length;
+
+  return (
+    <Card className="border-green-200 dark:border-green-900 bg-green-50/50 dark:bg-green-950/20 flex-shrink-0 print:border print:border-green-300" data-testid="posted-summary-card">
+      <CardContent className="pt-4 pb-3 px-4">
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <span className="font-semibold text-sm text-green-700 dark:text-green-400">تقرير مصادقة الترحيل</span>
+          </div>
+          <div className="flex items-center gap-2 print:hidden">
+            {session.journalEntryId && (
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={onViewJournal}>
+                <BookOpen className="h-3.5 w-3.5" />
+                قيد اليومية
+              </Button>
+            )}
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => window.print()}>
+              <Printer className="h-3.5 w-3.5" />
+              طباعة
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Metadata grid ── */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1.5 text-sm mb-3">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="font-medium text-foreground">المستودع:</span> {session.warehouseName}
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="font-medium text-foreground">تاريخ الجرد:</span> {formatDate(session.countDate)}
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="font-medium text-foreground">رحّله:</span> {session.postedByName ?? "—"}
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="font-medium text-foreground">وقت الترحيل:</span> {fmtDateTime(session.postedAt)}
+          </div>
+        </div>
+
+        <Separator className="mb-3" />
+
+        {/* ── Stats row ── */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {/* Surplus */}
+          <div className="bg-green-100 dark:bg-green-900/30 rounded-md p-2.5 text-center">
+            <div className="flex items-center justify-center gap-1 text-green-700 dark:text-green-400 mb-0.5">
+              <TrendingUp className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">فوائض ({surplusCount})</span>
+            </div>
+            <p className="font-mono font-bold text-green-700 dark:text-green-300 text-sm">
+              +{fmtMoney(surplus)} ج.م
+            </p>
+          </div>
+
+          {/* Shortage */}
+          <div className="bg-red-100 dark:bg-red-900/30 rounded-md p-2.5 text-center">
+            <div className="flex items-center justify-center gap-1 text-destructive mb-0.5">
+              <TrendingDown className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">عجز ({shortageCount})</span>
+            </div>
+            <p className="font-mono font-bold text-destructive text-sm">
+              -{fmtMoney(shortage)} ج.م
+            </p>
+          </div>
+
+          {/* Net */}
+          <div className={`rounded-md p-2.5 text-center ${
+            net > 0 ? "bg-green-100 dark:bg-green-900/30" :
+            net < 0 ? "bg-red-100 dark:bg-red-900/30" :
+                      "bg-muted"
+          }`}>
+            <div className="flex items-center justify-center gap-1 text-muted-foreground mb-0.5">
+              <Scale className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">صافي الفرق</span>
+            </div>
+            <p className={`font-mono font-bold text-sm ${
+              net > 0 ? "text-green-700 dark:text-green-300" :
+              net < 0 ? "text-destructive" :
+                        "text-muted-foreground"
+            }`}>
+              {net > 0 ? "+" : ""}{fmtMoney(net)} ج.م
+            </p>
+          </div>
+
+          {/* Lines breakdown */}
+          <div className="bg-muted rounded-md p-2.5 text-center">
+            <p className="text-xs font-medium text-muted-foreground mb-0.5">الأصناف المُجرَّدة</p>
+            <p className="font-mono font-bold text-sm">{lines.length}</p>
+          </div>
+
+          {/* Journal ref */}
+          <div className="bg-muted rounded-md p-2.5 text-center">
+            <p className="text-xs font-medium text-muted-foreground mb-0.5">لا فرق (صفري)</p>
+            <p className="font-mono font-bold text-sm text-muted-foreground">{zeroCount}</p>
+          </div>
+        </div>
+
+        {/* ── Journal entry reference ── */}
+        {session.journalEntryId && (
+          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground border-t pt-2">
+            <BookOpen className="h-3.5 w-3.5" />
+            <span>قيد اليومية مرتبط:</span>
+            <button
+              className="font-mono text-primary underline-offset-2 hover:underline"
+              onClick={onViewJournal}
+              data-testid="link-journal-entry"
+            >
+              {session.journalEntryId.slice(0, 8)}…
+            </button>
+          </div>
+        )}
+        {!session.journalEntryId && (
+          <p className="mt-3 text-xs text-muted-foreground border-t pt-2">
+            لا يوجد قيد يومية (لم توجد فروق مالية أو المستودع بدون حساب محاسبي)
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,6 +362,12 @@ export default function StockCountDetail() {
                 <ClipboardList className="h-5 w-5 text-primary" />
                 <h1 className="text-xl font-bold">جلسة جرد #{session.sessionNumber}</h1>
                 <Badge variant={statusVariant(session.status)}>{statusLabel(session.status)}</Badge>
+                {!isDraft && (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                    <Lock className="h-3 w-3" />
+                    محمي للقراءة فقط
+                  </span>
+                )}
               </div>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {session.warehouseName} — {formatDate(session.countDate)}
@@ -286,6 +452,25 @@ export default function StockCountDetail() {
             )}
           </div>
         </div>
+
+        {/* ── Posted Summary Card (reconciliation report) ── */}
+        {session.status === "posted" && (
+          <PostedSummaryCard
+            session={session}
+            lines={lines}
+            onViewJournal={() =>
+              session.journalEntryId && navigate(`/journal-entries/${session.journalEntryId}`)
+            }
+          />
+        )}
+
+        {/* ── Cancelled banner ── */}
+        {session.status === "cancelled" && (
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-md bg-destructive/10 border border-destructive/20 text-sm text-destructive flex-shrink-0" data-testid="banner-cancelled">
+            <Lock className="h-4 w-4 flex-shrink-0" />
+            <span>هذه الجلسة ملغاة — لا يمكن إجراء أي تعديلات عليها.</span>
+          </div>
+        )}
 
         {/* ── Lines table (with filters + sticky footer) ── */}
         <div className="flex-1 min-h-0">

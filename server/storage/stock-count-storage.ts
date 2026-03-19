@@ -68,8 +68,10 @@ export interface StockCountLineRow extends StockCountLine {
 }
 
 export interface StockCountSessionWithLines extends StockCountSession {
-  lines:         StockCountLineRow[];
-  warehouseName: string;
+  lines:          StockCountLineRow[];
+  warehouseName:  string;
+  createdByName:  string | null;
+  postedByName:   string | null;
 }
 
 export interface LoadedItem {
@@ -195,9 +197,14 @@ const stockCountStorage = {
     id: string
   ): Promise<StockCountSessionWithLines | null> {
     const sessionRows = await db.execute(sql`
-      SELECT s.*, w.name_ar AS warehouse_name
+      SELECT s.*,
+        w.name_ar  AS warehouse_name,
+        uc.full_name AS created_by_name,
+        up.full_name AS posted_by_name
       FROM stock_count_sessions s
       JOIN warehouses w ON w.id = s.warehouse_id
+      LEFT JOIN users uc ON uc.id = s.created_by
+      LEFT JOIN users up ON up.id = s.posted_by
       WHERE s.id = ${id}
     `);
     const sRaw = (sessionRows as any).rows[0];
@@ -260,6 +267,8 @@ const stockCountStorage = {
       postedAt:       sRaw.posted_at,
       journalEntryId: sRaw.journal_entry_id,
       warehouseName:  sRaw.warehouse_name,
+      createdByName:  sRaw.created_by_name ?? null,
+      postedByName:   sRaw.posted_by_name  ?? null,
       lines,
     };
   },
