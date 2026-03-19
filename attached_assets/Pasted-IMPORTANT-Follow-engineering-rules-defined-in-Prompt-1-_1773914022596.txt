@@ -1,0 +1,137 @@
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+
+ALWAYS enforce:
+- Clean refactoring (no duplication, modular design, reusable logic)
+- Proper database indexing for all high-volume queries
+- Query performance must be considered before implementation
+
+OBJECTIVE
+
+Stabilize pharmacy workflow with performance-safe architecture.
+
+---
+
+WAREHOUSE PERMISSIONS
+
+Each pharmacy user must have:
+
+default_sales_stock_id
+allowed_stock_ids
+
+Enforce at:
+- API validation layer
+- Database constraint level (if applicable)
+
+---
+
+FRACTIONAL QUANTITY
+
+Item card field:
+
+allow_fractional_sale
+
+Default = TRUE
+
+If FALSE:
+Reject quantities smaller than 1 at:
+- UI level
+- API validation level
+
+---
+
+BATCH DISTRIBUTION
+
+Batch distribution must trigger immediately when quantity changes.
+
+Rules:
+- No dependency on blur or Enter key
+- Must run onChange event
+- Must be idempotent (safe if triggered multiple times)
+
+Performance:
+- Optimize batch queries with proper indexing on:
+  (ItemID, StockID, ExpiryDate, BatchNumber)
+
+---
+
+UNIT & PRICE LOCK
+
+When item added to invoice line lock:
+
+- item_id
+- unit_id
+- price
+- conversion_rate
+
+Rules:
+- Prevent recalculation bugs
+- No silent overwrites
+- Changes require explicit user action
+
+---
+
+SEARCH DISPLAY
+
+Inventory search must display quantities in major unit.
+
+Performance:
+- Avoid heavy runtime conversions
+- Pre-calculate or cache conversion where needed
+
+---
+
+INDEXING REQUIREMENTS
+
+All critical queries must be indexed.
+
+Minimum required indexes:
+
+- ItemTransaction(ItemID, StockID)
+- ItemTransaction(ItemBatchID)
+- ItemBatch(ItemID, ExpiryDate)
+- ItemsPricing(ItemID)
+- SalesInvoiceLine(InvoiceID, ItemID)
+
+Rules:
+- No table scan on high-frequency operations
+- Use covering indexes where needed
+- Review execution plan before finalizing queries
+
+---
+
+REFACTORING RULES
+
+- No duplicated logic across:
+  - invoice creation
+  - batch distribution
+  - pricing
+
+- Centralize logic into:
+  - service layer (backend)
+  - reusable hooks (frontend)
+
+- All business rules must exist in ONE source of truth
+
+---
+
+ERROR HANDLING
+
+- No silent failures
+- All validations must return clear Arabic messages
+- Log all critical failures
+
+---
+
+AGENT TASK
+
+Produce PHARMACY STABILITY PLAN.
+
+INCLUDE:
+- Backend architecture
+- DB constraints + indexes
+- UI behavior rules
+- Validation flow
+- Performance considerations
+
+DO NOT IMPLEMENT YET.

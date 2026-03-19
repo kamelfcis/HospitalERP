@@ -1,0 +1,70 @@
+#15 - Pharmacy Stability — Schema + DB Indexes
+
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+Always preserve clean refactoring, backward compatibility, and performance-safe indexing.
+Do not duplicate existing indexes or schema logic. Reuse and extend current schema definitions only.
+
+OBJECTIVE
+
+Lay the schema and database foundation for pharmacy stability by adding the required fields and DB indexes only.
+This task is a prerequisite for the next pharmacy tasks.
+
+Done looks like
+
+- allow_fractional_sale (boolean, default true) exists in items
+- default_warehouse_id (nullable FK → warehouses) exists in users
+- The following DB indexes exist:
+  - item_batches(item_id, expiry_date)
+  - item_batches(item_id, warehouse_id)
+  - items_pricing(item_id) if table exists
+  - sales_invoice_lines(invoice_id, item_id)
+  - purchase_transactions(item_id, warehouse_id)
+  - purchase_transactions(item_batch_id)
+- Schema correctly reflects new fields with insert/select types updated
+- npm run db:push completes successfully without conflicts
+
+Out of scope
+
+- Any API validation
+- Any UI validation
+- Any sales invoice workflow logic changes
+- Warehouse permissions logic (next task)
+- Any pharmacy workflow implementation beyond schema/index preparation
+
+Tasks
+
+1) Add allow_fractional_sale
+- Add allow_fractional_sale: boolean default true to items table in shared/schema/inventory.ts
+- Update insertItemSchema
+- Update derived select/insert types
+
+2) Add default_warehouse_id to users
+- Add default_warehouse_id: varchar nullable FK → warehouses in shared/schema/users.ts
+- Update insertUserSchema
+- Keep backward compatibility with existing user records
+
+3) Add required indexes with Drizzle index()
+- item_batches(item_id, expiry_date)
+- item_batches(item_id, warehouse_id)
+- items_pricing(item_id) if the table exists
+- sales_invoice_lines(invoice_id, item_id)
+- purchase_transactions(item_id, warehouse_id)
+- purchase_transactions(item_batch_id)
+
+Engineering constraints
+
+- Refactor cleanly without duplicating schema definitions
+- Reuse existing table declarations and exports
+- Do not introduce breaking changes
+- Do not add unnecessary migrations outside this scope
+- Check for equivalent existing indexes before creating new ones
+- Use consistent naming for index definitions
+- Keep db:push safe and conflict-free
+
+Relevant files
+
+- shared/schema/inventory.ts:27-52
+- shared/schema/inventory.ts:150-160
+- shared/schema/inventory.ts:296-310
+- shared/schema/users.ts

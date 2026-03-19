@@ -42,6 +42,7 @@ export const items = pgTable("items", {
   majorToMinor: decimal("major_to_minor", { precision: 10, scale: 4 }),
   mediumToMinor: decimal("medium_to_minor", { precision: 10, scale: 4 }),
   description: text("description"),
+  allowFractionalSale: boolean("allow_fractional_sale").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

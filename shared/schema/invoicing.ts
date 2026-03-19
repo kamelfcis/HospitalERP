@@ -139,7 +139,9 @@ export const salesInvoiceLines = pgTable("sales_invoice_lines", {
   lotId: varchar("lot_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
-  returnCheckIdx: index("idx_sales_lines_return_check").on(table.invoiceId, table.itemId, table.lotId),
+  invoiceItemIdx:  index("idx_sales_lines_inv_item").on(table.invoiceId, table.itemId),
+  itemIdx:         index("idx_sales_lines_item").on(table.itemId),
+  returnCheckIdx:  index("idx_sales_lines_return_check").on(table.invoiceId, table.itemId, table.lotId),
 }));
 
 export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {

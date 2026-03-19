@@ -41,6 +41,7 @@ export const users = pgTable("users", {
   permissionGroupId:   varchar("permission_group_id").references(() => permissionGroups.id),
   departmentId:        varchar("department_id"),
   pharmacyId:          varchar("pharmacy_id"),
+  defaultWarehouseId:  varchar("default_warehouse_id"),
   isActive:            boolean("is_active").notNull().default(true),
   cashierGlAccountId:  text("cashier_gl_account_id"),
   createdAt:           timestamp("created_at").notNull().defaultNow(),
