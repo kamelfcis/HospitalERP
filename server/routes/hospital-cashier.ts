@@ -262,11 +262,10 @@ export function registerCashierRoutes(app: Express) {
       const [userRow] = await db.select({
         fullName: users.fullName,
         role:     users.role,
-        isAdmin:  users.isAdmin,
       }).from(users).where(eq(users.id, userId));
 
       const fullName           = userRow?.fullName || userId;
-      const isAdminOrSupervisor = !!(userRow?.isAdmin || userRow?.role === "admin" || userRow?.role === "owner");
+      const isAdminOrSupervisor = !!(userRow?.role === "admin" || userRow?.role === "owner");
 
       // القاعدة 5: التحقق من الملكية — bypass مشرف يُسجَّل
       const shiftId = req.params.shiftId as string;
@@ -321,10 +320,10 @@ export function registerCashierRoutes(app: Express) {
       if (!shiftId || !invoiceIds?.length || !collectedBy) return res.status(400).json({ message: "بيانات التحصيل غير مكتملة" });
 
       // القاعدة 5: ملكية الوردية إلزامية
-      const [userRow] = await db.select({ fullName: users.fullName, role: users.role, isAdmin: users.isAdmin })
+      const [userRow] = await db.select({ fullName: users.fullName, role: users.role })
         .from(users).where(eq(users.id, userId));
       const fullName           = userRow?.fullName || userId;
-      const isAdminOrSupervisor = !!(userRow?.isAdmin || userRow?.role === "admin" || userRow?.role === "owner");
+      const isAdminOrSupervisor = !!(userRow?.role === "admin" || userRow?.role === "owner");
       await assertShiftOwnership(shiftId, userId, fullName, isAdminOrSupervisor);
 
       const txnDate = paymentDate || new Date().toISOString().split("T")[0];
@@ -353,10 +352,10 @@ export function registerCashierRoutes(app: Express) {
       if (!shiftId || !invoiceIds?.length || !refundedBy) return res.status(400).json({ message: "بيانات الصرف غير مكتملة" });
 
       // القاعدة 5: ملكية الوردية إلزامية
-      const [userRow] = await db.select({ fullName: users.fullName, role: users.role, isAdmin: users.isAdmin })
+      const [userRow] = await db.select({ fullName: users.fullName, role: users.role })
         .from(users).where(eq(users.id, userId));
       const fullName           = userRow?.fullName || userId;
-      const isAdminOrSupervisor = !!(userRow?.isAdmin || userRow?.role === "admin" || userRow?.role === "owner");
+      const isAdminOrSupervisor = !!(userRow?.role === "admin" || userRow?.role === "owner");
       await assertShiftOwnership(shiftId, userId, fullName, isAdminOrSupervisor);
 
       const txnDate = paymentDate || new Date().toISOString().split("T")[0];

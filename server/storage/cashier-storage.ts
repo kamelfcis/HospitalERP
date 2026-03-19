@@ -155,12 +155,14 @@ const methods = {
   //  يُسقط تلقائياً الورديات المنتهية (> MAX_SHIFT_HOURS)
   async getMyOpenShift(this: DatabaseStorage, cashierId: string): Promise<CashierShift | null> {
     // القاعدة 2: اكتشاف الـ stale بالمدة SQL-side فقط، ثم تحديث الحالة
+    // ملاحظة: stale_reason يُبنى JS-side ثم يُمرَّر كمعامل مكتوب — لا يُضمَّن داخل نص SQL
+    const staleReasonMsg = `تجاوز الحد الزمني للوردية (${MAX_SHIFT_HOURS} ساعة)`;
     await db.execute(sql`
       UPDATE cashier_shifts
       SET
         status       = 'stale',
         stale_at     = NOW(),
-        stale_reason = 'تجاوز الحد الزمني للوردية (${MAX_SHIFT_HOURS} ساعة)'
+        stale_reason = ${staleReasonMsg}
       WHERE cashier_id = ${cashierId}
         AND status = 'open'
         AND EXTRACT(EPOCH FROM (NOW() - opened_at)) / 3600 > ${MAX_SHIFT_HOURS}
