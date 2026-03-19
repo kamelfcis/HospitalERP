@@ -15,7 +15,7 @@ import type { UserData, UserFormData } from "./types";
 const EMPTY_FORM: UserFormData = {
   username: "", password: "", fullName: "",
   role: "data_entry", departmentId: "", pharmacyId: "",
-  isActive: true, cashierGlAccountId: "",
+  isActive: true, cashierGlAccountId: "", defaultWarehouseId: "",
   allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [], hasAllUnits: false,
 };
 
@@ -38,6 +38,7 @@ export default function UsersManagement() {
   const { data: users = [], isLoading } = useQuery<UserData[]>({ queryKey: ["/api/users"] });
   const { items: departmentItems }      = useDepartmentsLookup();
   const { data: pharmacies = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/pharmacies"] });
+  const { data: warehouses = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/warehouses"] });
   const { data: cashierAccounts = [] }  = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({ queryKey: ["/api/drawer-passwords"] });
   const { items: clinicItems }          = useClinicsLookup();
 
@@ -104,6 +105,7 @@ export default function UsersManagement() {
       pharmacyId:          user.pharmacyId  || "",
       isActive:            user.isActive,
       cashierGlAccountId:  user.cashierGlAccountId || "",
+      defaultWarehouseId:  user.defaultWarehouseId || "",
       allowedPharmacyIds:  user.pharmacyId ? [user.pharmacyId] : [],
       allowedDepartmentIds: [],
       allowedClinicIds:    [],
@@ -150,6 +152,7 @@ export default function UsersManagement() {
       pharmacyId:         formData.pharmacyId   || null,
       isActive:           formData.isActive,
       cashierGlAccountId: formData.cashierGlAccountId || null,
+      defaultWarehouseId: formData.defaultWarehouseId || null,
     };
 
     if (editingUser) {
@@ -212,6 +215,7 @@ export default function UsersManagement() {
         departments={departmentItems.map(i => ({ id: i.id, nameAr: i.name }))}
         pharmacies={pharmacies}
         clinics={clinicItems.map(i => ({ id: i.id, nameAr: i.name }))}
+        warehouses={warehouses}
         cashierAccounts={cashierAccounts}
         isPending={isPending}
         onFormChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}

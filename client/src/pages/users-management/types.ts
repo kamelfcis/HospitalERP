@@ -7,6 +7,7 @@ export interface UserData {
   pharmacyId:         string | null;
   isActive:           boolean;
   cashierGlAccountId: string | null;
+  defaultWarehouseId: string | null;
   createdAt:          string;
 }
 
@@ -19,6 +20,7 @@ export interface UserFormData {
   pharmacyId:          string;
   isActive:            boolean;
   cashierGlAccountId:  string;
+  defaultWarehouseId:  string;
   allowedPharmacyIds:  string[];
   allowedDepartmentIds: string[];
   allowedClinicIds:    string[];

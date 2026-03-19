@@ -257,6 +257,14 @@ const methods = {
           }
         }
 
+        // فحص الكميات الكسرية للأصناف غير القابلة للتجزئة
+        if (item && item.allowFractionalSale === false) {
+          const epsilon = 0.0001;
+          if (Math.abs(qtyInMinor - Math.round(qtyInMinor)) > epsilon) {
+            throw new Error(`الصنف "${item.nameAr}" لا يسمح بالبيع بكميات كسرية`);
+          }
+        }
+
         const lineTotal = qty * salePrice;
         subtotal += lineTotal;
         processedLines.push({ line, qty, salePrice, qtyInMinor, lineTotal });

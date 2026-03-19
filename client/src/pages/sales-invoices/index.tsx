@@ -12,6 +12,7 @@
 import { useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Warehouse, SalesInvoiceWithDetails } from "@shared/schema";
@@ -45,8 +46,18 @@ export default function SalesInvoices() {
   // ── توجيه حسب الدور (الصيدلي → فاتورة جديدة مباشرة) ──────────────────────
   const { canViewRegistry, permissionsReady } = useRoleRouter(editId, navigate);
 
+  // ── بيانات المستخدم ────────────────────────────────────────────────────────
+  const { user, allowedWarehouseIds } = useAuth();
+
   // ── بيانات عامة ───────────────────────────────────────────────────────────
-  const { data: warehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
+  const { data: allWarehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
+
+  // فلترة المستودعات: عرض المسموح بها فقط (فارغة = كل المستودعات لـ admin/owner)
+  const warehouses = useMemo(() => {
+    if (!allWarehouses) return undefined;
+    if (allowedWarehouseIds.length === 0) return allWarehouses;
+    return allWarehouses.filter(w => allowedWarehouseIds.includes(w.id));
+  }, [allWarehouses, allowedWarehouseIds]);
 
   const { data: invoiceDetail, isLoading: detailLoading } = useQuery<SalesInvoiceWithDetails>({
     queryKey: ["/api/sales-invoices", editId],
@@ -71,7 +82,11 @@ export default function SalesInvoices() {
   const netTotal = useMemo(() => +(subtotal - form.discountValue).toFixed(2), [subtotal, form.discountValue]);
 
   // ── تحميل الفاتورة الموجودة ───────────────────────────────────────────────
-  const { loadedIdRef } = useLoadInvoice({ invoiceDetail, isNew, warehouses, form, setLines });
+  const { loadedIdRef } = useLoadInvoice({
+    invoiceDetail, isNew, warehouses,
+    defaultWarehouseId: user?.defaultWarehouseId,
+    form, setLines,
+  });
 
   // ── hooks الميزات ────────────────────────────────────────────────────────
   const registry       = useRegistry(today, !editId);

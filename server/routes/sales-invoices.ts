@@ -15,6 +15,22 @@ import {
 import { salesInvoiceHeaders, warehouses } from "@shared/schema";
 import { runPharmacyDemoSeed } from "../seeds/pharmacy-demo";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: التحقق من صلاحية المستودع للمستخدم
+// يعيد رسالة الخطأ أو null إذا كان الوصول مسموحاً
+// ─────────────────────────────────────────────────────────────────────────────
+async function getWarehouseForbiddenMsg(userId: string, warehouseId: string): Promise<string | null> {
+  const user = await storage.getUser(userId);
+  if (!user) return null;
+  if (user.role === "admin" || (user.role as string) === "owner") return null;
+  const allowed = await storage.getUserWarehouses(userId);
+  if (allowed.length === 0) return null; // لا قيود = وصول كامل
+  if (!allowed.some(w => w.id === warehouseId)) {
+    return "ليس لديك صلاحية استخدام هذا المستودع";
+  }
+  return null;
+}
+
 export function registerSalesInvoicesRoutes(app: Express) {
   // ==================== Sales Invoices ====================
   
@@ -96,6 +112,8 @@ export function registerSalesInvoicesRoutes(app: Express) {
     try {
       const { header, lines, existingId } = req.body;
       if (!header?.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
+      const forbiddenMsg = await getWarehouseForbiddenMsg(req.session.userId!, header.warehouseId);
+      if (forbiddenMsg) return res.status(403).json({ message: forbiddenMsg });
       const safeLines = Array.isArray(lines) ? lines.filter((l: Record<string, unknown>) => l.itemId) : [];
       const enrichedHeader = { ...header, createdBy: req.session?.userId || header.createdBy || null };
 
@@ -124,6 +142,8 @@ export function registerSalesInvoicesRoutes(app: Express) {
       const { header, lines } = req.body;
       if (!header?.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
       if (!header?.invoiceDate) return res.status(400).json({ message: "تاريخ الفاتورة مطلوب" });
+      const forbiddenMsg = await getWarehouseForbiddenMsg(req.session.userId!, header.warehouseId);
+      if (forbiddenMsg) return res.status(403).json({ message: forbiddenMsg });
       if (!lines || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
       
       for (const line of lines) {

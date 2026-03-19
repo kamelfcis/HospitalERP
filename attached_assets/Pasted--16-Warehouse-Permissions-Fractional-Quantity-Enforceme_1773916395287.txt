@@ -1,0 +1,69 @@
+#16 - Warehouse Permissions + Fractional Quantity Enforcement
+
+What & Why
+استكمال أساس استقرار الصيدلية عبر تفعيل منطق المستودع الافتراضي وصلاحيات المستودعات على مستوى الـ backend والـ frontend، مع منع بيع الكميات الكسرية للأصناف غير القابلة للتجزئة. هذه المهمة تعتمد على #15.
+
+Done looks like
+
+يمكن تحديث defaultWarehouseId من خلال PATCH /api/users/:id
+
+إنشاء فاتورة مبيعات أو auto-save يرفض المستودع غير المسموح به للمستخدم
+
+يتم استثناء admin و owner من هذا القيد
+
+إذا كان allowFractionalSale=false والصنف بكميّة كسرية، يرجع backend خطأ 400 برسالة عربية واضحة
+
+المستخدم يرى فقط المستودعات المسموح بها في واجهة الفاتورة
+
+عند إنشاء فاتورة جديدة يتم اختيار user.defaultWarehouseId تلقائيًا إن وُجد
+
+Out of scope
+
+أي تعديل على FEFO
+
+أي Price Lock
+
+أي تعديل على db:push أو schema constraints
+
+أي تغيير على منطق التسعير بخلاف التحقق من fractional quantity
+
+Tasks
+
+PATCH /api/users/:id
+أضف defaultWarehouseId إلى الحقول المسموح بتحديثها، مع validation آمن ومتوافق مع الحقول الحالية.
+
+POST /api/sales-invoices + auto-save
+أضف فحصًا يمنع استخدام مستودع خارج allowedWarehouseIds للمستخدم، مع استثناء admin/owner.
+
+createSalesInvoice
+أضف فحصًا على كل سطر: إذا كان allowFractionalSale=false والكمية كسرية → 400 برسالة عربية واضحة.
+
+use-auth.tsx
+أضف defaultWarehouseId و allowedWarehouseIds إلى AuthUser.
+
+users-management/types.ts
+أضف defaultWarehouseId إلى UserData و UserFormData.
+
+UserFormDialog.tsx
+أضف dropdown لاختيار المستودع الافتراضي.
+
+users-management/index.tsx
+اجلب قائمة المستودعات ومررها للـ dialog، وضمّن defaultWarehouseId في الحفظ والتعديل.
+
+useLoadInvoice.ts
+عند فاتورة جديدة، اختر user.defaultWarehouseId تلقائيًا بدل أول مستودع.
+
+InvoiceHeaderBar + الصفحة الرئيسية
+اعرض فقط المستودعات المسموح بها للمستخدم.
+
+Engineering constraints
+
+لا تكرر منطق التحقق من المستودعات في أكثر من مكان بدون helper/service موحد
+
+الرسائل العربية يجب أن تكون واضحة ومباشرة
+
+لا تكسر سلوك admin/owner الحالي
+
+أي filtering في frontend لا يغني عن backend enforcement
+
+راعِ refactor نظيف وأي استعلامات جديدة يجب مراجعة أثرها على الفهارس

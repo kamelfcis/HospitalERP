@@ -18,6 +18,7 @@ interface UserFormDialogProps {
   departments:     { id: string; nameAr: string }[];
   pharmacies:      { id: string; nameAr: string }[];
   clinics:         { id: string; nameAr: string }[];
+  warehouses:      { id: string; nameAr: string }[];
   cashierAccounts: { glAccountId: string; code: string; name: string; hasPassword: boolean }[];
   isPending:       boolean;
   onFormChange:    (patch: Partial<UserFormData>) => void;
@@ -26,7 +27,7 @@ interface UserFormDialogProps {
 }
 
 export function UserFormDialog({
-  open, editingUser, formData, departments, pharmacies, clinics, cashierAccounts,
+  open, editingUser, formData, departments, pharmacies, clinics, warehouses, cashierAccounts,
   isPending, onFormChange, onSave, onOpenChange,
 }: UserFormDialogProps) {
   const showScope = !!formData.cashierGlAccountId;
@@ -131,6 +132,27 @@ export function UserFormDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label>المستودع الافتراضي</Label>
+            <Select
+              value={formData.defaultWarehouseId || "none"}
+              onValueChange={v => onFormChange({ defaultWarehouseId: v === "none" ? "" : v })}
+            >
+              <SelectTrigger data-testid="select-user-default-warehouse">
+                <SelectValue placeholder="اختر المستودع الافتراضي" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">بدون</SelectItem>
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              يُختار تلقائياً عند إنشاء فاتورة جديدة
+            </p>
           </div>
 
           <div className="space-y-1">

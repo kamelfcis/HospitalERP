@@ -15,25 +15,28 @@ import type { SalesLineLocal } from "../types";
 import type { InvoiceFormHandlers } from "./useInvoiceForm";
 
 interface UseLoadInvoiceParams {
-  invoiceDetail:    SalesInvoiceWithDetails | undefined;
-  isNew:            boolean;
-  warehouses?:      { id: string }[];
-  form:             InvoiceFormHandlers;
-  setLines:         React.Dispatch<React.SetStateAction<SalesLineLocal[]>>;
+  invoiceDetail:      SalesInvoiceWithDetails | undefined;
+  isNew:              boolean;
+  warehouses?:        { id: string }[];
+  defaultWarehouseId?: string | null;
+  form:               InvoiceFormHandlers;
+  setLines:           React.Dispatch<React.SetStateAction<SalesLineLocal[]>>;
 }
 
 export function useLoadInvoice({
-  invoiceDetail, isNew, warehouses, form, setLines,
+  invoiceDetail, isNew, warehouses, defaultWarehouseId, form, setLines,
 }: UseLoadInvoiceParams) {
   const loadedIdRef = useRef<string | null>(null);
 
   // ── إعادة ضبط الفاتورة الجديدة ──────────────────────────────────────────
   useEffect(() => {
     if (!isNew) return;
-    form.resetForm({ warehouseId: warehouses?.[0]?.id || "" });
+    // الأولوية: المستودع الافتراضي للمستخدم → أول مستودع في القائمة
+    const initialWarehouse = defaultWarehouseId || warehouses?.[0]?.id || "";
+    form.resetForm({ warehouseId: initialWarehouse });
     setLines([]);
     loadedIdRef.current = null;
-  }, [isNew, warehouses]);
+  }, [isNew, warehouses, defaultWarehouseId]);
 
   // ── تحميل فاتورة موجودة ──────────────────────────────────────────────────
   useEffect(() => {

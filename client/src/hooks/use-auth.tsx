@@ -10,16 +10,19 @@ interface AuthUser {
   departmentId: string | null;
   pharmacyId: string | null;
   isActive: boolean;
+  defaultWarehouseId: string | null;
 }
 
 interface AuthData {
   user: AuthUser;
   permissions: string[];
+  allowedWarehouseIds: string[];
 }
 
 interface AuthContextType {
   user: AuthUser | null;
   permissions: string[];
+  allowedWarehouseIds: string[];
   isLoading: boolean;
   isAuthenticated: boolean;
   hasPermission: (permission: string) => boolean;
@@ -87,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [logoutMutation]);
 
   const permissions = data?.permissions || [];
+  const allowedWarehouseIds = data?.allowedWarehouseIds || [];
   const hasPermission = useCallback((permission: string) => {
     return permissions.includes(permission);
   }, [permissions]);
@@ -96,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user: data?.user || null,
         permissions,
+        allowedWarehouseIds,
         isLoading,
         isAuthenticated: !!data?.user,
         hasPermission,
