@@ -25,13 +25,18 @@ export interface CashierShift {
   pharmacyId: string | null;
   departmentId: string | null;
   glAccountId: string | null;
-  status: "open" | "closed" | string;
+  status: "open" | "closed" | "stale" | "closing" | string;
   openingCash: string;
   closingCash: string;
   expectedCash: string;
   variance: string;
   openedAt: string;
   closedAt: string | null;
+  // ── حقول دورة الحياة (Task #19) ─────────────────────────
+  businessDate: string | null;
+  closedBy: string | null;
+  staleAt: string | null;
+  staleReason: string | null;
 }
 
 // ── إجماليات الوردية (جلسة مالية كاملة) ──────────────────
@@ -42,6 +47,8 @@ export interface ShiftTotals {
   totalRefunded: string;
   refundCount: number;
   netCash: string;
+  hoursOpen: number;
+  isStale: boolean;
 }
 
 // ── حساب GL المرتبط بالمستخدم (خزنة الكاشير) ─────────────
@@ -68,6 +75,9 @@ export interface PendingInvoice {
   warehouseName: string | null;
   /** معرّف الصيدلية التابعة لها المستودع (للتمييز بين الوحدات) */
   warehousePharmacyId: string | null;
+  /** معرّف الوردية التي حجزت الفاتورة (قراءة فقط — لا يكتبه GET) */
+  claimedByShiftId: string | null;
+  claimedAt: string | null;
 }
 
 // ── تفاصيل فاتورة مع أصنافها (panel العرض) ───────────────
@@ -88,9 +98,11 @@ export interface InvoiceLine {
 
 // ── نتيجة التحقق قبل إغلاق الوردية ──────────────────────
 export type ShiftCloseReasonCode =
-  | "CLEAN"                    // لا فواتير معلّقة — إغلاق مباشر
-  | "PENDING_NO_OTHER_SHIFT"   // فواتير معلّقة ولا وردية أخرى — محجوب
+  | "CLEAN"                      // لا فواتير معلّقة — إغلاق مباشر
+  | "PENDING_NO_OTHER_SHIFT"     // فواتير معلّقة ولا وردية أخرى — محجوب
   | "PENDING_OTHER_SHIFT_EXISTS" // فواتير معلّقة وهناك وردية أخرى — مسموح بتحذير
+  | "STALE"                      // الوردية منتهية الصلاحية
+  | "NOT_OPEN"
   | "NOT_FOUND"
   | "ALREADY_CLOSED"
   | string;
@@ -106,6 +118,8 @@ export interface ShiftCloseValidation {
     openedAt: string;
   } | null;
   reasonCode: ShiftCloseReasonCode;
+  isStale: boolean;
+  hoursOpen: number;
 }
 
 // ── إجمالي مختار (اختيار متعدد في الجدول) ────────────────

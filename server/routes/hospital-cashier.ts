@@ -16,13 +16,44 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { users } from "@shared/schema";
+import { users, cashierAuditLog } from "@shared/schema";
 import { requireAuth, sseClients, broadcastToUnit } from "./_shared";
+
+// ── مساعد: التحقق من ملكية الوردية ──────────────────────────────────────
+//  القاعدة 5: الملكية إلزامية افتراضياً — bypass المشرف يُسجَّل في audit
+async function assertShiftOwnership(
+  shiftId: string,
+  userId: string,
+  userFullName: string,
+  isAdminOrSupervisor: boolean,
+): Promise<void> {
+  const shift = await storage.getShiftById(shiftId);
+  if (!shift) throw Object.assign(new Error("الوردية غير موجودة"), { status: 404 });
+
+  if (shift.cashierId === userId) return; // صاحب الوردية — مسموح دائماً
+
+  if (!isAdminOrSupervisor) {
+    throw Object.assign(
+      new Error("هذه الوردية لا تخصك — لا يمكنك تنفيذ هذه العملية"),
+      { status: 403 },
+    );
+  }
+
+  // المشرف/الأدمن — bypass مسموح لكن يجب تسجيله
+  await db.insert(cashierAuditLog).values({
+    shiftId,
+    action:      "supervisor_override",
+    entityType:  "shift",
+    entityId:    shiftId,
+    details:     `تدخل مشرف بواسطة ${userFullName} على وردية ${shift.cashierName}`,
+    performedBy: userFullName,
+  });
+}
 
 export function registerCashierRoutes(app: Express) {
   // ── Pharmacies ──────────────────────────────────────────────
@@ -148,7 +179,9 @@ export function registerCashierRoutes(app: Express) {
     try {
       const cashierId = (req.session as { userId?: string }).userId;
       if (!cashierId) return res.json(null);
-      res.json(await storage.getMyOpenShift(cashierId) || null);
+      // getMyOpenShift auto-marks stale shifts (duration-based, SQL-side)
+      const shift = await storage.getMyOpenShift(cashierId) || null;
+      res.json(shift);
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
@@ -219,15 +252,34 @@ export function registerCashierRoutes(app: Express) {
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/cashier/shift/:shiftId/close", async (req, res) => {
+  app.post("/api/cashier/shift/:shiftId/close", requireAuth, async (req, res) => {
     try {
+      const userId = (req.session as { userId?: string }).userId!;
       const { closingCash } = req.body;
       if (closingCash === undefined) return res.status(400).json({ message: "المبلغ النقدي الفعلي مطلوب" });
-      res.json(await storage.closeCashierShift(req.params.shiftId as string, closingCash));
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("معلق") || msg.includes("مغلق")) return res.status(409).json({ message: msg });
-      res.status(500).json({ message: msg });
+
+      // ── جلب بيانات المستخدم ──
+      const [userRow] = await db.select({
+        fullName: users.fullName,
+        role:     users.role,
+        isAdmin:  users.isAdmin,
+      }).from(users).where(eq(users.id, userId));
+
+      const fullName           = userRow?.fullName || userId;
+      const isAdminOrSupervisor = !!(userRow?.isAdmin || userRow?.role === "admin" || userRow?.role === "owner");
+
+      // القاعدة 5: التحقق من الملكية — bypass مشرف يُسجَّل
+      const shiftId = req.params.shiftId as string;
+      await assertShiftOwnership(shiftId, userId, fullName, isAdminOrSupervisor);
+
+      res.json(await storage.closeCashierShift(shiftId, closingCash, userId, fullName, isAdminOrSupervisor));
+    } catch (e: any) {
+      const msg  = e instanceof Error ? e.message : String(e);
+      const code = e?.status || 500;
+      if (msg.includes("معلق") || msg.includes("مغلق") || msg.includes("منتهية")) return res.status(409).json({ message: msg });
+      if (code === 403) return res.status(403).json({ message: msg });
+      if (code === 404) return res.status(404).json({ message: msg });
+      res.status(code === 500 ? 500 : code).json({ message: msg });
     }
   });
 
@@ -262,31 +314,51 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/cashier/collect", async (req, res) => {
+  app.post("/api/cashier/collect", requireAuth, async (req, res) => {
     try {
+      const userId = (req.session as { userId?: string }).userId!;
       const { shiftId, invoiceIds, collectedBy, paymentDate } = req.body;
       if (!shiftId || !invoiceIds?.length || !collectedBy) return res.status(400).json({ message: "بيانات التحصيل غير مكتملة" });
+
+      // القاعدة 5: ملكية الوردية إلزامية
+      const [userRow] = await db.select({ fullName: users.fullName, role: users.role, isAdmin: users.isAdmin })
+        .from(users).where(eq(users.id, userId));
+      const fullName           = userRow?.fullName || userId;
+      const isAdminOrSupervisor = !!(userRow?.isAdmin || userRow?.role === "admin" || userRow?.role === "owner");
+      await assertShiftOwnership(shiftId, userId, fullName, isAdminOrSupervisor);
+
       const txnDate = paymentDate || new Date().toISOString().split("T")[0];
       await storage.assertPeriodOpen(txnDate);
       const result = await storage.collectInvoices(shiftId, invoiceIds, collectedBy, txnDate);
       await storage.createAuditLog({ tableName: "cashier_receipts", recordId: shiftId, action: "collect", newValues: JSON.stringify({ invoiceIds, collectedBy }) });
       const shift = await storage.getShiftById(shiftId);
-      // unitKey = pharmacyId للصيدليات أو departmentId للأقسام — يطابق مفتاح SSE عند الكاشير
       const unitKey = shift?.pharmacyId || shift?.departmentId;
       if (unitKey) broadcastToUnit(unitKey, "invoice_collected", { invoiceIds, shiftId });
       res.json(result);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("الفترة المحاسبية")) return res.status(403).json({ message: msg });
-      if (msg.includes("محصّلة") || msg.includes("مفتوحة") || msg.includes("نهائي")) return res.status(409).json({ message: msg });
+    } catch (e: any) {
+      const msg  = e instanceof Error ? e.message : String(e);
+      const code = e?.status || 500;
+      if (msg.includes("الفترة المحاسبية"))                            return res.status(403).json({ message: msg });
+      if (msg.includes("محصّلة") || msg.includes("نهائي") || msg.includes("محجوزة")) return res.status(409).json({ message: msg });
+      if (msg.includes("منتهية الصلاحية"))                             return res.status(409).json({ message: msg });
+      if (code === 403) return res.status(403).json({ message: msg });
       res.status(500).json({ message: msg });
     }
   });
 
-  app.post("/api/cashier/refund", async (req, res) => {
+  app.post("/api/cashier/refund", requireAuth, async (req, res) => {
     try {
+      const userId = (req.session as { userId?: string }).userId!;
       const { shiftId, invoiceIds, refundedBy, paymentDate } = req.body;
       if (!shiftId || !invoiceIds?.length || !refundedBy) return res.status(400).json({ message: "بيانات الصرف غير مكتملة" });
+
+      // القاعدة 5: ملكية الوردية إلزامية
+      const [userRow] = await db.select({ fullName: users.fullName, role: users.role, isAdmin: users.isAdmin })
+        .from(users).where(eq(users.id, userId));
+      const fullName           = userRow?.fullName || userId;
+      const isAdminOrSupervisor = !!(userRow?.isAdmin || userRow?.role === "admin" || userRow?.role === "owner");
+      await assertShiftOwnership(shiftId, userId, fullName, isAdminOrSupervisor);
+
       const txnDate = paymentDate || new Date().toISOString().split("T")[0];
       await storage.assertPeriodOpen(txnDate);
       const result = await storage.refundInvoices(shiftId, invoiceIds, refundedBy, txnDate);
@@ -295,11 +367,14 @@ export function registerCashierRoutes(app: Express) {
       const unitKey = shift?.pharmacyId || shift?.departmentId;
       if (unitKey) broadcastToUnit(unitKey, "invoice_refunded", { invoiceIds, shiftId });
       res.json(result);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("الفترة المحاسبية")) return res.status(403).json({ message: msg });
-      if (msg.includes("رصيد الخزنة غير كافٍ")) return res.status(422).json({ message: msg });
-      if (msg.includes("مصروف") || msg.includes("مفتوحة") || msg.includes("نهائي")) return res.status(409).json({ message: msg });
+    } catch (e: any) {
+      const msg  = e instanceof Error ? e.message : String(e);
+      const code = e?.status || 500;
+      if (msg.includes("الفترة المحاسبية"))                           return res.status(403).json({ message: msg });
+      if (msg.includes("رصيد الخزنة غير كافٍ"))                       return res.status(422).json({ message: msg });
+      if (msg.includes("مصروف") || msg.includes("نهائي") || msg.includes("محجوز")) return res.status(409).json({ message: msg });
+      if (msg.includes("منتهية الصلاحية"))                            return res.status(409).json({ message: msg });
+      if (code === 403) return res.status(403).json({ message: msg });
       res.status(500).json({ message: msg });
     }
   });

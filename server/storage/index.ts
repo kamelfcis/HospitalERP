@@ -459,8 +459,8 @@ export interface IStorage {
   getMyOpenShifts(cashierId: string): Promise<Record<string, unknown>[]>;
   getUserCashierGlAccount(userId: string): Promise<{ glAccountId: string; code: string; name: string; hasPassword: boolean } | null>;
   getShiftById(shiftId: string): Promise<import("@shared/schema").CashierShift | null>;
-  closeCashierShift(shiftId: string, closingCash: string): Promise<Record<string, unknown>>;
-  validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; otherShift: Record<string, unknown> | null; reasonCode: string }>;
+  closeCashierShift(shiftId: string, closingCash: string, closedByUserId: string, closedByName: string, isSupervisorOverride?: boolean): Promise<Record<string, unknown>>;
+  validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; otherShift: Record<string, unknown> | null; reasonCode: string; isStale: boolean; hoursOpen: number }>;
     getPendingDocCountForUnit(shift: import("@shared/schema").CashierShift): Promise<number>;
     findOtherOpenShiftForUnit(currentShiftId: string, shift: import("@shared/schema").CashierShift): Promise<import("@shared/schema").CashierShift | null>;
   getPendingSalesInvoices(unitType: string, unitId: string, search?: string): Promise<Record<string, unknown>[]>;
@@ -468,7 +468,7 @@ export interface IStorage {
   getSalesInvoiceDetails(invoiceId: string): Promise<Record<string, unknown>>;
   collectInvoices(shiftId: string, invoiceIds: string[], collectedBy: string, paymentDate?: string): Promise<Record<string, unknown>>;
   refundInvoices(shiftId: string, invoiceIds: string[], refundedBy: string, paymentDate?: string): Promise<Record<string, unknown>>;
-  getShiftTotals(shiftId: string): Promise<{ totalCollected: string; totalRefunded: string; collectCount: number; refundCount: number; openingCash: string; netCash: string }>;
+  getShiftTotals(shiftId: string): Promise<{ totalCollected: string; totalRefunded: string; collectCount: number; refundCount: number; openingCash: string; netCash: string; hoursOpen: number; isStale: boolean }>;
   getNextCashierReceiptNumber(): Promise<number>;
   getNextCashierRefundReceiptNumber(): Promise<number>;
   markReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<Record<string, unknown>>;

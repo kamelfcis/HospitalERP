@@ -2,9 +2,10 @@
 //  CloseShiftValidationDialog — dialog التحقق قبل إغلاق الوردية
 //
 //  سيناريوهات:
-//  CLEAN                     → لا فواتير معلّقة — إغلاق آمن
-//  PENDING_NO_OTHER_SHIFT    → فواتير معلّقة ولا وردية أخرى — محجوب
+//  CLEAN                      → لا فواتير معلّقة — إغلاق آمن
+//  PENDING_NO_OTHER_SHIFT     → فواتير معلّقة ولا وردية أخرى — محجوب
 //  PENDING_OTHER_SHIFT_EXISTS → فواتير معلّقة + وردية أخرى — تحذير فقط
+//  STALE                      → تجاوزت 24 ساعة — تحتاج مشرف
 // ============================================================
 import { AlertTriangle, CheckCircle, Loader2, XCircle, User, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -24,6 +25,8 @@ export function CloseShiftValidationDialog({ open, onOpenChange, validation, isV
   const isBlocked       = reasonCode === "PENDING_NO_OTHER_SHIFT";
   const isWithWarning   = reasonCode === "PENDING_OTHER_SHIFT_EXISTS";
   const isClean         = reasonCode === "CLEAN";
+  const isStaleShift    = reasonCode === "STALE";
+  const hoursOpen       = validation?.hoursOpen ?? 0;
 
   const otherShiftTime = validation?.otherShift?.openedAt
     ? new Date(validation.otherShift.openedAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })
@@ -35,9 +38,9 @@ export function CloseShiftValidationDialog({ open, onOpenChange, validation, isV
         <DialogHeader>
           <DialogTitle className="text-right flex items-center gap-2">
             {isValidating  && <Loader2      className="h-5 w-5 animate-spin" />}
-            {!isValidating && isBlocked     && <XCircle       className="h-5 w-5 text-red-600"   />}
-            {!isValidating && isWithWarning && <AlertTriangle className="h-5 w-5 text-amber-500" />}
-            {!isValidating && isClean       && <CheckCircle   className="h-5 w-5 text-green-600" />}
+            {!isValidating && (isBlocked || isStaleShift) && <XCircle       className="h-5 w-5 text-red-600"   />}
+            {!isValidating && isWithWarning               && <AlertTriangle className="h-5 w-5 text-amber-500" />}
+            {!isValidating && isClean                     && <CheckCircle   className="h-5 w-5 text-green-600" />}
             التحقق من إغلاق الوردية
           </DialogTitle>
           <DialogDescription className="text-right sr-only">
@@ -48,6 +51,17 @@ export function CloseShiftValidationDialog({ open, onOpenChange, validation, isV
         <div className="py-2 space-y-3">
           {isValidating && (
             <p className="text-sm text-muted-foreground text-right">جارٍ التحقق من الفواتير المعلّقة...</p>
+          )}
+
+          {!isValidating && isStaleShift && (
+            <>
+              <AlertBox variant="error" title="وردية منتهية الصلاحية">
+                تجاوزت هذه الوردية {hoursOpen.toFixed(1)} ساعة — الحد المسموح {24} ساعة.
+              </AlertBox>
+              <p className="text-xs text-muted-foreground text-right">
+                يجب على المشرف أو مدير النظام إغلاق هذه الوردية يدوياً من لوحة الإدارة.
+              </p>
+            </>
           )}
 
           {!isValidating && isBlocked && (
@@ -94,7 +108,7 @@ export function CloseShiftValidationDialog({ open, onOpenChange, validation, isV
         </div>
 
         <DialogFooter className="flex flex-row-reverse gap-2">
-          {!isValidating && !isBlocked && (
+          {!isValidating && !isBlocked && !isStaleShift && (
             <Button onClick={onProceed} data-testid="button-proceed-close-shift">
               متابعة الإغلاق
             </Button>

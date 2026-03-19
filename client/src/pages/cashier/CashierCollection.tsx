@@ -11,7 +11,7 @@
 //  InvoiceWorkArea     → compound component لكل تاب
 // ============================================================
 import { useState } from "react";
-import { DollarSign, Loader2, Receipt, Undo2, Wallet } from "lucide-react";
+import { AlertTriangle, DollarSign, Loader2, Receipt, Undo2, Wallet } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ export default function CashierCollection() {
     drawerPassword,   setDrawerPassword,
     userGlAccount,    canOpenShift,
     openShiftMutation,
-    activeShift,      shiftLoading, hasActiveShift,
+    activeShift,      shiftLoading, hasActiveShift, isStale,
     shiftId,          shiftUnitType, shiftUnitId,
     shiftTotals,      expectedCash, varianceCalc,
     closeDialogOpen,      setCloseDialogOpen,
@@ -160,6 +160,20 @@ export default function CashierCollection() {
         </CardContent>
       </Card>
 
+      {/* ── تحذير الوردية المنتهية (stale) ── */}
+      {isStale && activeShift && (
+        <div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 text-amber-800 dark:text-amber-300"
+          data-testid="banner-stale-shift">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div className="text-sm leading-relaxed">
+            <p className="font-semibold">وردية منتهية الصلاحية</p>
+            <p className="text-xs mt-0.5">
+              تجاوزت هذه الوردية {24} ساعة منذ الفتح. يرجى إغلاقها من قِبَل المشرف لاستئناف العمل.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── تابات التحصيل (تظهر فقط عند وجود وردية) ── */}
       {hasActiveShift && (
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "sales" | "returns")} dir="rtl">
@@ -200,7 +214,7 @@ export default function CashierCollection() {
                   <Button
                     size="sm"
                     onClick={() => collectMutation.mutate()}
-                    disabled={salesTab.selected.size === 0 || !hasActiveShift || collectMutation.isPending}
+                    disabled={salesTab.selected.size === 0 || !hasActiveShift || isStale || collectMutation.isPending}
                     data-testid="button-collect"
                   >
                     {collectMutation.isPending
@@ -240,7 +254,7 @@ export default function CashierCollection() {
                   <Button
                     size="sm"
                     onClick={() => refundMutation.mutate()}
-                    disabled={returnsTab.selected.size === 0 || !hasActiveShift || refundMutation.isPending}
+                    disabled={returnsTab.selected.size === 0 || !hasActiveShift || isStale || refundMutation.isPending}
                     data-testid="button-refund"
                   >
                     {refundMutation.isPending

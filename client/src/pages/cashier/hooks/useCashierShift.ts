@@ -63,7 +63,9 @@ export function useCashierShift() {
 
   // ── مشتقّات من الوردية النشطة ────────────────────────────
   const activeShift    = myOpenShift || null;
+  // الوردية "فعّالة" فقط إذا كانت status='open' (stale مُقصاة من getMyOpenShift)
   const hasActiveShift = !!activeShift && activeShift.status === "open";
+  const isStale        = activeShift?.status === "stale";
   const shiftId        = activeShift?.id;
   const shiftUnitType  = activeShift?.unitType || selectedUnitType || "pharmacy";
   const shiftUnitId    = activeShift?.pharmacyId || activeShift?.departmentId || selectedUnitId;
@@ -188,7 +190,7 @@ export function useCashierShift() {
     userGlAccount, canOpenShift,
     openShiftMutation,
     // الوردية النشطة
-    activeShift, shiftLoading, hasActiveShift,
+    activeShift, shiftLoading, hasActiveShift, isStale,
     shiftId, shiftUnitType, shiftUnitId,
     // الإجماليات
     shiftTotals, expectedCash, varianceCalc,
