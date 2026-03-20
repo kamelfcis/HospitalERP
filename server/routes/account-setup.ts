@@ -65,11 +65,15 @@ export function registerAccountSetupRoutes(app: Express) {
     }
   });
 
-  app.get("/api/reports/account-ledger", async (req, res) => {
+  app.get("/api/reports/account-ledger", requireAuth, checkPermission(PERMISSIONS.REPORTS_ACCOUNT_LEDGER), async (req, res) => {
     try {
       const accountId = req.query.accountId as string;
       if (!accountId) {
         return res.status(400).json({ message: "معرف الحساب مطلوب" });
+      }
+      const visibleIds = await storage.getVisibleAccountIds(req.session.userId as string);
+      if (visibleIds !== null && !visibleIds.includes(accountId)) {
+        return res.status(403).json({ message: "ليس لديك صلاحية الوصول لهذا الحساب" });
       }
       const today = new Date();
       const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -84,7 +88,7 @@ export function registerAccountSetupRoutes(app: Express) {
   });
 
   // Accounts Import
-  app.post("/api/accounts/import", upload.single("file"), async (req, res) => {
+  app.post("/api/accounts/import", requireAuth, checkPermission(PERMISSIONS.ACCOUNTS_CREATE), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "لم يتم تحميل ملف" });

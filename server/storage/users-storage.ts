@@ -226,11 +226,12 @@ const methods = {
   },
 
   async setUserAccountScope(this: DatabaseStorage, userId: string, accountIds: string[], actorUserId: string): Promise<void> {
+    const uniqueIds = [...new Set(accountIds.filter(id => typeof id === "string" && id.trim() !== ""))];
     await db.transaction(async (tx) => {
       await tx.delete(userAccountScopes).where(eq(userAccountScopes.userId, userId));
-      if (accountIds.length > 0) {
+      if (uniqueIds.length > 0) {
         await tx.insert(userAccountScopes).values(
-          accountIds.map(accountId => ({ userId, accountId, createdBy: actorUserId }))
+          uniqueIds.map(accountId => ({ userId, accountId, createdBy: actorUserId }))
         );
       }
     });

@@ -1,0 +1,59 @@
+TASK: Phase 2 Verification Pass — Confirm Scope Enforcement Completeness, Admin Behavior, and Transaction Safety
+
+Phase 2 has been implemented.
+Now perform a strict verification pass before we close it completely.
+
+GOAL
+Confirm that user-scoped account visibility is fully enforced, transaction-safe, and does not leave bypasses.
+
+VERIFY ALL OF THE FOLLOWING
+
+A) Scope enforcement coverage
+1) Re-inspect all account-related backend routes, not only GET /api/accounts.
+List every account-related endpoint found and state whether scope filtering applies or not.
+This includes:
+- list routes
+- by-id routes
+- search routes
+- helper/lookup routes
+- any route returning account data used by selectors or forms
+
+2) If any route can expose accounts outside the user’s visible scope and should not, fix it.
+
+B) Admin behavior
+Decide and verify the intended behavior for admin/superuser users:
+- if an admin has explicit rows in user_account_scopes, are they restricted or still unrestricted?
+- if the project already has a super-admin pattern, reuse it
+- document the final rule clearly
+
+C) Transaction safety
+Review setUserAccountScope / replace logic and confirm:
+- scope replacement is atomic
+- no partial delete/insert state can remain on failure
+- duplicate input account IDs are handled safely
+- empty list behavior is explicit and correct
+
+D) Audit verification
+Confirm the audit log stores a clear and useful record:
+- actor user
+- target user
+- added accounts
+- removed accounts
+- timestamp
+If current logging is too vague, improve it.
+
+E) Functional verification
+Confirm again:
+- unrestricted user sees all accounts
+- scoped user sees only assigned accounts
+- AccountMappings uses scoped accounts automatically
+- journal-entry-form and Warehouses still behave correctly after Phase 1 + Phase 2
+- AccountScopeDialog works end-to-end
+
+PRINT EXACTLY
+1) all account-related routes found and their scope behavior
+2) final admin rule
+3) whether scope replacement is atomic
+4) what the audit log stores
+5) any tiny fixes made in this pass
+6) clear statement: “Phase 2 fully closed” or “Phase 2 still has these remaining gaps”
