@@ -1,0 +1,123 @@
+Do NOT start implementation yet.
+
+This Phase 2 analysis is not sufficient for approval.
+You must complete the missing inspection work first.
+
+==================================================
+PHASE 2 ANALYSIS CORRECTION REQUIRED
+==================================================
+
+Your current analysis is incomplete.
+You may not begin coding until you print a corrected analysis covering all required decision points.
+
+Return corrected analysis only.
+
+==================================================
+REQUIRED CORRECTIONS
+==================================================
+
+1) COMPLETE INTEGRATION-POINT INSPECTION
+
+Inspect and report the real code paths for all requested Phase 2 targets, even if some will later be deferred:
+
+- patient invoice line creation/update
+- clinic booking / consultation
+- lab service order line creation
+- radiology service order line creation
+- inpatient service line creation
+- stay/accommodation generated lines
+- sales invoice line creation/update
+
+For each one, print:
+- exact file(s) inspected
+- exact route/service/function where line insertion or line update happens
+- whether contract evaluation can be safely inserted there in Phase 2
+- READY / DEFER
+- exact reason
+
+Do not say “will inspect during execution”.
+Inspection must happen now.
+
+2) PRICE SOURCE BY INTEGRATION POINT
+
+For every inspected integration point above, print the actual source of listPrice / base price used before contract split.
+
+For each target, specify:
+- actual source file/function
+- whether price comes from incoming request, service master, price list, existing calculator, or stored line data
+- whether this source is reliable for evaluator input
+- whether basePriceListId can override it and where that lookup will happen
+
+Do not leave price source implicit.
+
+3) EDITABLE VS FINAL STATES — ACTUAL VALUES
+
+Inspect the real status enums / state logic from the codebase and print the exact actual status values for:
+- patient invoices
+- sales invoices
+- any other service documents you plan to integrate in Phase 2
+
+Then define the exact reevaluation boundary:
+- which statuses allow reevaluation
+- which statuses permanently block reevaluation
+
+Do not infer. Read the actual code.
+
+4) RULE COMPOSITION DECISION
+
+Before coding, print the exact rule composition model you will implement:
+
+- how eligibility rules are resolved
+- how pricing rules are resolved
+- how approval_required overlays the result
+- how ties are broken
+- whether one rule or multiple rules can contribute to a final result
+- how matchedRuleId / matchedRuleName will be chosen when more than one rule participates
+
+This must be explicit before implementation.
+
+5) SALES INVOICE SCOPE DECISION
+
+Inspect whether Sales Invoice contract stamping is genuinely safe and meaningful in Phase 2.
+
+Print one of these decisions only:
+- READY IN PHASE 2
+or
+- DEFER TO FOLLOW-UP
+
+Support the decision with:
+- exact header fields available
+- exact line creation path
+- exact price source
+- exact reason it is safe or unsafe now
+
+6) DEFERRED MODULES MUST BE EXPLICIT
+
+If lab / radiology / inpatient / stay lines are not cleanly integratable in this phase, that is acceptable.
+But you must explicitly mark them DEFERRED with exact reasons and exact files inspected.
+
+==================================================
+REQUIRED OUTPUT FORMAT
+==================================================
+
+Print exactly:
+
+1) FILES INSPECTED
+2) INTEGRATION POINT MATRIX
+3) PRICE SOURCE MATRIX
+4) EDITABLE VS FINAL STATE MATRIX
+5) RULE COMPOSITION MODEL
+6) SALES INVOICE DECISION
+7) DEFERRED ITEMS
+8) IMPLEMENTATION PLAN — PHASE 2 ONLY
+9) IMPLEMENTATION READINESS: READY / NOT READY
+
+You are READY only if:
+- all requested integration points were inspected
+- all price sources were identified
+- actual editable/final states were verified
+- rule composition model is explicit
+- sales invoice decision is explicit
+
+Do not start coding after this message.
+Return the corrected analysis only.
