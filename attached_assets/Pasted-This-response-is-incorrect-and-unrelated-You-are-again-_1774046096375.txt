@@ -1,0 +1,74 @@
+This response is incorrect and unrelated.
+
+You are again talking about Account Mappings, which is NOT the current task.
+
+We are working on Contracts Module — Phase 2, specifically:
+- Step 9 (Coverage Rules tab)
+- Step 10 (Patient invoice coverage display)
+
+Do NOT mention Account Mappings again.
+Do NOT summarize unrelated modules.
+Do NOT say “already done” without file evidence.
+
+==================================================
+CORRECTION — EXECUTE STEP 9 & STEP 10 NOW
+==================================================
+
+You must now continue and COMPLETE the actual required work.
+
+STEP 9 — Coverage Rules Tab
+
+Target:
+client/src/pages/contracts/index.tsx
+
+Requirements:
+- Add a "Coverage Rules" tab inside contracts module
+- Table sorted by priority
+- Add / edit rule UI
+- Dynamic fields based on ruleType
+- Active toggle
+- Inline test tool using POST /api/contracts/evaluate
+- Explanation panel
+- Extract subcomponents if needed (do NOT bloat index.tsx)
+
+STEP 10 — Patient Invoice Coverage Display
+
+Find the real line display file(s) in the codebase (do not assume names blindly).
+
+Requirements:
+- coverage status badge
+- company share chip
+- patient share chip
+- explanation tooltip or expandable section
+- must read ONLY backend-stamped fields
+- DO NOT calculate anything in frontend
+
+==================================================
+MANDATORY RULES
+==================================================
+
+- Do not talk about Account Mappings again
+- Do not ask what to do next
+- Do not say “already completed” without listing actual modified files
+- Show real implementation evidence
+- Keep code clean and modular
+
+==================================================
+BEFORE CODING (SHORT)
+==================================================
+
+Print only:
+1) Files to modify for Step 9
+2) Files to modify for Step 10
+
+Then implement immediately.
+
+==================================================
+FINAL OUTPUT (MANDATORY)
+==================================================
+
+1) MODIFIED FILES
+2) COVERAGE RULES TAB IMPLEMENTED
+3) PATIENT INVOICE COVERAGE DISPLAY IMPLEMENTED
+4) COMPONENTS ADDED OR EXTRACTED
+5) ANY SMALL FOLLOW-UP RISKS
