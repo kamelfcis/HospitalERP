@@ -28,6 +28,7 @@ import type {
   PatientInvoiceLine,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 
 const methods = {
   // ==================== Account Mappings — ربط الحسابات ====================
@@ -207,7 +208,13 @@ const methods = {
 
       // If no mappings AND no dynamic overrides at all: skip (nothing configured)
       if (mappings.length === 0 && !params.dynamicAccountOverrides) {
-        console.log(`[GL] SKIPPED: No account mappings configured for transaction type "${params.sourceType}". Configure mappings at /account-mappings to enable automatic GL posting.`);
+        logAcctEvent({
+          sourceType:   params.sourceType,
+          sourceId:     params.sourceDocumentId,
+          eventType:    "journal_no_mappings",
+          status:       "needs_retry",
+          errorMessage: `لا يوجد ربط حسابات مُعرَّف لنوع المعاملة "${params.sourceType}". أضف الربط من /account-mappings وسيُنشأ القيد تلقائياً عند إعادة التشغيل.`,
+        }).catch(() => {});
         return null;
       }
 
@@ -248,11 +255,23 @@ const methods = {
       }
 
       if (unmappedTypes.length > 0) {
-        console.log(`[GL] WARNING: Unmapped line types for ${params.sourceType}: ${unmappedTypes.join(', ')}. These lines will be skipped. Configure at /account-mappings.`);
+        logAcctEvent({
+          sourceType:   params.sourceType,
+          sourceId:     params.sourceDocumentId,
+          eventType:    "journal_partial_mappings",
+          status:       "needs_retry",
+          errorMessage: `أنواع سطور غير مربوطة لـ "${params.sourceType}": [${unmappedTypes.join(', ')}]. هذه السطور ستُحذف من القيد. أضف الربط الناقص من /account-mappings.`,
+        }).catch(() => {});
       }
 
       if (journalLineData.length === 0) {
-        console.log(`[GL] SKIPPED: All lines unmapped for ${params.sourceType}/${params.sourceDocumentId}. No journal entry created.`);
+        logAcctEvent({
+          sourceType:   params.sourceType,
+          sourceId:     params.sourceDocumentId,
+          eventType:    "journal_all_lines_unmapped",
+          status:       "needs_retry",
+          errorMessage: `جميع سطور المعاملة "${params.sourceType}" غير مربوطة بحسابات — لم يُنشأ أي قيد. عرِّف ربط الحسابات من /account-mappings.`,
+        }).catch(() => {});
         return null;
       }
 
@@ -263,7 +282,13 @@ const methods = {
       const preCheckDebit  = journalLineData.reduce((s, l) => s + parseMoney(l.debit),  0);
       const preCheckCredit = journalLineData.reduce((s, l) => s + parseMoney(l.credit), 0);
       if (Math.abs(preCheckDebit - preCheckCredit) > 0.01) {
-        console.log(`[GL] REJECTED: Unbalanced journal for ${params.sourceType}/${params.sourceDocumentId} (Dr=${preCheckDebit.toFixed(2)}, Cr=${preCheckCredit.toFixed(2)}). Missing mappings: [${unmappedTypes.join(', ')}]. Configure at /account-mappings and the next retry will succeed.`);
+        logAcctEvent({
+          sourceType:   params.sourceType,
+          sourceId:     params.sourceDocumentId,
+          eventType:    "journal_unbalanced",
+          status:       "failed",
+          errorMessage: `رُفض القيد: ميزان غير متوازن لـ "${params.sourceType}" (مدين=${preCheckDebit.toFixed(2)}, دائن=${preCheckCredit.toFixed(2)}). الربط الناقص: [${unmappedTypes.join(', ')}]. أضف الربط الناقص من /account-mappings وستنجح إعادة المحاولة.`,
+        }).catch(() => {});
         return null;
       }
 
@@ -279,17 +304,14 @@ const methods = {
         periodId = period?.id;
       }
 
-      // GAP 2 FIX: log a traceable warning when no fiscal period covers the entry date
+      // Log a traceable warning when no fiscal period covers the entry date
       if (!periodId) {
-        // fire-and-forget — does not block journal creation, but makes it visible
-        import("../lib/accounting-event-logger").then(({ logAcctEvent }) => {
-          logAcctEvent({
-            sourceType:   params.sourceType,
-            sourceId:     params.sourceDocumentId,
-            eventType:    "journal_no_fiscal_period",
-            status:       "needs_retry",
-            errorMessage: `لا توجد فترة مالية مفتوحة تغطي تاريخ ${params.entryDate} — القيد سيُنشأ بدون فترة مالية (period_id = null). افتح فترة مالية تشمل هذا التاريخ ثم أعد الترحيل.`,
-          }).catch(() => {});
+        logAcctEvent({
+          sourceType:   params.sourceType,
+          sourceId:     params.sourceDocumentId,
+          eventType:    "journal_no_fiscal_period",
+          status:       "needs_retry",
+          errorMessage: `لا توجد فترة مالية مفتوحة تغطي تاريخ ${params.entryDate} — القيد سيُنشأ بدون فترة مالية (period_id = null). افتح فترة مالية تشمل هذا التاريخ ثم أعد الترحيل.`,
         }).catch(() => {});
       }
 

@@ -33,6 +33,7 @@ import {
   type TransferLine,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 
 const methods = {
   async getTransfers(this: DatabaseStorage): Promise<StoreTransferWithDetails[]> {
@@ -438,12 +439,14 @@ const methods = {
 
           if (!srcHasGL && !destHasGL) {
             // ── كلاهما غير مُتابَع ─────────────────────────────────────────
-            // مستودعات بدون حساب GL — تخطي بدون خطأ (تحويل داخلي غير مُحاسَب)
-            console.log(
-              `[GL] Transfer journal SKIPPED — neither warehouse is financially tracked. ` +
-              `(${srcWh?.nameAr ?? transfer.sourceWarehouseId} → ${destWh?.nameAr ?? transfer.destinationWarehouseId}). ` +
-              `Assign GL accounts in Warehouse settings to enable financial tracking.`
-            );
+            // مستودعات بدون حساب GL — تخطي مع تسجيل دائم (تحويل داخلي غير مُحاسَب)
+            await logAcctEvent({
+              sourceType:   "warehouse_transfer",
+              sourceId:     transferId,
+              eventType:    "warehouse_transfer_journal_skipped",
+              status:       "needs_retry",
+              errorMessage: `تخطي القيد المحاسبي: كلا المستودعين (${srcWh?.nameAr ?? transfer.sourceWarehouseId} ← ${destWh?.nameAr ?? transfer.destinationWarehouseId}) غير مرتبطَين بحساب GL. أضف حساب GL لكل مستودع من إعدادات المستودعات لتفعيل التتبع المالي.`,
+            });
           } else if (srcHasGL !== destHasGL) {
             // ── إعداد ناقص → إيقاف ────────────────────────────────────────
             // أحد المستودعين فقط مُتتبَّع — حالة غير متسقة تسبب خللاً في الميزانية
@@ -514,7 +517,13 @@ const methods = {
               },
             ]);
 
-            console.log(`[GL] Transfer journal posted: #${entryNumber}, amount=${amount}, Dr=${destWh.nameAr}, Cr=${srcWh.nameAr}`);
+            await logAcctEvent({
+              sourceType:   "warehouse_transfer",
+              sourceId:     transferId,
+              eventType:    "warehouse_transfer_journal",
+              status:       "completed",
+              journalEntryId: entry.id,
+            });
           }
         }
       }

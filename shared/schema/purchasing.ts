@@ -56,6 +56,8 @@ export const receivingHeaders = pgTable("receiving_headers", {
   correctionOfId: varchar("correction_of_id"),
   correctedById: varchar("corrected_by_id"),
   correctionStatus: text("correction_status"),
+  journalStatus: text("journal_status").default("none"),
+  journalError: text("journal_error"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

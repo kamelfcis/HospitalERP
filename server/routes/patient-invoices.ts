@@ -18,7 +18,9 @@ import {
   insertPatientInvoiceHeaderSchema,
   insertPatientInvoiceLineSchema,
   insertPatientInvoicePaymentSchema,
+  patientInvoiceHeaders,
 } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Promise<boolean> {
   const hasZeroPrice = linesParsed.some(l => parseFloat(String(l.unitPrice ?? 0)) <= 0);
@@ -269,6 +271,11 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const invoiceLines = await storage.getPatientInvoice(invoiceId);
       if (invoiceLines) {
         const glLines = storage.buildPatientInvoiceGLLines(result, invoiceLines.lines || []);
+
+        // Set source doc + event log to "pending" BEFORE fire-and-forget
+        await db.update(patientInvoiceHeaders).set({ journalStatus: "pending", updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
+        await logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "pending" });
+
         storage.generateJournalEntry({
           sourceType: "patient_invoice",
           sourceDocumentId: invoiceId,
@@ -276,13 +283,21 @@ export function registerPatientInvoicesRoutes(app: Express) {
           description: `قيد فاتورة مريض رقم ${result.invoiceNumber} - ${result.patientName}`,
           entryDate: result.invoiceDate,
           lines: glLines,
-        }).then((entry) => {
-          logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "completed", journalEntryId: entry?.id }).catch(() => {});
-        }).catch((err: any) => {
+        }).then(async (entry) => {
+          if (entry) {
+            await db.update(patientInvoiceHeaders).set({ journalStatus: "posted", journalError: null, updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
+            logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "completed", journalEntryId: entry.id }).catch(() => {});
+          } else {
+            // generateJournalEntry returned null → mappings missing/skipped (already logged inside generateJournalEntry)
+            await db.update(patientInvoiceHeaders).set({ journalStatus: "needs_retry", journalError: "ربط الحسابات غير مكتمل — راجع /account-mappings", updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
+          }
+        }).catch(async (err: any) => {
           logger.warn({ err: err.message, invoiceId }, "[GL] patient invoice finalize — journal failed");
+          await db.update(patientInvoiceHeaders).set({ journalStatus: "failed", journalError: err.message, updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
           logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "failed", errorMessage: err.message }).catch(() => {});
         });
       } else {
+        await db.update(patientInvoiceHeaders).set({ journalStatus: "failed", journalError: "بيانات الفاتورة غير متاحة لبناء القيد", updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
         logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "blocked", errorMessage: "بيانات الفاتورة غير متاحة لبناء القيد" }).catch(() => {});
       }
 

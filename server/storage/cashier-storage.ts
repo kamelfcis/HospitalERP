@@ -35,6 +35,7 @@ import {
   type CashierShift,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 
 // ── ثابت: الحد الأقصى لساعات الوردية قبل اعتبارها منتهية ────────────────
 const MAX_SHIFT_HOURS = 24;
@@ -673,6 +674,13 @@ const methods = {
       ).catch((err: unknown) => {
         const msg = errMsg(err);
         logger.error({ err: msg, invoiceIds }, "[CASHIER] createCashierCollectionJournals: top-level failure");
+        logAcctEvent({
+          sourceType:   "cashier_collection",
+          sourceId:     shiftId,
+          eventType:    "cashier_collection_journals_top_level_failure",
+          status:       "failed",
+          errorMessage: `فشل على مستوى الوردية عند إنشاء قيود التحصيل: ${msg}. الفواتير المتأثرة: ${invoiceIds.join(', ')}`,
+        }).catch(() => {});
       });
 
       return result;
@@ -820,6 +828,13 @@ const methods = {
       ).catch((err: unknown) => {
         const msg = errMsg(err);
         logger.error({ err: msg, invoiceIds }, "[CASHIER_REFUND] completeSalesJournalsWithCash: top-level failure");
+        logAcctEvent({
+          sourceType:   "cashier_collection",
+          sourceId:     shiftId,
+          eventType:    "cashier_refund_journals_top_level_failure",
+          status:       "failed",
+          errorMessage: `فشل على مستوى الوردية عند إنشاء قيود الاسترداد: ${msg}. المرتجعات المتأثرة: ${invoiceIds.join(', ')}`,
+        }).catch(() => {});
       });
 
       return result;

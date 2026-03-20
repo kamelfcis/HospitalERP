@@ -175,6 +175,8 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   paidAmount: decimal("paid_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   finalizedAt: timestamp("finalized_at"),
   version: integer("version").notNull().default(1),
+  journalStatus: text("journal_status").default("none"),
+  journalError: text("journal_error"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

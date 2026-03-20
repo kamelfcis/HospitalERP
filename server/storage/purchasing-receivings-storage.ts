@@ -431,6 +431,10 @@ const methods = {
       const totalCost = activeRecvLines.reduce((sum, l) => sum + parseFloat(l.lineTotal || "0"), 0);
       
       if (totalCost > 0) {
+        // Set source doc to "pending" BEFORE the fire-and-forget so a crash leaves a queryable record
+        await db.update(receivingHeaders).set({ journalStatus: "pending", updatedAt: new Date() }).where(eq(receivingHeaders.id, id));
+        await logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "pending" });
+
         this.generateJournalEntry({
           sourceType: "receiving",
           sourceDocumentId: id,
@@ -441,11 +445,19 @@ const methods = {
             { lineType: "inventory", amount: String(totalCost) },
             { lineType: "payables", amount: String(totalCost) },
           ],
-        }).then((entry) => {
-          logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "completed", journalEntryId: entry?.id }).catch(() => {});
-        }).catch((err: unknown) => {
+        }).then(async (entry) => {
+          if (entry) {
+            // Journal created — mark posted on both source doc and event log
+            await db.update(receivingHeaders).set({ journalStatus: "posted", journalError: null, updatedAt: new Date() }).where(eq(receivingHeaders.id, id));
+            logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "completed", journalEntryId: entry.id }).catch(() => {});
+          } else {
+            // generateJournalEntry returned null → mappings missing/skipped (already logged inside generateJournalEntry)
+            await db.update(receivingHeaders).set({ journalStatus: "needs_retry", journalError: "ربط الحسابات غير مكتمل — راجع /account-mappings", updatedAt: new Date() }).where(eq(receivingHeaders.id, id));
+          }
+        }).catch(async (err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
           logger.error({ err: msg, receivingId: id }, "[RECEIVING] Auto journal failed");
+          await db.update(receivingHeaders).set({ journalStatus: "failed", journalError: msg, updatedAt: new Date() }).where(eq(receivingHeaders.id, id));
           logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "failed", errorMessage: msg }).catch(() => {});
         });
       }
