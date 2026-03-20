@@ -138,6 +138,29 @@ export function registerContractRoutes(app: Express) {
     }
   );
 
+  /**
+   * DELETE /api/companies/:id
+   *
+   * Soft-deactivate only — NO physical deletion ever occurs.
+   * Identical behavior to POST /api/companies/:id/deactivate.
+   * Provided for spec compatibility.
+   */
+  app.delete(
+    "/api/companies/:id",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_MANAGE),
+    async (req, res) => {
+      try {
+        const company = await storage.deactivateCompany(req.params.id);
+        res.json(company);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        const code = msg.includes("غير موجودة") ? 404 : msg.includes("نشطة") ? 409 : 500;
+        res.status(code).json({ message: msg });
+      }
+    }
+  );
+
   // ──────────────────────────────────────────────────────────────────────────
   //  CONTRACTS
   // ──────────────────────────────────────────────────────────────────────────

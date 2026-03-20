@@ -10,6 +10,7 @@ import {
 import { items, warehouses, departments, pharmacies } from "./inventory";
 import { accounts, costCenters } from "./finance";
 import { users } from "./users";
+import { companies } from "./companies";
 
 export const services = pgTable("services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -98,7 +99,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   customerName: text("customer_name"),
   contractCompany: text("contract_company"),
   // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
-  companyId:   varchar("company_id"),
+  companyId:   varchar("company_id").references(() => companies.id),
   contractId:  varchar("contract_id"),
   status: salesInvoiceStatusEnum("status").notNull().default("draft"),
   subtotal: decimal("subtotal", { precision: 18, scale: 2 }).notNull().default("0"),
@@ -149,7 +150,7 @@ export const salesInvoiceLines = pgTable("sales_invoice_lines", {
   expiryYear: integer("expiry_year"),
   lotId: varchar("lot_id"),
   // ── Contract fields (nullable — Phase 1 foundation, populated in Phase 2) ─
-  companyId:          varchar("company_id"),
+  companyId:          varchar("company_id").references(() => companies.id),
   contractId:         varchar("contract_id"),
   companyShareAmount: decimal("company_share_amount", { precision: 18, scale: 2 }),
   patientShareAmount: decimal("patient_share_amount", { precision: 18, scale: 2 }),
@@ -179,7 +180,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   doctorName: text("doctor_name"),
   contractName: text("contract_name"),
   // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
-  companyId:        varchar("company_id"),
+  companyId:        varchar("company_id").references(() => companies.id),
   contractId:       varchar("contract_id"),
   contractMemberId: varchar("contract_member_id"),
   notes: text("notes"),
@@ -238,7 +239,7 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   voidedBy: varchar("voided_by").references(() => users.id),
   voidReason: text("void_reason"),
   // ── Contract line fields (nullable — Phase 1 declares; Phase 2 populates) ─
-  companyId:          varchar("company_id"),
+  companyId:          varchar("company_id").references(() => companies.id),
   contractId:         varchar("contract_id"),
   contractMemberId:   varchar("contract_member_id"),
   contractRuleId:     varchar("contract_rule_id"),

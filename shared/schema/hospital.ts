@@ -7,6 +7,7 @@ import { users } from "./users";
 import { accounts } from "./finance";
 import { departments, pharmacies, warehouses, inventoryLots } from "./inventory";
 import { salesInvoiceHeaders, services, patientInvoiceHeaders } from "./invoicing";
+import { companies } from "./companies";
 
 // ─── المرضى ────────────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ export const admissions = pgTable("admissions", {
   insuranceCompany: text("insurance_company"),
   surgeryTypeId:  varchar("surgery_type_id").references(() => surgeryTypes.id),
   // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
-  companyId:        varchar("company_id"),
+  companyId:        varchar("company_id").references(() => companies.id),
   contractId:       varchar("contract_id"),
   contractMemberId: varchar("contract_member_id"),
   createdAt:      timestamp("created_at").notNull().defaultNow(),

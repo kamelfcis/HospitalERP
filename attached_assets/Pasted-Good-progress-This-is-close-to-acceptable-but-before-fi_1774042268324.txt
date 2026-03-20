@@ -1,0 +1,82 @@
+Good progress. This is close to acceptable, but before final approval I need a short hardening pass and one schema-integrity clarification.
+
+Do not expand scope.
+Do not start Phase 2.
+Apply only the corrections below.
+
+==================================================
+HARDENING / CORRECTION PASS — CONTRACTS PHASE 1
+==================================================
+
+1) COMPANY DEACTIVATE ROUTE COMPATIBILITY
+
+The original Phase 1 API spec required:
+DELETE /api/companies/:id
+
+You implemented:
+POST /api/companies/:id/deactivate
+
+Keep your current POST deactivate route if you want, but also add:
+DELETE /api/companies/:id
+
+This DELETE route must perform the same soft-deactivate behavior only.
+No physical delete.
+
+2) SCHEMA INTEGRITY CLARIFICATION + FIX IF NEEDED
+
+Your final summary says several newly added contract columns on existing transactional tables are:
+“nullable varchar, no FK ref”
+
+This may violate the original Phase 1 requirement, which asked for nullable FK columns.
+
+Inspect and print the exact reality for each of these columns:
+- patient_invoice_headers.company_id
+- patient_invoice_headers.contract_id
+- patient_invoice_headers.contract_member_id
+- patient_invoice_lines.company_id
+- patient_invoice_lines.contract_id
+- patient_invoice_lines.contract_member_id
+- sales_invoice_headers.company_id
+- sales_invoice_headers.contract_id
+- sales_invoice_lines.company_id
+- sales_invoice_lines.contract_id
+- hospital_admissions.company_id
+- hospital_admissions.contract_id
+- hospital_admissions.contract_member_id
+- clinic_appointments.company_id
+- clinic_appointments.contract_id
+- clinic_appointments.contract_member_id
+
+For each column print:
+- actual DB type
+- drizzle type
+- whether it has a true FK reference
+- if not, why not
+
+If any of these are missing proper FK references and they can be safely converted now without breaking compatibility, fix them now.
+
+If any cannot safely be converted in Phase 1, do NOT force a dangerous migration; instead:
+- keep the column as-is
+- document it explicitly as a temporary integrity gap
+- explain the safe Phase 2 remediation plan
+
+3) FINAL SUMMARY CORRECTION
+
+After the hardening pass, print an updated final summary with these exact sections:
+
+1) HARDENING CHANGES APPLIED
+2) DELETE ROUTE STATUS
+3) FK INTEGRITY MATRIX
+4) ANY TEMPORARY INTEGRITY GAPS LEFT
+5) SAFE REMEDIATION PLAN IF ANY GAP REMAINS
+
+==================================================
+IMPORTANT RULES
+==================================================
+
+- Do not change Phase 1 scope beyond the items above
+- Do not implement patient registration integration yet
+- Do not implement rules engine
+- Do not implement claims
+- Do not do destructive migration unless clearly safe and necessary
+- Prefer compatibility + documented clarity over risky schema churn

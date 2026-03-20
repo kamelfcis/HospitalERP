@@ -5,6 +5,8 @@ import { z } from "zod";
 import { items } from "./inventory";
 import { services } from "./invoicing";
 import { doctors, patients } from "./hospital";
+import { companies } from "./companies";
+import { contracts, contractMembers } from "./contracts";
 
 export const clinicClinics = pgTable("clinic_clinics", {
   id:               varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -63,9 +65,9 @@ export const clinicAppointments = pgTable("clinic_appointments", {
   refundReason:            text("refund_reason"),
   // ── Contract FK fields (nullable — Phase 1 foundation) ─────────────────────
   // Legacy fields insuranceCompany + payerReference remain untouched
-  companyId:               varchar("company_id"),
-  contractId:              varchar("contract_id"),
-  contractMemberId:        varchar("contract_member_id"),
+  companyId:               varchar("company_id").references(() => companies.id),
+  contractId:              varchar("contract_id").references(() => contracts.id),
+  contractMemberId:        varchar("contract_member_id").references(() => contractMembers.id),
 }, (t) => [
   index("idx_clinic_appts_clinic_date").on(t.clinicId, t.appointmentDate),
   index("idx_clinic_appts_clinic_date_status").on(t.clinicId, t.appointmentDate, t.status),
