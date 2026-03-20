@@ -54,6 +54,44 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **OPD GL Accounting — IFRS Revenue Deferral**: Uses deferred revenue (21163) until service delivery is complete for clinic consultation payments. Journal entries are atomic and idempotent. Defines specific GL accounts and entries for CASH booking, consultation completion, and full cancellation with refund.
 - **OPD Refund Workflow**: Handled via a dedicated API endpoint with specific behavioral rules for partial and full-cancel refunds. Database writes include negative entries in `patient_invoice_payments`, `treasury_transactions`, and `audit_log`. Access control and hard validation rules are enforced.
 
+## Contracts Module — Phase 1 Acceptance Notes
+
+### What Phase 1 Delivers
+- Full master-data CRUD for companies, contracts, and contract members (admin UI + REST API).
+- Nullable FK foundation columns (`company_id`, `contract_id`, `contract_member_id`) on all six transactional tables: `patient_invoice_headers`, `patient_invoice_lines`, `sales_invoice_headers`, `sales_invoice_lines`, `hospital_admissions`, `clinic_appointments`.
+- Card-lookup endpoint: `GET /api/contract-members/lookup?cardNumber=&date=` — ready for Phase 2 integration.
+- RBAC: `contracts.view` / `contracts.manage` enforced on all endpoints.
+
+### What Remains Intentionally Deferred
+- **Registration / runtime contract stamping is NOT active.** The three FK columns are nullable and currently always NULL. No existing flow writes to them. Legacy text fields (`insuranceCompany`, `contractName`, `payerReference`, `contractCompany`) remain the live data source for all current operational flows and are fully backward-compatible.
+- **Coverage rules engine** (discount schedules, approval limits, co-pay splits) — Phase 2.
+- **Claims GL accounting** — Phase 3.
+- `sales_invoice_headers.contract_member_id` — explicitly deferred to Phase 2 (pharmacy sales are company-level, not member-level, in Phase 1).
+- `PatientFormDialog` member-card lookup widget — Phase 2 (integration point is documented but not wired).
+
+### Temporary FK Integrity Gaps (8 Columns — Phase 1 Documented Gap)
+
+Eight columns on transactional tables carry `contract_id` or `contract_member_id` values but **cannot currently be wired as true Drizzle FK references** due to JavaScript module circular-import constraints:
+
+| Column | Table | Root cause |
+|--------|-------|-----------|
+| `contract_id` | `patient_invoice_headers` | `contracts.ts` imports `invoicing.ts` (priceLists) → making invoicing.ts → contracts.ts circular |
+| `contract_member_id` | `patient_invoice_headers` | same |
+| `contract_id` | `patient_invoice_lines` | same |
+| `contract_member_id` | `patient_invoice_lines` | same |
+| `contract_id` | `sales_invoice_headers` | same |
+| `contract_id` | `sales_invoice_lines` | same |
+| `contract_id` | `hospital_admissions` | `contracts.ts` imports `hospital.ts` (patients) → making hospital.ts → contracts.ts circular |
+| `contract_member_id` | `hospital_admissions` | same |
+
+**Why acceptable in Phase 1:** All eight columns are currently NULL in production. No code writes to them. NULL values are exempt from FK constraint checks in PostgreSQL, so there is no referential integrity risk.
+
+**When this becomes unacceptable:** Phase 2 will begin writing real `contract_id` / `contract_member_id` values into these columns during registration and billing flows. At that point, DB-level FK enforcement becomes mandatory.
+
+**Planned Phase 2 remediation options:**
+1. **Raw SQL migration helper** — execute `ALTER TABLE … ADD CONSTRAINT FOREIGN KEY … DEFERRABLE INITIALLY DEFERRED` via a one-time migration script outside Drizzle's schema layer. This adds DB-level enforcement without touching the import graph.
+2. **Schema restructuring** — split `contracts.ts` so it no longer imports `invoicing.ts` or `hospital.ts` directly, removing the circular dependency and allowing proper `.references()` declarations.
+
 ## External Dependencies
 ### Database
 - PostgreSQL
