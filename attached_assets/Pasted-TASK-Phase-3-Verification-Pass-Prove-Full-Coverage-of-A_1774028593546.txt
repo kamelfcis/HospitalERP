@@ -1,0 +1,80 @@
+TASK: Phase 3 Verification Pass — Prove Full Coverage of Accounting Event Hardening Before Closing
+
+Phase 3 implementation appears mostly complete, but before closing it we need a strict verification pass with exact evidence.
+
+GOAL
+Confirm that all intended accounting paths are actually hardened, durably logged, and retry-safe — not only partially.
+
+VERIFY ALL OF THE FOLLOWING
+
+A) Exact accounting paths covered
+List every accounting path originally targeted in Phase 3 and show the exact file/function where durable accounting_event_log recording now happens.
+
+Required paths to verify explicitly:
+1) sales invoice finalize journal generation
+2) cashier collection journal completion (completeSalesJournalsWithCash)
+3) patient invoice journal generation
+4) purchase invoice / purchase receiving journal generation
+5) cashier refund journal handling
+6) doctor payable settlement journal generation
+
+For each path, print:
+- file
+- function
+- when completed event is logged
+- when failed event is logged
+- what status values are used
+
+B) Resolve summary inconsistency
+The final summary listed only a subset of changed files.
+If cashier collection, patient invoice, and refund hardening were implemented, list the exact files changed for them too.
+If any of these paths were not actually completed, state that explicitly.
+
+C) accounting_event_log schema verification
+Print the final relevant columns now used by accounting_event_log for Phase 3, including:
+- source_type
+- source_document_id
+- event_type
+- status
+- error_message
+- attempt_count
+- last_attempted_at
+- journal_entry_id
+- triggered_by_user_id
+or the exact equivalent names used in the schema
+
+D) Retry verification
+For POST /api/accounting/events/:id/retry:
+- list the supported source types
+- explain how retry dispatch works for each
+- confirm idempotency protections
+- confirm what happens on retry success vs retry failure
+- confirm attempt_count updates correctly
+
+E) Fiscal period traceability
+Verify whether sales with no open fiscal period now produce an explicit durable accounting event/warning/failure state.
+If not, say so clearly.
+
+F) UI verification
+Confirm that /accounting-events actually shows:
+- failed events
+- pending / needs_retry / blocked events
+- completed events
+- source type filtering
+- retry action only where appropriate
+
+G) Permissions verification
+List the permissions applied to:
+- GET /api/accounting/events
+- GET /api/accounting/events/summary
+- POST /api/accounting/events/:id/retry
+and confirm unauthorized requests return the expected result.
+
+PRINT EXACTLY
+1) coverage table for all six accounting paths
+2) exact files changed for each
+3) final accounting_event_log fields used
+4) retry behavior by source type
+5) whether fiscal period null sales are now explicit and traceable
+6) any remaining gap
+7) clear statement: “Phase 3 fully closed” or “Phase 3 still has these remaining gaps”
