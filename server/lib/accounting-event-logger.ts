@@ -24,13 +24,27 @@ export type AcctEventStatus =
   | "blocked";
 
 export interface AcctEventParams {
-  sourceType:     string;
-  sourceId:       string;
-  eventType:      string;
-  status:         AcctEventStatus;
-  errorMessage?:  string | null;
+  sourceType:      string;
+  sourceId:        string;
+  eventType:       string;
+  status:          AcctEventStatus;
+  errorMessage?:   string | null;
   journalEntryId?: string | null;
-  userId?:        string | null;
+  userId?:         string | null;
+  /** Override auto-computed next_retry_at. Pass null to clear. */
+  nextRetryAt?:    Date | null;
+}
+
+/** Maximum auto-retry attempts before an event is permanently stuck */
+export const MAX_RETRY_ATTEMPTS = 5;
+
+/**
+ * Exponential backoff for next retry (capped at 24 h):
+ *  attempt 1 →  2 min | 2 → 4 min | 3 → 8 min | 4 → 16 min | 5 → 32 min …
+ */
+export function computeNextRetryAt(attemptCount: number): Date {
+  const delayMs = Math.min(Math.pow(2, attemptCount) * 60_000, 24 * 60 * 60_000);
+  return new Date(Date.now() + delayMs);
 }
 
 /**
@@ -47,18 +61,26 @@ export async function logAcctEvent(params: AcctEventParams): Promise<string | nu
   try {
     let result: unknown;
 
+    // next_retry_at: caller override wins; otherwise auto-compute for failure statuses
+    const nra: Date | null =
+      params.nextRetryAt !== undefined
+        ? params.nextRetryAt
+        : (params.status === "failed" || params.status === "needs_retry")
+          ? computeNextRetryAt(1)
+          : null;
+
     if (params.sourceType && params.sourceId) {
       // ── Upsert مع منع الكتابة فوق "completed" ──────────────────────────
       result = await db.execute(sql`
         INSERT INTO accounting_event_log
           (event_type, source_type, source_id, posted_by_user,
            status, error_message, journal_entry_id,
-           attempt_count, last_attempted_at, updated_at)
+           attempt_count, last_attempted_at, next_retry_at, updated_at)
         VALUES
           (${params.eventType}, ${params.sourceType}, ${params.sourceId},
            ${params.userId ?? null}, ${params.status},
            ${params.errorMessage ?? null}, ${params.journalEntryId ?? null},
-           1, NOW(), NOW())
+           1, NOW(), ${nra?.toISOString() ?? null}, NOW())
         ON CONFLICT (event_type, source_type, source_id)
         DO UPDATE SET
           status           = CASE
@@ -70,6 +92,12 @@ export async function logAcctEvent(params: AcctEventParams): Promise<string | nu
                                ELSE EXCLUDED.error_message
                              END,
           journal_entry_id = COALESCE(EXCLUDED.journal_entry_id, accounting_event_log.journal_entry_id),
+          next_retry_at    = CASE
+                               WHEN accounting_event_log.status = 'completed' THEN NULL
+                               WHEN EXCLUDED.status IN ('failed', 'needs_retry')
+                                 THEN NOW() + (POWER(2, accounting_event_log.attempt_count + 1)::int * INTERVAL '1 minute')
+                               ELSE NULL
+                             END,
           attempt_count    = accounting_event_log.attempt_count + 1,
           last_attempted_at = NOW(),
           updated_at       = NOW()
@@ -81,12 +109,12 @@ export async function logAcctEvent(params: AcctEventParams): Promise<string | nu
         INSERT INTO accounting_event_log
           (event_type, source_type, source_id, posted_by_user,
            status, error_message, journal_entry_id,
-           attempt_count, last_attempted_at, updated_at)
+           attempt_count, last_attempted_at, next_retry_at, updated_at)
         VALUES
           (${params.eventType}, ${(params as any).sourceType ?? null}, ${(params as any).sourceId ?? null},
            ${params.userId ?? null}, ${params.status},
            ${params.errorMessage ?? null}, ${params.journalEntryId ?? null},
-           1, NOW(), NOW())
+           1, NOW(), ${nra?.toISOString() ?? null}, NOW())
         RETURNING id
       `);
     }
@@ -116,6 +144,11 @@ export async function updateAcctEvent(
       SET  status           = ${status},
            error_message    = ${opts?.errorMessage ?? null},
            journal_entry_id = COALESCE(${opts?.journalEntryId ?? null}, journal_entry_id),
+           next_retry_at    = CASE
+                                WHEN ${status} IN ('failed', 'needs_retry')
+                                  THEN NOW() + (POWER(2, attempt_count + 1)::int * INTERVAL '1 minute')
+                                ELSE NULL
+                              END,
            attempt_count    = attempt_count + 1,
            last_attempted_at = NOW(),
            updated_at       = NOW()

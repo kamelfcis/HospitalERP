@@ -172,6 +172,7 @@ export const accountingEventLog = pgTable("accounting_event_log", {
   errorMessage:    text("error_message"),
   attemptCount:    integer("attempt_count").notNull().default(1),
   lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true }).notNull().defaultNow(),
+  nextRetryAt:     timestamp("next_retry_at", { withTimezone: true }),
   journalEntryId:  varchar("journal_entry_id"),
 }, (t) => [
   index("idx_ael_appointment_id").on(t.appointmentId),

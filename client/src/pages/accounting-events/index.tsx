@@ -7,6 +7,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -24,8 +26,11 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, AlertCircle, CheckCircle2, Clock, Ban, RotateCcw } from "lucide-react";
-import { format } from "date-fns";
+import {
+  RefreshCw, AlertCircle, CheckCircle2, Clock, Ban,
+  RotateCcw, PlayCircle, Timer,
+} from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -39,6 +44,7 @@ type AcctEvent = {
   error_message: string | null;
   attempt_count: number;
   last_attempted_at: string | null;
+  next_retry_at: string | null;
   journal_entry_id: string | null;
   created_at: string;
   updated_at: string;
@@ -64,13 +70,36 @@ function StatusBadge({ status }: { status: AcctEvent["status"] }) {
 
 function sourceTypeLabel(t: string) {
   const m: Record<string, string> = {
-    sales_invoice:            "فاتورة مبيعات",
-    cashier_collection:       "تحصيل كاشير",
-    patient_invoice:          "فاتورة مريض",
-    purchase_receiving:       "استلام مورد",
-    doctor_payable_settlement:"تسوية مستحقات طبيب",
+    sales_invoice:             "فاتورة مبيعات",
+    cashier_collection:        "تحصيل كاشير",
+    patient_invoice:           "فاتورة مريض",
+    purchase_receiving:        "استلام مورد",
+    receiving:                 "استلام مورد",
+    warehouse_transfer:        "تحويل مخزني",
+    doctor_payable_settlement: "تسوية مستحقات طبيب",
+    cashier_refund:            "مرتجع كاشير",
+    doctor_settlement:         "تسوية طبيب",
   };
   return m[t] ?? t;
+}
+
+// ── Next retry display ──────────────────────────────────────────────────────
+
+function NextRetryCell({ nextRetryAt, status }: { nextRetryAt: string | null; status: string }) {
+  if (!nextRetryAt || status === "completed") return <span className="text-muted-foreground">—</span>;
+
+  const d = new Date(nextRetryAt);
+  const isPast = d <= new Date();
+  return (
+    <span
+      className={`flex items-center gap-1 text-xs whitespace-nowrap ${isPast ? "text-orange-500 font-medium" : "text-muted-foreground"}`}
+      title={format(d, "dd/MM/yyyy HH:mm:ss")}
+    >
+      <Timer className="h-3 w-3 flex-shrink-0" />
+      {isPast ? "منذ " : "بعد "}
+      {formatDistanceToNow(d, { locale: ar })}
+    </span>
+  );
 }
 
 // ── Summary bar ────────────────────────────────────────────────────────────
@@ -108,7 +137,8 @@ export default function AccountingEventsPage() {
   const { toast } = useToast();
   const [statusFilter, setStatusFilter]         = useState<string>("all");
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");
-  const [page, setPage] = useState(0);
+  const [page, setPage]                         = useState(0);
+  const [autoRefresh, setAutoRefresh]           = useState(false);
   const pageSize = 50;
 
   const buildQS = (p = page) => {
@@ -124,18 +154,20 @@ export default function AccountingEventsPage() {
   const { data, isLoading, refetch } = useQuery<{ events: AcctEvent[]; total: number }>({
     queryKey: eventsKey,
     queryFn: () => fetch(`/api/accounting/events?${buildQS()}`).then((r) => r.json()),
+    refetchInterval: autoRefresh ? 15_000 : false,
   });
 
-  const { data: summaryData } = useQuery<{ rows: SummaryRow[] }>({
+  const { data: summaryData, refetch: refetchSummary } = useQuery<{ rows: SummaryRow[] }>({
     queryKey: ["/api/accounting/events/summary"],
     queryFn: () => fetch("/api/accounting/events/summary").then((r) => r.json()),
-    refetchInterval: 30_000,
+    refetchInterval: autoRefresh ? 15_000 : 30_000,
   });
 
+  // Single-event retry
   const retryMutation = useMutation({
     mutationFn: (id: string) =>
       apiRequest("POST", `/api/accounting/events/${id}/retry`, {}),
-    onSuccess: (_, id) => {
+    onSuccess: () => {
       toast({ title: "تمت إعادة المحاولة", description: "راجع الحالة المحدّثة في القائمة" });
       queryClient.invalidateQueries({ queryKey: eventsKey });
       queryClient.invalidateQueries({ queryKey: ["/api/accounting/events/summary"] });
@@ -146,25 +178,79 @@ export default function AccountingEventsPage() {
     },
   });
 
+  // Batch retry all due events
+  const batchRetryMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/accounting/events/retry-batch", {}),
+    onSuccess: (data: any) => {
+      toast({
+        title: "اكتملت إعادة المحاولة الجماعية",
+        description: data?.message ?? `نجح ${data?.succeeded ?? 0} من ${data?.attempted ?? 0}`,
+      });
+      queryClient.invalidateQueries({ queryKey: eventsKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/events/summary"] });
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "خطأ في إعادة المحاولة الجماعية";
+      toast({ title: "فشل", description: msg, variant: "destructive" });
+    },
+  });
+
   const events = data?.events ?? [];
   const total  = data?.total  ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 
   const canRetry = (status: AcctEvent["status"]) => ["failed", "pending", "needs_retry"].includes(status);
 
+  const handleRefreshAll = () => {
+    refetch();
+    refetchSummary();
+  };
+
   return (
     <div className="p-6 space-y-4" dir="rtl">
-      <div className="flex items-center justify-between">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-bold">مراقبة أحداث المحاسبة</h1>
-        <Button variant="outline" size="sm" onClick={() => { refetch(); queryClient.invalidateQueries({ queryKey: ["/api/accounting/events/summary"] }); }} data-testid="button-refresh-events">
-          <RefreshCw className="h-4 w-4 ms-1" />
-          تحديث
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Auto-refresh toggle */}
+          <div className="flex items-center gap-2 border rounded-md px-3 py-1.5">
+            <Switch
+              id="auto-refresh"
+              checked={autoRefresh}
+              onCheckedChange={setAutoRefresh}
+              data-testid="switch-auto-refresh"
+            />
+            <Label htmlFor="auto-refresh" className="text-sm cursor-pointer">
+              تحديث تلقائي (15 ث)
+            </Label>
+          </div>
+
+          {/* Manual refresh */}
+          <Button variant="outline" size="sm" onClick={handleRefreshAll} data-testid="button-refresh-events">
+            <RefreshCw className="h-4 w-4 ms-1" />
+            تحديث
+          </Button>
+
+          {/* Batch retry */}
+          <Button
+            size="sm"
+            variant="default"
+            disabled={batchRetryMutation.isPending}
+            onClick={() => batchRetryMutation.mutate()}
+            data-testid="button-batch-retry"
+          >
+            {batchRetryMutation.isPending
+              ? <RefreshCw className="h-4 w-4 ms-1 animate-spin" />
+              : <PlayCircle className="h-4 w-4 ms-1" />}
+            إعادة محاولة جماعية
+          </Button>
+        </div>
       </div>
 
       {summaryData?.rows && <SummaryBar rows={summaryData.rows} />}
 
-      {/* Filters */}
+      {/* ── Filters ── */}
       <Card>
         <CardHeader className="pb-2 pt-4">
           <CardTitle className="text-sm text-muted-foreground">فلترة</CardTitle>
@@ -195,14 +281,16 @@ export default function AccountingEventsPage() {
                 <SelectItem value="cashier_collection">تحصيل كاشير</SelectItem>
                 <SelectItem value="patient_invoice">فاتورة مريض</SelectItem>
                 <SelectItem value="purchase_receiving">استلام مورد</SelectItem>
+                <SelectItem value="warehouse_transfer">تحويل مخزني</SelectItem>
                 <SelectItem value="doctor_payable_settlement">تسوية مستحقات طبيب</SelectItem>
+                <SelectItem value="cashier_refund">مرتجع كاشير</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* Table */}
+      {/* ── Table ── */}
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -214,6 +302,7 @@ export default function AccountingEventsPage() {
                 <TableHead className="text-right">الحالة</TableHead>
                 <TableHead className="text-right">المحاولات</TableHead>
                 <TableHead className="text-right">رسالة الخطأ</TableHead>
+                <TableHead className="text-right">الإعادة القادمة</TableHead>
                 <TableHead className="text-right">تاريخ الإنشاء</TableHead>
                 <TableHead className="text-right">القيد</TableHead>
                 <TableHead className="text-right"></TableHead>
@@ -222,14 +311,14 @@ export default function AccountingEventsPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />
                     جارٍ التحميل...
                   </TableCell>
                 </TableRow>
               ) : events.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     لا توجد أحداث تطابق الفلتر
                   </TableCell>
                 </TableRow>
@@ -237,15 +326,25 @@ export default function AccountingEventsPage() {
                 events.map((ev) => (
                   <TableRow key={ev.id} data-testid={`row-event-${ev.id}`}>
                     <TableCell className="font-medium">{sourceTypeLabel(ev.source_type)}</TableCell>
-                    <TableCell className="font-mono text-xs max-w-[120px] truncate">{ev.source_id}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{ev.event_type}</TableCell>
+                    <TableCell className="font-mono text-xs max-w-[120px] truncate" title={ev.source_id}>{ev.source_id}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate" title={ev.event_type}>{ev.event_type}</TableCell>
                     <TableCell><StatusBadge status={ev.status} /></TableCell>
                     <TableCell className="text-center">{ev.attempt_count}</TableCell>
-                    <TableCell className="text-xs text-destructive max-w-[200px] truncate" title={ev.error_message ?? ""}>{ev.error_message ?? "—"}</TableCell>
+                    <TableCell
+                      className="text-xs text-destructive max-w-[180px] truncate"
+                      title={ev.error_message ?? ""}
+                    >
+                      {ev.error_message ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <NextRetryCell nextRetryAt={ev.next_retry_at} status={ev.status} />
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {ev.created_at ? format(new Date(ev.created_at), "dd/MM/yyyy HH:mm", { locale: ar }) : "—"}
                     </TableCell>
-                    <TableCell className="font-mono text-xs max-w-[80px] truncate">{ev.journal_entry_id ?? "—"}</TableCell>
+                    <TableCell className="font-mono text-xs max-w-[80px] truncate" title={ev.journal_entry_id ?? ""}>
+                      {ev.journal_entry_id ?? "—"}
+                    </TableCell>
                     <TableCell>
                       {canRetry(ev.status) && (
                         <Button
@@ -268,14 +367,28 @@ export default function AccountingEventsPage() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
+      {/* ── Pagination ── */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>الإجمالي: {total} حدث</span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} data-testid="button-prev-page">السابق</Button>
+            <Button
+              variant="outline" size="sm"
+              disabled={page === 0}
+              onClick={() => setPage(p => p - 1)}
+              data-testid="button-prev-page"
+            >
+              السابق
+            </Button>
             <span className="px-2 py-1">{page + 1} / {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)} data-testid="button-next-page">التالي</Button>
+            <Button
+              variant="outline" size="sm"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage(p => p + 1)}
+              data-testid="button-next-page"
+            >
+              التالي
+            </Button>
           </div>
         </div>
       )}

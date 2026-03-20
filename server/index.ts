@@ -27,6 +27,7 @@ import { db, pool, testDbConnection } from "./db";
 import { sql } from "drizzle-orm";
 import { runRefresh, REFRESH_KEYS } from "./lib/rpt-refresh-orchestrator";
 import { logger } from "./lib/logger";
+import { runAccountingRetryTick } from "./lib/accounting-retry-worker";
 
 // ── Module augmentations ──────────────────────────────────────────────────────
 declare module "http" {
@@ -339,7 +340,7 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
   setTimeout(runStayTick, 5000);
   setInterval(runStayTick, STAY_TICK_MS);
 
-  // Journal Retry: every 5 minutes
+  // Journal Retry: every 5 minutes (legacy — sales_invoice only)
   const JOURNAL_RETRY_MS = 5 * 60 * 1000;
   const runJournalRetry = async () => {
     try {
@@ -353,6 +354,21 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
   };
   setTimeout(runJournalRetry, 15000);
   setInterval(runJournalRetry, JOURNAL_RETRY_MS);
+
+  // Accounting Event Retry: every 7 minutes — covers all source types via accounting_event_log
+  const ACCT_RETRY_MS = 7 * 60 * 1000;
+  const runAcctRetry = async () => {
+    try {
+      const result = await runAccountingRetryTick();
+      if (result.attempted > 0) {
+        log(`[ACCT_RETRY_WORKER] attempted=${result.attempted} succeeded=${result.succeeded} failed=${result.failed} skipped=${result.skipped}`);
+      }
+    } catch (err: unknown) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, "[ACCT_RETRY_WORKER] tick error");
+    }
+  };
+  setTimeout(runAcctRetry, 20000);
+  setInterval(runAcctRetry, ACCT_RETRY_MS);
 
   // RPT Refresh: every 15 minutes
   const RPT_REFRESH_MS  = 15 * 60 * 1000;
