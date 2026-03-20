@@ -97,6 +97,9 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   customerType: customerTypeEnum("customer_type").notNull().default("cash"),
   customerName: text("customer_name"),
   contractCompany: text("contract_company"),
+  // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
+  companyId:   varchar("company_id"),
+  contractId:  varchar("contract_id"),
   status: salesInvoiceStatusEnum("status").notNull().default("draft"),
   subtotal: decimal("subtotal", { precision: 18, scale: 2 }).notNull().default("0"),
   discountType: text("discount_type").default("percent"),
@@ -128,6 +131,8 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   claimedByShiftIdx: index("idx_sales_inv_claimed_shift").on(table.claimedByShiftId),
   pharmacyStatusIdx: index("idx_sales_inv_pharmacy_status").on(table.pharmacyId, table.status),
   statusJournalIdx: index("idx_sales_inv_status_journal").on(table.status, table.journalStatus),
+  companyIdx:       index("idx_sales_inv_company").on(table.companyId),
+  contractIdx:      index("idx_sales_inv_contract").on(table.contractId),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {
@@ -143,11 +148,19 @@ export const salesInvoiceLines = pgTable("sales_invoice_lines", {
   expiryMonth: integer("expiry_month"),
   expiryYear: integer("expiry_year"),
   lotId: varchar("lot_id"),
+  // ── Contract fields (nullable — Phase 1 foundation, populated in Phase 2) ─
+  companyId:          varchar("company_id"),
+  contractId:         varchar("contract_id"),
+  companyShareAmount: decimal("company_share_amount", { precision: 18, scale: 2 }),
+  patientShareAmount: decimal("patient_share_amount", { precision: 18, scale: 2 }),
+  coverageStatus:     text("coverage_status"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   invoiceItemIdx:  index("idx_sales_lines_inv_item").on(table.invoiceId, table.itemId),
   itemIdx:         index("idx_sales_lines_item").on(table.itemId),
   returnCheckIdx:  index("idx_sales_lines_return_check").on(table.invoiceId, table.itemId, table.lotId),
+  companyIdx:      index("idx_sales_lines_company").on(table.companyId),
+  contractIdx:     index("idx_sales_lines_contract").on(table.contractId),
 }));
 
 export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
@@ -165,6 +178,10 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   sourceInvoiceIds: text("source_invoice_ids"),
   doctorName: text("doctor_name"),
   contractName: text("contract_name"),
+  // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
+  companyId:        varchar("company_id"),
+  contractId:       varchar("contract_id"),
+  contractMemberId: varchar("contract_member_id"),
   notes: text("notes"),
   status: patientInvoiceStatusEnum("status").notNull().default("draft"),
   totalAmount: decimal("total_amount", { precision: 18, scale: 2 }).notNull().default("0"),
@@ -188,6 +205,9 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   admissionIdx: index("idx_pat_inv_admission").on(table.admissionId),
   patientIdIdx: index("idx_pat_inv_patient_id").on(table.patientId),
   admissionStatusIdx: index("idx_pat_inv_admission_status").on(table.admissionId, table.status),
+  companyIdx:       index("idx_pat_inv_company").on(table.companyId),
+  contractIdx:      index("idx_pat_inv_contract").on(table.contractId),
+  contractMemberIdx: index("idx_pat_inv_contract_member").on(table.contractMemberId),
 }));
 
 export const patientInvoiceLines = pgTable("patient_invoice_lines", {
@@ -217,11 +237,25 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   voidedAt: timestamp("voided_at"),
   voidedBy: varchar("voided_by").references(() => users.id),
   voidReason: text("void_reason"),
+  // ── Contract line fields (nullable — Phase 1 declares; Phase 2 populates) ─
+  companyId:          varchar("company_id"),
+  contractId:         varchar("contract_id"),
+  contractMemberId:   varchar("contract_member_id"),
+  contractRuleId:     varchar("contract_rule_id"),
+  listPrice:          decimal("list_price", { precision: 18, scale: 2 }),
+  contractPrice:      decimal("contract_price", { precision: 18, scale: 2 }),
+  companyShareAmount: decimal("company_share_amount", { precision: 18, scale: 2 }),
+  patientShareAmount: decimal("patient_share_amount", { precision: 18, scale: 2 }),
+  coverageStatus:     text("coverage_status"),
+  approvalStatus:     text("approval_status"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
-  headerIdx: index("idx_pat_line_header").on(table.headerId),
-  typeIdx: index("idx_pat_line_type").on(table.lineType),
-  sourceIdx: index("idx_pat_line_source").on(table.sourceType, table.sourceId),
+  headerIdx:         index("idx_pat_line_header").on(table.headerId),
+  typeIdx:           index("idx_pat_line_type").on(table.lineType),
+  sourceIdx:         index("idx_pat_line_source").on(table.sourceType, table.sourceId),
+  companyIdx:        index("idx_pat_line_company").on(table.companyId),
+  contractIdx:       index("idx_pat_line_contract").on(table.contractId),
+  contractMemberIdx: index("idx_pat_line_contract_member").on(table.contractMemberId),
 }));
 
 export const patientInvoicePayments = pgTable("patient_invoice_payments", {

@@ -217,13 +217,20 @@ export const admissions = pgTable("admissions", {
   paymentType:    varchar("payment_type", { length: 20 }).default("CASH"),
   insuranceCompany: text("insurance_company"),
   surgeryTypeId:  varchar("surgery_type_id").references(() => surgeryTypes.id),
+  // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
+  companyId:        varchar("company_id"),
+  contractId:       varchar("contract_id"),
+  contractMemberId: varchar("contract_member_id"),
   createdAt:      timestamp("created_at").notNull().defaultNow(),
   updatedAt:      timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
-  admNumIdx: index("idx_adm_number").on(table.admissionNumber),
-  patientIdx: index("idx_adm_patient").on(table.patientName),
-  statusIdx: index("idx_adm_status").on(table.status),
-  dateIdx: index("idx_adm_date").on(table.admissionDate),
+  admNumIdx:         index("idx_adm_number").on(table.admissionNumber),
+  patientIdx:        index("idx_adm_patient").on(table.patientName),
+  statusIdx:         index("idx_adm_status").on(table.status),
+  dateIdx:           index("idx_adm_date").on(table.admissionDate),
+  companyIdx:        index("idx_adm_company").on(table.companyId),
+  contractIdx:       index("idx_adm_contract").on(table.contractId),
+  contractMemberIdx: index("idx_adm_contract_member").on(table.contractMemberId),
 }));
 
 // ─── محرك الإقامة ─────────────────────────────────────────────────────────

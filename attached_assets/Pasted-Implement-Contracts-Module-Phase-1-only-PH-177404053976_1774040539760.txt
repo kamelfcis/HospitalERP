@@ -1,0 +1,308 @@
+Implement Contracts Module — Phase 1 only.
+
+==================================================
+PHASE 1 GOAL
+==================================================
+
+Replace primitive free-text contract usage with proper relational master data and safe schema integration.
+
+Build the structural foundation only:
+- companies
+- contracts
+- contract members
+- nullable FK integration into existing transactional tables
+- companies/contracts/members UI
+- registration/lookup integration
+
+Do NOT implement rules engine yet.
+Do NOT implement claims yet.
+
+==================================================
+PHASE 1 SCHEMA
+==================================================
+
+Create shared/schema/contracts.ts
+
+Create these tables:
+
+1) companies
+Fields:
+- id
+- code
+- nameAr
+- nameEn
+- companyType
+- isActive
+- phone
+- email
+- address
+- taxId nullable
+- glAccountId nullable
+- defaultPaymentTermsDays nullable
+- creditLimit nullable
+- notes
+- createdAt
+- updatedAt
+
+2) contracts
+Fields:
+- id
+- companyId FK
+- contractNumber
+- contractName
+- basePriceListId nullable FK
+- companyCoveragePct nullable
+- startDate
+- endDate
+- isActive
+- notes
+- createdAt
+- updatedAt
+
+Important:
+One company may have multiple contracts over time.
+Do NOT hardcode one company = one contract.
+
+3) contractMembers
+Fields:
+- id
+- contractId FK
+- patientId FK nullable
+- memberCardNumber
+- employeeNumber nullable
+- nationalId nullable
+- memberNameAr
+- memberNameEn nullable
+- relationType
+- memberClass nullable
+- annualLimit nullable
+- startDate
+- endDate
+- isActive
+- notes
+- createdAt
+- updatedAt
+
+Export insert schemas and inferred types.
+
+Create indexes on:
+- all FK columns
+- code
+- nameAr
+- contractNumber
+- memberCardNumber
+- patientId
+- companyId
+- startDate
+- endDate
+
+==================================================
+PHASE 1 — EXTEND EXISTING TABLES SAFELY
+==================================================
+
+Add nullable FK columns only, with no data loss and backward compatibility.
+
+patientInvoiceHeaders:
+- companyId FK nullable
+- contractId FK nullable
+- contractMemberId FK nullable
+Keep legacy contractName text for compatibility/history.
+
+patientInvoiceLines:
+- companyId FK nullable
+- contractId FK nullable
+- contractMemberId FK nullable
+- contractRuleId FK nullable
+- listPrice decimal nullable
+- contractPrice decimal nullable
+- companyShareAmount decimal nullable
+- patientShareAmount decimal nullable
+- coverageStatus text nullable
+- approvalStatus text nullable
+
+salesInvoiceHeaders:
+- companyId FK nullable
+- contractId FK nullable
+Keep legacy contractCompany text.
+
+salesInvoiceLines:
+- companyId FK nullable
+- contractId FK nullable
+- companyShareAmount decimal nullable
+- patientShareAmount decimal nullable
+- coverageStatus text nullable
+
+admissions:
+- companyId FK nullable
+- contractId FK nullable
+- contractMemberId FK nullable
+Keep legacy insuranceCompany + payerReference text.
+
+clinicAppointments:
+- companyId FK nullable
+- contractId FK nullable
+- contractMemberId FK nullable
+Keep legacy text fields if currently used.
+
+All new FK columns must have DB indexes.
+
+==================================================
+PHASE 1 — STORAGE / BACKEND
+==================================================
+
+Create:
+- server/storage/contracts-companies-storage.ts
+- server/storage/contracts-core-storage.ts
+
+Required methods:
+
+Companies:
+- getCompanies(params)
+- getCompanyById(id)
+- createCompany(data)
+- updateCompany(id, data)
+- deactivateCompany(id)
+
+Rules:
+- code uniqueness validation
+- validate glAccountId if provided
+- soft delete only
+- block deactivate if active contracts exist
+
+Contracts:
+- getContractsByCompany(companyId)
+- getContractById(id)
+- createContract(data)
+- updateContract(id, data)
+- getActiveContractForMember(memberId, date)
+
+Rules:
+- validate companyId
+- validate basePriceListId if provided
+- validate startDate < endDate
+
+Members:
+- getMembersByContract(contractId)
+- getMemberById(id)
+- createMember(data)
+- updateMember(id, data)
+- lookupMemberByCard(cardNumber, date)
+
+Rules:
+- unique memberCardNumber per contract
+- validate patient if linked
+- lookup returns resolved member + contract + company
+
+==================================================
+PHASE 1 — ROUTES / RBAC
+==================================================
+
+Create:
+server/routes/contracts.ts
+Register in server/routes/index.ts
+
+Add routes:
+- GET /api/companies
+- POST /api/companies
+- PATCH /api/companies/:id
+- DELETE /api/companies/:id
+
+- GET /api/contracts?companyId=
+- POST /api/contracts
+- PATCH /api/contracts/:id
+
+- GET /api/contract-members?contractId=
+- POST /api/contract-members
+- PATCH /api/contract-members/:id
+
+- GET /api/contract-members/lookup?cardNumber=&date=
+
+Add RBAC permissions:
+- contracts.view
+- contracts.manage
+
+==================================================
+PHASE 1 — UI
+==================================================
+
+Create:
+client/src/pages/contracts/CompaniesPage.tsx
+
+UI pattern must follow strong ERP layout:
+- 2/3 list area
+- 1/3 detail panel
+- rows/table layout, not cards
+- RTL support
+- proper loading/empty/error states
+
+Left side:
+sortable companies table:
+- code
+- nameAr
+- companyType badge
+- GL account
+- status
+- contracts count
+
+Right side:
+detail panel with tabs:
+- company info
+- contracts sub-list
+
+Contract interaction:
+- click contract → open nested drawer/sheet
+- contract form
+- members table inside contract detail
+
+Members UI:
+- memberCardNumber
+- member name
+- linked patient chip
+- start/end dates
+- status
+- add/edit/deactivate
+
+==================================================
+PHASE 1 — REGISTRATION / APPOINTMENT INTEGRATION
+==================================================
+
+Extend patient registration and clinic appointment flows.
+
+When paymentType = CONTRACT or INSURANCE:
+- show Member Card Lookup input
+- call lookup endpoint
+- auto-populate companyId, contractId, contractMemberId
+- show resolved company + contract as read-only chips
+
+On save:
+- write FK fields to headers
+- keep legacy text fields for backward compatibility
+
+==================================================
+PHASE 1 — REFACTOR / COMPONENTIZATION / INDEXING / DOCS
+==================================================
+
+Mandatory:
+- refactor touched free-text contract logic
+- extract reusable components
+- keep routes thin
+- move business logic into storage/services
+- add all required indexes
+- document entity relationships
+- document migration path
+- document which legacy fields remain temporary
+
+Before coding:
+First inspect existing files and print:
+1) files to change
+2) migration impact
+3) risks
+4) implementation plan
+
+Then implement Phase 1 only.
+At the end print:
+- modified files
+- schema changes
+- indexes added
+- legacy compatibility retained
+- remaining Phase 2 prerequisites

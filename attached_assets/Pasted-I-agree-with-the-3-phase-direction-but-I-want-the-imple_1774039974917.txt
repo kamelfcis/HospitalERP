@@ -1,0 +1,293 @@
+I agree with the 3-phase direction, but I want the implementation to be upgraded into a strict enterprise-grade architecture that is fully compatible with the current system and also maintainable by future human developers.
+
+This is not just a feature request.
+This is a structured domain build + controlled refactor + system-wide integration.
+
+The contracts module must become a central financial and operational engine that integrates with ALL revenue-generating modules in the system:
+- Patient Invoice (فاتورة المريض)
+- Sales Invoice (فاتورة البيع)
+- Outpatient / Clinics (العيادات الخارجية)
+- Radiology (الأشعة)
+- Laboratory (التحاليل)
+- Pharmacy (الصيدلية)
+- Inpatient / Admissions (الإقامة)
+- Any future service module
+
+==================================================
+CRITICAL INTEGRATION REQUIREMENT (NON-NEGOTIABLE)
+==================================================
+
+Contracts must NOT be implemented as a standalone module.
+
+They MUST be deeply integrated with all service and billing flows in the system through proper relational fields and consistent evaluation logic.
+
+For EVERY service or invoice line generated anywhere in the system:
+
+The system MUST be able to determine:
+- Which company/payer is responsible
+- Which contract is active
+- Which contract member applies
+- Which pricing rule applies
+- Which coverage rule applies
+- Company share amount
+- Patient share amount
+- Whether approval is required
+- Whether service is covered or not
+
+This MUST be applied at:
+- Invoice HEADER level (for summary and reporting)
+- Invoice LINE level (for accurate accounting and claims)
+
+==================================================
+MANDATORY DATA MODEL EXTENSION FOR INTEGRATION
+==================================================
+
+You must extend existing core transactional tables (WITHOUT breaking them) to support contracts properly.
+
+For all service-producing modules (PatientInvoiceLine, SalesInvoiceLine, Lab, Radiology, etc.), ensure the following fields are supported (nullable for backward compatibility):
+
+At LINE LEVEL:
+- company_id FK nullable
+- contract_id FK nullable
+- contract_member_id FK nullable
+- contract_rule_id FK nullable
+- list_price
+- contract_price nullable
+- company_share_amount
+- patient_share_amount
+- coverage_status (covered / not_covered / partial / approval_required)
+- approval_status nullable
+- evaluation_snapshot or explain reference if needed
+
+At HEADER LEVEL (where applicable):
+- company_id FK nullable
+- contract_id FK nullable
+- contract_member_id FK nullable
+
+IMPORTANT:
+- Do NOT rely only on header-level contract data
+- LINE-LEVEL granularity is mandatory for:
+  - accurate billing
+  - claims generation
+  - accounting correctness
+  - auditability
+
+==================================================
+NON-NEGOTIABLE ENGINEERING RULES
+==================================================
+
+Apply in EVERY phase:
+
+1) No quick patching
+2) Mandatory refactor with every change
+3) Mandatory componentization
+4) Mandatory indexing
+5) Mandatory code organization
+6) Mandatory explainability
+7) No frontend business logic
+8) Backward-compatible migration
+9) Maintainable over fast
+10) Every phase improves codebase quality
+
+==================================================
+WHAT EXISTS TODAY
+==================================================
+
+Current system problems:
+- contractName is free text
+- contractCompany is free text
+- payerReference is free text
+- no FK relationships
+- no validation
+- no rule engine
+- no claims subsystem
+- price lists exist but are not linked to contracts
+
+==================================================
+TARGET VISION
+==================================================
+
+Contracts module must become a RULE ENGINE + FINANCIAL CONTROLLER that:
+
+- controls eligibility
+- controls pricing
+- controls coverage
+- controls approvals
+- splits revenue between patient and company
+- feeds claims
+- feeds accounting
+
+==================================================
+PHASE 1 — MASTER DATA + STRUCTURAL INTEGRATION
+==================================================
+
+Build:
+- companies
+- contracts
+- contract_members
+
+Upgrade:
+- Replace text fields with FK (incrementally)
+- Add contract fields to all invoice/service tables
+
+Integrate with:
+- Patient Invoice
+- Sales Invoice
+- Clinics
+- Radiology
+- Lab
+- Pharmacy
+- Admissions
+
+CRITICAL:
+Do NOT break existing flows.
+Introduce nullable FK fields first.
+Migrate gradually.
+
+UI:
+- Companies screen
+- Contracts screen
+- Members screen
+Layout:
+- 2/3 list
+- 1/3 details
+- rows not cards
+
+PHASE 1 MUST INCLUDE:
+- refactor of text-based contract usage
+- proper module separation
+- indexing on all FK and search fields
+- documentation of migration path
+
+==================================================
+PHASE 2 — PRICING + COVERAGE ENGINE (CORE LOGIC)
+==================================================
+
+Build rule engine using:
+- base price lists (existing)
+- contract rules
+
+Rule scopes:
+- service
+- department
+- global
+
+Rule types:
+- include
+- exclude
+- discount %
+- fixed price
+- approval required
+
+Evaluation must be:
+- server-side only
+- deterministic
+- priority-based
+- explainable
+
+Integration point:
+Every time a service is added ANYWHERE:
+- evaluate contract
+- calculate shares
+- store result on LINE level
+
+NO EXCEPTIONS.
+
+==================================================
+PHASE 2 — INTEGRATION REQUIREMENT
+==================================================
+
+You MUST integrate rule evaluation with:
+
+- PatientInvoice creation/edit
+- SalesInvoice creation/edit
+- Clinic service registration
+- Lab orders
+- Radiology orders
+- Pharmacy dispensing (if covered by contract)
+- Inpatient services
+
+Every service entry point must call the SAME contract evaluation service.
+
+Do NOT duplicate logic across modules.
+
+==================================================
+PHASE 3 — CLAIMS + ACCOUNTING INTEGRATION
+==================================================
+
+Build:
+- claim batches
+- claim lines
+- lifecycle (draft → submitted → approved/rejected → collected)
+
+Claims must be generated from:
+- invoice line contract data (NOT re-calculated later)
+
+Accounting:
+- split AR between patient and company at billing time
+- settle company AR at collection time
+- handle rejections explicitly (not silently)
+
+==================================================
+REFRACTOR / COMPONENTIZATION / INDEXING (MANDATORY IN ALL PHASES)
+==================================================
+
+REFRACTOR:
+- remove duplicated logic
+- centralize contract evaluation
+- isolate domain logic
+
+COMPONENTIZATION:
+Backend:
+- contract service
+- rule evaluator
+- claim service
+- settlement service
+
+Frontend:
+- reusable list panels
+- rule editor
+- explain panel
+- claim components
+
+INDEXING:
+- all FK fields
+- rule lookup paths
+- date validity fields
+- invoice line contract fields
+- claim tables
+
+PERFORMANCE:
+- no N+1 queries
+- optimized rule lookup
+- scalable evaluation
+
+==================================================
+EXPLAINABILITY (CRITICAL)
+==================================================
+
+System MUST provide a way to explain:
+- which contract was used
+- which member was used
+- which rule matched
+- how price was calculated
+- how shares were split
+
+This is REQUIRED for:
+- audit
+- debugging
+- support
+
+==================================================
+FINAL PRINCIPLE
+==================================================
+
+Contracts are NOT:
+- a text field
+- a discount flag
+- a UI-only feature
+
+Contracts are:
+A central rule engine that drives pricing, coverage, billing, claims, and accounting across the entire hospital system.
+
+Proceed by rewriting the 3 phases into detailed implementation tasks while strictly following all rules above.
