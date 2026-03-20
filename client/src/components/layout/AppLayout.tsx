@@ -51,6 +51,7 @@ import {
   ScanSearch,
   GitMerge,
   KeyRound,
+  AlertCircle,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -126,6 +127,7 @@ const systemNavItems: NavItem[] = [
   { title: "إدارة المستخدمين", href: "/users",              icon: Shield,    permission: "users.view" },
   { title: "مجموعات الصلاحيات", href: "/permission-groups", icon: KeyRound,  permission: "permission_groups.view" },
   { title: "شريط الإعلانات",   href: "/announcements",     icon: Megaphone, permission: "settings.account_mappings" },
+  { title: "أحداث المحاسبة",  href: "/accounting-events", icon: AlertCircle, permission: "journal.post" },
   { title: "تشخيص الأداء",    href: "/perf-diagnostics",  icon: Gauge,     permission: "settings.account_mappings" },
 ];
 

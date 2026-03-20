@@ -158,22 +158,29 @@ export const accountMappings = pgTable("account_mappings", {
   txTypeIdx: index("idx_acct_map_tx_type").on(table.transactionType),
 }));
 
-// ── سجل أحداث المحاسبة (OPD Engine Audit Log) ──────────────────────────────
+// ── سجل أحداث المحاسبة (General Accounting Event Log) ──────────────────────
 export const accountingEventLog = pgTable("accounting_event_log", {
-  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  eventType:     text("event_type").notNull(),
-  sourceId:      text("source_id"),
-  appointmentId: text("appointment_id"),
-  postedByUser:  text("posted_by_user"),
-  createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  status:        text("status").notNull().default("success"),
-  errorMessage:  text("error_message"),
+  id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventType:       text("event_type").notNull(),
+  sourceType:      text("source_type"),
+  sourceId:        text("source_id"),
+  appointmentId:   text("appointment_id"),
+  postedByUser:    text("posted_by_user"),
+  createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  status:          text("status").notNull().default("success"),
+  errorMessage:    text("error_message"),
+  attemptCount:    integer("attempt_count").notNull().default(1),
+  lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true }).notNull().defaultNow(),
+  journalEntryId:  varchar("journal_entry_id"),
 }, (t) => [
   index("idx_ael_appointment_id").on(t.appointmentId),
   index("idx_ael_event_type").on(t.eventType),
+  index("idx_ael_source").on(t.sourceType, t.sourceId),
+  index("idx_ael_status").on(t.status),
 ]);
 
-export const insertAccountingEventLogSchema = createInsertSchema(accountingEventLog).omit({ id: true, createdAt: true });
+export const insertAccountingEventLogSchema = createInsertSchema(accountingEventLog).omit({ id: true, createdAt: true, updatedAt: true, lastAttemptedAt: true });
 export type InsertAccountingEventLog = z.infer<typeof insertAccountingEventLogSchema>;
 export type AccountingEventLog = typeof accountingEventLog.$inferSelect;
 

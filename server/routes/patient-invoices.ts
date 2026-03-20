@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { db } from "../db";
 import { logger } from "../lib/logger";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 import { sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
@@ -275,7 +276,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
           description: `قيد فاتورة مريض رقم ${result.invoiceNumber} - ${result.patientName}`,
           entryDate: result.invoiceDate,
           lines: glLines,
-        }).catch(err => logger.warn({ err: err.message, invoiceId }, "[GL] patient invoice finalize"));
+        }).then((entry) => {
+          logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "completed", journalEntryId: entry?.id }).catch(() => {});
+        }).catch((err: any) => {
+          logger.warn({ err: err.message, invoiceId }, "[GL] patient invoice finalize — journal failed");
+          logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "failed", errorMessage: err.message }).catch(() => {});
+        });
+      } else {
+        logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "blocked", errorMessage: "بيانات الفاتورة غير متاحة لبناء القيد" }).catch(() => {});
       }
 
       storage.createTreasuryTransactionsForInvoice(invoiceId, result.finalizedAt

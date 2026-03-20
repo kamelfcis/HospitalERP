@@ -15,6 +15,8 @@
 
 import { db } from "../db";
 import { eq, and, sql, asc, desc } from "drizzle-orm";
+import { logAcctEvent } from "../lib/accounting-event-logger";
+import { logger } from "../lib/logger";
 import {
   doctorTransfers,
   doctorSettlements,
@@ -252,7 +254,7 @@ const methods = {
 
     if (glSourceId) {
       try {
-        await this.generateJournalEntry({
+        const entry = await this.generateJournalEntry({
           sourceType: "doctor_payable_settlement",
           sourceDocumentId: glSourceId,
           reference: `SETTLE-${glSourceId.slice(0, 8).toUpperCase()}`,
@@ -260,17 +262,30 @@ const methods = {
           entryDate: params.paymentDate,
           lines: [{ lineType: "doctor_payable_settlement", amount: params.amount }],
         });
-        if (glSourceId) {
-          await db.update(doctorSettlements)
-            .set({ glPosted: true })
-            .where(eq(doctorSettlements.id, glSourceId));
-        }
+        await db.update(doctorSettlements)
+          .set({ glPosted: true })
+          .where(eq(doctorSettlements.id, glSourceId));
+        await logAcctEvent({
+          sourceType:    "doctor_payable_settlement",
+          sourceId:      glSourceId,
+          eventType:     "doctor_settlement_journal",
+          status:        "completed",
+          journalEntryId: entry?.id ?? null,
+        });
       } catch (e) {
-        console.log(`[DOCTOR_SETTLEMENT] GL skipped for ${glSourceId}: ${(e as Error).message}`);
+        const msg = (e as Error).message;
+        logger.error({ err: msg, settlementId: glSourceId, doctorName: params.doctorName }, "[DOCTOR_SETTLEMENT] GL journal failed");
+        await logAcctEvent({
+          sourceType:   "doctor_payable_settlement",
+          sourceId:     glSourceId,
+          eventType:    "doctor_settlement_journal",
+          status:       "failed",
+          errorMessage: msg,
+        }).catch(() => {});
       }
     }
 
-    console.log(`[DOCTOR_SETTLEMENT] settlement=${settlementId} doctor=${params.doctorName} amount=${params.amount}`);
+    logger.info({ settlementId, doctorName: params.doctorName, amount: params.amount }, "[DOCTOR_SETTLEMENT] settlement completed");
 
     const [final] = await db.select().from(doctorSettlements).where(eq(doctorSettlements.id, settlementId!));
     const allocs = await db.select().from(doctorSettlementAllocations)

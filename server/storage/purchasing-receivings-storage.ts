@@ -13,6 +13,8 @@
 
 import { db } from "../db";
 import { eq, desc, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull } from "drizzle-orm";
+import { logAcctEvent } from "../lib/accounting-event-logger";
+import { logger } from "../lib/logger";
 import {
   items,
   inventoryLots,
@@ -439,7 +441,13 @@ const methods = {
             { lineType: "inventory", amount: String(totalCost) },
             { lineType: "payables", amount: String(totalCost) },
           ],
-        }).catch((err: unknown) => console.error("Auto journal for purchase invoice failed:", err instanceof Error ? err.message : String(err)));
+        }).then((entry) => {
+          logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "completed", journalEntryId: entry?.id }).catch(() => {});
+        }).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error({ err: msg, receivingId: id }, "[RECEIVING] Auto journal failed");
+          logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "failed", errorMessage: msg }).catch(() => {});
+        });
       }
     }
 

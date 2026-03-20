@@ -1,0 +1,147 @@
+TASK: Phase 3 — Harden Accounting Flow by Eliminating Silent Failures, Tracking Journal Problems, and Making Collection Completion Recoverable
+
+Phase 1 and Phase 2 are fully complete and closed.
+Now harden the accounting flow itself.
+
+BUSINESS / CONTROL GOAL
+No accounting event should fail silently.
+Any journal generation failure, completion failure, or accounting-side exception must become explicit, durable, queryable, and recoverable.
+
+IMPORTANT PHASE SCOPE
+Do NOT do a broad redesign yet.
+Do NOT yet split the pharmacy sale journal and collection journal into two separate accounting models in this phase.
+First, make the CURRENT design safe, traceable, and recoverable with minimal-risk refactor.
+
+CONFIRMED CURRENT WEAK POINTS
+- completeSalesJournalsWithCash runs after commit in a fire-and-forget path
+- if it fails, the invoice may be collected while the journal is not fully completed
+- doctor settlement journal generation can swallow errors
+- patient invoice journal failures are not tracked durably
+- some accounting paths can effectively skip or hide failure outcomes
+- sales may generate entries with periodId = null if no open fiscal period exists
+- retryFailedJournals exists for some failures, but collection completion failures are not durably tracked/retried
+
+IMPLEMENTATION GOALS
+1) Make all accounting failures explicit
+2) Persist accounting event/failure status durably
+3) Make collection-completion failures visible and recoverable
+4) Remove swallowed accounting exceptions
+5) Add a minimal admin visibility/reporting path for failed/pending accounting events
+6) Preserve idempotency and current business flow as much as possible
+
+STEP 1 — DISCOVERY BEFORE CODING
+Before implementing, inspect and print a concise report covering:
+- all journal generation/completion paths currently in use
+- which source document tables already have journal_status or equivalent fields
+- what existing event/audit/log tables already exist and whether any can be reused
+- whether a retry mechanism already exists and for which transaction types
+Then continue implementation using the best reuse path.
+
+TARGET DESIGN
+Implement a durable accounting event tracking model.
+Prefer reusing an existing focused table if it already fits.
+If not, create a dedicated table such as accounting_event_log or journal_event_log.
+
+MINIMUM REQUIRED DATA TO TRACK
+For each accounting event/failure record:
+- id
+- source_type
+- source_document_id
+- event_type
+- status (pending / completed / failed / needs_retry or clean equivalent)
+- error_message
+- attempt_count
+- last_attempted_at
+- created_at
+- updated_at
+- triggered_by_user_id if available
+- journal_entry_id if available/applicable
+
+If an existing table can be extended cleanly to support this, reuse it instead of creating a duplicate log concept.
+
+ACCOUNTING PATHS TO COVER
+At minimum review and harden these paths:
+- sales_invoice finalize journal generation
+- cashier collection journal completion
+- patient_invoice journal generation
+- purchase_invoice journal generation
+- cashier_refund journal handling
+- doctor_payable_settlement journal generation
+- any retry path currently present
+
+BACKEND REQUIREMENTS
+A) Explicit outcomes
+For every accounting path above, ensure the outcome is explicit:
+- completed
+- failed
+- needs_retry
+- blocked
+or equivalent
+No silent “none because something went wrong” behavior.
+
+B) Failure persistence
+When journal generation/completion fails:
+- persist the failure state
+- persist error message
+- persist event metadata
+- do not rely on console-only output
+
+C) Collection completion hardening
+For completeSalesJournalsWithCash:
+- do not swallow failure
+- persist failure event/status durably
+- make it queryable for retry/admin review
+- keep idempotency safe
+
+D) Doctor settlement hardening
+- remove swallowed exceptions
+- persist explicit accounting failure outcome
+
+E) Patient invoice traceability
+- if generateJournalEntry fails, store durable accounting failure state
+- do not leave it invisible
+
+F) Fiscal period visibility
+Review sales behavior where periodId can become null.
+Do not do a risky broad behavioral rewrite yet.
+But if sales proceed with no open period, make that state explicit and traceable.
+Do not allow silent accounting ambiguity.
+
+G) Retry support
+Extend or reuse retry handling so failed accounting events can be retried in a controlled, idempotent way.
+Do not build a fragile one-off retry path.
+
+H) Minimal admin/report visibility
+Provide a simple admin-facing way to inspect:
+- failed accounting events
+- pending accounting events
+- retryable events
+Keep it simple and consistent with existing project patterns.
+
+IMPORTANT RULES
+- no console-only failures
+- no swallowed try/catch
+- no invisible accounting gaps
+- preserve current business flows where possible
+- prefer extending existing infrastructure over inventing parallel systems
+- keep changes modular and low-risk
+- print what was reused vs newly created
+
+VERIFICATION REQUIREMENTS
+After implementation, verify all of the following:
+1) failure in cashier collection completion becomes durable and visible
+2) failure in doctor settlement becomes durable and visible
+3) failure in patient invoice journal generation becomes durable and visible
+4) retry path works safely and idempotently
+5) admin can inspect failed/pending accounting events
+6) no existing successful accounting paths regress
+7) sales behavior with missing open fiscal period is now explicit and traceable
+
+PRINT AFTER IMPLEMENTATION
+1) discovery findings used
+2) DB objects added/changed
+3) backend files/services/routes changed
+4) admin/report UI added or changed
+5) exact behavior per accounting path after hardening
+6) what was reused vs newly created
+7) any remaining items that belong to a later redesign phase, but do not start them

@@ -15,6 +15,7 @@
 
 import { db } from "../db";
 import { eq, and, sql, asc, inArray } from "drizzle-orm";
+import { logger } from "../lib/logger";
 import {
   pharmacies,
   accounts,
@@ -663,12 +664,15 @@ const methods = {
 
       const result = { receipts, totalCollected: totalCollected.toFixed(2), count: receipts.length };
 
-      // إكمال القيود المحاسبية خارج transaction (fire-and-forget)
+      // إكمال القيود المحاسبية خارج transaction — مُسجَّل الآن في accounting_event_log
       self.completeSalesJournalsWithCash(
         invoiceIds,
         shiftRow.gl_account_id || null,
         shiftRow.pharmacy_id || "",
-      ).catch((err: unknown) => console.error("[CASHIER] journal completion failed:", errMsg(err)));
+      ).catch((err: unknown) => {
+        const msg = errMsg(err);
+        logger.error({ err: msg, invoiceIds }, "[CASHIER] completeSalesJournalsWithCash: top-level failure");
+      });
 
       return result;
     });
@@ -807,11 +811,15 @@ const methods = {
 
       const result = { receipts, totalRefunded: totalRefunded.toFixed(2), count: receipts.length };
 
+      // إكمال القيود المحاسبية خارج transaction — مُسجَّل الآن في accounting_event_log
       self.completeSalesJournalsWithCash(
         invoiceIds,
         shiftRow.gl_account_id || null,
         shiftRow.pharmacy_id || "",
-      ).catch((err: unknown) => console.error("[CASHIER] journal completion failed:", errMsg(err)));
+      ).catch((err: unknown) => {
+        const msg = errMsg(err);
+        logger.error({ err: msg, invoiceIds }, "[CASHIER_REFUND] completeSalesJournalsWithCash: top-level failure");
+      });
 
       return result;
     });

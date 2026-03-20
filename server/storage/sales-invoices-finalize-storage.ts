@@ -1,6 +1,7 @@
 import { db } from "../db";
 import type { DrizzleTransaction } from "../db";
 import { eq, desc, and, sql, or, asc, gte, lte, ilike, inArray } from "drizzle-orm";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 import {
   items,
   warehouses,
@@ -317,7 +318,13 @@ const methods = {
         await tx.execute(sql`ROLLBACK TO SAVEPOINT journal_attempt`);
         journalStatus = "failed";
         journalError = journalErr.message || "خطأ غير معروف في إنشاء القيد المحاسبي";
-        console.error(`[JOURNAL_SAFETY] Sales invoice ${id} finalized but journal failed:`, journalErr.message);
+        logAcctEvent({
+          sourceType:   "sales_invoice",
+          sourceId:     id,
+          eventType:    "sales_invoice_journal_finalize",
+          status:       "failed",
+          errorMessage: journalError,
+        }).catch(() => {});
       }
 
       await tx.update(salesInvoiceHeaders).set({

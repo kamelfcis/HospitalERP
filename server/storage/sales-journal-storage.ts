@@ -1,6 +1,8 @@
 import { db } from "../db";
 import type { DrizzleTransaction } from "../db";
 import { eq, and, sql, asc, gte, lte, inArray } from "drizzle-orm";
+import { logAcctEvent, updateAcctEvent } from "../lib/accounting-event-logger";
+import { logger } from "../lib/logger";
 import {
   items,
   warehouses,
@@ -443,58 +445,101 @@ const methods = {
       }
     }
     if (!cashAccountId) {
-      console.error("completeSalesJournalsWithCash: no cash GL account found");
+      logger.error("[completeSalesJournalsWithCash] no cash GL account found — logging blocked events");
+      for (const invoiceId of invoiceIds) {
+        await logAcctEvent({
+          sourceType:   "cashier_collection",
+          sourceId:     invoiceId,
+          eventType:    "cashier_collection_complete",
+          status:       "blocked",
+          errorMessage: "لا يوجد حساب خزنة نقدية مُعرَّف — يرجى إضافة ربط الحسابات (cashier_collection / cash)",
+        });
+      }
       return;
     }
 
     for (const invoiceId of invoiceIds) {
-      const [invoice] = await db.select({
-        warehouseId: salesInvoiceHeaders.warehouseId,
-        isReturn: salesInvoiceHeaders.isReturn,
-      }).from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
+      const eventId = await logAcctEvent({
+        sourceType: "cashier_collection",
+        sourceId:   invoiceId,
+        eventType:  "cashier_collection_complete",
+        status:     "pending",
+      });
 
-      const invoiceReceivableIds = new Set<string>();
-      const mappings = await this.getMappingsForTransaction("sales_invoice", invoice?.warehouseId ?? null);
-      for (const m of mappings) {
-        if (m.lineType === "receivables" && m.debitAccountId) {
-          invoiceReceivableIds.add(m.debitAccountId);
+      try {
+        const [invoice] = await db.select({
+          warehouseId: salesInvoiceHeaders.warehouseId,
+          isReturn: salesInvoiceHeaders.isReturn,
+        }).from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
+
+        const invoiceReceivableIds = new Set<string>();
+        const mappings = await this.getMappingsForTransaction("sales_invoice", invoice?.warehouseId ?? null);
+        for (const m of mappings) {
+          if (m.lineType === "receivables" && m.debitAccountId) {
+            invoiceReceivableIds.add(m.debitAccountId);
+          }
         }
-      }
 
-      if (invoiceReceivableIds.size === 0) continue;
+        if (invoiceReceivableIds.size === 0) {
+          if (eventId) await updateAcctEvent(eventId, "completed", { errorMessage: "لا توجد أرصدة مدينة (receivables) في خريطة الحسابات — لا يلزم إكمال" });
+          continue;
+        }
 
-      const [existingEntry] = await db.select().from(journalEntries)
-        .where(and(
-          eq(journalEntries.sourceType, "sales_invoice"),
-          eq(journalEntries.sourceDocumentId, invoiceId)
-        ));
+        const [existingEntry] = await db.select().from(journalEntries)
+          .where(and(
+            eq(journalEntries.sourceType, "sales_invoice"),
+            eq(journalEntries.sourceDocumentId, invoiceId)
+          ));
 
-      if (!existingEntry) continue;
-      if (existingEntry.status === "posted") continue;
+        if (!existingEntry) {
+          if (eventId) await updateAcctEvent(eventId, "blocked", { errorMessage: "لا يوجد قيد مرتبط بالفاتورة — journal_status=failed سابق؟" });
+          continue;
+        }
+        if (existingEntry.status === "posted") {
+          if (eventId) await updateAcctEvent(eventId, "completed", { journalEntryId: existingEntry.id });
+          continue;
+        }
 
-      const existingLines = await db.select().from(journalLines)
-        .where(eq(journalLines.journalEntryId, existingEntry.id))
-        .orderBy(asc(journalLines.lineNumber));
+        const existingLines = await db.select().from(journalLines)
+          .where(eq(journalLines.journalEntryId, existingEntry.id))
+          .orderBy(asc(journalLines.lineNumber));
 
-      const receivablesLine = existingLines.find(l =>
-        invoiceReceivableIds.has(l.accountId) &&
-        (parseFloat(l.debit || "0") > 0 || parseFloat(l.credit || "0") > 0)
-      );
+        const receivablesLine = existingLines.find(l =>
+          invoiceReceivableIds.has(l.accountId) &&
+          (parseFloat(l.debit || "0") > 0 || parseFloat(l.credit || "0") > 0)
+        );
 
-      if (receivablesLine) {
-        const isReturn = invoice?.isReturn || false;
-        const desc = isReturn ? "نقدية مرتجع - تم الصرف" : "نقدية مبيعات - تم التحصيل";
-        const entryDesc = isReturn ? "(تم صرف المرتجع)" : "(تم التحصيل)";
+        if (receivablesLine) {
+          const isReturn = invoice?.isReturn || false;
+          const desc = isReturn ? "نقدية مرتجع - تم الصرف" : "نقدية مبيعات - تم التحصيل";
+          const entryDesc = isReturn ? "(تم صرف المرتجع)" : "(تم التحصيل)";
 
-        await db.update(journalLines).set({
-          accountId: cashAccountId,
-          description: desc,
-        }).where(eq(journalLines.id, receivablesLine.id));
+          await db.update(journalLines).set({
+            accountId: cashAccountId,
+            description: desc,
+          }).where(eq(journalLines.id, receivablesLine.id));
 
-        await db.update(journalEntries).set({
-          description: `${existingEntry.description} ${entryDesc}`,
-          status: "posted",
-        }).where(eq(journalEntries.id, existingEntry.id));
+          await db.update(journalEntries).set({
+            description: `${existingEntry.description} ${entryDesc}`,
+            status: "posted",
+          }).where(eq(journalEntries.id, existingEntry.id));
+        }
+
+        if (eventId) await updateAcctEvent(eventId, "completed", { journalEntryId: existingEntry.id });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error({ invoiceId, err: msg }, "[completeSalesJournalsWithCash] per-invoice completion failed");
+        if (eventId) {
+          await updateAcctEvent(eventId, "failed", { errorMessage: msg });
+        } else {
+          await logAcctEvent({
+            sourceType:   "cashier_collection",
+            sourceId:     invoiceId,
+            eventType:    "cashier_collection_complete",
+            status:       "failed",
+            errorMessage: msg,
+          });
+        }
       }
     }
   },
