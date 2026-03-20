@@ -20,8 +20,16 @@ import {
 export function registerAccountsRoutes(app: Express) {
   app.get("/api/accounts", requireAuth, async (req, res) => {
     try {
-      const userId = req.session.userId as string;
+      const userId      = req.session.userId as string;
       const allAccounts = await storage.getAccounts();
+
+      // Users who can manage account mappings must see ALL accounts in the picker
+      // regardless of their personal account scope (scoping would break the mapping UI)
+      const perms = await storage.getUserEffectivePermissions(userId);
+      if (perms.includes(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS)) {
+        return res.json(allAccounts);
+      }
+
       const visibleIds = await storage.getVisibleAccountIds(userId);
       if (visibleIds === null) {
         res.json(allAccounts);

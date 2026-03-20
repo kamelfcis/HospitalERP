@@ -40,7 +40,7 @@ const PatientInquiry = lazy(() => import("@/pages/patient-inquiry"));
 const Doctors = lazy(() => import("@/pages/Doctors"));
 const PatientInvoice = lazy(() => import("@/pages/PatientInvoice"));
 const CashierCollection = lazy(() => import("@/pages/cashier/CashierCollection"));
-const AccountMappings = lazy(() => import("@/pages/AccountMappings"));
+const AccountMappings = lazy(() => import("@/pages/account-mappings/index"));
 const DrawerPasswords = lazy(() => import("@/pages/DrawerPasswords"));
 const UsersManagement = lazy(() => import("@/pages/users-management"));
 const BedBoard = lazy(() => import("@/pages/bed-board"));

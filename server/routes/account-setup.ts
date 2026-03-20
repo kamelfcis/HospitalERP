@@ -10,6 +10,10 @@ import {
   checkPermission,
   accountTypeMapArabicToEnglish,
 } from "./_shared";
+import {
+  transactionTypeLabels,
+  mappingLineTypeLabels,
+} from "@shared/schema";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -351,14 +355,45 @@ export function registerAccountSetupRoutes(app: Express) {
   app.post("/api/account-mappings/bulk", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { mappings } = req.body;
-      if (!Array.isArray(mappings)) {
+      if (!Array.isArray(mappings) || mappings.length === 0) {
         return res.status(400).json({ message: "يجب إرسال مصفوفة من الإعدادات" });
       }
-      const results = [];
+
+      // ── Validation layer ────────────────────────────────────────────────────
+      const validTxTypes   = new Set(Object.keys(transactionTypeLabels));
+      const validLineTypes = new Set(Object.keys(mappingLineTypeLabels));
+
+      // Pre-load accounts once for existence checks
+      const allAccounts   = await storage.getAccounts();
+      const accountIdSet  = new Set(allAccounts.map((a: any) => a.id));
+
+      const cleaned: any[] = [];
       for (const m of mappings) {
-        const result = await storage.upsertAccountMapping(m);
-        results.push(result);
+        if (!m.transactionType || !validTxTypes.has(m.transactionType)) {
+          return res.status(400).json({ message: `نوع العملية غير صالح: ${m.transactionType}` });
+        }
+        if (!m.lineType || !validLineTypes.has(m.lineType)) {
+          return res.status(400).json({ message: `نوع البند غير صالح: ${m.lineType}` });
+        }
+        if (m.debitAccountId && !accountIdSet.has(m.debitAccountId)) {
+          return res.status(400).json({ message: `حساب المدين غير موجود: ${m.debitAccountId}` });
+        }
+        if (m.creditAccountId && !accountIdSet.has(m.creditAccountId)) {
+          return res.status(400).json({ message: `حساب الدائن غير موجود: ${m.creditAccountId}` });
+        }
+        cleaned.push({
+          transactionType: m.transactionType,
+          lineType:        m.lineType,
+          debitAccountId:  m.debitAccountId  || null,
+          creditAccountId: m.creditAccountId || null,
+          warehouseId:     m.warehouseId     || null,
+          description:     m.description     || null,
+          isActive:        m.isActive !== false,
+        });
       }
+
+      // ── Transactional bulk upsert ────────────────────────────────────────────
+      const results = await storage.bulkUpsertAccountMappings(cleaned);
       res.json(results);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

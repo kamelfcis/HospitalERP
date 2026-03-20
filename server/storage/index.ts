@@ -589,6 +589,7 @@ export interface IStorage {
   getAccountMappings(transactionType?: string): Promise<AccountMapping[]>;
   getAccountMapping(id: string): Promise<AccountMapping | undefined>;
   upsertAccountMapping(data: InsertAccountMapping): Promise<AccountMapping>;
+  bulkUpsertAccountMappings(items: InsertAccountMapping[]): Promise<AccountMapping[]>;
   deleteAccountMapping(id: string): Promise<boolean>;
   getMappingsForTransaction(transactionType: string, warehouseId?: string | null): Promise<AccountMapping[]>;
 

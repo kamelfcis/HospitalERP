@@ -77,6 +77,44 @@ const methods = {
     return (result as any).rowCount > 0;
   },
 
+  // ── bulkUpsertAccountMappings ─────────────────────────────────────────────
+  // Wraps all upserts in a single DB transaction.
+  // Pre-validated by route (transactionType, lineType, account existence).
+  async bulkUpsertAccountMappings(
+    this: DatabaseStorage,
+    items: import("@shared/schema").InsertAccountMapping[]
+  ): Promise<import("@shared/schema").AccountMapping[]> {
+    if (items.length === 0) return [];
+    return db.transaction(async (tx) => {
+      const results: import("@shared/schema").AccountMapping[] = [];
+      for (const data of items) {
+        const conditions = [
+          eq(accountMappings.transactionType, data.transactionType),
+          eq(accountMappings.lineType, data.lineType),
+        ];
+        if (data.warehouseId) {
+          conditions.push(eq(accountMappings.warehouseId, data.warehouseId));
+        } else {
+          conditions.push(isNull(accountMappings.warehouseId));
+        }
+        const existing = await tx.select({ id: accountMappings.id })
+          .from(accountMappings).where(and(...conditions)).limit(1);
+
+        if (existing.length > 0) {
+          const [updated] = await tx.update(accountMappings)
+            .set({ ...data, updatedAt: new Date() })
+            .where(eq(accountMappings.id, existing[0].id))
+            .returning();
+          results.push(updated);
+        } else {
+          const [inserted] = await tx.insert(accountMappings).values(data).returning();
+          results.push(inserted);
+        }
+      }
+      return results;
+    });
+  },
+
   async getMappingsForTransaction(this: DatabaseStorage, transactionType: string, warehouseId?: string | null): Promise<AccountMapping[]> {
     const allMappings = await db.select().from(accountMappings)
       .where(and(
