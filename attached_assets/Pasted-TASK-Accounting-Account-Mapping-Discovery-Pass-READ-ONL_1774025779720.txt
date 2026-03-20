@@ -1,0 +1,58 @@
+TASK: Accounting & Account Mapping Discovery Pass (READ-ONLY FIRST)
+
+You are working on an existing hospital/pharmacy ERP codebase.
+Before changing anything, perform a full discovery pass for the accounting/account-mapping module and print a precise report.
+
+GOAL
+Understand the current implementation completely before refactor:
+- how account lists are fetched
+- how account mappings are created/edited
+- how lookup/search is implemented elsewhere in the app
+- how permissions are structured
+- how journal entries are generated for sales, patient invoices, purchase invoices, cashier collection, refunds, transfers, doctor settlements
+- where silent failures exist
+- where fire-and-forget accounting exists
+- whether there is already a reusable search/select component
+- whether there is already any user-based visibility/permissions pattern that can be reused
+
+SEARCH FOR AND REPORT
+1) Frontend files:
+- AccountMappings page/component
+- hooks related to account lookup
+- shared lookup/search/select/autocomplete components
+- reusable table filter/search components
+- reusable permission-aware selector components
+- any account tree selector or chart-of-accounts picker
+
+2) Backend files:
+- account mappings routes/storage/service
+- accounts routes/storage/service
+- journal generation services/storage
+- permission middleware / RBAC utilities
+- user-role / user-permission / user-scope tables or services
+
+3) Database schema:
+- accounts
+- account_mappings
+- journal_entries
+- journal_lines
+- fiscal_periods
+- users / roles / permissions
+- any existing user-to-cost-center / user-to-warehouse / user-to-department restrictions
+- any audit tables
+
+REPORT FORMAT (print only, do not modify yet)
+A) Files found with paths
+B) Existing reusable components/hooks that should be reused instead of building new ones
+C) Current bug root cause for account selection screen
+D) Current weak points in accounting flow
+E) Existing permission model that can support account visibility by user
+F) Proposed refactor plan with minimal duplication
+G) Explicit list: what should be reused, what should be refactored, what should NOT be rewritten
+
+IMPORTANT RULES
+- Do NOT start coding yet
+- Do NOT create new search components if an equivalent reusable component exists
+- Prefer reuse over duplication
+- Prefer small targeted refactor over broad rewrite unless necessary
+- Print a structured report only

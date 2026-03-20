@@ -1,0 +1,226 @@
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+
+---
+
+OBJECTIVE
+
+Extract and document the COMPLETE accounting logic implemented in the system.
+
+This is NOT a coding task.
+
+This is a full analysis and mapping task of how accounting entries (GL postings) are generated, configured, and linked to system operations.
+
+---
+
+SCOPE
+
+Focus on backend + configuration logic for accounting only.
+
+Do NOT:
+
+- modify any code
+- change business logic
+- fix anything yet
+- add new features
+
+Only ANALYZE and EXPLAIN.
+
+---
+
+GOAL
+
+I want a full, end-to-end understanding of:
+
+1. How accounting entries are generated
+2. How account mapping works
+3. Why account selection UI (account linking screen) may not allow selection
+4. How all modules connect to accounting
+
+---
+
+REQUIRED OUTPUT
+
+Produce a COMPLETE structured report with the following sections:
+
+---
+
+1. ACCOUNTING FLOW OVERVIEW
+
+Explain the full lifecycle of accounting in the system:
+
+- What triggers accounting entries:
+  - sales invoice
+  - patient invoice
+  - cashier collection
+  - pharmacy sale
+  - returns
+  - stock movements (if any)
+  - treasury transactions
+
+For each trigger:
+
+- where it starts (route/service)
+- which function generates entries
+- when it is executed (on save / on collect / async)
+
+---
+
+2. JOURNAL ENTRY GENERATION LOGIC
+
+Identify and explain:
+
+- the exact functions/services responsible for creating GL entries
+- where journal entries are inserted (tables)
+- structure of journal entries:
+  - debit accounts
+  - credit accounts
+  - amount source (Net / Total / Tax / Cost)
+
+Explain the logic step-by-step.
+
+---
+
+3. ACCOUNT MAPPING SYSTEM (CRITICAL)
+
+Explain how account linking works:
+
+- which tables store mapping between:
+  - operation type (sale, return, cashier, etc.)
+  - account IDs
+
+Example:
+- revenue account
+- cost account
+- tax account
+- discount account
+- treasury account
+
+For each mapping:
+
+- table name
+- columns
+- how it is loaded
+- when it is used
+
+---
+
+4. ACCOUNT SELECTION UI ISSUE
+
+Investigate WHY the account linking screen is not allowing account selection.
+
+Check:
+
+- is account list empty?
+- is there a filter (company / branch / active flag)?
+- missing permissions?
+- missing data in accounts table?
+- incorrect foreign key?
+- UI depends on API that returns empty?
+
+Trace:
+
+UI → API → backend → database
+
+Explain the exact root cause.
+
+---
+
+5. CONFIGURATION DEPENDENCIES
+
+List all required data for accounting to work:
+
+- chart of accounts
+- account categories
+- cost centers (if used)
+- pharmacy / department mappings
+- price lists / tax configs
+
+Identify what is REQUIRED vs OPTIONAL.
+
+---
+
+6. DATA FLOW (IMPORTANT)
+
+For one example transaction (e.g. pharmacy sale):
+
+Trace:
+
+- request
+- invoice creation
+- posting trigger
+- journal creation
+- treasury (if exists)
+
+Step-by-step with involved tables.
+
+---
+
+7. FAILURE SCENARIOS
+
+Identify cases where accounting will FAIL or be incomplete:
+
+- missing account mapping
+- invoice not collected
+- journal_status not completed
+- zero values
+- invalid configuration
+
+Explain how system behaves in each case.
+
+---
+
+8. RELATIONSHIP MAP
+
+Provide a clear mapping between:
+
+- invoices
+- cashier shifts
+- treasury
+- journal entries
+- account mapping tables
+
+Show how everything connects.
+
+---
+
+9. FILES AND TABLES INVOLVED
+
+List all:
+
+Backend files:
+- routes
+- services
+- helpers
+
+Database tables:
+- journal tables
+- mapping tables
+- invoice tables
+- treasury tables
+
+---
+
+10. DIAGNOSTIC SUMMARY
+
+Summarize:
+
+- how accounting is designed
+- where the logic is strong
+- where it is fragile
+- exact reason account linking screen is not working
+
+---
+
+CRITICAL RULES
+
+- Do NOT assume anything — verify from code
+- Do NOT simplify — be precise
+- Use real table names and function names
+- Explain in structured format
+
+---
+
+DO NOT IMPLEMENT ANY FIXES.
+
+WAIT FOR REVIEW.
