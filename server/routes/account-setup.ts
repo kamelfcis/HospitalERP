@@ -296,7 +296,7 @@ export function registerAccountSetupRoutes(app: Express) {
   });
 
   // Account Mappings API
-  app.get("/api/account-mappings", async (req, res) => {
+  app.get("/api/account-mappings", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { transactionType } = req.query;
       const mappings = await storage.getAccountMappings(transactionType as string | undefined);
@@ -307,7 +307,7 @@ export function registerAccountSetupRoutes(app: Express) {
     }
   });
 
-  app.get("/api/account-mappings/:id", async (req, res) => {
+  app.get("/api/account-mappings/:id", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const mapping = await storage.getAccountMapping(req.params.id as string);
       if (!mapping) return res.status(404).json({ message: "الإعداد غير موجود" });
@@ -318,7 +318,7 @@ export function registerAccountSetupRoutes(app: Express) {
     }
   });
 
-  app.post("/api/account-mappings", async (req, res) => {
+  app.post("/api/account-mappings", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { transactionType, lineType, debitAccountId, creditAccountId, description, isActive, warehouseId } = req.body;
       if (!transactionType || !lineType) {
@@ -334,7 +334,7 @@ export function registerAccountSetupRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/account-mappings/:id", async (req, res) => {
+  app.delete("/api/account-mappings/:id", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       await storage.deleteAccountMapping(req.params.id as string);
       res.json({ success: true });
@@ -344,7 +344,7 @@ export function registerAccountSetupRoutes(app: Express) {
     }
   });
 
-  app.post("/api/account-mappings/bulk", async (req, res) => {
+  app.post("/api/account-mappings/bulk", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { mappings } = req.body;
       if (!Array.isArray(mappings)) {

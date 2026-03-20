@@ -1,0 +1,69 @@
+TASK: Phase 1 — Fix Account Mapping Picker Bug, Remove Duplicate Selector, Reuse Existing AccountSearchSelect, and Secure Account Mapping APIs
+
+You already completed discovery. Now implement the fix and cleanup in the safest, smallest, cleanest way.
+
+CONFIRMED FACTS
+- The root cause of the empty account picker is that useAccountsLookup.accountAdapter sets LookupItem.isActive correctly, but omits isActive from meta.
+- AccountMappings.tsx then remaps accountItems via item.meta as Account, so all mapped accounts have isActive = undefined.
+- AccountMappings.tsx contains a duplicated local SearchableAccountSelect implementation.
+- A reusable component already exists at: client/src/components/AccountSearchSelect.tsx
+- useAccountsLookup and useLookup are already good foundations and should be reused.
+- /api/account-mappings endpoints are currently not protected with requireAuth/checkPermission.
+
+GOALS
+1) Fix the account picker bug correctly
+2) Remove duplicated selector code from AccountMappings.tsx
+3) Reuse the existing AccountSearchSelect component
+4) Secure account mappings API endpoints
+5) Keep the change minimal, clean, and low-risk
+
+IMPLEMENTATION RULES
+- Reuse existing shared components/hooks/services whenever possible
+- Do not create any new account search component
+- Do not patch the same issue in multiple places unnecessarily
+- Keep page components thinner after the refactor
+- Follow existing project style and folder conventions
+- Preserve backward compatibility
+- Print exactly what was reused vs newly changed
+
+REQUIRED CHANGES
+
+A) Fix the bug at the correct source
+In client/src/hooks/lookups/useAccountsLookup.ts:
+- update accountAdapter so meta includes isActive
+- preserve existing adapter behavior
+- do not break other lookup consumers
+
+B) Remove duplicated selector implementation
+In client/src/pages/AccountMappings.tsx:
+- delete the internal SearchableAccountSelect implementation
+- replace it with import/use of client/src/components/AccountSearchSelect.tsx
+- keep the page logic clean and minimal
+- pass full Account data properly
+- do not keep duplicate local filtering/search logic if AccountSearchSelect already handles it
+
+C) Validate selectable account behavior
+- active accounts should appear correctly
+- selection should work for debit and credit account fields
+- search by account code/name should work through the reused component
+- do not regress existing behavior
+
+D) Secure the account mappings backend API
+In server/routes/account-setup.ts:
+- add requireAuth
+- add checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS) to all account-mappings endpoints
+- keep route behavior otherwise unchanged
+
+E) Sanity checks
+- verify GET /api/accounts still works with existing consumers
+- verify AccountSearchSelect works correctly inside AccountMappings after replacement
+- verify unauthorized users cannot access account-mappings endpoints anymore
+
+PRINT AFTER IMPLEMENTATION
+1) exact files changed
+2) exact lines/areas changed
+3) what bug was fixed
+4) what duplicate code was removed
+5) what shared component was reused
+6) what API protection was added
+7) any small follow-up note if needed, but do not start phase 2 yet

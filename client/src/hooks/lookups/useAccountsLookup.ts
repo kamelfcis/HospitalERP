@@ -9,7 +9,7 @@ function accountAdapter(a: Account): LookupItem {
     name: a.name,
     code: a.code,
     isActive: a.isActive ?? true,
-    meta: { id: a.id, name: a.name, code: a.code, accountType: a.accountType },
+    meta: { id: a.id, name: a.name, code: a.code, accountType: a.accountType, isActive: a.isActive },
   };
 }
 

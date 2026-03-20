@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useAccountsLookup } from "@/hooks/lookups/useAccountsLookup";
+import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -12,11 +11,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  Settings, Save, Loader2, Plus, Trash2, Search, X,
+  Settings, Save, Loader2, Plus, Trash2,
   CheckCircle2, AlertCircle, AlertTriangle, Info, Building2,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -101,107 +99,6 @@ const suggestedLineTypes: Record<string, string[]> = {
 const transactionTypes = Object.keys(transactionTypeLabels);
 const allLineTypeOptions = Object.entries(mappingLineTypeLabels);
 
-// ─── SearchableAccountSelect ──────────────────────────────────────────────────
-function SearchableAccountSelect({
-  accounts, value, onChange, placeholder, testId, dimmed,
-}: {
-  accounts: Account[];
-  value: string;
-  onChange: (val: string) => void;
-  placeholder: string;
-  testId: string;
-  dimmed?: boolean;
-}) {
-  const [open, setOpen]   = useState(false);
-  const [search, setSearch] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef     = useRef<HTMLInputElement>(null);
-
-  const selectedAccount = accounts.find(a => a.id === value);
-  const filtered = search.trim()
-    ? accounts.filter(a => {
-        const q = search.trim().toLowerCase();
-        return a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q);
-      })
-    : accounts;
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const handleSelect = useCallback((id: string) => { onChange(id); setOpen(false); setSearch(""); }, [onChange]);
-  const handleClear  = useCallback((e: React.MouseEvent) => { e.stopPropagation(); onChange(""); setSearch(""); }, [onChange]);
-
-  if (dimmed) {
-    return (
-      <div className="flex items-center h-9 w-full rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-2 py-1 text-xs text-muted-foreground/50 select-none" data-testid={testId}>
-        غير مستخدم في هذا النوع
-      </div>
-    );
-  }
-
-  return (
-    <div ref={containerRef} className="relative" data-testid={testId}>
-      <div
-        className="flex items-center h-9 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs cursor-pointer gap-1"
-        onClick={() => { setOpen(!open); setTimeout(() => inputRef.current?.focus(), 50); }}
-      >
-        {selectedAccount ? (
-          <>
-            <span className="truncate flex-1">{selectedAccount.code} - {selectedAccount.name}</span>
-            <X className="h-3 w-3 text-muted-foreground shrink-0 cursor-pointer" onClick={handleClear} />
-          </>
-        ) : (
-          <span className="text-muted-foreground flex-1">{placeholder}</span>
-        )}
-      </div>
-      {open && (
-        <div className="absolute z-50 top-full mt-1 w-full min-w-[280px] bg-popover border border-border rounded-md shadow-lg">
-          <div className="flex items-center gap-1 p-2 border-b">
-            <Search className="h-3 w-3 text-muted-foreground shrink-0" />
-            <Input
-              ref={inputRef}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="بحث بالكود أو الاسم..."
-              className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 p-0"
-              data-testid={`${testId}-search`}
-            />
-          </div>
-          <ScrollArea className="max-h-[200px]">
-            <div className="p-1">
-              {filtered.length === 0 ? (
-                <div className="text-xs text-muted-foreground text-center py-3">لا توجد نتائج</div>
-              ) : (
-                filtered.slice(0, 50).map(a => (
-                  <div
-                    key={a.id}
-                    className={`text-xs px-2 py-1.5 cursor-pointer rounded-sm hover:bg-muted ${a.id === value ? "bg-primary/10 font-medium" : ""}`}
-                    onClick={() => handleSelect(a.id)}
-                    data-testid={`${testId}-option-${a.id}`}
-                  >
-                    <span className="font-mono text-[10px] text-muted-foreground ml-2">{a.code}</span>
-                    {a.name}
-                  </div>
-                ))
-              )}
-              {filtered.length > 50 && (
-                <div className="text-[10px] text-muted-foreground text-center py-1">
-                  {filtered.length - 50} حساب إضافي — حسّن البحث
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 interface MappingRow {
   key: string;
@@ -227,8 +124,7 @@ export default function AccountMappings() {
   const [hasChanges, setHasChanges] = useState(false);
   const keyCounter = useRef(0);
 
-  const { items: accountItems, isLoading: accountsLoading } = useAccountsLookup();
-  const accounts = accountItems.map(i => i.meta as Account);
+  const { data: accounts = [], isLoading: accountsLoading } = useQuery<Account[]>({ queryKey: ["/api/accounts"] });
   const { data: warehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
 
   const { data: mappings, isLoading: mappingsLoading } = useQuery<AccountMapping[]>({
@@ -321,7 +217,6 @@ export default function AccountMappings() {
     saveMutation.mutate(toSave);
   };
 
-  const leafAccounts   = accounts?.filter(a => a.isActive) || [];
   const isLoading      = accountsLoading || mappingsLoading;
   const txSpecs        = lineTypeSpecs[selectedTxType] || {};
   const usedLineTypes  = new Set(rows.map(r => r.lineType));
@@ -527,24 +422,34 @@ export default function AccountMappings() {
                     </div>
 
                     {/* Debit account */}
-                    <SearchableAccountSelect
-                      accounts={leafAccounts}
-                      value={row.debitAccountId}
-                      onChange={v => updateRow(row.key, "debitAccountId", v)}
-                      placeholder="اختر حساب المدين"
-                      testId={`select-debit-${row.lineType || row.key}`}
-                      dimmed={!useDebit}
-                    />
+                    {!useDebit ? (
+                      <div className="flex items-center h-9 w-full rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-2 py-1 text-xs text-muted-foreground/50 select-none" data-testid={`select-debit-${row.lineType || row.key}`}>
+                        غير مستخدم في هذا النوع
+                      </div>
+                    ) : (
+                      <AccountSearchSelect
+                        accounts={accounts}
+                        value={row.debitAccountId}
+                        onChange={v => updateRow(row.key, "debitAccountId", v)}
+                        placeholder="اختر حساب المدين"
+                        data-testid={`select-debit-${row.lineType || row.key}`}
+                      />
+                    )}
 
                     {/* Credit account */}
-                    <SearchableAccountSelect
-                      accounts={leafAccounts}
-                      value={row.creditAccountId}
-                      onChange={v => updateRow(row.key, "creditAccountId", v)}
-                      placeholder="اختر حساب الدائن"
-                      testId={`select-credit-${row.lineType || row.key}`}
-                      dimmed={!useCredit}
-                    />
+                    {!useCredit ? (
+                      <div className="flex items-center h-9 w-full rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-2 py-1 text-xs text-muted-foreground/50 select-none" data-testid={`select-credit-${row.lineType || row.key}`}>
+                        غير مستخدم في هذا النوع
+                      </div>
+                    ) : (
+                      <AccountSearchSelect
+                        accounts={accounts}
+                        value={row.creditAccountId}
+                        onChange={v => updateRow(row.key, "creditAccountId", v)}
+                        placeholder="اختر حساب الدائن"
+                        data-testid={`select-credit-${row.lineType || row.key}`}
+                      />
+                    )}
 
                     {/* Remove */}
                     <Button size="icon" variant="ghost" onClick={() => removeRow(row.key)} data-testid={`button-remove-${row.key}`}>
