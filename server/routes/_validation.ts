@@ -62,6 +62,10 @@ export const userWarehousesAssignmentSchema = z.object({
   warehouseIds: z.array(z.string()),
 });
 
+export const userAccountScopeAssignmentSchema = z.object({
+  accountIds: z.array(z.string()),
+});
+
 // التحقق من سطور الاستلام:
 // يتأكد من: سعر بيع صحيح + تاريخ صلاحية للأصناف التي تتطلب ذلك
 export async function validateReceivingLines(

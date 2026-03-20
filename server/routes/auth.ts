@@ -329,6 +329,38 @@ export async function registerAuthRoutes(app: Express) {
     }
   });
 
+  app.get("/api/users/:id/account-scope", requireAuth, async (req, res) => {
+    try {
+      const accountIds = await storage.getUserAccountScope(req.params.id);
+      res.json({ accountIds });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/users/:id/account-scope", requireAuth, checkPermission(PERMISSIONS.USERS_EDIT), async (req, res) => {
+    try {
+      const { accountIds } = req.body;
+      if (!Array.isArray(accountIds)) {
+        return res.status(400).json({ message: "accountIds يجب أن يكون مصفوفة" });
+      }
+      const actorUserId = req.session.userId as string;
+      const oldIds = await storage.getUserAccountScope(req.params.id);
+      await storage.setUserAccountScope(req.params.id, accountIds, actorUserId);
+      auditLog({
+        tableName: "user_account_scopes",
+        recordId:  req.params.id,
+        action:    "update",
+        oldValues: oldIds,
+        newValues: accountIds,
+        userId:    actorUserId,
+      }).catch(err => logger.warn({ err: err.message }, "[Audit] user account scope change"));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.put("/api/users/:id/cashier-scope", requireAuth, checkPermission("users.edit"), async (req, res) => {
     try {
       const { departmentIds = [], hasAllUnits = false } = req.body;

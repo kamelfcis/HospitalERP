@@ -1,21 +1,22 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button }            from "@/components/ui/button";
 import { Badge }             from "@/components/ui/badge";
-import { Pencil, Trash2, Shield, UserCircle, Wallet } from "lucide-react";
+import { Pencil, Trash2, Shield, UserCircle, Wallet, Lock } from "lucide-react";
 import { ROLE_LABELS } from "@shared/permissions";
 import { ScopeBadge } from "../../cashier/components/ScopeBadge";
 import type { UserData } from "../types";
 
 interface UserCardProps {
-  user:        UserData;
-  canEdit:     boolean;
-  canDelete:   boolean;
-  onEdit:      (u: UserData) => void;
-  onDelete:    (id: string) => void;
-  onOpenPerms: (id: string) => void;
+  user:             UserData;
+  canEdit:          boolean;
+  canDelete:        boolean;
+  onEdit:           (u: UserData) => void;
+  onDelete:         (id: string) => void;
+  onOpenPerms:      (id: string) => void;
+  onOpenAcctScope:  (u: UserData) => void;
 }
 
-export function UserCard({ user, canEdit, canDelete, onEdit, onDelete, onOpenPerms }: UserCardProps) {
+export function UserCard({ user, canEdit, canDelete, onEdit, onDelete, onOpenPerms, onOpenAcctScope }: UserCardProps) {
   return (
     <Card data-testid={`card-user-${user.id}`}>
       <CardContent className="px-3 py-2">
@@ -53,8 +54,17 @@ export function UserCard({ user, canEdit, canDelete, onEdit, onDelete, onOpenPer
                   variant="ghost" size="icon"
                   onClick={() => onOpenPerms(user.id)}
                   data-testid={`button-user-perms-${user.id}`}
+                  title="الصلاحيات"
                 >
                   <Shield className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost" size="icon"
+                  onClick={() => onOpenAcctScope(user)}
+                  data-testid={`button-user-acct-scope-${user.id}`}
+                  title="نطاق الحسابات"
+                >
+                  <Lock className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="ghost" size="icon"

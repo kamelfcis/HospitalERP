@@ -338,6 +338,11 @@ export interface IStorage {
   getUserClinics(userId: string): Promise<string[]>;
   setUserClinics(userId: string, clinicIds: string[]): Promise<void>;
 
+  // User-Account scope
+  getUserAccountScope(userId: string): Promise<string[]>;
+  setUserAccountScope(userId: string, accountIds: string[], actorUserId: string): Promise<void>;
+  getVisibleAccountIds(userId: string): Promise<string[] | null>;
+
   // Cashier scope
   getUserCashierScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }>;
 

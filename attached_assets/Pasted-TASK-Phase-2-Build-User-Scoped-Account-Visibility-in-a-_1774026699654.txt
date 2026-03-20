@@ -1,0 +1,140 @@
+TASK: Phase 2 — Build User-Scoped Account Visibility in a Reusable, Backend-Enforced Way
+
+Phase 1 is fully complete and closed.
+Now implement user-specific account visibility so that a user only sees the subset of accounts assigned to them across account-picking screens.
+
+BUSINESS REQUIREMENT
+The organization has many departments and many accounts.
+When a user opens any account-related picker screen, they should only see the accounts assigned to them, not the full chart of accounts.
+This must be flexible, scalable, auditable, and reusable across the app.
+
+IMPORTANT SCOPE RULE
+Do NOT implement this only inside AccountMappings.
+Build it as a reusable account visibility layer for all account selector flows.
+
+CONFIRMED BASELINE
+- RBAC exists in shared/permissions.ts
+- account-related permissions already exist
+- there is currently no per-user account visibility model
+- GET /api/accounts currently returns all accounts to authenticated users
+- AccountSearchSelect is the shared reusable account picker and must remain reused
+- Phase 1 already proved that multiple screens depend on correct account loading behavior
+
+IMPLEMENTATION GOALS
+1) Add a user-account scope data model
+2) Add backend-enforced filtering of account visibility
+3) Add admin management UI for assigning visible accounts to users
+4) Reuse AccountSearchSelect and existing patterns
+5) Keep the implementation modular, auditable, and future-ready
+
+STEP 1 — DISCOVERY BEFORE CODING
+Before changing anything, inspect the codebase and print a short report on:
+- how users are fetched/listed in admin settings
+- whether there is already an admin screen for user-role or permission management
+- whether there is any existing per-user/per-entity scope table pattern
+- whether there are existing reusable multi-select assignment patterns that should be reused
+Then continue implementation using the best reuse path found.
+
+TARGET DATA MODEL
+Create a dedicated table for per-user visible accounts, preferably:
+user_account_scopes
+
+Minimum columns:
+- id
+- user_id
+- account_id
+- created_at
+- created_by
+
+Required DB rules:
+- unique(user_id, account_id)
+- foreign keys to users and accounts
+- indexes for user_id and account_id
+
+Optional extension-friendly columns are allowed only if they clearly fit the existing project style, but do not overbuild now.
+
+DEFAULT POLICY
+Use backward-compatible default behavior:
+- if a user has no rows in user_account_scopes, they remain unrestricted and can see all accounts
+- if a user has one or more rows in user_account_scopes, they become scoped and can only see assigned accounts
+
+BACKEND REQUIREMENTS
+A) Data/storage/service layer
+Add reusable methods for:
+- getVisibleAccountsForUser(userId)
+- getUserAccountScope(userId)
+- assignAccountsToUser(userId, accountIds, actorUserId)
+- removeAccountsFromUser(userId, accountIds, actorUserId)
+- replaceUserAccountScope(userId, accountIds, actorUserId) if appropriate for cleaner admin UX
+
+B) API layer
+Add protected endpoints for admin management of user account scopes.
+Use requireAuth and appropriate permission checks.
+If no dedicated permission exists yet, define a clean new permission for managing user account scopes.
+
+C) Accounts visibility enforcement
+Refactor the account-fetching flow so account list endpoints or scoped account endpoints return only visible accounts for the current user.
+Prefer backend-enforced filtering rather than scattered frontend-only filtering.
+
+D) Auditability
+Every assignment/removal/replacement of user account scope must be logged to the existing audit log in a clear way:
+- actor user
+- target user
+- accounts added/removed
+- timestamp
+
+FRONTEND REQUIREMENTS
+A) Reuse
+Reuse AccountSearchSelect.
+Do not create a new account search component.
+
+B) Admin management UI
+Add an admin UI to manage visible accounts per user.
+Prefer integrating into an existing user/permissions/settings area if such a page already exists.
+If no suitable page exists, create a focused admin screen/module in the existing style.
+
+C) UX
+Support:
+- selecting a user
+- viewing currently assigned visible accounts
+- searching accounts by code/name
+- adding/removing accounts
+- saving/replacing the user scope cleanly
+- showing assigned count
+- clear indication whether the user is unrestricted or scoped
+
+D) Modularity
+Keep UI logic split cleanly into hooks/components where appropriate.
+Do not bury everything in one giant file.
+
+IMPORTANT RULES
+- Reuse existing user admin patterns if present
+- Reuse AccountSearchSelect
+- Do not hardcode any user IDs
+- Do not enforce visibility only in frontend
+- Keep performance acceptable for 600+ accounts and future growth
+- Keep backward compatibility
+- No silent failures
+- Print what was reused vs newly created
+
+VERIFICATION REQUIREMENTS
+After implementation, verify all of the following:
+1) admin user can manage user account scopes
+2) unrestricted user with no scope still sees all accounts
+3) scoped user sees only assigned accounts
+4) AccountMappings uses scoped accounts automatically
+5) other screens using account pickers also receive scoped accounts correctly where applicable
+6) audit log entries are created for scope changes
+7) duplicate assignments are prevented
+
+PRINT AFTER IMPLEMENTATION
+1) discovery findings used for reuse
+2) DB objects added
+3) backend files/routes/services added or changed
+4) frontend files/components/hooks added or changed
+5) new permission added if any
+6) final behavior for:
+   - unrestricted user
+   - scoped user
+   - admin
+7) any remaining optional enhancements, but do not start them

@@ -20,8 +20,15 @@ import {
 export function registerAccountsRoutes(app: Express) {
   app.get("/api/accounts", requireAuth, async (req, res) => {
     try {
-      const accounts = await storage.getAccounts();
-      res.json(accounts);
+      const userId = req.session.userId as string;
+      const allAccounts = await storage.getAccounts();
+      const visibleIds = await storage.getVisibleAccountIds(userId);
+      if (visibleIds === null) {
+        res.json(allAccounts);
+      } else {
+        const idSet = new Set(visibleIds);
+        res.json(allAccounts.filter(a => idSet.has(a.id)));
+      }
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
       res.status(500).json({ message: _em });

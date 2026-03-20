@@ -10,6 +10,7 @@ import { Loader2, Plus } from "lucide-react";
 import { UserCard } from "./components/UserCard";
 import { UserFormDialog } from "./components/UserFormDialog";
 import { PermissionsDialog } from "./components/PermissionsDialog";
+import { AccountScopeDialog } from "./components/AccountScopeDialog";
 import type { UserData, UserFormData } from "./types";
 
 const EMPTY_FORM: UserFormData = {
@@ -34,6 +35,9 @@ export default function UsersManagement() {
 
   const [showPermDialog, setShowPermDialog] = useState(false);
   const [permUserId,     setPermUserId]     = useState<string | null>(null);
+
+  const [showScopeDialog, setShowScopeDialog] = useState(false);
+  const [scopeUser,        setScopeUser]       = useState<UserData | null>(null);
 
   const { data: users = [], isLoading } = useQuery<UserData[]>({ queryKey: ["/api/users"] });
   const { items: departmentItems }      = useDepartmentsLookup();
@@ -173,6 +177,11 @@ export default function UsersManagement() {
     setShowPermDialog(true);
   }
 
+  function handleOpenAcctScope(user: UserData) {
+    setScopeUser(user);
+    setShowScopeDialog(true);
+  }
+
   const isPending = createMutation.isPending || updateMutation.isPending || scopeLoading;
 
   return (
@@ -203,6 +212,7 @@ export default function UsersManagement() {
               onEdit={handleOpenEdit}
               onDelete={(id) => deleteMutation.mutate(id)}
               onOpenPerms={handleOpenPerms}
+              onOpenAcctScope={handleOpenAcctScope}
             />
           ))}
         </div>
@@ -229,6 +239,16 @@ export default function UsersManagement() {
         onOpenChange={(open) => {
           setShowPermDialog(open);
           if (!open) setPermUserId(null);
+        }}
+      />
+
+      <AccountScopeDialog
+        userId={scopeUser?.id ?? null}
+        userFullName={scopeUser?.fullName ?? ""}
+        open={showScopeDialog}
+        onOpenChange={(open) => {
+          setShowScopeDialog(open);
+          if (!open) setScopeUser(null);
         }}
       />
 

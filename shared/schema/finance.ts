@@ -53,6 +53,18 @@ export const accounts = pgTable("accounts", {
   typeIdx: index("idx_accounts_type").on(table.accountType),
 }));
 
+export const userAccountScopes = pgTable("user_account_scopes", {
+  id:        varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId:    varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  accountId: varchar("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdBy: varchar("created_by").references(() => users.id),
+}, (table) => ({
+  uniqueUserAccount: uniqueIndex("idx_user_account_scopes_unique").on(table.userId, table.accountId),
+  userIdx:           index("idx_user_account_scopes_user").on(table.userId),
+  accountIdx:        index("idx_user_account_scopes_account").on(table.accountId),
+}));
+
 export const journalTemplates = pgTable("journal_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),

@@ -26,8 +26,10 @@ import {
   userDepartments,
   userWarehouses,
   userClinics,
+  userAccountScopes,
   departments,
   warehouses,
+  accounts,
 } from "@shared/schema";
 import type {
   User,
@@ -36,6 +38,7 @@ import type {
   UserPermission,
   Department,
   Warehouse,
+  Account,
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 
@@ -213,6 +216,30 @@ const methods = {
         clinicIds.map(clinicId => ({ userId, clinicId }))
       );
     }
+  },
+
+  async getUserAccountScope(this: DatabaseStorage, userId: string): Promise<string[]> {
+    const rows = await db.select({ accountId: userAccountScopes.accountId })
+      .from(userAccountScopes)
+      .where(eq(userAccountScopes.userId, userId));
+    return rows.map(r => r.accountId);
+  },
+
+  async setUserAccountScope(this: DatabaseStorage, userId: string, accountIds: string[], actorUserId: string): Promise<void> {
+    await db.delete(userAccountScopes).where(eq(userAccountScopes.userId, userId));
+    if (accountIds.length > 0) {
+      await db.insert(userAccountScopes).values(
+        accountIds.map(accountId => ({ userId, accountId, createdBy: actorUserId }))
+      );
+    }
+  },
+
+  async getVisibleAccountIds(this: DatabaseStorage, userId: string): Promise<string[] | null> {
+    const rows = await db.select({ accountId: userAccountScopes.accountId })
+      .from(userAccountScopes)
+      .where(eq(userAccountScopes.userId, userId));
+    if (rows.length === 0) return null;
+    return rows.map(r => r.accountId);
   },
 
   async getUserCashierScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }> {
