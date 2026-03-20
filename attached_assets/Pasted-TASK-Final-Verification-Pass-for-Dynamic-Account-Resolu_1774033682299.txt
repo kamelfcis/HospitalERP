@@ -1,0 +1,57 @@
+TASK: Final Verification Pass for Dynamic Account Resolution — Close Naming, Fallback Traceability, and Balance Safety Gaps
+
+Dynamic account resolution is mostly complete and looks strong.
+Before final signoff, verify and close the remaining clarity/control gaps.
+
+VERIFY ALL OF THE FOLLOWING
+
+A) Cashier collection line-type semantics
+Current implementation uses cashier_collection / cash where:
+- debit side = dynamic treasury from cashier shift
+- credit side = mapped receivable clearing account
+
+This makes the line-type name "cash" potentially misleading.
+
+Required:
+1) Decide whether to:
+   - keep the existing line-type name with explicit documentation/UI clarification
+   OR
+   - rename/refactor it to a clearer semantic name such as receivable_clear / collection_clearance
+2) Print the final semantic meaning of this line type clearly
+3) Ensure UI wording fully matches actual accounting behavior
+
+B) Durable fallback traceability for missing shift GL
+Current behavior says:
+- if shift GL is missing, static debit fallback is used
+- only a server WARN is written
+
+Required:
+1) add a durable accounting_event_log info/warning event when shift.glAccountId is missing and static fallback is used
+2) message must clearly say that dynamic treasury GL was missing and fallback static treasury account was applied
+3) make this visible in the Accounting Events UI
+4) keep behavior backward-compatible
+
+C) Balance safety clarification for missing warehouse GL + missing fallback
+The current summary wording says:
+- COGS lines are omitted
+- journal remains unbalanced
+- existing balance check throws
+
+This must be clarified precisely.
+
+Required:
+1) verify exact behavior when both warehouse.glAccountId and static inventory fallback are missing
+2) confirm whether journal entry insertion is fully blocked before any unbalanced journal is saved
+3) if not already explicit, ensure accounting_event_log records a clear failed/blocked event
+4) print the exact final behavior in plain language:
+   - whether journal is created or not
+   - whether lines are inserted or not
+   - what status/error is stored
+
+PRINT EXACTLY
+1) final semantic rule for cashier_collection line type
+2) whether line type was renamed or just documented
+3) how missing shift GL fallback is now durably logged
+4) exact behavior when warehouse GL and fallback inventory account are both missing
+5) whether any file changed in this pass
+6) final statement: "Dynamic account resolution fully closed"

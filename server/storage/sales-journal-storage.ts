@@ -244,6 +244,20 @@ const methods = {
     const totalCogs = cogsDrugs + cogsSupplies;
     const hasInventoryAccount = !!inventoryAccountId;
 
+    // C-FIX: Durable audit entry when COGS/inventory lines are skipped.
+    // The journal will still be BALANCED (receivables Dr = revenue Cr) and POSTED
+    // successfully, but without COGS entries. This event makes the omission visible
+    // in the Accounting Events UI so it is auditable and not a silent gap.
+    if (!hasInventoryAccount && totalCogs > 0.001) {
+      await logAcctEvent({
+        sourceType:   "sales_invoice",
+        sourceId:     invoiceId,
+        eventType:    "sales_invoice_cogs_skipped",
+        status:       "completed",
+        errorMessage: `[تحذير] تم إهمال سطور تكلفة البضاعة (${totalCogs.toFixed(2)} ج.م) — لم يُعيَّن حساب GL للمخزن/الصيدلية ولا حساب مخزون احتياطي في ربط الحسابات. القيد سيُنشأ متوازناً (مدينون = إيرادات) لكن بدون قيود التكلفة. أضف حساب GL للمخزن في إعدادات المستودع أو أضف ربط "مخزون" في /account-mappings لتفعيل قيود التكلفة.`,
+      });
+    }
+
     if (hasInventoryAccount) {
       const cogsDrugsMapping = mappingMap.get("cogs_drugs");
       if (cogsDrugsMapping?.debitAccountId && cogsDrugs > 0.001) {
@@ -664,9 +678,20 @@ const methods = {
             eq(journalEntries.status, "draft"),
           ));
 
+        // B-FIX: Durable traceability when static fallback debit is used.
+        // When the cashier shift has no GL account, the static mapping debitAccountId
+        // is used instead of the real shift treasury. This is noted durably in every
+        // completed event so it is visible in the Accounting Events UI.
+        const fallbackNote = !cashGlAccountOverride
+          ? `[تحذير] لم يُعيَّن حساب GL للوردية — تم استخدام حساب الخزنة الاحتياطي (${effectiveDebitId}) من الربط الثابت بدلاً من خزنة الوردية الفعلية`
+          : null;
+
         if (eventId) {
           if (entry) {
-            await updateAcctEvent(eventId, "completed", { journalEntryId: entry.id });
+            await updateAcctEvent(eventId, "completed", {
+              journalEntryId: entry.id,
+              errorMessage:   fallbackNote,
+            });
           } else {
             const [existing] = await db.select({ id: journalEntries.id })
               .from(journalEntries)
@@ -677,7 +702,7 @@ const methods = {
             await updateAcctEvent(eventId, "completed", {
               journalEntryId: existing?.id ?? null,
               errorMessage:   existing
-                ? "القيد موجود مسبقاً (idempotent — لا حاجة لإعادة الإنشاء)"
+                ? (fallbackNote ?? "القيد موجود مسبقاً (idempotent — لا حاجة لإعادة الإنشاء)")
                 : "تم تجاوز إنشاء القيد — تحقق من إعدادات الربط المحاسبي",
             });
           }

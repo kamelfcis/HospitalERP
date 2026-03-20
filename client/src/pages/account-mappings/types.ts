@@ -51,9 +51,19 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     payables:  { required: true, debitSide: true, creditSide: true },
   },
   cashier_collection: {
+    // ── Semantic meaning of "cash" line type in cashier_collection ─────────────
+    // Line type name "cash" is kept for backward-compatibility with existing DB rows.
+    // Actual accounting meaning:
+    //   Dr = treasury/cash — resolved DYNAMICALLY from the actual cashier shift GL account
+    //                        (each cashier produces a DIFFERENT debit account)
+    //                        falls back to debitAccountId in mapping if shift has no GL
+    //   Cr = receivable clearing — STATICALLY configured here (creditAccountId)
+    //
+    // The admin ONLY needs to configure the credit (receivable clearing) account.
+    // The debit (treasury) is automatically sourced from the cashier shift.
     cash: {
       required: true,
-      condition: "مدين = الخزنة / دائن = مقاصة المدينين — يفعّل قيد التحصيل المستقل",
+      condition: "الدائن = مقاصة المدينين (يُحدد هنا) — المدين يُحدد تلقائياً من وردية الكاشير",
       debitSide: true, creditSide: true,
     },
   },
