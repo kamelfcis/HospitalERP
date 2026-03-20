@@ -1,0 +1,102 @@
+Good direction, but this is not implementation-ready yet.
+
+Do NOT start coding yet.
+
+Before approval, print a corrected analysis for Claims Phase with the missing structural decisions below.
+
+==================================================
+CLAIMS PHASE — ANALYSIS CORRECTION REQUIRED
+==================================================
+
+Your current analysis is promising, but several critical design decisions are still missing.
+
+Return corrected analysis only.
+
+1) CLAIM SCHEMA DEFINITION
+Print the exact proposed tables and fields in full.
+
+Use explicit table names and full field lists for:
+- claim headers
+- claim lines
+
+Also print:
+- status enum values
+- required indexes
+- uniqueness / deduplication constraints
+- which FK references are true DB FKs
+- which references cannot be wired because of circular import constraints
+
+2) CLAIM ELIGIBILITY RULE
+Print exactly which stamped invoice lines are eligible for claim generation.
+
+Specify:
+- whether not_covered lines are excluded
+- whether companyShareAmount must be > 0
+- whether approval_required lines are included or held back
+- whether cancelled/finalized invoice state affects eligibility
+- whether partially covered lines are included
+
+3) IDEMPOTENCY / DUPLICATE PREVENTION
+Print the exact anti-duplication strategy.
+
+You must specify:
+- what makes a claim line unique
+- how the generator avoids inserting the same patient invoice line twice
+- whether uniqueness is enforced by DB constraint, code check, or both
+- how regenerate/retry behaves safely
+
+4) CLAIM STATUS LIFECYCLE
+Print the exact header status flow and line status flow, if line statuses are needed.
+
+Example categories:
+- draft
+- submitted
+- partially_settled
+- settled
+- partially_rejected
+- rejected
+- cancelled
+
+Use the actual statuses you intend to implement.
+
+5) FIRE-AND-FORGET FAILURE VISIBILITY
+Because claim generation failure must not fail invoice finalization, print how failure becomes visible.
+
+Specify:
+- logging
+- retry path
+- whether any status or audit record is stored
+- how an operator can detect missing claim generation
+
+6) ACCOUNTING SCOPE DECISION
+Print one explicit decision:
+
+Either:
+A) Phase 3A = claims lifecycle only, no GL settlement posting yet
+
+Or:
+B) Phase 3 includes settlement accounting now
+
+Then justify the decision.
+
+Strong recommendation: do not mix claim generation and settlement GL posting unless the flow is already very clean.
+
+==================================================
+REQUIRED OUTPUT FORMAT
+==================================================
+
+Print exactly:
+
+1) FILES TO INSPECT
+2) CLAIM SCHEMA DESIGN
+3) CLAIM ELIGIBILITY RULE
+4) IDEMPOTENCY STRATEGY
+5) CLAIM STATUS LIFECYCLE
+6) FIRE-AND-FORGET FAILURE HANDLING
+7) ACCOUNTING SCOPE DECISION
+8) RISKS
+9) IMPLEMENTATION PLAN
+10) IMPLEMENTATION READINESS: READY / NOT READY
+
+Do not start coding after this message.
+Return corrected analysis only.
