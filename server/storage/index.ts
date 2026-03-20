@@ -384,7 +384,7 @@ export interface IStorage {
   searchItemsByPattern(query: string, limit: number): Promise<Record<string, unknown>[]>;
 
   // Suppliers
-  getSuppliers(params: { search?: string; page: number; pageSize: number; supplierType?: string; isActive?: boolean | null }): Promise<{ suppliers: Supplier[]; total: number }>;
+  getSuppliers(params: { search?: string; page: number; pageSize: number; supplierType?: string; isActive?: boolean | null; sortBy?: "nameAr" | "currentBalance"; sortDir?: "asc" | "desc" }): Promise<{ suppliers: (Supplier & { currentBalance: string })[]; total: number }>;
   searchSuppliers(q: string, limit?: number): Promise<Pick<Supplier, 'id' | 'code' | 'nameAr' | 'nameEn' | 'phone'>[]>;
   getSupplier(id: string): Promise<Supplier | undefined>;
   createSupplier(supplier: InsertSupplier): Promise<Supplier>;

@@ -17,11 +17,14 @@ export function registerPurchasingRoutes(app: Express) {
   // ===== SUPPLIERS =====
   app.get("/api/suppliers", async (req, res) => {
     try {
-      const { search, page, pageSize, supplierType, isActive } = req.query;
+      const { search, page, pageSize, supplierType, isActive, sortBy, sortDir } = req.query;
       // isActive: "true" = active, "false" = inactive, absent/anything else = active only (management screen passes true/false)
       let isActiveFilter: boolean | null = true;
       if (isActive === "false") isActiveFilter = false;
       else if (isActive === "all") isActiveFilter = null;
+
+      const validSortBy  = (sortBy === "nameAr" || sortBy === "currentBalance") ? sortBy : "currentBalance";
+      const validSortDir = (sortDir === "asc" || sortDir === "desc") ? sortDir : "desc";
 
       const result = await storage.getSuppliers({
         search:       search as string | undefined,
@@ -29,6 +32,8 @@ export function registerPurchasingRoutes(app: Express) {
         pageSize:     parseInt(pageSize as string) || 50,
         supplierType: supplierType as string | undefined,
         isActive:     isActiveFilter,
+        sortBy:       validSortBy,
+        sortDir:      validSortDir,
       });
       res.json(result);
     } catch (error: unknown) {

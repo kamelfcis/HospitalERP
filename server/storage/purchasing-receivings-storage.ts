@@ -80,39 +80,94 @@ const methods = {
     pageSize: number;
     supplierType?: string;
     isActive?: boolean | null;   // null = all, true = active only (default), false = inactive only
-  }): Promise<{ suppliers: Supplier[]; total: number }> {
-    const { search, page = 1, pageSize = 50, supplierType, isActive } = params;
+    sortBy?: "nameAr" | "currentBalance";
+    sortDir?: "asc" | "desc";
+  }): Promise<{ suppliers: (Supplier & { currentBalance: string })[]; total: number }> {
+    const { search, page = 1, pageSize = 50, supplierType, isActive, sortBy = "currentBalance", sortDir = "desc" } = params;
     const offset = (page - 1) * pageSize;
 
-    const conditions: ReturnType<typeof eq>[] = [];
+    // ── ORDER BY ──────────────────────────────────────────────────────────────
+    const orderExpr = sortBy === "currentBalance"
+      ? (sortDir === "asc" ? sql`current_balance ASC`  : sql`current_balance DESC`)
+      : (sortDir === "asc" ? sql`s.name_ar ASC`        : sql`s.name_ar DESC`);
 
-    // Active filter: default to active-only when isActive is not explicitly null
-    if (isActive === null || isActive === undefined) {
-      conditions.push(eq(suppliers.isActive, true));
-    } else {
-      conditions.push(eq(suppliers.isActive, isActive));
-    }
+    // ── Raw SQL with CTE for balance ──────────────────────────────────────────
+    //
+    // currentBalance formula:
+    //   opening_balance (master data from suppliers table)
+    //   + SUM(net_payable) from approved purchase invoices (status = 'approved_costed')
+    //
+    // Rationale:
+    //   - purchase_invoice_headers.net_payable is the final AP amount per invoice
+    //   - 'approved_costed' is the only terminal approved status in this system
+    //   - There is no AP payments table, so payments are NOT deducted here
+    //   - This balance represents TOTAL AP LIABILITY (total owed), not net outstanding
+    //   - opening_balance captures legacy/import balances from before the system go-live
+    //
+    // N+1 prevention: single LEFT JOIN to a grouped subquery — O(suppliers) total work
+    //
+    const searchClause  = search ? sql`AND (s.name_ar ILIKE ${`%${search}%`} OR s.code ILIKE ${`%${search}%`} OR s.phone ILIKE ${`%${search}%`} OR s.tax_id ILIKE ${`%${search}%`})` : sql``;
+    const typeClause    = supplierType ? sql`AND s.supplier_type = ${supplierType}` : sql``;
 
-    // Optional supplier type filter
-    if (supplierType) {
-      conditions.push(eq(suppliers.supplierType, supplierType) as any);
-    }
+    const rawRows = await db.execute(sql`
+      WITH supplier_invoice_totals AS (
+        SELECT   supplier_id,
+                 COALESCE(SUM(net_payable::numeric), 0) AS invoices_total
+        FROM     purchase_invoice_headers
+        WHERE    status = 'approved_costed'
+        GROUP BY supplier_id
+      )
+      SELECT
+        s.id, s.code, s.name_ar, s.name_en, s.phone, s.tax_id, s.address,
+        s.supplier_type, s.is_active, s.created_at,
+        s.payment_mode, s.credit_limit, s.default_payment_terms,
+        s.contact_person, s.opening_balance, s.gl_account_id,
+        ROUND(
+          COALESCE(s.opening_balance::numeric, 0) + COALESCE(sit.invoices_total, 0),
+          2
+        )::text AS current_balance
+      FROM   suppliers s
+      LEFT   JOIN supplier_invoice_totals sit ON sit.supplier_id = s.id
+      WHERE  s.is_active = ${isActive === null || isActive === undefined ? true : isActive}
+        ${typeClause}
+        ${searchClause}
+      ORDER BY ${orderExpr}
+      LIMIT  ${pageSize}
+      OFFSET ${offset}
+    `);
 
-    // Free-text search across name, code, phone, taxId
-    if (search) {
-      const pattern = `%${search}%`;
-      conditions.push(or(
-        ilike(suppliers.nameAr, pattern),
-        ilike(suppliers.code, pattern),
-        ilike(suppliers.phone, pattern),
-        ilike(suppliers.taxId, pattern)
-      )! as any);
-    }
+    const countRaw = await db.execute(sql`
+      SELECT COUNT(*)::int AS total
+      FROM   suppliers s
+      WHERE  s.is_active = ${isActive === null || isActive === undefined ? true : isActive}
+        ${typeClause}
+        ${searchClause}
+    `);
 
-    const where = and(...conditions)!;
-    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(suppliers).where(where);
-    const results = await db.select().from(suppliers).where(where).orderBy(suppliers.nameAr).limit(pageSize).offset(offset);
-    return { suppliers: results, total: Number(countResult.count) };
+    const rows = (rawRows as any).rows as any[];
+    const total = Number(((countRaw as any).rows[0])?.total ?? 0);
+
+    const result = rows.map(r => ({
+      id:                  r.id,
+      code:                r.code,
+      nameAr:              r.name_ar,
+      nameEn:              r.name_en ?? null,
+      phone:               r.phone ?? null,
+      taxId:               r.tax_id ?? null,
+      address:             r.address ?? null,
+      supplierType:        r.supplier_type,
+      isActive:            r.is_active,
+      createdAt:           r.created_at,
+      paymentMode:         r.payment_mode,
+      creditLimit:         r.credit_limit ?? null,
+      defaultPaymentTerms: r.default_payment_terms ?? null,
+      contactPerson:       r.contact_person ?? null,
+      openingBalance:      r.opening_balance ?? null,
+      glAccountId:         r.gl_account_id ?? null,
+      currentBalance:      r.current_balance ?? "0.00",
+    })) as (Supplier & { currentBalance: string })[];
+
+    return { suppliers: result, total };
   },
 
   async searchSuppliers(this: DatabaseStorage, q: string, limit: number = 20): Promise<Pick<Supplier, 'id' | 'code' | 'nameAr' | 'nameEn' | 'phone'>[]> {
