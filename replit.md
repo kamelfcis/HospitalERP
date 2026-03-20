@@ -27,6 +27,7 @@ The system is a full-stack web application with a React 18 frontend (TypeScript,
 - **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine for patient accommodation, Bed Board with real-time updates, and Surgery Types System.
 - **Stock Cycle Count**: Full inventory reconciliation module with atomic GL journal generation and lot adjustments.
 - **Permission Groups Management**: Admin UI for creating/editing groups, managing members, and controlling per-module permissions via a full matrix view.
+- **Contracts Module — Phase 1 (COMPLETE)**: Master data for insurance/contract companies (`companies` table), contracts (`contracts` table), and member cards (`contract_members` table). Full CRUD API with RBAC (`contracts.view` / `contracts.manage`). Three-panel RTL admin UI (companies → contracts → members). Card lookup endpoint `GET /api/contract-members/lookup?cardNumber=&date=`. Nullable FK columns (`company_id`, `contract_id`, `contract_member_id`) added to `patient_invoice_headers/lines`, `sales_invoice_headers/lines`, `hospital_admissions`, `clinic_appointments`. All legacy text fields (`insuranceCompany`, `contractName`, `payerReference`, `contractCompany`) retained and functional. Phase 2 (Coverage Rules Engine + registration integration) is deferred.
 
 ### Technical Implementations
 - **API**: RESTful JSON API.

@@ -1,0 +1,86 @@
+Approved.
+
+Your analysis is now sufficiently complete and implementation-ready.
+
+Proceed with Contracts Module — Phase 1 implementation only, with the following strict execution constraints.
+
+==================================================
+APPROVED IMPLEMENTATION SCOPE
+==================================================
+
+Implement Phase 1 only:
+
+- contracts master data structure
+- companies / contracts / contract members backend
+- routes
+- RBAC
+- admin UI for contracts management
+- required route registration
+- required sidebar/app route wiring
+- required db push for clinic_appointments nullable contract columns
+
+Do NOT implement Phase 2.
+Do NOT modify patient registration flow in this phase.
+Do NOT modify appointment/admission save payload logic in this phase.
+Do NOT implement runtime contract resolution in operational flows yet.
+Do NOT implement claims.
+Do NOT implement rules engine.
+
+==================================================
+MANDATORY CORRECTIONS TO APPLY DURING IMPLEMENTATION
+==================================================
+
+1) Endpoint naming
+Use the original agreed lookup route name exactly:
+GET /api/contract-members/lookup?cardNumber=&date=
+Do NOT rename it to /lookup-card.
+
+2) Phase 1 scope boundary
+Registration / appointment integration remains documented only for now.
+No PatientFormDialog runtime integration in this phase.
+
+3) sales_invoice_headers.contractMemberId
+Keep this explicitly deferred to Phase 2.
+Do not add it in Phase 1.
+Document this defer decision in the final summary.
+
+4) Backward compatibility
+Retain all legacy text fields unchanged and functional.
+No destructive migration.
+No backfill.
+
+==================================================
+IMPLEMENT NOW
+==================================================
+
+Execution order:
+1. Run db:push for clinic.ts changes
+2. Implement routes
+3. Register routes
+4. Verify storage wiring
+5. Build contracts admin UI
+6. Wire App route + sidebar
+7. Smoke-test the flow
+8. Print final summary
+
+==================================================
+FINAL OUTPUT FORMAT (MANDATORY)
+==================================================
+
+At the end print exactly:
+
+1) MODIFIED FILES
+2) SCHEMA CHANGES
+3) INDEXES ADDED
+4) ROUTES ADDED
+5) RBAC ADDED
+6) UI ADDED
+7) DB PUSH STATUS
+8) BACKWARD COMPATIBILITY RETAINED
+9) EXPLICIT PHASE 2 DEFERRALS
+10) PHASE 2 PREREQUISITES
+11) ANY BLOCKERS OR FOLLOW-UP RISKS
+
+Do not give vague completion language.
+Show exact files and exact implementation scope.
+Proceed now.

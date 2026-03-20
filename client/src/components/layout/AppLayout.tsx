@@ -126,6 +126,7 @@ const systemNavItems: NavItem[] = [
   { title: "سجل التدقيق",      href: "/audit-log",         icon: History,   permission: "audit_log.view" },
   { title: "إدارة المستخدمين", href: "/users",              icon: Shield,    permission: "users.view" },
   { title: "مجموعات الصلاحيات", href: "/permission-groups", icon: KeyRound,  permission: "permission_groups.view" },
+  { title: "العقود والشركات",  href: "/contracts",         icon: Building2, permission: "contracts.view" },
   { title: "شريط الإعلانات",   href: "/announcements",     icon: Megaphone, permission: "settings.account_mappings" },
   { title: "أحداث المحاسبة",  href: "/accounting-events", icon: AlertCircle, permission: "journal.post" },
   { title: "تشخيص الأداء",    href: "/perf-diagnostics",  icon: Gauge,     permission: "settings.account_mappings" },

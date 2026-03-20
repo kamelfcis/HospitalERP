@@ -63,6 +63,7 @@ const StockCountDetail = lazy(() => import("@/pages/stock-count/session-detail")
 const SuppliersPage = lazy(() => import("@/pages/suppliers/index"));
 const PermissionGroupsPage = lazy(() => import("@/pages/permission-groups/index"));
 const AccountingEventsPage = lazy(() => import("@/pages/accounting-events/index"));
+const ContractsPage = lazy(() => import("@/pages/contracts/index"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -145,6 +146,7 @@ function Router() {
           <Route path="/users">{() => <G p="users.view"><UsersManagement /></G>}</Route>
           <Route path="/permission-groups">{() => <G p="permission_groups.view"><PermissionGroupsPage /></G>}</Route>
           <Route path="/accounting-events">{() => <G p="journal.post"><AccountingEventsPage /></G>}</Route>
+          <Route path="/contracts">{() => <G p="contracts.view"><ContractsPage /></G>}</Route>
           <Route path="/announcements">{() => <G p="settings.account_mappings"><AnnouncementsPage /></G>}</Route>
           <Route path="/clinic-booking">{() => <G p="clinic.view_own"><ClinicBooking /></G>}</Route>
           <Route path="/doctor-consultation/:id">{() => <G p="doctor.consultation"><DoctorConsultation /></G>}</Route>

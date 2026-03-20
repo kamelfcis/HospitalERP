@@ -825,6 +825,8 @@ Object.assign(
   clinicOrdersMethods,
   rptRefreshMethods,
   stockCountMethods,
+  companiesMethods,
+  contractsCoreMethods,
 );
 
 export const storage = new DatabaseStorage();
