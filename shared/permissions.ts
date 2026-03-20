@@ -130,8 +130,11 @@ export const PERMISSIONS = {
   INVOICE_APPROVE_ZERO_PRICE: "invoice.approve_zero_price",
 
   // ── موديول العقود والشركات ─────────────────────────────────────────────
-  CONTRACTS_VIEW:   "contracts.view",   // عرض الشركات والعقود والمنتسبين
-  CONTRACTS_MANAGE: "contracts.manage", // إنشاء/تعديل/إلغاء تفعيل
+  CONTRACTS_VIEW:          "contracts.view",          // عرض الشركات والعقود والمنتسبين
+  CONTRACTS_MANAGE:        "contracts.manage",        // إنشاء/تعديل/إلغاء تفعيل
+  CONTRACTS_CLAIMS_VIEW:   "contracts.claims.view",   // عرض دفعات المطالبات وسطورها
+  CONTRACTS_CLAIMS_MANAGE: "contracts.claims.manage", // إرسال / قبول / رفض المطالبات
+  CONTRACTS_CLAIMS_SETTLE: "contracts.claims.settle", // تسوية دفعة مطالبة (قيد محاسبي)
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -599,8 +602,11 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
   {
     label: "العقود والشركات",
     permissions: [
-      { key: PERMISSIONS.CONTRACTS_VIEW,   label: "عرض الشركات والعقود" },
-      { key: PERMISSIONS.CONTRACTS_MANAGE, label: "إنشاء وتعديل" },
+      { key: PERMISSIONS.CONTRACTS_VIEW,          label: "عرض الشركات والعقود" },
+      { key: PERMISSIONS.CONTRACTS_MANAGE,        label: "إنشاء وتعديل" },
+      { key: PERMISSIONS.CONTRACTS_CLAIMS_VIEW,   label: "عرض المطالبات" },
+      { key: PERMISSIONS.CONTRACTS_CLAIMS_MANAGE, label: "إرسال / قبول / رفض" },
+      { key: PERMISSIONS.CONTRACTS_CLAIMS_SETTLE, label: "تسوية مالية" },
     ],
   },
 ];

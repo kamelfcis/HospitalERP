@@ -14,6 +14,7 @@ import {
   addFormattedNumbers,
   broadcastToUnit,
 } from "./_shared";
+import { generateClaimsForInvoice } from "../lib/contract-claim-generator";
 import {
   insertPatientInvoiceHeaderSchema,
   insertPatientInvoiceLineSchema,
@@ -330,6 +331,11 @@ export function registerPatientInvoicesRoutes(app: Express) {
           type: "patient_invoice",
         });
       }
+
+      // توليد مطالبات العقد (fire-and-forget — الفشل لا يوقف الاعتماد)
+      generateClaimsForInvoice(invoiceId).catch(err =>
+        logger.warn({ err: err.message, invoiceId }, "[Claims] fire-and-forget failed")
+      );
 
       res.json(result);
     } catch (error: unknown) {

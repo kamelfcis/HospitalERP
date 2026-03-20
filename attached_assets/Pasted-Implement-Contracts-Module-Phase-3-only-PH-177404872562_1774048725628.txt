@@ -1,0 +1,200 @@
+Implement Contracts Module — Phase 3 only.
+
+==================================================
+PHASE 3 GOAL
+==================================================
+
+Close the financial loop of the Contracts module.
+
+After Phase 2, invoice lines already carry stamped companyShareAmount and patientShareAmount.
+Phase 3 must use this stamped line data to build:
+- claim batches
+- claim lines
+- lifecycle management
+- settlement handling
+- accounting-safe company receivable handling
+
+Claims must be generated FROM stamped line data only.
+No re-calculation later.
+
+==================================================
+PHASE 3 — SCHEMA
+==================================================
+
+Extend shared/schema/contracts.ts
+
+Create:
+1) contractClaimBatches
+2) contractClaimLines
+
+contractClaimBatches fields:
+- id
+- companyId FK
+- contractId FK
+- batchNumber unique
+- batchDate
+- status enum
+- submittedAt nullable
+- submittedBy nullable
+- companyReferenceNo nullable
+- totalClaimed
+- totalApproved default 0
+- totalRejected default 0
+- notes
+- createdAt
+- updatedAt
+
+contractClaimLines fields:
+- id
+- batchId FK
+- patientInvoiceLineId FK nullable
+- salesInvoiceLineId FK nullable
+- invoiceHeaderId FK
+- contractMemberId FK nullable
+- serviceDescription
+- serviceDate
+- listPrice
+- contractPrice
+- companyShareAmount
+- patientShareAmount
+- approvedAmount nullable
+- status enum
+- rejectionReason nullable
+- approvedAt nullable
+- settledAt nullable
+- journalEntryId nullable
+- createdAt
+
+Indexes:
+- batchId
+- companyId
+- contractId
+- patientInvoiceLineId
+- status
+- batchDate
+
+==================================================
+PHASE 3 — CLAIM GENERATION
+==================================================
+
+Create:
+server/lib/contract-claim-generator.ts
+
+Function:
+generateClaimsForInvoice(invoiceHeaderId, tx)
+
+Rules:
+- use stamped invoice line data only
+- claim only lines with companyShareAmount > 0
+- skip not_covered
+- find or create open draft batch per company/contract/time period
+- create claim lines idempotently
+- update batch totals
+
+Integrate into patient invoice finalization flow inside transaction.
+
+==================================================
+PHASE 3 — ACCOUNTING INTEGRATION
+==================================================
+
+Use stamped line split to support company receivable handling.
+
+Required principle:
+At billing time:
+- patient AR for patientShareAmount
+- company AR for companyShareAmount
+- revenue according to contractPrice / line pricing result
+
+At settlement:
+- settle company AR only
+- do not recognize revenue again
+
+At rejection:
+- handle explicitly
+- do not silently absorb
+
+If a claim line is rejected:
+- move liability according to controlled business rule
+- keep audit trail
+- generate accounting correction path safely
+
+==================================================
+PHASE 3 — ROUTES
+==================================================
+
+Add routes in contracts routes file:
+
+- GET /api/contract-claims
+- GET /api/contract-claims/:batchId
+- PATCH /api/contract-claims/:batchId/submit
+- POST /api/contract-claims/:batchId/respond
+- POST /api/contract-claims/:batchId/settle
+
+Support:
+- filtering by company/contract/status/date
+- batch detail
+- submit batch
+- approve/reject lines
+- settlement entry
+- batch status progression
+
+==================================================
+PHASE 3 — UI
+==================================================
+
+Create:
+client/src/pages/contracts/ClaimsPage.tsx
+
+Layout:
+- 2/3 batches table
+- 1/3 batch detail
+
+Features:
+- filters
+- status badges
+- submit batch dialog
+- approve/reject controls
+- settlement action
+- company statement / running balance tab on company screen
+
+==================================================
+PHASE 3 — RBAC / ACCOUNTING MAPPINGS
+==================================================
+
+Add permissions:
+- contracts.claims.view
+- contracts.claims.manage
+- contracts.claims.settle
+
+If accounting event mapping is needed:
+add appropriate transaction type and mappings cleanly.
+
+==================================================
+PHASE 3 — REFACTOR / COMPONENTIZATION / INDEXING / DOCS
+==================================================
+
+Mandatory:
+- isolate claim lifecycle logic
+- isolate settlement logic
+- keep UI thin
+- extract claim services/components
+- add indexes for claims queries and settlement lookups
+- document claim lifecycle
+- document rejection handling
+- document accounting impact
+- document how future developer can extend statuses safely
+
+Before coding:
+First print:
+1) claim-related integration points
+2) accounting touchpoints
+3) risks
+4) implementation plan
+
+Then implement Phase 3 only.
+At the end print:
+- modified files
+- claims lifecycle summary
+- accounting integration summary
+- indexes added
+- remaining hardening recommendations

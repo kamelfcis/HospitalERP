@@ -44,6 +44,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { evaluateContractForService } from "../lib/contract-rule-evaluator";
+import type { RespondLineInput } from "../storage/contracts-claims-storage";
 
 export function registerContractRoutes(app: Express) {
   // ──────────────────────────────────────────────────────────────────────────
@@ -514,6 +515,126 @@ export function registerContractRoutes(app: Express) {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "خطأ";
         const code = msg.includes("غير موجود") ? 404 : msg.includes("مستخدم") ? 409 : 500;
+        res.status(code).json({ message: msg });
+      }
+    }
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  CLAIM BATCHES — دفعات المطالبات
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /** GET /api/contract-claims — قائمة دفعات المطالبات */
+  app.get("/api/contract-claims", requireAuth, checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_VIEW), async (req, res) => {
+    try {
+      const filters = {
+        companyId:  req.query.companyId  as string | undefined,
+        contractId: req.query.contractId as string | undefined,
+        status:     req.query.status     as string | undefined,
+        dateFrom:   req.query.dateFrom   as string | undefined,
+        dateTo:     req.query.dateTo     as string | undefined,
+      };
+      const batches = await storage.getClaimBatches(filters);
+      res.json(batches);
+    } catch (err: unknown) {
+      res.status(500).json({ message: err instanceof Error ? err.message : "خطأ" });
+    }
+  });
+
+  /** GET /api/contract-claims/:id — دفعة واحدة */
+  app.get("/api/contract-claims/:id", requireAuth, checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_VIEW), async (req, res) => {
+    try {
+      const batch = await storage.getClaimBatch(req.params.id);
+      if (!batch) return res.status(404).json({ message: "الدفعة غير موجودة" });
+      res.json(batch);
+    } catch (err: unknown) {
+      res.status(500).json({ message: err instanceof Error ? err.message : "خطأ" });
+    }
+  });
+
+  /** PATCH /api/contract-claims/:id/submit — إرسال الدفعة للشركة */
+  app.patch(
+    "/api/contract-claims/:id/submit",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_MANAGE),
+    async (req, res) => {
+      try {
+        const submittedBy = (req as any).user?.username ?? "system";
+        const batch = await storage.submitClaimBatch(req.params.id, submittedBy);
+        res.json(batch);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        const code = msg.includes("غير موجودة") ? 404 : msg.includes("مسودة") || msg.includes("سطور") ? 400 : 500;
+        res.status(code).json({ message: msg });
+      }
+    }
+  );
+
+  /** POST /api/contract-claims/:id/respond — رد الشركة (قبول / رفض بنود) */
+  app.post(
+    "/api/contract-claims/:id/respond",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_MANAGE),
+    async (req, res) => {
+      try {
+        const schema = z.object({
+          responses: z.array(z.object({
+            lineId:          z.string(),
+            status:          z.enum(["approved", "rejected"]),
+            approvedAmount:  z.string().optional(),
+            rejectionReason: z.string().optional(),
+          })).min(1),
+        });
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "بيانات غير صحيحة" });
+        const batch = await storage.respondToClaimBatch(req.params.id, parsed.data.responses as RespondLineInput[]);
+        res.json(batch);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        const code = msg.includes("غير موجودة") ? 404 : msg.includes("مُرسَلة") ? 400 : 500;
+        res.status(code).json({ message: msg });
+      }
+    }
+  );
+
+  /** POST /api/contract-claims/:id/settle — تسوية مالية */
+  app.post(
+    "/api/contract-claims/:id/settle",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_SETTLE),
+    async (req, res) => {
+      try {
+        const schema = z.object({
+          settlementDate:     z.string().min(1),
+          companyReferenceNo: z.string().optional(),
+          notes:              z.string().optional(),
+          bankAccountId:      z.string().optional(),
+          companyArAccountId: z.string().optional(),
+        });
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "بيانات غير صحيحة" });
+        const batch = await storage.settleClaimBatch(req.params.id, parsed.data);
+        res.json(batch);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        const code = msg.includes("غير موجودة") ? 404 : msg.includes("يجب") ? 400 : 500;
+        res.status(code).json({ message: msg });
+      }
+    }
+  );
+
+  /** PATCH /api/contract-claims/:id/cancel — إلغاء دفعة */
+  app.patch(
+    "/api/contract-claims/:id/cancel",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_MANAGE),
+    async (req, res) => {
+      try {
+        const batch = await storage.cancelClaimBatch(req.params.id);
+        res.json(batch);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        const code = msg.includes("غير موجودة") ? 404 : msg.includes("مُسوَّاة") ? 400 : 500;
         res.status(code).json({ message: msg });
       }
     }

@@ -749,6 +749,16 @@ export interface IStorage {
   updateCoverageRule(id: string, data: Partial<import("@shared/schema").InsertContractCoverageRule>): Promise<import("@shared/schema").ContractCoverageRule>;
   deleteCoverageRule(id: string): Promise<void>;
 
+  // ── Contract Claims (دفعات المطالبات) ─────────────────────────────────────
+  getClaimBatches(filters?: import("./contracts-claims-storage").ClaimBatchFilters): Promise<import("./contracts-claims-storage").ClaimBatchWithLines[]>;
+  getClaimBatch(batchId: string): Promise<import("./contracts-claims-storage").ClaimBatchWithLines | null>;
+  findOrCreateDraftBatch(companyId: string, contractId: string, batchDate: string): Promise<import("@shared/schema").ContractClaimBatch>;
+  upsertClaimLine(data: import("@shared/schema").InsertClaimLine & { batchId: string }): Promise<import("@shared/schema").ContractClaimLine>;
+  submitClaimBatch(batchId: string, submittedBy: string): Promise<import("@shared/schema").ContractClaimBatch>;
+  respondToClaimBatch(batchId: string, responses: import("./contracts-claims-storage").RespondLineInput[]): Promise<import("@shared/schema").ContractClaimBatch>;
+  settleClaimBatch(batchId: string, input: import("./contracts-claims-storage").SettleClaimBatchInput): Promise<import("@shared/schema").ContractClaimBatch>;
+  cancelClaimBatch(batchId: string): Promise<import("@shared/schema").ContractClaimBatch>;
+
   [key: string]: unknown;
 }
 
@@ -801,6 +811,7 @@ import permissionGroupsMethods from "./permission-groups-storage";
 import companiesMethods from "./contracts-companies-storage";
 import contractsCoreMethods from "./contracts-core-storage";
 import contractsRulesMethods from "./contracts-rules-storage";
+import contractsClaimsMethods from "./contracts-claims-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -836,6 +847,7 @@ Object.assign(
   companiesMethods,
   contractsCoreMethods,
   contractsRulesMethods,
+  contractsClaimsMethods,
 );
 
 export const storage = new DatabaseStorage();

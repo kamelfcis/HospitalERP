@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  Contracts Schema — جداول العقود والمنتسبين وقواعد التغطية
+ *  Contracts Schema — جداول العقود والمنتسبين وقواعد التغطية والمطالبات
  * ═══════════════════════════════════════════════════════════════════════════
  *
  *  يستورد من:
@@ -14,6 +14,15 @@
  *    contracts             → companies, priceLists
  *    contractMembers       → contracts, patients
  *    contractCoverageRules → contracts
+ *    contractClaimBatches  → companies, contracts
+ *    contractClaimLines    → contractClaimBatches, contractMembers
+ *                            patientInvoiceLineId / salesInvoiceLineId: varchar only (no FK — circular import gap)
+ *
+ *  ── Circular Import Gap (Phase 3 — documented) ──────────────────────────
+ *  contractClaimLines.patientInvoiceLineId / salesInvoiceLineId cannot be
+ *  declared as Drizzle .references() because invoicing.ts already imports
+ *  contracts.ts indirectly. DB-level FK can be added via raw ALTER TABLE if
+ *  needed. All values are validated at route layer before insert.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -121,6 +130,81 @@ export const contractCoverageRules = pgTable("contract_coverage_rules", {
   activeIdx:    index("idx_ccr_active").on(table.contractId, table.isActive),
 }));
 
+// ─── دفعات المطالبات (Claim Batches) ──────────────────────────────────────
+
+export const claimBatchStatusEnum = pgEnum("claim_batch_status", [
+  "draft",       // تجميع — يمكن الإضافة إليها
+  "submitted",   // مُرسَلة للشركة — مقفلة للإضافة
+  "responded",   // الشركة أجابت (قبول / رفض جزئي / كلي)
+  "settled",     // تمت التسوية المالية
+  "cancelled",   // ملغاة
+]);
+
+export const contractClaimBatches = pgTable("contract_claim_batches", {
+  id:                varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId:         varchar("company_id").notNull().references(() => companies.id),
+  contractId:        varchar("contract_id").notNull().references(() => contracts.id),
+  batchNumber:       text("batch_number").notNull().unique(),
+  batchDate:         date("batch_date").notNull(),
+  status:            claimBatchStatusEnum("status").notNull().default("draft"),
+  submittedAt:       timestamp("submitted_at"),
+  submittedBy:       varchar("submitted_by"),
+  companyReferenceNo: text("company_reference_no"),
+  totalClaimed:      decimal("total_claimed", { precision: 18, scale: 2 }).notNull().default("0"),
+  totalApproved:     decimal("total_approved", { precision: 18, scale: 2 }).notNull().default("0"),
+  totalRejected:     decimal("total_rejected", { precision: 18, scale: 2 }).notNull().default("0"),
+  notes:             text("notes"),
+  journalEntryId:    varchar("journal_entry_id"),
+  createdAt:         timestamp("created_at").notNull().defaultNow(),
+  updatedAt:         timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx:    index("idx_ccb_company").on(table.companyId),
+  contractIdx:   index("idx_ccb_contract").on(table.contractId),
+  statusIdx:     index("idx_ccb_status").on(table.status),
+  batchDateIdx:  index("idx_ccb_batch_date").on(table.batchDate),
+  companyStatusIdx: index("idx_ccb_company_status").on(table.companyId, table.status),
+}));
+
+// ─── سطور المطالبات (Claim Lines) ─────────────────────────────────────────
+
+export const claimLineStatusEnum = pgEnum("claim_line_status", [
+  "pending",   // في انتظار رد الشركة
+  "approved",  // موافق عليه
+  "rejected",  // مرفوض
+  "settled",   // تمت التسوية
+]);
+
+export const contractClaimLines = pgTable("contract_claim_lines", {
+  id:                   varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  batchId:              varchar("batch_id").notNull().references(() => contractClaimBatches.id, { onDelete: "cascade" }),
+  // No Drizzle FK on these — circular import gap (documented above)
+  patientInvoiceLineId: varchar("patient_invoice_line_id"),
+  salesInvoiceLineId:   varchar("sales_invoice_line_id"),
+  invoiceHeaderId:      varchar("invoice_header_id").notNull(),
+  contractMemberId:     varchar("contract_member_id").references(() => contractMembers.id),
+  serviceDescription:   text("service_description").notNull(),
+  serviceDate:          date("service_date").notNull(),
+  listPrice:            decimal("list_price",         { precision: 18, scale: 2 }).notNull(),
+  contractPrice:        decimal("contract_price",     { precision: 18, scale: 2 }).notNull(),
+  companyShareAmount:   decimal("company_share_amount", { precision: 18, scale: 2 }).notNull(),
+  patientShareAmount:   decimal("patient_share_amount", { precision: 18, scale: 2 }).notNull(),
+  approvedAmount:       decimal("approved_amount",    { precision: 18, scale: 2 }),
+  status:               claimLineStatusEnum("status").notNull().default("pending"),
+  rejectionReason:      text("rejection_reason"),
+  approvedAt:           timestamp("approved_at"),
+  settledAt:            timestamp("settled_at"),
+  journalEntryId:       varchar("journal_entry_id"),
+  createdAt:            timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  batchIdx:          index("idx_ccl_batch").on(table.batchId),
+  patientLineIdx:    index("idx_ccl_patient_line").on(table.patientInvoiceLineId),
+  salesLineIdx:      index("idx_ccl_sales_line").on(table.salesInvoiceLineId),
+  invoiceHeaderIdx:  index("idx_ccl_invoice_header").on(table.invoiceHeaderId),
+  memberIdx:         index("idx_ccl_member").on(table.contractMemberId),
+  statusIdx:         index("idx_ccl_status").on(table.status),
+  serviceDateIdx:    index("idx_ccl_service_date").on(table.serviceDate),
+}));
+
 // ─── Schemas & Types ──────────────────────────────────────────────────────
 
 export const insertContractSchema = createInsertSchema(contracts).omit({
@@ -135,12 +219,26 @@ export const insertContractCoverageRuleSchema = createInsertSchema(contractCover
   id: true, createdAt: true,
 });
 
+export const insertClaimBatchSchema = createInsertSchema(contractClaimBatches).omit({
+  id: true, createdAt: true, updatedAt: true,
+  status: true, submittedAt: true, totalApproved: true, totalRejected: true, journalEntryId: true,
+});
+
+export const insertClaimLineSchema = createInsertSchema(contractClaimLines).omit({
+  id: true, createdAt: true,
+  status: true, approvedAmount: true, rejectionReason: true, approvedAt: true, settledAt: true, journalEntryId: true,
+});
+
 export type Contract                  = typeof contracts.$inferSelect;
 export type InsertContract            = z.infer<typeof insertContractSchema>;
 export type ContractMember            = typeof contractMembers.$inferSelect;
 export type InsertContractMember      = z.infer<typeof insertContractMemberSchema>;
 export type ContractCoverageRule      = typeof contractCoverageRules.$inferSelect;
 export type InsertContractCoverageRule = z.infer<typeof insertContractCoverageRuleSchema>;
+export type ContractClaimBatch        = typeof contractClaimBatches.$inferSelect;
+export type InsertClaimBatch          = z.infer<typeof insertClaimBatchSchema>;
+export type ContractClaimLine         = typeof contractClaimLines.$inferSelect;
+export type InsertClaimLine           = z.infer<typeof insertClaimLineSchema>;
 
 // ─── Labels ───────────────────────────────────────────────────────────────
 
@@ -161,4 +259,19 @@ export const coverageRuleTypeLabels: Record<string, string> = {
   fixed_price:       "سعر ثابت",
   approval_required: "موافقة مسبقة",
   global_discount:   "خصم عام",
+};
+
+export const claimBatchStatusLabels: Record<string, string> = {
+  draft:     "مسودة",
+  submitted: "مُرسَلة",
+  responded: "مُجابة",
+  settled:   "مُسوَّاة",
+  cancelled: "ملغاة",
+};
+
+export const claimLineStatusLabels: Record<string, string> = {
+  pending:  "معلّق",
+  approved: "مقبول",
+  rejected: "مرفوض",
+  settled:  "مُسوَّى",
 };
