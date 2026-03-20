@@ -1,0 +1,291 @@
+TASK: Build Dynamic Account Resolution for Warehouse/Pharmacy and Cashier Treasury Accounts Without Losing Account Mapping Control
+
+CONTEXT
+The current AccountMappings model is useful, but it is too manual in areas where the system already knows the operational source.
+We need to make accounting smarter and more ERP-correct.
+
+BUSINESS PROBLEM
+Today, in AccountMappings and journal logic, some accounts are effectively treated as if they must be manually selected or statically mapped, while in reality they should be resolved dynamically from the transaction source.
+
+Examples:
+1) Sales invoice inventory / pharmacy side:
+- the warehouse or pharmacy is already determined by the sales invoice itself, or by the user’s allowed pharmacy/warehouse
+- therefore the inventory-side account should come from the actual warehouse/pharmacy on the invoice, not from a manually selected static account when the source is already known
+
+2) Cashier collection:
+- the treasury/cash account should not be chosen manually as a static mapping
+- it must come from the actual cashier shift / treasury drawer that received the money
+- example:
+  if collection was received in Cashier Antar’s open shift, then the debit side must be from Cashier Antar treasury GL account
+- this must not depend on a manually chosen generic cash account when the actual collecting treasury is known
+
+GOAL
+Refactor the accounting design so that:
+- AccountMappings remains the configuration hub
+- but dynamic accounts are resolved automatically from operational context
+- warehouse/pharmacy and cashier treasury are treated as system-derived accounts, not user-picked assumptions
+- journal creation remains screen-based and transaction-type-based
+- the design stays clean, auditable, reusable, and backward-compatible
+
+IMPORTANT DESIGN PRINCIPLE
+Separate accounting accounts into two categories:
+
+A) STATIC / CONFIGURED accounts
+These stay in AccountMappings, e.g.:
+- revenue_drugs
+- revenue_consumables
+- receivables
+- receivable_clear
+- cogs_drugs
+- cogs_supplies
+- discount_allowed
+- doctor_payable
+- generic fallback inventory account if needed
+
+B) DYNAMIC / RESOLVED accounts
+These must come automatically from the operational source/context, e.g.:
+- inventory account from the actual warehouse/pharmacy on the invoice
+- treasury/cash account from the actual cashier shift / treasury drawer that collected the cash
+- future-ready: bank account, POS clearing account, cost center, branch, department
+
+--------------------------------------------------
+PART A — DISCOVERY BEFORE CODING
+--------------------------------------------------
+
+Before changing anything, inspect and print a concise report on:
+
+1) How sales invoices currently determine the pharmacy/warehouse context
+- invoice header fields
+- pharmacy_id / warehouse_id usage
+- whether warehouse.glAccountId or pharmacy.glAccountId exists
+- whether user-scoped pharmacy/warehouse already determines invoice source
+
+2) How cashier collection currently determines the actual collecting treasury
+- cashier shift model
+- shift.gl_account_id
+- receipt / collect flow
+- whether the collecting treasury is always known at collection time
+
+3) All places where current journal logic still uses static mapping in areas that should be dynamic
+
+4) Current AccountMappings transaction types and line types relevant to:
+- sales_invoice
+- cashier_collection
+- cashier_refund
+- warehouse_transfer
+- purchase_invoice
+
+Then continue implementation using the cleanest, lowest-risk design.
+
+--------------------------------------------------
+PART B — TARGET DESIGN
+--------------------------------------------------
+
+Design and implement a clean “Dynamic Account Resolution Layer” used by the accounting engine.
+
+The engine should work like this:
+
+1) Read transaction type and source document
+2) Load configured mappings from AccountMappings
+3) Resolve dynamic accounts from the transaction context
+4) Build final journal lines
+5) Insert journal entry + journal lines
+6) Log accounting_event_log normally
+
+The source of truth should be:
+
+A) For sales invoice:
+- inventory-side / warehouse-side account comes from the actual warehouse or pharmacy on the invoice
+- if the invoice is pharmacy-based, resolve from the actual pharmacy/warehouse linked to that invoice
+- do NOT force admin to manually choose an inventory account per screen if the warehouse already determines it
+
+B) For cashier collection:
+- treasury/cash debit account comes from the actual cashier shift / treasury drawer that received the money
+- use cashier_shifts.gl_account_id or the true equivalent source
+- do NOT require a generic static cash mapping when the real treasury is known from the shift
+
+C) For receivables clearing / revenue / COGS:
+- these can remain driven by AccountMappings, unless the current architecture already supports safer dynamic overrides
+
+--------------------------------------------------
+PART C — ACCOUNT MAPPINGS REFACTOR RULES
+--------------------------------------------------
+
+Do NOT remove AccountMappings.
+Instead, make it semantically correct.
+
+REQUIRED RULES
+
+1) For transaction types that include dynamic accounts, the UI and backend model must reflect that some line types are:
+- configured
+- dynamic/system-resolved
+- optional fallback only
+
+2) For cashier_collection:
+- treasury cash account must be resolved dynamically from the actual collecting shift
+- AccountMappings should keep the non-dynamic side, e.g.:
+  - receivable_clear
+or another clearly named credit-side mapping
+- if the current “cash” line type implies both debit and credit are manually mapped, refactor it into a cleaner model
+
+Preferred cashier_collection model:
+- dynamic debit side = treasury from shift
+- mapped credit side = receivable_clear
+This is much more logical than asking admins to configure both sides manually.
+
+3) For sales_invoice:
+- inventory credit side should come dynamically from the warehouse/pharmacy used by the invoice when possible
+- mapped sides remain:
+  - revenue_drugs
+  - revenue_consumables
+  - receivables
+  - cogs_drugs
+  - cogs_supplies
+- if a warehouse/pharmacy has no GL account configured, use an explicit fallback rule:
+   a) fallback to generic inventory mapping if allowed
+   OR
+   b) block and log an accounting event
+Choose the safest low-risk design and document it clearly.
+
+4) AccountMappings UI must clearly label dynamic lines so admins understand:
+- which lines are configured here
+- which lines are automatically resolved by the system
+- which lines are fallback-only
+
+--------------------------------------------------
+PART D — FRONTEND / UI REQUIREMENTS
+--------------------------------------------------
+
+Update AccountMappings UI so it becomes logically clear, not confusing.
+
+For relevant transaction types:
+- visually mark dynamic/system-resolved lines
+- prevent unnecessary account selection for lines that should not be selected manually
+- show clear Arabic descriptions
+
+Examples:
+
+For cashier_collection:
+- "الخزنة / حساب النقدية: يُحدد تلقائياً من الوردية / الخزنة المستلمة"
+- "مقاصة المدينين: يُحدد من ربط الحسابات"
+
+For sales_invoice inventory side:
+- "حساب المخزون: يُحدد تلقائياً من المخزن/الصيدلية الموجودة على الفاتورة"
+- "يُستخدم الحساب الاحتياطي فقط إذا لم يوجد حساب GL على المخزن/الصيدلية" (if fallback exists)
+
+The UI must not force the admin to fill a field that the system should resolve dynamically.
+
+--------------------------------------------------
+PART E — ENGINE / BACKEND REQUIREMENTS
+--------------------------------------------------
+
+Implement a reusable resolver layer, such as:
+- resolveDynamicAccounts(...)
+or equivalent clean helper/service
+
+It should support at minimum:
+
+1) resolveSalesInvoiceInventoryAccount(invoice)
+- returns inventory account from actual warehouse/pharmacy on invoice
+- uses warehouse.glAccountId / pharmacy GL account or equivalent
+
+2) resolveCashierCollectionCashAccount(collection/shift)
+- returns treasury GL account from actual collecting cashier shift
+- uses shift.gl_account_id or equivalent source
+
+3) fallback behavior
+- if dynamic account is missing, handle explicitly:
+  - use configured fallback if allowed
+  - otherwise log accounting_event_log and fail/block/needs_retry
+No silent fallback.
+
+4) Preserve idempotency
+- journal creation must remain safe under retries
+
+5) Preserve accounting_event_log
+- if dynamic account resolution fails, write a clear durable event
+- examples:
+  - "Warehouse/pharmacy GL account missing"
+  - "Cashier shift treasury GL account missing"
+
+--------------------------------------------------
+PART F — CASHIER COLLECTION ACCOUNTING MODEL
+--------------------------------------------------
+
+Refactor cashier_collection so the accounting meaning becomes:
+
+Dr dynamic treasury/cash account from actual collecting shift
+Cr mapped receivable_clear account from AccountMappings
+
+Do NOT require the admin to statically map the treasury side if the system already knows it from the shift.
+
+If the current lineType model is not ideal, refactor line types cleanly.
+Example:
+- remove/replace ambiguous "cash" line type if it implies fully manual mapping
+- introduce or standardize:
+  - treasury_dynamic (system side, no manual pick)
+  - receivable_clear (mapped side)
+
+Keep the model clear and future-safe.
+
+--------------------------------------------------
+PART G — SALES INVOICE ACCOUNTING MODEL
+--------------------------------------------------
+
+Keep the separated sales journal model from Phase 4.
+
+But improve inventory-side account determination:
+- inventory account should come from actual warehouse/pharmacy context on the invoice
+- not from a generic manual choice when a true source-specific account exists
+
+The accounting meaning should be:
+
+Dr receivables (mapped)
+Dr COGS (mapped)
+Cr revenue (mapped)
+Cr inventory (dynamic from invoice warehouse/pharmacy, with explicit fallback/block rule)
+
+--------------------------------------------------
+PART H — VERIFICATION
+--------------------------------------------------
+
+After implementation, verify all of the following:
+
+1) In sales invoice:
+- warehouse/pharmacy account is resolved from the actual invoice source
+- no unnecessary manual account selection is required for a dynamic inventory side
+- fallback/block behavior is explicit if warehouse/pharmacy GL account is missing
+
+2) In cashier collection:
+- treasury account is resolved from the actual collecting cashier shift
+- no generic static treasury mapping is required
+- receivable_clear still comes from AccountMappings
+- different cashier shifts produce different debit treasury accounts correctly
+
+3) AccountMappings UI:
+- clearly distinguishes configured lines vs dynamic lines
+- no misleading required fields remain for system-resolved accounts
+
+4) accounting_event_log:
+- missing dynamic GL accounts are durably logged
+- no silent failure
+
+5) Backward compatibility:
+- existing mappings do not break unexpectedly
+- old data remains queryable
+- any migration or fallback assumptions are documented
+
+--------------------------------------------------
+PRINT EXACTLY
+--------------------------------------------------
+
+1) discovery findings
+2) files changed
+3) dynamic accounts now resolved automatically for which transaction types
+4) final cashier_collection accounting rule
+5) final sales_invoice inventory-account rule
+6) fallback/block behavior when dynamic GL account is missing
+7) AccountMappings UI changes
+8) any compatibility assumptions
+9) final statement:
+"Dynamic account resolution completed"

@@ -602,6 +602,7 @@ export interface IStorage {
     entryDate: string;
     lines: { lineType: string; amount: string }[];
     periodId?: string;
+    dynamicAccountOverrides?: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }>;
   }): Promise<JournalEntry | null>;
   batchPostJournalEntries(ids: string[], userId: string | null): Promise<{ posted: number; errors: string[] }>;
 

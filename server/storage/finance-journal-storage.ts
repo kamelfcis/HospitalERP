@@ -172,6 +172,16 @@ const methods = {
     entryDate: string;
     lines: { lineType: string; amount: string }[];
     periodId?: string;
+    /**
+     * Dynamic account overrides — applied BEFORE the static mapping lookup.
+     * Used when the system can resolve an account from operational context
+     * (e.g. cashier shift treasury GL, warehouse GL) without requiring manual mapping.
+     *
+     * Example:
+     *   { cash: { debitAccountId: shiftGlAccountId } }
+     *   → debit side uses the actual shift treasury; credit still comes from mapping
+     */
+    dynamicAccountOverrides?: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }>;
   }): Promise<JournalEntry | null> {
     return await db.transaction(async (tx) => {
       const lockKey = Math.abs(params.sourceDocumentId.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0));
@@ -190,22 +200,29 @@ const methods = {
       }
 
       const mappings = await this.getMappingsForTransaction(params.sourceType, null);
-      if (mappings.length === 0) {
-        console.log(`[GL] SKIPPED: No account mappings configured for transaction type "${params.sourceType}". Configure mappings at /account-mappings to enable automatic GL posting.`);
-        return null;
-      }
-
       const mappingMap = new Map<string, AccountMapping>();
       for (const m of mappings) {
         mappingMap.set(m.lineType, m);
+      }
+
+      // If no mappings AND no dynamic overrides at all: skip (nothing configured)
+      if (mappings.length === 0 && !params.dynamicAccountOverrides) {
+        console.log(`[GL] SKIPPED: No account mappings configured for transaction type "${params.sourceType}". Configure mappings at /account-mappings to enable automatic GL posting.`);
+        return null;
       }
 
       const journalLineData: InsertJournalLine[] = [];
       const unmappedTypes: string[] = [];
 
       for (const line of params.lines) {
-        const mapping = mappingMap.get(line.lineType);
-        if (!mapping || !mapping.debitAccountId || !mapping.creditAccountId) {
+        const mapping    = mappingMap.get(line.lineType);
+        const overrides  = params.dynamicAccountOverrides?.[line.lineType];
+
+        // Dynamic overrides take priority; static mapping is the fallback for each side
+        const debitId  = overrides?.debitAccountId  || mapping?.debitAccountId  || null;
+        const creditId = overrides?.creditAccountId || mapping?.creditAccountId || null;
+
+        if (!debitId || !creditId) {
           unmappedTypes.push(line.lineType);
           continue;
         }
@@ -215,18 +232,18 @@ const methods = {
         journalLineData.push({
           journalEntryId: "",
           lineNumber: 0,
-          accountId: mapping.debitAccountId,
+          accountId: debitId,
           debit: roundMoney(amount),
           credit: "0.00",
-          description: mapping.description || params.description,
+          description: mapping?.description || params.description,
         });
         journalLineData.push({
           journalEntryId: "",
           lineNumber: 0,
-          accountId: mapping.creditAccountId,
+          accountId: creditId,
           debit: "0.00",
           credit: roundMoney(amount),
-          description: mapping.description || params.description,
+          description: mapping?.description || params.description,
         });
       }
 

@@ -99,11 +99,63 @@ export interface MappingRow {
   source: "warehouse" | "generic" | "new";
 }
 
+// ─── Dynamic line specifications ───────────────────────────────────────────────
+//
+// Declares which account *sides* of which line types are system-resolved
+// (dynamic), meaning the account is determined automatically by the engine
+// from operational context — not manually configured by the admin.
+//
+// Structure: { transactionType: { lineType: { debit?: DynamicSideInfo, credit?: DynamicSideInfo } } }
+//
+// When a side is marked dynamic:
+//   - The admin does NOT need to select an account for that side
+//   - MappingRowEditor shows an informational badge instead of the account picker
+//   - isRowComplete considers the dynamic side as always satisfied
+
+export interface DynamicSideInfo {
+  /** Short Arabic label shown in place of the account picker */
+  label: string;
+  /** Longer Arabic tooltip / explanation */
+  tooltip: string;
+  /** Is the fallback static mapping still respected if the dynamic source is absent? */
+  hasFallback: boolean;
+}
+
+export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: DynamicSideInfo; credit?: DynamicSideInfo }>> = {
+  cashier_collection: {
+    cash: {
+      debit: {
+        label:       "مدين: يُحدد تلقائياً من وردية الكاشير",
+        tooltip:     "حساب الخزنة يُحدد تلقائياً من الوردية المفتوحة للكاشير الذي استلم الدفع. لكل كاشير حساب خزنة مختلف — لا يحتاج الأدمن لتحديد هذا الحساب يدوياً.",
+        hasFallback: true,
+      },
+      // credit side (receivable_clear) stays static — admin must configure it
+    },
+  },
+  sales_invoice: {
+    inventory: {
+      credit: {
+        label:       "دائن: يُحدد تلقائياً من حساب GL المخزن/الصيدلية",
+        tooltip:     "حساب المخزون يُحدد تلقائياً من حساب GL المرتبط بالمخزن أو الصيدلية المستخدمة في الفاتورة. إذا لم يكن للمخزن حساب GL، يُستخدم الحساب الاحتياطي المحدد هنا.",
+        hasFallback: true,
+      },
+    },
+  },
+};
+
 // ─── isRowComplete ─────────────────────────────────────────────────────────────
 // Returns true when all *used* sides of a row have an account assigned.
-export function isRowComplete(row: MappingRow, spec: LineTypeSpec | undefined): boolean {
-  if (!spec) return !!(row.debitAccountId && row.creditAccountId);
-  const needsDebit  = spec.debitSide  ? !!row.debitAccountId  : true;
-  const needsCredit = spec.creditSide ? !!row.creditAccountId : true;
+// Dynamic sides are treated as always satisfied (the engine resolves them).
+export function isRowComplete(row: MappingRow, spec: LineTypeSpec | undefined, txType?: string): boolean {
+  const dynSpec = txType ? DYNAMIC_LINE_SPECS[txType]?.[row.lineType] : undefined;
+  const debitDynamic  = !!dynSpec?.debit;
+  const creditDynamic = !!dynSpec?.credit;
+
+  if (!spec) {
+    return (debitDynamic  || !!row.debitAccountId) &&
+           (creditDynamic || !!row.creditAccountId);
+  }
+  const needsDebit  = spec.debitSide  ? (debitDynamic  || !!row.debitAccountId)  : true;
+  const needsCredit = spec.creditSide ? (creditDynamic || !!row.creditAccountId) : true;
   return needsDebit && needsCredit;
 }

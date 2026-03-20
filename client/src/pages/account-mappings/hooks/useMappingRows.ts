@@ -139,9 +139,9 @@ export function useMappingRows(): UseMappingRowsResult {
   const usedLineTypes   = new Set(rows.map(r => r.lineType));
   const isWarehouseView = selectedWarehouseId !== "__generic__";
 
-  const requiredMissing    = rows.filter(r => txSpecs[r.lineType]?.required === true   && !isRowComplete(r, txSpecs[r.lineType]));
-  const conditionalMissing = rows.filter(r => txSpecs[r.lineType]?.required === "cond" && !isRowComplete(r, txSpecs[r.lineType]));
-  const configured         = rows.filter(r => isRowComplete(r, txSpecs[r.lineType]));
+  const requiredMissing    = rows.filter(r => txSpecs[r.lineType]?.required === true   && !isRowComplete(r, txSpecs[r.lineType], selectedTxType));
+  const conditionalMissing = rows.filter(r => txSpecs[r.lineType]?.required === "cond" && !isRowComplete(r, txSpecs[r.lineType], selectedTxType));
+  const configured         = rows.filter(r => isRowComplete(r, txSpecs[r.lineType], selectedTxType));
   const setupComplete      = requiredMissing.length === 0;
 
   return {

@@ -572,13 +572,23 @@ const methods = {
   ): Promise<void> {
     const ccMappings = await this.getMappingsForTransaction("cashier_collection", null);
     const cashMapping = ccMappings.find(m => m.lineType === "cash");
-    const hasFullMapping = !!(cashMapping?.debitAccountId && cashMapping?.creditAccountId);
 
-    if (!hasFullMapping) {
-      // C-FIX: Log a durable warning row per invoice so admins can identify
-      // which invoices used the legacy mutation path vs the Phase-4 separated path.
-      const legacyMsg = "استُخدم المسار القديم (legacy): ربط cashier_collection/cash غير مكتمل — " +
-        "عرِّف debitAccountId + creditAccountId في /account-mappings لتفعيل قيد التحصيل المستقل (Phase 4)";
+    // ── Dynamic account resolution (Phase 4+) ─────────────────────────────────
+    // Debit  = shift's actual treasury GL account (dynamic — different per cashier)
+    //          falls back to cashMapping.debitAccountId (static config) if shift has no GL
+    // Credit = mapped receivable_clear / cashMapping.creditAccountId (always static)
+    //
+    // Activation rule (much more permissive than old "hasFullMapping"):
+    //   - We need a credit account from the mapping AND
+    //   - at least one debit source: shift GL or static mapping debit
+    const effectiveDebitId  = cashGlAccountOverride || cashMapping?.debitAccountId || null;
+    const effectiveCreditId = cashMapping?.creditAccountId || null;
+    const hasPhase4Path     = !!(effectiveDebitId && effectiveCreditId);
+
+    if (!hasPhase4Path) {
+      // Neither shift GL nor static mapping provides a full Dr+Cr pair — fall back to legacy path
+      const legacyMsg = "استُخدم المسار القديم (legacy): لا يوجد حساب خزنة للوردية ولا ربط cashier_collection/cash مكتمل — " +
+        "عرِّف creditAccountId في /account-mappings أو تأكد أن الوردية مرتبطة بحساب GL";
       logger.warn("[CASHIER_COLLECTION] " + legacyMsg);
       for (const invoiceId of invoiceIds) {
         await logAcctEvent({
@@ -590,6 +600,13 @@ const methods = {
         });
       }
       return this.completeSalesJournalsWithCash(invoiceIds, cashGlAccountOverride, pharmacyId);
+    }
+
+    // Log which debit source is being used (useful for audit visibility)
+    if (cashGlAccountOverride) {
+      logger.info({ cashGlAccountOverride }, "[CASHIER_COLLECTION] Using shift treasury GL for debit (dynamic)");
+    } else {
+      logger.warn({ debitFromMapping: cashMapping?.debitAccountId }, "[CASHIER_COLLECTION] Shift has no GL account — using static mapping debit (fallback)");
     }
 
     for (const invoiceId of invoiceIds) {
@@ -625,6 +642,13 @@ const methods = {
           description:      `قيد تحصيل فاتورة مبيعات رقم ${invoice.invoiceNumber}`,
           entryDate:        invoice.invoiceDate,
           lines:            [{ lineType: "cash", amount: String(netTotal.toFixed(2)) }],
+          // ─── Dynamic resolution: inject shift treasury as debit override ────
+          // This ensures each cashier's own GL account is debited, not a generic
+          // static treasury account. The credit side (receivable clearing) still
+          // comes from the static mapping (cashMapping.creditAccountId).
+          dynamicAccountOverrides: {
+            cash: { debitAccountId: effectiveDebitId },
+          },
         });
 
         // A-FIX: Resolve status inconsistency.

@@ -15,18 +15,19 @@ import {
 } from "../types";
 
 interface MappingTableProps {
-  rows:           MappingRow[];
-  txSpecs:        Record<string, LineTypeSpec>;
-  usedLineTypes:  Set<string>;
+  rows:            MappingRow[];
+  txSpecs:         Record<string, LineTypeSpec>;
+  txType:          string;
+  usedLineTypes:   Set<string>;
   isWarehouseView: boolean;
-  isLoading:      boolean;
-  onUpdateRow:    (key: string, field: keyof MappingRow, value: string) => void;
-  onRemoveRow:    (key: string) => void;
-  onAddRow:       () => void;
+  isLoading:       boolean;
+  onUpdateRow:     (key: string, field: keyof MappingRow, value: string) => void;
+  onRemoveRow:     (key: string) => void;
+  onAddRow:        () => void;
 }
 
 export function MappingTable({
-  rows, txSpecs, usedLineTypes, isWarehouseView,
+  rows, txSpecs, txType, usedLineTypes, isWarehouseView,
   isLoading, onUpdateRow, onRemoveRow, onAddRow,
 }: MappingTableProps) {
   if (isLoading) {
@@ -67,6 +68,7 @@ export function MappingTable({
             key={row.key}
             row={row}
             spec={txSpecs[row.lineType]}
+            txType={txType}
             usedLineTypes={usedLineTypes}
             isWarehouseView={isWarehouseView}
             onUpdateRow={onUpdateRow}

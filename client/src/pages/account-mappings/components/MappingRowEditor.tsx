@@ -4,8 +4,9 @@
  * Renders a single account-mapping row:
  *   [status cell] [line-type cell] [debit account] [credit account] [delete]
  *
- * Uses AccountLookup with unscoped=1 so that users who have SETTINGS_ACCOUNT_MAPPINGS
- * permission always see ALL accounts, regardless of their personal account scope.
+ * Dynamic sides (system-resolved accounts) show an informational badge
+ * instead of an account picker, so admins are not confused into thinking
+ * they must manually fill a value the engine already resolves automatically.
  */
 
 import {
@@ -13,31 +14,63 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
-  CheckCircle2, AlertCircle, AlertTriangle, Info, Trash2,
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  CheckCircle2, AlertCircle, AlertTriangle, Info, Trash2, Zap,
 } from "lucide-react";
 import { AccountLookup } from "@/components/lookups/AccountLookup";
 import { mappingLineTypeLabels } from "@shared/schema";
 import {
   type MappingRow,
   type LineTypeSpec,
+  type DynamicSideInfo,
+  DYNAMIC_LINE_SPECS,
   isRowComplete,
   allLineTypeOptions,
 } from "../types";
 
 interface MappingRowEditorProps {
-  row:            MappingRow;
-  spec:           LineTypeSpec | undefined;
-  usedLineTypes:  Set<string>;
+  row:             MappingRow;
+  spec:            LineTypeSpec | undefined;
+  txType:          string;
+  usedLineTypes:   Set<string>;
   isWarehouseView: boolean;
-  onUpdateRow:    (key: string, field: keyof MappingRow, value: string) => void;
-  onRemoveRow:    (key: string) => void;
+  onUpdateRow:     (key: string, field: keyof MappingRow, value: string) => void;
+  onRemoveRow:     (key: string) => void;
+}
+
+/** Renders an informational cell for a system-resolved (dynamic) account side */
+function DynamicAccountBadge({ info, testId }: { info: DynamicSideInfo; testId: string }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            className="flex items-center gap-1.5 h-9 w-full rounded-md border border-dashed border-indigo-300 bg-indigo-50/60 dark:bg-indigo-950/20 px-2 py-1 text-xs text-indigo-700 dark:text-indigo-300 cursor-help select-none"
+            data-testid={testId}
+          >
+            <Zap className="h-3 w-3 shrink-0 text-indigo-500" />
+            <span className="truncate leading-tight">{info.label}</span>
+            {info.hasFallback && (
+              <span className="text-[9px] text-indigo-400 shrink-0">(احتياطي)</span>
+            )}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed" dir="rtl">
+          {info.tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export function MappingRowEditor({
-  row, spec, usedLineTypes, isWarehouseView,
+  row, spec, txType, usedLineTypes, isWarehouseView,
   onUpdateRow, onRemoveRow,
 }: MappingRowEditorProps) {
-  const complete  = isRowComplete(row, spec);
+  const dynSpec = DYNAMIC_LINE_SPECS[txType]?.[row.lineType];
+  const complete  = isRowComplete(row, spec, txType);
   const required  = spec?.required === true;
   const cond      = spec?.required === "cond";
   const unknown   = !spec;
@@ -118,6 +151,11 @@ export function MappingRowEditor({
         >
           غير مستخدم في هذا النوع
         </div>
+      ) : dynSpec?.debit ? (
+        <DynamicAccountBadge
+          info={dynSpec.debit}
+          testId={`select-debit-${row.lineType || row.key}`}
+        />
       ) : (
         <AccountLookup
           value={row.debitAccountId}
@@ -135,6 +173,11 @@ export function MappingRowEditor({
         >
           غير مستخدم في هذا النوع
         </div>
+      ) : dynSpec?.credit ? (
+        <DynamicAccountBadge
+          info={dynSpec.credit}
+          testId={`select-credit-${row.lineType || row.key}`}
+        />
       ) : (
         <AccountLookup
           value={row.creditAccountId}

@@ -81,6 +81,7 @@ export default function AccountMappings() {
           <MappingTable
             rows={data.rows}
             txSpecs={data.txSpecs}
+            txType={data.selectedTxType}
             usedLineTypes={data.usedLineTypes}
             isWarehouseView={data.isWarehouseView}
             isLoading={data.isLoading}
