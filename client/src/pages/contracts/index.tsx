@@ -25,10 +25,14 @@ import {
   insertCompanySchema,
   insertContractSchema,
   insertContractMemberSchema,
+  insertContractCoverageRuleSchema,
   companyTypeLabels,
   relationTypeLabels,
+  coverageRuleTypeLabels,
 } from "@shared/schema";
-import type { Company, Contract, ContractMember } from "@shared/schema";
+import type { Company, Contract, ContractMember, ContractCoverageRule } from "@shared/schema";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +80,11 @@ import {
   Loader2,
   AlertCircle,
   PowerOff,
+  Shield,
+  FlaskConical,
+  CheckCircle2,
+  XCircle,
+  Trash2,
 } from "lucide-react";
 
 // ─── Zod schemas with Arabic validation ───────────────────────────────────
@@ -634,6 +643,212 @@ function MemberForm({ open, onOpenChange, contractId, editing }: MemberFormProps
   );
 }
 
+// ─── Rule form schema ─────────────────────────────────────────────────────
+
+const ruleFormSchema = insertContractCoverageRuleSchema.extend({
+  ruleName: z.string().min(1, "اسم القاعدة مطلوب"),
+  ruleType: z.string().min(1, "نوع القاعدة مطلوب"),
+  priority: z.coerce.number().int().min(1).default(10),
+  discountPct: z.string().optional().nullable(),
+  fixedPrice:  z.string().optional().nullable(),
+});
+type RuleFormValues = z.infer<typeof ruleFormSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CoverageRuleForm — Dialog for creating / editing a coverage rule
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface CoverageRuleFormProps {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  contractId: string;
+  editing: ContractCoverageRule | null;
+}
+
+function CoverageRuleForm({ open, onOpenChange, contractId, editing }: CoverageRuleFormProps) {
+  const { toast } = useToast();
+
+  const form = useForm<RuleFormValues>({
+    resolver: zodResolver(ruleFormSchema),
+    defaultValues: {
+      contractId,
+      ruleName:        editing?.ruleName        ?? "",
+      ruleType:        editing?.ruleType        ?? "include_service",
+      serviceId:       editing?.serviceId       ?? "",
+      departmentId:    editing?.departmentId    ?? "",
+      serviceCategory: editing?.serviceCategory ?? "",
+      discountPct:     editing?.discountPct     ?? null,
+      fixedPrice:      editing?.fixedPrice      ?? null,
+      priority:        editing?.priority        ?? 10,
+      isActive:        editing?.isActive        ?? true,
+      notes:           editing?.notes           ?? "",
+    },
+  });
+
+  const ruleType = form.watch("ruleType");
+
+  const showServiceId  = ["include_service", "exclude_service", "discount_pct", "fixed_price", "approval_required"].includes(ruleType);
+  const showDeptId     = ["include_dept", "exclude_dept"].includes(ruleType);
+  const showCategory   = ["discount_pct", "fixed_price", "global_discount", "approval_required"].includes(ruleType);
+  const showDiscount   = ["discount_pct", "global_discount"].includes(ruleType);
+  const showFixedPrice = ruleType === "fixed_price";
+
+  const mutation = useMutation({
+    mutationFn: (data: RuleFormValues) =>
+      editing
+        ? apiRequest("PATCH", `/api/contracts/rules/${editing.id}`, data)
+        : apiRequest("POST", `/api/contracts/${contractId}/rules`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contracts", contractId, "rules"] });
+      toast({ title: editing ? "تم تحديث القاعدة" : "تمت إضافة القاعدة" });
+      onOpenChange(false);
+      form.reset();
+    },
+    onError: async (err: unknown) => {
+      const body = err instanceof Response ? await err.json().catch(() => ({})) : {};
+      toast({ variant: "destructive", title: "خطأ", description: body?.message ?? "حدث خطأ" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>{editing ? "تعديل قاعدة التغطية" : "إضافة قاعدة تغطية"}</DialogTitle>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(d => mutation.mutate(d))} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <FormField control={form.control} name="ruleName" render={({ field }) => (
+                <FormItem className="col-span-2">
+                  <FormLabel>اسم القاعدة *</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="مثال: تشمل الأشعة" data-testid="input-rule-name" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={form.control} name="ruleType" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>نوع القاعدة *</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-rule-type">
+                        <SelectValue placeholder="اختر النوع" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {Object.entries(coverageRuleTypeLabels).map(([v, l]) => (
+                        <SelectItem key={v} value={v}>{l}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={form.control} name="priority" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>الأولوية (أصغر = أعلى)</FormLabel>
+                  <FormControl>
+                    <Input {...field} type="number" min={1} data-testid="input-rule-priority" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+
+            {showServiceId && (
+              <FormField control={form.control} name="serviceId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>معرّف الخدمة (اختياري — اتركه فارغاً لتطبيق القاعدة على الكل)</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ""} placeholder="service-uuid" data-testid="input-rule-service-id" />
+                  </FormControl>
+                </FormItem>
+              )} />
+            )}
+
+            {showDeptId && (
+              <FormField control={form.control} name="departmentId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>معرّف القسم</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ""} placeholder="dept-uuid" data-testid="input-rule-dept-id" />
+                  </FormControl>
+                </FormItem>
+              )} />
+            )}
+
+            {showCategory && (
+              <FormField control={form.control} name="serviceCategory" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>فئة الخدمة (اختياري)</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ""} placeholder="مثال: RADIOLOGY" data-testid="input-rule-category" />
+                  </FormControl>
+                </FormItem>
+              )} />
+            )}
+
+            {showDiscount && (
+              <FormField control={form.control} name="discountPct" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>نسبة الخصم %</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ""} type="number" min={0} max={100} step={0.01} data-testid="input-rule-discount" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+
+            {showFixedPrice && (
+              <FormField control={form.control} name="fixedPrice" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>السعر الثابت (جنيه)</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ""} type="number" min={0} step={0.01} data-testid="input-rule-fixed-price" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+
+            <FormField control={form.control} name="notes" render={({ field }) => (
+              <FormItem>
+                <FormLabel>ملاحظات</FormLabel>
+                <FormControl>
+                  <Textarea {...field} value={field.value ?? ""} rows={2} data-testid="input-rule-notes" />
+                </FormControl>
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="isActive" render={({ field }) => (
+              <FormItem className="flex flex-row-reverse items-center justify-between rounded-md border p-3">
+                <FormLabel className="cursor-pointer">القاعدة نشطة</FormLabel>
+                <FormControl>
+                  <Switch checked={field.value ?? true} onCheckedChange={field.onChange} data-testid="switch-rule-active" />
+                </FormControl>
+              </FormItem>
+            )} />
+
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+              <Button type="submit" disabled={mutation.isPending} data-testid="button-save-rule">
+                {mutation.isPending && <Loader2 className="h-4 w-4 ml-1 animate-spin" />}
+                {editing ? "حفظ التعديلات" : "إضافة القاعدة"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  Main Page
 // ═══════════════════════════════════════════════════════════════════════════
@@ -658,6 +873,13 @@ export default function ContractsPage() {
 
   const [memberFormOpen, setMemberFormOpen]     = useState(false);
   const [editingMember, setEditingMember]       = useState<ContractMember | null>(null);
+
+  const [contractDetailsTab, setContractDetailsTab] = useState<"members" | "rules">("members");
+  const [ruleFormOpen, setRuleFormOpen]         = useState(false);
+  const [editingRule, setEditingRule]           = useState<ContractCoverageRule | null>(null);
+  const [evalInput, setEvalInput]               = useState({ serviceId: "", departmentId: "", serviceCategory: "", listPrice: "" });
+  const [evalResult, setEvalResult]             = useState<any>(null);
+  const [evalLoading, setEvalLoading]           = useState(false);
 
   const { toast } = useToast();
 
@@ -688,6 +910,46 @@ export default function ContractsPage() {
       apiRequest("GET", `/api/contract-members?contractId=${selectedContract!.id}`).then(r => r.json()),
     enabled: !!selectedContract,
   });
+
+  const { data: rules = [], isLoading: rulesLoading } = useQuery<ContractCoverageRule[]>({
+    queryKey: ["/api/contracts", selectedContract?.id, "rules"],
+    queryFn: () =>
+      apiRequest("GET", `/api/contracts/${selectedContract!.id}/rules`).then(r => r.json()),
+    enabled: !!selectedContract,
+  });
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: (ruleId: string) => apiRequest("DELETE", `/api/contracts/rules/${ruleId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contracts", selectedContract?.id, "rules"] });
+      toast({ title: "تم حذف القاعدة" });
+    },
+    onError: async (err: unknown) => {
+      const body = err instanceof Response ? await err.json().catch(() => ({})) : {};
+      toast({ variant: "destructive", title: "خطأ", description: body?.message ?? "حدث خطأ" });
+    },
+  });
+
+  async function runEvaluate() {
+    if (!selectedContract) return;
+    setEvalLoading(true);
+    setEvalResult(null);
+    try {
+      const body: Record<string, unknown> = {
+        contractId: selectedContract.id,
+        listPrice:  parseFloat(evalInput.listPrice) || 0,
+      };
+      if (evalInput.serviceId.trim())       body.serviceId       = evalInput.serviceId.trim();
+      if (evalInput.departmentId.trim())    body.departmentId    = evalInput.departmentId.trim();
+      if (evalInput.serviceCategory.trim()) body.serviceCategory = evalInput.serviceCategory.trim();
+      const res = await apiRequest("POST", "/api/contracts/evaluate", body);
+      setEvalResult(await res.json());
+    } catch {
+      toast({ variant: "destructive", title: "فشل الاختبار" });
+    } finally {
+      setEvalLoading(false);
+    }
+  }
 
   // ── Deactivate company ───────────────────────────────────────────────────
   const deactivateMutation = useMutation({
@@ -727,6 +989,15 @@ export default function ContractsPage() {
   function openEditMember(m: ContractMember) {
     setEditingMember(m);
     setMemberFormOpen(true);
+  }
+
+  function openAddRule() {
+    setEditingRule(null);
+    setRuleFormOpen(true);
+  }
+  function openEditRule(r: ContractCoverageRule) {
+    setEditingRule(r);
+    setRuleFormOpen(true);
   }
 
   function selectCompany(c: Company) {
@@ -969,22 +1240,37 @@ export default function ContractsPage() {
             </div>
           </div>
 
-          {/* ── Members Panel (visible only when a contract is selected) ── */}
+          {/* ── Bottom Tab Panel: Members / Coverage Rules ── */}
           {selectedContract && (
-            <div className="flex flex-col h-1/2 overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b shrink-0">
-                <div className="flex items-center gap-1.5 text-xs font-semibold">
-                  <Users className="h-3.5 w-3.5 text-primary" />
-                  منتسبو العقد: {selectedContract.contractName} ({members.length})
-                </div>
-                {canManage && (
+            <Tabs
+              value={contractDetailsTab}
+              onValueChange={v => setContractDetailsTab(v as "members" | "rules")}
+              className="flex flex-col h-1/2 overflow-hidden border-t"
+            >
+              {/* Tab bar + action button */}
+              <div className="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b shrink-0">
+                <TabsList className="h-7">
+                  <TabsTrigger value="members" className="text-xs h-6 px-2.5 gap-1" data-testid="tab-members">
+                    <Users className="h-3 w-3" />منتسبون ({members.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="rules" className="text-xs h-6 px-2.5 gap-1" data-testid="tab-coverage-rules">
+                    <Shield className="h-3 w-3" />قواعد التغطية ({rules.length})
+                  </TabsTrigger>
+                </TabsList>
+                {canManage && contractDetailsTab === "members" && (
                   <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={openAddMember} data-testid="button-add-member">
                     <Plus className="h-3 w-3" /> منتسب جديد
                   </Button>
                 )}
+                {canManage && contractDetailsTab === "rules" && (
+                  <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={openAddRule} data-testid="button-add-rule">
+                    <Plus className="h-3 w-3" /> قاعدة جديدة
+                  </Button>
+                )}
               </div>
 
-              <div className="overflow-auto flex-1">
+              {/* ── Members tab ── */}
+              <TabsContent value="members" className="overflow-auto flex-1 m-0 p-0 data-[state=inactive]:hidden">
                 {membersLoading ? (
                   <div className="flex justify-center py-6">
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1024,13 +1310,8 @@ export default function ContractsPage() {
                           </TableCell>
                           {canManage && (
                             <TableCell>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 text-[11px] px-2"
-                                onClick={() => openEditMember(m)}
-                                data-testid={`button-edit-member-${m.id}`}
-                              >
+                              <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2"
+                                onClick={() => openEditMember(m)} data-testid={`button-edit-member-${m.id}`}>
                                 تعديل
                               </Button>
                             </TableCell>
@@ -1040,8 +1321,170 @@ export default function ContractsPage() {
                     </TableBody>
                   </Table>
                 )}
-              </div>
-            </div>
+              </TabsContent>
+
+              {/* ── Coverage Rules tab ── */}
+              <TabsContent value="rules" className="overflow-auto flex-1 m-0 p-0 data-[state=inactive]:hidden flex flex-col">
+                {/* Rules table */}
+                <div className="overflow-auto flex-1">
+                  {rulesLoading ? (
+                    <div className="flex justify-center py-6">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : rules.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-6 text-muted-foreground text-xs gap-2">
+                      <Shield className="h-6 w-6 opacity-40" />
+                      لا توجد قواعد تغطية — أضف قاعدة أولى
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="text-xs">
+                          <TableHead className="text-right w-8">#</TableHead>
+                          <TableHead className="text-right">الاسم</TableHead>
+                          <TableHead className="text-right">النوع</TableHead>
+                          <TableHead className="text-right">التفاصيل</TableHead>
+                          <TableHead className="text-center w-16">الأولوية</TableHead>
+                          <TableHead className="text-center w-16">الحالة</TableHead>
+                          {canManage && <TableHead className="text-right w-24">إجراءات</TableHead>}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[...rules].sort((a, b) => a.priority - b.priority).map((r, idx) => (
+                          <TableRow key={r.id} data-testid={`row-rule-${r.id}`} className="text-xs">
+                            <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                            <TableCell className="font-medium">{r.ruleName}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-[10px]">
+                                {coverageRuleTypeLabels[r.ruleType] ?? r.ruleType}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-[10px]">
+                              {r.discountPct  && <span>خصم {r.discountPct}%</span>}
+                              {r.fixedPrice   && <span>سعر ثابت {r.fixedPrice} ج.م</span>}
+                              {r.serviceId    && <span className="font-mono"> سرv:{r.serviceId.slice(0,8)}</span>}
+                              {r.departmentId && <span className="font-mono"> قسم:{r.departmentId.slice(0,8)}</span>}
+                              {r.serviceCategory && <span> فئة:{r.serviceCategory}</span>}
+                              {r.notes && <span className="italic"> {r.notes}</span>}
+                            </TableCell>
+                            <TableCell className="text-center font-mono">{r.priority}</TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant={r.isActive ? "outline" : "destructive"} className="text-[10px]">
+                                {r.isActive ? "نشط" : "موقوف"}
+                              </Badge>
+                            </TableCell>
+                            {canManage && (
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2"
+                                    onClick={() => openEditRule(r)} data-testid={`button-edit-rule-${r.id}`}>
+                                    تعديل
+                                  </Button>
+                                  <Button size="icon" variant="ghost" className="h-6 w-6"
+                                    onClick={() => { if (confirm("حذف القاعدة؟")) deleteRuleMutation.mutate(r.id); }}
+                                    data-testid={`button-delete-rule-${r.id}`}>
+                                    <Trash2 className="h-3 w-3 text-destructive" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+
+                {/* ── Inline Evaluator ── */}
+                <div className="border-t bg-muted/20 px-3 py-2 shrink-0">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold mb-2">
+                    <FlaskConical className="h-3.5 w-3.5 text-amber-600" />
+                    اختبار القواعد
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 mb-2">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">معرّف الخدمة</Label>
+                      <Input
+                        className="h-6 text-[11px]"
+                        placeholder="UUID"
+                        value={evalInput.serviceId}
+                        onChange={e => setEvalInput(p => ({ ...p, serviceId: e.target.value }))}
+                        data-testid="input-eval-service-id"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">معرّف القسم</Label>
+                      <Input
+                        className="h-6 text-[11px]"
+                        placeholder="UUID"
+                        value={evalInput.departmentId}
+                        onChange={e => setEvalInput(p => ({ ...p, departmentId: e.target.value }))}
+                        data-testid="input-eval-dept-id"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">الفئة</Label>
+                      <Input
+                        className="h-6 text-[11px]"
+                        placeholder="RADIOLOGY"
+                        value={evalInput.serviceCategory}
+                        onChange={e => setEvalInput(p => ({ ...p, serviceCategory: e.target.value }))}
+                        data-testid="input-eval-category"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">السعر المعلن</Label>
+                      <Input
+                        className="h-6 text-[11px]"
+                        type="number"
+                        placeholder="100"
+                        value={evalInput.listPrice}
+                        onChange={e => setEvalInput(p => ({ ...p, listPrice: e.target.value }))}
+                        data-testid="input-eval-list-price"
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    size="sm" variant="outline" className="h-6 text-xs gap-1"
+                    onClick={runEvaluate} disabled={evalLoading}
+                    data-testid="button-run-evaluate"
+                  >
+                    {evalLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FlaskConical className="h-3 w-3" />}
+                    تشغيل الاختبار
+                  </Button>
+
+                  {evalResult && (
+                    <div className={`mt-2 rounded-md border p-2 text-[11px] space-y-1 ${
+                      evalResult.coverageStatus === "covered"   ? "bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800" :
+                      evalResult.coverageStatus === "excluded"  ? "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800" :
+                      "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800"
+                    }`}>
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        {evalResult.coverageStatus === "covered"
+                          ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                          : evalResult.coverageStatus === "excluded"
+                          ? <XCircle className="h-3.5 w-3.5 text-red-600" />
+                          : <Shield className="h-3.5 w-3.5 text-amber-600" />}
+                        {evalResult.coverageStatus === "covered"  ? "مشمول بالتغطية" :
+                         evalResult.coverageStatus === "excluded" ? "مستثنى من التغطية" :
+                         "غير محدد"}
+                        {evalResult.approvalStatus === "pending" && (
+                          <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-400 ml-2">يحتاج موافقة</Badge>
+                        )}
+                      </div>
+                      {evalResult.contractPrice !== undefined && (
+                        <div className="flex items-center gap-3 text-[11px]">
+                          <span>السعر التعاقدي: <strong>{evalResult.contractPrice} ج.م</strong></span>
+                          <span>نصيب الشركة: <strong className="text-blue-700">{evalResult.companyShareAmount} ج.م</strong></span>
+                          <span>نصيب المريض: <strong className="text-orange-700">{evalResult.patientShareAmount} ج.م</strong></span>
+                        </div>
+                      )}
+                      <div className="text-muted-foreground leading-relaxed">{evalResult.explanation}</div>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
           )}
         </div>
       )}
@@ -1068,6 +1511,15 @@ export default function ContractsPage() {
           onOpenChange={v => { setMemberFormOpen(v); if (!v) setEditingMember(null); }}
           contractId={selectedContract.id}
           editing={editingMember}
+        />
+      )}
+
+      {selectedContract && (
+        <CoverageRuleForm
+          open={ruleFormOpen}
+          onOpenChange={v => { setRuleFormOpen(v); if (!v) setEditingRule(null); }}
+          contractId={selectedContract.id}
+          editing={editingRule}
         />
       )}
     </div>

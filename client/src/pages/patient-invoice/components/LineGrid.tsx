@@ -2,7 +2,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, X, BarChart3 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Loader2, X, BarChart3, ShieldCheck, ShieldOff, Clock } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import type { Service, Item } from "@shared/schema";
 import type { LineLocal } from "../types";
@@ -218,6 +224,58 @@ export function LineGrid({
                             <Badge variant="secondary" className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">سعر القسم</Badge>
                           )}
                         </div>
+                      )}
+                      {line.coverageStatus && line.coverageStatus !== "not_required" && (
+                        <TooltipProvider>
+                          <div className="flex flex-row-reverse items-center gap-1 mt-0.5 flex-wrap" data-testid={`coverage-${type}-${i}`}>
+                            {/* Coverage status badge */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  {line.coverageStatus === "covered" ? (
+                                    <Badge className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 border-green-300 gap-0.5 cursor-help">
+                                      <ShieldCheck className="h-2.5 w-2.5" />مشمول
+                                    </Badge>
+                                  ) : line.coverageStatus === "excluded" ? (
+                                    <Badge className="text-[10px] bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400 border-red-300 gap-0.5 cursor-help">
+                                      <ShieldOff className="h-2.5 w-2.5" />مستثنى
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="secondary" className="text-[10px] gap-0.5 cursor-help">
+                                      <ShieldCheck className="h-2.5 w-2.5" />{line.coverageStatus}
+                                    </Badge>
+                                  )}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" dir="rtl" className="max-w-xs text-xs leading-relaxed">
+                                {line.coverageStatus === "covered" && line.companyShareAmount && (
+                                  <div className="mb-1">
+                                    <span className="font-medium">نصيب الشركة: </span>{formatNumber(parseFloat(line.companyShareAmount || "0"))} ج.م
+                                    {line.patientShareAmount && (
+                                      <> | <span className="font-medium">نصيب المريض: </span>{formatNumber(parseFloat(line.patientShareAmount || "0"))} ج.م</>
+                                    )}
+                                  </div>
+                                )}
+                              </TooltipContent>
+                            </Tooltip>
+                            {line.approvalStatus === "pending" && (
+                              <Badge className="text-[10px] bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-300 gap-0.5">
+                                <Clock className="h-2.5 w-2.5" />ينتظر موافقة
+                              </Badge>
+                            )}
+                            {/* Share chips */}
+                            {line.coverageStatus === "covered" && line.companyShareAmount && parseFloat(line.companyShareAmount) > 0 && (
+                              <Badge variant="outline" className="text-[10px] text-blue-700 dark:text-blue-400 border-blue-300">
+                                شركة: {formatNumber(parseFloat(line.companyShareAmount))}
+                              </Badge>
+                            )}
+                            {line.coverageStatus === "covered" && line.patientShareAmount && parseFloat(line.patientShareAmount) > 0 && (
+                              <Badge variant="outline" className="text-[10px] text-orange-700 dark:text-orange-400 border-orange-300">
+                                مريض: {formatNumber(parseFloat(line.patientShareAmount))}
+                              </Badge>
+                            )}
+                          </div>
+                        </TooltipProvider>
                       )}
                     </div>
                   )}

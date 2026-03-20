@@ -217,6 +217,13 @@ export function useLineManagement({
       priceSource: "service",
       sourceType: null,
       sourceId: null,
+      coverageStatus:     null,
+      approvalStatus:     null,
+      companyShareAmount: null,
+      patientShareAmount: null,
+      contractPrice:      null,
+      listPrice:          null,
+      contractRuleId:     null,
     };
     setLines(prev => [...prev, newLine]);
   }, []);
@@ -266,6 +273,13 @@ export function useLineManagement({
       priceSource: "item",
       sourceType: null,
       sourceId: null,
+      coverageStatus:     null,
+      approvalStatus:     null,
+      companyShareAmount: null,
+      patientShareAmount: null,
+      contractPrice:      null,
+      listPrice:          null,
+      contractRuleId:     null,
     };
     setLines(prev => [...prev, placeholder]);
     setItemSearch(""); setItemResults([]);
