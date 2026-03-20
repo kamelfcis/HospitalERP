@@ -1,0 +1,246 @@
+#20 - Complete Logger Adoption + Compound DB Index Hardening
+
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+
+---
+
+OBJECTIVE
+
+Complete infrastructure hardening by:
+
+1. Enforcing full adoption of structured logging (pino) across all server code
+2. Adding strictly justified compound database indexes for hot query paths
+
+No business logic, API behavior, or authentication changes are allowed.
+
+---
+
+CURRENT STATE
+
+The following infrastructure items are already COMPLETE:
+
+- pino logger (JSON in production / pretty in development)
+- database pool configuration (max connections, timeouts, statement_timeout)
+- GET /health endpoint (no auth, DB check, 503 on failure)
+- SESSION_SECRET production enforcement (fatal exit)
+- graceful shutdown handling
+- startup DB connection validation
+
+---
+
+REMAINING GAPS
+
+1. Residual console logging
+
+There are 37 remaining console.log / console.error calls across 12 files under:
+
+- server/routes/*
+- server/lib/*
+- server/seed.ts
+
+These bypass structured logging and break log aggregation and filtering.
+
+---
+
+2. Missing compound indexes
+
+High-frequency queries use multi-column WHERE conditions but only have single-column indexes.
+
+PostgreSQL is forced into bitmap index AND operations instead of efficient index scans.
+
+This will degrade performance under production load.
+
+---
+
+SUCCESS CRITERIA (MANDATORY)
+
+- Zero console.log or console.error calls under server/ (grep must return empty)
+- All logs emitted through centralized pino logger
+- Proper log levels used: debug / info / warn / error
+- npm run db:push completes without errors
+- EXPLAIN confirms compound index usage (no bitmap AND) for:
+
+  - pending invoices by pharmacy
+  - open shifts by pharmacy
+  - patient invoices by admission
+
+---
+
+OUT OF SCOPE (STRICT)
+
+DO NOT:
+
+- change route logic
+- change return values
+- add endpoints
+- modify frontend
+- change ORM or DB driver
+- introduce OpenTelemetry or tracing systems
+
+---
+
+TASK 1 — COMPLETE LOGGER ADOPTION
+
+Replace all remaining:
+
+- console.log
+- console.error
+
+with:
+
+- logger.info
+- logger.warn
+- logger.error
+
+---
+
+RULES
+
+- Use the SAME structured logging pattern already implemented in server/index.ts
+- Do NOT change surrounding logic
+- Do NOT introduce new logging formats
+
+---
+
+STRUCTURED LOGGING REQUIREMENTS
+
+Each log should include relevant metadata when available:
+
+- route
+- userId
+- shiftId
+- invoiceId
+- pharmacyId
+- admissionId
+- durationMs
+- error (for failures)
+
+---
+
+NOISE CONTROL (CRITICAL)
+
+DO NOT:
+
+- add logs inside tight loops
+- add logs inside SSE broadcast loops
+- add logs inside scheduler ticks unless already present
+
+Logging must not degrade performance.
+
+---
+
+TASK 2 — COMPOUND INDEX HARDENING
+
+Add ONLY the following justified compound indexes:
+
+1. sales_invoice_headers (pharmacy_id, status)
+   → used in pending invoice queries per pharmacy
+
+2. sales_invoice_headers (status, journal_status)
+   → used by journal retry worker
+
+3. cashier_shifts (pharmacy_id, status)
+   → used in open shift lookup
+
+4. patient_invoice_headers (admission_id, status)
+   → used in admission billing queries
+
+5. cashier_audit_log (shift_id, action)
+   → used in supervisor override and audit queries
+
+---
+
+INDEX VALIDATION RULES
+
+Before adding each index:
+
+- verify actual query pattern uses BOTH columns
+- ensure column order matches WHERE clause filtering/selectivity
+- confirm index improves the target query (not theoretical)
+
+DO NOT:
+
+- add speculative indexes
+- duplicate existing indexes
+- reorder columns without justification
+
+---
+
+SCHEMA + MIGRATION RULES
+
+- Apply indexes through Drizzle schema updates
+- Ensure migration names clearly describe purpose
+
+Example naming pattern:
+
+idx_sales_invoice_pharmacy_status
+idx_cashier_shifts_pharmacy_status
+
+- Each index must be traceable to a specific query/workflow
+
+---
+
+POST-DEPLOY VALIDATION
+
+For each index:
+
+- run EXPLAIN (or EXPLAIN ANALYZE if safe)
+- confirm:
+
+  - Index Scan or Index Only Scan is used
+  - Bitmap AND is eliminated (where applicable)
+
+---
+
+PERFORMANCE SAFETY
+
+Ensure:
+
+- no noticeable slowdown in INSERT/UPDATE operations
+- no blocking operations during migration (use safe deployment strategy)
+
+---
+
+RELEVANT FILES
+
+server/routes/accounts.ts
+server/routes/account-setup.ts
+server/routes/admissions.ts
+server/routes/reports.ts
+server/routes/_sse.ts
+server/routes/patient-invoices.ts
+server/routes/auth.ts
+server/routes/sales-invoices.ts
+server/routes/hospital-cashier.ts
+
+server/seed.ts
+
+server/lib/rpt-refresh-orchestrator.ts
+server/lib/inventory-snapshot-scheduler.ts
+server/lib/logger.ts
+
+shared/schema/invoicing.ts
+shared/schema/hospital.ts
+
+---
+
+DELIVERABLES
+
+Produce:
+
+1. List of all replaced console calls (file-by-file)
+2. Final logging consistency confirmation
+3. Index definitions added to schema
+4. Migration summary
+5. Query-to-index mapping (why each index exists)
+6. EXPLAIN validation results
+7. Risk notes (if any)
+
+---
+
+DO NOT EXPAND SCOPE.
+
+DO NOT MODIFY BUSINESS LOGIC.
+
+EXECUTE ONLY AFTER APPROVAL.

@@ -18,6 +18,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { PERMISSIONS, DEFAULT_ROLE_PERMISSIONS } from "@shared/permissions";
+import { logger } from "../lib/logger";
 import { auditLog } from "../route-helpers";
 import {
   requireAuth,
@@ -33,10 +34,10 @@ export async function registerAuthRoutes(app: Express) {
       if (existing.length === 0) {
         await storage.createPharmacy({ code: "PH01", nameAr: "الصيدلية الرئيسية", isActive: true });
         await storage.createPharmacy({ code: "PH02", nameAr: "صيدلية الطوارئ", isActive: true });
-        console.log("Seeded default pharmacies");
+        logger.info("[SEED] Seeded default pharmacies");
       }
     } catch (e) {
-      console.error("Failed to seed pharmacies:", e);
+      logger.error({ err: e instanceof Error ? e.message : String(e) }, "[SEED] Failed to seed pharmacies");
     }
   })();
 
@@ -56,9 +57,9 @@ export async function registerAuthRoutes(app: Express) {
           seeded = true;
         }
       }
-      if (seeded) console.log("Synced role permissions with defaults");
+      if (seeded) logger.info("[SEED] Synced role permissions with defaults");
     } catch (e) {
-      console.error("Failed to seed role permissions:", e);
+      logger.error({ err: e instanceof Error ? e.message : String(e) }, "[SEED] Failed to seed role permissions");
     }
   })();
 
@@ -74,10 +75,10 @@ export async function registerAuthRoutes(app: Express) {
           role: "admin",
           isActive: true,
         });
-        console.log("Seeded default admin user (admin/admin123)");
+        logger.info("[SEED] Seeded default admin user (admin/admin123)");
       }
     } catch (e) {
-      console.error("Failed to seed admin user:", e);
+      logger.error({ err: e instanceof Error ? e.message : String(e) }, "[SEED] Failed to seed admin user");
     }
   })();
 
@@ -244,7 +245,7 @@ export async function registerAuthRoutes(app: Express) {
         oldValues: oldPerms.map((p: any) => p.permission),
         newValues: permissions || [],
         userId: req.session.userId,
-      }).catch(err => console.error("[Audit] permission change:", err));
+      }).catch(err => logger.warn({ err: err.message }, "[Audit] permission change"));
       res.json({ message: "تم تحديث الصلاحيات" });
     } catch (error: any) {
       res.status(500).json({ message: error.message });

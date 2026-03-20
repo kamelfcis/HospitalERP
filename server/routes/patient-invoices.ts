@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { db } from "../db";
+import { logger } from "../lib/logger";
 import { sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
@@ -262,7 +263,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         action: "finalize",
         oldValues: JSON.stringify({ status: "draft", version: existing.version }),
         newValues: JSON.stringify({ status: "finalized", version: result.version }),
-      }).catch(err => console.error("[Audit] patient invoice finalize:", err));
+      }).catch(err => logger.warn({ err: err.message, invoiceId }, "[Audit] patient invoice finalize"));
 
       const invoiceLines = await storage.getPatientInvoice(invoiceId);
       if (invoiceLines) {
@@ -274,13 +275,13 @@ export function registerPatientInvoicesRoutes(app: Express) {
           description: `قيد فاتورة مريض رقم ${result.invoiceNumber} - ${result.patientName}`,
           entryDate: result.invoiceDate,
           lines: glLines,
-        }).catch(err => console.error("[GL] patient invoice finalize:", err));
+        }).catch(err => logger.warn({ err: err.message, invoiceId }, "[GL] patient invoice finalize"));
       }
 
       storage.createTreasuryTransactionsForInvoice(invoiceId, result.finalizedAt
         ? new Date(result.finalizedAt).toISOString().split("T")[0]
         : result.invoiceDate
-      ).catch(err => console.error("[Treasury] patient invoice finalize:", err));
+      ).catch(err => logger.warn({ err: err.message, invoiceId }, "[Treasury] patient invoice finalize"));
 
       // بث SSE: تحديث الكاشير الفوري عند تسوية فاتورة مريض
       if (existing.departmentId) {

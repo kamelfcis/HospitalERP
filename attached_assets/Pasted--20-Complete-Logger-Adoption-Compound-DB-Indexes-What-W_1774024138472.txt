@@ -1,0 +1,60 @@
+#20 - Complete Logger Adoption + Compound DB Indexes
+
+What & Why
+The four core infrastructure issues (pino logger, DB pool config, /health endpoint, SESSION_SECRET validation) are already fully implemented. Two gaps remain before production readiness:
+
+1. 37 residual console.log/error calls across 12 server route and lib files were not part of the original 3-file fix scope. These still produce unstructured output that bypasses the pino pipeline, breaking log level filtering and machine-readable log aggregation in production.
+
+2. Missing compound indexes on hot query paths — the cashier, invoice, and patient workflows execute high-frequency queries using two-column WHERE clauses (e.g. pharmacy_id + status, admission_id + status) against tables that only have single-column indexes. PostgreSQL must perform two index scans and a bitmap AND, making these queries significantly slower than necessary under load.
+
+Done looks like
+- Zero console.log or console.error calls anywhere under server/ (grep returns empty)
+- Every log line emitted by the server routes through the pino logger with a proper level (debug/info/warn/error)
+- npm run db:push applies new compound indexes with no errors
+- EXPLAIN on the three key queries (pending invoices by pharmacy, open shifts by pharmacy, patient invoices by admission) shows compound index scans instead of bitmap AND operations
+
+Out of scope
+- Changing any route handler logic or return values
+- Adding new API endpoints
+- Frontend changes
+- Changing ORM or DB driver
+- Adding OpenTelemetry or distributed tracing
+
+Tasks
+
+1. Replace residual console calls with logger
+In all 12 files under server/routes/ and server/lib/ that still use console.log or console.error, replace each call with the appropriate logger.info / logger.warn / logger.error call using the same structured pattern already established in server/index.ts. Do not change the surrounding logic.
+
+Do not introduce noisy or high-frequency logs inside tight loops, SSE broadcast paths, or scheduler ticks unless already required by the existing behavior.
+
+2. Add justified compound indexes
+Add the following compound indexes to the Drizzle schema, then run npm run db:push:
+
+- sales_invoice_headers: (pharmacy_id, status) — used in every pending-invoice query per pharmacy
+- sales_invoice_headers: (status, journal_status) — used by the journal retry worker every 5 minutes
+- cashier_shifts: (pharmacy_id, status) — used in every open-shift lookup
+- patient_invoice_headers: (admission_id, status) — used in admission billing queries
+- cashier_audit_log: (shift_id, action) — used in supervisor override and shift audit queries
+
+Only add indexes that have a clear single-query justification. Do not add speculative indexes.
+
+Before adding each compound index, verify that the column order matches the actual WHERE clause selectivity and query pattern. Do not add the index if the query pattern does not justify the proposed order.
+
+Use clear migration/schema naming so each compound index is traceable to the workflow it serves.
+
+Relevant files
+- server/routes/accounts.ts
+- server/routes/account-setup.ts
+- server/routes/admissions.ts
+- server/routes/reports.ts
+- server/routes/_sse.ts
+- server/routes/patient-invoices.ts
+- server/routes/auth.ts
+- server/routes/sales-invoices.ts
+- server/routes/hospital-cashier.ts
+- server/seed.ts
+- server/lib/rpt-refresh-orchestrator.ts
+- server/lib/inventory-snapshot-scheduler.ts
+- server/lib/logger.ts
+- shared/schema/invoicing.ts
+- shared/schema/hospital.ts

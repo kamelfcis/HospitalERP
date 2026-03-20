@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { db, pool } from "../db";
+import { logger } from "../lib/logger";
 import { eq, sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import {
@@ -277,7 +278,7 @@ export function registerSalesInvoicesRoutes(app: Express) {
             );
           }
         } catch (e: any) {
-          console.error('[CLINIC_ORDER_LINK]', e.message);
+          logger.warn({ err: e.message }, "[CLINIC_ORDER_LINK] failed to update clinic order status");
         }
       }
       // بث SSE: للصيدليات نستخدم pharmacyId مباشرة،

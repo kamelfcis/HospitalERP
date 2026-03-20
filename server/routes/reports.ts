@@ -32,6 +32,7 @@ import type { Express, Request, Response } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { requireAuth } from "./_auth";
+import { logger } from "../lib/logger";
 import {
   getStatusAll,
   runRefresh,
@@ -177,7 +178,7 @@ export function registerReportsRoutes(app: Express) {
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[reports] item-movements error:", msg);
+      logger.error({ err: msg }, "[reports] item-movements error");
       return res.status(500).json({ error: "خطأ في استرجاع تقرير الحركات" });
     }
   });

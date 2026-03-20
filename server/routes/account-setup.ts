@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import multer from "multer";
 import { storage } from "../storage";
 import { PERMISSIONS } from "@shared/permissions";
+import { logger } from "../lib/logger";
 import {
   requireAuth,
   checkPermission,
@@ -115,7 +116,7 @@ export function registerAccountSetupRoutes(app: Express) {
       };
 
       if (data.length > 0) {
-        console.log("أسماء الأعمدة في الملف:", Object.keys(data[0]));
+        logger.debug({ columns: Object.keys(data[0]) }, "[IMPORT] column names detected");
       }
 
       for (const row of data) {

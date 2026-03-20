@@ -126,6 +126,8 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   journalStatusIdx: index("idx_sales_inv_journal_status").on(table.journalStatus),
   originalInvoiceIdx: index("idx_sales_inv_original_invoice_id").on(table.originalInvoiceId),
   claimedByShiftIdx: index("idx_sales_inv_claimed_shift").on(table.claimedByShiftId),
+  pharmacyStatusIdx: index("idx_sales_inv_pharmacy_status").on(table.pharmacyId, table.status),
+  statusJournalIdx: index("idx_sales_inv_status_journal").on(table.status, table.journalStatus),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {
@@ -183,6 +185,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   statusIdx: index("idx_pat_inv_status").on(table.status),
   admissionIdx: index("idx_pat_inv_admission").on(table.admissionId),
   patientIdIdx: index("idx_pat_inv_patient_id").on(table.patientId),
+  admissionStatusIdx: index("idx_pat_inv_admission_status").on(table.admissionId, table.status),
 }));
 
 export const patientInvoiceLines = pgTable("patient_invoice_lines", {

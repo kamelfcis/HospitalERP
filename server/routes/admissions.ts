@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
+import { logger } from "../lib/logger";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
 import { requireAuth, checkPermission } from "./_shared";
@@ -200,7 +201,7 @@ export function registerAdmissionsRoutes(app: Express) {
       const results = await storage.searchSaleInvoicesForReturn({ invoiceNumber, receiptBarcode, itemBarcode, itemCode, itemId, dateFrom, dateTo, warehouseId });
       res.json(results);
     } catch (e: any) {
-      console.error("[SALES_RETURNS_SEARCH]", e);
+      logger.error({ err: e.message }, "[SALES_RETURNS_SEARCH]");
       res.status(500).json({ message: e.message });
     }
   });
@@ -235,7 +236,7 @@ export function registerAdmissionsRoutes(app: Express) {
         action: "sales_return",
         newValues: { originalInvoiceId, linesCount: activeLines.length },
         userId: req.session.userId,
-      }).catch(err => console.error("[Audit] sales return:", err));
+      }).catch(err => logger.warn({ err: err.message }, "[Audit] sales return"));
       scheduleInventorySnapshotRefresh("sales_return");
       res.json(result);
     } catch (e: any) { res.status(500).json({ message: e.message }); }

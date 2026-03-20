@@ -105,6 +105,7 @@ export const cashierShifts = pgTable("cashier_shifts", {
   openedAtIdx: index("idx_cashier_shifts_opened").on(table.openedAt),
   pharmacyIdx: index("idx_cashier_shifts_pharmacy").on(table.pharmacyId),
   businessDateIdx: index("idx_cashier_shifts_biz_date").on(table.businessDate),
+  pharmacyStatusIdx: index("idx_cashier_shifts_pharmacy_status").on(table.pharmacyId, table.status),
 }));
 
 export const cashierTransferLog = pgTable("cashier_transfer_log", {
@@ -171,6 +172,7 @@ export const cashierAuditLog = pgTable("cashier_audit_log", {
   shiftIdx: index("idx_cashier_audit_shift").on(table.shiftId),
   actionIdx: index("idx_cashier_audit_action").on(table.action),
   performedAtIdx: index("idx_cashier_audit_performed").on(table.performedAt),
+  shiftActionIdx: index("idx_cashier_audit_shift_action").on(table.shiftId, table.action),
 }));
 
 // ─── أنواع العمليات ────────────────────────────────────────────────────────

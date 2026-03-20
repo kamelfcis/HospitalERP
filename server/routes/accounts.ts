@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { storage } from "../storage";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
+import { logger } from "../lib/logger";
 import {
   requireAuth,
   checkPermission,
@@ -79,7 +80,7 @@ export function registerAccountsRoutes(app: Express) {
         action: "create",
         newValues: validated,
         userId: req.session?.userId as string,
-      }).catch(err => console.error("[Audit] account create:", err));
+      }).catch(err => logger.warn({ err: err.message }, "[Audit] account create"));
       res.status(201).json(account);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -104,7 +105,7 @@ export function registerAccountsRoutes(app: Express) {
         oldValues: oldAccount,
         newValues: validated,
         userId: req.session?.userId as string,
-      }).catch(err => console.error("[Audit] account update:", err));
+      }).catch(err => logger.warn({ err: err.message }, "[Audit] account update"));
       res.json(account);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -124,7 +125,7 @@ export function registerAccountsRoutes(app: Express) {
         action: "delete",
         oldValues: deletedAccount,
         userId: req.session?.userId as string,
-      }).catch(err => console.error("[Audit] account delete:", err));
+      }).catch(err => logger.warn({ err: err.message }, "[Audit] account delete"));
       res.status(204).send();
     } catch (error: any) {
       if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("violates foreign key constraint") || error.code === "23503") {
@@ -263,7 +264,7 @@ export function registerAccountsRoutes(app: Express) {
         action: "close",
         newValues: { name: period.name },
         userId: req.session.userId as string,
-      }).catch(err => console.error("[Audit] fiscal period close:", err));
+      }).catch(err => logger.warn({ err: err.message }, "[Audit] fiscal period close"));
       res.json(period);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
@@ -283,7 +284,7 @@ export function registerAccountsRoutes(app: Express) {
         action: "reopen",
         newValues: { name: period.name },
         userId: req.session.userId as string,
-      }).catch(err => console.error("[Audit] fiscal period reopen:", err));
+      }).catch(err => logger.warn({ err: err.message }, "[Audit] fiscal period reopen"));
       res.json(period);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

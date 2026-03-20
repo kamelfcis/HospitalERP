@@ -25,6 +25,7 @@
 
 import { storage } from "../storage";
 import { runRefresh, REFRESH_KEYS } from "./rpt-refresh-orchestrator";
+import { logger } from "./logger";
 
 const DEBOUNCE_MS = 2000;
 
@@ -41,9 +42,9 @@ let pendingAfterRun = false;
 export function scheduleInventorySnapshotRefresh(reason: string): void {
   if (debounceHandle !== null) {
     clearTimeout(debounceHandle);
-    console.log(`[SNAP_SCHED] coalesced reason=${reason}`);
+    logger.debug({ reason }, "[SNAP_SCHED] coalesced");
   } else {
-    console.log(`[SNAP_SCHED] scheduled reason=${reason}`);
+    logger.debug({ reason }, "[SNAP_SCHED] scheduled");
   }
 
   debounceHandle = setTimeout(() => {
@@ -54,7 +55,7 @@ export function scheduleInventorySnapshotRefresh(reason: string): void {
 
 async function runScheduled(reason: string): Promise<void> {
   if (isRunning) {
-    console.log(`[SNAP_SCHED] busy, queued pending reason=${reason}`);
+    logger.debug({ reason }, "[SNAP_SCHED] busy, queued pending");
     pendingAfterRun = true;
     return;
   }
@@ -80,7 +81,7 @@ async function runScheduled(reason: string): Promise<void> {
     isRunning = false;
     if (pendingAfterRun) {
       pendingAfterRun = false;
-      console.log(`[SNAP_SCHED] running queued pending`);
+      logger.debug("[SNAP_SCHED] running queued pending");
       await runScheduled("pending");
     }
   }

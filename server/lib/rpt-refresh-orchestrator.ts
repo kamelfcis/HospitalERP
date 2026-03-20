@@ -53,6 +53,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { logger } from "./logger";
+
 export type TriggerSource = "startup" | "polling" | "event-driven" | "manual";
 export type JobStatus    = "idle" | "running" | "success" | "error";
 
@@ -152,7 +154,7 @@ export async function runRefresh(
   const status = getOrInit(key);
 
   if (status.currentlyRunning) {
-    console.log(`[RPT_ORCH] skipped key=${key} trigger=${trigger} reason=already_running`);
+    logger.debug({ key, trigger }, "[RPT_ORCH] skipped reason=already_running");
     return null;
   }
 
@@ -161,7 +163,7 @@ export async function runRefresh(
   status.lastStartedAt     = new Date().toISOString();
   status.triggerSource     = trigger;
   status.lastErrorMessage  = null;
-  console.log(`[RPT_ORCH] started key=${key} trigger=${trigger}`);
+  logger.debug({ key, trigger }, "[RPT_ORCH] started");
 
   const t0 = Date.now();
   try {
@@ -172,10 +174,7 @@ export async function runRefresh(
     status.lastRowsUpserted  = result.upserted;
     status.lastStatus        = "success";
     status.lastFinishedAt    = new Date().toISOString();
-    console.log(
-      `[RPT_ORCH] done key=${key} trigger=${trigger}` +
-      ` upserted=${result.upserted} duration=${durationMs}ms`
-    );
+    logger.info({ key, trigger, upserted: result.upserted, durationMs }, "[RPT_ORCH] done");
     return result;
   } catch (err: unknown) {
     const durationMs = Date.now() - t0;
@@ -185,10 +184,7 @@ export async function runRefresh(
     status.lastStatus        = "error";
     status.lastFinishedAt    = new Date().toISOString();
     status.lastErrorMessage  = msg;
-    console.error(
-      `[RPT_ORCH] error key=${key} trigger=${trigger}` +
-      ` duration=${durationMs}ms: ${msg}`
-    );
+    logger.error({ key, trigger, durationMs, err: msg }, "[RPT_ORCH] error");
     throw err;
   } finally {
     status.currentlyRunning = false;

@@ -1,15 +1,16 @@
 import { db } from "./db";
 import { accounts, costCenters } from "@shared/schema";
+import { logger } from "./lib/logger";
 
 export async function seedDatabase() {
   try {
     const existingAccounts = await db.select().from(accounts).limit(1);
     if (existingAccounts.length > 0) {
-      console.log("Database already seeded (accounts and cost centers exist).");
+      logger.info("[SEED] Database already seeded (accounts and cost centers exist)");
       return;
     }
 
-    console.log("Seeding database...");
+    logger.info("[SEED] Seeding database...");
 
     const accountsData = [
       { code: "1000", name: "الأصول", accountType: "asset" as const, level: 1, parentId: null },
@@ -70,7 +71,7 @@ export async function seedDatabase() {
       });
     }
 
-    console.log("Accounts seeded");
+    logger.info("[SEED] Accounts seeded");
 
     const costCentersData = [
       { code: "CC001", name: "قسم الباطنة", description: "قسم الأمراض الباطنية" },
@@ -92,11 +93,11 @@ export async function seedDatabase() {
       });
     }
 
-    console.log("Cost centers seeded");
-    console.log("Database seeding completed (accounts and cost centers only).");
+    logger.info("[SEED] Cost centers seeded");
+    logger.info("[SEED] Database seeding completed (accounts and cost centers only)");
 
   } catch (error) {
-    console.error("Error seeding database:", error);
+    logger.error({ err: error instanceof Error ? error.message : String(error) }, "[SEED] Error seeding database");
     throw error;
   }
 }

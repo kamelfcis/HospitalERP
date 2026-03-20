@@ -23,6 +23,7 @@ import { sql, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { users, cashierAuditLog } from "@shared/schema";
 import { requireAuth, sseClients, broadcastToUnit } from "./_shared";
+import { logger } from "../lib/logger";
 
 // ── مساعد: التحقق من ملكية الوردية ──────────────────────────────────────
 //  القاعدة 5: الملكية إلزامية افتراضياً — bypass المشرف يُسجَّل في audit
@@ -95,7 +96,7 @@ export function registerCashierRoutes(app: Express) {
     };
 
     sseWrite(`event: connected\ndata: ${JSON.stringify({ unitId })}\n\n`);
-    console.log(`[SSE] client connected unitId=${unitId}`);
+    logger.debug({ unitId }, "[SSE] cashier client connected");
 
     if (!sseClients.has(unitId)) sseClients.set(unitId, new Set());
     sseClients.get(unitId)!.add(res);
@@ -111,7 +112,7 @@ export function registerCashierRoutes(app: Express) {
         clients.delete(res);
         if (clients.size === 0) sseClients.delete(unitId);
       }
-      console.log(`[SSE] client disconnected unitId=${unitId}`);
+      logger.debug({ unitId }, "[SSE] cashier client disconnected");
     });
   });
 

@@ -1,0 +1,410 @@
+IMPORTANT:
+Follow engineering rules defined in Prompt 1.
+
+---
+
+OBJECTIVE
+
+Harden server infrastructure for production readiness without changing business logic.
+
+The system already has good foundations but contains critical gaps in:
+
+* logging
+* database pool configuration
+* health monitoring
+* environment security
+
+These must be fixed before production load.
+
+In addition, the review must explicitly consider:
+
+* refactor quality
+* backend code organization
+* database indexing
+* compound indexes
+* startup efficiency
+* query hot paths
+* infrastructure-related technical debt
+
+---
+
+SCOPE
+
+This task focuses ONLY on backend infrastructure.
+
+Do NOT:
+
+* change business logic
+* modify API behavior
+* alter authentication system
+* add new features unrelated to infrastructure
+
+You may propose refactoring ONLY when it improves:
+
+* maintainability
+* observability
+* performance
+* production safety
+* separation of concerns
+
+---
+
+ISSUE 1 — UNSTRUCTURED LOGGING
+
+Current State:
+
+* Logs use console.log / console.error
+* No log levels
+* Not machine-readable
+
+Problem:
+
+* Cannot monitor system properly
+* Cannot filter logs
+* Cannot debug production issues efficiently
+
+---
+
+REQUIRED FIX
+
+Replace logging with structured logging using:
+
+pino
+
+Requirements:
+
+* JSON logs in production
+* pretty logs in development (pino-pretty)
+* include:
+
+  * level
+  * time
+  * msg
+  * metadata
+
+---
+
+IMPLEMENTATION
+
+* Install:
+
+  * pino
+  * pino-pretty
+
+* Create:
+
+server/lib/logger.ts
+
+* Export a single logger instance
+
+* Replace all:
+
+console.log
+console.error
+
+in:
+
+* server/index.ts
+* server/db.ts
+* server/monitoring.ts
+
+---
+
+BACKWARD COMPATIBILITY
+
+Keep existing log() export in index.ts
+
+Wrap it over new logger.
+
+---
+
+ISSUE 2 — DATABASE POOL NOT CONFIGURED
+
+Current State:
+
+* pg.Pool uses default settings
+* no timeout
+* limited connections
+* runaway queries possible
+
+Problem:
+
+* slow queries block system
+* pool exhaustion
+* system freeze
+
+---
+
+REQUIRED FIX
+
+Configure pool in:
+
+server/db.ts
+
+---
+
+POOL CONFIG
+
+* max: 20
+* idleTimeoutMillis: 30000
+* connectionTimeoutMillis: 5000
+
+---
+
+QUERY TIMEOUT
+
+Set:
+
+statement_timeout = 30s
+
+Using:
+
+pool.on('connect', ...)
+
+---
+
+STARTUP DB TEST
+
+Before server starts listening:
+
+Run:
+
+SELECT 1
+
+If fails:
+
+* log structured error
+* exit process with code 1
+
+---
+
+ISSUE 3 — MISSING PROPER /health ENDPOINT
+
+Current State:
+
+* /api/ops/health requires auth
+* does not validate DB
+
+Problem:
+
+* monitoring tools cannot access
+* DB failures undetected
+
+---
+
+REQUIRED FIX
+
+Create endpoint:
+
+GET /health
+
+---
+
+RULES
+
+* NO authentication required
+* must be registered BEFORE auth middleware
+
+---
+
+RESPONSE
+
+Success:
+
+{
+  status: "ok",
+  db: "ok",
+  uptime: N,
+  version: "..."
+}
+
+Failure:
+
+* DB unreachable
+* return HTTP 503
+* status: "error"
+
+---
+
+PERFORMANCE
+
+Response time must be:
+
+< 200 ms
+
+---
+
+IMPLEMENTATION
+
+Must execute:
+
+SELECT 1
+
+against DB to verify liveness.
+
+---
+
+ISSUE 4 — SESSION_SECRET FALLBACK
+
+Current State:
+
+* system uses default secret if not set
+
+Problem:
+
+* insecure sessions
+* predictable tokens
+* production risk
+
+---
+
+REQUIRED FIX
+
+At startup:
+
+If:
+
+NODE_ENV = production
+
+AND:
+
+SESSION_SECRET is missing OR equals default
+
+Then:
+
+* log fatal error
+* exit process immediately
+
+---
+
+NO SILENT FALLBACK ALLOWED
+
+---
+
+INFRASTRUCTURE REFACTOR REVIEW
+
+Review backend structure and propose improvements for:
+
+* centralizing configuration (env, logger, db)
+* removing duplicated logic
+* isolating infrastructure concerns from business logic
+* improving module boundaries
+* ensuring clear separation between:
+
+  * config layer
+  * db layer
+  * server bootstrap
+  * monitoring layer
+
+---
+
+DATABASE INDEX & PERFORMANCE REVIEW
+
+Analyze database usage patterns and propose improvements for:
+
+* missing indexes on high-usage queries
+* inefficient WHERE / JOIN conditions
+* full table scans
+* repeated queries under load
+
+---
+
+COMPOUND INDEX REQUIREMENTS
+
+Where applicable, suggest compound indexes for:
+
+* (status, created_at)
+* (invoice_id, item_id)
+* (shift_id, status)
+* (user_id, created_at)
+
+Only when justified by query patterns.
+
+---
+
+QUERY HOT PATH ANALYSIS
+
+Identify:
+
+* most frequently executed queries
+* slow queries
+* queries executed during:
+
+  * invoice creation
+  * cashier operations
+  * shift closing
+  * reporting
+
+Recommend optimizations WITHOUT changing business logic.
+
+---
+
+STARTUP PERFORMANCE REVIEW
+
+Check for:
+
+* unnecessary DB calls on startup
+* repeated initialization logic
+* blocking operations delaying server boot
+
+---
+
+LOG-DRIVEN PERFORMANCE INSIGHTS
+
+Ensure new logging enables:
+
+* slow query detection
+* error correlation
+* request tracing
+
+---
+
+OUT OF SCOPE
+
+Do NOT:
+
+* change ORM
+* change DB driver
+* add OpenTelemetry
+* change existing monitoring endpoints
+* modify frontend
+
+---
+
+REFACTOR REQUIREMENTS
+
+While proposing improvements:
+
+* maintain backward compatibility
+* avoid breaking changes
+* keep API contracts intact
+
+---
+
+AGENT TASK
+
+Produce:
+
+1. Infrastructure issues analysis
+2. Root causes
+3. Logger refactor plan
+4. DB pool hardening plan
+5. Health endpoint implementation plan
+6. Startup validation plan
+7. Refactor recommendations
+8. Indexing & compound index plan
+9. Query performance analysis
+10. Startup performance risks
+11. Affected files:
+
+   * server/index.ts
+   * server/db.ts
+   * server/monitoring.ts
+12. Risk assessment
+13. Test checklist
+
+---
+
+DO NOT IMPLEMENT YET.
+
+Wait for approval.

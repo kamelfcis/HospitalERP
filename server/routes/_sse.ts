@@ -40,7 +40,6 @@ export function broadcastToUnit(unitId: string, event: string, data: unknown) {
   const clients = sseClients.get(unitId);
   if (!clients || clients.size === 0) return;
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  console.log(`[SSE] broadcast event="${event}" unitId=${unitId} clients=${clients.size}`);
   clients.forEach((res) => {
     try {
       res.write(payload);
