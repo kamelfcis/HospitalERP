@@ -26,6 +26,13 @@ export interface LineLocal {
   priceSource: string;
   sourceType: string | null;
   sourceId: string | null;
+  coverageStatus: string | null;
+  approvalStatus: string | null;
+  companyShareAmount: string | null;
+  patientShareAmount: string | null;
+  contractPrice: string | null;
+  listPrice: string | null;
+  contractRuleId: string | null;
 }
 
 export interface PaymentLocal {

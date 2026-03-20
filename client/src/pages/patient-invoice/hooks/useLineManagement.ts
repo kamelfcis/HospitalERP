@@ -156,6 +156,13 @@ export function useLineManagement({
       priceSource: l.line?.priceSource || l.priceSource || "",
       sourceType: l.sourceType ?? null,
       sourceId: l.sourceId ?? null,
+      coverageStatus:     (l as any).coverageStatus     ?? null,
+      approvalStatus:     (l as any).approvalStatus     ?? null,
+      companyShareAmount: (l as any).companyShareAmount  ?? null,
+      patientShareAmount: (l as any).patientShareAmount  ?? null,
+      contractPrice:      (l as any).contractPrice       ?? null,
+      listPrice:          (l as any).listPrice           ?? null,
+      contractRuleId:     (l as any).contractRuleId      ?? null,
     }));
     setLines(loaded);
     return loaded;

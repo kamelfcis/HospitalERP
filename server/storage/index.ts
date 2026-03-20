@@ -742,6 +742,13 @@ export interface IStorage {
   updateContractMember(id: string, data: Partial<import("@shared/schema").InsertContractMember>): Promise<import("@shared/schema").ContractMember>;
   lookupMemberByCard(cardNumber: string, date: string): Promise<import("./contracts-core-storage").ContractMemberLookupResult | null>;
 
+  // ── Coverage Rules (قواعد التغطية) ────────────────────────────────────────
+  getCoverageRules(contractId: string): Promise<import("@shared/schema").ContractCoverageRule[]>;
+  getCoverageRuleById(id: string): Promise<import("@shared/schema").ContractCoverageRule | null>;
+  createCoverageRule(data: import("@shared/schema").InsertContractCoverageRule): Promise<import("@shared/schema").ContractCoverageRule>;
+  updateCoverageRule(id: string, data: Partial<import("@shared/schema").InsertContractCoverageRule>): Promise<import("@shared/schema").ContractCoverageRule>;
+  deleteCoverageRule(id: string): Promise<void>;
+
   [key: string]: unknown;
 }
 
@@ -793,6 +800,7 @@ import stockCountMethods from "./stock-count-storage";
 import permissionGroupsMethods from "./permission-groups-storage";
 import companiesMethods from "./contracts-companies-storage";
 import contractsCoreMethods from "./contracts-core-storage";
+import contractsRulesMethods from "./contracts-rules-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -827,6 +835,7 @@ Object.assign(
   stockCountMethods,
   companiesMethods,
   contractsCoreMethods,
+  contractsRulesMethods,
 );
 
 export const storage = new DatabaseStorage();

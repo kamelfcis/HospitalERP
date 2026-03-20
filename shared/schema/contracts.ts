@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  Contracts Schema — جداول العقود والمنتسبين
+ *  Contracts Schema — جداول العقود والمنتسبين وقواعد التغطية
  * ═══════════════════════════════════════════════════════════════════════════
  *
  *  يستورد من:
@@ -11,14 +11,15 @@
  *  لا يستورد من هذا الملف أي من الجداول العليا لتجنّب الاستيراد الدائري.
  *
  *  العلاقات:
- *    contracts       → companies, priceLists
- *    contractMembers → contracts, patients
+ *    contracts             → companies, priceLists
+ *    contractMembers       → contracts, patients
+ *    contractCoverageRules → contracts
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 import { sql } from "drizzle-orm";
 import {
-  pgTable, text, varchar, decimal, boolean,
+  pgTable, pgEnum, text, varchar, decimal, boolean, integer,
   timestamp, date, index, uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -83,6 +84,43 @@ export const contractMembers = pgTable("contract_members", {
   uniqueCardPerContract: uniqueIndex("idx_cm_unique_card").on(table.contractId, table.memberCardNumber),
 }));
 
+// ─── نوع قاعدة التغطية ────────────────────────────────────────────────────
+
+export const coverageRuleTypeEnum = pgEnum("coverage_rule_type", [
+  "include_service",
+  "exclude_service",
+  "include_dept",
+  "exclude_dept",
+  "discount_pct",
+  "fixed_price",
+  "approval_required",
+  "global_discount",
+]);
+
+// ─── قواعد التغطية (Coverage Rules) ───────────────────────────────────────
+
+export const contractCoverageRules = pgTable("contract_coverage_rules", {
+  id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId:      varchar("contract_id").notNull().references(() => contracts.id, { onDelete: "cascade" }),
+  ruleName:        text("rule_name").notNull(),
+  ruleType:        coverageRuleTypeEnum("rule_type").notNull(),
+  serviceId:       varchar("service_id"),
+  departmentId:    varchar("department_id"),
+  serviceCategory: text("service_category"),
+  discountPct:     decimal("discount_pct", { precision: 5, scale: 2 }),
+  fixedPrice:      decimal("fixed_price", { precision: 18, scale: 2 }),
+  priority:        integer("priority").notNull().default(10),
+  isActive:        boolean("is_active").notNull().default(true),
+  notes:           text("notes"),
+  createdAt:       timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  contractIdx:  index("idx_ccr_contract").on(table.contractId),
+  serviceIdx:   index("idx_ccr_service").on(table.serviceId),
+  deptIdx:      index("idx_ccr_dept").on(table.departmentId),
+  priorityIdx:  index("idx_ccr_priority").on(table.contractId, table.priority),
+  activeIdx:    index("idx_ccr_active").on(table.contractId, table.isActive),
+}));
+
 // ─── Schemas & Types ──────────────────────────────────────────────────────
 
 export const insertContractSchema = createInsertSchema(contracts).omit({
@@ -93,10 +131,16 @@ export const insertContractMemberSchema = createInsertSchema(contractMembers).om
   id: true, createdAt: true, updatedAt: true,
 });
 
-export type Contract             = typeof contracts.$inferSelect;
-export type InsertContract       = z.infer<typeof insertContractSchema>;
-export type ContractMember       = typeof contractMembers.$inferSelect;
-export type InsertContractMember = z.infer<typeof insertContractMemberSchema>;
+export const insertContractCoverageRuleSchema = createInsertSchema(contractCoverageRules).omit({
+  id: true, createdAt: true,
+});
+
+export type Contract                  = typeof contracts.$inferSelect;
+export type InsertContract            = z.infer<typeof insertContractSchema>;
+export type ContractMember            = typeof contractMembers.$inferSelect;
+export type InsertContractMember      = z.infer<typeof insertContractMemberSchema>;
+export type ContractCoverageRule      = typeof contractCoverageRules.$inferSelect;
+export type InsertContractCoverageRule = z.infer<typeof insertContractCoverageRuleSchema>;
 
 // ─── Labels ───────────────────────────────────────────────────────────────
 
@@ -106,4 +150,15 @@ export const relationTypeLabels: Record<string, string> = {
   child:   "ابن/ابنة",
   parent:  "والد/والدة",
   other:   "أخرى",
+};
+
+export const coverageRuleTypeLabels: Record<string, string> = {
+  include_service:   "تشمل خدمة",
+  exclude_service:   "تستثني خدمة",
+  include_dept:      "تشمل قسم",
+  exclude_dept:      "تستثني قسم",
+  discount_pct:      "خصم بنسبة",
+  fixed_price:       "سعر ثابت",
+  approval_required: "موافقة مسبقة",
+  global_discount:   "خصم عام",
 };

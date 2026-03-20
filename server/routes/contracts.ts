@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  Contracts Routes — مسارات العقود والشركات
+ *  Contracts Routes — مسارات العقود والشركات وقواعد التغطية
  * ═══════════════════════════════════════════════════════════════════════════
  *
  *  POST   /api/companies                         — إنشاء شركة
@@ -14,14 +14,21 @@
  *  GET    /api/contracts/:id                     — عقد واحد
  *  PATCH  /api/contracts/:id                     — تحديث عقد
  *
+ *  GET    /api/contracts/:id/rules               — قواعد التغطية لعقد
+ *  POST   /api/contracts/:id/rules               — إضافة قاعدة
+ *  PATCH  /api/contracts/rules/:ruleId           — تحديث قاعدة
+ *  DELETE /api/contracts/rules/:ruleId           — حذف قاعدة
+ *
+ *  POST   /api/contracts/evaluate                — تقييم بند فاتورة
+ *
  *  POST   /api/contract-members                  — إضافة منتسب
  *  GET    /api/contract-members?contractId=      — منتسبو عقد
  *  GET    /api/contract-members/:id              — منتسب واحد
- *  PATCH  /api/contract-members/:id              — تحديث منتسب
+ *  PATCH  /api/contract-members/:id             — تحديث منتسب
  *  GET    /api/contract-members/lookup           — بحث ببطاقة المنتسب
  *
  *  RBAC:  contracts.view  (GET)
- *         contracts.manage (POST / PATCH / deactivate)
+ *         contracts.manage (POST / PATCH / DELETE / deactivate)
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -33,8 +40,10 @@ import {
   insertCompanySchema,
   insertContractSchema,
   insertContractMemberSchema,
+  insertContractCoverageRuleSchema,
 } from "@shared/schema";
 import { z } from "zod";
+import { evaluateContractForService } from "../lib/contract-rule-evaluator";
 
 export function registerContractRoutes(app: Express) {
   // ──────────────────────────────────────────────────────────────────────────
@@ -138,13 +147,6 @@ export function registerContractRoutes(app: Express) {
     }
   );
 
-  /**
-   * DELETE /api/companies/:id
-   *
-   * Soft-deactivate only — NO physical deletion ever occurs.
-   * Identical behavior to POST /api/companies/:id/deactivate.
-   * Provided for spec compatibility.
-   */
   app.delete(
     "/api/companies/:id",
     requireAuth,
@@ -178,6 +180,123 @@ export function registerContractRoutes(app: Express) {
         res.json(list);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "خطأ";
+        res.status(500).json({ message: msg });
+      }
+    }
+  );
+
+  // ─── Rules routes MUST be registered before /:id to avoid param collision ─
+
+  /**
+   * GET /api/contracts/rules/:ruleId — single rule (for internal use)
+   * MUST be before /api/contracts/:id
+   */
+  app.get(
+    "/api/contracts/rules/:ruleId",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_VIEW),
+    async (req, res) => {
+      try {
+        const rule = await storage.getCoverageRuleById(req.params.ruleId);
+        if (!rule) return res.status(404).json({ message: "القاعدة غير موجودة" });
+        res.json(rule);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        res.status(500).json({ message: msg });
+      }
+    }
+  );
+
+  /** PATCH /api/contracts/rules/:ruleId — update a coverage rule */
+  app.patch(
+    "/api/contracts/rules/:ruleId",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_MANAGE),
+    async (req, res) => {
+      try {
+        const partial = insertContractCoverageRuleSchema.partial().safeParse(req.body);
+        if (!partial.success) {
+          return res.status(400).json({ message: partial.error.errors[0]?.message ?? "بيانات غير صحيحة" });
+        }
+        const rule = await storage.updateCoverageRule(req.params.ruleId, partial.data);
+        res.json(rule);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        const code = msg.includes("غير موجودة") ? 404 : 500;
+        res.status(code).json({ message: msg });
+      }
+    }
+  );
+
+  /** DELETE /api/contracts/rules/:ruleId — delete a coverage rule */
+  app.delete(
+    "/api/contracts/rules/:ruleId",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_MANAGE),
+    async (req, res) => {
+      try {
+        await storage.deleteCoverageRule(req.params.ruleId);
+        res.status(204).end();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        const code = msg.includes("غير موجودة") ? 404 : 500;
+        res.status(code).json({ message: msg });
+      }
+    }
+  );
+
+  /**
+   * POST /api/contracts/evaluate
+   *
+   * تقييم بند فاتورة مريض في سياق عقد معين.
+   * يُعيد EvaluationResult كاملاً.
+   *
+   * Body:
+   *   { contractId, serviceId?, departmentId?, serviceCategory?, listPrice, evaluationDate? }
+   */
+  app.post(
+    "/api/contracts/evaluate",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_VIEW),
+    async (req, res) => {
+      try {
+        const schema = z.object({
+          contractId:      z.string().min(1, "contractId مطلوب"),
+          serviceId:       z.string().nullish(),
+          departmentId:    z.string().nullish(),
+          serviceCategory: z.string().nullish(),
+          listPrice:       z.string().min(1, "listPrice مطلوب"),
+          evaluationDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+        });
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "بيانات غير صحيحة" });
+        }
+
+        const contract = await storage.getContractById(parsed.data.contractId);
+        if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
+
+        const rules = await storage.getCoverageRules(parsed.data.contractId);
+
+        const result = evaluateContractForService({
+          contract: {
+            id:                contract.id,
+            companyCoveragePct: contract.companyCoveragePct,
+            isActive:          contract.isActive,
+            startDate:         contract.startDate,
+            endDate:           contract.endDate,
+          },
+          rules,
+          serviceId:       parsed.data.serviceId       ?? null,
+          departmentId:    parsed.data.departmentId    ?? null,
+          serviceCategory: parsed.data.serviceCategory ?? null,
+          listPrice:       parsed.data.listPrice,
+          evaluationDate:  parsed.data.evaluationDate  ?? undefined,
+        });
+
+        res.json(result);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ في التقييم";
         res.status(500).json({ message: msg });
       }
     }
@@ -243,14 +362,55 @@ export function registerContractRoutes(app: Express) {
   );
 
   // ──────────────────────────────────────────────────────────────────────────
+  //  COVERAGE RULES
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /** GET /api/contracts/:id/rules — coverage rules for a contract */
+  app.get(
+    "/api/contracts/:id/rules",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_VIEW),
+    async (req, res) => {
+      try {
+        const rules = await storage.getCoverageRules(req.params.id);
+        res.json(rules);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        res.status(500).json({ message: msg });
+      }
+    }
+  );
+
+  /** POST /api/contracts/:id/rules — add a coverage rule */
+  app.post(
+    "/api/contracts/:id/rules",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_MANAGE),
+    async (req, res) => {
+      try {
+        const parsed = insertContractCoverageRuleSchema.safeParse({
+          ...req.body,
+          contractId: req.params.id,
+        });
+        if (!parsed.success) {
+          return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "بيانات غير صحيحة" });
+        }
+        const rule = await storage.createCoverageRule(parsed.data);
+        res.status(201).json(rule);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ في إضافة القاعدة";
+        const code = msg.includes("غير موجود") ? 404 : 500;
+        res.status(code).json({ message: msg });
+      }
+    }
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
   //  CONTRACT MEMBERS
   // ──────────────────────────────────────────────────────────────────────────
 
   /**
    * GET /api/contract-members/lookup?cardNumber=&date=
-   *
-   * Lookup a member by card number as-of a given service date.
-   * Returns { member, contract, company } or 404.
    *
    * NOTE: This route MUST be registered BEFORE the /:id route so Express
    * does not treat "lookup" as a UUID parameter.

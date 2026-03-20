@@ -1,0 +1,88 @@
+Approved to implement Phase 2, with four semantic corrections to lock before coding.
+
+Proceed with implementation only after applying these exact decisions.
+
+==================================================
+PHASE 2 APPROVAL WITH LOCKED SEMANTICS
+==================================================
+
+Your analysis is now implementation-ready.
+
+Proceed with Phase 2 only, but lock these semantics exactly before coding:
+
+1) approvalStatus semantics
+Do NOT use:
+- approvalStatus = "approval_required"
+- approvalStatus = null for normal covered lines
+
+Use exactly:
+- if approval_required rule matches:
+    coverageStatus = "approval_required"
+    approvalStatus = "pending"
+- otherwise:
+    approvalStatus = "not_required"
+
+2) Fallback coverage logic
+Do NOT make fallback eligibility depend on companyCoveragePct > 0.
+
+Use this rule:
+- if the contract is active and no exclusion rule blocks the service,
+  fallback eligibility remains covered
+- then shares are computed from companyCoveragePct
+- if companyCoveragePct = 0, then:
+    companyShareAmount = 0
+    patientShareAmount = full contractPrice
+    coverageStatus remains "covered" unless excluded or approval-required
+
+3) companyCoveragePct default
+Do NOT default companyCoveragePct to 100.
+
+Use:
+- explicit contract companyCoveragePct if present
+- otherwise default to 0 unless a safer existing system rule explicitly says otherwise
+
+4) explanation content
+Even if matchedRuleId / matchedRuleName points to the pricing rule only,
+the explanation must still mention:
+- eligibility basis
+- pricing basis
+- approval overlay if any
+- fallback reason if no explicit rule priced the line
+
+==================================================
+IMPLEMENTATION SCOPE REMINDER
+==================================================
+
+Implement only:
+- contractCoverageRules schema
+- evaluator
+- rules CRUD + evaluate endpoint
+- patient invoice create/update integration
+- contracts UI rules tab
+- patient invoice line display badges/explanation
+
+Keep deferred:
+- sales invoice integration
+- clinic booking direct stamping
+- consultation order stamping
+- stay/accommodation stamping
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+At the end print exactly:
+1) MODIFIED FILES
+2) RULES ENGINE SUMMARY
+3) RULE COMPOSITION / PRECEDENCE SUMMARY
+4) SEMANTICS LOCKED
+5) INTEGRATION POINTS COMPLETED
+6) INTEGRATION POINTS DEFERRED
+7) INDEXES ADDED
+8) IMMUTABILITY / REEVALUATION RULE ENFORCED
+9) UI ADDED
+10) DOCUMENTATION ADDED
+11) PHASE 3 PREREQUISITES
+12) ANY BLOCKERS OR FOLLOW-UP RISKS
+
+Proceed now.

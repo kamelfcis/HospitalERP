@@ -20,6 +20,7 @@ import {
   insertPatientInvoicePaymentSchema,
   patientInvoiceHeaders,
 } from "@shared/schema";
+import { applyContractCoverage } from "../lib/patient-invoice-coverage";
 import { eq } from "drizzle-orm";
 
 async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Promise<boolean> {
@@ -112,8 +113,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const { header, lines, payments } = req.body;
 
       const headerParsed = insertPatientInvoiceHeaderSchema.parse(header);
-      const linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
+      let linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
+
+      linesParsed = await applyContractCoverage(
+        (headerParsed as any).contractId ?? null,
+        linesParsed,
+        (headerParsed as any).invoiceDate ?? undefined,
+      );
 
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
@@ -135,8 +142,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const { header, lines, payments, expectedVersion } = req.body;
 
       const headerParsed = insertPatientInvoiceHeaderSchema.partial().parse(header);
-      const linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
+      let linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
+
+      linesParsed = await applyContractCoverage(
+        (headerParsed as any).contractId ?? null,
+        linesParsed,
+        (headerParsed as any).invoiceDate ?? undefined,
+      );
 
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
