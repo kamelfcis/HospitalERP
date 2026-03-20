@@ -1,0 +1,60 @@
+TASK: Final Verification Pass — Accounting Retry Worker, Batch Retry, and next_retry_at Consistency
+
+The accounting monitoring/retry enhancements are now implemented.
+Before final signoff, perform a strict verification pass focused only on retry correctness and consistency.
+
+VERIFY ALL OF THE FOLLOWING
+
+A) Worker execution rules
+1) List exactly which event statuses the background worker picks up
+2) Confirm it only processes rows where next_retry_at is due
+3) Confirm completed events are never retried
+4) Confirm blocked events are either excluded or handled intentionally
+
+B) Concurrency / duplicate execution safety
+1) Verify what happens if:
+   - the background worker retries an event
+   - while an admin triggers single retry or batch retry at the same time
+2) Confirm whether there is any locking / guard / update condition preventing duplicate retry execution
+3) If duplicate trigger is still possible, close it with the safest minimal fix
+
+C) attempt_count and next_retry_at consistency
+For each retry path:
+- background worker
+- POST /api/accounting/events/:id/retry
+- POST /api/accounting/events/retry-batch
+
+Print exactly:
+- when attempt_count increments
+- how next_retry_at is recalculated
+- what happens on retry success
+- what happens on retry failure
+
+D) Source-type retry coverage
+List all source types now supported by retry logic and confirm exact handler behavior for each:
+- sales_invoice
+- cashier_collection
+- patient_invoice
+- purchase_receiving
+- warehouse_transfer
+- cashier_refund
+- doctor_payable_settlement
+If any source type is UI-visible but not actually retried, state that clearly.
+
+E) UI verification
+Confirm the accounting events page now correctly shows:
+- next_retry_at
+- countdown behavior
+- batch retry button
+- auto-refresh
+- warehouse_transfer filter
+- cashier_refund filter
+And verify that batch retry only targets due/eligible events.
+
+PRINT EXACTLY
+1) statuses retried by worker
+2) all source types with actual retry support
+3) concurrency/idempotency guarantee
+4) attempt_count and next_retry_at behavior
+5) any tiny fixes applied in this pass
+6) final statement: "Accounting retry system fully closed"

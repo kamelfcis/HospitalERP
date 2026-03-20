@@ -17,7 +17,7 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { storage } from "../storage";
 import { logger } from "../lib/logger";
-import { logAcctEvent, MAX_RETRY_ATTEMPTS } from "../lib/accounting-event-logger";
+import { MAX_RETRY_ATTEMPTS } from "../lib/accounting-event-logger";
 import { runAccountingRetryTick } from "../lib/accounting-retry-worker";
 
 export function registerAccountingEventRoutes(app: Express) {
@@ -146,7 +146,9 @@ export function registerAccountingEventRoutes(app: Express) {
 
         logger.info({ id, sourceType, sourceId, actorUserId }, "[ACCT_RETRY] manual retry initiated");
 
-        // Helper — mark completed
+        // Helper — mark completed.
+        // Guard: AND status != 'completed' prevents a concurrent retry path from overwriting
+        // a completed event or double-incrementing attempt_count.
         const markCompleted = async (journalEntryId?: string | null) => {
           await db.execute(sql`
             UPDATE accounting_event_log
@@ -155,10 +157,13 @@ export function registerAccountingEventRoutes(app: Express) {
                 attempt_count = attempt_count + 1,
                 last_attempted_at = NOW(), updated_at = NOW()
             WHERE id = ${id}
+              AND status != 'completed'
           `);
         };
 
-        // Helper — mark failed with next_retry_at
+        // Helper — mark failed with next_retry_at.
+        // Does NOT set status (keeps current status) — safe: if worker already marked it completed,
+        // this only updates error_message/next_retry_at but never reverts the completed status.
         const markFailed = async (errorMsg: string) => {
           await db.execute(sql`
             UPDATE accounting_event_log
@@ -167,6 +172,7 @@ export function registerAccountingEventRoutes(app: Express) {
                 attempt_count = attempt_count + 1,
                 last_attempted_at = NOW(), updated_at = NOW()
             WHERE id = ${id}
+              AND status != 'completed'
           `);
         };
 
@@ -193,9 +199,27 @@ export function registerAccountingEventRoutes(app: Express) {
         }
 
         if (sourceType === "cashier_collection") {
-          await storage.createCashierCollectionJournals([sourceId], null, "");
-          await markCompleted();
-          return res.json({ success: true, message: "تمت إعادة محاولة إنشاء قيد التحصيل — راجع accounting_event_log للنتيجة التفصيلية" });
+          // createCashierCollectionJournals creates its own sub-events in accounting_event_log.
+          // The top-level event is marked completed to signal "retry was triggered".
+          // Any journal-level failures appear as separate events with their own status.
+          try {
+            await storage.createCashierCollectionJournals([sourceId], null, "");
+            await markCompleted();
+            return res.json({ success: true, message: "تمت إعادة محاولة إنشاء قيد التحصيل — راجع accounting_event_log للنتيجة التفصيلية" });
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            await markFailed(msg);
+            return res.status(422).json({ message: msg });
+          }
+        }
+
+        if (sourceType === "cashier_refund") {
+          // Cashier refund journals are generated inside the refund transaction itself.
+          // Re-running the refund would double-process the refund — not safe to auto-retry.
+          // If the refund's journal failed, inspect the individual sub-events or re-issue from the UI.
+          return res.status(422).json({
+            message: "مرتجع الكاشير لا يدعم إعادة المحاولة التلقائية — راجع القيود الفرعية في accounting_event_log أو أعد معالجة المرتجع من الشاشة المختصة"
+          });
         }
 
         if (sourceType === "patient_invoice") {

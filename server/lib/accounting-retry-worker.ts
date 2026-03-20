@@ -39,7 +39,8 @@ async function markPermanentlyFailed(id: string, reason: string): Promise<void> 
   `);
 }
 
-/** Mark event completed after successful retry */
+/** Mark event completed after successful retry.
+ *  Guard: WHERE status != 'completed' prevents a racing path from overwriting a completed event. */
 async function markCompleted(id: string, journalEntryId?: string | null): Promise<void> {
   await db.execute(sql`
     UPDATE accounting_event_log
@@ -50,10 +51,12 @@ async function markCompleted(id: string, journalEntryId?: string | null): Promis
          last_attempted_at = NOW(),
          updated_at        = NOW()
     WHERE id = ${id}
+      AND status != 'completed'
   `);
 }
 
-/** Bump attempt_count and set next_retry_at for next attempt */
+/** Bump attempt_count and set next_retry_at for next attempt.
+ *  Guard: WHERE status != 'completed' prevents a racing path from bumping attempt_count after success. */
 async function markRetried(id: string, errorMsg: string, attemptCount: number): Promise<void> {
   const nextAt = computeNextRetryAt(attemptCount + 1);
   await db.execute(sql`
@@ -64,6 +67,7 @@ async function markRetried(id: string, errorMsg: string, attemptCount: number): 
          last_attempted_at = NOW(),
          updated_at        = NOW()
     WHERE id = ${id}
+      AND status != 'completed'
   `);
 }
 
@@ -219,13 +223,30 @@ export async function runAccountingRetryTick(): Promise<{
   failed: number;
   skipped: number;
 }> {
-  // Pick events that are due for retry (next_retry_at <= NOW or never set)
+  // Pick events that are due for retry.
+  //
+  // Eligibility rules:
+  //  • status 'failed' or 'needs_retry' with next_retry_at due (or unset)
+  //  • status 'pending' older than 5 minutes — catches events that were never moved out of pending
+  //    (e.g. server crash between log write and journal generation)
+  //  • last_attempted_at < NOW() - 30 s — concurrency guard: prevents the worker from picking up
+  //    an event that was just touched by another worker tick or a manual admin retry
+  //  • attempt_count < MAX_RETRY_ATTEMPTS — never re-attempt permanently failed events
   const raw = await db.execute(sql`
     SELECT id, source_type, source_id, event_type, attempt_count, error_message
     FROM accounting_event_log
-    WHERE status IN ('failed', 'needs_retry')
-      AND attempt_count < ${MAX_RETRY_ATTEMPTS}
-      AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+    WHERE attempt_count < ${MAX_RETRY_ATTEMPTS}
+      AND last_attempted_at < NOW() - INTERVAL '30 seconds'
+      AND (
+        (
+          status IN ('failed', 'needs_retry')
+          AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+        )
+        OR (
+          status = 'pending'
+          AND last_attempted_at < NOW() - INTERVAL '5 minutes'
+        )
+      )
     ORDER BY last_attempted_at ASC
     LIMIT 30
   `);
