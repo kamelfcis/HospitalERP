@@ -81,6 +81,12 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     cash:             { required: "cond", condition: "عند الدفع نقداً", debitSide: true, creditSide: true },
     receivable_clear: { required: "cond", condition: "لتصفية الذمم",    debitSide: true, creditSide: true },
   },
+  stock_count_adjustment: {
+    // surplus: Dr = warehouse GL account (dynamic — from session warehouse), Cr = stock_gain.creditAccountId (configured here)
+    // shortage: Dr = stock_loss.debitAccountId (configured here), Cr = warehouse GL account (dynamic)
+    stock_gain: { required: "cond", condition: "عند وجود فوائض في الجرد", debitSide: false, creditSide: true  },
+    stock_loss: { required: "cond", condition: "عند وجود عجز في الجرد",   debitSide: true,  creditSide: false },
+  },
 };
 
 // Ordered list of suggested line types per transaction type (controls default row order)
@@ -93,6 +99,7 @@ export const suggestedLineTypes: Record<string, string[]> = {
   cashier_refund:            ["cash", "returns", "revenue_drugs", "inventory"],
   warehouse_transfer:        ["inventory"],
   doctor_payable_settlement: ["doctor_payable", "cash", "receivable_clear"],
+  stock_count_adjustment:    ["stock_gain", "stock_loss"],
 };
 
 // Derived sets reused across multiple components
@@ -151,7 +158,44 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
       },
     },
   },
+  stock_count_adjustment: {
+    // Surplus: Dr side is the warehouse GL account (resolved from session warehouse)
+    stock_gain: {
+      debit: {
+        label:       "مدين: يُحدد تلقائياً من حساب GL المخزن",
+        tooltip:     "الجانب المدين للفوائض هو حساب GL المخزن نفسه المرتبط بجلسة الجرد. يُحدد تلقائياً ولا يحتاج إلى ضبط يدوي — قم بتحديد الحساب الدائن (إيراد فوائض الجرد) فقط.",
+        hasFallback: false,
+      },
+    },
+    // Shortage: Cr side is the warehouse GL account (resolved from session warehouse)
+    stock_loss: {
+      credit: {
+        label:       "دائن: يُحدد تلقائياً من حساب GL المخزن",
+        tooltip:     "الجانب الدائن للعجز هو حساب GL المخزن نفسه المرتبط بجلسة الجرد. يُحدد تلقائياً ولا يحتاج إلى ضبط يدوي — قم بتحديد الحساب المدين (خسائر عجز الجرد) فقط.",
+        hasFallback: false,
+      },
+    },
+  },
 };
+
+// ─── Transaction types with system-resolved warehouse/treasury ─────────────────
+//
+// For these transaction types, the warehouse or treasury is determined
+// automatically from the source document — the admin should NOT select a
+// warehouse in the mapping filters.  The warehouse selector is hidden for
+// these types and replaced with an explanatory label.
+//
+// sales_invoice:      inventory credit resolved from invoice warehouse.glAccountId
+// cashier_collection: treasury debit resolved from cashier shift GL account
+// cashier_refund:     treasury credit resolved from cashier shift (reverse of collection)
+// warehouse_transfer: both source and target warehouse GL resolved from the transfer document
+//
+export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
+  "sales_invoice",
+  "cashier_collection",
+  "cashier_refund",
+  "warehouse_transfer",
+]);
 
 // ─── isRowComplete ─────────────────────────────────────────────────────────────
 // Returns true when all *used* sides of a row have an account assigned.

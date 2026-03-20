@@ -275,6 +275,7 @@ export const transactionTypeLabels: Record<string, string> = {
   cashier_refund:            "مرتجع كاشير",
   warehouse_transfer:        "تحويلات مخزنية",
   doctor_payable_settlement: "تسوية مستحقات الطبيب",
+  stock_count_adjustment:    "تسوية جرد مخزني",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
@@ -309,6 +310,9 @@ export const mappingLineTypeLabels: Record<string, string> = {
   receivable_clear:     "تصفية ذمم مدينة",
   // Doctor settlement
   doctor_payable:       "مستحقات طبيب",
+  // Stock count adjustment
+  stock_gain:           "إيراد فوائض الجرد",
+  stock_loss:           "خسائر عجز الجرد",
   // Generic
   other:                "أخرى",
 };

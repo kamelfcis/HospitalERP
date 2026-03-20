@@ -19,6 +19,7 @@ import {
   transactionTypes,
   allLineTypeOptions,
   isRowComplete,
+  NO_WAREHOUSE_SELECTOR_TYPES,
 } from "../types";
 
 export interface UseMappingRowsResult {
@@ -34,9 +35,10 @@ export interface UseMappingRowsResult {
   isLoading:     boolean;
 
   // Derived
-  txSpecs:         Record<string, import("../types").LineTypeSpec>;
-  usedLineTypes:   Set<string>;
-  isWarehouseView: boolean;
+  txSpecs:              Record<string, import("../types").LineTypeSpec>;
+  usedLineTypes:        Set<string>;
+  isWarehouseView:      boolean;
+  showWarehouseSelector: boolean;
   requiredMissing:    MappingRow[];
   conditionalMissing: MappingRow[];
   configured:         MappingRow[];
@@ -53,8 +55,15 @@ export interface UseMappingRowsResult {
 }
 
 export function useMappingRows(): UseMappingRowsResult {
-  const [selectedTxType,      setSelectedTxType]      = useState<string>(transactionTypes[0]);
+  const [selectedTxType,      setSelectedTxTypeRaw]   = useState<string>(transactionTypes[0]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("__generic__");
+
+  // When switching to a tx type whose warehouse is system-resolved, auto-reset the
+  // warehouse filter to "__generic__" so the UI stays consistent.
+  const setSelectedTxType = (v: string) => {
+    if (NO_WAREHOUSE_SELECTOR_TYPES.has(v)) setSelectedWarehouseId("__generic__");
+    setSelectedTxTypeRaw(v);
+  };
   const [rows,       setRows]       = useState<MappingRow[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const keyCounter = useRef(0);
@@ -135,9 +144,10 @@ export function useMappingRows(): UseMappingRowsResult {
   const resetChanges = () => setHasChanges(false);
 
   // ── Derived state ──────────────────────────────────────────────────────────
-  const txSpecs         = lineTypeSpecs[selectedTxType] ?? {};
-  const usedLineTypes   = new Set(rows.map(r => r.lineType));
-  const isWarehouseView = selectedWarehouseId !== "__generic__";
+  const txSpecs              = lineTypeSpecs[selectedTxType] ?? {};
+  const usedLineTypes        = new Set(rows.map(r => r.lineType));
+  const isWarehouseView      = selectedWarehouseId !== "__generic__";
+  const showWarehouseSelector = !NO_WAREHOUSE_SELECTOR_TYPES.has(selectedTxType);
 
   const requiredMissing    = rows.filter(r => txSpecs[r.lineType]?.required === true   && !isRowComplete(r, txSpecs[r.lineType], selectedTxType));
   const conditionalMissing = rows.filter(r => txSpecs[r.lineType]?.required === "cond" && !isRowComplete(r, txSpecs[r.lineType], selectedTxType));
@@ -149,7 +159,7 @@ export function useMappingRows(): UseMappingRowsResult {
     selectedWarehouseId, setSelectedWarehouseId,
     rows,       hasChanges,
     isLoading:  mappingsLoading,
-    txSpecs,    usedLineTypes, isWarehouseView,
+    txSpecs,    usedLineTypes, isWarehouseView, showWarehouseSelector,
     requiredMissing, conditionalMissing, configured, setupComplete,
     warehouses,
     updateRow, addRow, removeRow, resetChanges,

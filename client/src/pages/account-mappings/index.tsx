@@ -62,6 +62,7 @@ export default function AccountMappings() {
             selectedWarehouseId={data.selectedWarehouseId}
             onWarehouseChange={data.setSelectedWarehouseId}
             warehouses={data.warehouses}
+            showWarehouseSelector={data.showWarehouseSelector}
           />
         </CardHeader>
 

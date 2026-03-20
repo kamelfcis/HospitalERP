@@ -2,13 +2,16 @@
  * MappingFilters
  *
  * Transaction-type selector + Warehouse override selector.
+ * The warehouse selector is hidden for transaction types whose warehouse/treasury
+ * account is resolved automatically from the source document (sales_invoice,
+ * cashier_collection, cashier_refund, warehouse_transfer).
  * Pure presentational — all state lives in useMappingRows.
  */
 
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Building2 } from "lucide-react";
+import { Building2, Info } from "lucide-react";
 import {
   transactionTypeLabels,
   type Warehouse,
@@ -21,12 +24,15 @@ interface MappingFiltersProps {
   selectedWarehouseId:   string;
   onWarehouseChange:     (v: string) => void;
   warehouses:            Warehouse[];
+  /** When false, warehouse selector is hidden and a "system-resolved" label is shown instead */
+  showWarehouseSelector: boolean;
 }
 
 export function MappingFilters({
   selectedTxType, onTxTypeChange,
   selectedWarehouseId, onWarehouseChange,
   warehouses,
+  showWarehouseSelector,
 }: MappingFiltersProps) {
   return (
     <div className="flex items-center gap-4 flex-wrap">
@@ -44,26 +50,33 @@ export function MappingFilters({
         </SelectContent>
       </Select>
 
-      {/* Warehouse override */}
-      <div className="flex items-center gap-2">
-        <Building2 className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">المستودع</span>
-        <Select value={selectedWarehouseId} onValueChange={onWarehouseChange}>
-          <SelectTrigger className="w-[220px]" data-testid="select-warehouse-filter">
-            <SelectValue placeholder="عام (لجميع المستودعات)" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__generic__" data-testid="option-warehouse-generic">
-              عام (لجميع المستودعات)
-            </SelectItem>
-            {warehouses.map(w => (
-              <SelectItem key={w.id} value={w.id} data-testid={`option-warehouse-${w.id}`}>
-                {w.nameAr}
+      {/* Warehouse selector — only for transaction types with configurable warehouse */}
+      {showWarehouseSelector ? (
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">المستودع</span>
+          <Select value={selectedWarehouseId} onValueChange={onWarehouseChange}>
+            <SelectTrigger className="w-[220px]" data-testid="select-warehouse-filter">
+              <SelectValue placeholder="عام (لجميع المستودعات)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__generic__" data-testid="option-warehouse-generic">
+                عام (لجميع المستودعات)
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+              {warehouses.map(w => (
+                <SelectItem key={w.id} value={w.id} data-testid={`option-warehouse-${w.id}`}>
+                  {w.nameAr}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-md px-3 py-1.5">
+          <Info className="h-4 w-4 shrink-0 text-blue-500" />
+          <span>المخزن/الصيدلية أو الخزنة يُحدد تلقائياً من المستند — لا يتم اختياره هنا</span>
+        </div>
+      )}
     </div>
   );
 }

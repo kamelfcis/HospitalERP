@@ -1,0 +1,149 @@
+TASK: Fix AccountMappings Design — Remove Invalid Warehouse Selection and Ensure Full Transaction Type Coverage
+
+CONTEXT
+After implementing dynamic account resolution:
+- warehouse/pharmacy accounts are resolved automatically from the invoice
+- cashier treasury accounts are resolved automatically from the cashier shift
+
+The current AccountMappings UI still contains legacy design elements that are now incorrect and confusing.
+
+GOAL
+1) remove invalid warehouse selection where it is no longer needed
+2) ensure ALL transaction types in the system are visible in AccountMappings
+3) unify the source of truth for transaction types
+4) keep backward compatibility and avoid breaking existing mappings
+
+--------------------------------------------------
+PART A — REMOVE INVALID WAREHOUSE SELECTION
+--------------------------------------------------
+
+Problem:
+AccountMappings currently allows selecting warehouse/pharmacy for mappings like sales_invoice.
+
+This is now incorrect because:
+- warehouse/pharmacy is already determined by the source document (invoice)
+- inventory account is resolved dynamically from warehouse.glAccountId
+
+REQUIRED:
+
+1) Identify all transaction types where warehouse/pharmacy is dynamically resolved
+   (at minimum: sales_invoice, and any other flow using warehouse.glAccountId)
+
+2) For those transaction types:
+   - remove warehouse selector from UI
+   OR
+   - disable it and clearly mark it as "system-resolved"
+
+3) Update UI text in Arabic:
+   Example:
+   "المخزن/الصيدلية يُحدد تلقائياً من الفاتورة — لا يتم اختياره هنا"
+
+4) Ensure backend getMappingsForTransaction does NOT rely on warehouse_id
+   for these transaction types anymore
+
+5) Keep warehouse override logic ONLY where it is still valid (if any)
+
+--------------------------------------------------
+PART B — COMPLETE TRANSACTION TYPE LIST
+--------------------------------------------------
+
+Problem:
+AccountMappings only shows a subset of transaction types.
+
+REQUIRED:
+
+1) Discover all transaction-producing flows in the system:
+   - sales_invoice
+   - patient_invoice
+   - cashier_collection
+   - cashier_refund
+   - purchase_invoice / purchase_receiving
+   - warehouse_transfer
+   - doctor_payable_settlement
+   - stock_count (cycle count)
+   - any service-based billing (lab, radiology, operations, ICU, accommodation)
+
+2) Identify the source of truth:
+   - where transaction_type values are defined (labels or enums)
+
+3) Ensure ALL transaction types are:
+   - defined centrally (NOT hardcoded in UI)
+   - exposed to AccountMappings dropdown
+
+4) If missing types exist in backend but not in UI:
+   - add them to the central definition
+   - ensure they appear in AccountMappings automatically
+
+--------------------------------------------------
+PART C — STOCK COUNT (CRITICAL)
+--------------------------------------------------
+
+Ensure stock_count is fully integrated:
+
+1) transaction_type = "stock_count" must appear in AccountMappings
+2) required line types:
+   - inventory_adjustment (Dr/Cr)
+   - inventory (counter side if needed)
+3) confirm postStockCountSession uses AccountMappings
+4) if not wired → connect it to the accounting engine
+
+--------------------------------------------------
+PART D — UI CONSISTENCY
+--------------------------------------------------
+
+1) AccountMappings must:
+   - NOT show fields that are system-resolved
+   - clearly label dynamic vs configured fields
+
+2) For each transaction type:
+   - show only relevant line types
+   - no dead or unused fields
+
+3) Add Arabic labels explaining:
+   - dynamic accounts
+   - required mappings
+   - fallback behavior
+
+--------------------------------------------------
+PART E — BACKEND CONSISTENCY
+--------------------------------------------------
+
+1) getMappingsForTransaction must:
+   - not depend on warehouse_id for dynamic flows
+   - return only relevant mappings
+
+2) No breaking changes to existing mappings
+
+3) Ensure accounting_event_log still works correctly
+
+--------------------------------------------------
+VERIFICATION
+--------------------------------------------------
+
+After implementation verify:
+
+1) sales_invoice:
+   - no warehouse selector
+   - inventory resolved from invoice warehouse
+
+2) cashier_collection:
+   - no treasury selector
+   - treasury resolved from shift
+
+3) stock_count appears and works
+
+4) ALL transaction types appear in dropdown
+
+5) no regression in existing journals
+
+--------------------------------------------------
+PRINT EXACTLY
+--------------------------------------------------
+
+1) list of all transaction types now visible in AccountMappings
+2) which transaction types had warehouse selection removed
+3) how dynamic warehouse resolution now works
+4) confirmation that stock_count is integrated
+5) files changed
+6) final statement:
+"AccountMappings design cleaned and unified"
