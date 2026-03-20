@@ -1,0 +1,223 @@
+Implement Contracts Module — Phase 2 only.
+
+==================================================
+PHASE 2 GOAL
+==================================================
+
+Build the deterministic server-side Coverage / Pricing Rules Engine.
+
+This is the core intelligence of the contracts module.
+
+Every time a service is added anywhere in the system, the backend must evaluate:
+- the active contract
+- the matching rule
+- the contract price
+- company share
+- patient share
+- coverage status
+- approval requirement
+
+This result must be stamped on the invoice/service line.
+
+Do NOT implement claims settlement in this phase.
+Do NOT move accounting settlement here beyond storing the stamped line data.
+
+==================================================
+PHASE 2 — SCHEMA
+==================================================
+
+Extend shared/schema/contracts.ts
+
+Create table:
+contractCoverageRules
+
+Fields:
+- id
+- contractId FK
+- ruleName
+- ruleType enum:
+  - include_service
+  - exclude_service
+  - include_dept
+  - exclude_dept
+  - discount_pct
+  - fixed_price
+  - approval_required
+  - global_discount
+- serviceId FK nullable
+- departmentId FK nullable
+- serviceCategory text nullable
+- discountPct decimal nullable
+- fixedPrice decimal nullable
+- priority integer not null
+- isActive boolean
+- notes
+- createdAt
+
+Indexes:
+- contractId
+- serviceId
+- departmentId
+- priority
+
+Add or confirm:
+- contractRuleId FK on patientInvoiceLines
+- contractRuleId FK on salesInvoiceLines where needed
+
+==================================================
+PHASE 2 — RULE EVALUATOR
+==================================================
+
+Create:
+server/lib/contract-rule-evaluator.ts
+
+Export:
+- evaluateContractForService(params)
+- batchEvaluate(params[])
+
+EvaluationResult must contain:
+- covered
+- coverageStatus
+- contractPrice
+- companyShareAmount
+- patientShareAmount
+- matchedRuleId
+- matchedRuleName
+- explanation
+- companyCoveragePct
+
+Rules:
+- evaluator must be pure
+- no DB writes inside evaluator
+- preloaded contract/rules preferred for performance
+
+Matching precedence:
+- exact service
+- exact department
+- service category
+- global/default
+
+Priority:
+- lower priority number = higher priority
+
+Rule behavior:
+- include_* => covered, price from base list or listPrice, shares by companyCoveragePct
+- exclude_* => not covered
+- discount_pct => reduced contract price
+- fixed_price => fixed contract price
+- approval_required => approval_required status
+- global_discount => fallback discount
+
+Fallback if no rule:
+- use base price list if available
+- else listPrice
+- apply companyCoveragePct if defined
+
+Return human-readable explanation for audit/debug/support.
+
+==================================================
+PHASE 2 — EVALUATION API
+==================================================
+
+Add:
+POST /api/contracts/evaluate
+
+Input:
+{
+  contractId,
+  date,
+  lines: [
+    {
+      serviceId,
+      listPrice,
+      departmentId?,
+      serviceCategory?
+    }
+  ]
+}
+
+Return:
+array of EvaluationResult
+
+Validate contract and services properly.
+
+==================================================
+PHASE 2 — SYSTEM-WIDE INTEGRATION (MANDATORY)
+==================================================
+
+The SAME evaluator service must be used in all entry points.
+No duplicated logic.
+
+Integrate with:
+
+1) patient invoice creation/update
+2) clinic booking / consultation
+3) lab service orders
+4) radiology service orders
+5) inpatient service lines
+6) stay/accommodation generated lines where relevant
+7) sales invoice lines if contract applies
+
+At every line insert/update where contract exists:
+stamp:
+- contractRuleId
+- listPrice
+- contractPrice
+- companyShareAmount
+- patientShareAmount
+- coverageStatus
+- approvalStatus if applicable
+
+Stamped result becomes immutable after finalization.
+Re-evaluation allowed only while still editable/draft.
+
+==================================================
+PHASE 2 — UI
+==================================================
+
+Extend contracts screen with Coverage Rules tab.
+
+Requirements:
+- sortable rules table
+- priority ordering
+- inline add/edit
+- dynamic fields based on ruleType
+- active toggle
+- inline test tool using evaluation endpoint
+- clear explanation panel
+
+Also extend patient invoice line display:
+- coverage status badge
+- company share chip
+- patient share chip
+- tooltip/explanation showing matched rule
+
+==================================================
+PHASE 2 — REFACTOR / COMPONENTIZATION / INDEXING / DOCS
+==================================================
+
+Mandatory:
+- centralize all evaluation in one backend service
+- remove duplicated split logic
+- extract reusable rule editor components
+- keep UI thin
+- add indexes for rule lookup and date-validity performance
+- document evaluation order
+- document precedence
+- document fallback behavior
+- document how future rules can be added safely
+
+Before coding:
+First print:
+1) files to inspect
+2) evaluation integration points
+3) risks to invoice flows
+4) implementation plan
+
+Then implement Phase 2 only.
+At the end print:
+- modified files
+- rules engine summary
+- integration points completed
+- indexes added
+- remaining Phase 3 prerequisites

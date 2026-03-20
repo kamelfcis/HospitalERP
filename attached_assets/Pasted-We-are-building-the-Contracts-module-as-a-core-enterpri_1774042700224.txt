@@ -1,0 +1,109 @@
+We are building the Contracts module as a core enterprise subsystem inside the ERP/HMIS.
+
+This is NOT a simple feature and NOT a text-field enhancement.
+
+Contracts must become a central business engine that controls:
+- eligibility
+- company/payer identity
+- active contract resolution
+- member resolution
+- pricing
+- coverage
+- patient share vs company share
+- claims
+- accounting integration
+
+Important:
+This module must be fully compatible with the existing system and deeply integrated with:
+- Patient Invoice
+- Sales Invoice
+- Outpatient Clinics
+- Radiology
+- Laboratory
+- Admissions / Inpatient
+- future service modules
+
+==================================================
+MANDATORY ENGINEERING RULES
+==================================================
+
+Apply these in every phase and every file:
+
+1) No quick patches
+Do not inject ad-hoc logic directly into screens or route handlers.
+
+2) Mandatory refactor
+Whenever you touch existing code, refactor for clarity, separation of concerns, and future maintainability.
+
+3) Mandatory componentization
+Frontend:
+- no giant page files
+- extract reusable components
+
+Backend:
+- no giant route files
+- extract storage/services/evaluators/validators/mappers
+
+4) Mandatory indexing
+Every FK, search field, date-validity field, and evaluation lookup path must be indexed.
+
+5) Mandatory organization
+Use strong module boundaries and keep contracts logic in a dedicated contracts domain/module.
+
+6) No frontend business logic
+All contract evaluation, pricing, coverage, and split logic must be backend/domain-driven only.
+
+7) Backward-compatible rollout
+The current system has free-text contract fields in several modules.
+Migration must be safe and incremental.
+Do not break old data or current production flows.
+
+8) Explainability is mandatory
+Another weaker human developer will continue after this.
+So code must be clear, modular, and documented.
+Complex rule logic must be understandable.
+
+9) Every phase must leave the codebase cleaner
+Not just working, but cleaner and easier to continue.
+
+==================================================
+IMPORTANT INTEGRATION RULE
+==================================================
+
+Contracts must not live only on header level.
+They must support line-level stamping.
+
+For every service/invoice line generated anywhere in the system, the backend must be able to stamp:
+- companyId
+- contractId
+- contractMemberId
+- contractRuleId
+- listPrice
+- contractPrice
+- companyShareAmount
+- patientShareAmount
+- coverageStatus
+- approvalStatus if needed
+
+This line-level stamping is required for:
+- accurate billing
+- accurate claims
+- AR split
+- auditability
+- future reporting
+
+Do not execute all phases now.
+We will do this phase by phase.
+For each phase:
+- analyze existing code first
+- implement carefully
+- refactor touched code
+- add indexes
+- keep backward compatibility
+- print a final implementation summary at the end
+
+Reply first with:
+1) files you will inspect
+2) expected impact area
+3) execution plan for the requested phase only
+Do not start coding before that analysis summary.
