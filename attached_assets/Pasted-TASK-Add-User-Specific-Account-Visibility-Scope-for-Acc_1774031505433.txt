@@ -1,0 +1,95 @@
+TASK: Add User-Specific Account Visibility Scope for Account Selection
+
+BUSINESS REQUIREMENT
+When a user opens account-related screens (especially Account Mappings and any accounting selector screens), they should only see the subset of accounts assigned to them, not the entire chart of accounts.
+This is required because the organization has many departments and users should not browse irrelevant accounts.
+
+GOAL
+Implement a flexible, scalable user-account visibility scope model.
+
+DESIGN PRINCIPLES
+- clean RBAC-compatible design
+- no hardcoded user conditions
+- reusable across all account-picking screens
+- easy to audit
+- supports future extension by role, department, cost center, warehouse, or branch
+
+FIRST: DISCOVERY
+Before implementing, inspect whether the system already has:
+- user roles
+- permissions
+- department scopes
+- warehouse scopes
+- cost center scopes
+- per-user entity scoping tables
+Reuse existing scope patterns if available.
+
+PREFERRED IMPLEMENTATION
+Create a dedicated visibility layer for accounts, such as:
+- user_account_scopes
+or a similarly well-named table/service
+
+Suggested data model:
+- id
+- user_id
+- account_id
+- allow_view boolean default true
+- created_at
+- created_by
+- updated_at
+Optional future extension:
+- role_id
+- department_id
+- cost_center_id
+- branch_id
+
+BACKEND REQUIREMENTS
+1) Add storage/service methods to:
+- assign accounts to a user
+- remove accounts from a user
+- fetch allowed accounts for a user
+- optionally detect unrestricted users (see all accounts)
+
+2) Extend the accounts lookup endpoint or create a scoped lookup endpoint so account queries can respect current user visibility.
+
+3) Add permission rules:
+- privileged admins can see all accounts and manage scopes
+- regular users only see allowed accounts
+- if no scope is assigned, define an explicit behavior:
+  choose one clear policy and document it:
+  a) unrestricted by default
+  OR
+  b) hidden by default
+Prefer a safe policy, but keep backward compatibility in mind.
+
+FRONTEND REQUIREMENTS
+1) Any account picker should consume scoped accounts automatically.
+2) AccountMappings screen should not contain custom user filtering logic if backend can return scoped results.
+3) Add an admin UI to assign visible accounts to a user.
+4) The assignment UI must reuse existing lookup/search component if available.
+5) Support multi-select add/remove.
+6) Support searching by code/name.
+7) Show count of assigned accounts.
+
+IMPORTANT
+- Keep the scope logic centralized
+- Do NOT scatter account visibility filters across many pages
+- Prefer backend-enforced scoping with frontend-friendly UX
+- Preserve performance for 600+ accounts and future growth
+
+AUDIT & SAFETY
+- log who changed user account scopes
+- add validation to prevent duplicate assignments
+- add proper indexes
+- no silent failures
+
+DELIVERABLES
+- implement DB schema/migration
+- backend routes/storage/service
+- frontend admin management UI
+- integrate scoped lookup into account selectors
+- print exact files changed
+- print final behavior for:
+  admin user
+  scoped user
+  user with no explicit scope
