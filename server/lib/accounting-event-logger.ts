@@ -4,7 +4,10 @@
  * سجّل دائم لأحداث المحاسبة — يُستخدم في كل مسارات توليد القيود المحاسبية
  * وإكمالها لضمان رؤية كاملة لأي فشل أو حالة pending.
  *
- * الوظيفة الأساسية: logAcctEvent() — تكتب صفاً واحداً في accounting_event_log.
+ * logAcctEvent() — upsert عند وجود (event_type, source_type, source_id):
+ *   • إذا كانت الحالة الحالية "completed" لن تُحدَّث (لا رجوع عن الاكتمال)
+ *   • في جميع الحالات الأخرى تُحدَّث الحالة والرسالة والعدد
+ *
  * إذا فشلت الكتابة نفسها، تُسجَّل عبر logger فقط (لا ترفع exception).
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -21,33 +24,73 @@ export type AcctEventStatus =
   | "blocked";
 
 export interface AcctEventParams {
-  sourceType:    string;
-  sourceId:      string;
-  eventType:     string;
-  status:        AcctEventStatus;
-  errorMessage?: string | null;
+  sourceType:     string;
+  sourceId:       string;
+  eventType:      string;
+  status:         AcctEventStatus;
+  errorMessage?:  string | null;
   journalEntryId?: string | null;
-  userId?:       string | null;
+  userId?:        string | null;
 }
 
 /**
  * تسجيل حدث محاسبي — لا يرفع exception أبداً حتى لو فشل الإدراج.
- * آمن للاستخدام في مسارات fire-and-forget وخارج transactions.
+ *
+ * عند توفر (source_type + source_id) يستخدم UPSERT بناءً على الفهرس الفريد
+ * idx_ael_dedup (event_type, source_type, source_id) لمنع التكرار:
+ *   - إذا كانت الحالة الحالية "completed" → لا تُعدِّل (completed لا يُراجَع)
+ *   - غير ذلك → حدِّث الحالة والخطأ والعدد
+ *
+ * في حالة NULL source (أحداث OPD القديمة) يُنفَّذ INSERT عادي.
  */
 export async function logAcctEvent(params: AcctEventParams): Promise<string | null> {
   try {
-    const result = await db.execute(sql`
-      INSERT INTO accounting_event_log
-        (event_type, source_type, source_id, posted_by_user,
-         status, error_message, journal_entry_id,
-         attempt_count, last_attempted_at, updated_at)
-      VALUES
-        (${params.eventType}, ${params.sourceType}, ${params.sourceId},
-         ${params.userId ?? null}, ${params.status},
-         ${params.errorMessage ?? null}, ${params.journalEntryId ?? null},
-         1, NOW(), NOW())
-      RETURNING id
-    `);
+    let result: unknown;
+
+    if (params.sourceType && params.sourceId) {
+      // ── Upsert مع منع الكتابة فوق "completed" ──────────────────────────
+      result = await db.execute(sql`
+        INSERT INTO accounting_event_log
+          (event_type, source_type, source_id, posted_by_user,
+           status, error_message, journal_entry_id,
+           attempt_count, last_attempted_at, updated_at)
+        VALUES
+          (${params.eventType}, ${params.sourceType}, ${params.sourceId},
+           ${params.userId ?? null}, ${params.status},
+           ${params.errorMessage ?? null}, ${params.journalEntryId ?? null},
+           1, NOW(), NOW())
+        ON CONFLICT (event_type, source_type, source_id)
+        DO UPDATE SET
+          status           = CASE
+                               WHEN accounting_event_log.status = 'completed' THEN 'completed'
+                               ELSE EXCLUDED.status
+                             END,
+          error_message    = CASE
+                               WHEN accounting_event_log.status = 'completed' THEN accounting_event_log.error_message
+                               ELSE EXCLUDED.error_message
+                             END,
+          journal_entry_id = COALESCE(EXCLUDED.journal_entry_id, accounting_event_log.journal_entry_id),
+          attempt_count    = accounting_event_log.attempt_count + 1,
+          last_attempted_at = NOW(),
+          updated_at       = NOW()
+        RETURNING id
+      `);
+    } else {
+      // ── INSERT عادي للأحداث التي لا تحمل source_id (مثل OPD) ──────────
+      result = await db.execute(sql`
+        INSERT INTO accounting_event_log
+          (event_type, source_type, source_id, posted_by_user,
+           status, error_message, journal_entry_id,
+           attempt_count, last_attempted_at, updated_at)
+        VALUES
+          (${params.eventType}, ${(params as any).sourceType ?? null}, ${(params as any).sourceId ?? null},
+           ${params.userId ?? null}, ${params.status},
+           ${params.errorMessage ?? null}, ${params.journalEntryId ?? null},
+           1, NOW(), NOW())
+        RETURNING id
+      `);
+    }
+
     return ((result as any).rows[0]?.id as string) ?? null;
   } catch (err) {
     logger.warn(

@@ -224,6 +224,20 @@ const methods = {
         periodId = period?.id;
       }
 
+      // GAP 2 FIX: log a traceable warning when no fiscal period covers the entry date
+      if (!periodId) {
+        // fire-and-forget — does not block journal creation, but makes it visible
+        import("../lib/accounting-event-logger").then(({ logAcctEvent }) => {
+          logAcctEvent({
+            sourceType:   params.sourceType,
+            sourceId:     params.sourceDocumentId,
+            eventType:    "journal_no_fiscal_period",
+            status:       "needs_retry",
+            errorMessage: `لا توجد فترة مالية مفتوحة تغطي تاريخ ${params.entryDate} — القيد سيُنشأ بدون فترة مالية (period_id = null). افتح فترة مالية تشمل هذا التاريخ ثم أعد الترحيل.`,
+          }).catch(() => {});
+        }).catch(() => {});
+      }
+
       const totalDebit = journalLineData.reduce((s, l) => s + parseMoney(l.debit), 0);
       const totalCredit = journalLineData.reduce((s, l) => s + parseMoney(l.credit), 0);
 

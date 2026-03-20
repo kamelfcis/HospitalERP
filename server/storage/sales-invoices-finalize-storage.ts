@@ -303,16 +303,15 @@ const methods = {
 
       let journalStatus: string = "pending";
       let journalError: string | null = null;
+      let capturedJournalEntryId: string | null = null;
 
       try {
         await tx.execute(sql`SAVEPOINT journal_attempt`);
         const journalResult = await this.generateSalesInvoiceJournalInTx(tx, id, invoice, cogsDrugs, cogsSupplies, revenueDrugs, revenueSupplies);
-        if (journalResult) {
-          await tx.execute(sql`RELEASE SAVEPOINT journal_attempt`);
-          journalStatus = "posted";
-        } else {
-          await tx.execute(sql`RELEASE SAVEPOINT journal_attempt`);
-          journalStatus = "posted";
+        await tx.execute(sql`RELEASE SAVEPOINT journal_attempt`);
+        journalStatus = "posted";
+        if (journalResult && typeof (journalResult as any).id === "string") {
+          capturedJournalEntryId = (journalResult as any).id;
         }
       } catch (journalErr: any) {
         await tx.execute(sql`ROLLBACK TO SAVEPOINT journal_attempt`);
@@ -338,6 +337,17 @@ const methods = {
       const [updated] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
       return updated;
     });
+
+    // GAP 1 FIX: log "completed" after successful finalize (outside tx so never rolled back)
+    if (finalResult && (finalResult as any).journalStatus === "posted") {
+      logAcctEvent({
+        sourceType:     "sales_invoice",
+        sourceId:       id,
+        eventType:      "sales_invoice_journal_finalize",
+        status:         "completed",
+        journalEntryId: capturedJournalEntryId,
+      }).catch(() => {});
+    }
 
     return finalResult;
   },

@@ -84,6 +84,11 @@ const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
   warehouse_transfer: {
     inventory: { required: true, debitSide: true, creditSide: true },
   },
+  doctor_payable_settlement: {
+    doctor_payable:   { required: true,   debitSide: true, creditSide: true },
+    cash:             { required: "cond", condition: "عند الدفع نقداً",        debitSide: true, creditSide: true },
+    receivable_clear: { required: "cond", condition: "لتصفية الذمم",            debitSide: true, creditSide: true },
+  },
 };
 
 const suggestedLineTypes: Record<string, string[]> = {
@@ -93,7 +98,8 @@ const suggestedLineTypes: Record<string, string[]> = {
   purchase_invoice:    ["inventory", "vat_input", "discount_earned", "payables_drugs", "payables_consumables"],
   cashier_collection:  ["cash", "receivables", "revenue_drugs", "revenue_general"],
   cashier_refund:      ["cash", "returns", "revenue_drugs", "inventory"],
-  warehouse_transfer:  ["inventory"],
+  warehouse_transfer:        ["inventory"],
+  doctor_payable_settlement: ["doctor_payable", "cash", "receivable_clear"],
 };
 
 const transactionTypes = Object.keys(transactionTypeLabels);

@@ -178,6 +178,7 @@ export const accountingEventLog = pgTable("accounting_event_log", {
   index("idx_ael_event_type").on(t.eventType),
   index("idx_ael_source").on(t.sourceType, t.sourceId),
   index("idx_ael_status").on(t.status),
+  uniqueIndex("idx_ael_dedup").on(t.eventType, t.sourceType, t.sourceId),
 ]);
 
 export const insertAccountingEventLogSchema = createInsertSchema(accountingEventLog).omit({ id: true, createdAt: true, updatedAt: true, lastAttemptedAt: true });
@@ -265,13 +266,14 @@ export const journalStatusLabels: Record<string, string> = {
 };
 
 export const transactionTypeLabels: Record<string, string> = {
-  sales_invoice: "فاتورة مبيعات",
-  patient_invoice: "فاتورة مريض",
-  receiving: "استلام مورد",
-  purchase_invoice: "فاتورة مشتريات",
-  cashier_collection: "تحصيل كاشير",
-  cashier_refund: "مرتجع كاشير",
-  warehouse_transfer: "تحويلات مخزنية",
+  sales_invoice:             "فاتورة مبيعات",
+  patient_invoice:           "فاتورة مريض",
+  receiving:                 "استلام مورد",
+  purchase_invoice:          "فاتورة مشتريات",
+  cashier_collection:        "تحصيل كاشير",
+  cashier_refund:            "مرتجع كاشير",
+  warehouse_transfer:        "تحويلات مخزنية",
+  doctor_payable_settlement: "تسوية مستحقات الطبيب",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
@@ -303,6 +305,9 @@ export const mappingLineTypeLabels: Record<string, string> = {
   revenue:              "إيراد",
   discount:             "خصم",
   tax:                  "ضريبة",
+  receivable_clear:     "تصفية ذمم مدينة",
+  // Doctor settlement
+  doctor_payable:       "مستحقات طبيب",
   // Generic
   other:                "أخرى",
 };

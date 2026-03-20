@@ -1,0 +1,198 @@
+TASK: Phase 3.1 — Close Remaining Accounting Gaps + Expand Account Mapping for Cashier Collection
+
+Phase 3 verification identified three remaining accounting gaps.
+Additionally, there is a functional limitation in the Account Mappings screen that prevents full accounting coverage for cashier collection.
+
+This phase must:
+1) close the remaining accounting_event_log gaps
+2) expand Account Mappings so ALL transaction types (especially cashier collection) are configurable
+3) enable future separation of sales journal vs collection journal
+
+IMPORTANT
+- Do NOT redesign the entire accounting system
+- Do NOT break existing flows
+- Apply minimal, safe, controlled changes
+- Keep backward compatibility
+- Reuse existing patterns and structures
+
+--------------------------------------------------
+PART A — Close Remaining Accounting Gaps
+--------------------------------------------------
+
+GAP 1 — Sales finalize success not logged
+
+Fix:
+- In sales invoice finalize success path, create/update accounting_event_log with:
+  status = "completed"
+- Link journal_entry_id if available
+- Ensure idempotency (no duplicate success rows)
+
+--------------------------------------------------
+
+GAP 2 — Missing fiscal period is silent
+
+Current problem:
+- journal created with period_id = null silently
+
+Fix:
+- detect this condition inside generateJournalEntry
+- log accounting_event_log with:
+  status = "blocked" OR "needs_retry"
+  error_message = clear explanation
+
+Rules:
+- DO NOT silently pass anymore
+- DO NOT break current flow aggressively
+- Make it visible and queryable
+
+--------------------------------------------------
+
+GAP 3 — Duplicate accounting events
+
+Fix:
+- Add dedup protection
+
+Preferred:
+- unique constraint OR
+- get-or-create / upsert logic
+
+Constraint suggestion:
+(event_type, source_type, source_id)
+
+Rules:
+- must NOT break retry logic
+- must allow status updates (pending → completed)
+- must prevent duplicate logical events
+
+--------------------------------------------------
+PART B — Expand Account Mappings Screen (CRITICAL)
+--------------------------------------------------
+
+PROBLEM
+AccountMappings screen does NOT expose all transaction types.
+This prevents configuring proper accounting for:
+- cashier collection
+- cashier refund
+- future accounting events
+
+BUSINESS IMPACT
+Currently:
+- cashier collection cannot have a dedicated GL mapping
+- system modifies receivable line instead of creating independent accounting logic
+
+GOAL
+Make AccountMappings a FULL accounting configuration hub.
+
+--------------------------------------------------
+
+REQUIRED CHANGES
+
+1) Ensure ALL transaction types are visible in AccountMappings UI
+
+At minimum include:
+- sales_invoice
+- purchase_invoice
+- patient_invoice
+- cashier_collection   ← CRITICAL
+- cashier_refund
+- warehouse_transfer
+- doctor_payable_settlement
+
+If any of these are missing:
+- fix frontend data source
+- fix backend mapping query if needed
+
+--------------------------------------------------
+
+2) Ensure ALL line_types exist for cashier_collection
+
+At minimum define:
+- cash
+- receivable_clear
+(optional future: bank, POS, etc.)
+
+Mapping example:
+Dr: cash / treasury
+Cr: receivables
+
+--------------------------------------------------
+
+3) Update mapping loader logic
+
+In getMappingsForTransaction:
+
+Ensure:
+- cashier_collection mappings are returned correctly
+- no filtering removes them unintentionally
+- warehouse override logic does NOT break them
+
+--------------------------------------------------
+
+4) Frontend — AccountMappings UI
+
+Ensure:
+- transaction_type dropdown shows ALL types
+- cashier_collection appears and selectable
+- user can define debit and credit accounts for it
+- reuse AccountSearchSelect (DO NOT build new search)
+
+--------------------------------------------------
+
+5) Validation
+
+Backend must enforce:
+- both debit_account_id and credit_account_id exist
+- mapping completeness for cashier_collection
+
+NO silent skip allowed
+
+--------------------------------------------------
+
+6) Backward compatibility
+
+If cashier_collection mapping does not exist:
+- keep current behavior working
+- BUT log warning event to accounting_event_log
+
+--------------------------------------------------
+PART C — Verification
+--------------------------------------------------
+
+VERIFY ALL:
+
+A) Accounting gaps
+- sales finalize success logs completed
+- missing fiscal period logs event
+- duplicate events prevented
+
+B) AccountMappings
+- ALL transaction types visible
+- cashier_collection appears
+- mapping can be saved successfully
+
+C) Runtime behavior
+- system still works without breaking current invoices
+- no regression in:
+  - sales
+  - patient invoices
+  - purchase
+  - cashier
+
+D) accounting_event_log
+- still logs correctly after all changes
+
+--------------------------------------------------
+PRINT EXACTLY
+--------------------------------------------------
+
+1) files changed
+2) DB changes (indexes/constraints)
+3) how GAP 1 fixed
+4) how GAP 2 fixed
+5) how GAP 3 fixed
+6) list of ALL transaction types now visible in AccountMappings
+7) confirmation cashier_collection mapping works
+8) final uniqueness rule used
+9) final statement:
+
+"Phase 3 fully closed"
