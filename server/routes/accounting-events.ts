@@ -135,20 +135,16 @@ export function registerAccountingEventRoutes(app: Express) {
         }
 
         if (sourceType === "cashier_collection") {
-          // إعادة إكمال قيد الكاشير
-          const cashMappings = await storage.getMappingsForTransaction("cashier_collection", null);
-          const cashMapping  = cashMappings.find(m => m.lineType === "cash");
-          if (!cashMapping?.debitAccountId) {
-            return res.status(422).json({ message: "لا يوجد حساب خزنة نقدية في خريطة الحسابات" });
-          }
-          await storage.completeSalesJournalsWithCash([sourceId], cashMapping.debitAccountId, "");
+          // Phase 4: إعادة المحاولة عبر المسار الجديد (createCashierCollectionJournals)
+          // إذا لم يوجد ربط cashier_collection/cash كامل: يتراجع للمسار القديم تلقائياً
+          await storage.createCashierCollectionJournals([sourceId], null, "");
           await db.execute(sql`
             UPDATE accounting_event_log
             SET attempt_count = attempt_count + 1,
                 last_attempted_at = NOW(), updated_at = NOW()
             WHERE id = ${id}
           `);
-          return res.json({ success: true, message: "تمت إعادة إكمال القيد — راجع accounting_event_log للنتيجة التفصيلية" });
+          return res.json({ success: true, message: "تمت إعادة محاولة إنشاء قيد التحصيل — راجع accounting_event_log للنتيجة التفصيلية" });
         }
 
         if (sourceType === "patient_invoice") {

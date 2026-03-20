@@ -70,10 +70,11 @@ const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     payables:  { required: true,   debitSide: true, creditSide: true },
   },
   cashier_collection: {
-    cash:          { required: true,   debitSide: true, creditSide: true },
-    receivables:   { required: "cond", condition: "للذمم المدينة",                  debitSide: true, creditSide: true },
-    revenue_drugs: { required: "cond", condition: "عند وجود أدوية",                 debitSide: true, creditSide: true },
-    revenue_general: { required: "cond", condition: "للبنود العامة",                debitSide: true, creditSide: true },
+    cash: {
+      required: true,
+      condition: "مدين = الخزنة / دائن = مقاصة المدينين — يفعّل قيد التحصيل المستقل",
+      debitSide: true, creditSide: true,
+    },
   },
   cashier_refund: {
     cash:          { required: true,   debitSide: true, creditSide: true },
@@ -96,7 +97,7 @@ const suggestedLineTypes: Record<string, string[]> = {
   patient_invoice:     ["cash", "receivables", "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment"],
   receiving:           ["inventory", "payables"],
   purchase_invoice:    ["inventory", "vat_input", "discount_earned", "payables_drugs", "payables_consumables"],
-  cashier_collection:  ["cash", "receivables", "revenue_drugs", "revenue_general"],
+  cashier_collection:  ["cash"],
   cashier_refund:      ["cash", "returns", "revenue_drugs", "inventory"],
   warehouse_transfer:        ["inventory"],
   doctor_payable_settlement: ["doctor_payable", "cash", "receivable_clear"],

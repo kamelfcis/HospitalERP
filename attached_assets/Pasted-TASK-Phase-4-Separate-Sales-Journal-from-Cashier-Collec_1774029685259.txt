@@ -1,0 +1,225 @@
+TASK: Phase 4 — Separate Sales Journal from Cashier Collection Journal Using Account Mappings
+
+Phase 1, Phase 2, and Phase 3/3.1 are complete.
+The system now has:
+- working AccountMappings
+- scoped account visibility
+- durable accounting_event_log with retry/admin UI
+- cashier_collection mappings visible in AccountMappings
+
+Now implement the next accounting architecture step:
+
+GOAL
+Stop modifying the original sales journal during cashier collection.
+Instead, create a separate cashier collection journal entry using the cashier_collection mappings from AccountMappings.
+
+BUSINESS / ACCOUNTING REQUIREMENT
+Current behavior:
+- sales invoice finalize creates a journal
+- cashier collection later modifies the receivable line in that same journal and marks it posted
+
+Target behavior:
+1) Sales invoice finalize creates and keeps its own sales journal
+2) Cashier collection creates a NEW and separate journal entry
+3) The original sales journal is never mutated into a cash journal
+4) AccountMappings for cashier_collection must actually drive the new journal logic
+
+TARGET ACCOUNTING MODEL
+
+A) On sales invoice finalize:
+Create a sales journal such as:
+- Dr receivables
+- Dr discount allowed (if applicable)
+- Dr COGS
+- Cr revenue
+- Cr inventory
+
+B) On cashier collection:
+Create a separate cashier collection journal such as:
+- Dr cash / treasury
+- Cr receivables_clear (or receivables, depending on current mapping design)
+
+The exact account IDs must come from account_mappings for transaction_type = cashier_collection.
+
+IMPORTANT
+Do NOT redesign the whole accounting model.
+Keep this phase focused on separating execution logic cleanly and safely.
+
+--------------------------------------------------
+PART A — DISCOVERY BEFORE CODING
+--------------------------------------------------
+
+Before changing anything, inspect and print a short report on:
+
+1) The current full cashier collection path:
+- route
+- storage/service method
+- completeSalesJournalsWithCash behavior
+- how it finds/modifies the original journal
+- how journal status is currently updated
+
+2) The current refund path:
+- whether it uses the same completion logic
+- whether it needs parallel adjustment in this phase or can safely stay on current logic temporarily
+
+3) The current journal status model on:
+- sales_invoice_headers
+- journal_entries
+- accounting_event_log
+
+4) Whether there is already a reusable generic helper for creating journals from transaction mappings that can be reused for cashier_collection
+
+Then continue implementation using the cleanest reuse path.
+
+--------------------------------------------------
+PART B — SALES JOURNAL MUST STAY INDEPENDENT
+--------------------------------------------------
+
+REQUIREMENTS
+
+1) At sales invoice finalize:
+- keep generating the sales journal as before
+- do NOT rely on later mutation by cashier collection
+- do NOT overwrite receivable with cash later
+
+2) Ensure the sales journal reaches/keeps the correct accounting state for a finalized sale.
+If current status handling assumes later completion by cashier collection, refactor it safely so the sales journal itself has a coherent independent lifecycle.
+
+3) Preserve idempotency:
+- no duplicate sales journals
+- no broken finalize retry behavior
+
+--------------------------------------------------
+PART C — NEW CASHIER COLLECTION JOURNAL
+--------------------------------------------------
+
+REQUIREMENTS
+
+1) On successful cashier collection:
+Create a NEW journal entry for the collection event.
+
+2) The collection journal must be driven by account_mappings where:
+- transaction_type = cashier_collection
+
+3) Use the line types already configured in AccountMappings.
+At minimum support the mapping model currently available in the codebase, including:
+- cash
+- receivable_clear
+and any other cashier_collection line types currently defined
+
+4) Journal construction rules:
+- Dr treasury/cash account from mapping
+- Cr receivable clearing account from mapping
+- amount = actual collected amount
+- if partial collection is possible now or later, the design must not block it
+
+5) Link the new collection journal clearly to:
+- source invoice
+- collection event / receipt
+- source type suitable for accounting_event_log and retry
+
+6) Preserve idempotency:
+- repeated collect retry must not create duplicate collection journals
+- use stable source linkage and locking strategy
+
+--------------------------------------------------
+PART D — STOP MUTATING THE ORIGINAL JOURNAL
+--------------------------------------------------
+
+REQUIREMENTS
+
+1) Refactor completeSalesJournalsWithCash (or replace its role cleanly) so it no longer edits the original sales journal lines from receivable to cash.
+
+2) If the function name no longer matches behavior after refactor, rename or wrap it cleanly.
+Do not leave misleading architecture if the function now does something fundamentally different.
+
+3) Update any dependent flows carefully, especially:
+- cashier collection
+- cashier refund
+- retry path in /api/accounting/events/:id/retry
+- any code that expects sales journal status to change only after collection
+
+--------------------------------------------------
+PART E — STATUS / EVENT / TRACEABILITY
+--------------------------------------------------
+
+REQUIREMENTS
+
+1) Accounting event log:
+- sales finalize should remain traceable as sales journal creation
+- cashier collection should create its own accounting event trail as a separate logical event
+
+2) journal_entries:
+- clearly distinguish sales journal vs cashier collection journal
+- use source type / source id / event type / purpose fields consistently
+- if a new discriminator field is needed, add it only if necessary and keep it minimal
+
+3) Retry:
+- retrying cashier_collection event should retry only the collection journal creation
+- it must not mutate or recreate the sales journal
+
+4) Admin accounting events UI:
+- should continue to show meaningful event rows for both sales and collection
+- update source/event labeling if needed for clarity
+
+--------------------------------------------------
+PART F — BACKWARD COMPATIBILITY / SAFE TRANSITION
+--------------------------------------------------
+
+REQUIREMENTS
+
+1) Existing historical data must not be corrupted.
+2) Previously created journals must remain queryable.
+3) Do not try to mass-rewrite old journals in this phase unless absolutely necessary.
+4) For in-flight invoices:
+- define clear behavior if a sales invoice already has the old journal style and collection happens after deployment
+- prefer safe compatibility handling over risky migration
+
+--------------------------------------------------
+PART G — REFUND HANDLING
+--------------------------------------------------
+
+REQUIREMENTS
+
+Inspect refund behavior and choose the safest approach for this phase:
+
+Option A:
+- keep refund on current mechanism temporarily if changing it now would create risk
+- but document it clearly
+
+Option B:
+- if low-risk, align refund with the new separated model
+
+Do NOT do a risky refund redesign unless it is clearly small and safe.
+Be explicit about what was changed vs deferred.
+
+--------------------------------------------------
+PART H — VERIFICATION
+--------------------------------------------------
+
+After implementation, verify all of the following:
+
+1) Sales invoice finalize creates exactly one sales journal and does not depend on later cashier mutation
+2) Cashier collection creates exactly one separate collection journal
+3) The original sales journal remains unchanged after collection
+4) cashier_collection mappings from AccountMappings are actually used
+5) Retry on cashier_collection is idempotent and creates no duplicates
+6) Accounting event log remains correct and meaningful
+7) Existing reporting / journal listing does not regress materially
+8) Any deferred refund behavior is clearly documented
+
+--------------------------------------------------
+PRINT EXACTLY
+--------------------------------------------------
+
+1) discovery findings
+2) files changed
+3) old behavior vs new behavior
+4) exact sales journal lifecycle after refactor
+5) exact cashier collection journal lifecycle after refactor
+6) how AccountMappings cashier_collection is now used
+7) idempotency strategy used
+8) treatment of refund path
+9) any compatibility assumptions for old data
+10) final statement:
+"Phase 4 completed"

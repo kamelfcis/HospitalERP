@@ -544,6 +544,116 @@ const methods = {
     }
   },
 
+  /**
+   * createCashierCollectionJournals — المسار الجديد (Phase 4)
+   *
+   * يُنشئ قيداً محاسبياً مستقلاً لكل عملية تحصيل كاشير، بدلاً من تعديل القيد الأصلي.
+   *
+   * هيكل القيد الناتج:
+   * ┌─────────────────────────────────────────────────────────────────┐
+   * │  مدين   │ الخزنة / النقدية (cash.debitAccountId)               │
+   * │  دائن   │ مقاصة المدينين  (cash.creditAccountId)               │
+   * └─────────────────────────────────────────────────────────────────┘
+   *
+   * الشرط:
+   * - يجب أن يكون cashier_collection / cash مُعرَّفاً بحسابَي مدين ودائن في account_mappings
+   * - إذا لم يُعرَّف الربط: يتراجع إلى completeSalesJournalsWithCash (التوافق مع الإصدارات القديمة)
+   *
+   * الضمانات:
+   * - idempotent: لا يُنشئ قيدين لنفس الفاتورة (generateJournalEntry يفحص مسبقاً)
+   * - القيد الأصلي (sales_invoice) لا يُلمَس أبداً
+   * - يُسجِّل كل عملية في accounting_event_log بـ event_type = "cashier_collection_journal"
+   */
+  async createCashierCollectionJournals(
+    this: DatabaseStorage,
+    invoiceIds: string[],
+    cashGlAccountOverride: string | null,
+    pharmacyId: string,
+  ): Promise<void> {
+    const ccMappings = await this.getMappingsForTransaction("cashier_collection", null);
+    const cashMapping = ccMappings.find(m => m.lineType === "cash");
+    const hasFullMapping = !!(cashMapping?.debitAccountId && cashMapping?.creditAccountId);
+
+    if (!hasFullMapping) {
+      logger.warn(
+        "[CASHIER_COLLECTION] cashier_collection/cash mapping missing creditAccountId — " +
+        "falling back to legacy journal mutation (completeSalesJournalsWithCash). " +
+        "Configure both debitAccountId and creditAccountId at /account-mappings to enable Phase-4 separated journals."
+      );
+      return this.completeSalesJournalsWithCash(invoiceIds, cashGlAccountOverride, pharmacyId);
+    }
+
+    for (const invoiceId of invoiceIds) {
+      const eventId = await logAcctEvent({
+        sourceType: "cashier_collection",
+        sourceId:   invoiceId,
+        eventType:  "cashier_collection_journal",
+        status:     "pending",
+      });
+
+      try {
+        const [invoice] = await db.select({
+          netTotal:      salesInvoiceHeaders.netTotal,
+          invoiceNumber: salesInvoiceHeaders.invoiceNumber,
+          invoiceDate:   salesInvoiceHeaders.invoiceDate,
+        }).from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
+
+        if (!invoice) {
+          if (eventId) await updateAcctEvent(eventId, "blocked", { errorMessage: "الفاتورة غير موجودة في قاعدة البيانات" });
+          continue;
+        }
+
+        const netTotal = parseFloat(invoice.netTotal || "0");
+        if (netTotal <= 0) {
+          if (eventId) await updateAcctEvent(eventId, "completed", { errorMessage: "المبلغ صفر — لا يلزم قيد تحصيل" });
+          continue;
+        }
+
+        const entry = await this.generateJournalEntry({
+          sourceType:       "cashier_collection",
+          sourceDocumentId: invoiceId,
+          reference:        `COL-${invoice.invoiceNumber}`,
+          description:      `قيد تحصيل فاتورة مبيعات رقم ${invoice.invoiceNumber}`,
+          entryDate:        invoice.invoiceDate,
+          lines:            [{ lineType: "cash", amount: String(netTotal.toFixed(2)) }],
+        });
+
+        if (eventId) {
+          if (entry) {
+            await updateAcctEvent(eventId, "completed", { journalEntryId: entry.id });
+          } else {
+            const [existing] = await db.select({ id: journalEntries.id })
+              .from(journalEntries)
+              .where(and(
+                eq(journalEntries.sourceType, "cashier_collection"),
+                eq(journalEntries.sourceDocumentId, invoiceId)
+              ));
+            await updateAcctEvent(eventId, "completed", {
+              journalEntryId: existing?.id ?? null,
+              errorMessage:   existing
+                ? "القيد موجود مسبقاً (idempotent — لا حاجة لإعادة الإنشاء)"
+                : "تم تجاوز إنشاء القيد — تحقق من إعدادات الربط المحاسبي",
+            });
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error({ invoiceId, err: msg }, "[CASHIER_COLLECTION] createCashierCollectionJournals: per-invoice failure");
+        if (eventId) {
+          await updateAcctEvent(eventId, "failed", { errorMessage: msg });
+        } else {
+          await logAcctEvent({
+            sourceType:   "cashier_collection",
+            sourceId:     invoiceId,
+            eventType:    "cashier_collection_journal",
+            status:       "failed",
+            errorMessage: msg,
+          });
+        }
+      }
+    }
+  },
+
   async deleteSalesInvoice(this: DatabaseStorage, id: string, reason?: string): Promise<boolean> {
     const [invoice] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
     if (!invoice) throw new Error("الفاتورة غير موجودة");

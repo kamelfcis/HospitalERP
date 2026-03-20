@@ -664,14 +664,15 @@ const methods = {
 
       const result = { receipts, totalCollected: totalCollected.toFixed(2), count: receipts.length };
 
-      // إكمال القيود المحاسبية خارج transaction — مُسجَّل الآن في accounting_event_log
-      self.completeSalesJournalsWithCash(
+      // Phase 4: إنشاء قيد تحصيل مستقل خارج transaction بدلاً من تعديل قيد المبيعات
+      // إذا لم يكن هناك ربط حسابات كامل (cashier_collection/cash)، يتراجع تلقائياً للمسار القديم
+      self.createCashierCollectionJournals(
         invoiceIds,
         shiftRow.gl_account_id || null,
         shiftRow.pharmacy_id || "",
       ).catch((err: unknown) => {
         const msg = errMsg(err);
-        logger.error({ err: msg, invoiceIds }, "[CASHIER] completeSalesJournalsWithCash: top-level failure");
+        logger.error({ err: msg, invoiceIds }, "[CASHIER] createCashierCollectionJournals: top-level failure");
       });
 
       return result;
