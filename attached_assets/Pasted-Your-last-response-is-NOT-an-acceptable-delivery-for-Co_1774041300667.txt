@@ -1,0 +1,370 @@
+Your last response is NOT an acceptable delivery for Contracts Phase 1.
+
+You drifted into reviewing Account Mappings work and only mentioned that db:push applied some schema columns. That is not the requested deliverable.
+
+We are evaluating Contracts Module — Phase 1 only.
+
+You must now stop discussing Account Mappings entirely and do the following properly.
+
+==================================================
+CORRECTION INSTRUCTION
+==================================================
+
+Re-focus strictly on Contracts Module — Phase 1.
+
+Do not summarize unrelated modules.
+Do not report generic completion statements.
+Do not say “mostly done”.
+Do not say “structure exists”.
+Do not give me high-level claims without exact file evidence.
+
+I need a precise implementation-oriented analysis and then the actual implementation for Contracts Phase 1 only.
+
+==================================================
+STEP 1 — ANALYSIS FIRST
+==================================================
+
+First inspect the actual existing codebase and print a structured analysis summary before coding.
+
+Print exactly these sections:
+
+1) EXISTING FILES TO INSPECT
+List the exact real files you inspected that are relevant to:
+- schema
+- transactional tables
+- patient invoice
+- sales invoice
+- admissions
+- clinic appointments
+- patient registration
+- routes
+- RBAC / permissions
+- UI patterns/pages/components
+- account / GL lookup
+- price list lookup
+
+2) REAL TABLE / ENTITY MAPPING
+Map the conceptual names from the prompt to the actual codebase entities.
+Example:
+- patientInvoiceHeaders -> actual file/table name
+- patientInvoiceLines -> actual file/table name
+- salesInvoiceHeaders -> actual file/table name
+- salesInvoiceLines -> actual file/table name
+- admissions -> actual file/table name
+- clinicAppointments -> actual file/table name
+
+If names differ, print the exact mapping you will use.
+
+3) FILES TO CHANGE
+List the exact files you will create/modify for Contracts Phase 1 only.
+
+4) MIGRATION IMPACT
+State exactly:
+- which new tables will be created
+- which existing tables will get new nullable columns
+- which legacy text fields will remain untouched
+- confirm additive migration only
+- confirm no destructive rename/drop
+- confirm no old-row backfill in Phase 1
+
+5) RISKS
+List concrete risks only, such as:
+- naming mismatch
+- FK target validation dependencies
+- route registration collisions
+- UI integration points
+- migration order
+- DB push / journal retry side effects if any
+
+6) EXECUTION PLAN — PHASE 1 ONLY
+Break into small steps.
+Do not include Phase 2.
+Do not include rules engine.
+Do not include claims engine.
+
+After printing the analysis summary, implement.
+
+==================================================
+STEP 2 — IMPLEMENT CONTRACTS PHASE 1 ONLY
+==================================================
+
+Implement the following exactly and only for Phase 1.
+
+A) SCHEMA
+
+Create:
+- shared/schema/contracts.ts
+
+Create these relational tables:
+1. companies
+2. contracts
+3. contractMembers
+
+Include:
+- insert schemas
+- inferred types
+
+Required indexes:
+- all FK columns
+- code
+- nameAr
+- contractNumber
+- memberCardNumber
+- patientId
+- companyId
+- startDate
+- endDate
+
+Important:
+- one company can have multiple contracts
+- no rules engine in this phase
+- contractRuleId in invoice lines is placeholder only for forward compatibility
+
+B) SAFE EXTENSION OF EXISTING TABLES
+
+Add nullable FK columns only, keeping backward compatibility.
+
+Use the real actual existing transactional table names from the codebase, but ensure these conceptual fields are added:
+
+Patient invoice header equivalent:
+- companyId nullable FK
+- contractId nullable FK
+- contractMemberId nullable FK
+Keep legacy contractName text field unchanged
+
+Patient invoice line equivalent:
+- companyId nullable FK
+- contractId nullable FK
+- contractMemberId nullable FK
+- contractRuleId nullable FK placeholder only
+- listPrice nullable decimal
+- contractPrice nullable decimal
+- companyShareAmount nullable decimal
+- patientShareAmount nullable decimal
+- coverageStatus nullable text
+- approvalStatus nullable text
+
+Sales invoice header equivalent:
+- companyId nullable FK
+- contractId nullable FK
+Keep legacy contractCompany text unchanged
+
+Sales invoice line equivalent:
+- companyId nullable FK
+- contractId nullable FK
+- companyShareAmount nullable decimal
+- patientShareAmount nullable decimal
+- coverageStatus nullable text
+
+Admissions equivalent:
+- companyId nullable FK
+- contractId nullable FK
+- contractMemberId nullable FK
+Keep legacy insuranceCompany + payerReference unchanged
+
+Clinic appointments equivalent:
+- companyId nullable FK
+- contractId nullable FK
+- contractMemberId nullable FK
+Keep legacy text fields unchanged if they currently exist
+
+Add indexes for all new FK columns.
+
+C) STORAGE / BACKEND
+
+Create:
+- server/storage/contracts-companies-storage.ts
+- server/storage/contracts-core-storage.ts
+
+Implement methods:
+
+Companies:
+- getCompanies(params)
+- getCompanyById(id)
+- createCompany(data)
+- updateCompany(id, data)
+- deactivateCompany(id)
+
+Rules:
+- unique code validation
+- validate glAccountId if provided
+- soft delete only
+- prevent deactivate if active contracts exist
+
+Contracts:
+- getContractsByCompany(companyId)
+- getContractById(id)
+- createContract(data)
+- updateContract(id, data)
+- getActiveContractForMember(memberId, date)
+
+Rules:
+- validate companyId
+- validate basePriceListId if provided
+- validate startDate < endDate
+
+Members:
+- getMembersByContract(contractId)
+- getMemberById(id)
+- createMember(data)
+- updateMember(id, data)
+- lookupMemberByCard(cardNumber, date)
+
+Rules:
+- unique memberCardNumber per contract
+- validate patient if linked
+- lookup must return resolved member + contract + company
+
+D) ROUTES / RBAC
+
+Create:
+- server/routes/contracts.ts
+
+Register it in:
+- server/routes/index.ts
+
+Add routes:
+- GET /api/companies
+- POST /api/companies
+- PATCH /api/companies/:id
+- DELETE /api/companies/:id   --> soft deactivate only
+
+- GET /api/contracts?companyId=
+- POST /api/contracts
+- PATCH /api/contracts/:id
+
+- GET /api/contract-members?contractId=
+- POST /api/contract-members
+- PATCH /api/contract-members/:id
+
+- GET /api/contract-members/lookup?cardNumber=&date=
+
+Add RBAC permissions:
+- contracts.view
+- contracts.manage
+
+Keep routes thin.
+Put business logic in storage/services.
+
+E) UI
+
+Create:
+- client/src/pages/contracts/CompaniesPage.tsx
+
+Pattern requirements:
+- ERP-style layout
+- 2/3 list area
+- 1/3 detail panel
+- rows/table layout, not cards
+- RTL support
+- loading / empty / error states
+
+Left side companies table:
+- code
+- nameAr
+- companyType
+- GL account
+- status
+- contracts count
+
+Right side detail panel tabs:
+- company info
+- contracts sub-list
+
+Contract interaction:
+- click contract -> nested drawer/sheet
+- contract form
+- members table inside contract detail
+
+Members UI:
+- memberCardNumber
+- member name
+- linked patient chip
+- start/end dates
+- status
+- add/edit/deactivate
+
+Mandatory frontend rule:
+no business logic in frontend.
+Lookup/evaluation must stay backend-driven.
+
+F) REGISTRATION / APPOINTMENT INTEGRATION
+
+Extend the existing patient registration flow and clinic appointment flow.
+
+When paymentType = CONTRACT or INSURANCE:
+- show Member Card Lookup input
+- call lookup endpoint
+- auto-populate companyId, contractId, contractMemberId
+- show resolved company + contract as read-only chips
+
+On save:
+- write FK fields to header/transactional records
+- keep legacy text fields populated for backward compatibility
+
+Scope rule:
+Only integrate with the existing current registration/appointment flows already in the codebase.
+Do not redesign unrelated payment workflows.
+
+G) REFACTOR / DOCS / CLEANUP
+
+Mandatory:
+- refactor any touched primitive free-text contract logic
+- extract reusable components
+- avoid giant files
+- add indexes
+- document entity relationships
+- document migration path
+- document which legacy fields remain temporary
+
+==================================================
+STEP 3 — FINAL OUTPUT FORMAT (MANDATORY)
+==================================================
+
+At the end, print exactly these sections:
+
+1) MODIFIED FILES
+List every created/changed file exactly.
+
+2) SCHEMA CHANGES
+List:
+- new tables
+- new columns added to existing tables
+- legacy fields intentionally retained
+
+3) INDEXES ADDED
+List every new index exactly.
+
+4) BACKWARD COMPATIBILITY RETAINED
+State exactly how old flows/data remain safe.
+
+5) ROUTES ADDED
+List every endpoint added.
+
+6) RBAC ADDED
+List every permission added and where wired.
+
+7) UI ADDED
+List pages/components/hooks added.
+
+8) INTEGRATION CHANGES
+State exactly what changed in registration and appointment flows.
+
+9) NOT IMPLEMENTED BY DESIGN
+Explicitly state:
+- no rules engine
+- no claims engine
+- no contract rule evaluation
+- no backfill of legacy rows
+
+10) PHASE 2 PREREQUISITES
+List the specific next-step dependencies only.
+
+==================================================
+IMPORTANT DELIVERY RULE
+==================================================
+
+Do not answer with vague claims like “done” or “mostly complete”.
+Do not summarize unrelated modules.
+Do not stop at db:push.
+Show exact files, exact changes, and exact implementation scope for Contracts Phase 1 only.

@@ -1,0 +1,100 @@
+Good progress, but this analysis is still incomplete and not yet approved for implementation.
+
+You may NOT start implementation yet.
+
+You must first correct the analysis and close the missing inspection gaps.
+
+==================================================
+ANALYSIS CORRECTION REQUIRED
+==================================================
+
+Your analysis improved, but it is still missing critical scope verification for Contracts Phase 1.
+
+Before implementation, print a corrected analysis with the additional sections below.
+
+Do not code yet.
+Do not say "already in DB" as a substitute for code/schema inspection.
+The source of truth is the current codebase + schema files.
+
+==================================================
+REQUIRED CORRECTIONS
+==================================================
+
+1) TRANSACTIONAL SCHEMA VERIFICATION MATRIX
+
+For each of the following existing tables/entities, print the exact status:
+
+- patient_invoice_headers
+- patient_invoice_lines
+- sales_invoice_headers
+- sales_invoice_lines
+- hospital_admissions
+- clinic_appointments
+
+For each one, print:
+- schema file name
+- drizzle object name
+- whether required Phase 1 contract columns already exist in code
+- whether they are missing in code
+- whether legacy text fields still exist
+- exact columns that still need to be added, if any
+
+Use a strict matrix format.
+
+2) REGISTRATION FLOW INSPECTION
+
+You inspected clinic booking, but Phase 1 also requires patient registration integration.
+
+Inspect the actual existing patient registration / front-desk / reception flow files and print:
+- exact files inspected
+- which file renders payment type
+- which file saves registration/admission/encounter data
+- where Member Card Lookup should be inserted
+- where companyId / contractId / contractMemberId should be written on save
+
+If there is no clean registration flow yet, state that explicitly and propose the safest current integration point.
+
+3) GL ACCOUNT + PRICE LIST VALIDATION TARGETS
+
+Inspect and print the exact source-of-truth entities/files for:
+- glAccountId validation target
+- basePriceListId validation target
+
+Print:
+- actual schema/table/object names
+- storage/query source you will use to validate them
+- whether they already exist and are safe to reference
+
+Do not leave this implicit.
+
+4) FILES TO MODIFY — COMPLETE LIST
+
+Revise your “files to create/modify” list so it includes every schema file that must actually change.
+
+If patient_invoice_headers / lines, sales_invoice_headers / lines, or hospital_admissions still need contract columns in code, those schema files must appear explicitly in the modify list.
+
+Do not omit them.
+
+5) IMPLEMENTATION READINESS CHECK
+
+At the end, print a short section:
+
+IMPLEMENTATION READINESS
+- READY / NOT READY
+
+It is READY only if:
+- all required Phase 1 schema locations are verified
+- registration and appointment integration points are identified
+- glAccountId validation target is identified
+- basePriceListId validation target is identified
+- all files to modify are fully enumerated
+
+If any of these are still unclear, print NOT READY and state exactly what remains unclear.
+
+==================================================
+IMPORTANT RULE
+==================================================
+
+Do not start coding after this message.
+Return the corrected analysis only.
+After that I will review and then authorize implementation.

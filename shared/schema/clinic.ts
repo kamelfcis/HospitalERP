@@ -61,12 +61,20 @@ export const clinicAppointments = pgTable("clinic_appointments", {
   serviceDelivered:        boolean("service_delivered").notNull().default(false),
   refundAmount:            decimal("refund_amount", { precision: 18, scale: 2 }).default("0"),
   refundReason:            text("refund_reason"),
+  // ── Contract FK fields (nullable — Phase 1 foundation) ─────────────────────
+  // Legacy fields insuranceCompany + payerReference remain untouched
+  companyId:               varchar("company_id"),
+  contractId:              varchar("contract_id"),
+  contractMemberId:        varchar("contract_member_id"),
 }, (t) => [
   index("idx_clinic_appts_clinic_date").on(t.clinicId, t.appointmentDate),
   index("idx_clinic_appts_clinic_date_status").on(t.clinicId, t.appointmentDate, t.status),
   index("idx_clinic_appts_doctor_date").on(t.doctorId, t.appointmentDate),
   index("idx_clinic_appts_patient_id").on(t.patientId),
   index("idx_clinic_appts_status").on(t.status),
+  index("idx_clinic_appts_company").on(t.companyId),
+  index("idx_clinic_appts_contract").on(t.contractId),
+  index("idx_clinic_appts_contract_member").on(t.contractMemberId),
 ]);
 
 export const clinicUserClinicAssignments = pgTable("clinic_user_clinic_assignments", {

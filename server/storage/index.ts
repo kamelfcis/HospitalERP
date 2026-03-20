@@ -722,6 +722,26 @@ export interface IStorage {
   lookupBarcodeForSession(barcode: string, warehouseId: string, sessionId: string): Promise<import("./stock-count-storage").LoadedItem[]>;
   postStockCountSession(sessionId: string, userId: string): Promise<import("@shared/schema").StockCountSession>;
 
+  // ── Companies (شركات التأمين والتعاقد) ───────────────────────────────────
+  getCompanies(params?: import("./contracts-companies-storage").GetCompaniesParams): Promise<import("@shared/schema").Company[]>;
+  getCompanyById(id: string): Promise<import("@shared/schema").Company | null>;
+  createCompany(data: import("@shared/schema").InsertCompany): Promise<import("@shared/schema").Company>;
+  updateCompany(id: string, data: Partial<import("@shared/schema").InsertCompany>): Promise<import("@shared/schema").Company>;
+  deactivateCompany(id: string): Promise<import("@shared/schema").Company>;
+
+  // ── Contracts (العقود) ────────────────────────────────────────────────────
+  getContractsByCompany(companyId: string): Promise<import("@shared/schema").Contract[]>;
+  getContractById(id: string): Promise<import("@shared/schema").Contract | null>;
+  createContract(data: import("@shared/schema").InsertContract): Promise<import("@shared/schema").Contract>;
+  updateContract(id: string, data: Partial<import("@shared/schema").InsertContract>): Promise<import("@shared/schema").Contract>;
+
+  // ── Contract Members (المنتسبون) ──────────────────────────────────────────
+  getMembersByContract(contractId: string): Promise<import("@shared/schema").ContractMember[]>;
+  getMemberById(id: string): Promise<import("@shared/schema").ContractMember | null>;
+  createContractMember(data: import("@shared/schema").InsertContractMember): Promise<import("@shared/schema").ContractMember>;
+  updateContractMember(id: string, data: Partial<import("@shared/schema").InsertContractMember>): Promise<import("@shared/schema").ContractMember>;
+  lookupMemberByCard(cardNumber: string, date: string): Promise<import("./contracts-core-storage").ContractMemberLookupResult | null>;
+
   [key: string]: unknown;
 }
 
@@ -771,6 +791,8 @@ import { clinicMasterMethods, clinicOrdersMethods } from "./clinic-storage";
 import rptRefreshMethods from "./rpt-refresh-storage";
 import stockCountMethods from "./stock-count-storage";
 import permissionGroupsMethods from "./permission-groups-storage";
+import companiesMethods from "./contracts-companies-storage";
+import contractsCoreMethods from "./contracts-core-storage";
 
 Object.assign(
   DatabaseStorage.prototype,

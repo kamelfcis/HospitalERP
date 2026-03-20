@@ -128,6 +128,10 @@ export const PERMISSIONS = {
 
   // ── فواتير: موافقة سعر الصفر ──────────────────────────────────────────
   INVOICE_APPROVE_ZERO_PRICE: "invoice.approve_zero_price",
+
+  // ── موديول العقود والشركات ─────────────────────────────────────────────
+  CONTRACTS_VIEW:   "contracts.view",   // عرض الشركات والعقود والمنتسبين
+  CONTRACTS_MANAGE: "contracts.manage", // إنشاء/تعديل/إلغاء تفعيل
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -198,6 +202,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.PERMISSION_GROUPS_VIEW,
     PERMISSIONS.PERMISSION_GROUPS_MANAGE,
     PERMISSIONS.INVOICE_APPROVE_ZERO_PRICE,
+    PERMISSIONS.CONTRACTS_VIEW,
+    PERMISSIONS.CONTRACTS_MANAGE,
   ],
 
   admin: Object.values(PERMISSIONS),
@@ -588,6 +594,13 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
     permissions: [
       { key: PERMISSIONS.PERMISSION_GROUPS_VIEW,   label: "عرض" },
       { key: PERMISSIONS.PERMISSION_GROUPS_MANAGE, label: "إدارة" },
+    ],
+  },
+  {
+    label: "العقود والشركات",
+    permissions: [
+      { key: PERMISSIONS.CONTRACTS_VIEW,   label: "عرض الشركات والعقود" },
+      { key: PERMISSIONS.CONTRACTS_MANAGE, label: "إنشاء وتعديل" },
     ],
   },
 ];
