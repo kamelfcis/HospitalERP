@@ -1,0 +1,51 @@
+TASK: Phase 1 Verification Pass — Confirm Functional Correctness, Route Coverage, and Reuse Quality
+
+Phase 1 has been implemented. Now perform a strict verification pass before we close it.
+
+GOAL
+Confirm that the fix is complete, functionally correct, secure, and did not introduce architectural regression.
+
+VERIFY ALL OF THE FOLLOWING
+
+A) AccountMappings functional verification
+1) Open the Account Mappings screen and verify:
+- accounts now appear correctly
+- search by account name works
+- search by account code works
+- selecting debit account works
+- selecting credit account works
+- no empty-result bug remains
+
+2) Verify whether AccountSearchSelect behavior is fully compatible with AccountMappings needs:
+- does it filter only active accounts?
+- does it allow selecting parent/non-postable accounts?
+- if the business rule requires only leaf/postable accounts, confirm whether that rule is enforced correctly
+- if not enforced, report it explicitly instead of guessing
+
+B) Route security coverage verification
+Inspect server/routes/account-setup.ts again and list ALL account-mappings endpoints present in the file.
+Confirm whether every single one is protected with:
+- requireAuth
+- checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS)
+
+If any endpoint was missed, fix it.
+
+C) Architectural verification
+Review the change where AccountMappings switched from useAccountsLookup to direct useQuery<Account[]>.
+Decide explicitly whether this is the right long-term pattern or whether it weakens the existing lookup architecture.
+
+Rules:
+- if direct useQuery is justified, explain why clearly
+- if it bypasses a good reusable abstraction unnecessarily, refactor back to the shared hook pattern cleanly
+- do not keep a one-off pattern without justification
+
+D) Regression verification
+Check whether the Phase 1 changes affected any existing screens already using AccountSearchSelect or account lookups.
+
+PRINT EXACTLY
+1) all account-mappings routes found and whether each is protected
+2) whether AccountMappings now works end-to-end
+3) whether AccountSearchSelect is fully compatible or has any hidden mismatch
+4) whether direct useQuery was kept or reverted, and why
+5) any final tiny fix applied during this verification pass
+6) clear statement: “Phase 1 fully closed” or “Phase 1 still has these remaining gaps”
