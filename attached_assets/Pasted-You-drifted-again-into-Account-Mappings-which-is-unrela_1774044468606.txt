@@ -1,0 +1,89 @@
+You drifted again into Account Mappings, which is unrelated and not acceptable here.
+
+We are currently in Contracts Module — Phase 2 only.
+
+Do not discuss Account Mappings again.
+Do not ask me what I want next.
+Do not pause for prioritization.
+Continue immediately with the remaining approved Phase 2 work only.
+
+==================================================
+CONTINUE CONTRACTS PHASE 2 — REMAINING STEPS ONLY
+==================================================
+
+Complete only these two remaining items:
+
+STEP 9
+Finish the Coverage Rules tab in the contracts screen.
+
+Target:
+client/src/pages/contracts/index.tsx
+
+Requirements:
+- rules tab visible inside the contracts module
+- rules table sorted by priority
+- add/edit rule UI
+- dynamic fields by ruleType
+- active toggle
+- inline test tool using POST /api/contracts/evaluate
+- explanation panel
+- keep UI thin
+- no frontend business logic
+- reuse extracted components if needed instead of bloating index.tsx
+
+STEP 10
+Add coverage stamping display to patient invoice line UI.
+
+Target:
+the actual patient invoice line grid / line display file(s) in the current codebase
+(find the real file instead of assuming only one file)
+
+Requirements:
+- coverage status badge
+- company share chip
+- patient share chip
+- explanation tooltip or expandable explanation area
+- show matched rule / explanation from backend-stamped line data
+- do not recalculate anything in frontend
+- read stamped fields only
+
+==================================================
+MANDATORY EXECUTION RULES
+==================================================
+
+- Do not touch Account Mappings
+- Do not expand to Phase 3
+- Do not add Sales Invoice integration
+- Do not add Clinic/Stay integrations
+- Do not ask for prioritization
+- Do not re-audit unrelated modules
+- If imports/components need cleanup, do it only as needed for these two steps
+- Keep the touched files cleaner than before
+
+==================================================
+BEFORE CODING
+==================================================
+
+Print only this short analysis:
+
+1) FILES TO MODIFY FOR STEP 9
+2) FILES TO MODIFY FOR STEP 10
+3) ANY SMALL BLOCKER
+4) EXECUTION PLAN FOR THESE TWO STEPS ONLY
+
+Then implement immediately.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+At the end print exactly:
+
+1) MODIFIED FILES
+2) COVERAGE RULES TAB COMPLETED
+3) PATIENT INVOICE COVERAGE DISPLAY COMPLETED
+4) COMPONENTS ADDED OR EXTRACTED
+5) ANY SMALL FOLLOW-UP RISKS
+
+Do not ask me any question.
+Proceed now.
