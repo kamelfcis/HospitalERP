@@ -197,7 +197,9 @@ export const contractClaimLines = pgTable("contract_claim_lines", {
   createdAt:            timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   batchIdx:          index("idx_ccl_batch").on(table.batchId),
-  patientLineIdx:    index("idx_ccl_patient_line").on(table.patientInvoiceLineId),
+  // UNIQUE on patientInvoiceLineId (nullable — PostgreSQL excludes NULLs automatically):
+  // prevents same patient invoice line from entering claims twice across all batches
+  uniquePatientLine: uniqueIndex("idx_ccl_unique_patient_line").on(table.patientInvoiceLineId),
   salesLineIdx:      index("idx_ccl_sales_line").on(table.salesInvoiceLineId),
   invoiceHeaderIdx:  index("idx_ccl_invoice_header").on(table.invoiceHeaderId),
   memberIdx:         index("idx_ccl_member").on(table.contractMemberId),

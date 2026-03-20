@@ -1,0 +1,80 @@
+Fix these three gaps now. Do not defer them to Phase 4.
+
+These are required hardening fixes before Claims phase can be accepted.
+
+==================================================
+CLAIMS HARDENING FIXES — APPLY NOW
+==================================================
+
+Implement exactly these three fixes only:
+
+1) DB-LEVEL DUPLICATE PREVENTION
+Add a DB uniqueness guarantee for claim lines generated from patient invoice lines.
+
+Goal:
+Prevent the same patient_invoice_line_id from being inserted twice into contract_claim_lines, even under concurrent generation.
+
+Requirements:
+- add a unique constraint / unique index for patient_invoice_line_id where it is not null
+- keep nullable behavior safe
+- update generator logic if needed to handle unique-conflict gracefully
+- if a duplicate insert is attempted, it should safely no-op or be ignored without breaking invoice finalization
+
+2) CLAIM GENERATION VISIBILITY ON PATIENT INVOICE HEADER
+Add a claimStatus field to patient invoice headers so fire-and-forget failures are visible to operators.
+
+Add field on patient invoice header equivalent:
+- claimStatus nullable text/enum
+
+Allowed values:
+- generating
+- generated
+- failed
+
+Behavior:
+- when finalize starts claim generation: set claimStatus = generating
+- on successful claim generation: set claimStatus = generated
+- on generation failure: set claimStatus = failed
+- do not fail invoice finalization if generation fails
+- keep logger warning too
+
+Also:
+- expose claimStatus in any relevant patient invoice read path already used by the UI if easy and safe
+- do not expand UI scope unless the field is already naturally returned
+
+3) CLAIM ELIGIBILITY FILTER CORRECTION
+Tighten generator eligibility.
+
+Current logic using only:
+companyShareAmount > 0
+is not sufficient.
+
+Update claim generation so that eligible lines must satisfy all applicable conditions:
+- finalized invoice context only
+- companyShareAmount > 0
+- coverageStatus is not not_covered / excluded
+- cancelled lines are excluded if such state exists in the real line/document model
+
+If approval_required lines currently remain claim-eligible in your design, keep that behavior for now, but document it explicitly.
+
+==================================================
+IMPLEMENTATION RULES
+==================================================
+
+- Do not expand scope beyond these three fixes
+- Do not redesign claim lifecycle
+- Do not change settlement accounting in this pass
+- Do not move anything to Phase 4 that is required for data integrity now
+- Keep backward compatibility
+- Keep fire-and-forget behavior, but make it observable
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+At the end print exactly:
+1) MODIFIED FILES
+2) UNIQUE CONSTRAINT ADDED
+3) CLAIM STATUS FIELD ADDED
+4) ELIGIBILITY FILTER CORRECTED
+5) ANY REMAINING KNOWN GAPS

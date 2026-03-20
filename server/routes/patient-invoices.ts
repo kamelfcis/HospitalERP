@@ -333,9 +333,16 @@ export function registerPatientInvoicesRoutes(app: Express) {
       }
 
       // توليد مطالبات العقد (fire-and-forget — الفشل لا يوقف الاعتماد)
-      generateClaimsForInvoice(invoiceId).catch(err =>
-        logger.warn({ err: err.message, invoiceId }, "[Claims] fire-and-forget failed")
-      );
+      // claimStatus يُعيَّن 'generating' هنا — الـ generator يُعيِّن 'generated' أو 'failed'
+      const hasContract = !!(result as any).companyId || !!(result as any).contractId;
+      if (hasContract) {
+        await db.update(patientInvoiceHeaders)
+          .set({ claimStatus: "generating", updatedAt: new Date() })
+          .where(eq(patientInvoiceHeaders.id, invoiceId))
+          .catch(() => {}); // non-blocking
+      }
+      generateClaimsForInvoice(invoiceId)
+        .catch(err => logger.warn({ err: err.message, invoiceId }, "[Claims] fire-and-forget outer catch"));
 
       res.json(result);
     } catch (error: unknown) {
