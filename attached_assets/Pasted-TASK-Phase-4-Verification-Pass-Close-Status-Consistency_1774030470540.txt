@@ -1,0 +1,67 @@
+TASK: Phase 4 Verification Pass — Close Status Consistency and Legacy Fallback Traceability Before Final Signoff
+
+Phase 4 implementation is mostly complete and looks strong.
+Before final signoff, perform a strict verification pass and close the remaining consistency gaps.
+
+GOAL
+Confirm that the separated cashier collection journal model is fully coherent, traceable, and does not leave hidden ambiguity.
+
+VERIFY ALL OF THE FOLLOWING
+
+A) Status consistency
+Review the full lifecycle and status usage for:
+- sales_invoice_headers.journal_status
+- journal_entries.status for sales journals
+- journal_entries.status for cashier_collection journals
+- accounting_event_log.status
+
+Current reported behavior suggests:
+- sales journal entry remains "draft"
+- invoice journal_status becomes "posted"
+
+This may be inconsistent.
+
+Required:
+1) Decide the correct status model after Phase 4
+2) Make the statuses semantically consistent
+3) Print the final intended meaning of each status field
+4) Fix any mismatch if needed
+
+B) Fire-and-forget traceability for cashier collection
+Review the post-transaction createCashierCollectionJournals fire-and-forget call and confirm:
+1) a pending accounting_event_log row is always created before any risky operation
+2) failure cannot become silent
+3) retry path fully covers failures from this async path
+4) no event is lost if the async creation fails after collection commit
+
+If any gap exists, close it with the safest minimal change.
+
+C) Legacy fallback traceability
+Current behavior:
+- if cashier_collection mapping is complete → new separate journal path
+- if mapping is missing → legacy mutation path
+
+Required:
+1) make this fallback explicitly traceable
+2) write a durable accounting_event_log warning/info row when legacy fallback is used
+3) include a clear message that cashier_collection mapping is incomplete and legacy mutation was applied
+4) make it easy for admins to identify which invoices are still using the legacy path
+
+D) Functional verification
+Verify all of the following:
+1) with cashier_collection mapping configured:
+   - collection creates exactly one separate journal
+   - original sales journal remains unchanged
+2) without cashier_collection mapping configured:
+   - legacy path still works
+   - fallback is durably logged and visible
+3) retry for cashier_collection does not create duplicates
+4) journal listing/reporting still behaves coherently
+
+PRINT EXACTLY
+1) final status model after Phase 4
+2) whether any status mismatch was fixed
+3) how async cashier collection failures are guaranteed visible
+4) how legacy fallback is now logged
+5) any files changed in this verification pass
+6) final statement: "Phase 4 fully closed"

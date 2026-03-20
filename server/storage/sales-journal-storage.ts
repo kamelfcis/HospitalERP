@@ -575,11 +575,20 @@ const methods = {
     const hasFullMapping = !!(cashMapping?.debitAccountId && cashMapping?.creditAccountId);
 
     if (!hasFullMapping) {
-      logger.warn(
-        "[CASHIER_COLLECTION] cashier_collection/cash mapping missing creditAccountId — " +
-        "falling back to legacy journal mutation (completeSalesJournalsWithCash). " +
-        "Configure both debitAccountId and creditAccountId at /account-mappings to enable Phase-4 separated journals."
-      );
+      // C-FIX: Log a durable warning row per invoice so admins can identify
+      // which invoices used the legacy mutation path vs the Phase-4 separated path.
+      const legacyMsg = "استُخدم المسار القديم (legacy): ربط cashier_collection/cash غير مكتمل — " +
+        "عرِّف debitAccountId + creditAccountId في /account-mappings لتفعيل قيد التحصيل المستقل (Phase 4)";
+      logger.warn("[CASHIER_COLLECTION] " + legacyMsg);
+      for (const invoiceId of invoiceIds) {
+        await logAcctEvent({
+          sourceType:   "cashier_collection",
+          sourceId:     invoiceId,
+          eventType:    "cashier_collection_journal",
+          status:       "needs_retry",
+          errorMessage: legacyMsg,
+        });
+      }
       return this.completeSalesJournalsWithCash(invoiceIds, cashGlAccountOverride, pharmacyId);
     }
 
@@ -617,6 +626,19 @@ const methods = {
           entryDate:        invoice.invoiceDate,
           lines:            [{ lineType: "cash", amount: String(netTotal.toFixed(2)) }],
         });
+
+        // A-FIX: Resolve status inconsistency.
+        // invoice.journal_status = "posted" (set at finalize = "journal was created").
+        // journal_entries.status on the sales journal was "draft" because the old path
+        // mutated it later. Now that Phase 4 creates a separate collection journal,
+        // post the sales journal here so both statuses say "posted" with consistent meaning.
+        await db.update(journalEntries)
+          .set({ status: "posted" })
+          .where(and(
+            eq(journalEntries.sourceType, "sales_invoice"),
+            eq(journalEntries.sourceDocumentId, invoiceId),
+            eq(journalEntries.status, "draft"),
+          ));
 
         if (eventId) {
           if (entry) {
