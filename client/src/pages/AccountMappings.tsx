@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { AccountSearchSelect } from "@/components/AccountSearchSelect";
+import { AccountLookup } from "@/components/lookups/AccountLookup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   transactionTypeLabels,
   mappingLineTypeLabels,
-  type Account,
   type AccountMapping,
   type Warehouse,
 } from "@shared/schema";
@@ -131,7 +130,6 @@ export default function AccountMappings() {
   const [hasChanges, setHasChanges] = useState(false);
   const keyCounter = useRef(0);
 
-  const { data: accounts = [], isLoading: accountsLoading } = useQuery<Account[]>({ queryKey: ["/api/accounts"] });
   const { data: warehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
 
   const { data: mappings, isLoading: mappingsLoading } = useQuery<AccountMapping[]>({
@@ -224,7 +222,7 @@ export default function AccountMappings() {
     saveMutation.mutate(toSave);
   };
 
-  const isLoading      = accountsLoading || mappingsLoading;
+  const isLoading      = mappingsLoading;
   const txSpecs        = lineTypeSpecs[selectedTxType] || {};
   const usedLineTypes  = new Set(rows.map(r => r.lineType));
   const isWarehouseView = selectedWarehouseId !== "__generic__";
@@ -434,10 +432,9 @@ export default function AccountMappings() {
                         غير مستخدم في هذا النوع
                       </div>
                     ) : (
-                      <AccountSearchSelect
-                        accounts={accounts}
+                      <AccountLookup
                         value={row.debitAccountId}
-                        onChange={v => updateRow(row.key, "debitAccountId", v)}
+                        onChange={item => updateRow(row.key, "debitAccountId", item?.id ?? "")}
                         placeholder="اختر حساب المدين"
                         data-testid={`select-debit-${row.lineType || row.key}`}
                       />
@@ -449,10 +446,9 @@ export default function AccountMappings() {
                         غير مستخدم في هذا النوع
                       </div>
                     ) : (
-                      <AccountSearchSelect
-                        accounts={accounts}
+                      <AccountLookup
                         value={row.creditAccountId}
-                        onChange={v => updateRow(row.key, "creditAccountId", v)}
+                        onChange={item => updateRow(row.key, "creditAccountId", item?.id ?? "")}
                         placeholder="اختر حساب الدائن"
                         data-testid={`select-credit-${row.lineType || row.key}`}
                       />
