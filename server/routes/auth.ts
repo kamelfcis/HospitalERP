@@ -347,12 +347,26 @@ export async function registerAuthRoutes(app: Express) {
       const actorUserId = req.session.userId as string;
       const oldIds = await storage.getUserAccountScope(req.params.id);
       await storage.setUserAccountScope(req.params.id, accountIds, actorUserId);
+      const oldSet  = new Set(oldIds);
+      const newSet  = new Set(accountIds as string[]);
+      const added   = (accountIds as string[]).filter(id => !oldSet.has(id));
+      const removed = oldIds.filter(id => !newSet.has(id));
       auditLog({
         tableName: "user_account_scopes",
         recordId:  req.params.id,
         action:    "update",
-        oldValues: oldIds,
-        newValues: accountIds,
+        oldValues: {
+          scope:        oldIds.length === 0 ? "unrestricted" : `${oldIds.length} accounts`,
+          accountIds:   oldIds,
+        },
+        newValues: {
+          scope:        accountIds.length === 0 ? "unrestricted" : `${accountIds.length} accounts`,
+          accountIds:   accountIds,
+          added,
+          removed,
+          targetUserId: req.params.id,
+          actorUserId,
+        },
         userId:    actorUserId,
       }).catch(err => logger.warn({ err: err.message }, "[Audit] user account scope change"));
       res.json({ success: true });

@@ -226,15 +226,20 @@ const methods = {
   },
 
   async setUserAccountScope(this: DatabaseStorage, userId: string, accountIds: string[], actorUserId: string): Promise<void> {
-    await db.delete(userAccountScopes).where(eq(userAccountScopes.userId, userId));
-    if (accountIds.length > 0) {
-      await db.insert(userAccountScopes).values(
-        accountIds.map(accountId => ({ userId, accountId, createdBy: actorUserId }))
-      );
-    }
+    await db.transaction(async (tx) => {
+      await tx.delete(userAccountScopes).where(eq(userAccountScopes.userId, userId));
+      if (accountIds.length > 0) {
+        await tx.insert(userAccountScopes).values(
+          accountIds.map(accountId => ({ userId, accountId, createdBy: actorUserId }))
+        );
+      }
+    });
   },
 
   async getVisibleAccountIds(this: DatabaseStorage, userId: string): Promise<string[] | null> {
+    const user = await this.getUser(userId);
+    if (!user) return null;
+    if (user.role === "admin" || (user.role as string) === "owner") return null;
     const rows = await db.select({ accountId: userAccountScopes.accountId })
       .from(userAccountScopes)
       .where(eq(userAccountScopes.userId, userId));

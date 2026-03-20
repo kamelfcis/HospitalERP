@@ -35,9 +35,14 @@ export function registerAccountsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/accounts/export", async (req, res) => {
+  app.get("/api/accounts/export", requireAuth, async (req, res) => {
     try {
-      const accountsList = await storage.getAccounts();
+      const userId       = req.session.userId as string;
+      const allAccounts  = await storage.getAccounts();
+      const visibleIds   = await storage.getVisibleAccountIds(userId);
+      const accountsList = visibleIds === null
+        ? allAccounts
+        : allAccounts.filter(a => (new Set(visibleIds)).has(a.id));
       
       const excelData = accountsList.map((account: any) => ({
         "كود الحساب": account.code,
@@ -64,11 +69,15 @@ export function registerAccountsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/accounts/:id", async (req, res) => {
+  app.get("/api/accounts/:id", requireAuth, async (req, res) => {
     try {
       const account = await storage.getAccount(req.params.id as string);
       if (!account) {
         return res.status(404).json({ message: "الحساب غير موجود" });
+      }
+      const visibleIds = await storage.getVisibleAccountIds(req.session.userId as string);
+      if (visibleIds !== null && !visibleIds.includes(account.id)) {
+        return res.status(403).json({ message: "ليس لديك صلاحية الوصول لهذا الحساب" });
       }
       res.json(account);
     } catch (error: unknown) {
