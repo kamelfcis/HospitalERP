@@ -30,6 +30,39 @@ The system uses a RESTful JSON API. Drizzle ORM interacts with PostgreSQL, and Z
 - **Contracts Module**: Supports master data for insurance/contract companies, contracts, and member cards. Includes a 5-pass rule evaluator for contract coverage, a claims GL accounting system, and an approval workflow.
 - **Account Mappings Module**: Dedicated UI and transactional backend route for bulk updates.
 
+## Recent Session Progress (OPD Steps 7+)
+
+### OPD Step 7 — Doctor Orders Grouped View (مكتمل ✓)
+- Backend `getGroupedClinicOrders()` — groups by `(appointmentId, orderType, targetId||targetName)`
+- Route `GET /api/clinic-orders/grouped` — placed before `/:id` to avoid route shadowing
+- Frontend: `GroupedOrderRow`, `useGroupedOrders`, `OrdersFilterBar`, SSE-scoped hook
+- `orderType→targetType` mapping fix (pharmacy→pharmacy, service→department)
+- Popup trigger buttons (`PharmacyGroupPopup`, `ServiceGroupPopup`) with live detail view
+- Cancelled lines: strikethrough + "ملغي — مستثنى من العدد" in drill-down
+
+### Patient History for Cash Patients (مكتمل ✓)
+- New storage function `getConsultationsByPatientName()` — exact LOWER/TRIM match, no fuzzy
+- New route `GET /api/clinic/consultations/by-name` — requires `doctor.consultation` permission, clinic-scoped
+- `usePatientHistory` hook updated: supports both `patientId` (FK) and `patientName` (cash fallback)
+- Returns `matchType: 'id' | 'name'` for UI disambiguation
+- Tab label: "تاريخ المريض" (registered) vs "سجل بالاسم" (cash)
+- Amber warning note shown inside panel when match is name-based
+
+### Intake Form Bug Fix (مكتمل ✓)
+- **Bug 1 (400 error):** Zod schema `upsertIntakeSchema` was rejecting `null` for optional fields (only accepted `undefined`). Fixed by adding `.nullable()` to all string/enum fields.
+- **Bug 2 (404 on complete):** `handleComplete()` was calling the `/complete` endpoint even when `handleSave()` failed silently. Fixed by extracting `doSaveApi()` that always throws, so `/complete` only runs if save succeeds.
+- Files: `server/routes/clinic-intake.ts`, `client/src/pages/clinic-booking/components/IntakeFormModal.tsx`
+
+### Key Technical Rules (DO NOT BREAK)
+- **Route ordering:** `/api/clinic-orders/sse` → `/api/clinic-orders` → `/appointment/:id` → `/grouped` → `/:id`
+- **Grouping key:** `${appointmentId}_${orderType}_${targetId || targetName || ""}`
+- **`useClinicOrders`** = mutations only (execute, cancel); SSE lives in `useGroupedOrders`
+- **Both mutations invalidate** `["/api/clinic-orders/grouped"]` query key
+- **`saveConsultation`** uses raw pool — new fields need both INSERT and ON CONFLICT UPDATE SET
+- **`clinic_orders`** has no `clinic_id` — scoping via JOIN through `clinic_appointments`
+- **FROZEN:** OPD accounting/IFRS 15 logic — DO NOT TOUCH
+- **Pre-existing TS errors** (ignore): auth.ts, OrdersTable.tsx, lookup hooks, patients.ts, suppliers/index.tsx
+
 ## External Dependencies
 
 ### Database
