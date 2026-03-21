@@ -458,6 +458,7 @@ const methods = {
         discountValue: String(actualDiscount.toFixed(2)),
         netTotal: roundMoney(netTotal),
         notes: header.notes !== undefined ? header.notes : invoice.notes,
+        createdBy: invoice.createdBy || header.createdBy || null,
         updatedAt: new Date(),
       }).where(eq(salesInvoiceHeaders.id, id));
 

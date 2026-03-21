@@ -173,7 +173,8 @@ export function registerSalesInvoicesRoutes(app: Express) {
         if (!line.qty || parseFloat(line.qty) <= 0) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
       }
 
-      const invoice = await storage.updateSalesInvoice(req.params.id as string, header || {}, lines);
+      const enrichedHeader = { ...(header || {}), createdBy: req.session?.userId || (header || {}).createdBy || null };
+      const invoice = await storage.updateSalesInvoice(req.params.id as string, enrichedHeader, lines);
       res.json(invoice);
     } catch (error: unknown) {
       if ((error instanceof Error ? error.message : String(error)).includes("نهائية") || (error instanceof Error ? error.message : String(error)).includes("معتمدة")) {
