@@ -675,6 +675,13 @@ export function registerClinicRoutes(app: Express) {
       if (req.query.status    as string) filters.status     = req.query.status    as string;
       if (req.query.targetId  as string) filters.targetId   = req.query.targetId  as string;
 
+      // Map orderType param (frontend UI convention: "pharmacy"|"service") to targetType filter
+      // only when targetType was not already set by the query or security enforcement
+      if (!filters.targetType && req.query.orderType) {
+        if (req.query.orderType === "pharmacy") filters.targetType = "pharmacy";
+        else if (req.query.orderType === "service") filters.targetType = "department";
+      }
+
       const scope = await resolveClinicScope(userId, perms);
       if (!scope.all) {
         filters.clinicIds = scope.clinicIds;
