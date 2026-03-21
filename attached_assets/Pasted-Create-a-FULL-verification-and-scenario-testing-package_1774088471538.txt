@@ -1,0 +1,349 @@
+Create a FULL verification and scenario-testing package for Outpatient Improvement — Step 1.
+
+STRICT GOAL:
+You must actively try to BREAK the implementation and detect hidden issues I may not notice.
+
+Do NOT implement new product features.
+Do NOT modify business scope.
+Do NOT move to Step 2.
+
+Your task is ONLY:
+- build a strong validation script/test suite
+- run all critical scenarios
+- identify hidden bugs
+- report exact failures clearly
+
+==================================================
+TESTING TARGET
+==================================================
+
+Target features already implemented:
+1) clinic_visit_intake
+2) clinic_doctor_favorites
+3) intake locking after consultation start
+4) RBAC for intake/favorites
+5) clinic isolation
+6) reception intake UI flow
+7) doctor read-only intake banner
+8) doctor favorites insertion/save/update/delete
+
+==================================================
+REQUIRED OUTPUT FIRST
+==================================================
+
+Before writing tests, print EXACTLY:
+
+1) TEST SURFACE MAP
+2) HIGH-RISK FAILURE POINTS
+3) SCENARIO MATRIX
+4) TEST IMPLEMENTATION PLAN
+
+Then implement.
+
+==================================================
+TESTING RULES
+==================================================
+
+You must create tests/scripts that validate ALL of the following:
+
+A) DATABASE / SCHEMA VALIDATION
+- tables exist
+- expected columns exist
+- unique constraint on appointmentId works
+- required indexes exist
+- nullable vs non-nullable behavior is correct
+
+B) API VALIDATION
+- valid requests succeed
+- invalid requests fail correctly
+- locked intake returns correct error
+- unauthorized access is rejected
+- cross-clinic access is rejected
+- favorite ownership rules are enforced
+
+C) BUSINESS RULE VALIDATION
+- one intake per appointment only
+- intake can be created then updated before lock
+- intake cannot be changed after consultation start
+- template data persists correctly
+- favorites are never auto-applied
+- favorites remain safe text helpers only
+
+D) RBAC VALIDATION
+Test all relevant roles:
+- admin
+- owner
+- reception
+- nurse if exists
+- doctor
+- department_admin
+- unauthorized/no-permission user
+
+E) UI / USER FLOW VALIDATION
+At minimum verify:
+- intake button visibility by role
+- intake modal open/save/complete behavior
+- locked state visibility
+- intake summary banner rendering
+- favorites panel visibility by permission
+- pinned favorites ordering
+- insert favorite behavior
+- empty states
+- error states
+
+==================================================
+MANDATORY TEST CATEGORIES
+==================================================
+
+You MUST include all categories below.
+
+--------------------------------------------------
+1) HAPPY PATH SCENARIOS
+--------------------------------------------------
+
+HP-01:
+Reception opens waiting appointment → saves intake draft → completes intake → doctor sees summary banner
+
+HP-02:
+Doctor opens consultation → intake becomes locked → reception can no longer edit
+
+HP-03:
+Doctor saves favorite → favorite appears in list → can insert into target field
+
+HP-04:
+Doctor pins favorite → pinned appears first
+
+--------------------------------------------------
+2) VALIDATION FAILURE SCENARIOS
+--------------------------------------------------
+
+VF-01:
+Create intake without appointmentId → fail
+
+VF-02:
+Create intake without visitType → fail
+
+VF-03:
+Invalid vital values / malformed payload → fail
+
+VF-04:
+Duplicate intake creation for same appointmentId → verify upsert or unique handling is correct
+
+VF-05:
+Complete intake with invalid state → fail if applicable
+
+--------------------------------------------------
+3) LOCKING SCENARIOS
+--------------------------------------------------
+
+LK-01:
+Reception saves intake
+Doctor opens consultation
+Reception tries update
+Expect hard rejection (423 or exact implemented behavior)
+
+LK-02:
+Doctor opened consultation once, refreshes page
+Intake must remain locked
+
+LK-03:
+Attempt direct API update after lock
+Must fail server-side even if UI is bypassed
+
+LK-04:
+If consultation has NOT started, intake remains editable
+
+IMPORTANT:
+Lock validation must confirm backend enforcement, not just UI disabling.
+
+--------------------------------------------------
+4) CLINIC ISOLATION SCENARIOS
+--------------------------------------------------
+
+CI-01:
+User from clinic A attempts to read intake for clinic B → reject
+
+CI-02:
+User from clinic A attempts to update intake for clinic B → reject
+
+CI-03:
+Doctor from clinic A must not access clinic-specific favorites of clinic B
+
+CI-04:
+Doctor must only see:
+- own doctor-wide favorites (clinicId null)
+- own clinic-specific favorites for current clinic
+and nothing else
+
+--------------------------------------------------
+5) OWNERSHIP / FAVORITES SAFETY SCENARIOS
+--------------------------------------------------
+
+FV-01:
+Doctor A creates favorite
+Doctor B cannot edit/delete it
+
+FV-02:
+Doctor A creates doctor-wide favorite (clinicId null)
+Doctor A can use it across allowed clinics if supported by implementation
+
+FV-03:
+Favorite types only allow:
+- note
+- assessment_note
+- plan
+- followup
+- quick_text
+
+FV-04:
+Rejected types:
+- diagnosis
+- auto_diagnosis
+- suggestion
+or any disallowed value
+
+FV-05:
+Favorite insertion never happens automatically
+Must require explicit doctor action
+
+--------------------------------------------------
+6) AUDIT SCENARIOS
+--------------------------------------------------
+
+AU-01:
+Create intake → createdBy, updatedBy, createdAt, updatedAt populated correctly
+
+AU-02:
+Update intake before lock → updatedBy and updatedAt change, createdBy remains stable
+
+AU-03:
+Complete intake → completedBy and completedAt set correctly
+
+--------------------------------------------------
+7) TEMPLATE PERSISTENCE SCENARIOS
+--------------------------------------------------
+
+TP-01:
+Select visitType template → reasonForVisit default appears → user edits it → saved correctly
+
+TP-02:
+templateKey persists
+
+TP-03:
+templateLabel persists
+
+TP-04:
+structuredFlags persists
+
+TP-05:
+selectedPromptValues persists and reloads correctly
+
+--------------------------------------------------
+8) RESILIENCE / EDGE CASE SCENARIOS
+--------------------------------------------------
+
+EC-01:
+Very long intakeNotes
+
+EC-02:
+Very long favorite content
+
+EC-03:
+Empty favorite title/content handling
+
+EC-04:
+Delete pinned favorite
+
+EC-05:
+Patch favorite partially
+
+EC-06:
+Concurrent update attempt on same intake from two sessions/users
+
+EC-07:
+Refresh after completion/lock and verify consistent UI state
+
+EC-08:
+Missing optional vitals still allows valid save
+
+==================================================
+TEST IMPLEMENTATION REQUIREMENTS
+==================================================
+
+Build a strong test package using the most appropriate approach for this codebase.
+
+Preferred structure:
+- backend integration tests for API/business rules
+- focused unit tests for storage/service logic where needed
+- optional scenario runner script for seeded end-to-end validation
+- optional smoke test helpers for manual verification
+
+You may add:
+- test seed data
+- helper factories
+- scenario runner
+- assertion utilities
+
+BUT:
+- do not rewrite production code unless required for testability
+- keep any production edits minimal and justified
+
+==================================================
+TEST DATA REQUIREMENTS
+==================================================
+
+Seed/create test users and roles for:
+- admin
+- reception
+- doctor A
+- doctor B
+- department_admin
+- cross-clinic user
+
+Seed/create:
+- at least 2 clinics
+- appointments across clinics
+- at least 2 doctors
+- at least 1 waiting appointment per clinic
+
+==================================================
+REPORTING REQUIREMENTS
+==================================================
+
+After running tests, print EXACTLY:
+
+1) TEST FILES ADDED / MODIFIED
+2) SCENARIOS EXECUTED
+3) PASS RESULTS
+4) FAIL RESULTS
+5) BUGS FOUND
+6) FIXES APPLIED (IF ANY)
+7) REMAINING RISKS
+8) MANUAL CHECKS RECOMMENDED
+
+==================================================
+IMPORTANT EXECUTION RULE
+==================================================
+
+Do not stop after writing tests.
+Run them.
+
+If any test fails:
+- identify root cause
+- fix only the relevant Step 1 issue
+- rerun the affected tests
+- report clearly what was wrong
+
+==================================================
+STRICT NON-NEGOTIABLES
+==================================================
+
+- Do NOT move to Step 2
+- Do NOT add diagnosis logic
+- Do NOT weaken permissions for convenience
+- Do NOT bypass server-side checks
+- Do NOT treat UI-only disable as sufficient locking
+- Do NOT silently ignore failing scenarios
+
+Goal:
+I want a brutal verification pass that reveals hidden bugs, not a superficial green report.
