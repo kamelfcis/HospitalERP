@@ -91,6 +91,19 @@ The system utilizes a RESTful JSON API. Drizzle ORM manages interactions with Po
 
 > Production-ready. FK-first for new records. Legacy-safe for old records. Architecture-clean (thin routes, isolated hook/components).
 
+## Financial Baseline
+
+**Tag:** `financial-baseline-v1` (same commit as `outpatient-step5-stable`)
+
+This tag marks the frozen financial integrity point. All future development must:
+- Preserve contract FK integrity (`company_id / contract_id / contract_member_id` chain)
+- Extend, not modify, the FK-first booking flow
+- Keep INSURANCE free-text fallback as legacy-compat (no removal)
+- Keep CONTRACT FK-required rule (no downgrade to free-text)
+- Not duplicate contract resolution logic — contracts module remains single source of truth
+
+Any change touching `clinic_appointments` FK columns, `lookupMemberByCard`, `createAppointment`, or `getConsultationByAppointment` must be reviewed against this baseline.
+
 ## External Dependencies
 
 ### Database
