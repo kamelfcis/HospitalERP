@@ -74,13 +74,41 @@ export function GroupedOrderRow({ group, onExecute, isExecuting, canExecute }: P
         )}
       </TableCell>
 
-      {/* Order summary — "عدد الأدوية: X" / "عدد الخدمات: X" */}
+      {/* Order summary — "عدد الأدوية: X" / "عدد الخدمات: X" + detail trigger */}
       <TableCell>
         <div className="text-sm font-medium">{countLabel}</div>
         {group.cancelledCount > 0 && (
           <div className="text-[11px] text-red-500">{group.cancelledCount} ملغي</div>
         )}
-        <div className="text-[11px] text-muted-foreground">اضغط لعرض التفاصيل</div>
+        {isPharmacy ? (
+          <PharmacyGroupPopup
+            orders={group.lines}
+            pendingOrders={pendingLines}
+            patientName={group.patientName}
+            trigger={
+              <button
+                className="text-[11px] text-muted-foreground hover:text-foreground hover:underline underline-offset-2 cursor-pointer"
+                data-testid={`button-detail-pharmacy-${group.groupKey}`}
+              >
+                عرض التفاصيل
+              </button>
+            }
+          />
+        ) : (
+          <ServiceGroupPopup
+            orders={group.lines}
+            pendingOrders={pendingLines}
+            patientName={group.patientName}
+            trigger={
+              <button
+                className="text-[11px] text-muted-foreground hover:text-foreground hover:underline underline-offset-2 cursor-pointer"
+                data-testid={`button-detail-service-${group.groupKey}`}
+              >
+                عرض التفاصيل
+              </button>
+            }
+          />
+        )}
       </TableCell>
 
       {/* Target */}
