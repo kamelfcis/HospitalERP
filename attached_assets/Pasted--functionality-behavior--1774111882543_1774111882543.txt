@@ -1,0 +1,142 @@
+قبل أي تنفيذ — شرط أساسي:
+
+🚫 ممنوع كسر أي functionality موجودة حالياً
+🚫 ممنوع تغيير behavior قائم مستخدم في production بدون توافق خلفي
+🚫 ممنوع حذف أي logic حالي إلا إذا تم استبداله بشكل آمن ومكافئ
+
+✅ المطلوب تحسين (Enhancement) وليس إعادة كتابة (Rewrite)
+✅ أي تعديل يجب أن يكون Backward-Compatible 100%
+✅ أي تغيير في logic لازم يكون تدريجي + آمن + قابل للرجوع (reversible)
+
+---
+
+## المطلوب أولاً: Root Cause Analysis واضح
+(لا تبدأ في التعديل قبل التشخيص)
+
+افحص بالتحديد:
+- list API لشاشة cashier-collection
+- collect action
+- shift summary logic
+- invoice details API
+
+ووضح:
+1) شروط ظهور الفاتورة في القائمة
+2) شروط قبول التحصيل
+3) هل في اختلاف بينهم؟
+4) source of truth الحقيقي للتحصيل
+5) هل في inconsistency في البيانات؟
+6) هل المرتجع مربوط بالوردية؟
+7) مصدر اسم الصيدلي الصحيح
+
+---
+
+## المشكلة 1 — الفاتورة تظهر رغم أنها محصلة
+
+⚠️ المطلوب هنا تحسين الفلترة فقط بدون كسر أي behavior حالي
+
+### المطلوب:
+- لا تغيّر أي status enum أو logic قائم
+- لا تحذف أي شرط حالي
+
+لكن:
+✅ أضف guard إضافي يمنع ظهور الفاتورة إذا:
+- لديها cashier collection record
+- أو treasury transaction
+- أو collected_at not null
+
+### التنفيذ:
+- أنشئ helper جديد:
+  `isInvoiceAlreadyCollectedSafe()`
+
+- واستخدمه كـ **filter إضافي فقط** في list
+- لا تستبدل query الحالية بالكامل
+
+### مهم:
+- الهدف: تقليل inconsistency وليس تغيير المنطق الأصلي
+
+---
+
+## المشكلة 2 — المرتجع لا يظهر في ملخص الوردية
+
+⚠️ لا تغيّر شكل الملخص الحالي — فقط أضف معلومات
+
+### المطلوب:
+- لا تلمس الحسابات الحالية للملخص
+- لا تغيّر totals الموجودة
+
+لكن:
+✅ أضف:
+- total_returns
+- net_collection = collections - returns
+
+### التنفيذ:
+- أضف aggregation إضافي للمرتجعات
+- لا تعدل existing aggregation
+
+### UI:
+- أضف سطر جديد فقط:
+  "المرتجعات"
+  "الصافي"
+
+---
+
+## المشكلة 3 — إضافة اسم الصيدلي + التاريخ + الوقت
+
+⚠️ بدون تغيير أي structure حالي
+
+### المطلوب:
+- لا تعدل أي API field موجود
+- لا تغيّر أسماء الحقول الحالية
+
+لكن:
+✅ أضف fields جديدة فقط:
+- pharmacistName
+- invoiceDateTime
+
+### التنفيذ:
+- derive القيم من:
+  - createdBy أو finalizedBy (حدد الأنسب ووضح السبب)
+- أضفها في response بدون حذف أي field
+
+### UI:
+- أضف display فقط بدون تغيير layout الحالي
+
+---
+
+## قواعد تنفيذ إلزامية
+
+1) No Breaking Changes
+أي كود قديم يجب أن يستمر في العمل كما هو
+
+2) Additive Changes Only
+أي تعديل يكون إضافة وليس استبدال
+
+3) Safe Guards Not Rewrites
+نضيف checks بدل تغيير المنطق
+
+4) Data Safety
+لا تعديل مباشر في البيانات الحالية
+
+5) Cache Safety
+- استخدم invalidate بدون تغيير آلية التحميل
+- لا تكسر React Query أو caching logic
+
+---
+
+## المطلوب في الرد
+
+1) Root cause analysis
+2) What will NOT be changed (very important)
+3) What will be added only
+4) Files touched
+5) Code changes (minimal + safe)
+6) Edge cases
+7) Before vs After behavior
+8) Test scenarios
+
+وفي النهاية اطبع فقط:
+
+SAFE ENHANCEMENTS CONFIRMED:
+- No breaking changes
+- Backward compatible
+- Existing flows untouched

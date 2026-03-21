@@ -20,7 +20,7 @@ import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { salesInvoiceStatusLabels } from "@shared/schema";
-import { formatNumber, formatDateShort } from "@/lib/formatters";
+import { formatNumber, formatDateShort, formatDateTime } from "@/lib/formatters";
 import type { PendingInvoice, InvoiceDetails, SelectionAggregated } from "../types";
 
 // ── ألوان حالة الفاتورة ──────────────────────────────────────
@@ -236,7 +236,7 @@ function InvoiceRow({
       </TableCell>
       <TableCell className="text-right py-1 px-2">{formatNumber(inv.subtotal)}</TableCell>
       <TableCell className="text-right font-medium py-1 px-2">{formatNumber(inv.netTotal)}</TableCell>
-      <TableCell className="text-right py-1 px-2 text-muted-foreground">{inv.createdBy || "—"}</TableCell>
+      <TableCell className="text-right py-1 px-2 text-muted-foreground">{inv.pharmacistName || inv.createdBy || "—"}</TableCell>
       <TableCell className="text-right py-1 px-2">{formatDateShort(inv.createdAt)}</TableCell>
       <TableCell className="text-right py-1 px-2">
         <Badge className={`text-[10px] px-1.5 py-0 ${STATUS_CLASS[inv.status] || ""}`}>
@@ -311,8 +311,10 @@ function SingleInvoiceDetails({
         <span>{formatNumber(details.subtotal)}</span>
         <span className="text-muted-foreground">الصافي:</span>
         <span className="font-medium">{formatNumber(details.netTotal)}</span>
-        <span className="text-muted-foreground">بواسطة:</span>
-        <span>{details.createdBy || "—"}</span>
+        <span className="text-muted-foreground">الصيدلي:</span>
+        <span data-testid={`text-${testPrefix}-detail-pharmacist`}>{details.pharmacistName || details.createdBy || "—"}</span>
+        <span className="text-muted-foreground">التاريخ والوقت:</span>
+        <span data-testid={`text-${testPrefix}-detail-datetime`}>{details.invoiceDateTime ? formatDateTime(details.invoiceDateTime) : formatDateShort(details.createdAt)}</span>
       </div>
 
       {details.lines?.length > 0 && (

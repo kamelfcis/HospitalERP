@@ -24,10 +24,14 @@ export function ShiftTotalsWidget({ totals }: ShiftTotalsWidgetProps) {
           </div>
           <div className="flex flex-row-reverse justify-between gap-2 text-[11px]">
             <span className="text-muted-foreground">المرتجعات:</span>
-            <span className="font-medium" data-testid="text-total-refunded">{formatNumber(totals.totalRefunded)}</span>
+            <span className="font-medium text-red-600 dark:text-red-400" data-testid="text-total-refunded">{formatNumber(totals.totalRefunded)}</span>
+          </div>
+          <div className="flex flex-row-reverse justify-between gap-2 text-[11px]">
+            <span className="text-muted-foreground">صافي التحصيل:</span>
+            <span className="font-semibold text-primary" data-testid="text-net-collected">{formatNumber(totals.netCollected)}</span>
           </div>
           <div className="border-t pt-0.5 flex flex-row-reverse justify-between gap-2 text-[11px]">
-            <span className="text-muted-foreground">الصافي:</span>
+            <span className="text-muted-foreground">إجمالي الخزنة:</span>
             <span className="font-bold" data-testid="text-net-cash">{formatNumber(totals.netCash)}</span>
           </div>
         </CardContent>

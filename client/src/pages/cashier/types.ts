@@ -47,6 +47,7 @@ export interface ShiftTotals {
   totalRefunded: string;
   refundCount: number;
   netCash: string;
+  netCollected: string;
   hoursOpen: number;
   isStale: boolean;
 }
@@ -70,8 +71,12 @@ export interface PendingInvoice {
   discountValue: string;
   netTotal: string;
   createdBy: string | null;
+  /** الاسم الكامل للصيدلي (مشتق من جدول users بناءً على createdBy) */
+  pharmacistName: string | null;
   status: string;
   createdAt: string;
+  /** وقت إنشاء الفاتورة كـ ISO string (تاريخ + وقت) */
+  invoiceDateTime: string | null;
   warehouseName: string | null;
   /** معرّف الصيدلية التابعة لها المستودع (للتمييز بين الوحدات) */
   warehousePharmacyId: string | null;

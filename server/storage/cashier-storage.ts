@@ -489,15 +489,44 @@ const methods = {
     .where(and(...baseConditions, unitCondition))
     .orderBy(asc(salesInvoiceHeaders.createdAt));
 
+    // ── Guard إضافي: استبعاد الفواتير التي لها إيصال تحصيل فعلي ──────────
+    // يمنع ظهور الفواتير في حالة inconsistency بين status و cashier_receipts
+    let filtered = results;
+    if (results.length > 0) {
+      const ids = results.map(r => r.id);
+      const existingReceipts = await db.select({ invoiceId: cashierReceipts.invoiceId })
+        .from(cashierReceipts)
+        .where(inArray(cashierReceipts.invoiceId, ids));
+      const alreadyCollected = new Set(existingReceipts.map(r => r.invoiceId));
+      filtered = results.filter(r => !alreadyCollected.has(r.id));
+    }
+
+    // ── إثراء إضافي: اسم الصيدلي الكامل من جدول users ───────────────────
+    const usernameSet = new Set(filtered.map(r => r.createdBy).filter((v): v is string => !!v));
+    const usernames = Array.from(usernameSet);
+    const nameMap = new Map<string, string>();
+    if (usernames.length > 0) {
+      const userRows = await db.execute(sql`
+        SELECT username, full_name FROM users WHERE username = ANY(${usernames})
+      `);
+      for (const row of (userRows as any).rows) {
+        nameMap.set(row.username, row.full_name);
+      }
+    }
+    const enriched = filtered.map(r => ({
+      ...r,
+      pharmacistName: (r.createdBy ? nameMap.get(r.createdBy) || r.createdBy : null),
+    }));
+
     if (search) {
       const s = search.toLowerCase();
-      return results.filter(r =>
+      return enriched.filter(r =>
         String(r.invoiceNumber).includes(s) ||
         (r.customerName && r.customerName.toLowerCase().includes(s)) ||
         (r.createdBy && r.createdBy.toLowerCase().includes(s))
       );
     }
-    return results;
+    return enriched;
   },
 
   // ── قائمة المرتجعات المعلّقة ─────────────────────────────────────────
@@ -530,14 +559,42 @@ const methods = {
     .where(and(...baseConditions, unitCondition))
     .orderBy(asc(salesInvoiceHeaders.createdAt));
 
+    // ── Guard إضافي: استبعاد المرتجعات التي لها إيصال صرف فعلي ──────────
+    let filtered = results;
+    if (results.length > 0) {
+      const ids = results.map(r => r.id);
+      const existingRefunds = await db.select({ invoiceId: cashierRefundReceipts.invoiceId })
+        .from(cashierRefundReceipts)
+        .where(inArray(cashierRefundReceipts.invoiceId, ids));
+      const alreadyRefunded = new Set(existingRefunds.map(r => r.invoiceId));
+      filtered = results.filter(r => !alreadyRefunded.has(r.id));
+    }
+
+    // ── إثراء إضافي: اسم الصيدلي الكامل من جدول users ───────────────────
+    const usernameSet2 = new Set(filtered.map(r => r.createdBy).filter((v): v is string => !!v));
+    const usernames2 = Array.from(usernameSet2);
+    const nameMap2 = new Map<string, string>();
+    if (usernames2.length > 0) {
+      const userRows = await db.execute(sql`
+        SELECT username, full_name FROM users WHERE username = ANY(${usernames2})
+      `);
+      for (const row of (userRows as any).rows) {
+        nameMap2.set(row.username, row.full_name);
+      }
+    }
+    const enriched = filtered.map(r => ({
+      ...r,
+      pharmacistName: (r.createdBy ? nameMap2.get(r.createdBy) || r.createdBy : null),
+    }));
+
     if (search) {
       const s = search.toLowerCase();
-      return results.filter(r =>
+      return enriched.filter(r =>
         String(r.invoiceNumber).includes(s) ||
         (r.customerName && r.customerName.toLowerCase().includes(s))
       );
     }
-    return results;
+    return enriched;
   },
 
   async getSalesInvoiceDetails(this: DatabaseStorage, invoiceId: string): Promise<any> {
@@ -560,7 +617,18 @@ const methods = {
     .where(eq(salesInvoiceLines.invoiceId, invoiceId))
     .orderBy(asc(salesInvoiceLines.lineNo));
 
-    return { ...header, lines };
+    // ── إثراء إضافي: اسم الصيدلي الكامل + وقت الفاتورة ─────────────────
+    let pharmacistName: string | null = header.createdBy || null;
+    if (header.createdBy) {
+      const userResult = await db.execute(sql`
+        SELECT full_name FROM users WHERE username = ${header.createdBy} LIMIT 1
+      `);
+      const row = (userResult as any).rows[0];
+      if (row?.full_name) pharmacistName = row.full_name;
+    }
+    const invoiceDateTime = header.createdAt ? header.createdAt.toISOString() : null;
+
+    return { ...header, lines, pharmacistName, invoiceDateTime };
   },
 
   // ── تحصيل الفواتير ────────────────────────────────────────────────────
@@ -849,6 +917,7 @@ const methods = {
     refundCount: number;
     openingCash: string;
     netCash: string;
+    netCollected: string;
     hoursOpen: number;
     isStale: boolean;
   }> {
@@ -875,6 +944,7 @@ const methods = {
     const hoursOpen      = parseFloat(shiftRow?.hours_open || "0");
     const isStale        = hoursOpen > MAX_SHIFT_HOURS || shiftRow?.status === "stale";
     const netCash        = (parseFloat(openingCash) + parseFloat(totalCollected) - parseFloat(totalRefunded)).toFixed(2);
+    const netCollected   = (parseFloat(totalCollected) - parseFloat(totalRefunded)).toFixed(2);
 
     return {
       openingCash,
@@ -883,6 +953,7 @@ const methods = {
       totalRefunded,
       refundCount:  refundResult?.count || 0,
       netCash,
+      netCollected,
       hoursOpen,
       isStale,
     };
