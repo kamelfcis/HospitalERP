@@ -1,0 +1,243 @@
+POST-IMPLEMENTATION HARDENING — Cashier Pending Logic + Drawer Handover + Shift Close
+
+Context:
+We have successfully:
+- centralized pending logic in cashier-pending.ts
+- unified display + validation + shift-close rules
+- fixed ghost invoices issue
+- built the drawer handover screen
+- implemented defensive diagnostics
+
+Now we need a structured hardening + refactor pass to ensure:
+- long-term maintainability
+- performance stability
+- zero future drift
+- clean architecture alignment
+
+This is NOT a bug fix phase.
+This is a stability + architecture + performance phase.
+
+==================================================
+A) STRICT SINGLE SOURCE OF TRUTH (NO DRIFT EVER AGAIN)
+==================================================
+
+We already created cashier-pending.ts.
+
+Required:
+1) enforce that ALL pending-related logic goes through this module ONLY
+2) search entire codebase for:
+   - status='finalized'
+   - NOT EXISTS cashier_receipts
+   - NOT EXISTS cashier_refund_receipts
+3) replace any duplicated logic with shared helpers
+
+Add clear exported functions like:
+- isPendingSalesInvoiceSQL()
+- isPendingReturnSQL()
+- getPendingPredicateSQL()
+
+No inline duplication allowed anymore.
+
+==================================================
+B) NAMING + DOMAIN CLARITY (IMPORTANT REFACTOR)
+==================================================
+
+Current name "PENDING" is too generic.
+
+Refactor naming to be explicit:
+- PENDING_SALES_COLLECTION
+- PENDING_RETURN_REFUND
+
+Or equivalent function-based naming.
+
+Goal:
+Anyone reading the code immediately understands:
+"pending for what?"
+
+==================================================
+C) COMPONENTIZATION (FRONTEND HARDENING)
+==================================================
+
+Review the drawer handover screen and ensure:
+
+1) Strict separation:
+- Page container → owns state + query
+- FilterBar → filters only
+- SummaryCards → totals only
+- SummaryTable → table only
+
+2) No logic leakage:
+- no business logic inside table components
+- no API calls inside child components
+
+3) Reusability:
+- move shared formatters (money, date, status) to utils
+- reuse existing UI primitives (table, badge, card)
+
+4) Refresh behavior:
+- ensure refresh button calls refetch() only
+- no re-mount hacks
+- no window reload
+- no unstable keys
+
+==================================================
+D) QUERY PERFORMANCE + INDEX VALIDATION
+==================================================
+
+We said no new indexes were needed — now verify that decision properly.
+
+Required:
+
+1) Analyze actual query plan for:
+- drawer handover aggregate query (3-CTE)
+- pending counts query
+
+2) Confirm indexes are used:
+- idx_cashier_shifts_biz_date
+- idx_cashier_receipts_shift
+- idx_cashier_refunds_shift
+
+3) Check for:
+- sequential scans on large tables
+- missing index usage on:
+   - shiftId
+   - cashierId
+   - business_date
+   - status
+
+4) If any query shows degradation risk:
+- propose minimal index addition
+- DO NOT blindly add indexes
+
+==================================================
+E) PREVENT DOUBLE COUNTING (CRITICAL VALIDATION)
+==================================================
+
+Ensure all aggregate queries:
+
+- use COUNT(DISTINCT ...)
+- avoid multiplying rows via joins
+- do NOT join invoice lines directly unless grouped correctly
+- isolate aggregates per entity (sales / returns / receipts)
+
+If needed:
+- split queries and merge in code safely
+
+==================================================
+F) CONSISTENCY BETWEEN EVENTS AND STATUS (DEFENSIVE LAYER)
+==================================================
+
+Even though pending logic is event-based, we must still prevent bad states.
+
+Required:
+
+1) Add internal validation (lightweight):
+- if receipt exists AND invoice.status != collected → log warning
+- if refund receipt exists AND return.status is inconsistent → log warning
+
+2) Do NOT block flow
+But log clearly (server log + optional diagnostic endpoint)
+
+Goal:
+Detect drift early even if logic survives it.
+
+==================================================
+G) DIAGNOSTIC ENDPOINT HARDENING
+==================================================
+
+Enhance:
+GET /api/admin/cashier-consistency
+
+Add:
+- sample document IDs
+- breakdown:
+   - ghost_sales
+   - ghost_returns
+   - true_pending_sales
+   - true_pending_returns
+
+Ensure:
+- admin-only access
+- safe execution
+- no heavy queries without limits
+
+==================================================
+H) SEED / TEST DATA PROTECTION (IMPORTANT)
+==================================================
+
+We added @invariant comments — now enforce behavior:
+
+1) Review all seed files
+2) Ensure:
+- no direct insert into cashier_receipts
+- no direct insert into cashier_refund_receipts
+
+3) If possible:
+- create seed helper that:
+   - creates invoice
+   - runs proper collection flow
+
+Goal:
+Test data must respect business rules.
+
+==================================================
+I) SHIFT CLOSE SAFETY
+==================================================
+
+Ensure shift close:
+
+1) always uses centralized pending logic
+2) cannot be blocked by ghost invoices again
+3) cannot pass if true pending exists
+
+Add:
+- explicit log when blocking occurs:
+   "Shift close blocked due to X pending documents"
+
+==================================================
+J) REGRESSION TESTS (MANDATORY)
+==================================================
+
+Validate:
+
+1) finalized + no receipt → pending
+2) finalized + receipt → NOT pending
+3) collected → NOT pending
+4) return finalized + no refund → pending
+5) return with refund → NOT pending
+
+6) UI vs validation:
+- both must always match
+
+7) shift close:
+- allowed when no pending
+- blocked when pending exists
+
+==================================================
+K) OUTPUT REQUIRED
+==================================================
+
+Before changes:
+1) files to be modified
+2) naming refactor plan
+3) query performance findings
+
+After changes:
+1) modified files list
+2) confirmation no duplicated pending logic exists
+3) query performance validation
+4) any new indexes (if added)
+5) proof no double counting
+6) regression test results
+7) confirmation UI and validation cannot drift again
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+- Do NOT reintroduce duplicated logic
+- Do NOT mix business logic inside UI components
+- Do NOT add indexes without justification
+- Do NOT rely on header status alone
+- Do NOT break existing cashier flows
+- Maintain clean, modular, testable code
