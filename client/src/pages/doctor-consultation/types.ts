@@ -67,6 +67,11 @@ export interface Consultation {
   paymentStatus?: string | null;
   paymentType?: string | null;
   insuranceCompany?: string | null;
+  companyId?: string | null;
+  contractId?: string | null;
+  contractMemberId?: string | null;
+  companyName?: string | null;
+  contractName?: string | null;
   latestDiagnosis?: string | null;
 }
 

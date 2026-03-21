@@ -21,7 +21,7 @@ The system utilizes a RESTful JSON API. Drizzle ORM manages interactions with Po
 - **Services & Price Lists**: Provides CRUD operations for department-scoped services and price lists with inline editing and bulk adjustments.
 - **Multi-Pharmacy Support**: Offers isolation for invoicing and cashier operations across multiple pharmacies.
 - **Cashier & Security**: Features real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC), and Dynamic Account Resolution. It includes a complete cashier shift lifecycle with business date management, stale detection, atomic close with transfer logs, and concurrent collection protection.
-- **Outpatient Clinic Module**: Covers clinic booking, doctor consultations, doctor orders, integration with sales invoices and service orders, doctor-specific pricing, and clinic-scoped drug favorites. Step 2 adds PatientSnapshot header, SOAP structured fields, specialty templates, and quick follow-up text helpers. Step 3 adds doctor-facing order execution tracking tab (متابعة الطلبات) with real-time order status. Step 4 adds follow-up planning fields (followUpAfterDays, followUpReason, suggestedFollowUpDate — nullable, UTC-safe), fixes patient history N+1 query, adds offset pagination with backend hasMore indicator, visit history now shows drugs + orders summary, excludes current appointment from history, and extracts PatientHistoryPanel to hook+component architecture.
+- **Outpatient Clinic Module**: Covers clinic booking, doctor consultations, doctor orders, integration with sales invoices and service orders, doctor-specific pricing, and clinic-scoped drug favorites. Step 2 adds PatientSnapshot header, SOAP structured fields, specialty templates, and quick follow-up text helpers. Step 3 adds doctor-facing order execution tracking tab (متابعة الطلبات) with real-time order status. Step 4 adds follow-up planning fields (followUpAfterDays, followUpReason, suggestedFollowUpDate — nullable, UTC-safe), fixes patient history N+1 query, adds offset pagination with backend hasMore indicator, visit history now shows drugs + orders summary, excludes current appointment from history, and extracts PatientHistoryPanel to hook+component architecture. Step 5 activates real contract FK stamping on clinic_appointments (companyId, contractId, contractMemberId), adds OPD-scoped member lookup endpoint (clinic.book permission), replaces free-text payer fields with ContractMemberLookup component + useContractResolution hook, enforces FK chain validation on booking POST, shows resolved contract context in PatientSnapshot.
 - **Reporting & Audit**: Ensures balanced financial reports, RBAC enforcement, comprehensive audit trails, and strict validation.
 - **Department Services Orders**: A unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
 - **Specialized Features**: Includes Doctor Payable Transfer, Doctor Settlement, Stay Engine for patient accommodation (with `hours_24` and `hotel_noon` billing modes), Bed Board with real-time updates, and a Surgery Types System.
@@ -70,6 +70,26 @@ The system utilizes a RESTful JSON API. Drizzle ORM manages interactions with Po
 
 > This milestone is production-ready within the implemented scope.
 > All changes are backward-compatible, medically safe, and access-scoped server-side.
+
+## Outpatient Improvement — Step 5 (Stable)
+
+**Tag:** `outpatient-step5-stable`
+
+- **OPD-scoped member lookup** — `GET /api/clinic-opd/member-lookup?cardNumber=&date=` with `clinic.book` permission (no CONTRACTS_VIEW required). Card must be >= 3 chars. Date defaults to server today if missing or malformed.
+- **Real FK stamping** — `createAppointment()` INSERT now stamps `company_id`, `contract_id`, `contract_member_id` on `clinic_appointments`. All three columns were pre-existing and nullable.
+- **FK chain validation** — booking POST validates member → contract → company chain via single SQL query before INSERT. Invalid chain rejected with Arabic error.
+- **INSURANCE fallback preserved** — if no card number provided, free-text `insurance_company` accepted (legacy compat). If card entered but invalid → rejected.
+- **CONTRACT: FK required** — new CONTRACT bookings require resolved member card. No free-text fallback.
+- **`useContractResolution` hook** — isolated state (cardNumber, resolved, isLooking, error). Abort-controller prevents stale responses. Resets on paymentType change.
+- **`ContractMemberLookup` component** — card input + search button + error display. Renders only for INSURANCE/CONTRACT. Delegates display to `ResolvedContractSummary`.
+- **`ResolvedContractSummary` component** — read-only card: member name, card number, company, contract, coverage-until date. Shows "تنتهي قريباً" badge when <= 30 days remaining. Clear button resets state.
+- **PatientSnapshot updated** — payer chip shows FK-resolved company name when available, safe fallback to text field. Expanded section shows company + contract details. Never crashes on missing FK data.
+- **Consultation query enriched** — both paths in `getConsultationByAppointment` LEFT JOIN companies + contracts to populate `company_name`, `contract_name` for the snapshot.
+- **No duplicate contract logic** — contracts module remains single source of truth. OPD only consumes via service layer.
+- **Backward compatibility** — old appointments with null FK fields load normally. Old INSURANCE/CONTRACT text records unchanged.
+- **Indexes** — all needed indexes pre-existed. No new indexes added (verified no redundancy).
+
+> Production-ready. FK-first for new records. Legacy-safe for old records. Architecture-clean (thin routes, isolated hook/components).
 
 ## External Dependencies
 

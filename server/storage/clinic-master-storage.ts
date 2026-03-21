@@ -332,6 +332,7 @@ const methods = {
     patientPhone?: string; appointmentDate: string; appointmentTime?: string;
     notes?: string; createdBy?: string;
     paymentType?: string; insuranceCompany?: string; payerReference?: string;
+    companyId?: string; contractId?: string; contractMemberId?: string;
   }): Promise<any> {
     const paymentType = (data.paymentType || 'CASH').toUpperCase();
 
@@ -377,11 +378,11 @@ const methods = {
           clinic.resolved_treasury_id = clinic.treasury_id;
         }
       }
-      if (paymentType === 'INSURANCE' && !data.insuranceCompany?.trim()) {
-        throw new Error("اسم شركة التأمين مطلوب");
+      if (paymentType === 'INSURANCE' && !data.insuranceCompany?.trim() && !data.contractMemberId) {
+        throw new Error("اسم شركة التأمين أو بطاقة المنتسب مطلوبة");
       }
-      if (paymentType === 'CONTRACT' && !data.payerReference?.trim()) {
-        throw new Error("اسم الجهة المتعاقدة مطلوب");
+      if (paymentType === 'CONTRACT' && !data.contractMemberId) {
+        throw new Error("يجب تحديد بطاقة المنتسب لحجوزات التعاقد");
       }
 
       // ── 2b. حماية من الحجز المكرر ─────────────────────────────────────────
@@ -414,8 +415,9 @@ const methods = {
         INSERT INTO clinic_appointments
           (clinic_id, doctor_id, patient_id, patient_name, patient_phone,
            appointment_date, appointment_time, turn_number, notes, created_by,
-           payment_type, insurance_company, payer_reference)
-        VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10,$11,$12,$13)
+           payment_type, insurance_company, payer_reference,
+           company_id, contract_id, contract_member_id)
+        VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
         RETURNING *
       `, [
         data.clinicId, data.doctorId, data.patientId ?? null, data.patientName,
@@ -424,6 +426,9 @@ const methods = {
         paymentType,
         paymentType === 'INSURANCE' ? (data.insuranceCompany?.trim() ?? null) : null,
         paymentType === 'CONTRACT'  ? (data.payerReference?.trim()   ?? null) : null,
+        data.companyId        ?? null,
+        data.contractId       ?? null,
+        data.contractMemberId ?? null,
       ]);
       const appointment = ins.rows[0];
 
@@ -798,6 +803,9 @@ const methods = {
              a.patient_name, a.patient_phone, a.patient_id, a.appointment_date, a.appointment_time,
              a.turn_number, a.status AS appointment_status, a.doctor_id, a.clinic_id,
              a.gender AS appointment_gender, a.payment_type, a.insurance_company,
+             a.company_id, a.contract_id, a.contract_member_id,
+             co.name_ar AS company_name,
+             ct.contract_name,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
              cl.name_ar AS clinic_name, cl.default_pharmacy_id,
              cl.consultation_service_id, cl.treasury_id,
@@ -815,11 +823,15 @@ const methods = {
       JOIN doctors d ON d.id = a.doctor_id
       JOIN clinic_clinics cl ON cl.id = a.clinic_id
       LEFT JOIN patients p ON p.id = a.patient_id
+      LEFT JOIN companies co ON co.id = a.company_id
+      LEFT JOIN contracts ct ON ct.id = a.contract_id
       WHERE c.appointment_id = ${appointmentId}
     `);
     if (!consRows.rows.length) {
       const apptRows = await db.execute(sql`
         SELECT a.*,
+               co.name_ar AS company_name,
+               ct.contract_name,
                d.name AS doctor_name, d.specialty AS doctor_specialty,
                cl.name_ar AS clinic_name, cl.default_pharmacy_id,
                cl.consultation_service_id, cl.treasury_id,
@@ -836,6 +848,8 @@ const methods = {
         JOIN doctors d ON d.id = a.doctor_id
         JOIN clinic_clinics cl ON cl.id = a.clinic_id
         LEFT JOIN patients p ON p.id = a.patient_id
+        LEFT JOIN companies co ON co.id = a.company_id
+        LEFT JOIN contracts ct ON ct.id = a.contract_id
         WHERE a.id = ${appointmentId}
       `);
       if (!apptRows.rows.length) return null;

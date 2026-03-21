@@ -131,12 +131,17 @@ export function PatientSnapshot({ appointmentId, form }: Props) {
           </span>
         )}
 
-        {/* payer */}
+        {/* payer — show FK-resolved name when available, safe fallback to text field */}
         {payerLabel && (
           <span className="flex items-center gap-1 text-muted-foreground shrink-0">
             <CreditCard className="h-3 w-3" />
             {payerLabel}
-            {form.insuranceCompany && ` — ${form.insuranceCompany}`}
+            {form.companyId
+              ? ` — ${form.companyName ?? "شركة غير محددة"}`
+              : form.insuranceCompany
+              ? ` — ${form.insuranceCompany}`
+              : null
+            }
           </span>
         )}
 
@@ -198,6 +203,18 @@ export function PatientSnapshot({ appointmentId, form }: Props) {
               <VitalChip label="طول" value={intake?.height} unit=" سم" />
               <VitalChip label="SpO₂" value={intake?.spo2} unit="%" />
               <VitalChip label="سكر" value={intake?.randomBloodSugar} unit=" مج/دل" />
+            </div>
+          )}
+
+          {/* contract / payer details — only when FK-resolved */}
+          {form.companyId && (form.companyName || form.contractName) && (
+            <div className="text-xs flex flex-wrap gap-x-3 gap-y-0.5 border-t pt-1 text-muted-foreground">
+              {form.companyName && (
+                <span><span className="font-medium text-foreground">الشركة: </span>{form.companyName}</span>
+              )}
+              {form.contractName && (
+                <span><span className="font-medium text-foreground">العقد: </span>{form.contractName}</span>
+              )}
             </div>
           )}
 

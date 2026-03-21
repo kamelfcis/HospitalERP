@@ -41,6 +41,8 @@ import type { LookupItem }            from "@/lib/lookupTypes";
 import type { InsertPatient }         from "@shared/schema";
 import type { PatientFormDialogProps, PrefilledPatient } from "./types";
 import { useDebounce }                from "./useDebounce";
+import { useContractResolution }      from "./hooks/useContractResolution";
+import { ContractMemberLookup }       from "./components/ContractMemberLookup";
 
 // ===== Types =====
 
@@ -150,7 +152,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   /* payment */
   const [paymentType,    setPaymentType]    = useState<PaymentKind>("CASH");
   const [insuranceCo,    setInsuranceCo]    = useState("");
-  const [payerReference, setPayerReference] = useState("");
+  const resolution = useContractResolution();
 
   /* visit reason */
   const [visitReason, setVisitReason] = useState<VisitReason>("");
@@ -194,7 +196,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   useEffect(() => {
     if (!open) return;
 
-    setPaymentType("CASH"); setInsuranceCo(""); setPayerReference("");
+    setPaymentType("CASH"); setInsuranceCo(""); resolution.clear();
     setVisitReason("");
     setSelectedClinic(null); setSelectedDoctor(null);
     setConsultDate(todayISO); setConsultTime("");
@@ -365,8 +367,8 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   const handlePaymentTypeChange = useCallback((v: PaymentKind) => {
     setPaymentType(v);
     if (v !== "INSURANCE") setInsuranceCo("");
-    if (v !== "CONTRACT")  setPayerReference("");
-  }, []);
+    resolution.clear();
+  }, [resolution]);
 
   // ===== Search Keyboard Navigation =====
 
@@ -466,11 +468,17 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     if (nationalId && !/^\d{14}$/.test(nationalId)) {
       toast({ title: "الرقم القومي يجب أن يكون 14 رقم", variant: "destructive" }); return false;
     }
-    if (paymentType === "INSURANCE" && !insuranceCo.trim()) {
-      toast({ title: "الرجاء كتابة اسم شركة التأمين", variant: "destructive" }); return false;
+    if (paymentType === "INSURANCE") {
+      const cardEntered = resolution.state.cardNumber.trim().length > 0;
+      if (cardEntered && !resolution.state.resolved) {
+        toast({ title: "رقم بطاقة التأمين غير صالح", description: "تحقق من رقم البطاقة أو امسح الرقم لاستخدام اسم الشركة النصي", variant: "destructive" }); return false;
+      }
+      if (!resolution.state.resolved && !insuranceCo.trim()) {
+        toast({ title: "الرجاء إدخال بطاقة التأمين أو اسم شركة التأمين", variant: "destructive" }); return false;
+      }
     }
-    if (paymentType === "CONTRACT" && visitReason === "consultation" && !payerReference.trim()) {
-      toast({ title: "الرجاء كتابة اسم الجهة المتعاقدة", variant: "destructive" }); return false;
+    if (paymentType === "CONTRACT" && visitReason === "consultation" && !resolution.state.resolved) {
+      toast({ title: "يجب تحديد بطاقة المنتسب لحجوزات التعاقد", description: "ابحث عن رقم بطاقة المنتسب وتأكد من نجاح التحقق منها", variant: "destructive" }); return false;
     }
     if (visitReason === "consultation" && selectedClinic && !selectedDoctor) {
       toast({ title: "الرجاء اختيار الطبيب للكشف", variant: "destructive" }); return false;
@@ -567,6 +575,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     /* Consultation booking */
     if (visitReason === "consultation" && selectedClinic && selectedDoctor) {
       try {
+        const resolved = resolution.state.resolved;
         const apt = await appointmentMutation.mutateAsync({
           clinicId: selectedClinic.id,
           body: {
@@ -577,17 +586,20 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
             appointmentDate:  consultDate,
             appointmentTime:  consultTime || undefined,
             paymentType,
-            insuranceCompany: paymentType === "INSURANCE" ? insuranceCo.trim() : undefined,
-            payerReference:   paymentType === "CONTRACT"  ? payerReference.trim() : undefined,
+            insuranceCompany: paymentType === "INSURANCE" && !resolved ? insuranceCo.trim() || undefined : undefined,
+            companyId:        resolved?.companyId,
+            contractId:       resolved?.contractId,
+            contractMemberId: resolved?.memberId,
           },
         });
         queryClient.invalidateQueries({ queryKey: ["/api/clinic-appointments"] });
         const invoicePart = apt.invoiceNumber ? ` — فاتورة رقم: ${apt.invoiceNumber}` : "";
+        const payerDisplayName = resolved?.companyName ?? insuranceCo ?? "";
         const paymentPart = paymentType === "CASH"
           ? " (تم التحصيل نقداً)"
           : paymentType === "INSURANCE"
-          ? ` (تأمين: ${insuranceCo})`
-          : ` (تعاقد: ${payerReference})`;
+          ? ` (تأمين: ${payerDisplayName})`
+          : ` (تعاقد: ${resolved?.contractName ?? ""})`;
         toast({
           title: existingPatient ? "تم حجز زيارة جديدة" : "تم إضافة المريض وحجز الكشف",
           description: `${selectedClinic.name} — رقم الدور: ${apt.turnNumber}${invoicePart}${paymentPart}`,
@@ -601,9 +613,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
             doctorName:     selectedDoctor?.name ?? null,
             turnNumber:     apt.turnNumber ?? null,
             paymentType,
-            contractName:   paymentType === "INSURANCE" ? insuranceCo.trim() || null
-                          : paymentType === "CONTRACT"  ? payerReference.trim() || null
-                          : null,
+            contractName:   resolved?.contractName ?? resolved?.companyName ?? insuranceCo.trim() || null,
           });
         }
       } catch (e: any) {
@@ -926,29 +936,32 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
               </div>
 
               {paymentType === "INSURANCE" && (
-                <div className="space-y-1">
-                  <Label className="text-xs">شركة التأمين *</Label>
-                  <Input
-                    value={insuranceCo}
-                    onChange={e => setInsuranceCo(e.target.value)}
-                    placeholder="اسم شركة التأمين"
-                    className="h-7 text-xs"
-                    data-testid="input-insurance-company"
+                <div className="space-y-2">
+                  <ContractMemberLookup
+                    paymentType="INSURANCE"
+                    resolution={resolution}
+                    appointmentDate={consultDate}
                   />
+                  {!resolution.state.resolved && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">اسم شركة التأمين (بديل عند عدم توفر البطاقة)</Label>
+                      <Input
+                        value={insuranceCo}
+                        onChange={e => setInsuranceCo(e.target.value)}
+                        placeholder="اسم شركة التأمين"
+                        className="h-7 text-xs"
+                        data-testid="input-insurance-company"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
               {paymentType === "CONTRACT" && (
-                <div className="space-y-1">
-                  <Label className="text-xs">الجهة المتعاقدة *</Label>
-                  <Input
-                    value={payerReference}
-                    onChange={e => setPayerReference(e.target.value)}
-                    placeholder="اسم الشركة أو الجهة"
-                    className="h-7 text-xs"
-                    data-testid="input-payer-reference"
-                  />
-                  <p className="text-xs text-muted-foreground px-1">سيتم إنشاء فاتورة آجلة بشروط التعاقد</p>
-                </div>
+                <ContractMemberLookup
+                  paymentType="CONTRACT"
+                  resolution={resolution}
+                  appointmentDate={consultDate}
+                />
               )}
             </section>
 

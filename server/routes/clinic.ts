@@ -181,6 +181,46 @@ export function registerClinicRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  /**
+   * GET /api/clinic-opd/member-lookup
+   * OPD-scoped contract member lookup (clinic.book permission only — no CONTRACTS_VIEW required).
+   * Used by the booking form to resolve a member card to its FK context.
+   * Safety rules:
+   *   - cardNumber must be >= 3 characters
+   *   - date defaults to server today if missing/invalid
+   *   - returns 404 if no active member found for that card+date combination
+   */
+  app.get("/api/clinic-opd/member-lookup", requireAuth, checkPermission("clinic.book"), async (req, res) => {
+    try {
+      const rawCard = (req.query.cardNumber as string | undefined)?.trim() ?? "";
+      if (rawCard.length < 3) {
+        return res.status(400).json({ message: "رقم البطاقة قصير جداً — أدخل 3 أحرف على الأقل" });
+      }
+      // Fallback to today when date is missing or malformed
+      const rawDate = req.query.date as string | undefined;
+      const resolvedDate = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+        ? rawDate
+        : new Date().toISOString().slice(0, 10);
+
+      const result = await storage.lookupMemberByCard(rawCard, resolvedDate);
+      if (!result) {
+        return res.status(404).json({ message: "لم يُعثر على بطاقة منتسب نشطة بهذا الرقم للتاريخ المحدد" });
+      }
+      res.json({
+        memberId:        result.member.id,
+        memberCardNumber: result.member.memberCardNumber,
+        memberName:      result.member.memberNameAr,
+        contractId:      result.contract.id,
+        contractName:    result.contract.contractName,
+        companyId:       result.company.id,
+        companyName:     result.company.nameAr,
+        coverageUntil:   result.member.endDate,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message ?? "خطأ في البحث" });
+    }
+  });
+
   app.post("/api/clinic-clinics/:id/appointments", requireAuth, checkPermission("clinic.book"), async (req, res) => {
     try {
       const userId = req.session.userId!;
@@ -195,18 +235,54 @@ export function registerClinicRoutes(app: Express) {
         patientName, patientId, patientPhone,
         doctorId, appointmentDate, appointmentTime, notes,
         paymentType, insuranceCompany, payerReference,
+        companyId, contractId, contractMemberId,
       } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       if (!doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
       if (!appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
+
+      const pt = (paymentType || 'CASH').toUpperCase();
+
+      // ── FK contract validation ──────────────────────────────────────────────
+      // If a contractMemberId is provided, validate the full chain: member → contract → company
+      if (contractMemberId) {
+        if (!contractId || !companyId) {
+          return res.status(400).json({ message: "بيانات العقد غير مكتملة — يجب توفير companyId و contractId مع contractMemberId" });
+        }
+        const chainCheck = await db.execute(
+          sql`SELECT cm.id FROM contract_members cm
+              JOIN contracts ct ON ct.id = cm.contract_id
+              WHERE cm.id = ${contractMemberId}
+                AND cm.contract_id = ${contractId}
+                AND ct.company_id = ${companyId}
+              LIMIT 1`
+        );
+        if (!(chainCheck as any).rows?.length) {
+          return res.status(400).json({ message: "بيانات العقد غير متطابقة — المنتسب لا ينتمي للعقد أو الشركة المحددة" });
+        }
+      }
+
+      // ── INSURANCE: card provided but lookup failed → reject ────────────────
+      if (pt === 'INSURANCE' && contractMemberId === undefined && req.body.hasOwnProperty('contractMemberId')) {
+        return res.status(400).json({ message: "رقم بطاقة التأمين غير صالح — تحقق من الرقم وأعد المحاولة" });
+      }
+
+      // ── CONTRACT: FK required for new records ──────────────────────────────
+      if (pt === 'CONTRACT' && !contractMemberId) {
+        return res.status(400).json({ message: "يجب تحديد بطاقة المنتسب لحجوزات التعاقد" });
+      }
+
       const appointment = await storage.createAppointment({
         clinicId: req.params.id as string,
         createdBy: userId,
         patientName: patientName.trim(),
         patientId, patientPhone, doctorId, appointmentDate, appointmentTime, notes,
-        paymentType: paymentType || 'CASH',
+        paymentType: pt,
         insuranceCompany: insuranceCompany || undefined,
         payerReference: payerReference || undefined,
+        companyId: companyId || undefined,
+        contractId: contractId || undefined,
+        contractMemberId: contractMemberId || undefined,
       });
       broadcastToClinic(req.params.id as string, "appointment_changed", { ts: Date.now() });
       res.status(201).json(snakeToCamel(appointment));
