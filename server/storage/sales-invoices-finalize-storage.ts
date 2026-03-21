@@ -211,6 +211,7 @@ const methods = {
     let cogsSupplies = 0;
     let revenueDrugs = 0;
     let revenueSupplies = 0;
+    let capturedJournalEntryId: string | null = null;
 
     const finalResult = await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM sales_invoice_headers WHERE id = ${id} FOR UPDATE`);
@@ -303,7 +304,6 @@ const methods = {
 
       let journalStatus: string = "pending";
       let journalError: string | null = null;
-      let capturedJournalEntryId: string | null = null;
 
       try {
         await tx.execute(sql`SAVEPOINT journal_attempt`);
