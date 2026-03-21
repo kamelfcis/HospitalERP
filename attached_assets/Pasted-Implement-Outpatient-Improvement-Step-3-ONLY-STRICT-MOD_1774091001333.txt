@@ -1,0 +1,276 @@
+Implement Outpatient Improvement — Step 3 ONLY (STRICT MODE).
+
+DO NOT implement anything outside Step 3.
+DO NOT build result-entry systems.
+DO NOT redesign pharmacy/lab/radiology modules.
+DO NOT invent fake clinical data.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Close the doctor order loop by giving the doctor clear execution visibility.
+
+Doctor must be able to see:
+- what was ordered
+- what was executed
+- what is still pending
+
+This step is about ORDER TRACKING VISIBILITY first, not operational workflow redesign.
+
+==================================================
+STRICT BOUNDARIES (NON-NEGOTIABLE)
+==================================================
+
+DO NOT implement:
+- lab result entry subsystem
+- radiology result entry subsystem
+- new pharmacy dispensing engine
+- new stock deduction logic
+- new order fulfillment workflow
+- fake result data
+- guessed clinical outcomes
+- complex order lifecycle engine unless already backed by real existing data
+
+This step is ONLY:
+- real order execution visibility
+- per-visit counts
+- status badges
+- safe tracking UI
+- data-driven summaries
+
+==================================================
+SCOPE
+==================================================
+
+Build execution tracking first.
+
+If real lab/radiology result tables do not yet exist:
+- show status only
+- do not fabricate result content
+- do not create placeholder clinical findings
+
+Required:
+- order status visibility inside doctor consultation
+- per-visit counts
+- pending vs executed badges
+- pharmacy dispense status visibility
+- internal vs external visibility ONLY if safely inferable from existing data
+
+==================================================
+DATA SOURCE RULES
+==================================================
+
+Use ONLY real existing data sources.
+
+Required:
+- inspect current clinic_orders model and related fulfillment/execution tables
+- track only what can be proven from actual persisted data
+- if status mapping is inconsistent across sources, normalize for DISPLAY ONLY
+- do not invent new operational states unless required and backed by current business flow
+
+If current execution data is incomplete:
+- show the best truthful visibility possible
+- explicitly defer unavailable tracking
+
+==================================================
+SCHEMA
+==================================================
+
+Safely extend clinic_orders ONLY if truly necessary.
+
+Possible additions:
+- isExternal boolean default false
+- executionNotes nullable
+- executionSource nullable
+- resultAvailable boolean default false
+
+STRICT RULES:
+- add only fields that are actually required
+- prefer reusing existing data before extending schema
+- no overbuilding
+- no schema changes for future hypothetical workflows
+
+==================================================
+DOCTOR UI
+==================================================
+
+Inside doctor consultation screen add:
+- OrdersTrackingPanel
+
+Show:
+- total lab orders
+- executed lab orders
+- pending lab orders
+- total radiology orders
+- executed radiology orders
+- pending radiology orders
+- pharmacy dispensed count
+- pending pharmacy count
+
+Also show line-level order badges with status.
+
+STRICT UI RULES:
+- counts and row badges must come from the same source-of-truth logic
+- no mismatch between totals and visible rows
+- panel must be compact, readable, and fast
+- do not bloat consultation page
+
+==================================================
+PHARMACY VISIBILITY RULES
+==================================================
+
+Pharmacy status visibility is display-only in this step.
+
+Allowed:
+- dispensed / pending display if real data exists
+- source/status badge visibility
+- internal/external flag if real data supports it
+
+Disallowed:
+- stock deduction changes
+- dispense workflow redesign
+- cashier/pharmacy posting changes
+
+==================================================
+OPTIONAL RESULTS PLACEHOLDER
+==================================================
+
+If lab/radiology result modules are not yet integrated:
+- show order execution status only
+- optionally show "result not integrated yet"
+
+Do NOT build:
+- full result-entry subsystem
+- result editor
+- result viewer with fake data
+- doctor result sign-off workflow
+
+==================================================
+STATUS NORMALIZATION RULE
+==================================================
+
+If raw statuses vary across modules/tables,
+create a small display-only normalization layer for the doctor UI.
+
+Example display buckets:
+- pending
+- executed
+- dispensed
+- result_available (only if real)
+- external (only if real)
+
+Do NOT rewrite source workflows.
+Do NOT change existing business meaning.
+
+==================================================
+RBAC / SCOPE
+==================================================
+
+Respect clinic and doctor isolation.
+
+Required:
+- doctor sees only orders related to allowed patients/consultations/appointments
+- no cross-clinic leakage
+- no exposure of unrelated orders
+
+==================================================
+PERFORMANCE
+==================================================
+
+Keep queries lean.
+
+Avoid N+1 queries.
+Prefer aggregated counts + a compact order list.
+
+Add indexes ONLY if proven necessary by actual query patterns.
+
+Potential useful indexes:
+- clinic_orders(appointmentId, status)
+- clinic_orders(consultationId, status)
+- clinic_orders(orderType, status)
+- executedAt if actually used in filtering/sorting
+
+Do NOT add redundant indexes if existing indexes already cover the queries.
+
+==================================================
+REFACTOR
+==================================================
+
+Extract:
+- components/OrdersTrackingPanel.tsx
+- components/OrderStatusBadge.tsx
+- hooks/useOrderExecutionTracking.ts
+
+Keep existing doctor consultation page thin.
+Keep routes thin.
+Keep storage/services separate.
+
+==================================================
+IMPLEMENTATION SAFETY RULES
+==================================================
+
+- no fake data
+- no guessed results
+- no hidden side effects
+- no auto-status transitions
+- no silent schema expansion beyond actual need
+- no backend logic that changes fulfillment behavior
+
+This step must remain visibility-first.
+
+==================================================
+BEFORE CODING (MANDATORY)
+==================================================
+
+Print EXACTLY:
+
+1) FILES TO MODIFY
+2) REAL ORDER EXECUTION DATA SOURCES
+3) CURRENT ORDER STATUS MODEL
+4) WHAT CAN BE TRACKED NOW VS DEFERRED
+5) STATUS NORMALIZATION APPROACH
+6) IMPLEMENTATION PLAN
+
+STOP.
+
+Wait for approval.
+
+==================================================
+IMPLEMENTATION
+==================================================
+
+After approval:
+Implement Step 3 ONLY.
+
+Do NOT start Step 4.
+Do NOT widen scope.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) ORDER TRACKING ADDED
+3) DOCTOR VISIBILITY IMPROVED
+4) STATUS NORMALIZATION ADDED
+5) INDEXES ADDED
+6) REFACTOR SUMMARY
+7) DEFERRED ITEMS IF ANY
+8) ANY LIMITATIONS
+
+==================================================
+QUALITY BAR
+==================================================
+
+Must be:
+- truthful to real data
+- medically safe
+- operationally safe
+- fast
+- compact
+- maintainable
+
+No fake results.
+No workflow invention.
+Only Step 3, executed correctly.
