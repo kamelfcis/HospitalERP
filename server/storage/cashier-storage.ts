@@ -506,11 +506,11 @@ const methods = {
     const creatorIds = Array.from(creatorIdSet);
     const nameMap = new Map<string, string>();
     if (creatorIds.length > 0) {
-      const userRows = await db.execute(sql`
-        SELECT id, full_name FROM users WHERE id = ANY(${creatorIds})
-      `);
-      for (const row of (userRows as any).rows) {
-        nameMap.set(row.id, row.full_name);
+      const userRows = await db.select({ id: users.id, fullName: users.fullName, username: users.username })
+        .from(users)
+        .where(inArray(users.id, creatorIds));
+      for (const row of userRows) {
+        nameMap.set(row.id, row.fullName || row.username || "");
       }
     }
     const enriched = filtered.map(r => ({
@@ -575,11 +575,11 @@ const methods = {
     const creatorIds2 = Array.from(creatorIdSet2);
     const nameMap2 = new Map<string, string>();
     if (creatorIds2.length > 0) {
-      const userRows = await db.execute(sql`
-        SELECT id, full_name FROM users WHERE id = ANY(${creatorIds2})
-      `);
-      for (const row of (userRows as any).rows) {
-        nameMap2.set(row.id, row.full_name);
+      const userRows2 = await db.select({ id: users.id, fullName: users.fullName, username: users.username })
+        .from(users)
+        .where(inArray(users.id, creatorIds2));
+      for (const row of userRows2) {
+        nameMap2.set(row.id, row.fullName || row.username || "");
       }
     }
     const enriched = filtered.map(r => ({
@@ -620,11 +620,10 @@ const methods = {
     // ── إثراء إضافي: اسم منشئ الفاتورة (created_by = UUID) + وقت الفاتورة ─
     let pharmacistName: string | null = null;
     if (header.createdBy) {
-      const userResult = await db.execute(sql`
-        SELECT full_name FROM users WHERE id = ${header.createdBy} LIMIT 1
-      `);
-      const row = (userResult as any).rows[0];
-      if (row?.full_name) pharmacistName = row.full_name;
+      const [userRow] = await db.select({ fullName: users.fullName, username: users.username })
+        .from(users)
+        .where(eq(users.id, header.createdBy));
+      if (userRow) pharmacistName = userRow.fullName || userRow.username || null;
     }
     const invoiceDateTime = header.createdAt ? header.createdAt.toISOString() : null;
 
