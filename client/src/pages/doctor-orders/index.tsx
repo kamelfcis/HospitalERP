@@ -1,35 +1,31 @@
-import { useState } from "react";
 import { useLocation } from "wouter";
 import { ClipboardList } from "lucide-react";
+import { useGroupedOrders } from "./hooks/useGroupedOrders";
 import { useClinicOrders } from "./hooks/useClinicOrders";
 import { useOrderPermissions } from "./hooks/useOrderPermissions";
 import { OrdersFilterBar } from "./components/OrdersFilterBar";
 import { OrdersTable } from "./components/OrdersTable";
-import { ExecuteConfirmDialog } from "./components/ExecuteConfirmDialog";
 import type { ClinicOrder } from "./types";
 
 export default function DoctorOrders() {
   const [, navigate] = useLocation();
-  const [confirmOrder, setConfirmOrder] = useState<ClinicOrder | null>(null);
-  const [departmentFilter, setDepartmentFilter] = useState("all");
   const { canExecute } = useOrderPermissions();
 
   const {
-    orders,
+    groups,
     isLoading,
     statusFilter,
     setStatusFilter,
     typeFilter,
     setTypeFilter,
-    executeMutation,
+    departmentFilter,
+    setDepartmentFilter,
+    departments,
+    pendingCount,
     refetch,
-  } = useClinicOrders();
+  } = useGroupedOrders();
 
-  const pendingCount = orders.filter((o) => o.status === "pending").length;
-
-  const filteredOrders = departmentFilter === "all"
-    ? orders
-    : orders.filter((o) => o.targetName === departmentFilter);
+  const { executeMutation } = useClinicOrders();
 
   const handleExecute = (order: ClinicOrder) => {
     if (order.orderType === "service") {
@@ -39,21 +35,13 @@ export default function DoctorOrders() {
       params.set("patientName", order.apptPatientName || order.patientName || "");
       if (order.doctorId) params.set("doctorId", order.doctorId);
       if (order.doctorName) params.set("doctorName", order.doctorName);
-      const servicesJson = [{
+      params.set("services", JSON.stringify([{
         serviceId: order.serviceId,
         serviceName: order.serviceNameAr || order.serviceNameManual || "",
         unitPrice: order.servicePrice || "0",
-      }];
-      params.set("services", JSON.stringify(servicesJson));
+      }]));
       navigate(`/dept-services/${deptCode}?${params.toString()}`);
-      return;
     }
-  };
-
-  const handleConfirmExecute = (orderId: string) => {
-    executeMutation.mutate(orderId, {
-      onSuccess: () => setConfirmOrder(null),
-    });
   };
 
   return (
@@ -71,27 +59,18 @@ export default function DoctorOrders() {
         onTypeChange={setTypeFilter}
         onDepartmentChange={setDepartmentFilter}
         onRefresh={refetch}
-        totalCount={filteredOrders.length}
+        totalCount={groups.length}
         pendingCount={pendingCount}
-        allOrders={orders}
+        departments={departments}
       />
 
       <OrdersTable
-        orders={filteredOrders}
+        groups={groups}
         isLoading={isLoading}
         onExecute={handleExecute}
         isExecuting={executeMutation.isPending}
         canExecute={canExecute}
       />
-
-      {canExecute && (
-        <ExecuteConfirmDialog
-          order={confirmOrder}
-          onClose={() => setConfirmOrder(null)}
-          onConfirm={handleConfirmExecute}
-          isPending={executeMutation.isPending}
-        />
-      )}
     </div>
   );
 }

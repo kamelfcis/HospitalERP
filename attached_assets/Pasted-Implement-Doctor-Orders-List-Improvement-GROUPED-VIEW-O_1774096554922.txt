@@ -1,0 +1,226 @@
+Implement Doctor Orders List Improvement — GROUPED VIEW ONLY (STRICT MODE).
+
+GOAL:
+Reduce noise in the doctor orders screen by grouping rows by patient visit and target department,
+while preserving full line-level detail in an expandable/drill-down view.
+
+DO NOT change transactional logic.
+DO NOT change execution logic.
+DO NOT remove original order-line data.
+DO NOT build new workflow.
+
+==================================================
+PRIMARY CHANGE
+==================================================
+
+Current issue:
+The doctor orders list shows one row per order line, which creates visual clutter.
+
+Required improvement:
+Show one grouped summary row per:
+- appointment/visit
+- patient
+- target department
+
+Examples:
+- Pharmacy → show "عدد الأدوية: 3"
+- Radiology → show "عدد الخدمات: 2"
+- Laboratory → show "عدد الخدمات: 4"
+
+Each department/target must appear in its own row only.
+Do NOT merge pharmacy + radiology + lab into one row.
+
+==================================================
+GROUPING RULES
+==================================================
+
+Group by real source-of-truth fields only.
+
+Preferred grouping key:
+- appointmentId
+- patientId
+- targetName or target department
+- optionally grouped status bucket if needed for display correctness
+
+IMPORTANT:
+Do NOT group across different appointments or different visit dates.
+Do NOT group only by patient name.
+Do NOT group by service name.
+
+==================================================
+MAIN LIST DISPLAY
+==================================================
+
+Replace the noisy per-line display with grouped summary rows.
+
+Each grouped row should show:
+- patient / doctor
+- target department
+- summarized request count
+- overall status
+- actions
+
+Replace the current "order" text column with a summarized label:
+- for pharmacy: "عدد الأدوية: X"
+- for other service departments: "عدد الخدمات: X"
+
+Optional small subtext:
+- "اضغط لعرض التفاصيل"
+
+==================================================
+DETAIL PRESERVATION (MANDATORY)
+==================================================
+
+Do NOT lose line-level detail.
+
+Each grouped row must support drill-down / expand / drawer / modal to show original order lines.
+
+Detail view must still show:
+- exact item/service names
+- line status
+- created date/time if available
+- execution/dispense details if available
+
+This step is a PRESENTATION REFACTOR, not a data-loss simplification.
+
+==================================================
+STATUS DISPLAY
+==================================================
+
+Grouped row should show a safe overall status.
+
+Use a simple aggregation rule:
+- if all lines executed/dispensed → executed group
+- if all lines pending → pending group
+- if mixed → partial / mixed status (only if real and useful)
+- if cancelled lines exist, handle safely without corrupting counts
+
+Do NOT invent new transactional states.
+Display-only normalization is acceptable.
+
+==================================================
+COUNT RULES
+==================================================
+
+Counts must come from real line items.
+
+Examples:
+- Pharmacy group count = number of pharmacy order lines
+- Radiology/Lab/Service group count = number of service order lines inside that grouped department
+
+Counts shown in the grouped row must exactly match the number of lines shown in the drill-down details.
+
+No mismatch allowed.
+
+==================================================
+ARCHITECTURE / REFACTOR (CRITICAL)
+==================================================
+
+This change must include real refactor, not just UI patching.
+
+Required:
+
+1) BACKEND
+- create a grouped query/service for doctor orders list
+- keep route thin
+- do not push grouping logic into frontend only
+
+2) FRONTEND HOOKS
+- isolate grouped list fetching in a dedicated hook if appropriate
+- isolate drill-down details state cleanly
+
+3) COMPONENTIZATION
+Extract reusable components for:
+- grouped orders table/list
+- grouped row summary
+- order detail expansion/drill-down
+- status badge if needed
+
+4) PAGE THINNESS
+Do not leave a giant page component with inline grouping/rendering logic.
+
+5) REUSABILITY
+Design grouping/display components so they can later support dashboards/reports.
+
+==================================================
+INDEXING (QUERY-DRIVEN ONLY)
+==================================================
+
+Add indexes only if real grouped query patterns need them.
+
+Potential useful paths:
+- clinic_orders by appointment_id
+- clinic_orders by target/department
+- clinic_orders by status
+- created_at if used in ordering
+
+Rules:
+- do NOT add speculative indexes
+- do NOT add redundant indexes
+- verify existing indexes first
+- use EXPLAIN if needed
+
+==================================================
+UI / UX RULES
+==================================================
+
+Use a compact grouped table/list.
+No card overload.
+
+Main list must be:
+- cleaner than current screen
+- easier to scan
+- faster for secretary/doctor to use
+
+Detail expansion must be:
+- simple
+- readable
+- not heavy
+
+==================================================
+STRICT BOUNDARIES
+==================================================
+
+Do NOT:
+- change order creation logic
+- change dispensing/execution logic
+- change permissions
+- remove existing detail data
+- build reports in this step
+- build dashboards in this step
+
+This step is ONLY:
+- grouped view
+- preserved details
+- safe UI refactor
+- backend-supported grouping
+
+==================================================
+BEFORE CODING
+==================================================
+
+Print EXACTLY:
+
+1) FILES TO MODIFY
+2) GROUPING KEY / GROUPING LOGIC
+3) DETAIL PRESERVATION APPROACH
+4) STATUS AGGREGATION RULE
+5) REFACTOR / COMPONENT PLAN
+6) INDEXING PLAN (WITH JUSTIFICATION)
+7) IMPLEMENTATION PLAN
+
+STOP.
+
+Wait for approval.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) GROUPED VIEW ADDED
+3) DETAIL DRILL-DOWN ADDED
+4) STATUS AGGREGATION ADDED
+5) INDEXES ADDED (IF ANY)
+6) REFACTOR SUMMARY
+7) ANY LIMITATIONS

@@ -580,6 +580,113 @@ const methods = {
     `, [patientName, date, ...serviceIds]);
     return res.rows.map((r: any) => ({ serviceName: r.service_name, invoiceNumber: r.invoice_number }));
   },
+
+  /**
+   * getGroupedClinicOrders
+   *
+   * Groups order lines by (appointmentId, orderType, targetName) — the correct key
+   * that separates different target departments into distinct rows.
+   *
+   * Returns one entry per group with embedded lines[] for drill-down.
+   * Reuses getClinicOrders to stay DRY and respect all filters/scopes.
+   */
+  async getGroupedClinicOrders(
+    this: DatabaseStorage,
+    filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string; clinicIds?: string[] }
+  ): Promise<Array<Record<string, unknown>>> {
+    const flat = await this.getClinicOrders(filters);
+
+    // Build groups keyed by (appointment_id, order_type, resolved target_name)
+    const groupMap = new Map<string, {
+      groupKey: string;
+      appointmentId: string;
+      orderType: string;
+      targetType: string;
+      targetId: string | null;
+      targetName: string | null;
+      patientName: string;
+      doctorId: string;
+      doctorName: string;
+      appointmentDate: string | null;
+      lines: Array<Record<string, unknown>>;
+      latestCreatedAt: string | null;
+    }>();
+
+    for (const row of flat) {
+      const appointmentId = row.appointment_id as string;
+      const orderType     = row.order_type as string;
+      // Correction 1: prefer targetId (stable FK) over targetName (can be display text)
+      const targetKey     = (row.target_id as string | null) || (row.target_name as string | null) || "";
+      const groupKey      = `${appointmentId}_${orderType}_${targetKey}`;
+
+      if (!groupMap.has(groupKey)) {
+        groupMap.set(groupKey, {
+          groupKey,
+          appointmentId,
+          orderType,
+          targetType:      (row.target_type as string) ?? "",
+          targetId:        (row.target_id  as string | null) ?? null,
+          targetName:      (row.target_name as string | null) ?? null,
+          patientName:     (row.appt_patient_name as string) || (row.patient_name as string) || "",
+          doctorId:        (row.doctor_id   as string) ?? "",
+          doctorName:      (row.doctor_name as string) ?? "",
+          appointmentDate: (row.appointment_date as string | null) ?? null,
+          lines:           [],
+          latestCreatedAt: null,
+        });
+      }
+
+      const grp = groupMap.get(groupKey)!;
+      grp.lines.push(row);
+
+      // Track latest created_at for sort ordering
+      const rowTs = row.created_at as string | null;
+      if (rowTs && (!grp.latestCreatedAt || rowTs > grp.latestCreatedAt)) {
+        grp.latestCreatedAt = rowTs;
+      }
+    }
+
+    // Compute per-group aggregates and sort desc by latestCreatedAt
+    const result = Array.from(groupMap.values()).map(grp => {
+      const nonCancelled = grp.lines.filter(l => l.status !== "cancelled");
+      const pendingCount  = grp.lines.filter(l => l.status === "pending").length;
+      const executedCount = grp.lines.filter(l => l.status === "executed").length;
+      const cancelledCount = grp.lines.filter(l => l.status === "cancelled").length;
+      const totalCount    = grp.lines.length;
+
+      const allExecuted = nonCancelled.length > 0 && nonCancelled.every(l => l.status === "executed");
+      const allPending  = nonCancelled.length > 0 && nonCancelled.every(l => l.status === "pending");
+      const groupStatus = allExecuted ? "executed" : allPending ? "pending" : "mixed";
+
+      return {
+        group_key:        grp.groupKey,
+        appointment_id:   grp.appointmentId,
+        order_type:       grp.orderType,
+        target_type:      grp.targetType,
+        target_id:        grp.targetId,
+        target_name:      grp.targetName,
+        patient_name:     grp.patientName,
+        doctor_id:        grp.doctorId,
+        doctor_name:      grp.doctorName,
+        appointment_date: grp.appointmentDate,
+        total_count:      totalCount,
+        pending_count:    pendingCount,
+        executed_count:   executedCount,
+        cancelled_count:  cancelledCount,
+        group_status:     groupStatus,
+        latest_created_at: grp.latestCreatedAt,
+        lines:            grp.lines,
+      };
+    });
+
+    result.sort((a, b) => {
+      const aTs = (a.latest_created_at as string) ?? "";
+      const bTs = (b.latest_created_at as string) ?? "";
+      return bTs.localeCompare(aTs);
+    });
+
+    return result;
+  },
 };
 
 export default methods;

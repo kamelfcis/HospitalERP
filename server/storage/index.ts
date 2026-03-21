@@ -670,6 +670,9 @@ export interface IStorage {
     orders: Array<Record<string, unknown>>;
   }>;
 
+  // العرض المجمّع لأوامر الطبيب (قراءة فقط)
+  getGroupedClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string; clinicIds?: string[] }): Promise<Array<Record<string, unknown>>>;
+
   // لوحات المتابعة اليومية (قراءة فقط)
   getDoctorDailySummary(doctorId: string, date: string): Promise<import("./clinic-dashboard-storage").DoctorDailySummaryData>;
   getSecretaryDailySummary(clinicId: string, date: string): Promise<import("./clinic-dashboard-storage").SecretaryDailySummaryData>;

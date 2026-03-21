@@ -51,16 +51,16 @@ export function ServiceGroupPopup({ orders, pendingOrders, patientName, trigger 
 
           <div className="rounded border p-2 bg-muted/30 space-y-1.5 max-h-48 overflow-y-auto">
             {orders.map((o, i) => (
-              <div key={o.id} className="flex items-center justify-between text-xs">
+              <div key={o.id} className={`flex items-center justify-between text-xs ${o.status === "cancelled" ? "opacity-50" : ""}`}>
                 <div className="flex items-center gap-1.5">
                   <span className="text-muted-foreground w-4">{i + 1}.</span>
-                  <span className="font-medium">{o.serviceNameAr || o.serviceNameManual || o.serviceId}</span>
+                  <span className={`font-medium ${o.status === "cancelled" ? "line-through" : ""}`}>
+                    {o.serviceNameAr || o.serviceNameManual || o.serviceId}
+                  </span>
                 </div>
-                {o.status === "executed" ? (
-                  <span className="text-green-600 text-[10px]">✓ منفذ</span>
-                ) : (
-                  <span className="text-yellow-600 text-[10px]">معلق</span>
-                )}
+                {o.status === "executed"  && <span className="text-green-600 text-[10px]">✓ منفذ</span>}
+                {o.status === "pending"   && <span className="text-yellow-600 text-[10px]">معلق</span>}
+                {o.status === "cancelled" && <span className="text-red-500 text-[10px]">ملغي — مستثنى من العدد</span>}
               </div>
             ))}
           </div>

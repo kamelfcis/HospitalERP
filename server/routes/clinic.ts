@@ -648,6 +648,65 @@ export function registerClinicRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ── قائمة أوامر الطبيب المجمّعة حسب (موعد × نوع × جهة) ─────────────────────
+  app.get("/api/clinic-orders/grouped", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const role   = req.session.role!;
+      const perms  = await storage.getUserEffectivePermissions(userId);
+      const canViewOrders   = perms.includes("doctor_orders.view");
+      const canViewPharmacy = perms.includes("clinic.pharmacy_orders");
+      const isAdmin = role === "admin" || role === "owner";
+
+      if (!canViewOrders && !canViewPharmacy && !isAdmin) {
+        return res.status(403).json({ message: "لا تملك صلاحية" });
+      }
+
+      const filters: { targetType?: string; status?: string; targetId?: string; clinicIds?: string[] } = {};
+
+      if (canViewPharmacy && !isAdmin && !canViewOrders) {
+        filters.targetType = "pharmacy";
+        const userRow = await db.execute(sql`SELECT pharmacy_id FROM users WHERE id = ${userId}`);
+        const pharmacyId = (userRow as any).rows?.[0]?.pharmacy_id as string | null;
+        if (pharmacyId) filters.targetId = pharmacyId;
+      }
+
+      if (req.query.targetType as string) filters.targetType = req.query.targetType as string;
+      if (req.query.status    as string) filters.status     = req.query.status    as string;
+      if (req.query.targetId  as string) filters.targetId   = req.query.targetId  as string;
+
+      const scope = await resolveClinicScope(userId, perms);
+      if (!scope.all) {
+        filters.clinicIds = scope.clinicIds;
+      }
+
+      const groups = await storage.getGroupedClinicOrders(filters);
+
+      // Return groups with camelCase top-level fields; lines are camelCased individually
+      const camelGroups = groups.map((g: Record<string, unknown>) => ({
+        groupKey:        g.group_key,
+        appointmentId:   g.appointment_id,
+        orderType:       g.order_type,
+        targetType:      g.target_type,
+        targetId:        g.target_id,
+        targetName:      g.target_name,
+        patientName:     g.patient_name,
+        doctorId:        g.doctor_id,
+        doctorName:      g.doctor_name,
+        appointmentDate: g.appointment_date,
+        totalCount:      g.total_count,
+        pendingCount:    g.pending_count,
+        executedCount:   g.executed_count,
+        cancelledCount:  g.cancelled_count,
+        groupStatus:     g.group_status,
+        latestCreatedAt: g.latest_created_at,
+        lines:           snakeToCamel(g.lines as Array<Record<string, unknown>>),
+      }));
+
+      res.json(camelGroups);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   app.get("/api/clinic-orders/:id", requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;

@@ -32,3 +32,23 @@ export interface ClinicOrder {
 
 export type OrderStatusFilter = "all" | "pending" | "executed" | "cancelled";
 export type OrderTypeFilter = "all" | "service" | "pharmacy";
+
+export interface GroupedClinicOrder {
+  groupKey: string;
+  appointmentId: string;
+  orderType: "service" | "pharmacy";
+  targetType: string;
+  targetId: string | null;
+  targetName: string | null;
+  patientName: string;
+  doctorId: string;
+  doctorName: string;
+  appointmentDate: string | null;
+  totalCount: number;
+  pendingCount: number;
+  executedCount: number;
+  cancelledCount: number;
+  groupStatus: "pending" | "executed" | "mixed";
+  latestCreatedAt: string | null;
+  lines: ClinicOrder[];
+}
