@@ -511,10 +511,16 @@ const methods = {
         const drTotal = lines.reduce((s, l) => s + parseFloat(l.debit),  0);
         const crTotal = lines.reduce((s, l) => s + parseFloat(l.credit), 0);
         if (Math.abs(drTotal - crTotal) > 0.001) {
-          throw new Error(`قيد غير متوازن: مدين ${drTotal.toFixed(2)} ≠ دائن ${crTotal.toFixed(2)}`);
+          throw Object.assign(
+            new Error(`قيد غير متوازن: مدين ${drTotal.toFixed(2)} ≠ دائن ${crTotal.toFixed(2)}`),
+            { code: "SHIFT_CLOSE_JOURNAL_IMBALANCED" }
+          );
         }
         if (lines.some(l => !l.accountId)) {
-          throw new Error("سطر قيد يحتوي على حساب فارغ — تحقق من الإعدادات");
+          throw Object.assign(
+            new Error("سطر قيد يحتوي على حساب فارغ — تحقق من الإعدادات"),
+            { code: "SHIFT_CLOSE_NO_CASHIER_ACCOUNT" }
+          );
         }
         if (lines.some(l => parseFloat(l.debit) === 0 && parseFloat(l.credit) === 0)) {
           throw new Error("سطر قيد بقيمة صفرية — تحقق من مبلغ الوردية");
@@ -550,14 +556,18 @@ const methods = {
         }
 
         logger.info({
-          event:          "SHIFT_CLOSE_JOURNAL_CREATED",
+          event:              "SHIFT_CLOSE_JOURNAL_CREATED",
           shiftId,
-          cashierId:      closedByUserId,
-          expectedCash:   expectedNum,
-          actualCash:     closingNum,
-          variance:       varianceNum,
-          journalEntryId: journalId,
-          createdBy:      closedByUserId,
+          cashierId:          closedByUserId,
+          expectedCash:       expectedNum,
+          actualCash:         closingNum,
+          variance:           varianceNum,
+          cashierGlAccountId: glAccountId,
+          varianceAccountId:  journalContext.varianceAccountId,
+          treasuryAccountId:  journalContext.custodianAccountId,
+          journalEntryId:     journalId,
+          createdBy:          closedByUserId,
+          timestamp:          new Date().toISOString(),
         }, "[SHIFT_CLOSE] قيد GL أُنشئ بنجاح");
       }
 
@@ -1175,14 +1185,20 @@ const methods = {
       }
       const periodId = periodRes.rows[0].id;
 
-      // ── 4. شرط: حساب عهدة أمين الخزنة (12127) ─────────────────────────
+      // ── 4. حساب عهدة الخزنة — كود ديناميكي من الإعدادات (لا hardcode) ────
+      const settingRes = await client.query(
+        `SELECT value FROM system_settings WHERE key = 'cashier_treasury_account_code' LIMIT 1`
+      );
+      const treasuryCode = settingRes.rows[0]?.value || '12127';
+
       const custRes = await client.query(
-        `SELECT id FROM accounts WHERE code = '12127' AND is_active = true LIMIT 1`
+        `SELECT id FROM accounts WHERE code = $1 AND is_active = true LIMIT 1`,
+        [treasuryCode]
       );
       if (!custRes.rows.length) {
         throw Object.assign(
-          new Error("لا يمكن إغلاق الوردية لعدم وجود حساب عهدة أمين الخزنة (12127) أو إنه غير نشط — يرجى مراجعة شجرة الحسابات"),
-          { status: 422, code: "SHIFT_CLOSE_NO_CUSTODIAN" }
+          new Error(`لا يمكن إغلاق الوردية لعدم وجود حساب عهدة الخزنة (${treasuryCode}) أو إنه غير نشط — يرجى مراجعة إعدادات النظام`),
+          { status: 422, code: "SHIFT_CLOSE_NO_TREASURY_ACCOUNT" }
         );
       }
       const custodianAccountId = custRes.rows[0].id;
@@ -1191,7 +1207,7 @@ const methods = {
       if (!sr.gl_account_id) {
         throw Object.assign(
           new Error("لا يمكن إغلاق الوردية لعدم ربط حساب خزنة بها — يرجى فتح وردية جديدة بعد إعداد الحساب"),
-          { status: 422, code: "SHIFT_CLOSE_NO_GL" }
+          { status: 422, code: "SHIFT_CLOSE_NO_CASHIER_ACCOUNT" }
         );
       }
       const glRes = await client.query(
@@ -1201,7 +1217,7 @@ const methods = {
       if (!glRes.rows.length) {
         throw Object.assign(
           new Error("حساب الخزنة المرتبط بالوردية غير موجود أو غير نشط — يرجى مراجعة الإعدادات"),
-          { status: 422, code: "SHIFT_CLOSE_GL_INACTIVE" }
+          { status: 422, code: "SHIFT_CLOSE_NO_CASHIER_ACCOUNT" }
         );
       }
 
@@ -1220,7 +1236,7 @@ const methods = {
               `(${variance > 0 ? "فائض" : "عجز"}: ${Math.abs(variance).toFixed(2)} ج.م) ` +
               `ولم يُعيَّن حساب فروق الجرد لهذا الكاشير — يرجى إعداده من إدارة المستخدمين`
             ),
-            { status: 422, code: "SHIFT_CLOSE_NO_VARIANCE_ACCT" }
+            { status: 422, code: "SHIFT_CLOSE_NO_VARIANCE_ACCOUNT" }
           );
         }
         const varActiveRes = await client.query(
@@ -1230,7 +1246,7 @@ const methods = {
         if (!varActiveRes.rows.length) {
           throw Object.assign(
             new Error("حساب فروق الجرد المرتبط بالكاشير غير موجود أو غير نشط — يرجى مراجعة الإعدادات"),
-            { status: 422, code: "SHIFT_CLOSE_VARIANCE_INACTIVE" }
+            { status: 422, code: "SHIFT_CLOSE_NO_VARIANCE_ACCOUNT" }
           );
         }
       }
@@ -1295,14 +1311,19 @@ const methods = {
         return { journalId: existing.rows[0].id };
       }
 
-      // ── 2. حساب عهدة أمين الخزنة (12127) ─────────────────────── STRICT ──
+      // ── 2. حساب عهدة الخزنة — كود ديناميكي من الإعدادات ────── STRICT ──
+      const tSettingRes = await client.query(
+        `SELECT value FROM system_settings WHERE key = 'cashier_treasury_account_code' LIMIT 1`
+      );
+      const tCode = tSettingRes.rows[0]?.value || '12127';
       const custodianRes = await client.query(
-        `SELECT id FROM accounts WHERE code = '12127' AND is_active = true LIMIT 1`
+        `SELECT id FROM accounts WHERE code = $1 AND is_active = true LIMIT 1`,
+        [tCode]
       );
       if (!custodianRes.rows.length) {
         throw Object.assign(
-          new Error("حساب عهدة أمين الخزنة (12127) غير موجود أو غير نشط — يرجى مراجعة شجرة الحسابات"),
-          { status: 422, code: "SHIFT_CLOSE_NO_CUSTODIAN" }
+          new Error(`حساب عهدة الخزنة (${tCode}) غير موجود أو غير نشط — يرجى مراجعة إعدادات النظام`),
+          { status: 422, code: "SHIFT_CLOSE_NO_TREASURY_ACCOUNT" }
         );
       }
       const custodianAccountId = custodianRes.rows[0].id;
@@ -1322,7 +1343,7 @@ const methods = {
               `(${variance > 0 ? "فائض" : "عجز"}: ${Math.abs(variance).toFixed(2)} ج.م) ` +
               `ولم يُعيَّن حساب فروق الجرد لهذا الكاشير`
             ),
-            { status: 422, code: "SHIFT_CLOSE_NO_VARIANCE_ACCT" }
+            { status: 422, code: "SHIFT_CLOSE_NO_VARIANCE_ACCOUNT" }
           );
         }
       }

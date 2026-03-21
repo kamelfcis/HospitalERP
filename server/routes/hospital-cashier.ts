@@ -283,11 +283,12 @@ export function registerCashierRoutes(app: Express) {
         const msg  = preflightErr instanceof Error ? preflightErr.message : String(preflightErr);
         const code = preflightErr?.status || 422;
         logger.warn({
-          event:    "SHIFT_CLOSE_BLOCKED",
+          event:     "SHIFT_CLOSE_BLOCKED",
           shiftId,
           cashierId: userId,
-          reason:   msg,
-          code:     preflightErr?.code,
+          reason:    msg,
+          code:      preflightErr?.code,
+          timestamp: new Date().toISOString(),
         }, "[SHIFT_CLOSE] محجوب بواسطة التحقق المسبق");
         return res.status(code).json({ message: msg });
       }

@@ -1,0 +1,223 @@
+FINAL HARDENING — Shift Close GL Journal (Production Closure)
+
+Context:
+We have implemented a full Shift Close → GL Journal integration with:
+- pre-flight validation
+- atomic transaction (shift close + journal)
+- variance handling
+- DB-level idempotency
+- structured logging
+- frontend validation
+
+This is the final hardening pass to close this feature completely and ensure:
+- zero accounting risk
+- zero duplicate journals
+- full audit compliance
+- no future regression
+
+==================================================
+A) FINAL GUARANTEE — NO SHIFT CLOSE WITHOUT JOURNAL
+==================================================
+
+Required:
+
+1) Enforce strictly:
+   - shift MUST NOT close unless journal is successfully created
+
+2) Inside transaction:
+   - if journal creation fails → rollback shift close
+
+3) Remove any fallback logic or warnings:
+   - no “log and continue”
+   - no partial success
+
+==================================================
+B) STRICT PRE-FLIGHT VALIDATION (LOCKED RULES)
+==================================================
+
+Before closing:
+
+1) Must have open fiscal period:
+   business_date BETWEEN start_date AND end_date
+   AND is_closed = false
+
+2) Treasury account (custodian 12127):
+   - must exist
+   - must be active
+   - must be asset type
+
+3) Cashier GL account:
+   - must exist
+   - must be active
+
+4) Variance:
+   IF variance ≠ 0:
+      variance account MUST exist
+
+5) All failures:
+   - block shift close
+   - return:
+     - error message (Arabic)
+     - error code (machine-readable)
+
+==================================================
+C) DATABASE-LEVEL IDEMPOTENCY (FINAL FORM)
+==================================================
+
+Replace partial index with unified constraint:
+
+UNIQUE(source_type, source_document_id)
+
+Where:
+- source_type = 'cashier_shift_close'
+- source_document_id = shift_id
+
+Before insert:
+- check existing journal
+- return existing instead of creating new
+
+==================================================
+D) TREASURY ACCOUNT CONFIGURATION (REMOVE HARDCODE)
+==================================================
+
+Current: 12127 is assumed
+
+Required:
+
+1) Move treasury account to system settings
+2) load dynamically during shift close
+3) validate existence + type
+4) fail if not configured
+
+==================================================
+E) JOURNAL INTEGRITY ASSERTION
+==================================================
+
+Before insert:
+
+1) assert:
+   total_debit == total_credit
+
+2) assert:
+   all accounts exist
+   no null account_id
+   no zero-value lines
+
+3) if any check fails:
+   - abort transaction
+   - log error
+
+==================================================
+F) STRUCTURED AUDIT LOG (FINAL FORM)
+==================================================
+
+On success:
+
+{
+  event: "SHIFT_CLOSE_JOURNAL_CREATED",
+  shiftId,
+  cashierId,
+  expectedCash,
+  actualCash,
+  variance,
+  cashierGlAccountId,
+  varianceAccountId,
+  treasuryAccountId,
+  journalEntryId,
+  createdBy,
+  timestamp
+}
+
+On failure:
+
+{
+  event: "SHIFT_CLOSE_BLOCKED",
+  code,
+  reason,
+  shiftId,
+  cashierId,
+  timestamp
+}
+
+==================================================
+G) ERROR CODES (MANDATORY)
+==================================================
+
+Add machine-readable codes:
+
+SHIFT_CLOSE_NO_FISCAL_PERIOD
+SHIFT_CLOSE_NO_TREASURY_ACCOUNT
+SHIFT_CLOSE_NO_CASHIER_ACCOUNT
+SHIFT_CLOSE_NO_VARIANCE_ACCOUNT
+SHIFT_CLOSE_JOURNAL_IMBALANCED
+
+Return:
+- Arabic message
+- error code
+
+==================================================
+H) FRONTEND FINAL VALIDATION
+==================================================
+
+In user management:
+
+1) If user has cashier role:
+   - cashier GL account REQUIRED
+   - variance account REQUIRED
+
+2) Show validation:
+   - live (not only on submit)
+   - clear error messages
+
+3) Prevent saving invalid configuration
+
+==================================================
+I) REGRESSION TEST SUITE (FINAL)
+==================================================
+
+Must pass:
+
+1) No variance → balanced journal
+2) Surplus → variance credited
+3) Shortage → variance debited
+4) Missing variance account → blocked
+5) Missing fiscal period → blocked
+6) Missing treasury account → blocked
+7) Duplicate close → no duplicate journal
+8) Transaction rollback on failure
+
+==================================================
+J) SAFETY CHECK (POST-DEPLOY)
+==================================================
+
+Add optional admin check:
+
+Query:
+- shifts closed without journal (should be ZERO)
+
+==================================================
+K) OUTPUT REQUIRED
+==================================================
+
+Before changes:
+1) files to modify
+2) migration plan for index change
+
+After changes:
+1) modified files list
+2) DB constraint confirmation
+3) validation rules implemented
+4) sample success journal
+5) sample blocked scenarios
+6) regression test results
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+- No shift close without journal
+- No silent fallback
+- No duplicate journals
+- No hidden variance
+- No hardcoded accounts
+- System must be audit-safe and production-ready

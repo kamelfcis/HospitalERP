@@ -504,4 +504,51 @@ export function registerReportsRoutes(app: Express) {
     }
   });
 
+  // ── GET /api/admin/cashier-shifts-without-journal ─────────────────────────
+  //
+  // J) Diagnostic check (post-deploy safety):
+  //    Returns all closed shifts that have no corresponding GL journal entry.
+  //    Under normal operation (after the GL feature was activated) this should
+  //    return ZERO rows.  Legacy shifts closed before the feature was added
+  //    will appear here — this is expected for historical data.
+  //
+  // For admin / owner only.
+  //
+  app.get("/api/admin/cashier-shifts-without-journal", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const result = await pool.query(`
+        SELECT
+          cs.id            AS shift_id,
+          cs.cashier_name,
+          cs.cashier_id,
+          cs.business_date,
+          cs.closing_cash,
+          cs.expected_cash,
+          cs.variance,
+          cs.closed_at,
+          cs.closed_by
+        FROM cashier_shifts cs
+        LEFT JOIN journal_entries je
+               ON je.source_document_id = cs.id
+              AND je.source_type = 'cashier_shift_close'
+        WHERE cs.status = 'closed'
+          AND je.id IS NULL
+        ORDER BY cs.closed_at DESC
+      `);
+      return res.json({
+        ok:         result.rows.length === 0,
+        count:      result.rows.length,
+        rows:       result.rows,
+        note:       result.rows.length > 0
+                      ? "الوردات التي أُغلقت قبل تفعيل ميزة القيد المحاسبي لن يكون لها قيد — هذا متوقع للبيانات التاريخية"
+                      : "جميع الوردات المغلقة لها قيود محاسبية — النظام سليم",
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      logger.error({ err: err.message }, "[CASHIER_JOURNAL_CHECK] failed");
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
 }

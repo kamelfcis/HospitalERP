@@ -367,6 +367,18 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier_collection hardening error");
   }
 
+  // ── 5h-post. Seed default system settings for cashier GL ─────────────────
+  try {
+    await db.execute(sql`
+      INSERT INTO system_settings (key, value)
+      VALUES ('cashier_treasury_account_code', '12127')
+      ON CONFLICT (key) DO NOTHING
+    `);
+    log("[STARTUP] cashier_treasury_account_code setting ensured");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier settings seed error");
+  }
+
   // ── 5h. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
