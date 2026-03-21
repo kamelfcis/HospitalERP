@@ -95,7 +95,7 @@ const mainNavItems: NavItem[] = [
   { title: "أنواع العمليات الجراحية", href: "/surgery-types",      icon: Scissors,          permission: "patient_invoices.view" },
   { title: "تسوية مستحقات الأطباء",   href: "/doctor-settlements", icon: Banknote,          permission: "patient_invoices.view" },
   { title: "شاشة تحصيل الكاشير",     href: "/cashier-collection", icon: Banknote,          permission: "cashier.view" },
-  { title: "تقرير تسليم الدرج",       href: "/cashier-handover",   icon: ClipboardList,     permission: "cashier.view" },
+  { title: "تقرير تسليم الدرج",       href: "/cashier-handover",   icon: ClipboardList,     permission: "cashier.handover_view" },
   { title: "الخدمات والأسعار",        href: "/services-pricing",   icon: Stethoscope,       permission: "services.view" },
   { title: "المخازن",                href: "/warehouses",         icon: Warehouse,          permission: "warehouses.view" },
   { title: "الأقسام",               href: "/departments",        icon: Building2,          permission: "departments.view" },

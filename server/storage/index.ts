@@ -730,6 +730,7 @@ export interface IStorage {
   retryFailedJournals(): Promise<{ total: number; succeeded: number; failed: number }>;
   checkJournalReadiness(invoiceId: string): Promise<{ ready: boolean; critical: string[]; warnings: string[] }>;
   syncInvoiceHeaderJournalStatus(invoiceId: string): Promise<string>;
+  getDistinctCashierNames(): Promise<string[]>;
   getDrawerHandoverSummary(filters: import("./cashier-handover-storage").HandoverFilters): Promise<import("./cashier-handover-storage").HandoverSummaryResult>;
 
   // Receiving corrections

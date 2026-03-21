@@ -62,6 +62,7 @@ export const PERMISSIONS = {
   CASHIER_REFUND: "cashier.refund",
   CASHIER_VIEW_TOTALS: "cashier.view_shift_totals",
   CASHIER_ALL_UNITS: "cashier.all_units",
+  CASHIER_HANDOVER_VIEW: "cashier.handover_view",
 
   SERVICES_VIEW: "services.view",
   SERVICES_MANAGE: "services.manage",
@@ -180,6 +181,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.PATIENT_INVOICES_DISCOUNT,
     PERMISSIONS.CASHIER_VIEW,
     PERMISSIONS.CASHIER_VIEW_TOTALS,
+    PERMISSIONS.CASHIER_HANDOVER_VIEW,
     PERMISSIONS.SERVICES_VIEW,
     PERMISSIONS.WAREHOUSES_VIEW,
     PERMISSIONS.DEPARTMENTS_VIEW,
@@ -332,6 +334,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.CASHIER_COLLECT,
     PERMISSIONS.CASHIER_REFUND,
     PERMISSIONS.CASHIER_VIEW_TOTALS,
+    PERMISSIONS.CASHIER_HANDOVER_VIEW,
   ],
 
   department_admin: [
@@ -502,6 +505,7 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.CASHIER_COLLECT, label: "تحصيل" },
       { key: PERMISSIONS.CASHIER_REFUND, label: "مرتجع" },
       { key: PERMISSIONS.CASHIER_VIEW_TOTALS, label: "عرض ملخص الوردية" },
+      { key: PERMISSIONS.CASHIER_HANDOVER_VIEW, label: "تقرير تسليم الدرج" },
     ],
   },
   {

@@ -84,6 +84,16 @@ export interface HandoverFilters {
 }
 
 const methods = {
+  async getDistinctCashierNames(this: DatabaseStorage): Promise<string[]> {
+    const result = await pool.query<{ cashier_name: string }>(`
+      SELECT DISTINCT cashier_name
+      FROM cashier_shifts
+      WHERE cashier_name IS NOT NULL AND cashier_name <> ''
+      ORDER BY cashier_name
+    `);
+    return result.rows.map(r => r.cashier_name);
+  },
+
   async getDrawerHandoverSummary(
     this: DatabaseStorage,
     filters: HandoverFilters
@@ -112,8 +122,8 @@ const methods = {
       params.push(to);
     }
     if (cashierName && cashierName.trim()) {
-      conditions.push(`s.cashier_name ILIKE $${paramIdx++}`);
-      params.push(`%${cashierName.trim()}%`);
+      conditions.push(`s.cashier_name = $${paramIdx++}`);
+      params.push(cashierName.trim());
     }
     if (status && status !== "all") {
       conditions.push(`s.status = $${paramIdx++}`);
