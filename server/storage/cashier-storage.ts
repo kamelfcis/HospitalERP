@@ -18,6 +18,7 @@ import { eq, and, sql, asc, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import {
   countPendingDocsForUnit as _countPendingDocsForUnit,
+  PENDING_DOCS_SQL,
 } from "./cashier-pending";
 import {
   pharmacies,
@@ -354,12 +355,38 @@ const methods = {
       } as CashierShift;
 
       // ── 2. فحص المستندات المعلّقة + الوردية البديلة ──
+      //  ★ IMPORTANT: use tx.execute() here — NOT pool.query() — to stay on the
+      //    same transaction connection as the FOR UPDATE lock above.
+      //    PENDING_DOCS_SQL is the single predicate from cashier-pending.ts.
       const [pendingCount, otherShift] = await Promise.all([
-        this.getPendingDocCountForUnit(shift),
+        (async () => {
+          if (shift.unitType === "department" && shift.departmentId) {
+            const r = await tx.execute(sql`
+              SELECT COUNT(*) AS count
+              FROM sales_invoice_headers sih
+              INNER JOIN warehouses w ON w.id = sih.warehouse_id
+              WHERE w.department_id = ${shift.departmentId}
+                AND ${sql.raw(PENDING_DOCS_SQL)}
+            `);
+            return parseInt((r as any).rows[0]?.count || "0", 10);
+          }
+          if (shift.pharmacyId) {
+            const r = await tx.execute(sql`
+              SELECT COUNT(*) AS count
+              FROM sales_invoice_headers sih
+              WHERE sih.pharmacy_id = ${shift.pharmacyId}
+                AND ${sql.raw(PENDING_DOCS_SQL)}
+            `);
+            return parseInt((r as any).rows[0]?.count || "0", 10);
+          }
+          return 0;
+        })(),
         this.findOtherOpenShiftForUnit(shiftId, shift),
       ]);
 
       if (pendingCount > 0 && !otherShift) {
+        logger.warn({ shiftId, pendingCount, cashierName: shift.cashierName },
+          "[SHIFT_CLOSE] blocked — pending documents exist with no handover shift");
         throw new Error(`لا يمكن إغلاق الوردية — يوجد ${pendingCount} مستند معلّق ولا توجد وردية أخرى لاستقباله`);
       }
 

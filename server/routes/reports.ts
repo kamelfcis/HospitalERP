@@ -29,13 +29,12 @@
  */
 
 import type { Express, Request, Response } from "express";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
 import { requireAuth } from "./_auth";
 import { logger } from "../lib/logger";
 import {
   getCashierConsistencyReport,
-  repairGhostInvoices,
 } from "../storage/cashier-pending";
 import {
   getStatusAll,
@@ -446,9 +445,27 @@ export function registerReportsRoutes(app: Express) {
   app.post("/api/admin/cashier-consistency/repair", async (req, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const result = await repairGhostInvoices();
-      logger.info(result, "[CASHIER_CONSISTENCY] ghost invoices repaired");
-      return res.json({ ...result, repairedAt: new Date().toISOString() });
+      // Inline repair: atomically set status='collected' for any invoice
+      // that has a real receipt but whose status is still stuck on 'finalized'.
+      // This is the only WRITE in the cashier-consistency admin flow.
+      const result = await pool.query<{ id: string; invoice_number: number }>(`
+        UPDATE sales_invoice_headers
+        SET status = 'collected', updated_at = NOW()
+        WHERE status = 'finalized'
+          AND (
+            EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = id)
+            OR
+            EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = id)
+          )
+        RETURNING id, invoice_number
+      `);
+      const payload = {
+        repairedCount: result.rowCount ?? 0,
+        repairedIds:   result.rows.map(r => r.id),
+        repairedAt:    new Date().toISOString(),
+      };
+      logger.info(payload, "[CASHIER_CONSISTENCY] ghost invoices repaired");
+      return res.json(payload);
     } catch (err: any) {
       logger.error({ err: err.message }, "[CASHIER_CONSISTENCY] repair failed");
       return res.status(500).json({ message: err.message });

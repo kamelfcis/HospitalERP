@@ -38,23 +38,40 @@
 import { pool } from "../db";
 
 /*
- * ── SQL fragments ── لا تُعدَّل إلا من هنا ─────────────────────────────────
- *  استخدمها مباشرةً في interpolated SQL strings ضمن هذا الملف فقط.
- *  الكود خارج هذا الملف يستخدم الدوال المُصدَّرة أدناه — لا الـ fragments.
+ * ── SQL predicate fragments ── defined ONCE, used everywhere ────────────────
+ *
+ *  EXPORTED: use PENDING_SALES_SQL / PENDING_RETURNS_SQL / PENDING_RECEIPT_GUARD_SQL
+ *  anywhere in the codebase that needs the predicate — pool.query(), tx.execute(),
+ *  or Drizzle sql`...${sql.raw(PENDING_RECEIPT_GUARD_SQL)}...` inside transactions.
+ *
+ *  DO NOT copy these strings. Import and reuse.
  */
-const PENDING_SALES_SQL = `
+
+/** Common NOT EXISTS receipt guards — identical for sales and returns */
+export const PENDING_RECEIPT_GUARD_SQL = `
+  AND NOT EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = sih.id)
+  AND NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id)
+`.trim();
+
+/** Full WHERE predicate: sales invoice pending collection */
+export const PENDING_SALES_SQL = `
   sih.status   = 'finalized'
   AND sih.is_return = false
-  AND NOT EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = sih.id)
-  AND NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id)
-`;
+  ${PENDING_RECEIPT_GUARD_SQL}
+`.trim();
 
-const PENDING_RETURNS_SQL = `
+/** Full WHERE predicate: return invoice pending refund */
+export const PENDING_RETURNS_SQL = `
   sih.status   = 'finalized'
   AND sih.is_return = true
-  AND NOT EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = sih.id)
-  AND NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id)
-`;
+  ${PENDING_RECEIPT_GUARD_SQL}
+`.trim();
+
+/** Combined: any document pending collection or refund */
+export const PENDING_DOCS_SQL = `
+  sih.status = 'finalized'
+  ${PENDING_RECEIPT_GUARD_SQL}
+`.trim();
 
 /* ─── Unit scoping helpers ───────────────────────────────────────────────── */
 type UnitScope =
@@ -240,29 +257,13 @@ export async function getCashierConsistencyReport(): Promise<CashierConsistencyR
 }
 
 /*
- * repairGhostInvoices
- * إصلاح ذري للفواتير الوهمية — يُحدّث status إلى 'collected'
- * مقيّد ببيئة التطوير والـ admin endpoints فقط.
- * يُعيد قائمة الفواتير المُصلحة.
+ * ── WRITE OPERATIONS ARE NOT IN THIS FILE ────────────────────────────────
+ *
+ * cashier-pending.ts is READ-ONLY.
+ *
+ * The repair operation (repairGhostInvoices) lives in server/routes/reports.ts
+ * alongside its endpoint handler, where writes belong.
+ *
+ * If you need to add admin repair logic, add it there — not here.
+ * ─────────────────────────────────────────────────────────────────────────
  */
-export async function repairGhostInvoices(): Promise<{
-  repairedCount: number;
-  repairedIds: string[];
-}> {
-  const result = await pool.query<{ id: string; invoice_number: number }>(`
-    UPDATE sales_invoice_headers
-    SET status = 'collected', updated_at = NOW()
-    WHERE status = 'finalized'
-      AND (
-        EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = id)
-        OR
-        EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = id)
-      )
-    RETURNING id, invoice_number
-  `);
-
-  return {
-    repairedCount: result.rowCount ?? 0,
-    repairedIds:   result.rows.map(r => r.id),
-  };
-}
