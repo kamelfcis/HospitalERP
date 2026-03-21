@@ -82,7 +82,8 @@ export function IntakeFormModal({ open, onClose, appointmentId, patientName }: P
 
   const isLocked = !!existing?.isLocked;
 
-  async function handleSave() {
+  /** Core API call — always throws on error, no UI side-effects */
+  async function doSaveApi() {
     const tmpl = VISIT_TYPES.find((t) => t.key === visitType);
     const payload: Partial<IntakeData> = {
       visitType:            visitType || null,
@@ -95,14 +96,16 @@ export function IntakeFormModal({ open, onClose, appointmentId, patientName }: P
       spo2:                 spo2 || null,
       randomBloodSugar:     randomBloodSugar || null,
       intakeNotes:          intakeNotes || null,
-      // Persist the selected template key/label for later review
       templateKey:          visitType || null,
       templateLabel:        tmpl?.label || null,
       selectedPromptValues: visitType ? { visitType } : null,
     };
+    await upsert.mutateAsync(payload as any); // throws on HTTP error
+  }
 
+  async function handleSave() {
     try {
-      await upsert.mutateAsync(payload as any);
+      await doSaveApi();
       toast({ title: "تم حفظ بيانات الاستقبال" });
       onClose();
     } catch (e: any) {
@@ -116,12 +119,16 @@ export function IntakeFormModal({ open, onClose, appointmentId, patientName }: P
 
   async function handleComplete() {
     try {
-      await handleSave();
+      await doSaveApi();               // throws → complete never called if save fails
       await complete.mutateAsync();
       toast({ title: "تم إكمال الاستقبال" });
       onClose();
     } catch (e: any) {
-      toast({ title: "خطأ", description: e?.message, variant: "destructive" });
+      if (e?.status === 423) {
+        toast({ title: "الاستقبال مقفل", description: "بدأ الكشف بالفعل — لا يمكن التعديل.", variant: "destructive" });
+      } else {
+        toast({ title: "خطأ", description: e?.message, variant: "destructive" });
+      }
     }
   }
 

@@ -48,13 +48,14 @@ async function getAppointmentClinicId(appointmentId: string): Promise<string | n
 // ─── Zod validation schemas ─────────────────────────────────────────────────
 
 const upsertIntakeSchema = z.object({
-  visitType:             z.enum(["new", "follow_up", "review_results", "procedure", "urgent"]).optional(),
-  reasonForVisit:        z.string().max(1000).optional(),
-  bloodPressure:         z.string().max(20).optional(),
-  pulse:                 z.string().max(10).optional(),
-  temperature:           z.string().max(10).optional(),
-  weight:                z.string().max(10).optional(),
-  height:                z.string().max(10).optional(),
+  // All fields accept null — frontend sends null for cleared/empty fields
+  visitType:             z.enum(["new", "follow_up", "review_results", "procedure", "urgent"]).optional().nullable(),
+  reasonForVisit:        z.string().max(1000).optional().nullable(),
+  bloodPressure:         z.string().max(20).optional().nullable(),
+  pulse:                 z.string().max(10).optional().nullable(),
+  temperature:           z.string().max(10).optional().nullable(),
+  weight:                z.string().max(10).optional().nullable(),
+  height:                z.string().max(10).optional().nullable(),
   spo2:                  z.string().max(10).optional().nullable(),
   randomBloodSugar:      z.string().max(10).optional().nullable(),
   intakeNotes:           z.string().max(2000).optional().nullable(),
