@@ -55,7 +55,7 @@ export function usePatientHistory(
   const { data: firstPage, isLoading, isError } = useQuery<HistoryPage>({
     queryKey: ["/api/patients", patientId, "previous-consultations", { offset: 0, excludeAppointmentId }],
     queryFn: async () => {
-      const res = await fetch(buildUrl(patientId!, 0, excludeAppointmentId));
+      const res = await fetch(buildUrl(patientId!, 0, excludeAppointmentId), { credentials: "include" });
       if (!res.ok) throw new Error("فشل تحميل تاريخ المريض");
       return res.json();
     },
@@ -84,7 +84,7 @@ export function usePatientHistory(
     setIsLoadingMore(true);
     try {
       const nextOffset = offset + PAGE_SIZE;
-      const res = await fetch(buildUrl(patientId, nextOffset, excludeAppointmentId));
+      const res = await fetch(buildUrl(patientId, nextOffset, excludeAppointmentId), { credentials: "include" });
       if (!res.ok) throw new Error("فشل تحميل مزيد من الزيارات");
       const page: HistoryPage = await res.json();
       setAccumulated(prev => [...prev, ...page.data]);

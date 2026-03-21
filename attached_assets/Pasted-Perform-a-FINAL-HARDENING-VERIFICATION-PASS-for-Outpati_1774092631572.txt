@@ -1,0 +1,147 @@
+Perform a FINAL HARDENING & VERIFICATION PASS for Outpatient Improvement — Step 4.
+
+STRICT GOAL:
+Confirm Step 4 is complete, backward-compatible, access-safe, pagination-correct, and production-ready.
+
+Do NOT implement Step 5.
+Do NOT expand scope.
+Do NOT build a scheduling engine.
+Do NOT add new features unless a discovered bug requires a minimal fix.
+
+==================================================
+REQUIRED OUTPUT FIRST
+==================================================
+
+Print EXACTLY:
+
+1) FILES VERIFIED
+2) FOLLOW-UP VALIDATION
+3) PATIENT HISTORY VALIDATION
+4) ACCESS / SCOPE VALIDATION
+5) PAGINATION VALIDATION
+6) PERFORMANCE VALIDATION
+7) RUNTIME TEST SCENARIOS
+8) BUGS FOUND
+9) FIXES APPLIED (IF ANY)
+10) REMAINING RISKS
+
+Then proceed with verification.
+
+==================================================
+CRITICAL VALIDATION AREAS
+==================================================
+
+A) FOLLOW-UP VALIDATION
+Verify:
+- followUpAfterDays saves correctly
+- followUpReason saves correctly
+- suggestedFollowUpDate saves correctly
+- old consultations with null follow-up fields still load without crash
+- quick buttons work: 3 / 7 / 14 / 30 / 90 / custom
+- manual override works
+- clear/reset works
+- UTC-safe date calculation behaves correctly
+
+Reject if:
+- follow-up fields break existing consultation save/load
+- date shifts occur due to timezone issues
+- quick actions auto-create appointments
+- hidden scheduling side effects exist
+
+B) PATIENT HISTORY VALIDATION
+Verify:
+- more than 5 visits can be browsed
+- current appointment is excluded correctly when excludeId is used
+- history rows show real persisted data only
+- diagnosis summary correct
+- prescriptions summary correct
+- orders summary correct
+- latest-first ordering is correct
+- if multiple consultations exist per appointment, latest one only is used for summary
+
+Reject if:
+- history includes current visit accidentally
+- summaries use fake/default data
+- duplicate rows appear unexpectedly
+- chronology is incorrect
+
+C) ACCESS / SCOPE VALIDATION
+Verify:
+- route still enforces permission correctly
+- clinic scope is enforced server-side
+- no cross-clinic history leakage
+- no frontend-only filtering
+- unauthorized requests are rejected
+
+D) PAGINATION VALIDATION
+Verify:
+- backend pagination is real
+- limit+1 hasMore behavior is correct
+- no missing rows across pages
+- no duplicate rows across load more
+- stable ordering across pages
+- load more appends correctly in UI
+- empty state is correct
+
+E) PERFORMANCE VALIDATION
+Verify:
+- N+1 is eliminated
+- only one main history query per page load
+- aggregated drugs/orders summaries work without per-row DB queries
+- existing indexes are sufficient
+- no redundant indexes needed
+
+F) BACKWARD COMPATIBILITY
+Verify:
+- old consultations load normally
+- old saves still work
+- optional fields remain nullable
+- no existing endpoint behavior broken
+
+==================================================
+RUNTIME TEST SCENARIOS (MANDATORY)
+==================================================
+
+Run and report:
+
+S1 — old consultation with null follow-up fields loads correctly
+S2 — save consultation with follow-up fields populated → persists correctly
+S3 — quick follow-up buttons set expected values
+S4 — custom follow-up days works
+S5 — manual override of suggested date works
+S6 — patient with >5 visits → load more works
+S7 — pagination across multiple pages → no duplicates / no missing rows
+S8 — current appointment excluded correctly
+S9 — cross-clinic access attempt → rejected
+S10 — history with missing optional data → safe UI
+S11 — multiple consultations for same appointment → latest one only used
+S12 — reload / refetch → no state corruption
+
+For each:
+- PASS / FAIL
+- exact reason
+
+==================================================
+FIX POLICY
+==================================================
+
+If any issue is found:
+- fix ONLY within Step 4 scope
+- do NOT redesign modules
+- rerun affected tests
+
+==================================================
+FINAL ACCEPTANCE CRITERIA
+==================================================
+
+System must be:
+- backward-compatible
+- pagination-correct
+- scope-safe
+- performant
+- read-only safe for history
+- no scheduling side effects
+
+If everything passes, explicitly state:
+
+"Step 4 is production-ready within the implemented scope."
