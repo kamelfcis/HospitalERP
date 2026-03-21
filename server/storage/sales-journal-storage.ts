@@ -679,6 +679,21 @@ const methods = {
             eq(journalEntries.status, "draft"),
           ));
 
+        // C-FIX: Post the cashier_collection journal itself.
+        // generateJournalEntry always creates entries in "draft" status.
+        // Without this update the cashier_collection journal stays draft forever,
+        // which means (a) the journal entries screen shows "مسودة" and
+        // (b) account ledger queries (filtered to posted only) show 0 results
+        // for cash/treasury accounts.
+        if (entry) {
+          await db.update(journalEntries)
+            .set({ status: "posted" })
+            .where(and(
+              eq(journalEntries.id, entry.id),
+              eq(journalEntries.status, "draft"),
+            ));
+        }
+
         // B-FIX: Durable traceability when static fallback debit is used.
         // When the cashier shift has no GL account, the static mapping debitAccountId
         // is used instead of the real shift treasury. This is noted durably in every
