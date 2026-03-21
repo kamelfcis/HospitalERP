@@ -223,24 +223,49 @@ const methods = {
 
   // ── عدد المستندات المعلّقة (مبيعات + مرتجعات) ───────────────────────
   async getPendingDocCountForUnit(this: DatabaseStorage, shift: CashierShift): Promise<number> {
+    /*
+     * ══════════════════════════════════════════════════════════════════════════
+     *  قواعد العد الدقيقة — تطابق ما تعرضه شاشة التحصيل:
+     *
+     *  مستند معلّق = status='finalized'
+     *               AND لا يوجد إيصال تحصيل في cashier_receipts (للمبيعات)
+     *               AND لا يوجد إيصال استرداد في cashier_refund_receipts (للمرتجعات)
+     *
+     *  السبب: الفواتير التي أُنشئت إيصالات لها ولكن لم يُحدَّث حقل status
+     *  (بسبب بيانات تجريبية أو خطأ قديم) تظهر هنا "معلّقة" رغم أنها محصّلة فعلياً.
+     *  استبعادها يُحقق التناسق مع شاشة التحصيل التي تستبعدها بالفعل.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
     if (shift.unitType === "department" && shift.departmentId) {
-      const [result] = await db.select({ count: sql<number>`COUNT(*)` })
-        .from(salesInvoiceHeaders)
-        .innerJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
-        .where(and(
-          eq(warehouses.departmentId, shift.departmentId),
-          eq(salesInvoiceHeaders.status, "finalized"),
-        ));
-      return Number(result?.count) || 0;
+      const result = await pool.query<{ count: string }>(`
+        SELECT COUNT(*) AS count
+        FROM sales_invoice_headers sih
+        INNER JOIN warehouses w ON w.id = sih.warehouse_id
+        WHERE w.department_id = $1
+          AND sih.status = 'finalized'
+          AND NOT EXISTS (
+            SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = sih.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id
+          )
+      `, [shift.departmentId]);
+      return parseInt(result.rows[0]?.count || "0", 10);
     }
     if (shift.pharmacyId) {
-      const [result] = await db.select({ count: sql<number>`COUNT(*)` })
-        .from(salesInvoiceHeaders)
-        .where(and(
-          eq(salesInvoiceHeaders.pharmacyId, shift.pharmacyId),
-          eq(salesInvoiceHeaders.status, "finalized"),
-        ));
-      return Number(result?.count) || 0;
+      const result = await pool.query<{ count: string }>(`
+        SELECT COUNT(*) AS count
+        FROM sales_invoice_headers sih
+        WHERE sih.pharmacy_id = $1
+          AND sih.status = 'finalized'
+          AND NOT EXISTS (
+            SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = sih.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id
+          )
+      `, [shift.pharmacyId]);
+      return parseInt(result.rows[0]?.count || "0", 10);
     }
     return 0;
   },
