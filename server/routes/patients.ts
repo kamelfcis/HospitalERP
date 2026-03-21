@@ -191,9 +191,11 @@ export function registerPatientsRoutes(app: Express) {
       const clinicScope = await resolveClinicScope(userId, perms);
       const allowedClinicIds = clinicScope.all ? null : clinicScope.clinicIds;
 
-      const limit = parseInt(String(req.query.limit || "5"));
-      const consultations = await storage.getPatientPreviousConsultations(req.params.id, limit, allowedClinicIds);
-      res.json(consultations);
+      const limit = Math.min(parseInt(String(req.query.limit || "5")), 20);
+      const offset = Math.max(parseInt(String(req.query.offset || "0")), 0);
+      const excludeId = typeof req.query.excludeId === "string" ? req.query.excludeId : null;
+      const result = await storage.getPatientPreviousConsultations(req.params.id, limit, allowedClinicIds, offset, excludeId);
+      res.json(result);
     } catch (error: unknown) {
       res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
     }

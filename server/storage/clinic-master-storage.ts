@@ -957,6 +957,7 @@ const methods = {
   async saveConsultation(this: DatabaseStorage, data: {
     appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string;
     subjectiveSummary?: string; objectiveSummary?: string; assessmentSummary?: string; planSummary?: string; followUpPlan?: string;
+    followUpAfterDays?: number | null; followUpReason?: string | null; suggestedFollowUpDate?: string | null;
     drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[];
     serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[];
   }): Promise<any> {
@@ -980,24 +981,30 @@ const methods = {
         INSERT INTO clinic_consultations
           (appointment_id, chief_complaint, diagnosis, notes, created_by,
            subjective_summary, objective_summary, assessment_summary, plan_summary, follow_up_plan,
+           follow_up_after_days, follow_up_reason, suggested_follow_up_date,
            updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
         ON CONFLICT (appointment_id) DO UPDATE
-          SET chief_complaint     = EXCLUDED.chief_complaint,
-              diagnosis           = EXCLUDED.diagnosis,
-              notes               = EXCLUDED.notes,
-              subjective_summary  = EXCLUDED.subjective_summary,
-              objective_summary   = EXCLUDED.objective_summary,
-              assessment_summary  = EXCLUDED.assessment_summary,
-              plan_summary        = EXCLUDED.plan_summary,
-              follow_up_plan      = EXCLUDED.follow_up_plan,
-              updated_at          = now()
+          SET chief_complaint          = EXCLUDED.chief_complaint,
+              diagnosis                = EXCLUDED.diagnosis,
+              notes                    = EXCLUDED.notes,
+              subjective_summary       = EXCLUDED.subjective_summary,
+              objective_summary        = EXCLUDED.objective_summary,
+              assessment_summary       = EXCLUDED.assessment_summary,
+              plan_summary             = EXCLUDED.plan_summary,
+              follow_up_plan           = EXCLUDED.follow_up_plan,
+              follow_up_after_days     = EXCLUDED.follow_up_after_days,
+              follow_up_reason         = EXCLUDED.follow_up_reason,
+              suggested_follow_up_date = EXCLUDED.suggested_follow_up_date,
+              updated_at               = now()
         RETURNING *
       `, [data.appointmentId, data.chiefComplaint ?? null, data.diagnosis ?? null,
           data.notes ?? null, data.createdBy ?? null,
           data.subjectiveSummary ?? null, data.objectiveSummary ?? null,
           data.assessmentSummary ?? null, data.planSummary ?? null,
-          data.followUpPlan ?? null]);
+          data.followUpPlan ?? null,
+          data.followUpAfterDays ?? null, data.followUpReason ?? null,
+          data.suggestedFollowUpDate ?? null]);
       const consultation = consRes.rows[0];
 
       // احفظ الأدوية (حذف ثم إعادة إدراج — idempotent)

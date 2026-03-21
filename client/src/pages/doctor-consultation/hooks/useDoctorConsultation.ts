@@ -30,6 +30,9 @@ export function useDoctorConsultation(appointmentId: string) {
     assessmentSummary: "",
     planSummary: "",
     followUpPlan: "",
+    followUpAfterDays: null,
+    followUpReason: null,
+    suggestedFollowUpDate: null,
     drugs: [],
     serviceOrders: [],
   });
@@ -61,6 +64,9 @@ export function useDoctorConsultation(appointmentId: string) {
         assessmentSummary: data.assessmentSummary || null,
         planSummary: data.planSummary || null,
         followUpPlan: data.followUpPlan || null,
+        followUpAfterDays: data.followUpAfterDays ?? null,
+        followUpReason: data.followUpReason || null,
+        suggestedFollowUpDate: data.suggestedFollowUpDate || null,
         drugs: data.drugs,
         serviceOrders: data.serviceOrders,
       }, controller.signal).then((r) => r.json());

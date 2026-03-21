@@ -42,6 +42,10 @@ export interface Consultation {
   assessmentSummary?: string;
   planSummary?: string;
   followUpPlan?: string;
+  // ── Step 4: follow-up planning fields (all nullable) ─────────────────────
+  followUpAfterDays?: number | null;
+  followUpReason?: string | null;
+  suggestedFollowUpDate?: string | null;
   drugs: ConsultationDrug[];
   serviceOrders: ServiceOrder[];
   patientName?: string;

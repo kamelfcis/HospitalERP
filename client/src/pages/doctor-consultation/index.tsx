@@ -18,6 +18,7 @@ import { PatientSnapshot } from "./components/PatientSnapshot";
 import { FavoritesPanel } from "./components/FavoritesPanel";
 import { ConsultationTemplatePicker } from "./components/ConsultationTemplatePicker";
 import { StructuredConsultationPanel } from "./components/StructuredConsultationPanel";
+import { FollowUpActions } from "./components/FollowUpActions";
 import { OrdersTrackingPanel } from "./components/OrdersTrackingPanel";
 import { useAuth } from "@/hooks/use-auth";
 import type { ConsultationTemplate } from "./hooks/useConsultationTemplates";
@@ -212,14 +213,27 @@ export default function DoctorConsultation() {
             )}
           </TabsList>
 
-          {/* ── الكشف الهيكلي: SOAP + قوالب ── */}
+          {/* ── الكشف الهيكلي: SOAP + متابعة + قوالب ── */}
           <TabsContent value="structured" className="mt-2">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-muted-foreground">حقول اختيارية — تُحفظ تلقائياً مع باقي الكشف</span>
               <ConsultationTemplatePicker onApply={handleApplyTemplate} />
             </div>
-            <div className="max-h-52 overflow-y-auto">
+            <div className="max-h-64 overflow-y-auto space-y-3">
               <StructuredConsultationPanel form={form} onChange={updateForm} />
+              <div className="border-t pt-2">
+                <FollowUpActions
+                  appointmentDate={form.appointmentDate}
+                  followUpAfterDays={form.followUpAfterDays}
+                  followUpReason={form.followUpReason}
+                  suggestedFollowUpDate={form.suggestedFollowUpDate}
+                  onChange={(patch) => {
+                    if ("followUpAfterDays" in patch) updateForm("followUpAfterDays", patch.followUpAfterDays ?? null);
+                    if ("followUpReason" in patch) updateForm("followUpReason", patch.followUpReason ?? null);
+                    if ("suggestedFollowUpDate" in patch) updateForm("suggestedFollowUpDate", patch.suggestedFollowUpDate ?? null);
+                  }}
+                />
+              </div>
             </div>
           </TabsContent>
 

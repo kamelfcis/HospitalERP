@@ -497,7 +497,7 @@ export interface IStorage {
     forcedDeptIds: string[] | null,
     lineType?: string | null,
   ): Promise<Record<string, unknown>[]>;
-  getPatientPreviousConsultations(patientId: string, limit?: number, allowedClinicIds?: string[] | null): Promise<Array<Record<string, unknown>>>;
+  getPatientPreviousConsultations(patientId: string, limit?: number, allowedClinicIds?: string[] | null, offset?: number, excludeAppointmentId?: string | null): Promise<{ data: Array<Record<string, unknown>>; hasMore: boolean }>;
   checkPatientInScope(patientId: string, forcedDeptIds: string[] | null): Promise<boolean>;
   checkInvoiceInScope(invoiceId: string, forcedDeptIds: string[] | null): Promise<boolean>;
   checkPatientDuplicateCandidates(

@@ -434,6 +434,7 @@ export function registerClinicRoutes(app: Express) {
     try {
       const { appointmentId, chiefComplaint, diagnosis, notes,
               subjectiveSummary, objectiveSummary, assessmentSummary, planSummary, followUpPlan,
+              followUpAfterDays, followUpReason, suggestedFollowUpDate,
               drugs, serviceOrders } = req.body;
       if (!appointmentId) return res.status(400).json({ message: "appointmentId مطلوب" });
       const userId = req.session.userId!;
@@ -451,6 +452,9 @@ export function registerClinicRoutes(app: Express) {
         appointmentId,
         chiefComplaint, diagnosis, notes,
         subjectiveSummary, objectiveSummary, assessmentSummary, planSummary, followUpPlan,
+        followUpAfterDays: followUpAfterDays ?? null,
+        followUpReason: followUpReason ?? null,
+        suggestedFollowUpDate: suggestedFollowUpDate ?? null,
         createdBy: userId,
         drugs: drugs || [],
         serviceOrders: serviceOrders || [],

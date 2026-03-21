@@ -115,6 +115,10 @@ export const clinicConsultations = pgTable("clinic_consultations", {
   assessmentSummary:  text("assessment_summary"),
   planSummary:        text("plan_summary"),
   followUpPlan:       text("follow_up_plan"),
+  // ── Follow-up planning fields (Step 4 — nullable, additive only) ─────────
+  followUpAfterDays:      integer("follow_up_after_days"),
+  followUpReason:         text("follow_up_reason"),
+  suggestedFollowUpDate:  varchar("suggested_follow_up_date"),
   createdBy:       varchar("created_by"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
   updatedAt:       timestamp("updated_at").notNull().defaultNow(),
