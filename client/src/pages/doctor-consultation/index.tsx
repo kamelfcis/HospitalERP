@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Save, Loader2, CheckCircle2, CheckCheck, History } from "lucide-react";
+import { Printer, Save, Loader2, CheckCircle2, CheckCheck, History, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDoctorConsultation } from "./hooks/useDoctorConsultation";
 import { useFavoriteDrugs } from "./hooks/useFavoriteDrugs";
@@ -13,12 +14,19 @@ import { ServicesQuadrant } from "./components/ServicesQuadrant";
 import { DoctorStatementTab } from "./components/DoctorStatementTab";
 import { PrintPrescription } from "./components/PrintPrescription";
 import { PatientHistoryPanel } from "./components/PatientHistoryPanel";
+import { IntakeSummaryBanner } from "./components/IntakeSummaryBanner";
+import { FavoritesPanel } from "./components/FavoritesPanel";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function DoctorConsultation() {
   const params = useParams<{ id: string }>();
   const appointmentId = params.id;
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { hasPermission } = useAuth();
+
+  // Which form field to insert favorites into (complaint or notes)
+  const [favTarget, setFavTarget] = useState<"chiefComplaint" | "notes">("chiefComplaint");
 
   const {
     form,
@@ -44,6 +52,16 @@ export default function DoctorConsultation() {
     addMutation: addFav,
     removeMutation: removeFav,
   } = useFavoriteDrugs(form.clinicId);
+
+  // Insert favorite text into the currently selected target field
+  function handleInsertFavorite(text: string) {
+    const current = favTarget === "chiefComplaint" ? (form.chiefComplaint || "") : (form.notes || "");
+    const separator = current.trim() ? "\n" : "";
+    updateForm(favTarget, current + separator + text);
+    toast({ title: "تم إدراج النص", description: `أُضيف إلى: ${favTarget === "chiefComplaint" ? "الشكوى" : "الملاحظات"}` });
+  }
+
+  const canUseFavorites = hasPermission("clinic.favorites.manage");
 
   if (isLoading) {
     return (
@@ -124,6 +142,11 @@ export default function DoctorConsultation() {
         </div>
       </div>
 
+      {/* بانر بيانات الاستقبال — قراءة فقط للطبيب */}
+      <div className="shrink-0">
+        <IntakeSummaryBanner appointmentId={appointmentId} />
+      </div>
+
       {/* التخطيط 2×2 */}
       <div className="grid grid-cols-2 gap-3 h-40 shrink-0">
         <ComplaintQuadrant
@@ -172,6 +195,12 @@ export default function DoctorConsultation() {
               </TabsTrigger>
             )}
             <TabsTrigger value="statement" className="text-xs h-7">كشف الحساب</TabsTrigger>
+            {canUseFavorites && (
+              <TabsTrigger value="favorites" className="text-xs h-7 gap-1" data-testid="tab-doctor-favorites">
+                <Star className="h-3 w-3" />
+                نصوص محفوظة
+              </TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value="consultation" className="mt-2">
             <p className="text-xs text-muted-foreground">البيانات تُحفظ تلقائياً أثناء الكتابة</p>
@@ -185,6 +214,35 @@ export default function DoctorConsultation() {
           <TabsContent value="statement" className="mt-2">
             <DoctorStatementTab doctorId={form.doctorId} />
           </TabsContent>
+          {canUseFavorites && (
+            <TabsContent value="favorites" className="mt-2">
+              {/* Target selector — doctor picks where to insert text */}
+              <div className="flex items-center gap-2 mb-2 text-xs">
+                <span className="text-muted-foreground shrink-0">الإدراج في:</span>
+                <button
+                  className={`px-2 py-0.5 rounded border text-xs transition-colors ${favTarget === "chiefComplaint" ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 hover:bg-muted"}`}
+                  onClick={() => setFavTarget("chiefComplaint")}
+                  data-testid="button-fav-target-complaint"
+                >
+                  خانة الشكوى
+                </button>
+                <button
+                  className={`px-2 py-0.5 rounded border text-xs transition-colors ${favTarget === "notes" ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/30 hover:bg-muted"}`}
+                  onClick={() => setFavTarget("notes")}
+                  data-testid="button-fav-target-notes"
+                >
+                  خانة الملاحظات
+                </button>
+              </div>
+              <div className="max-h-48 overflow-hidden">
+                <FavoritesPanel
+                  clinicId={form.clinicId}
+                  onInsert={handleInsertFavorite}
+                  currentText={favTarget === "chiefComplaint" ? (form.chiefComplaint || "") : (form.notes || "")}
+                />
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 

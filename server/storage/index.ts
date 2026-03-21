@@ -664,6 +664,18 @@ export interface IStorage {
   // كشف حساب الطبيب - عيادات
   getClinicDoctorStatement(doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<Record<string, unknown>[]>;
 
+  // ── استقبال وقياسات حيوية (Intake) ────────────────────────────────────────
+  getIntakeByAppointment(appointmentId: string): Promise<import("@shared/schema/intake").ClinicVisitIntake | null>;
+  upsertIntake(appointmentId: string, data: Omit<import("@shared/schema/intake").InsertClinicVisitIntake, "appointmentId">, userId: string): Promise<import("@shared/schema/intake").ClinicVisitIntake>;
+  lockIntake(appointmentId: string): Promise<void>;
+  markIntakeCompleted(appointmentId: string, userId: string): Promise<import("@shared/schema/intake").ClinicVisitIntake>;
+
+  // ── المفضلة — نصوص محفوظة للطبيب (Favorites) ──────────────────────────────
+  getDoctorFavorites(doctorId: string, clinicId?: string | null): Promise<import("@shared/schema/intake").ClinicDoctorFavorite[]>;
+  addDoctorFavorite(doctorId: string, data: Omit<import("@shared/schema/intake").InsertClinicDoctorFavorite, "doctorId">): Promise<import("@shared/schema/intake").ClinicDoctorFavorite>;
+  updateDoctorFavorite(id: string, doctorId: string, data: Partial<Pick<import("@shared/schema/intake").ClinicDoctorFavorite, "title" | "content" | "isPinned" | "type">>): Promise<import("@shared/schema/intake").ClinicDoctorFavorite | null>;
+  deleteDoctorFavorite(id: string, doctorId: string): Promise<boolean>;
+
   // تسعير خدمات حسب الطبيب
   getServiceDoctorPrices(serviceId: string): Promise<Record<string, unknown>[]>;
   upsertServiceDoctorPrice(serviceId: string, doctorId: string, price: number): Promise<Record<string, unknown>>;
@@ -820,6 +832,7 @@ import contractsCoreMethods from "./contracts-core-storage";
 import contractsRulesMethods from "./contracts-rules-storage";
 import contractsClaimsMethods from "./contracts-claims-storage";
 import contractsApprovalsMethods from "./contracts-approvals-storage";
+import clinicIntakeMethods from "./clinic-intake-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -850,6 +863,7 @@ Object.assign(
   treasuriesMethods,
   clinicMasterMethods,
   clinicOrdersMethods,
+  clinicIntakeMethods,
   rptRefreshMethods,
   stockCountMethods,
   companiesMethods,

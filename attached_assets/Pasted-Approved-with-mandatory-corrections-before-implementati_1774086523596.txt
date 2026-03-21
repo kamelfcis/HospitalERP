@@ -1,0 +1,97 @@
+Approved with mandatory corrections before implementation.
+
+KEEP the overall plan, BUT apply the following strict corrections:
+
+1) FAVORITES SAFETY
+Do NOT couple favorites specifically to "DiagnosisQuadrant" as diagnosis templates.
+Favorites must be safe reusable text helpers only.
+
+Allowed favorite types:
+- note
+- assessment_note
+- plan
+- followup
+- quick_text
+
+Disallowed:
+- diagnosis
+- auto-diagnosis
+- symptom-to-diagnosis logic
+- suggested diagnosis engine
+
+If the current UI has a DiagnosisQuadrant, favorites may insert editable text there, but the backend/data model must NOT define favorites as diagnosis templates.
+
+2) TEMPLATE DATA MODEL
+Frontend constants are acceptable for Step 1, BUT intake persistence must store enough structure.
+
+clinic_visit_intake must include:
+- templateKey nullable
+- templateLabel nullable
+- structuredFlags nullable json
+- selectedPromptValues nullable json
+
+Do NOT rely only on reasonForVisit default text.
+The selected template and structured answers must be preserved.
+
+3) INTAKE LOCKING RULE
+Add a lightweight protection rule:
+If doctor consultation has already started, intake should become read-only for reception/nursing, or require elevated permission to edit.
+
+At minimum:
+- prevent silent intake changes after consultation start
+- return a clear validation error or warning
+
+4) AUDIT FIELDS
+For clinic_visit_intake add:
+- createdBy
+- updatedBy
+- completedBy
+- createdAt
+- updatedAt
+
+Do not rely on completedBy alone.
+
+For favorites, keep:
+- createdAt
+- updatedAt
+and ensure ownership validation by doctorId.
+
+5) FAVORITES SCOPING
+Prefer model design that supports:
+- doctorId required
+- clinicId nullable
+
+Meaning:
+- clinicId null = doctor-wide favorite
+- clinicId set = clinic-specific favorite
+
+If this is too much for Step 1 implementation, keep current behavior,
+but design the schema/service cleanly so nullable clinicId can be added later without refactor pain.
+
+6) MEDICAL SAFETY LABELING
+UI copy must avoid wording that implies diagnosis automation.
+Use labels such as:
+- Favorites
+- Saved Notes
+- Saved Plans
+- Quick Text
+Do NOT use:
+- Suggested Diagnosis
+- Diagnostic Templates
+- Smart Diagnosis
+
+7) IMPLEMENTATION PRIORITY
+Proceed in this order:
+A) backend schema/storage/routes
+B) reception intake UI
+C) doctor read-only intake banner
+D) favorites panel
+
+8) DO NOT EXPAND SCOPE
+Still Step 1 only.
+No EMR expansion.
+No prescription support.
+No protocol engine.
+No clinical intelligence layer.
+
+Now update the pre-coding plan to reflect these corrections, print the revised plan, then implement Step 1 only.

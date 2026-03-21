@@ -451,6 +451,8 @@ export function registerClinicRoutes(app: Express) {
         drugs: drugs || [],
         serviceOrders: serviceOrders || [],
       });
+      // Lock the intake once a consultation record is created — fire and forget
+      storage.lockIntake(appointmentId).catch(() => {});
       res.json(snakeToCamel(result));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

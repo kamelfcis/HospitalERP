@@ -111,6 +111,10 @@ export const PERMISSIONS = {
   DOCTOR_ORDERS_VIEW:    "doctor_orders.view",      // قسم يرى أوامره
   DOCTOR_ORDERS_EXECUTE: "doctor_orders.execute",   // تنفيذ أمر → فاتورة
   PHARMACY_DRUG_ORDERS:  "clinic.pharmacy_orders",  // الصيدلاني يرى أوامر الأدوية
+  // ── استقبال وقياسات ───────────────────────────────────────────────────
+  CLINIC_INTAKE_VIEW:    "clinic.intake.view",    // عرض بيانات الاستقبال والقياسات
+  CLINIC_INTAKE_MANAGE:  "clinic.intake.manage",  // تسجيل/تعديل الاستقبال (استقبال / تمريض)
+  CLINIC_FAVORITES_MANAGE: "clinic.favorites.manage", // حفظ وإدارة النصوص المفضلة للطبيب
 
   // ── خدمات الأقسام (معمل / أشعة) ──────────────────────────────────────
   DEPT_SERVICES_CREATE:  "dept_services.create",
@@ -200,6 +204,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.DOCTOR_ORDERS_VIEW,
     PERMISSIONS.DOCTOR_ORDERS_EXECUTE,
     PERMISSIONS.PHARMACY_DRUG_ORDERS,
+    PERMISSIONS.CLINIC_INTAKE_VIEW,
+    PERMISSIONS.CLINIC_INTAKE_MANAGE,
+    PERMISSIONS.CLINIC_FAVORITES_MANAGE,
     PERMISSIONS.DEPT_SERVICES_CREATE,
     PERMISSIONS.DEPT_SERVICES_BATCH,
     PERMISSIONS.DEPT_SERVICES_DISCOUNT,
@@ -359,6 +366,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.ADMISSIONS_MANAGE,
     PERMISSIONS.CLINIC_VIEW_OWN,
     PERMISSIONS.CLINIC_BOOK,
+    PERMISSIONS.CLINIC_INTAKE_VIEW,
+    PERMISSIONS.CLINIC_INTAKE_MANAGE,
   ],
 
   doctor: [
@@ -370,6 +379,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.ITEMS_VIEW,
     PERMISSIONS.DOCTOR_CONSULTATION,
     PERMISSIONS.DOCTOR_VIEW_STATEMENT,
+    PERMISSIONS.CLINIC_INTAKE_VIEW,
+    PERMISSIONS.CLINIC_FAVORITES_MANAGE,
   ],
 };
 
@@ -578,6 +589,9 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.DOCTOR_ORDERS_VIEW,     label: "عرض الأوامر الطبية" },
       { key: PERMISSIONS.DOCTOR_ORDERS_EXECUTE,  label: "تنفيذ الأوامر" },
       { key: PERMISSIONS.PHARMACY_DRUG_ORDERS,   label: "أوامر الأدوية للصيدلية" },
+      { key: PERMISSIONS.CLINIC_INTAKE_VIEW,     label: "عرض بيانات الاستقبال" },
+      { key: PERMISSIONS.CLINIC_INTAKE_MANAGE,   label: "تسجيل/تعديل الاستقبال" },
+      { key: PERMISSIONS.CLINIC_FAVORITES_MANAGE, label: "إدارة النصوص المفضلة" },
     ],
   },
   {

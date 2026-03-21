@@ -9,10 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Stethoscope, Loader2, Trash2, RotateCcw } from "lucide-react";
+import { Stethoscope, Loader2, Trash2, RotateCcw, ClipboardList, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { ClinicAppointment } from "../types";
 import { STATUS_LABELS, STATUS_COLORS } from "../types";
+import { IntakeFormModal } from "./IntakeFormModal";
 
 interface Props {
   appointments: ClinicAppointment[];
@@ -35,6 +36,7 @@ export function AppointmentQueue({ appointments, isLoading, onStatusChange, isCh
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [refund, setRefund] = useState<RefundState | null>(null);
+  const [intakeApt, setIntakeApt] = useState<ClinicAppointment | null>(null);
 
   function openRefundDialog(apt: ClinicAppointment) {
     const paid = parseFloat(String(apt.invoicePaidAmount || 0));
@@ -222,6 +224,18 @@ export function AppointmentQueue({ appointments, isLoading, onStatusChange, isCh
                           بدء الكشف
                         </Button>
                       )}
+                      {active && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 text-xs gap-1 text-blue-700 hover:text-blue-800 hover:bg-blue-50"
+                          onClick={() => setIntakeApt(apt)}
+                          data-testid={`button-intake-${apt.id}`}
+                        >
+                          <ClipboardList className="h-3 w-3" />
+                          استقبال
+                        </Button>
+                      )}
                       {active && isCashPaid && (
                         <Button
                           size="sm"
@@ -255,6 +269,16 @@ export function AppointmentQueue({ appointments, isLoading, onStatusChange, isCh
           </TableBody>
         </Table>
       </div>
+
+      {/* Intake modal — opens when reception clicks the "استقبال" button */}
+      {intakeApt && (
+        <IntakeFormModal
+          open={!!intakeApt}
+          onClose={() => setIntakeApt(null)}
+          appointmentId={intakeApt.id}
+          patientName={intakeApt.patientName}
+        />
+      )}
     </>
   );
 }
