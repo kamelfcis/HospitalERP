@@ -11,7 +11,8 @@ export const accountTypeEnum = pgEnum("account_type", [
 export const journalStatusEnum = pgEnum("journal_status", [
   "draft",
   "posted",
-  "reversed"
+  "reversed",
+  "failed"
 ]);
 
 export const itemCategoryEnum = pgEnum("item_category", [

@@ -315,6 +315,21 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] sequence sync error");
   }
 
+  // ── 5h-pre. DB-level hardening for cashier_collection journals ───────────
+  try {
+    // Add 'failed' enum value if not already present (idempotent — safe every boot)
+    await db.execute(sql`ALTER TYPE journal_status ADD VALUE IF NOT EXISTS 'failed'`);
+    // Partial unique index — prevents race-condition duplicate cashier_collection journals
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_je_cashier_collection_dedup
+      ON journal_entries (source_document_id)
+      WHERE source_type = 'cashier_collection'
+    `);
+    log("[STARTUP] journal_status 'failed' + idx_je_cashier_collection_dedup ensured");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier_collection hardening error");
+  }
+
   // ── 5h. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {

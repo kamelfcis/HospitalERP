@@ -262,9 +262,10 @@ export const accountTypeLabels: Record<string, string> = {
 };
 
 export const journalStatusLabels: Record<string, string> = {
-  draft: "مسودة",
-  posted: "مُرحّل",
-  reversed: "ملغي"
+  draft:    "مسودة",
+  posted:   "مُرحّل",
+  reversed: "ملغي",
+  failed:   "فشل",
 };
 
 export const transactionTypeLabels: Record<string, string> = {

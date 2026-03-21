@@ -679,19 +679,66 @@ const methods = {
             eq(journalEntries.status, "draft"),
           ));
 
-        // C-FIX: Post the cashier_collection journal itself.
-        // generateJournalEntry always creates entries in "draft" status.
-        // Without this update the cashier_collection journal stays draft forever,
-        // which means (a) the journal entries screen shows "مسودة" and
-        // (b) account ledger queries (filtered to posted only) show 0 results
-        // for cash/treasury accounts.
+        // C-FIX + HARDENING: Post the cashier_collection journal with full guards.
+        //
+        // Safeguards applied here (per hardening spec A-D):
+        //   A) Pre-post balance verification — query stored lines from DB and
+        //      assert debit == credit before touching status. Throws on violation.
+        //   B) DB-level dedup index (idx_je_cashier_collection_dedup) enforces at
+        //      the postgres layer; app-level check in generateJournalEntry is the
+        //      first guard; this ensures no race-condition duplicates slip through.
+        //   C) Safe posting — WHERE status='draft' prevents double-posting.
+        //      If already 'posted': resolved immediately (idempotent). If 'failed':
+        //      error is thrown so the outer catch can re-log it.
+        //   D) On any failure in this block the outer try/catch marks the audit
+        //      event 'failed' and, if the journal exists but is still draft,
+        //      marks it 'failed' in the DB so it is visible to operators.
         if (entry) {
-          await db.update(journalEntries)
-            .set({ status: "posted" })
-            .where(and(
-              eq(journalEntries.id, entry.id),
-              eq(journalEntries.status, "draft"),
-            ));
+          const currentStatus = entry.status;
+
+          if (currentStatus === "posted") {
+            // Already posted (idempotent re-run) — nothing to do
+            logger.info({ entryId: entry.id }, "[CASHIER_COLLECTION] journal already posted, skipping");
+          } else if (currentStatus !== "draft") {
+            throw new Error(`[GUARD-C] قيد التحصيل ${entry.reference} في حالة غير متوقعة: "${currentStatus}" — رُفض الترحيل`);
+          } else {
+            // GUARD A: Verify stored lines are balanced before posting
+            const [lineBalance] = await db
+              .select({
+                lineCount:   sql<number>`COUNT(*)::int`,
+                totalDebit:  sql<string>`COALESCE(SUM(debit::numeric), 0)::text`,
+                totalCredit: sql<string>`COALESCE(SUM(credit::numeric), 0)::text`,
+              })
+              .from(journalLines)
+              .where(eq(journalLines.journalEntryId, entry.id));
+
+            const lineCount = Number(lineBalance?.lineCount ?? 0);
+            const drTotal   = parseFloat(lineBalance?.totalDebit  ?? "0");
+            const crTotal   = parseFloat(lineBalance?.totalCredit ?? "0");
+
+            if (lineCount === 0) {
+              throw new Error(`[GUARD-A] قيد التحصيل ${entry.reference} لا يحتوي على سطور — رُفض الترحيل`);
+            }
+            if (Math.abs(drTotal - crTotal) > 0.01) {
+              throw new Error(
+                `[GUARD-A] قيد التحصيل ${entry.reference} غير متوازن: ` +
+                `مدين=${drTotal.toFixed(2)} ≠ دائن=${crTotal.toFixed(2)} — رُفض الترحيل`
+              );
+            }
+
+            // GUARD C: Post only if still draft
+            await db.update(journalEntries)
+              .set({ status: "posted" })
+              .where(and(
+                eq(journalEntries.id, entry.id),
+                eq(journalEntries.status, "draft"),
+              ));
+
+            logger.info(
+              { entryId: entry.id, ref: entry.reference, dr: drTotal, cr: crTotal, lines: lineCount },
+              "[CASHIER_COLLECTION] journal posted ✓"
+            );
+          }
         }
 
         // B-FIX: Durable traceability when static fallback debit is used.
@@ -726,6 +773,22 @@ const methods = {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error({ invoiceId, err: msg }, "[CASHIER_COLLECTION] createCashierCollectionJournals: per-invoice failure");
+
+        // GUARD D: Mark the journal entry itself as 'failed' in the DB so it is
+        // clearly visible to operators in the journal entries screen, not silently
+        // left as 'draft'. Only touches draft entries — never overwrites a posted one.
+        try {
+          await db.update(journalEntries)
+            .set({ status: "failed" })
+            .where(and(
+              eq(journalEntries.sourceType, "cashier_collection"),
+              eq(journalEntries.sourceDocumentId, invoiceId),
+              eq(journalEntries.status, "draft"),
+            ));
+        } catch (_markErr) {
+          // Best-effort — do not shadow the original error
+        }
+
         if (eventId) {
           await updateAcctEvent(eventId, "failed", { errorMessage: msg });
         } else {

@@ -1,0 +1,157 @@
+POST-FIX HARDENING REQUIRED — Cashier Collection Journals
+
+Context:
+We have fixed the core issue where cashier_collection journals were left in draft and now both:
+- sales_invoice journals
+- cashier_collection journals
+are correctly posted.
+
+However, this fix must now be hardened to ensure:
+- no duplicate journals
+- no invalid posting
+- no silent failures
+- full accounting integrity
+
+This is NOT a new feature — this is a stability and financial integrity hardening phase.
+
+==================================================
+REQUIRED VALIDATIONS & SAFEGUARDS
+==================================================
+
+A) STRICT POSTING SEQUENCE (MANDATORY)
+
+Ensure cashier_collection journal is ONLY posted after:
+1) journal entry is fully created
+2) all lines exist and are balanced
+3) debit == credit
+
+Add explicit validation before posting:
+- if journal is not balanced → FAIL
+- if any required account is missing → FAIL
+- do NOT allow posting incomplete journal
+
+==================================================
+B) IDEMPOTENCY — PREVENT DUPLICATE JOURNALS (CRITICAL)
+
+This is mandatory.
+
+For each cashier collection:
+- only ONE journal must ever exist
+
+Implement protection using:
+- source_type = "cashier_collection"
+- source_id = collection ID
+
+Before creating a new journal:
+- check if a journal already exists for this source
+- if exists:
+    - do NOT create another
+    - do NOT repost blindly
+    - return existing journal
+
+If needed:
+- enforce unique constraint at DB level:
+  (source_type, source_id)
+
+==================================================
+C) SAFE POSTING — NO DOUBLE POST
+
+Before posting:
+- if journal.status == "posted"
+    → skip posting
+- do NOT repost a posted journal
+
+==================================================
+D) FAILURE HANDLING (MANDATORY)
+
+If journal creation or posting fails:
+- set journal_status = "failed"
+- store detailed error message in journal_error
+- do NOT silently continue
+
+Error message must include:
+- line_type
+- account used
+- reason of failure
+
+==================================================
+E) ACCOUNTING CONSISTENCY CHECK
+
+Before posting cashier_collection:
+
+Validate:
+- Dr = Treasury / Cashbox account
+- Cr = Receivable / clearing account
+
+Reject if:
+- treasury account is missing
+- receivable account is missing
+- account category mismatch
+
+==================================================
+F) LINK BETWEEN SALES AND COLLECTION
+
+Ensure clear linkage:
+
+- sales_invoice journal → source_type = sales_invoice
+- cashier_collection journal → source_type = cashier_collection
+
+Do NOT mix logic or reuse incorrectly.
+
+Each must be independently:
+- created
+- validated
+- posted
+
+==================================================
+G) LEDGER CONSISTENCY VALIDATION
+
+After posting, verify:
+
+- journal appears in getAccountLedger
+- balances are updated correctly
+- no draft journals are included in ledger
+
+==================================================
+H) TEST SCENARIOS (MANDATORY)
+
+Validate all cases:
+
+1) normal flow:
+   create invoice → collect → both journals posted
+
+2) duplicate request:
+   collect same invoice twice
+   → no duplicate journal
+
+3) failure scenario:
+   break mapping intentionally
+   → journal_status = failed
+   → no posting
+
+4) partial failure:
+   sales posted but collection fails
+   → system remains consistent
+
+==================================================
+I) OUTPUT REQUIRED
+
+After implementation, provide:
+
+1) exact modified files
+2) safeguards added per section (A–H)
+3) proof of:
+   - no duplicate journals
+   - no double posting
+   - correct ledger behavior
+4) sample journals before/after validation
+
+==================================================
+IMPORTANT CONSTRAINTS
+
+- Do NOT rely on UI to prevent duplicates
+- Do NOT allow silent failures
+- Do NOT allow posting without validation
+- Do NOT assume single execution path (handle retries safely)
+
+This is a financial system — correctness is mandatory.
