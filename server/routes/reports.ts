@@ -34,6 +34,10 @@ import { sql } from "drizzle-orm";
 import { requireAuth } from "./_auth";
 import { logger } from "../lib/logger";
 import {
+  getCashierConsistencyReport,
+  repairGhostInvoices,
+} from "../storage/cashier-pending";
+import {
   getStatusAll,
   runRefresh,
   REFRESH_KEYS,
@@ -399,6 +403,54 @@ export function registerReportsRoutes(app: Express) {
         repairedAt: new Date().toISOString(),
       });
     } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── GET /api/admin/cashier-consistency ────────────────────────────────────
+  //
+  // Diagnostic report for cashier collection integrity.
+  // Detects "ghost invoices": invoice has a real receipt but status is still
+  // 'finalized' instead of 'collected'.
+  //
+  // Returns:
+  //   ok              — true if no ghost invoices found
+  //   ghostSalesCount — invoices with cashier_receipt but status=finalized
+  //   ghostReturnsCount — returns with cashier_refund_receipt but status=finalized
+  //   rows            — detail list for manual inspection
+  //
+  // For admin / owner only.
+  //
+  app.get("/api/admin/cashier-consistency", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const report = await getCashierConsistencyReport();
+      return res.json({ ...report, generatedAt: new Date().toISOString() });
+    } catch (err: any) {
+      logger.error({ err: err.message }, "[CASHIER_CONSISTENCY] report failed");
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── POST /api/admin/cashier-consistency/repair ────────────────────────────
+  //
+  // Atomically repairs all ghost invoices:
+  //   UPDATE sales_invoice_headers SET status='collected'
+  //   WHERE status='finalized' AND EXISTS receipt
+  //
+  // This is a safe repair: collected is the correct final state for an
+  // invoice that already has a real cashier receipt.
+  //
+  // For admin / owner only.
+  //
+  app.post("/api/admin/cashier-consistency/repair", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const result = await repairGhostInvoices();
+      logger.info(result, "[CASHIER_CONSISTENCY] ghost invoices repaired");
+      return res.json({ ...result, repairedAt: new Date().toISOString() });
+    } catch (err: any) {
+      logger.error({ err: err.message }, "[CASHIER_CONSISTENCY] repair failed");
       return res.status(500).json({ message: err.message });
     }
   });

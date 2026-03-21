@@ -17,6 +17,9 @@ import { db } from "../db";
 import { eq, and, sql, asc, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import {
+  countPendingDocsForUnit as _countPendingDocsForUnit,
+} from "./cashier-pending";
+import {
   pharmacies,
   accounts,
   drawerPasswords,
@@ -195,77 +198,15 @@ const methods = {
     return shift || null;
   },
 
-  // ── عدد الفواتير المعلّقة (مبيعات فقط) ───────────────────────────────
-  async getPendingInvoiceCountForUnit(this: DatabaseStorage, shift: CashierShift): Promise<number> {
-    if (shift.unitType === "department" && shift.departmentId) {
-      const [result] = await db.select({ count: sql<number>`COUNT(*)` })
-        .from(salesInvoiceHeaders)
-        .innerJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
-        .where(and(
-          eq(warehouses.departmentId, shift.departmentId),
-          eq(salesInvoiceHeaders.status, "finalized"),
-          eq(salesInvoiceHeaders.isReturn, false),
-        ));
-      return Number(result?.count) || 0;
-    }
-    if (shift.pharmacyId) {
-      const [result] = await db.select({ count: sql<number>`COUNT(*)` })
-        .from(salesInvoiceHeaders)
-        .where(and(
-          eq(salesInvoiceHeaders.pharmacyId, shift.pharmacyId),
-          eq(salesInvoiceHeaders.status, "finalized"),
-          eq(salesInvoiceHeaders.isReturn, false),
-        ));
-      return Number(result?.count) || 0;
-    }
-    return 0;
-  },
-
   // ── عدد المستندات المعلّقة (مبيعات + مرتجعات) ───────────────────────
+  //  ★ المصدر الوحيد للحقيقة: cashier-pending.ts → countPendingDocsForUnit
+  //  ★ لا تُعدِّل هذا المنطق هنا — عدِّل cashier-pending.ts فقط
   async getPendingDocCountForUnit(this: DatabaseStorage, shift: CashierShift): Promise<number> {
-    /*
-     * ══════════════════════════════════════════════════════════════════════════
-     *  قواعد العد الدقيقة — تطابق ما تعرضه شاشة التحصيل:
-     *
-     *  مستند معلّق = status='finalized'
-     *               AND لا يوجد إيصال تحصيل في cashier_receipts (للمبيعات)
-     *               AND لا يوجد إيصال استرداد في cashier_refund_receipts (للمرتجعات)
-     *
-     *  السبب: الفواتير التي أُنشئت إيصالات لها ولكن لم يُحدَّث حقل status
-     *  (بسبب بيانات تجريبية أو خطأ قديم) تظهر هنا "معلّقة" رغم أنها محصّلة فعلياً.
-     *  استبعادها يُحقق التناسق مع شاشة التحصيل التي تستبعدها بالفعل.
-     * ══════════════════════════════════════════════════════════════════════════
-     */
     if (shift.unitType === "department" && shift.departmentId) {
-      const result = await pool.query<{ count: string }>(`
-        SELECT COUNT(*) AS count
-        FROM sales_invoice_headers sih
-        INNER JOIN warehouses w ON w.id = sih.warehouse_id
-        WHERE w.department_id = $1
-          AND sih.status = 'finalized'
-          AND NOT EXISTS (
-            SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = sih.id
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id
-          )
-      `, [shift.departmentId]);
-      return parseInt(result.rows[0]?.count || "0", 10);
+      return _countPendingDocsForUnit({ unitType: "department", departmentId: shift.departmentId });
     }
     if (shift.pharmacyId) {
-      const result = await pool.query<{ count: string }>(`
-        SELECT COUNT(*) AS count
-        FROM sales_invoice_headers sih
-        WHERE sih.pharmacy_id = $1
-          AND sih.status = 'finalized'
-          AND NOT EXISTS (
-            SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = sih.id
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id
-          )
-      `, [shift.pharmacyId]);
-      return parseInt(result.rows[0]?.count || "0", 10);
+      return _countPendingDocsForUnit({ unitType: "pharmacy", pharmacyId: shift.pharmacyId });
     }
     return 0;
   },
@@ -487,12 +428,18 @@ const methods = {
   // ── قائمة الفواتير المعلّقة (مبيعات) ─────────────────────────────────
   //  تُضمَّن claimedByShiftId للعرض البصري — GET لا يكتب
   async getPendingSalesInvoices(this: DatabaseStorage, unitType: string, unitId: string, search?: string): Promise<any[]> {
-    const baseConditions = [eq(salesInvoiceHeaders.status, "finalized"), eq(salesInvoiceHeaders.isReturn, false)];
+    // ★ قاعدة "المعلّق": تُطبَّق على مستوى SQL — المصدر: cashier-pending.ts
+    const baseConditions = [
+      eq(salesInvoiceHeaders.status, "finalized"),
+      eq(salesInvoiceHeaders.isReturn, false),
+      sql`NOT EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = ${salesInvoiceHeaders.id})`,
+      sql`NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = ${salesInvoiceHeaders.id})`,
+    ];
     const unitCondition = unitType === "department"
       ? eq(warehouses.departmentId, unitId)
       : eq(salesInvoiceHeaders.pharmacyId, unitId);
 
-    const results = await db.select({
+    const filtered = await db.select({
       id:                  salesInvoiceHeaders.id,
       invoiceNumber:       salesInvoiceHeaders.invoiceNumber,
       invoiceDate:         salesInvoiceHeaders.invoiceDate,
@@ -514,19 +461,7 @@ const methods = {
     .where(and(...baseConditions, unitCondition))
     .orderBy(asc(salesInvoiceHeaders.createdAt));
 
-    // ── Guard إضافي: استبعاد الفواتير التي لها إيصال تحصيل فعلي ──────────
-    // يمنع ظهور الفواتير في حالة inconsistency بين status و cashier_receipts
-    let filtered = results;
-    if (results.length > 0) {
-      const ids = results.map(r => r.id);
-      const existingReceipts = await db.select({ invoiceId: cashierReceipts.invoiceId })
-        .from(cashierReceipts)
-        .where(inArray(cashierReceipts.invoiceId, ids));
-      const alreadyCollected = new Set(existingReceipts.map(r => r.invoiceId));
-      filtered = results.filter(r => !alreadyCollected.has(r.id));
-    }
-
-    // ── إثراء إضافي: اسم منشئ الفاتورة من جدول users (created_by = UUID) ──
+    // ── إثراء: اسم منشئ الفاتورة من جدول users (created_by = UUID) ──────
     const creatorIdSet = new Set(filtered.map(r => r.createdBy).filter((v): v is string => !!v));
     const creatorIds = Array.from(creatorIdSet);
     const nameMap = new Map<string, string>();
@@ -556,12 +491,18 @@ const methods = {
 
   // ── قائمة المرتجعات المعلّقة ─────────────────────────────────────────
   async getPendingReturnInvoices(this: DatabaseStorage, unitType: string, unitId: string, search?: string): Promise<any[]> {
-    const baseConditions = [eq(salesInvoiceHeaders.status, "finalized"), eq(salesInvoiceHeaders.isReturn, true)];
+    // ★ قاعدة "المعلّق": تُطبَّق على مستوى SQL — المصدر: cashier-pending.ts
+    const baseConditions = [
+      eq(salesInvoiceHeaders.status, "finalized"),
+      eq(salesInvoiceHeaders.isReturn, true),
+      sql`NOT EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = ${salesInvoiceHeaders.id})`,
+      sql`NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = ${salesInvoiceHeaders.id})`,
+    ];
     const unitCondition = unitType === "department"
       ? eq(warehouses.departmentId, unitId)
       : eq(salesInvoiceHeaders.pharmacyId, unitId);
 
-    const results = await db.select({
+    const filtered = await db.select({
       id:                  salesInvoiceHeaders.id,
       invoiceNumber:       salesInvoiceHeaders.invoiceNumber,
       invoiceDate:         salesInvoiceHeaders.invoiceDate,
@@ -583,17 +524,6 @@ const methods = {
     .leftJoin(warehouses, eq(salesInvoiceHeaders.warehouseId, warehouses.id))
     .where(and(...baseConditions, unitCondition))
     .orderBy(asc(salesInvoiceHeaders.createdAt));
-
-    // ── Guard إضافي: استبعاد المرتجعات التي لها إيصال صرف فعلي ──────────
-    let filtered = results;
-    if (results.length > 0) {
-      const ids = results.map(r => r.id);
-      const existingRefunds = await db.select({ invoiceId: cashierRefundReceipts.invoiceId })
-        .from(cashierRefundReceipts)
-        .where(inArray(cashierRefundReceipts.invoiceId, ids));
-      const alreadyRefunded = new Set(existingRefunds.map(r => r.invoiceId));
-      filtered = results.filter(r => !alreadyRefunded.has(r.id));
-    }
 
     // ── إثراء إضافي: اسم منشئ الفاتورة من جدول users (created_by = UUID) ──
     const creatorIdSet2 = new Set(filtered.map(r => r.createdBy).filter((v): v is string => !!v));

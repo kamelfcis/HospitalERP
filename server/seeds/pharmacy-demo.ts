@@ -3,6 +3,12 @@
  *
  * يُستدعى فقط من route بيئة التطوير: POST /api/seed/pharmacy-sales-demo
  * لا علاقة له بمنطق الإنتاج في invoicing routes
+ *
+ * @invariant CASHIER RECEIPTS — قاعدة حرام كسرها:
+ *   يحظر إدراج صفوف مباشرةً في cashier_receipts أو cashier_refund_receipts هنا.
+ *   إنشاء الإيصال وتحديث حالة الفاتورة يجب أن يتما دائماً ضمن نفس الـ transaction
+ *   عبر collectInvoices() / refundInvoices() في cashier-storage.ts.
+ *   إدراج إيصال بدون تحديث الحالة يخلق "فاتورة وهمية" تمنع إغلاق الوردية.
  */
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";

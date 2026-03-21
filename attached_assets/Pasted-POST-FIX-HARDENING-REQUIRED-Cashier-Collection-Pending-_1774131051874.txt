@@ -1,0 +1,175 @@
+POST-FIX HARDENING REQUIRED — Cashier Collection / Pending Documents / Shift Close Consistency
+
+Context:
+We fixed a real production bug caused by two root causes:
+1) ghost invoices created by seed/test data:
+   receipts existed in cashier_receipts, but invoice.status remained finalized instead of collected
+2) logic mismatch:
+   collection screen excluded invoices with receipts using NOT EXISTS,
+   but getPendingDocCountForUnit counted finalized invoices without applying the same guard
+
+This caused the collection screen to show zero pending invoices while shift-close validation still blocked closing.
+
+The immediate fix is good.
+Now I want a structural hardening pass so this class of bug cannot happen again.
+
+==================================================
+GOAL
+==================================================
+
+Make the system internally consistent so that:
+- an invoice with an actual cashier receipt cannot remain in a logically stale status
+- pending-document validation and display logic always use the same business definition
+- shift close cannot be blocked by phantom pending invoices
+- future seed / migration / retry / repair flows cannot silently reintroduce this mismatch
+
+==================================================
+A) CENTRALIZE THE BUSINESS DEFINITION OF "PENDING"
+==================================================
+
+Right now, multiple code paths reason about whether an invoice/return is still pending collection/refund.
+
+Required:
+1) define one shared source of truth for pending logic
+2) use it in:
+   - collection screen invoice search
+   - shift close validation
+   - any pending counts / summary cards / operational guards
+3) do NOT allow separate SQL fragments to drift again
+
+Preferred implementation:
+- create a shared helper / shared query builder / shared SQL fragment for:
+  - pending sales invoice
+  - pending sales return
+- then reuse it everywhere
+
+The same definition must be used consistently across:
+- display
+- validation
+- blocking rules
+- counts
+
+==================================================
+B) COLLECTION STATUS CONSISTENCY HARDENING
+==================================================
+
+This is critical.
+
+An invoice with a real cashier receipt should not remain in status=finalized.
+A return with a real refund receipt should not remain in a stale pre-refund status.
+
+Required:
+1) review the receipt creation flow end-to-end
+2) ensure receipt creation and source document status transition are always coordinated
+3) if possible, wrap in one transaction:
+   - create cashier_receipt / cashier_refund_receipt
+   - update source invoice/return status
+   - update related journal/header status if required
+4) if transaction wrapping is not feasible everywhere, add a central post-receipt sync function and enforce its usage everywhere
+
+Goal:
+- after successful receipt creation, invoice/return status must be consistent immediately
+- no ghost invoice/ghost return states
+
+==================================================
+C) DATABASE-LEVEL OR DEFENSIVE CONSISTENCY CHECKS
+==================================================
+
+Add at least one defensive layer beyond application logic.
+
+Acceptable options:
+1) a diagnostic query/report
+2) startup integrity check in non-production/dev
+3) admin consistency endpoint
+4) background consistency checker
+5) DB constraint if feasible without breaking valid workflows
+
+At minimum, I want a reusable diagnostic that finds:
+- invoices with cashier_receipt but status not collected
+- returns with cashier_refund_receipt but status not refunded/collected according to current design
+- header says posted while actual journal is draft/missing
+- any other source-document vs actual-event mismatch already known in this module
+
+==================================================
+D) SEED / TEST DATA SAFETY
+==================================================
+
+The bug was partly introduced by seed data inserting receipts directly.
+
+Required:
+1) review seed/test data creation paths
+2) prohibit direct insertion of receipts without the corresponding status sync
+3) if seed needs receipts, it must go through the same domain flow or a safe seed helper
+4) document any shortcuts that are still allowed and why
+
+Goal:
+- test/seed data must not create impossible business states
+
+==================================================
+E) SHIFT CLOSE VALIDATION MUST STAY EVENT-AWARE
+==================================================
+
+Shift close must not rely on raw document status alone.
+It must remain aware of actual collection/refund events.
+
+Required:
+1) keep NOT EXISTS / event-aware guards in the pending-doc validation
+2) ensure sales and returns are both covered
+3) verify open/close validation uses the same definition as the UI display
+
+Also verify:
+- a collected invoice is not counted pending even if status is stale
+- a refunded return is not counted pending even if status is stale
+- a truly uncollected/unrefunded document is still blocked correctly
+
+==================================================
+F) REGRESSION TESTS (MANDATORY)
+==================================================
+
+Add or run validation scenarios for all of these:
+
+1) Sales invoice:
+   - finalized, no receipt => pending
+   - finalized, receipt exists => not pending
+   - collected, receipt exists => not pending
+
+2) Return:
+   - finalized, no refund receipt => pending
+   - finalized/refundable, refund receipt exists => not pending
+
+3) Shift close:
+   - UI pending list and validation count must match exactly
+   - no case where UI shows zero but validation blocks
+   - no case where validation allows close while UI still shows pending docs
+
+4) Seed/test safety:
+   - direct receipt seed without status sync must be prevented or detected
+
+==================================================
+G) OUTPUT I WANT
+==================================================
+
+Before implementation, give me:
+1) exact files you will modify
+2) how you will centralize pending logic
+3) how you will harden receipt/status consistency
+4) what diagnostic/consistency checks you will add
+5) what seed/test paths are risky today
+
+After implementation, give me:
+1) modified files list
+2) exact shared pending logic now used
+3) exact consistency safeguards added
+4) exact seed/test data protection added
+5) regression test results
+6) proof that UI display and shift-close validation can no longer drift apart
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+- Do NOT stop at patching one query
+- Do NOT rely on manual DB repair as the long-term solution
+- Do NOT allow display logic and validation logic to diverge again
+- Do NOT allow receipts to exist while source status remains stale
+- Build a structural prevention fix, not a one-off repair
