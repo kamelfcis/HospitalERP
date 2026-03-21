@@ -52,6 +52,12 @@ import {
   cancelApproval,
   ApprovalServiceError,
 } from "../lib/contract-approval-service";
+import {
+  settleBatch,
+  getSettlementsByBatch,
+  getBatchReconciliation,
+  SettlementServiceError,
+} from "../lib/contract-claim-settlement-service";
 
 export function registerContractRoutes(app: Express) {
   // ──────────────────────────────────────────────────────────────────────────
@@ -751,6 +757,75 @@ export function registerContractRoutes(app: Express) {
         });
         res.json(result);
       } catch (err) { handleApprovalError(err, res); }
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  PHASE 5 — SETTLEMENT ROUTES
+  //  POST /api/claim-batches/:id/settle
+  //  GET  /api/claim-batches/:id/settlements
+  //  GET  /api/claim-batches/:id/reconciliation
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function handleSettlementError(err: unknown, res: any) {
+    if (err instanceof SettlementServiceError) {
+      const code = err.code === "NOT_FOUND" ? 404 : 400;
+      return res.status(code).json({ message: err.message });
+    }
+    const msg = err instanceof Error ? err.message : "خطأ في التسوية";
+    return res.status(500).json({ message: msg });
+  }
+
+  /** POST /api/claim-batches/:id/settle — تسوية دفعة */
+  app.post("/api/claim-batches/:id/settle",
+    requireAuth, checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_SETTLE),
+    async (req, res) => {
+      try {
+        const schema = z.object({
+          settlementDate:      z.string().min(1, "تاريخ التسوية مطلوب"),
+          settledAmount:       z.number().positive("مبلغ التسوية يجب أن يكون موجباً"),
+          bankAccountId:       z.string().nullable().optional(),
+          companyArAccountId:  z.string().nullable().optional(),
+          referenceNumber:     z.string().optional(),
+          notes:               z.string().optional(),
+          lines:               z.array(z.object({
+            claimLineId:      z.string().min(1),
+            settledAmount:    z.number().nonnegative(),
+            writeOffAmount:   z.number().nonnegative().optional(),
+            adjustmentReason: z.string().optional(),
+          })).min(1, "يجب تحديد سطر واحد على الأقل"),
+        });
+        const body = schema.parse(req.body);
+        const result = await settleBatch(req.params.id, body);
+        res.status(201).json(result);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          return res.status(400).json({ message: err.errors[0]?.message ?? "بيانات غير صالحة" });
+        }
+        handleSettlementError(err, res);
+      }
+    }
+  );
+
+  /** GET /api/claim-batches/:id/settlements — سجل التسويات */
+  app.get("/api/claim-batches/:id/settlements",
+    requireAuth, checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_VIEW),
+    async (req, res) => {
+      try {
+        const settlements = await getSettlementsByBatch(req.params.id);
+        res.json(settlements);
+      } catch (err) { handleSettlementError(err, res); }
+    }
+  );
+
+  /** GET /api/claim-batches/:id/reconciliation — تقرير المطابقة */
+  app.get("/api/claim-batches/:id/reconciliation",
+    requireAuth, checkPermission(PERMISSIONS.CONTRACTS_CLAIMS_VIEW),
+    async (req, res) => {
+      try {
+        const recon = await getBatchReconciliation(req.params.id);
+        res.json(recon);
+      } catch (err) { handleSettlementError(err, res); }
     }
   );
 }

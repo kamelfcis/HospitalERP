@@ -150,9 +150,13 @@ export const contractClaimBatches = pgTable("contract_claim_batches", {
   submittedAt:       timestamp("submitted_at"),
   submittedBy:       varchar("submitted_by"),
   companyReferenceNo: text("company_reference_no"),
-  totalClaimed:      decimal("total_claimed", { precision: 18, scale: 2 }).notNull().default("0"),
-  totalApproved:     decimal("total_approved", { precision: 18, scale: 2 }).notNull().default("0"),
-  totalRejected:     decimal("total_rejected", { precision: 18, scale: 2 }).notNull().default("0"),
+  totalClaimed:      decimal("total_claimed",      { precision: 18, scale: 2 }).notNull().default("0"),
+  totalApproved:     decimal("total_approved",     { precision: 18, scale: 2 }).notNull().default("0"),
+  totalRejected:     decimal("total_rejected",     { precision: 18, scale: 2 }).notNull().default("0"),
+  totalSettled:      decimal("total_settled",      { precision: 18, scale: 2 }).notNull().default("0"),
+  totalOutstanding:  decimal("total_outstanding",  { precision: 18, scale: 2 }).notNull().default("0"),
+  totalVariance:     decimal("total_variance",     { precision: 18, scale: 2 }).notNull().default("0"),
+  totalWriteoff:     decimal("total_writeoff",     { precision: 18, scale: 2 }).notNull().default("0"),
   notes:             text("notes"),
   journalEntryId:    varchar("journal_entry_id"),
   createdAt:         timestamp("created_at").notNull().defaultNow(),
@@ -254,8 +258,43 @@ export const contractApprovals = pgTable("contract_approvals", {
   contractStatusIdx:     index("idx_ca_contract_status").on(table.contractId, table.approvalStatus),
   // Composite for fast pending approval queue
   pendingIdx:            index("idx_ca_pending").on(table.approvalStatus, table.contractId, table.requestedAt),
-  // Note: duplicate-active-approval prevention is enforced at service layer, not DB level
-  // (uniqueIndex not used here because re-request after cancel would create two 'cancelled' rows)
+  // DB-level partial unique: only ONE pending approval per patient invoice line
+  // Multiple cancelled/rejected rows are allowed — partial WHERE ensures no conflict
+  uniquePendingLine:     uniqueIndex("idx_ca_unique_pending_line")
+                           .on(table.patientInvoiceLineId)
+                           .where(sql`approval_status = 'pending' AND patient_invoice_line_id IS NOT NULL`),
+}));
+
+// ─── تسويات المطالبات (Claim Settlements) Phase 5 ────────────────────────
+
+export const contractClaimSettlements = pgTable("contract_claim_settlements", {
+  id:               varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  batchId:          varchar("batch_id").notNull().references(() => contractClaimBatches.id, { onDelete: "restrict" }),
+  settlementDate:   date("settlement_date").notNull(),
+  settledAmount:    decimal("settled_amount",  { precision: 18, scale: 2 }).notNull(),
+  bankAccountId:    varchar("bank_account_id"),
+  referenceNumber:  text("reference_number"),
+  notes:            text("notes"),
+  journalEntryId:   varchar("journal_entry_id"),
+  createdAt:        timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  batchIdx:           index("idx_ccs_batch").on(table.batchId),
+  settleDateIdx:      index("idx_ccs_settle_date").on(table.settlementDate),
+  batchDateIdx:       index("idx_ccs_batch_date").on(table.batchId, table.settlementDate),
+}));
+
+export const contractClaimSettlementLines = pgTable("contract_claim_settlement_lines", {
+  id:               varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  settlementId:     varchar("settlement_id").notNull().references(() => contractClaimSettlements.id, { onDelete: "cascade" }),
+  claimLineId:      varchar("claim_line_id").notNull().references(() => contractClaimLines.id, { onDelete: "restrict" }),
+  settledAmount:    decimal("settled_amount",   { precision: 18, scale: 2 }).notNull(),
+  writeOffAmount:   decimal("write_off_amount", { precision: 18, scale: 2 }).default("0"),
+  adjustmentReason: text("adjustment_reason"),
+  createdAt:        timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  settlementIdx:  index("idx_ccsl_settlement").on(table.settlementId),
+  claimLineIdx:   index("idx_ccsl_claim_line").on(table.claimLineId),
+  // One settlement line per claim line per settlement (allow multiple settlements if partial)
 }));
 
 // ─── Schemas & Types ──────────────────────────────────────────────────────
@@ -338,6 +377,20 @@ export const insertContractApprovalSchema = createInsertSchema(contractApprovals
 
 export type ContractApproval       = typeof contractApprovals.$inferSelect;
 export type InsertContractApproval = z.infer<typeof insertContractApprovalSchema>;
+
+// ─── Phase 5 Settlement Types ─────────────────────────────────────────────
+
+export const insertClaimSettlementSchema = createInsertSchema(contractClaimSettlements).omit({
+  id: true, createdAt: true, journalEntryId: true,
+});
+export const insertClaimSettlementLineSchema = createInsertSchema(contractClaimSettlementLines).omit({
+  id: true, createdAt: true,
+});
+
+export type ContractClaimSettlement      = typeof contractClaimSettlements.$inferSelect;
+export type InsertClaimSettlement        = z.infer<typeof insertClaimSettlementSchema>;
+export type ContractClaimSettlementLine  = typeof contractClaimSettlementLines.$inferSelect;
+export type InsertClaimSettlementLine    = z.infer<typeof insertClaimSettlementLineSchema>;
 
 export const approvalStatusLabels: Record<string, string> = {
   pending:   "في انتظار القرار",

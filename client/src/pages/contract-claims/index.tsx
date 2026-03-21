@@ -1,10 +1,8 @@
 /**
  * صفحة مطالبات التأمين — Contract Claims Management
+ * Phase 5 Refactor: thin orchestrator using extracted components
  *
  * دورة الحياة: draft → submitted → responded → settled
- *
- * اللوحة اليسرى: قائمة دفعات المطالبات مع فلاتر
- * اللوحة اليمنى: تفاصيل الدفعة المختارة + سطورها + أزرار العمليات
  */
 
 import { useState, useMemo } from "react";
@@ -12,54 +10,37 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
-  SendHorizonal,
-  CheckCircle2,
-  XCircle,
-  Coins,
-  Ban,
-  Search,
-  ChevronLeft,
-  FileText,
-  Building2,
-  Calendar,
-  AlertCircle,
-  Loader2,
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  SendHorizonal, CheckCircle2, Coins, Ban, Search,
+  ChevronLeft, FileText, Building2, Calendar, AlertCircle, Loader2, BarChart3,
 } from "lucide-react";
+
+// ─── Extracted Components ──────────────────────────────────────────────────
+import { SettlementSummary }   from "./components/SettlementSummary";
+import { SettlementDialog }    from "./components/SettlementDialog";
+import { ReconciliationTable } from "./components/ReconciliationTable";
+import {
+  useSettleBatch, useReconciliation,
+} from "./hooks/useClaimSettlement";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -95,6 +76,8 @@ interface ClaimBatch {
   totalClaimed:       string;
   totalApproved:      string;
   totalRejected:      string;
+  totalSettled?:      string;
+  totalOutstanding?:  string;
   notes?:             string | null;
   journalEntryId?:    string | null;
   createdAt:          string;
@@ -150,15 +133,18 @@ export default function ContractClaimsPage() {
   const [selectedId, setSelectedId]       = useState<string | null>(null);
   const [filterStatus, setFilterStatus]   = useState<string>("all");
   const [filterSearch, setFilterSearch]   = useState<string>("");
+  const [activeTab, setActiveTab]         = useState<string>("lines");
 
   // Respond dialog
   const [respondOpen, setRespondOpen]     = useState(false);
-  const [lineResponses, setLineResponses] = useState<Record<string, { status: "approved" | "rejected"; approvedAmount: string; rejectionReason: string }>>({});
+  const [lineResponses, setLineResponses] = useState<Record<string, {
+    status: "approved" | "rejected"; approvedAmount: string; rejectionReason: string;
+  }>>({});
 
-  // Settle dialog
-  const [settleOpen, setSettleOpen]       = useState(false);
-  const [settleForm, setSettleForm]       = useState({ settlementDate: "", companyReferenceNo: "", bankAccountId: "", companyArAccountId: "", notes: "" });
+  // Settlement dialog
+  const [settleOpen, setSettleOpen] = useState(false);
 
+  // Data
   const { data: batches = [], isLoading } = useQuery<ClaimBatch[]>({
     queryKey: ["/api/contract-claims"],
   });
@@ -181,6 +167,13 @@ export default function ContractClaimsPage() {
     }
     return list;
   }, [batches, filterStatus, filterSearch]);
+
+  // ── Phase 5 Hooks ──────────────────────────────────────────────────────
+
+  const settleMutation = useSettleBatch();
+  const { data: reconciliation, isLoading: reconLoading } = useReconciliation(
+    activeTab === "reconciliation" ? selectedId : null
+  );
 
   // ── Mutations ──────────────────────────────────────────────────────────
 
@@ -207,28 +200,13 @@ export default function ContractClaimsPage() {
     onError: (e: any) => toast({ title: e.message ?? "خطأ", variant: "destructive" }),
   });
 
-  const settleMut = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) =>
-      apiRequest("POST", `/api/contract-claims/${id}/settle`, data),
-    onSuccess: () => {
-      toast({ title: "تمت التسوية المالية بنجاح" });
-      qc.invalidateQueries({ queryKey: ["/api/contract-claims"] });
-      setSettleOpen(false);
-    },
-    onError: (e: any) => toast({ title: e.message ?? "خطأ", variant: "destructive" }),
-  });
-
-  // ── Respond init ───────────────────────────────────────────────────────
+  // ── Respond ────────────────────────────────────────────────────────────
 
   function openRespondDialog() {
     if (!selected) return;
     const init: typeof lineResponses = {};
     for (const l of selected.lines) {
-      init[l.id] = {
-        status:          "approved",
-        approvedAmount:  l.companyShareAmount,
-        rejectionReason: "",
-      };
+      init[l.id] = { status: "approved", approvedAmount: l.companyShareAmount, rejectionReason: "" };
     }
     setLineResponses(init);
     setRespondOpen(true);
@@ -245,13 +223,17 @@ export default function ContractClaimsPage() {
     respondMut.mutate({ id: selected.id, responses });
   }
 
-  function handleSettle() {
-    if (!selected || !settleForm.settlementDate) {
-      toast({ title: "تاريخ التسوية مطلوب", variant: "destructive" });
-      return;
-    }
-    settleMut.mutate({ id: selected.id, data: settleForm });
+  // ── Phase 5 Settle ─────────────────────────────────────────────────────
+
+  function handleSettle(payload: any) {
+    if (!selected) return;
+    settleMutation.mutate(
+      { batchId: selected.id, payload },
+      { onSuccess: () => setSettleOpen(false) }
+    );
   }
+
+  const canSettle = selected && ["submitted", "responded"].includes(selected.status);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -301,7 +283,7 @@ export default function ContractClaimsPage() {
               {filtered.map(b => (
                 <button
                   key={b.id}
-                  onClick={() => setSelectedId(b.id)}
+                  onClick={() => { setSelectedId(b.id); setActiveTab("lines"); }}
                   data-testid={`row-batch-${b.id}`}
                   className={`w-full text-right p-3 text-sm hover:bg-muted/60 transition-colors ${selectedId === b.id ? "bg-primary/10 border-r-2 border-primary" : ""}`}
                 >
@@ -352,54 +334,24 @@ export default function ContractClaimsPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 {selected.status === "draft" && (
                   <>
-                    <Button
-                      size="sm"
-                      onClick={() => submitMut.mutate(selected.id)}
-                      disabled={submitMut.isPending}
-                      data-testid="button-submit-batch"
-                    >
+                    <Button size="sm" onClick={() => submitMut.mutate(selected.id)} disabled={submitMut.isPending} data-testid="button-submit-batch">
                       {submitMut.isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <SendHorizonal className="h-4 w-4 ml-1" />}
                       إرسال للشركة
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => cancelMut.mutate(selected.id)}
-                      disabled={cancelMut.isPending}
-                      data-testid="button-cancel-batch"
-                    >
+                    <Button size="sm" variant="destructive" onClick={() => cancelMut.mutate(selected.id)} disabled={cancelMut.isPending} data-testid="button-cancel-batch">
                       <Ban className="h-4 w-4 ml-1" />
                       إلغاء
                     </Button>
                   </>
                 )}
                 {selected.status === "submitted" && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={openRespondDialog}
-                      data-testid="button-respond-batch"
-                    >
-                      <CheckCircle2 className="h-4 w-4 ml-1" />
-                      تسجيل رد الشركة
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => { setSettleOpen(true); setSettleForm({ settlementDate: new Date().toISOString().split("T")[0], companyReferenceNo: "", bankAccountId: "", companyArAccountId: "", notes: "" }); }}
-                      data-testid="button-settle-batch"
-                    >
-                      <Coins className="h-4 w-4 ml-1" />
-                      تسوية
-                    </Button>
-                  </>
+                  <Button size="sm" variant="outline" onClick={openRespondDialog} data-testid="button-respond-batch">
+                    <CheckCircle2 className="h-4 w-4 ml-1" />
+                    تسجيل رد الشركة
+                  </Button>
                 )}
-                {selected.status === "responded" && (
-                  <Button
-                    size="sm"
-                    onClick={() => { setSettleOpen(true); setSettleForm({ settlementDate: new Date().toISOString().split("T")[0], companyReferenceNo: selected.companyReferenceNo ?? "", bankAccountId: "", companyArAccountId: "", notes: "" }); }}
-                    data-testid="button-settle-responded-batch"
-                  >
+                {canSettle && (
+                  <Button size="sm" onClick={() => setSettleOpen(true)} data-testid="button-settle-batch">
                     <Coins className="h-4 w-4 ml-1" />
                     تسوية مالية
                   </Button>
@@ -407,80 +359,88 @@ export default function ContractClaimsPage() {
               </div>
             </div>
 
-            {/* Totals */}
-            <div className="grid grid-cols-3 divide-x-reverse divide-x border-b text-center">
-              <div className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">إجمالي المطالبة</div>
-                <div className="font-bold text-sm">{fmt(selected.totalClaimed)} <span className="text-xs font-normal">ج.م</span></div>
-              </div>
-              <div className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">المقبول</div>
-                <div className="font-bold text-sm text-green-700">{fmt(selected.totalApproved)} <span className="text-xs font-normal">ج.م</span></div>
-              </div>
-              <div className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">المرفوض</div>
-                <div className="font-bold text-sm text-red-600">{fmt(selected.totalRejected)} <span className="text-xs font-normal">ج.م</span></div>
-              </div>
-            </div>
+            {/* AR Summary */}
+            <SettlementSummary
+              totalClaimed={selected.totalClaimed}
+              totalApproved={selected.totalApproved}
+              totalRejected={selected.totalRejected}
+              totalSettled={selected.totalSettled}
+              totalOutstanding={selected.totalOutstanding}
+            />
 
-            {/* Lines Table */}
-            <ScrollArea className="flex-1">
-              {selected.lines.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-sm gap-2">
-                  <AlertCircle className="h-5 w-5" />
-                  لا توجد سطور في هذه الدفعة
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-right">الخدمة</TableHead>
-                      <TableHead className="text-right">التاريخ</TableHead>
-                      <TableHead className="text-right">سعر القائمة</TableHead>
-                      <TableHead className="text-right">سعر العقد</TableHead>
-                      <TableHead className="text-right">حصة الشركة</TableHead>
-                      <TableHead className="text-right">المعتمد</TableHead>
-                      <TableHead className="text-right">الحالة</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selected.lines.map(line => (
-                      <TableRow key={line.id} data-testid={`row-claim-line-${line.id}`}>
-                        <TableCell className="text-sm font-medium max-w-xs truncate" title={line.serviceDescription}>
-                          {line.serviceDescription}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{line.serviceDate}</TableCell>
-                        <TableCell className="text-sm">{fmt(line.listPrice)}</TableCell>
-                        <TableCell className="text-sm">{fmt(line.contractPrice)}</TableCell>
-                        <TableCell className="text-sm font-semibold">{fmt(line.companyShareAmount)}</TableCell>
-                        <TableCell className="text-sm">
-                          {line.approvedAmount != null
-                            ? <span className="text-green-700 font-semibold">{fmt(line.approvedAmount)}</span>
-                            : <span className="text-muted-foreground">—</span>
-                          }
-                        </TableCell>
-                        <TableCell>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={`text-xs px-1.5 py-0.5 rounded border cursor-default ${LINE_STATUS_COLORS[line.status] ?? ""}`}>
-                                  {LINE_STATUS_LABELS[line.status] ?? line.status}
-                                </span>
-                              </TooltipTrigger>
-                              {line.rejectionReason && (
-                                <TooltipContent side="top">
-                                  <p className="text-xs max-w-xs">{line.rejectionReason}</p>
-                                </TooltipContent>
-                              )}
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </ScrollArea>
+            {/* Tabs: Lines / Reconciliation */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+              <TabsList className="mx-4 mt-2 w-fit">
+                <TabsTrigger value="lines" className="text-xs">سطور المطالبة</TabsTrigger>
+                <TabsTrigger value="reconciliation" className="text-xs flex items-center gap-1">
+                  <BarChart3 className="h-3 w-3" />
+                  تقرير المطابقة
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="lines" className="flex-1 overflow-hidden m-0">
+                <ScrollArea className="h-full">
+                  {selected.lines.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-sm gap-2">
+                      <AlertCircle className="h-5 w-5" />
+                      لا توجد سطور في هذه الدفعة
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-right">الخدمة</TableHead>
+                          <TableHead className="text-right">التاريخ</TableHead>
+                          <TableHead className="text-right">سعر القائمة</TableHead>
+                          <TableHead className="text-right">سعر العقد</TableHead>
+                          <TableHead className="text-right">حصة الشركة</TableHead>
+                          <TableHead className="text-right">المعتمد</TableHead>
+                          <TableHead className="text-right">الحالة</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selected.lines.map(line => (
+                          <TableRow key={line.id} data-testid={`row-claim-line-${line.id}`}>
+                            <TableCell className="text-sm font-medium max-w-xs truncate" title={line.serviceDescription}>
+                              {line.serviceDescription}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{line.serviceDate}</TableCell>
+                            <TableCell className="text-sm">{fmt(line.listPrice)}</TableCell>
+                            <TableCell className="text-sm">{fmt(line.contractPrice)}</TableCell>
+                            <TableCell className="text-sm font-semibold">{fmt(line.companyShareAmount)}</TableCell>
+                            <TableCell className="text-sm">
+                              {line.approvedAmount != null
+                                ? <span className="text-green-700 font-semibold">{fmt(line.approvedAmount)}</span>
+                                : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
+                            <TableCell>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className={`text-xs px-1.5 py-0.5 rounded border cursor-default ${LINE_STATUS_COLORS[line.status] ?? ""}`}>
+                                      {LINE_STATUS_LABELS[line.status] ?? line.status}
+                                    </span>
+                                  </TooltipTrigger>
+                                  {line.rejectionReason && (
+                                    <TooltipContent side="top">
+                                      <p className="text-xs max-w-xs">{line.rejectionReason}</p>
+                                    </TooltipContent>
+                                  )}
+                                </Tooltip>
+                              </TooltipProvider>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="reconciliation" className="flex-1 overflow-auto m-0 p-4">
+                <ReconciliationTable data={reconciliation} isLoading={reconLoading} />
+              </TabsContent>
+            </Tabs>
           </>
         )}
       </div>
@@ -494,7 +454,9 @@ export default function ContractClaimsPage() {
 
           <div className="space-y-3 py-2">
             {selected?.lines.map(line => {
-              const resp = lineResponses[line.id] ?? { status: "approved", approvedAmount: line.companyShareAmount, rejectionReason: "" };
+              const resp = lineResponses[line.id] ?? {
+                status: "approved", approvedAmount: line.companyShareAmount, rejectionReason: ""
+              };
               return (
                 <div key={line.id} className="border rounded-lg p-3 space-y-2 bg-muted/20">
                   <div className="flex items-center justify-between">
@@ -554,78 +516,18 @@ export default function ContractClaimsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Dialog: Settle ─────────────────────────────────────────────── */}
-      <Dialog open={settleOpen} onOpenChange={setSettleOpen}>
-        <DialogContent className="max-w-md" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>تسوية مالية — {selected?.batchNumber}</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-sm">تاريخ التسوية *</Label>
-              <Input
-                type="date"
-                value={settleForm.settlementDate}
-                onChange={e => setSettleForm(f => ({ ...f, settlementDate: e.target.value }))}
-                className="text-sm"
-                data-testid="input-settlement-date"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-sm">رقم مرجع الشركة</Label>
-              <Input
-                value={settleForm.companyReferenceNo}
-                onChange={e => setSettleForm(f => ({ ...f, companyReferenceNo: e.target.value }))}
-                placeholder="رقم الإشعار / المرجع"
-                className="text-sm"
-                data-testid="input-company-ref"
-              />
-            </div>
-            <Separator />
-            <p className="text-xs text-muted-foreground">
-              لتسجيل قيد محاسبي تلقائي، أدخل معرّفَي الحساب أدناه (اختياري):
-            </p>
-            <div className="space-y-1">
-              <Label className="text-sm">حساب النقدية / البنك (مدين)</Label>
-              <Input
-                value={settleForm.bankAccountId}
-                onChange={e => setSettleForm(f => ({ ...f, bankAccountId: e.target.value }))}
-                placeholder="معرّف الحساب"
-                className="text-sm"
-                data-testid="input-bank-account"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-sm">حساب ذمم الشركة (دائن)</Label>
-              <Input
-                value={settleForm.companyArAccountId}
-                onChange={e => setSettleForm(f => ({ ...f, companyArAccountId: e.target.value }))}
-                placeholder="معرّف الحساب"
-                className="text-sm"
-                data-testid="input-ar-account"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-sm">ملاحظات</Label>
-              <Textarea
-                value={settleForm.notes}
-                onChange={e => setSettleForm(f => ({ ...f, notes: e.target.value }))}
-                className="text-sm min-h-[60px]"
-                data-testid="textarea-settle-notes"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSettleOpen(false)}>إلغاء</Button>
-            <Button onClick={handleSettle} disabled={settleMut.isPending} data-testid="button-confirm-settle">
-              {settleMut.isPending && <Loader2 className="h-4 w-4 animate-spin ml-1" />}
-              تأكيد التسوية
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── Dialog: Settlement (Phase 5) ────────────────────────────────── */}
+      {selected && (
+        <SettlementDialog
+          open={settleOpen}
+          onClose={() => setSettleOpen(false)}
+          batchId={selected.id}
+          batchNumber={selected.batchNumber}
+          lines={selected.lines}
+          onSettle={handleSettle}
+          isPending={settleMutation.isPending}
+        />
+      )}
     </div>
   );
 }

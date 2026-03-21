@@ -1,0 +1,328 @@
+You will execute in TWO STRICT STEPS.
+
+Do NOT skip Step 1.
+Do NOT expand scope.
+Do NOT touch unrelated modules.
+Do NOT redesign existing working flows.
+
+==================================================
+STEP 1 — HARDENING FIXES (MANDATORY BEFORE PHASE 5)
+==================================================
+
+Apply ONLY the following corrections:
+
+1) PREVENT DUPLICATE APPROVAL REQUESTS
+
+Ensure:
+- only ONE active approval per patientInvoiceLineId
+
+Implement:
+- DB unique constraint (partial index):
+    unique(patientInvoiceLineId) WHERE approvalStatus = 'pending'
+
+- or safe equivalent logic if DB limitation exists
+
+Also:
+- createApprovalRequest() must check existing pending approval and no-op safely
+
+--------------------------------------------------
+
+2) PARTIAL APPROVAL SHARE CORRECTION
+
+Ensure correct financial behavior:
+
+If approvalDecision = partial_approval:
+    companyShareAmount = approvedAmount
+    patientShareAmount = contractPrice - approvedAmount
+
+If full approval:
+    companyShareAmount = contractPrice * coveragePct
+    patientShareAmount = remainder
+
+If rejected:
+    companyShareAmount = 0
+    patientShareAmount = contractPrice
+
+Apply ONLY in approval service (backend).
+Do NOT calculate in frontend.
+
+--------------------------------------------------
+
+3) CLAIM STATUS VISIBILITY (OPTIONAL BUT PREFERRED)
+
+If already added:
+- ensure claimStatus is returned in patient invoice read API
+
+If trivial:
+- expose it in response only (no UI required here)
+
+--------------------------------------------------
+
+4) LIGHT REFACTOR (NO SCOPE EXPANSION)
+
+- keep approval service clean
+- remove any duplicated approval logic
+- ensure routes are thin
+
+--------------------------------------------------
+
+PRINT AFTER STEP 1:
+
+1) HARDENING CHANGES APPLIED
+2) APPROVAL DUPLICATION GUARANTEE
+3) PARTIAL APPROVAL LOGIC VERIFIED
+
+THEN PROCEED TO STEP 2.
+
+==================================================
+STEP 2 — PHASE 5: CLAIMS SETTLEMENT + AR
+==================================================
+
+GOAL:
+Convert claims into financial reality (AR + settlement + reconciliation)
+
+This is IFRS-aligned financial layer.
+
+DO NOT modify:
+- contract evaluator
+- approval workflow logic
+- invoice posting logic
+
+==================================================
+PHASE 5 — SCOPE
+==================================================
+
+Implement ONLY:
+
+1) Claim settlement lifecycle
+2) AR tracking per company
+3) reconciliation (claimed vs approved vs settled)
+4) controlled GL posting (safe + optional)
+
+Do NOT implement:
+- advanced treasury module
+- bank integrations
+- payment gateway
+- full ERP accounting redesign
+
+==================================================
+PHASE 5 — SCHEMA
+==================================================
+
+Extend shared/schema/contracts.ts
+
+Create:
+
+contractClaimSettlements
+- id
+- batchId FK
+- settlementDate
+- settledAmount
+- bankAccountId nullable
+- referenceNumber
+- notes
+- createdAt
+
+contractClaimSettlementLines
+- id
+- claimLineId FK
+- settledAmount
+- writeOffAmount nullable
+- adjustmentReason nullable
+- createdAt
+
+Indexes:
+- batchId
+- claimLineId
+- settlementDate
+- (batchId, settlementDate)
+
+--------------------------------------------------
+
+Add to contract_claim_batches:
+
+- total_settled decimal
+- total_outstanding decimal
+
+--------------------------------------------------
+
+(OPTIONAL but recommended)
+
+Add derived tracking fields:
+- total_variance (claimed - approved)
+- total_writeoff
+
+==================================================
+PHASE 5 — AR LOGIC (MANDATORY)
+==================================================
+
+Define:
+
+At claim generation:
+- AR = companyShareAmount (implicit, not yet posted)
+
+At approval:
+- AR adjusts to approvedAmount
+
+At settlement:
+- reduce AR by settledAmount
+
+Outstanding:
+outstanding = approvedAmount - settledAmount
+
+--------------------------------------------------
+
+No duplication:
+- AR is derived, not stored redundantly everywhere
+
+==================================================
+PHASE 5 — BACKEND SERVICES
+==================================================
+
+Create:
+server/lib/contract-claim-settlement-service.ts
+
+Functions:
+- settleBatch(batchId, lines[])
+- validateSettlementAmounts()
+- calculateBatchTotals()
+- applyWriteOffs()
+
+Rules:
+- cannot settle more than approvedAmount
+- partial settlement allowed
+- rejected lines cannot be settled
+- settlement must be idempotent-safe
+
+==================================================
+PHASE 5 — GL POSTING (CONTROLLED)
+==================================================
+
+VERY IMPORTANT:
+
+GL posting must be OPTIONAL and SAFE.
+
+If bankAccountId AND companyArAccountId provided:
+
+Use existing:
+generateJournalEntry()
+
+Entries:
+DR: Bank / Cash
+CR: Accounts Receivable (Company)
+
+If not provided:
+- skip GL posting entirely
+
+DO NOT use raw SQL.
+DO NOT bypass accounting module.
+
+==================================================
+PHASE 5 — ROUTES
+==================================================
+
+Add:
+
+POST /api/claim-batches/:id/settle
+GET  /api/claim-batches/:id/settlements
+GET  /api/claim-batches/:id/reconciliation
+
+Optional:
+GET  /api/claims/outstanding
+
+RBAC:
+- claims.settle
+- claims.view_financial
+
+Routes must be thin.
+
+==================================================
+PHASE 5 — UI
+==================================================
+
+Extend:
+client/src/pages/contract-claims/index.tsx
+
+Add:
+
+1) Settlement Panel
+- show:
+    total claimed
+    total approved
+    total settled
+    outstanding
+
+2) Settlement Dialog
+- input settled amounts per line
+- optional write-off
+- validation
+
+3) Reconciliation View
+- claimed vs approved vs settled
+- variance display
+
+--------------------------------------------------
+
+REFACTOR REQUIREMENTS:
+
+Extract:
+- components/SettlementDialog.tsx
+- components/SettlementSummary.tsx
+- components/ReconciliationTable.tsx
+- hooks/useClaimSettlement.ts
+
+Keep page thin.
+
+==================================================
+PHASE 5 — INDEXING
+==================================================
+
+Ensure:
+
+- fast lookup by batchId
+- fast lookup outstanding
+- fast reconciliation queries
+
+Indexes:
+- (batchId, status)
+- (approvalStatus)
+- (settlementDate)
+- partial index for outstanding > 0
+
+==================================================
+PHASE 5 — SAFETY RULES
+==================================================
+
+- no settlement for cancelled batch
+- no settlement beyond approved amount
+- no duplicate settlement lines
+- settlement must not break claim data
+- GL posting must not block settlement
+
+==================================================
+BEFORE CODING — REQUIRED ANALYSIS
+==================================================
+
+Print:
+
+1) FILES TO MODIFY
+2) SETTLEMENT INTEGRATION POINTS
+3) GL INTEGRATION METHOD
+4) RISKS TO CURRENT FLOWS
+5) IMPLEMENTATION PLAN
+
+Then implement.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) HARDENING SUMMARY
+2) MODIFIED FILES
+3) SETTLEMENT FLOW SUMMARY
+4) AR LOGIC IMPLEMENTED
+5) GL INTEGRATION STATUS
+6) INDEXES ADDED
+7) UI COMPONENTS ADDED
+8) REFACTOR SUMMARY
+9) ANY REMAINING RISKS
