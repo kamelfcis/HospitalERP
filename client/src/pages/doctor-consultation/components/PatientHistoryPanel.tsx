@@ -4,15 +4,15 @@ import { PatientVisitHistoryTable } from "./PatientVisitHistoryTable";
 interface Props {
   patientId: string | null | undefined;
   currentAppointmentId: string;
+  patientName?: string | null;
 }
 
-export function PatientHistoryPanel({ patientId, currentAppointmentId }: Props) {
+export function PatientHistoryPanel({ patientId, currentAppointmentId, patientName }: Props) {
   const { visits, isLoading, isLoadingMore, hasMore, loadMore } = usePatientHistory(
     patientId,
-    currentAppointmentId
+    currentAppointmentId,
+    patientName
   );
-
-  if (!patientId) return null;
 
   return (
     <PatientVisitHistoryTable

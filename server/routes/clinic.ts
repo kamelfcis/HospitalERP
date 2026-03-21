@@ -648,6 +648,31 @@ export function registerClinicRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
+  // ── تاريخ زيارات المريض النقدي بحثاً بالاسم ─────────────────────────────────
+  app.get("/api/clinic/consultations/by-name", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const perms  = await storage.getUserEffectivePermissions(userId);
+      if (!perms.includes("doctor.consultation")) {
+        return res.status(403).json({ message: "غير مصرح" });
+      }
+      const patientName = typeof req.query.patientName === "string" ? req.query.patientName.trim() : "";
+      if (!patientName) return res.status(400).json({ message: "patientName مطلوب" });
+
+      const limit      = Math.min(parseInt(String(req.query.limit  || "5")),  20);
+      const offset     = Math.max(parseInt(String(req.query.offset || "0")),   0);
+      const excludeId  = typeof req.query.excludeId === "string" ? req.query.excludeId : null;
+
+      const scope         = await resolveClinicScope(userId, perms);
+      const allowedClinicIds = scope.all ? null : scope.clinicIds;
+
+      const result = await storage.getConsultationsByPatientName(
+        patientName, limit, offset, excludeId, allowedClinicIds
+      );
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
   // ── قائمة أوامر الطبيب المجمّعة حسب (موعد × نوع × جهة) ─────────────────────
   app.get("/api/clinic-orders/grouped", requireAuth, async (req, res) => {
     try {

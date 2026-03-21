@@ -582,6 +582,90 @@ const methods = {
   },
 
   /**
+   * getConsultationsByPatientName
+   *
+   * Same shape as getPatientPreviousConsultations but looks up by patient_name
+   * (case/trim-insensitive) instead of patient_id — used for cash patients who
+   * have no registered patient record.
+   */
+  async getConsultationsByPatientName(
+    this: DatabaseStorage,
+    patientName: string,
+    limit: number = 5,
+    offset: number = 0,
+    excludeAppointmentId?: string | null,
+    clinicIds?: string[] | null
+  ): Promise<{ data: Array<Record<string, unknown>>; hasMore: boolean }> {
+    const clinicCond =
+      clinicIds && clinicIds.length > 0
+        ? sql`AND a.clinic_id = ANY(${clinicIds}::varchar[])`
+        : sql``;
+
+    const excludeCond = excludeAppointmentId
+      ? sql`AND a.id != ${excludeAppointmentId}`
+      : sql``;
+
+    const fetchLimit = limit + 1;
+
+    const rows = await db.execute(sql`
+      SELECT
+        c.id,
+        c.chief_complaint,
+        c.diagnosis,
+        c.notes,
+        c.follow_up_plan,
+        c.follow_up_after_days,
+        c.follow_up_reason,
+        c.suggested_follow_up_date,
+        c.consultation_fee,
+        c.discount_value,
+        c.final_amount,
+        c.payment_status,
+        c.created_at,
+        COALESCE(a.appointment_date::text, c.created_at::date::text) AS visit_date,
+        a.turn_number,
+        d.name  AS doctor_name,
+        cl.name_ar AS clinic_name,
+        COALESCE(drugs_agg.drugs, '[]'::json) AS drugs,
+        COALESCE(orders_agg.service_count, 0)  AS service_count,
+        COALESCE(orders_agg.pharmacy_count, 0) AS pharmacy_count
+      FROM clinic_consultations c
+      JOIN clinic_appointments a  ON a.id  = c.appointment_id
+      JOIN doctors          d  ON d.id  = a.doctor_id
+      JOIN clinic_clinics   cl ON cl.id = a.clinic_id
+      LEFT JOIN (
+        SELECT consultation_id,
+               json_agg(json_build_object(
+                 'drug_name', drug_name,
+                 'dose', dose,
+                 'frequency', frequency,
+                 'duration', duration
+               ) ORDER BY line_no) AS drugs
+        FROM clinic_consultation_drugs
+        GROUP BY consultation_id
+      ) drugs_agg ON drugs_agg.consultation_id = c.id
+      LEFT JOIN (
+        SELECT consultation_id,
+               COUNT(*) FILTER (WHERE order_type = 'service')  AS service_count,
+               COUNT(*) FILTER (WHERE order_type = 'pharmacy') AS pharmacy_count
+        FROM clinic_orders
+        WHERE status != 'cancelled'
+        GROUP BY consultation_id
+      ) orders_agg ON orders_agg.consultation_id = c.id
+      WHERE LOWER(TRIM(a.patient_name)) = LOWER(TRIM(${patientName}))
+        ${clinicCond}
+        ${excludeCond}
+      ORDER BY COALESCE(a.appointment_date, c.created_at::date) DESC, c.created_at DESC
+      LIMIT ${fetchLimit}
+      OFFSET ${offset}
+    `);
+
+    const all = rows.rows as Array<Record<string, unknown>>;
+    const hasMore = all.length > limit;
+    return { data: hasMore ? all.slice(0, limit) : all, hasMore };
+  },
+
+  /**
    * getGroupedClinicOrders
    *
    * Groups order lines by (appointmentId, orderType, targetName) — the correct key

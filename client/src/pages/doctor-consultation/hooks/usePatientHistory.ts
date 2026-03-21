@@ -38,13 +38,24 @@ interface HistoryPage {
   hasMore: boolean;
 }
 
-function buildUrl(patientId: string, offset: number, excludeAppointmentId: string) {
-  return `/api/patients/${patientId}/previous-consultations?limit=${PAGE_SIZE}&offset=${offset}&excludeId=${excludeAppointmentId}`;
+function buildUrlById(patientId: string, offset: number, excludeId: string) {
+  return `/api/patients/${patientId}/previous-consultations?limit=${PAGE_SIZE}&offset=${offset}&excludeId=${excludeId}`;
+}
+
+function buildUrlByName(patientName: string, offset: number, excludeId: string) {
+  const params = new URLSearchParams({
+    patientName,
+    limit: String(PAGE_SIZE),
+    offset: String(offset),
+    excludeId,
+  });
+  return `/api/clinic/consultations/by-name?${params.toString()}`;
 }
 
 export function usePatientHistory(
   patientId: string | null | undefined,
-  excludeAppointmentId: string
+  excludeAppointmentId: string,
+  patientName?: string | null
 ) {
   const [offset, setOffset] = useState(0);
   const [accumulated, setAccumulated] = useState<PreviousConsultation[]>([]);
@@ -52,14 +63,23 @@ export function usePatientHistory(
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const initializedRef = useRef(false);
 
+  const byId   = !!patientId;
+  const byName = !patientId && !!patientName;
+  const enabled = byId || byName;
+
   const { data: firstPage, isLoading, isError } = useQuery<HistoryPage>({
-    queryKey: ["/api/patients", patientId, "previous-consultations", { offset: 0, excludeAppointmentId }],
+    queryKey: byId
+      ? ["/api/patients", patientId, "previous-consultations", { offset: 0, excludeAppointmentId }]
+      : ["/api/clinic/consultations/by-name", patientName, { offset: 0, excludeAppointmentId }],
     queryFn: async () => {
-      const res = await fetch(buildUrl(patientId!, 0, excludeAppointmentId), { credentials: "include" });
+      const url = byId
+        ? buildUrlById(patientId!, 0, excludeAppointmentId)
+        : buildUrlByName(patientName!, 0, excludeAppointmentId);
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("فشل تحميل تاريخ المريض");
       return res.json();
     },
-    enabled: !!patientId,
+    enabled,
     staleTime: 60_000,
   });
 
@@ -77,14 +97,17 @@ export function usePatientHistory(
     setAccumulated([]);
     setOffset(0);
     setHasMore(false);
-  }, [patientId, excludeAppointmentId]);
+  }, [patientId, patientName, excludeAppointmentId]);
 
   async function loadMore() {
-    if (!patientId || !hasMore || isLoadingMore) return;
+    if (!enabled || !hasMore || isLoadingMore) return;
     setIsLoadingMore(true);
     try {
       const nextOffset = offset + PAGE_SIZE;
-      const res = await fetch(buildUrl(patientId, nextOffset, excludeAppointmentId), { credentials: "include" });
+      const url = byId
+        ? buildUrlById(patientId!, nextOffset, excludeAppointmentId)
+        : buildUrlByName(patientName!, nextOffset, excludeAppointmentId);
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("فشل تحميل مزيد من الزيارات");
       const page: HistoryPage = await res.json();
       setAccumulated(prev => [...prev, ...page.data]);

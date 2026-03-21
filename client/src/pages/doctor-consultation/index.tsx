@@ -194,7 +194,7 @@ export default function DoctorConsultation() {
               <ClipboardList className="h-3 w-3" />
               الكشف الهيكلي
             </TabsTrigger>
-            {form.patientId && (
+            {(form.patientId || form.patientName) && (
               <TabsTrigger value="history" className="text-xs h-7 gap-1" data-testid="tab-patient-history">
                 <History className="h-3 w-3" />
                 تاريخ المريض
@@ -241,6 +241,7 @@ export default function DoctorConsultation() {
             <PatientHistoryPanel
               patientId={form.patientId}
               currentAppointmentId={appointmentId}
+              patientName={form.patientName}
             />
           </TabsContent>
 
