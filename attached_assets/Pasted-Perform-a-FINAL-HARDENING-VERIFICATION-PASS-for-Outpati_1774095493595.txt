@@ -1,0 +1,126 @@
+Perform a FINAL HARDENING & VERIFICATION PASS for Outpatient Improvement — Step 6.
+
+STRICT GOAL:
+Confirm Step 6 is complete, read-only, access-safe, metric-correct, and production-ready.
+
+DO NOT implement Step 7.
+DO NOT expand scope.
+DO NOT add workflow changes.
+DO NOT add financial logic beyond current trusted sources.
+
+==================================================
+REQUIRED OUTPUT FIRST
+==================================================
+
+Print EXACTLY:
+
+1) FILES VERIFIED
+2) DOCTOR DASHBOARD VALIDATION
+3) SECRETARY DASHBOARD VALIDATION
+4) REVENUE METRIC VALIDATION
+5) ACCESS / SCOPE VALIDATION
+6) PERFORMANCE / INDEX VALIDATION
+7) RUNTIME TEST SCENARIOS
+8) BUGS FOUND
+9) FIXES APPLIED (IF ANY)
+10) REMAINING RISKS
+
+Then proceed with verification.
+
+==================================================
+CRITICAL VALIDATION AREAS
+==================================================
+
+A) DOCTOR DASHBOARD
+Verify:
+- total patients today is correct
+- 5-status breakdown is correct
+- service orders total/pending/executed are correct
+- pharmacy orders total/pending/executed are correct
+- gross consultation fee is derived from a real trusted source
+- doctor deduction total is derived correctly
+- net expected = gross - doctor deduction if that is the intended formula
+- no hidden write logic exists
+
+B) SECRETARY DASHBOARD
+Verify:
+- total bookings today is correct
+- waiting / in consultation / done / cancelled / no_show counts are correct
+- gross revenue is correct
+- collected revenue is correct
+- payment-type breakdown is correct
+- no cross-clinic data leakage
+
+C) REVENUE METRIC VALIDATION
+Verify:
+- revenue metrics are operational only, not pretending to be formal accounting reports
+- totals reconcile internally
+- collected is not confused with gross
+- CONTRACT / INSURANCE / CASH grouping is based on real persisted payment type data
+- no speculative revenue formulas exist
+
+D) ACCESS / SCOPE
+Verify:
+- doctor route respects doctor-specific scope
+- secretary route respects clinic/front-desk scope
+- unauthorized users are rejected
+- cross-clinic access is rejected
+- no frontend-only filtering
+
+E) DATE BOUNDARY
+Verify:
+- all "today" widgets use the same backend date boundary
+- no timezone mismatch between different metrics
+
+F) PERFORMANCE / INDEXING
+Verify:
+- routes use storage aggregation only
+- no N+1 queries
+- existing indexes are sufficient
+- no missing index is causing obvious scan problems at current query shapes
+
+==================================================
+RUNTIME TEST SCENARIOS (MANDATORY)
+==================================================
+
+Run and report:
+
+S1 — authorized doctor opens dashboard → metrics load
+S2 — authorized secretary/front-desk opens dashboard → metrics load
+S3 — unauthorized request → rejected
+S4 — cross-clinic request → rejected
+S5 — doctor patient count matches real appointments for today
+S6 — service/pharmacy counts match real orders for today
+S7 — secretary status counts match booking rows for today
+S8 — revenue totals and payment-type rows reconcile correctly
+S9 — deferred metrics are not shown as fake values
+S10 — reload/refetch → no state corruption
+
+For each:
+- PASS / FAIL
+- exact reason
+
+==================================================
+FIX POLICY
+==================================================
+
+If any issue is found:
+- fix ONLY within Step 6 scope
+- do NOT redesign modules
+- rerun affected tests
+
+==================================================
+FINAL ACCEPTANCE CRITERIA
+==================================================
+
+System must be:
+- read-only
+- truthful to real data
+- access-safe
+- compact
+- performant
+- not overstating financial certainty
+
+If everything passes, explicitly state:
+
+"Step 6 is production-ready within the implemented scope."
