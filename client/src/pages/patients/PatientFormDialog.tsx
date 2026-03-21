@@ -613,7 +613,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
             doctorName:     selectedDoctor?.name ?? null,
             turnNumber:     apt.turnNumber ?? null,
             paymentType,
-            contractName:   resolved?.contractName ?? resolved?.companyName ?? insuranceCo.trim() || null,
+            contractName:   resolved?.contractName ?? resolved?.companyName ?? (insuranceCo.trim() || null),
           });
         }
       } catch (e: any) {

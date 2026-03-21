@@ -802,7 +802,7 @@ const methods = {
       SELECT c.*,
              a.patient_name, a.patient_phone, a.patient_id, a.appointment_date, a.appointment_time,
              a.turn_number, a.status AS appointment_status, a.doctor_id, a.clinic_id,
-             a.gender AS appointment_gender, a.payment_type, a.insurance_company,
+             a.payment_type, a.insurance_company,
              a.company_id, a.contract_id, a.contract_member_id,
              co.name_ar AS company_name,
              ct.contract_name,

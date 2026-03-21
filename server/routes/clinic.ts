@@ -262,11 +262,6 @@ export function registerClinicRoutes(app: Express) {
         }
       }
 
-      // ── INSURANCE: card provided but lookup failed → reject ────────────────
-      if (pt === 'INSURANCE' && contractMemberId === undefined && req.body.hasOwnProperty('contractMemberId')) {
-        return res.status(400).json({ message: "رقم بطاقة التأمين غير صالح — تحقق من الرقم وأعد المحاولة" });
-      }
-
       // ── CONTRACT: FK required for new records ──────────────────────────────
       if (pt === 'CONTRACT' && !contractMemberId) {
         return res.status(400).json({ message: "يجب تحديد بطاقة المنتسب لحجوزات التعاقد" });

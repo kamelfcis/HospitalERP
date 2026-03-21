@@ -1,0 +1,130 @@
+Perform a FINAL HARDENING & VERIFICATION PASS for Outpatient Improvement — Step 5.
+
+STRICT GOAL:
+Confirm Step 5 is complete, contract-safe, backward-compatible, access-safe, and production-ready.
+
+DO NOT implement Step 6.
+DO NOT expand scope.
+DO NOT add claims logic.
+DO NOT add approvals workflow.
+DO NOT add pricing logic duplication.
+
+==================================================
+REQUIRED OUTPUT FIRST
+==================================================
+
+Print EXACTLY:
+
+1) FILES VERIFIED
+2) CONTRACT LOOKUP VALIDATION
+3) FK STAMPING VALIDATION
+4) BACKWARD COMPATIBILITY VALIDATION
+5) ACCESS / SCOPE VALIDATION
+6) PERFORMANCE / INDEX VALIDATION
+7) RUNTIME TEST SCENARIOS
+8) BUGS FOUND
+9) FIXES APPLIED (IF ANY)
+10) REMAINING RISKS
+
+Then proceed with verification.
+
+==================================================
+CRITICAL VALIDATION AREAS
+==================================================
+
+A) CONTRACT LOOKUP VALIDATION
+Verify:
+- GET /api/clinic-opd/member-lookup requires auth and clinic.book permission
+- empty / too-short card numbers are rejected correctly
+- date defaults to server today if missing
+- valid member card returns correct:
+  memberId, contractId, companyId, memberName, contractName, companyName
+- inactive member on appointment date is rejected
+- invalid card returns safe Arabic error
+- AbortController / stale response handling works on frontend
+
+B) FK CHAIN VALIDATION
+Verify backend rejects inconsistent combinations:
+- contractMemberId not belonging to contractId
+- contractId not belonging to companyId
+- CONTRACT payment type without required FK
+- INSURANCE with invalid provided card must reject and must NOT silently fallback
+- non-contract payment types tolerate null contract fields safely
+
+C) FK STAMPING VALIDATION
+Verify:
+- createAppointment writes company_id, contract_id, contract_member_id correctly
+- stamped values are readable later from appointment/consultation context
+- PatientSnapshot shows resolved contract context correctly
+- if FK present but related names missing, UI shows safe fallback and does not crash
+
+D) BACKWARD COMPATIBILITY VALIDATION
+Verify:
+- old appointments with null FK fields still load normally
+- old INSURANCE with free-text insurance_company still works
+- old CONTRACT with free-text payer_reference still works
+- existing non-contract booking flow remains unaffected
+- no migration/data rewrite required
+
+E) ACCESS / SCOPE VALIDATION
+Verify:
+- booking route still enforces clinic scope
+- member lookup endpoint does not leak unrelated data
+- consultation snapshot only shows contract context for allowed appointment/patient
+- no frontend-only enforcement
+
+F) PERFORMANCE / INDEX VALIDATION
+Verify:
+- member lookup uses the existing card-number index path
+- no redundant indexes were needed
+- no overfetching in lookup response
+- booking flow remains fast
+
+==================================================
+RUNTIME TEST SCENARIOS (MANDATORY)
+==================================================
+
+Run and report:
+
+S1 — valid CONTRACT booking with member card → FK stamping succeeds
+S2 — CONTRACT booking without FK/card → rejected
+S3 — INSURANCE booking with valid card → FK stamping succeeds
+S4 — INSURANCE booking without card → legacy free-text fallback allowed
+S5 — INSURANCE booking with invalid provided card → rejected, no fallback
+S6 — invalid FK chain (member/contract/company mismatch) → rejected
+S7 — old appointment with null FKs opens correctly
+S8 — PatientSnapshot shows company/contract names correctly
+S9 — lookup with short/empty card number → rejected safely
+S10 — rapid repeated lookup requests → stale response does not corrupt UI
+S11 — unauthorized lookup request → rejected
+S12 — non-contract payment type booking unchanged
+
+For each:
+- PASS / FAIL
+- exact reason
+
+==================================================
+FIX POLICY
+==================================================
+
+If any issue is found:
+- fix ONLY within Step 5 scope
+- do NOT redesign modules
+- rerun affected tests
+
+==================================================
+FINAL ACCEPTANCE CRITERIA
+==================================================
+
+System must be:
+- contract-safe
+- FK-consistent
+- backward-compatible
+- access-safe
+- source-of-truth aligned
+- no silent fallback from invalid FK data
+- no parallel insurance logic
+
+If everything passes, explicitly state:
+
+"Step 5 is production-ready within the implemented scope."
