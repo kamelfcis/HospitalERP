@@ -30,6 +30,20 @@ The system utilizes a RESTful JSON API. Drizzle ORM manages interactions with Po
 - **Contracts Module**: Supports master data for insurance/contract companies, contracts, and member cards. It includes a pure 5-pass rule evaluator for contract coverage rules (e.g., service inclusion/exclusion, discounts, approvals), and a claims GL accounting system for generating claim batches upon patient invoice finalization. The module also features an approval workflow for contract-related services.
 - **Account Mappings Module**: Provides a dedicated module for managing account mappings with a specialized UI and transactional backend route for bulk updates.
 
+## Outpatient Improvement — Step 2 (Stable)
+
+**Tag:** `outpatient-step2-stable`
+
+- **Patient snapshot header** — compact collapsible read-only block above consultation showing: patient name, age, gender, visit type, intake completion/lock status, chronic flags, payer chip, latest vitals, latest diagnosis from previous visits, intake notes. Defaults expanded so doctors see intake data without extra clicks.
+- **Structured consultation (SOAP fields)** — five nullable text columns added to `clinic_consultations` (`subjective_summary`, `objective_summary`, `assessment_summary`, `plan_summary`, `follow_up_plan`). Displayed as a "الكشف الهيكلي" tab with labelled textareas. Old `chiefComplaint`, `diagnosis`, `notes` fields fully preserved.
+- **Safe doctor templates** — 5 specialty groups (general, pediatrics, orthopedics, gynecology, ENT), 2 templates each. Code-based config only, no DB admin UI. Doctor must explicitly select a template; all inserted text is editable.
+- **Quick follow-up helpers** — text-only insertion buttons (أسبوع / أسبوعان / شهر / 3 أشهر / عند الحاجة). No auto-scheduling, no backend side-effects.
+- **Backward compatibility preserved** — all new columns nullable, existing saves continue unchanged, old records load without SOAP fields without error.
+- **No diagnosis automation** — templates insert plain text phrases only; no medical decision logic.
+
+> This milestone is production-ready within the implemented scope.
+> All changes are backward-compatible and medically safe (no automated decision logic).
+
 ## External Dependencies
 
 ### Database
