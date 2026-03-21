@@ -1,0 +1,229 @@
+POST-AUDIT HARDENING — Cashier Pending Logic + Shift Close + Drawer Handover
+
+Context:
+We have completed a major refactor:
+- centralized pending logic in cashier-pending.ts
+- removed duplicated logic across display, validation, and shift close
+- fixed ghost invoices and consistency issues
+- moved write operations out of pending module
+- fixed pool.query usage inside transactions
+- implemented drawer handover report
+
+Now we need a final hardening pass to ensure:
+- long-term stability
+- strict architectural boundaries
+- performance correctness
+- zero future regression
+
+This is a structural improvement phase, not a bug fix.
+
+==================================================
+A) ENFORCE READ-ONLY MODULE (cashier-pending.ts)
+==================================================
+
+cashier-pending.ts must remain strictly read-only.
+
+Required:
+1) assert no INSERT/UPDATE/DELETE exists in this file
+2) add explicit top-of-file comment:
+   "THIS MODULE IS READ-ONLY — NO WRITE OPERATIONS ALLOWED"
+3) if any future write is needed:
+   - it must go through routes/admin layer only
+
+==================================================
+B) TRANSACTION CONSISTENCY (CRITICAL)
+==================================================
+
+Ensure strict separation:
+
+- db / tx.execute → transactional logic
+- pool.query → read/reporting only
+
+Required checks:
+1) confirm no pool.query is used inside any db.transaction
+2) confirm all transaction queries use tx.execute
+3) confirm no mixed connections inside a single transactional flow
+
+If any violation exists → refactor immediately
+
+==================================================
+C) SAFE SQL COMPOSITION (sql.raw)
+==================================================
+
+We are using:
+sql.raw(PENDING_DOCS_SQL)
+
+Required:
+1) confirm all raw SQL fragments are constants (no user input)
+2) ensure no dynamic concatenation from request data
+3) document clearly that these are trusted internal predicates only
+
+==================================================
+D) CENTRALIZED PENDING LOGIC (NO DUPLICATION)
+==================================================
+
+Ensure:
+1) ALL pending logic goes through cashier-pending.ts only
+2) no inline "status='finalized' AND NOT EXISTS ..." exists anywhere else
+3) expose clear helpers:
+   - PENDING_SALES_SQL
+   - PENDING_RETURNS_SQL
+   - PENDING_DOCS_SQL
+
+4) rename if needed for clarity:
+   - PENDING_COLLECTION_DOCS_SQL (preferred)
+
+==================================================
+E) LOGGING + DEBUGGING IMPROVEMENTS
+==================================================
+
+Add structured logs for critical operations:
+
+1) Shift close block:
+   log:
+   {
+     event: "SHIFT_CLOSE_BLOCKED",
+     shiftId,
+     pendingSales,
+     pendingReturns
+   }
+
+2) Receipt/status mismatch (if detected):
+   log warning:
+   {
+     event: "STATUS_MISMATCH",
+     invoiceId,
+     hasReceipt,
+     status
+   }
+
+==================================================
+F) ADMIN REPAIR ENDPOINT HARDENING
+==================================================
+
+For:
+POST /api/admin/cashier-consistency/repair
+
+Required:
+1) admin-only permission (strict)
+2) audit logging:
+   - who triggered repair
+   - timestamp
+   - affected rows
+3) optional dry-run mode (preferred)
+
+==================================================
+G) QUERY PERFORMANCE VALIDATION
+==================================================
+
+Re-check performance:
+
+1) analyze query plan for:
+   - pending count query
+   - drawer handover query
+
+2) confirm indexes used:
+   - idx_cashier_shifts_biz_date
+   - idx_cashier_receipts_shift
+   - idx_cashier_refunds_shift
+
+3) ensure:
+   - no full table scans on large tables
+   - filters use indexed columns
+   - joins do not explode row counts
+
+Add indexes ONLY if proven necessary.
+
+==================================================
+H) DOUBLE COUNTING SAFETY
+==================================================
+
+Ensure all aggregates:
+- use COUNT(DISTINCT ...)
+- avoid line-level joins without grouping
+- no duplicate multiplication
+
+==================================================
+I) SEED SAFETY (STRICT)
+==================================================
+
+Ensure:
+1) no direct insert into:
+   - cashier_receipts
+   - cashier_refund_receipts
+
+2) enforce:
+   seed must go through domain flow OR safe helper
+
+3) keep @invariant comments and enforce behavior
+
+==================================================
+J) SHIFT CLOSE SAFETY ASSERTION
+==================================================
+
+Inside closeCashierShift:
+
+Add explicit guard:
+
+if (pendingCount > 0) {
+  throw new Error("SHIFT_CLOSE_BLOCKED: pending documents exist")
+}
+
+Ensure:
+- cannot close shift with real pending docs
+- cannot be blocked by ghost docs
+
+==================================================
+K) REGRESSION TESTS (MANDATORY)
+==================================================
+
+Validate:
+
+1) finalized + no receipt → pending
+2) finalized + receipt → NOT pending
+3) collected → NOT pending
+4) return + no refund → pending
+5) return + refund → NOT pending
+6) UI pending == validation pending ALWAYS
+7) shift close:
+   - allowed when no pending
+   - blocked when pending exists
+
+==================================================
+L) FRONTEND HARDENING (DRAWER HANDOVER)
+==================================================
+
+Ensure:
+1) refresh button uses refetch() only
+2) no full page reload
+3) stable query keys
+4) no remount side-effects
+5) filters persist correctly
+6) dropdown uses cashierId if available (not name)
+
+==================================================
+M) FINAL OUTPUT REQUIRED
+==================================================
+
+Provide:
+
+1) list of modified files
+2) confirmation:
+   - no pool.query inside transactions
+   - no write in cashier-pending.ts
+3) logging added
+4) performance validation results
+5) regression test results
+6) confirmation:
+   display == validation == shift-close logic (same predicate)
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+- Do NOT reintroduce duplicated logic
+- Do NOT mix pool with transaction connections
+- Do NOT allow user input inside sql.raw
+- Do NOT allow silent failures
+- Maintain clean architecture boundaries
+- Keep code modular, readable, and testable

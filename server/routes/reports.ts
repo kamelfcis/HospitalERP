@@ -444,10 +444,37 @@ export function registerReportsRoutes(app: Express) {
   //
   app.post("/api/admin/cashier-consistency/repair", async (req, res) => {
     if (!requireAdmin(req, res)) return;
+    // Optional dry-run: if dryRun=true in body, return what WOULD be repaired
+    // without writing anything. Default = false (real repair).
+    const dryRun: boolean = req.body?.dryRun === true;
+    const triggeredBy: string = (req.session as any).username || (req.session as any).userId || "unknown";
+
     try {
-      // Inline repair: atomically set status='collected' for any invoice
-      // that has a real receipt but whose status is still stuck on 'finalized'.
-      // This is the only WRITE in the cashier-consistency admin flow.
+      // Ghost-detection SELECT — always run (used for both dry-run and real repair)
+      const candidates = await pool.query<{ id: string; invoice_number: number }>(`
+        SELECT id, invoice_number
+        FROM sales_invoice_headers
+        WHERE status = 'finalized'
+          AND (
+            EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = id)
+            OR
+            EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = id)
+          )
+      `);
+
+      if (dryRun) {
+        const payload = {
+          dryRun:         true,
+          wouldRepair:    candidates.rowCount ?? 0,
+          candidateIds:   candidates.rows.map(r => r.id),
+          checkedAt:      new Date().toISOString(),
+          triggeredBy,
+        };
+        logger.info(payload, "[CASHIER_CONSISTENCY] dry-run scan complete");
+        return res.json(payload);
+      }
+
+      // Real repair — only runs if dryRun=false (default)
       const result = await pool.query<{ id: string; invoice_number: number }>(`
         UPDATE sales_invoice_headers
         SET status = 'collected', updated_at = NOW()
@@ -460,14 +487,16 @@ export function registerReportsRoutes(app: Express) {
         RETURNING id, invoice_number
       `);
       const payload = {
+        dryRun:        false,
         repairedCount: result.rowCount ?? 0,
         repairedIds:   result.rows.map(r => r.id),
         repairedAt:    new Date().toISOString(),
+        triggeredBy,
       };
       logger.info(payload, "[CASHIER_CONSISTENCY] ghost invoices repaired");
       return res.json(payload);
     } catch (err: any) {
-      logger.error({ err: err.message }, "[CASHIER_CONSISTENCY] repair failed");
+      logger.error({ err: err.message, triggeredBy }, "[CASHIER_CONSISTENCY] repair failed");
       return res.status(500).json({ message: err.message });
     }
   });

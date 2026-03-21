@@ -265,6 +265,43 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.warn({ err: error instanceof Error ? error.message : String(error) }, "[STARTUP] permission groups seed warning");
   }
 
+  // ── 5b-3. Cashier status-mismatch check (soft warning) ───────────────────
+  // Detects STATUS_MISMATCH anomalies: invoices whose status disagrees with
+  // the receipt tables. These are silent data anomalies that would NOT appear
+  // in ghost-invoice detection but would cause UI/collection discrepancies.
+  // Logs WARN only — never crashes startup.
+  try {
+    const mismatch1 = await pool.query<{ id: string; invoice_number: number; issue: string }>(`
+      SELECT id, invoice_number, 'collected_no_receipt' AS issue
+      FROM sales_invoice_headers
+      WHERE status = 'collected'
+        AND is_return = false
+        AND NOT EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = id)
+      LIMIT 20
+    `);
+    const mismatch2 = await pool.query<{ id: string; invoice_number: number; issue: string }>(`
+      SELECT id, invoice_number, 'return_collected_no_refund' AS issue
+      FROM sales_invoice_headers
+      WHERE status = 'collected'
+        AND is_return = true
+        AND NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = id)
+      LIMIT 20
+    `);
+    const all = [...mismatch1.rows, ...mismatch2.rows];
+    if (all.length > 0) {
+      for (const row of all) {
+        logger.warn(
+          { event: "STATUS_MISMATCH", invoiceId: row.id, invoiceNumber: row.invoice_number, issue: row.issue },
+          "[CASHIER_INTEGRITY] invoice status mismatch — investigate with GET /api/admin/cashier-consistency",
+        );
+      }
+    } else {
+      logger.info("[STARTUP] cashier status-mismatch check: CLEAN");
+    }
+  } catch (err: unknown) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier mismatch check skipped");
+  }
+
   // ── 5c. System settings ───────────────────────────────────────────────────
   try {
     await loadSettings();

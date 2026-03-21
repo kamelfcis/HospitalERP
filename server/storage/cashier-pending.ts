@@ -4,6 +4,15 @@
  *  المصدر الوحيد للحقيقة: تعريف "المستند المعلّق" في نظام الكاشير
  * ═══════════════════════════════════════════════════════════════════════════════
  *
+ *  ╔══════════════════════════════════════════════════════════════════════════╗
+ *  ║  THIS MODULE IS READ-ONLY — NO WRITE OPERATIONS ALLOWED                ║
+ *  ║  هذا الملف للقراءة فقط — ممنوع منعاً باتاً أي INSERT / UPDATE / DELETE  ║
+ *  ║  All writes belong in route handlers or db.transaction() callers only. ║
+ *  ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ *  sql.raw() safety: ALL constants below are hardcoded internal predicates.
+ *  None accept user input. Do NOT interpolate request data into these strings.
+ *
  *  INVARIANT — قاعدة حرام كسرها:
  *  ───────────────────────────────
  *  فاتورة مبيعات معلّقة =
@@ -72,6 +81,13 @@ export const PENDING_DOCS_SQL = `
   sih.status = 'finalized'
   ${PENDING_RECEIPT_GUARD_SQL}
 `.trim();
+
+/**
+ * Preferred alias — identical to PENDING_DOCS_SQL.
+ * Use this name when the context is "collection" (cashier drawer).
+ * ⚠ sql.raw() safe: constant, no user input, no dynamic concatenation.
+ */
+export const PENDING_COLLECTION_DOCS_SQL = PENDING_DOCS_SQL;
 
 /* ─── Unit scoping helpers ───────────────────────────────────────────────── */
 type UnitScope =

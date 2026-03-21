@@ -19,6 +19,8 @@ import { logger } from "../lib/logger";
 import {
   countPendingDocsForUnit as _countPendingDocsForUnit,
   PENDING_DOCS_SQL,
+  PENDING_SALES_SQL,
+  PENDING_RETURNS_SQL,
 } from "./cashier-pending";
 import {
   pharmacies,
@@ -357,47 +359,61 @@ const methods = {
       // ── 2. فحص المستندات المعلّقة + الوردية البديلة ──
       //  ★ IMPORTANT: use tx.execute() here — NOT pool.query() — to stay on the
       //    same transaction connection as the FOR UPDATE lock above.
-      //    PENDING_DOCS_SQL is the single predicate from cashier-pending.ts.
-      const [pendingCount, otherShift] = await Promise.all([
-        (async () => {
-          if (shift.unitType === "department" && shift.departmentId) {
-            const r = await tx.execute(sql`
-              SELECT COUNT(*) AS count
-              FROM sales_invoice_headers sih
-              INNER JOIN warehouses w ON w.id = sih.warehouse_id
-              WHERE w.department_id = ${shift.departmentId}
-                AND ${sql.raw(PENDING_DOCS_SQL)}
-            `);
-            return parseInt((r as any).rows[0]?.count || "0", 10);
-          }
-          if (shift.pharmacyId) {
-            const r = await tx.execute(sql`
-              SELECT COUNT(*) AS count
-              FROM sales_invoice_headers sih
-              WHERE sih.pharmacy_id = ${shift.pharmacyId}
-                AND ${sql.raw(PENDING_DOCS_SQL)}
-            `);
-            return parseInt((r as any).rows[0]?.count || "0", 10);
-          }
-          return 0;
-        })(),
+      //    PENDING_SALES_SQL / PENDING_RETURNS_SQL from cashier-pending.ts.
+      //    Counts are split so the blocked log reports (pendingSales, pendingReturns)
+      //    separately for structured diagnostics (requirement E).
+      const countPendingByPredicate = async (predicate: string): Promise<number> => {
+        if (shift.unitType === "department" && shift.departmentId) {
+          const r = await tx.execute(sql`
+            SELECT COUNT(*) AS count
+            FROM sales_invoice_headers sih
+            INNER JOIN warehouses w ON w.id = sih.warehouse_id
+            WHERE w.department_id = ${shift.departmentId}
+              AND ${sql.raw(predicate)}
+          `);
+          return parseInt((r as any).rows[0]?.count || "0", 10);
+        }
+        if (shift.pharmacyId) {
+          const r = await tx.execute(sql`
+            SELECT COUNT(*) AS count
+            FROM sales_invoice_headers sih
+            WHERE sih.pharmacy_id = ${shift.pharmacyId}
+              AND ${sql.raw(predicate)}
+          `);
+          return parseInt((r as any).rows[0]?.count || "0", 10);
+        }
+        return 0;
+      };
+
+      const [[pendingSales, pendingReturns], otherShift] = await Promise.all([
+        Promise.all([
+          countPendingByPredicate(PENDING_SALES_SQL),
+          countPendingByPredicate(PENDING_RETURNS_SQL),
+        ]),
         this.findOtherOpenShiftForUnit(shiftId, shift),
       ]);
+      const pendingCount = pendingSales + pendingReturns;
 
       if (pendingCount > 0 && !otherShift) {
-        logger.warn({ shiftId, pendingCount, cashierName: shift.cashierName },
-          "[SHIFT_CLOSE] blocked — pending documents exist with no handover shift");
-        throw new Error(`لا يمكن إغلاق الوردية — يوجد ${pendingCount} مستند معلّق ولا توجد وردية أخرى لاستقباله`);
+        logger.warn(
+          { event: "SHIFT_CLOSE_BLOCKED", shiftId, pendingSales, pendingReturns, cashierName: shift.cashierName },
+          "[SHIFT_CLOSE] blocked — pending documents exist with no handover shift",
+        );
+        throw new Error(`لا يمكن إغلاق الوردية — يوجد ${pendingCount} مستند معلّق (${pendingSales} بيع + ${pendingReturns} مرتجع) ولا توجد وردية أخرى لاستقباله`);
       }
 
       // ── 3. تسجيل تحويل المستندات إن وُجدت ──
       if (pendingCount > 0 && otherShift) {
+        logger.info(
+          { event: "SHIFT_CLOSE_HANDOVER", shiftId, pendingSales, pendingReturns, toShiftId: otherShift.id },
+          "[SHIFT_CLOSE] handing over pending documents to other open shift",
+        );
         await tx.insert(cashierTransferLog).values({
           fromShiftId:    shiftId,
           toShiftId:      otherShift.id,
           invoiceIds:     `pending:${pendingCount}`,
           transferredBy:  closedByName,
-          reason:         `إغلاق وردية ${shift.cashierName} — تحويل ${pendingCount} مستند إلى ${otherShift.cashierName}`,
+          reason:         `إغلاق وردية ${shift.cashierName} — تحويل ${pendingCount} مستند (${pendingSales} بيع + ${pendingReturns} مرتجع) إلى ${otherShift.cashierName}`,
         });
       }
 
