@@ -1,0 +1,122 @@
+Perform a FINAL HARDENING & VERIFICATION PASS for Outpatient Improvement — Step 3.
+
+STRICT GOAL:
+Confirm Step 3 is complete, truthful to real data, access-safe, and production-ready.
+
+DO NOT implement Step 4.
+DO NOT expand workflow.
+DO NOT add lab/radiology/pharmacy result systems.
+
+==================================================
+REQUIRED OUTPUT FIRST
+==================================================
+
+Print EXACTLY:
+
+1) FILES VERIFIED
+2) ACCESS CONTROL VALIDATION
+3) ORDER TRACKING VALIDATION
+4) STATUS NORMALIZATION VALIDATION
+5) PERFORMANCE VALIDATION
+6) RUNTIME TEST SCENARIOS
+7) BUGS FOUND
+8) FIXES APPLIED (IF ANY)
+9) REMAINING RISKS
+
+Then proceed with verification.
+
+==================================================
+CRITICAL VALIDATION AREAS
+==================================================
+
+A) ACCESS / SCOPE
+Verify:
+- only authorized users can access GET /api/clinic-orders/appointment/:appointmentId
+- cross-clinic access is rejected with 403
+- unrelated appointment access is rejected
+- doctor consultation tab visibility respects permission rules
+
+B) TRACKING CORRECTNESS
+Verify:
+- totalService count is correct
+- executedService count is correct
+- pendingService count is correct
+- totalPharmacy count is correct
+- executedPharmacy count is correct
+- pendingPharmacy count is correct
+- row list matches aggregate counts exactly
+
+C) STATUS NORMALIZATION
+Verify:
+- pending → معلق
+- executed → منفّذ
+- cancelled → ملغي if shown
+- mismatch handling works:
+  status='executed' with executed_at null → trust status and log warning
+
+D) DISPLAY SAFETY
+Verify:
+- service rows use service_name_manual
+- pharmacy rows use drug_name
+- missing names fall back safely to "Unnamed order"
+- no UI crash on null fields
+
+E) DEFERRED BOUNDARIES
+Confirm:
+- no fake lab/radiology split
+- no fake results
+- no internal/external guessing
+- no schema overbuild
+
+F) PERFORMANCE
+Verify:
+- no N+1 queries
+- current appointment index is sufficient
+- panel loads fast
+- no redundant indexes needed
+
+==================================================
+RUNTIME TEST SCENARIOS (MANDATORY)
+==================================================
+
+Run and report:
+
+S1 — authorized doctor opens tracking tab → data loads
+S2 — unauthorized user hits route → rejected
+S3 — cross-clinic appointment access → rejected
+S4 — appointment with mixed service/pharmacy orders → counts correct
+S5 — appointment with pending only → counts correct
+S6 — appointment with executed only → counts correct
+S7 — appointment with cancelled rows → display/count behavior correct
+S8 — missing displayName source → fallback works
+S9 — executed status with null executed_at → warning logged, UI still correct
+S10 — page reload / refetch → no state corruption
+
+For each:
+- PASS / FAIL
+- exact reason
+
+==================================================
+FIX POLICY
+==================================================
+
+If any issue is found:
+- fix ONLY within Step 3 scope
+- do NOT redesign modules
+- rerun affected tests
+
+==================================================
+FINAL ACCEPTANCE CRITERIA
+==================================================
+
+System must be:
+- truthful to current data
+- access-safe
+- compact
+- fast
+- no fake clinical behavior
+- no hidden side effects
+
+If everything passes, explicitly state:
+
+"Step 3 is production-ready within the current data model."
