@@ -820,4 +820,79 @@ export function registerClinicRoutes(app: Express) {
       res.json(result);
     } catch (e: any) { res.status(400).json({ message: e.message }); }
   });
+
+  // ── لوحات المتابعة اليومية (قراءة فقط) ─────────────────────────────────────
+
+  /**
+   * GET /api/clinic-opd/dashboard/doctor
+   * Doctor daily summary — scoped to the logged-in doctor.
+   * Admin (clinic.view_all) may pass ?doctorId= to view another doctor.
+   * Requires: doctor.consultation  OR  clinic.view_all
+   */
+  app.get("/api/clinic-opd/dashboard/doctor", requireAuth, async (req, res) => {
+    try {
+      const perms = await storage.getUserEffectivePermissions(req.session.userId!);
+      const canConsult  = perms.includes("doctor.consultation");
+      const isAdmin     = perms.includes("clinic.view_all");
+      if (!canConsult && !isAdmin) {
+        return res.status(403).json({ message: "ليس لديك صلاحية الوصول إلى لوحة الطبيب" });
+      }
+
+      let doctorId: string | null = null;
+      if (isAdmin && req.query.doctorId) {
+        doctorId = String(req.query.doctorId);
+      } else {
+        doctorId = await storage.getUserDoctorId(req.session.userId!);
+      }
+
+      if (!doctorId) {
+        return res.json({ noDoctorLinked: true });
+      }
+
+      const dateParam = typeof req.query.date === "string" ? req.query.date : null;
+      const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+        ? dateParam
+        : new Date().toISOString().slice(0, 10);
+
+      const data = await storage.getDoctorDailySummary(doctorId, date);
+      res.json(data);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  /**
+   * GET /api/clinic-opd/dashboard/secretary?clinicId=&date=
+   * Secretary daily summary — scoped to a single clinic.
+   * Requires: clinic.view_own  OR  clinic.view_all
+   * If not admin, verifies user is assigned to the requested clinic.
+   */
+  app.get("/api/clinic-opd/dashboard/secretary", requireAuth, async (req, res) => {
+    try {
+      const perms  = await storage.getUserEffectivePermissions(req.session.userId!);
+      const isAdmin = perms.includes("clinic.view_all");
+      const canView = isAdmin || perms.includes("clinic.view_own");
+      if (!canView) {
+        return res.status(403).json({ message: "ليس لديك صلاحية الوصول إلى لوحة الاستقبال" });
+      }
+
+      const clinicId = typeof req.query.clinicId === "string" ? req.query.clinicId : null;
+      if (!clinicId) {
+        return res.status(400).json({ message: "clinicId مطلوب" });
+      }
+
+      if (!isAdmin) {
+        const assignedClinics = await storage.getUserClinicIds(req.session.userId!);
+        if (!assignedClinics.includes(clinicId)) {
+          return res.status(403).json({ message: "ليس لديك صلاحية الوصول إلى هذه العيادة" });
+        }
+      }
+
+      const dateParam = typeof req.query.date === "string" ? req.query.date : null;
+      const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+        ? dateParam
+        : new Date().toISOString().slice(0, 10);
+
+      const data = await storage.getSecretaryDailySummary(clinicId, date);
+      res.json(data);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
 }

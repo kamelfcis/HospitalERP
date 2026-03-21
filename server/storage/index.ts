@@ -670,6 +670,10 @@ export interface IStorage {
     orders: Array<Record<string, unknown>>;
   }>;
 
+  // لوحات المتابعة اليومية (قراءة فقط)
+  getDoctorDailySummary(doctorId: string, date: string): Promise<import("./clinic-dashboard-storage").DoctorDailySummaryData>;
+  getSecretaryDailySummary(clinicId: string, date: string): Promise<import("./clinic-dashboard-storage").SecretaryDailySummaryData>;
+
   // كشف حساب الطبيب - عيادات
   getClinicDoctorStatement(doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<Record<string, unknown>[]>;
 
@@ -842,6 +846,7 @@ import contractsRulesMethods from "./contracts-rules-storage";
 import contractsClaimsMethods from "./contracts-claims-storage";
 import contractsApprovalsMethods from "./contracts-approvals-storage";
 import clinicIntakeMethods from "./clinic-intake-storage";
+import clinicDashboardMethods from "./clinic-dashboard-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -873,6 +878,7 @@ Object.assign(
   clinicMasterMethods,
   clinicOrdersMethods,
   clinicIntakeMethods,
+  clinicDashboardMethods,
   rptRefreshMethods,
   stockCountMethods,
   companiesMethods,

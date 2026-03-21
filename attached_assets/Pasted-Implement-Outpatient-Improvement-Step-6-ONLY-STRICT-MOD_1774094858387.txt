@@ -1,0 +1,302 @@
+Implement Outpatient Improvement — Step 6 ONLY (STRICT MODE + READ-ONLY DASHBOARDS + ARCHITECTURE ENFORCEMENT).
+
+DO NOT implement anything outside Step 6.
+DO NOT change transactional logic.
+DO NOT build a BI/reporting engine.
+DO NOT create new financial formulas.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Add lightweight operational dashboards for doctor and secretary/front-desk
+without changing transactional logic.
+
+This step is READ-ONLY analytics only.
+
+Dashboards must be:
+- fast
+- compact
+- truthful to current data
+- operationally useful
+- safe to maintain
+
+==================================================
+STRICT BOUNDARIES (NON-NEGOTIABLE)
+==================================================
+
+DO NOT implement:
+- transactional workflow changes
+- claims logic
+- commission engine
+- financial posting logic
+- scheduling/reminder engine
+- data write-back from dashboards
+- speculative calculations not backed by real data
+- heavy BI / cube / export subsystem
+
+This step is ONLY:
+- operational summaries
+- compact tables
+- daily counts
+- safe read-only dashboard views
+
+==================================================
+SCOPE
+==================================================
+
+Build ONLY:
+
+1) doctor daily dashboard
+2) secretary/front-desk daily dashboard
+
+==================================================
+DATE BOUNDARY RULE (CRITICAL)
+==================================================
+
+All "today" calculations must use a single consistent backend date boundary.
+
+Required:
+- use server/clinic-consistent date logic
+- no frontend-derived date window
+- no timezone drift between counts shown in different widgets
+
+==================================================
+DOCTOR DASHBOARD
+==================================================
+
+Show ONLY what can be calculated reliably from real existing data.
+
+Potential items:
+- total patients today
+- new vs follow-up
+- total service orders today
+- executed service orders today
+- pending service orders today
+- total prescriptions today
+- clinic revenue related to doctor ONLY if safely available from a real trusted source
+- secretary percentage / value ONLY if current system already supports it safely from real persisted data
+
+IMPORTANT:
+- Do NOT split lab vs radiology unless the current data model truly distinguishes them
+- If Step 3 data still stores both as generic service orders, then show service orders only
+- If revenue is not trustworthy from current source, defer it explicitly
+- If secretary percentage/value is not already a trusted stored calculation, defer it explicitly
+
+==================================================
+SECRETARY / FRONT-DESK DASHBOARD
+==================================================
+
+Show:
+- total bookings today
+- waiting count
+- in consultation count
+- done count
+- cancelled count
+- no_show count
+- daily clinic revenue ONLY if safely available from a trusted source
+- follow-up due count ONLY if available from Step 4 data in a meaningful queryable form
+
+IMPORTANT:
+- follow-up due count is read-only only
+- no auto-reminders
+- no scheduling side effects
+
+==================================================
+ANALYTICS DATA RELIABILITY RULE
+==================================================
+
+Every metric must be classified as one of:
+
+1) RELIABLE NOW
+2) DEFERRED
+
+Do NOT fake or approximate any metric.
+
+If a metric cannot be computed from real existing persisted data with acceptable confidence:
+- do not show it
+- list it as deferred
+- do not create replacement logic in this step
+
+==================================================
+ARCHITECTURE ENFORCEMENT (CRITICAL)
+==================================================
+
+Implementation must improve code quality, not just add screens.
+
+Required:
+
+1) SERVICE / STORAGE LAYER
+All dashboard aggregations must live in backend storage/service functions.
+No large SQL logic inside routes.
+Routes must remain thin.
+
+2) COMPONENTIZATION
+Use isolated reusable components.
+Avoid dashboard logic inside page files.
+
+3) HOOK DESIGN
+useOutpatientDashboard must encapsulate:
+- date handling
+- loading/error states
+- per-dashboard fetches
+- caching / refresh behavior
+
+4) SINGLE RESPONSIBILITY
+- components = rendering only
+- hooks = UI state / data fetching
+- backend storage/services = aggregation logic
+- routes = request/response only
+
+5) PAGE THINNESS
+Doctor and secretary dashboard pages must remain thin and readable.
+
+6) SHARED UI PATTERNS
+Reuse summary table/block patterns wherever possible.
+Avoid duplicate components with tiny cosmetic differences.
+
+==================================================
+REFACTOR REQUIREMENTS
+==================================================
+
+Extract and enforce:
+
+- components/DoctorDailySummary.tsx
+- components/SecretaryDailySummary.tsx
+- components/ClinicRevenueTable.tsx
+- hooks/useOutpatientDashboard.ts
+
+If useful, additionally extract shared internal components/helpers for:
+- summary metric rows
+- status count tables
+- empty/loading/error blocks
+
+Reject:
+- giant page components
+- duplicated SQL logic
+- duplicated metric mapping logic
+- inline fetch-heavy pages
+
+==================================================
+UI RULES
+==================================================
+
+Use:
+- compact summary blocks
+- compact tables
+- minimal visual noise
+
+Do NOT:
+- overload with cards
+- create flashy charts unless already trivial and justified
+- add filters beyond what is needed for "today"
+
+If a table is used:
+- keep it compact
+- no giant scrolling dashboard
+- prioritize operational clarity
+
+==================================================
+INDEXING STRATEGY (STRICT)
+==================================================
+
+Indexing must be query-driven only.
+
+Potential useful paths:
+- appointments by clinic/date/status
+- consultations by clinic/date
+- orders by clinic/date/status
+- invoice joins if actually used
+
+Rules:
+- add indexes only if actual dashboard queries need them
+- prefer existing indexes from earlier steps when sufficient
+- do NOT add speculative or redundant indexes
+- verify with actual query patterns / EXPLAIN if needed
+
+==================================================
+ACCESS / SCOPE SAFETY
+==================================================
+
+Dashboards must respect:
+- clinic isolation
+- role-based permissions
+- doctor-specific visibility where applicable
+
+Required:
+- no cross-clinic leakage
+- no unauthorized secretary metrics exposure
+- backend-enforced scope only
+
+==================================================
+DATA SAFETY / INTERPRETATION RULES
+==================================================
+
+- dashboards are read-only
+- metrics are operational, not accounting statements
+- no mutation side effects
+- no hidden writes
+- no approximation from missing data
+- no secondary business logic engine
+
+==================================================
+BEFORE CODING (MANDATORY)
+==================================================
+
+Print EXACTLY:
+
+1) FILES TO MODIFY
+2) ANALYTICS DATA SOURCES
+3) WHAT CAN BE CALCULATED RELIABLY NOW
+4) WHAT MUST BE DEFERRED
+5) ACCESS / SCOPE RULES
+6) INDEXING PLAN (WITH JUSTIFICATION)
+7) REFACTOR / COMPONENT PLAN
+8) IMPLEMENTATION PLAN
+
+STOP.
+
+Wait for approval.
+
+==================================================
+IMPLEMENTATION
+==================================================
+
+After approval:
+Implement Step 6 ONLY.
+
+Do NOT start Step 7.
+Do NOT widen scope.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) DOCTOR DASHBOARD ADDED
+3) SECRETARY DASHBOARD ADDED
+4) RELIABLE METRICS IMPLEMENTED
+5) DEFERRED METRICS
+6) INDEXES ADDED (WITH JUSTIFICATION)
+7) ARCHITECTURE / REFACTOR SUMMARY
+8) ANY LIMITATIONS
+
+==================================================
+QUALITY BAR
+==================================================
+
+Must be:
+- read-only
+- truthful to existing data
+- compact
+- performant
+- cleanly refactored
+- componentized
+- correctly indexed
+- maintainable
+
+No workflow changes.
+No financial overreach.
+No speculative analytics.
+
+Only Step 6 — implemented with strong architecture discipline.
