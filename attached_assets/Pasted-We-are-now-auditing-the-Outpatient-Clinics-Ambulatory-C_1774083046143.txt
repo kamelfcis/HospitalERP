@@ -1,0 +1,354 @@
+We are now auditing the Outpatient Clinics / Ambulatory Care module as it currently exists in the system.
+
+This is NOT a request to build yet.
+This is a discovery + architecture + gap-analysis task only.
+
+I do NOT want generic claims.
+I want the REAL current system state from the actual codebase.
+
+You built this system, so I need you to explain the current outpatient module from the code itself, in a way that helps us decide what to improve, what to refactor, and what is missing to make it a strong sellable module.
+
+==================================================
+STRICT OUTPUT RULES
+==================================================
+
+1) Do NOT code anything yet.
+2) Do NOT give high-level vague summaries.
+3) Do NOT say "module exists" without evidence.
+4) Read the actual files first and report the real system.
+5) Treat this as a technical product audit for future redesign / completion.
+6) Explain clearly because a weaker human developer may continue later.
+7) Use exact file names, route names, table names, and workflow points.
+8) Where something is weak, say it clearly.
+9) Where something is good, say it clearly.
+10) If a function or table name differs from expected naming, print the actual mapping.
+
+==================================================
+I NEED THE AUDIT FROM THESE ANGLES
+==================================================
+
+A) CURRENT FUNCTIONAL SCOPE
+B) WORKFLOW / USER JOURNEY
+C) SCHEMA / TABLES / RELATIONSHIPS
+D) ROUTES / STORAGE / SERVICES
+E) UI PAGES / COMPONENTS
+F) ROLE-BASED ACCESS (Secretary / Doctor / Nurse / Manager / Cashier)
+G) FINANCIAL / CONTRACT / APPROVAL INTEGRATION
+H) LAB / RADIOLOGY / PHARMACY / ADMISSION INTEGRATION
+I) REPORTING / DASHBOARD / FOLLOW-UP / HISTORY
+J) GAPS / RISKS / WEAKNESSES
+K) WHAT SHOULD BE KEPT vs REFACTORED vs ADDED
+
+==================================================
+FIRST: FILE DISCOVERY
+==================================================
+
+Start by inspecting and listing the exact files relevant to the outpatient clinics module, including but not limited to:
+
+- pages
+- routes
+- storage files
+- schema files
+- hooks
+- components
+- permissions / RBAC
+- billing / invoice links
+- appointment / queue / consultation files
+- lab / radiology / prescription / referrals if connected
+- patient history / encounter / visit note if connected
+
+Print a section:
+
+1) FILES INSPECTED
+For each file:
+- exact file path
+- why it matters to outpatient clinics
+
+==================================================
+THEN PRINT THE AUDIT IN THIS EXACT STRUCTURE
+==================================================
+
+2) MODULE BOUNDARY
+Explain:
+- what the outpatient module currently includes
+- what it does NOT include
+- where its boundaries start/end in the current system
+
+3) REAL USER JOURNEY
+Explain the current actual flow step by step:
+- secretary workflow
+- patient booking workflow
+- check-in / arrival workflow
+- doctor workflow
+- consultation workflow
+- follow-up workflow
+- billing workflow
+- closing / completion workflow
+
+For each step:
+- actual screen/page
+- actual route
+- actual table(s) written/read
+
+4) APPOINTMENT / BOOKING ENGINE
+Explain the current booking logic:
+- how appointments are created
+- statuses used
+- reschedule/cancel/no-show handling
+- walk-in support
+- waiting list support
+- queue support
+- doctor schedule support
+- slot management support
+- overbooking handling
+- calendar/day-list support
+
+State clearly:
+- what exists
+- what is missing
+- what is weak
+
+5) DOCTOR CONSULTATION / ENCOUNTER ENGINE
+Explain the current doctor-side module:
+- consultation screen
+- visit note
+- complaint/history/exam
+- diagnosis
+- plan
+- templates/macros
+- specialty-specific fields
+- vitals
+- attachments
+- follow-up planning
+
+State clearly:
+- what exists
+- what is basic only
+- what is missing completely
+
+6) PRESCRIPTIONS / ORDERS / PROCEDURES
+Explain current support for:
+- prescriptions
+- lab orders
+- radiology orders
+- procedures
+- referrals
+- admission requests
+- surgery requests
+- internal services
+
+For each:
+- actual entry point
+- actual route/storage
+- whether it creates financial lines
+- whether it is only a doctor order / request
+- whether execution can be tracked
+- whether status can be tracked
+
+7) EXECUTION TRACKING
+This is very important.
+
+Explain whether the current system lets the doctor see:
+- how many labs were ordered
+- which labs were executed
+- which labs are still pending
+- how many radiology orders were done vs pending
+- whether prescribed medications were dispensed
+- whether orders are internal or external
+- whether results are linked back to the visit
+
+If not available, say exactly what is missing.
+
+8) PATIENT HISTORY / LONGITUDINAL VIEW
+Explain the current patient history capabilities:
+- previous visits
+- diagnoses history
+- prescriptions history
+- labs history
+- radiology history
+- attachments
+- timeline view
+- doctor can return later and review full history?
+
+State clearly:
+- what exists
+- where it is shown
+- how strong/weak it is
+
+9) SECRETARY / FRONT DESK CAPABILITIES
+Explain exactly what the secretary can do today:
+- register patient
+- book
+- reschedule
+- cancel
+- mark arrived
+- print queue slip
+- see waiting patients
+- track no-show
+- follow-up reminders
+- patient phone / contact use
+- insurance/contract verification
+
+State actual permissions and actual screens.
+
+10) DOCTOR CAPABILITIES
+Explain exactly what the doctor can do today:
+- open queue
+- start consultation
+- write notes
+- request tests
+- prescribe
+- review history
+- complete visit
+- see financial impact
+- see order execution status
+- see daily productivity
+
+State actual permissions and actual screens.
+
+11) FINANCIAL INTEGRATION
+Explain how outpatient clinics currently connect to:
+- patient invoices
+- cashier
+- service pricing
+- contracts
+- approvals
+- claims readiness
+- company share / patient share
+- finalization
+
+Very important:
+Print actual integration points, not assumptions.
+
+12) CROSS-MODULE INTEGRATIONS
+Explain current real integrations with:
+- Lab
+- Radiology
+- Pharmacy
+- Admissions / Inpatient
+- Contracts
+- Claims
+- Accounting / GL
+- Bed board if relevant
+
+For each:
+- integration exists / partial / missing
+- actual files/routes/tables
+- whether it is tight or weak coupling
+
+13) SCHEMA / TABLE MAP
+Print the main tables actually used by outpatient clinics.
+
+For each table:
+- table name
+- drizzle/schema object
+- purpose
+- main important columns
+- linked tables
+
+Also print the relationship map for:
+- appointment
+- consultation
+- patient invoice
+- service order
+- doctor
+- clinic
+- patient
+- contract if present
+
+14) RBAC / PERMISSIONS MAP
+Print the actual permissions relevant to outpatient clinics.
+
+Group them by role:
+- secretary
+- doctor
+- nurse
+- clinic manager
+- cashier
+- insurance officer
+- admin
+
+For each:
+- what pages/routes they can access
+- what actions they can perform
+
+15) REPORTS / KPI / ANALYTICS
+Explain what currently exists in outpatient analytics:
+- daily visits
+- revenue
+- doctor productivity
+- queue time
+- no-show
+- follow-up
+- order completion
+- conversion to admission
+- conversion to procedures
+
+State clearly:
+- existing
+- partial
+- missing
+
+16) WEAK POINTS / PRODUCT GAPS
+Now be brutally honest.
+
+From the actual codebase, list:
+- architectural weaknesses
+- giant files
+- duplicated logic
+- weak workflows
+- missing statuses
+- missing doctor tools
+- missing secretary tools
+- missing financial visibility
+- missing tracking
+- missing history/timeline
+- missing specialty extensibility
+- anything preventing this module from being a strong sellable product
+
+17) KEEP / REFACTOR / ADD
+Split your recommendations into three sections:
+
+A. KEEP AS-IS
+What is already good and should stay
+
+B. REFACTOR
+What exists but should be reorganized / componentized / cleaned
+
+C. ADD
+What is missing and should be built next
+
+18) PRODUCT MATURITY VERDICT
+Give a final honest verdict:
+- current maturity level of outpatient module
+- strongest areas
+- weakest areas
+- what must be built to make it a modern sellable outpatient module
+
+19) PHASED RECOMMENDATION
+Based on the REAL current codebase, propose the best development phases for improving outpatient clinics.
+
+The phases must be practical and incremental, for example:
+- Phase 1: booking / queue / check-in hardening
+- Phase 2: doctor encounter strengthening
+- Phase 3: orders + execution tracking
+- Phase 4: financial + contract integration hardening
+- Phase 5: analytics + doctor dashboard + secretary dashboard
+
+But adapt phases to the actual system state, not generic ideas.
+
+==================================================
+CRITICAL REQUIREMENTS
+==================================================
+
+- Do not build anything yet
+- Do not propose fantasy features without first stating whether the current system supports the foundation
+- Use exact file names and exact route names
+- Explain actual tables and integrations
+- Tell me where the module is weak
+- Tell me where the module is already strong
+- Make the answer useful for product redesign and handoff to another developer
+
+At the very end print:
+
+20) TOP 10 MISSING THINGS THAT PREVENT THIS MODULE FROM BEING A STRONG SELLABLE OUTPATIENT PRODUCT
