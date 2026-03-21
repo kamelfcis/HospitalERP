@@ -207,6 +207,67 @@ export const PHARMACY_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "sales_invoice",
 ]);
 
+// ─── Account category rules (mirrors server/lib/account-category-validator) ────
+//
+// Defines which account_type values are allowed for each line type / side.
+// Used by MappingRowEditor to filter the AccountLookup dropdown so the admin
+// cannot pick an incompatible account type from the UI.
+//
+// account_type values: "asset" | "liability" | "equity" | "revenue" | "expense"
+
+export interface AccountCategoryRule {
+  debit?:  string[];
+  credit?: string[];
+}
+
+export const ACCOUNT_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
+  revenue_drugs:        { debit: ["asset"],                credit: ["revenue"] },
+  revenue_general:      { debit: ["asset"],                credit: ["revenue"] },
+  revenue_consumables:  { debit: ["asset"],                credit: ["revenue"] },
+  revenue_services:     { debit: ["asset"],                credit: ["revenue"] },
+  revenue_equipment:    { debit: ["asset"],                credit: ["revenue"] },
+
+  inventory:            { debit: ["asset"],                credit: ["asset"]             },
+
+  cogs:                 { debit: ["expense"],              credit: ["asset"]             },
+  cogs_drugs:           { debit: ["expense"],              credit: ["asset"]             },
+  cogs_supplies:        { debit: ["expense"],              credit: ["asset"]             },
+
+  receivables:          { debit: ["asset"],                credit: ["asset"]             },
+  cash:                 { debit: ["asset"],                credit: ["asset", "liability"] },
+
+  discount_allowed:     { debit: ["revenue", "expense"],  credit: ["asset", "liability"] },
+
+  vat_output:           { debit: ["asset"],                credit: ["liability"]         },
+  vat_input:            { debit: ["asset"],                credit: ["asset", "liability"] },
+
+  payables:             { debit: ["asset"],                credit: ["liability"]         },
+  payables_drugs:       { debit: ["asset"],                credit: ["liability"]         },
+  payables_consumables: { debit: ["asset"],                credit: ["liability"]         },
+
+  discount_earned:      { debit: ["asset", "liability"],  credit: ["revenue", "expense"] },
+
+  doctor_payable:       { debit: ["liability"],            credit: ["asset"]             },
+  receivable_clear:     { debit: ["asset"],                credit: ["asset"]             },
+
+  stock_gain:           {                                  credit: ["revenue", "equity"] },
+  stock_loss:           { debit: ["expense", "equity"]                                  },
+
+  returns:              { debit: ["revenue"],              credit: ["asset"]             },
+};
+
+/**
+ * Returns an AccountLookup filter string for the given line type and side.
+ * Undefined means no filter — all accounts are shown.
+ */
+export function getAccountFilter(lineType: string, side: "debit" | "credit"): string | undefined {
+  const rule = ACCOUNT_CATEGORY_RULES[lineType];
+  if (!rule) return undefined;
+  const allowed = rule[side];
+  if (!allowed || allowed.length === 0) return undefined;
+  return `account_type:${allowed.join(",")}`;
+}
+
 // ─── isRowComplete ─────────────────────────────────────────────────────────────
 // Returns true when all *used* sides of a row have an account assigned.
 // Dynamic sides are treated as always satisfied (the engine resolves them).

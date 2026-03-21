@@ -14,6 +14,7 @@ import {
   transactionTypeLabels,
   mappingLineTypeLabels,
 } from "@shared/schema";
+import { validateAccountCategory } from "../lib/account-category-validator";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -332,6 +333,24 @@ export function registerAccountSetupRoutes(app: Express) {
       if (!transactionType || !lineType) {
         return res.status(400).json({ message: "نوع العملية ونوع السطر مطلوبان" });
       }
+
+      // ── Category validation ──────────────────────────────────────────────
+      const allAccounts = await storage.getAccounts();
+      const accountMap  = new Map((allAccounts as any[]).map((a: any) => [a.id, a]));
+
+      if (debitAccountId) {
+        const acct = accountMap.get(debitAccountId) as any;
+        if (!acct) return res.status(400).json({ message: `حساب المدين غير موجود: ${debitAccountId}` });
+        const vr = validateAccountCategory(acct.accountType, lineType, "debit");
+        if (!vr.valid) return res.status(422).json({ message: vr.message });
+      }
+      if (creditAccountId) {
+        const acct = accountMap.get(creditAccountId) as any;
+        if (!acct) return res.status(400).json({ message: `حساب الدائن غير موجود: ${creditAccountId}` });
+        const vr = validateAccountCategory(acct.accountType, lineType, "credit");
+        if (!vr.valid) return res.status(422).json({ message: vr.message });
+      }
+
       const mapping = await storage.upsertAccountMapping({
         transactionType, lineType, debitAccountId, creditAccountId, description, isActive,
         warehouseId: warehouseId || null,
@@ -365,9 +384,10 @@ export function registerAccountSetupRoutes(app: Express) {
       const validTxTypes   = new Set(Object.keys(transactionTypeLabels));
       const validLineTypes = new Set(Object.keys(mappingLineTypeLabels));
 
-      // Pre-load accounts once for existence checks
-      const allAccounts   = await storage.getAccounts();
-      const accountIdSet  = new Set(allAccounts.map((a: any) => a.id));
+      // Pre-load accounts once for existence + category checks
+      const allAccounts  = await storage.getAccounts();
+      const accountIdSet = new Set(allAccounts.map((a: any) => a.id));
+      const accountMap   = new Map((allAccounts as any[]).map((a: any) => [a.id, a]));
 
       const cleaned: any[] = [];
       for (const m of mappings) {
@@ -382,6 +402,17 @@ export function registerAccountSetupRoutes(app: Express) {
         }
         if (m.creditAccountId && !accountIdSet.has(m.creditAccountId)) {
           return res.status(400).json({ message: `حساب الدائن غير موجود: ${m.creditAccountId}` });
+        }
+        // ── Semantic category check ────────────────────────────────────────
+        if (m.debitAccountId) {
+          const acct = accountMap.get(m.debitAccountId) as any;
+          const vr   = validateAccountCategory(acct.accountType, m.lineType, "debit");
+          if (!vr.valid) return res.status(422).json({ message: vr.message });
+        }
+        if (m.creditAccountId) {
+          const acct = accountMap.get(m.creditAccountId) as any;
+          const vr   = validateAccountCategory(acct.accountType, m.lineType, "credit");
+          if (!vr.valid) return res.status(422).json({ message: vr.message });
         }
         cleaned.push({
           transactionType: m.transactionType,

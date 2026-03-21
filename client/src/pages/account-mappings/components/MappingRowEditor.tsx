@@ -28,6 +28,7 @@ import {
   DYNAMIC_LINE_SPECS,
   isRowComplete,
   allLineTypeOptions,
+  getAccountFilter,
 } from "../types";
 
 interface MappingRowEditorProps {
@@ -75,6 +76,9 @@ export function MappingRowEditor({
   const required  = spec?.required === true;
   const cond      = spec?.required === "cond";
   const unknown   = !spec;
+
+  const debitFilter  = !unknown ? getAccountFilter(row.lineType, "debit")  : undefined;
+  const creditFilter = !unknown ? getAccountFilter(row.lineType, "credit") : undefined;
 
   const useDebit  = spec ? spec.debitSide  : true;
   const useCredit = spec ? spec.creditSide : true;
@@ -166,6 +170,7 @@ export function MappingRowEditor({
           value={row.debitAccountId}
           onChange={item => onUpdateRow(row.key, "debitAccountId", item?.id ?? "")}
           placeholder="اختر حساب المدين"
+          filter={debitFilter}
           data-testid={`select-debit-${row.lineType || row.key}`}
         />
       )}
@@ -188,6 +193,7 @@ export function MappingRowEditor({
           value={row.creditAccountId}
           onChange={item => onUpdateRow(row.key, "creditAccountId", item?.id ?? "")}
           placeholder="اختر حساب الدائن"
+          filter={creditFilter}
           data-testid={`select-credit-${row.lineType || row.key}`}
         />
       )}

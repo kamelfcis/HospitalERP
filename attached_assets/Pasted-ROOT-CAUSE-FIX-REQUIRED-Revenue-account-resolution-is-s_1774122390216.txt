@@ -1,0 +1,226 @@
+ROOT-CAUSE FIX REQUIRED — Revenue account resolution is structurally unsafe and must be corrected at the design level, not by data cleanup only.
+
+Context:
+We discovered a critical accounting bug in sales_invoice journal generation:
+- revenue_drugs can resolve to an inventory/warehouse account (12xxx) instead of a revenue account (41xx/42xx)
+- this happened because:
+  1) account_mappings contained wrong rows at warehouse level
+  2) current priority rules allowed warehouse-specific mapping to override the correct pharmacy-specific revenue mapping
+- result: journal stays mathematically balanced, but is materially wrong accounting-wise
+
+Business rule that must be enforced from now on:
+1) Revenue lines must NEVER post to inventory/stock accounts
+2) Inventory lines must NEVER post to revenue accounts
+3) COGS lines must NEVER post to inventory or revenue accounts incorrectly
+4) The resolver must enforce semantic/account-category validation, not just “first matching mapping wins”
+
+Important:
+Old experimental posted data is NOT important.
+Do NOT spend time on correcting historical journals.
+Focus only on fixing the logic permanently so the bug cannot happen again.
+
+==================================================
+REQUIRED DESIGN CHANGES
+==================================================
+
+A) FIX THE RESOLUTION MODEL BY LINE TYPE
+Do not use one generic priority rule for all line types.
+
+Implement line-type-aware resolution rules for sales_invoice:
+
+1) For revenue lines:
+- line types: revenue_drugs, revenue_general
+- priority must be:
+  exact match (pharmacyId + warehouseId) if supported
+  then pharmacy-specific
+  then warehouse-specific
+  then general
+- if the business design does not require exact match, then:
+  pharmacy-specific first
+  then warehouse-specific
+  then general
+- DO NOT allow warehouse-level mapping to override pharmacy mapping for revenue unless explicitly intended and validated
+
+2) For inventory lines:
+- line type: inventory
+- priority can be:
+  exact match (pharmacyId + warehouseId)
+  then warehouse-specific
+  then pharmacy-specific
+  then general
+- inventory is logically allowed to resolve to warehouse/stock asset accounts
+
+3) For COGS lines:
+- line type: cogs
+- priority can be:
+  exact match
+  then pharmacy-specific or warehouse-specific depending on current business design
+  then general
+
+4) For receivables / discounts:
+- preserve current intended business behavior, but make it explicit and type-safe
+
+==================================================
+B) ADD ACCOUNT CATEGORY VALIDATION (CRITICAL)
+==================================================
+
+This is mandatory.
+
+The system must no longer trust account_mappings blindly.
+Before accepting a resolved account for a journal line, validate that the chosen GL account belongs to the correct semantic category for that line type.
+
+Implement one of these approaches (prefer the strongest practical one already compatible with this codebase):
+
+Preferred approach:
+- add / use an account classification or account category field on GL accounts, such as:
+  revenue
+  inventory
+  cogs
+  receivable
+  discount
+  cash
+  bank
+  payable
+  other
+- then enforce line-type-to-category compatibility
+
+Minimum acceptable fallback if categories are not yet modeled:
+- introduce a validation helper based on account ranges / account code prefixes / existing account metadata
+- example:
+  revenue lines must map only to 4xxx / approved revenue accounts
+  inventory lines must map only to 12xxx / approved inventory asset accounts
+  cogs lines must map only to 51xx / approved cost accounts
+- this fallback is acceptable only if full account categories are not available yet
+
+Mandatory validation examples:
+- revenue_drugs / revenue_general:
+  allowed categories = revenue only
+  reject inventory / asset / cogs / receivable accounts
+- inventory:
+  allowed categories = inventory only
+- cogs:
+  allowed categories = cogs only
+- receivables:
+  allowed categories = receivable only
+- discount_allowed:
+  allowed categories = discount/contra-revenue or approved discount expense accounts based on current accounting design
+
+If validation fails:
+- do NOT post the journal
+- mark journal_status = failed
+- store a clear journal_error message in Arabic and English if possible
+- log the exact mapping row and exact account code that caused rejection
+
+==================================================
+C) HARD FAIL ON INVALID MAPPING
+==================================================
+
+If a mapping resolves to an account that violates line-type semantics:
+- fail loudly
+- do not silently continue
+- do not auto-fallback to a random weaker mapping after selecting an invalid one unless there is an intentional, deterministic validation-aware fallback process
+
+Recommended behavior:
+1) collect candidate mappings by priority
+2) evaluate candidates in order
+3) select the first candidate that both:
+   - matches the scope rule
+   - passes semantic category validation
+4) if none pass, fail the journal with a precise error
+
+This is the key root-cause fix.
+
+==================================================
+D) UPDATE getMappingsForTransaction / resolver API
+==================================================
+
+Refactor the resolver API so it clearly accepts and uses all relevant context:
+- transactionType
+- lineType
+- pharmacyId
+- warehouseId
+- any other dimensions already used by mappings
+
+If the current interface does not formally include pharmacyId, fix that properly in:
+- interface/type definitions
+- implementation
+- all call sites
+
+No hidden third-argument hacks.
+No implicit any.
+No mismatched signatures.
+
+==================================================
+E) PREVENT BAD CONFIGURATION FROM UI / API
+==================================================
+
+This is also required.
+
+When users configure account mappings from the UI:
+- do not allow selecting an invalid account type for a given line type
+
+Examples:
+- if mapping row is revenue_drugs, account dropdown must only allow revenue accounts
+- if mapping row is inventory, account dropdown must only allow inventory accounts
+- if mapping row is cogs, account dropdown must only allow cogs accounts
+
+At minimum:
+- validate on backend API before save
+- reject invalid mapping with explicit validation message
+
+Preferred:
+- validate in both frontend and backend
+- frontend filters selectable accounts
+- backend re-validates authoritatively
+
+==================================================
+F) VALIDATION / TESTS REQUIRED
+==================================================
+
+Do not stop at code edits.
+Produce proof.
+
+1) Add or run test scenarios for:
+- pharmacy-specific revenue mapping exists, warehouse-specific wrong mapping exists → revenue must still resolve to valid revenue account, never inventory
+- inventory line resolves to inventory account correctly
+- cogs line resolves to cogs account correctly
+- invalid mapping configured intentionally (revenue line -> inventory account) → journal must fail, not post
+- missing valid mapping → clear journal failure, no silent corruption
+
+2) Validate with live/manual scenarios for:
+- external pharmacy sale
+- internal pharmacy sale
+- main warehouse sale if applicable
+
+3) Show final journal examples proving:
+- receivable debit correct
+- revenue credit goes to 41xx/42xx only
+- cogs debit goes to 51xx only
+- inventory credit goes to 12xxx only
+
+==================================================
+G) OUTPUT FORMAT I WANT FROM YOU
+==================================================
+
+Before implementation, give me:
+1) exact root-cause summary
+2) exact files to modify
+3) exact resolution-rule design you will implement per line type
+4) exact validation strategy for account categories
+
+Then implement.
+
+After implementation, give me:
+1) modified files list
+2) exact logic changes
+3) exact validation rules now enforced
+4) examples of rejected invalid mappings
+5) proof from test output or live validation that revenue can no longer post to inventory accounts
+6) confirmation that this is a structural fix, not a one-time data correction
+
+Important constraints:
+- do NOT spend time fixing historical experimental data
+- do NOT patch only the 3 current mappings
+- do NOT leave the system vulnerable to the same class of mistake again
+- do NOT rely on “users should configure it correctly”
+- the code must actively prevent semantic misposting

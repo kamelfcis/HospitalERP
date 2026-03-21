@@ -19,6 +19,12 @@ export interface UseAccountsLookupOptions {
   enabled?: boolean;
 }
 
+/**
+ * Filter syntax:
+ *   "asset-flat"          — asset accounts without a parent (legacy)
+ *   "account_type:X"      — accounts whose accountType === X
+ *   "account_type:X,Y"    — accounts whose accountType is in {X, Y}
+ */
 export function useAccountsLookup(options: UseAccountsLookupOptions = {}): UseLookupResult {
   const { search = "", filter, enabled = true } = options;
 
@@ -27,8 +33,13 @@ export function useAccountsLookup(options: UseAccountsLookupOptions = {}): UseLo
     if (!res.ok) return [];
     const data = await res.json();
     const list: Account[] = Array.isArray(data) ? data : [];
+
     if (filter === "asset-flat") {
       return list.filter(a => a.accountType === "asset" && !a.parentId);
+    }
+    if (filter?.startsWith("account_type:")) {
+      const allowed = new Set(filter.slice("account_type:".length).split(",").map(s => s.trim()));
+      return list.filter(a => a.accountType && allowed.has(a.accountType));
     }
     return list;
   }

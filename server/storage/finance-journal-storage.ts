@@ -11,12 +11,13 @@
  */
 
 import { db } from "../db";
-import { eq, and, asc, sql, gte, lte, isNull } from "drizzle-orm";
+import { eq, and, asc, sql, gte, lte, isNull, inArray } from "drizzle-orm";
 import { roundMoney, parseMoney } from "../finance-helpers";
 import {
   journalEntries,
   journalLines,
   accountMappings,
+  accounts as accountsTable,
   fiscalPeriods,
 } from "@shared/schema";
 import type {
@@ -29,6 +30,10 @@ import type {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { logAcctEvent } from "../lib/accounting-event-logger";
+import {
+  validateAccountCategory,
+  REVENUE_FIRST_LINE_TYPES,
+} from "../lib/account-category-validator";
 
 const methods = {
   // ==================== Account Mappings — ربط الحسابات ====================
@@ -121,38 +126,124 @@ const methods = {
     });
   },
 
-  async getMappingsForTransaction(this: DatabaseStorage, transactionType: string, warehouseId?: string | null, pharmacyId?: string | null): Promise<AccountMapping[]> {
+  async getMappingsForTransaction(
+    this: DatabaseStorage,
+    transactionType: string,
+    warehouseId?: string | null,
+    pharmacyId?:  string | null,
+  ): Promise<AccountMapping[]> {
+    // ── 1. Fetch all active mappings for this transaction type ──────────────
     const allMappings = await db.select().from(accountMappings)
       .where(and(
         eq(accountMappings.transactionType, transactionType),
-        eq(accountMappings.isActive, true)
+        eq(accountMappings.isActive, true),
       ))
       .orderBy(asc(accountMappings.lineType));
 
-    // مستوى 1: ربط مخصص للمخزن
-    const warehouseSpecific = warehouseId
+    // ── 2. Load account categories for validation ──────────────────────────
+    // Collect all referenced account IDs (debit + credit) across all mappings
+    const accountIds = [
+      ...new Set(
+        allMappings.flatMap(m => [m.debitAccountId, m.creditAccountId].filter(Boolean) as string[])
+      ),
+    ];
+    const accountTypeMap = new Map<string, string>(); // id → account_type
+    if (accountIds.length > 0) {
+      const rows = await db
+        .select({ id: accountsTable.id, accountType: accountsTable.accountType })
+        .from(accountsTable)
+        .where(inArray(accountsTable.id, accountIds));
+      for (const r of rows) {
+        accountTypeMap.set(r.id, r.accountType as string);
+      }
+    }
+
+    // ── 3. Partition by scope ──────────────────────────────────────────────
+    const warehouseSpecific: AccountMapping[] = warehouseId
       ? allMappings.filter(m => m.warehouseId === warehouseId && !m.pharmacyId)
       : [];
 
-    // مستوى 2: ربط مخصص للصيدلية (بدون مخزن محدد)
-    const pharmacySpecific = pharmacyId
+    const pharmacySpecific: AccountMapping[] = pharmacyId
       ? allMappings.filter(m => m.pharmacyId === pharmacyId && !m.warehouseId)
       : [];
 
-    // مستوى 3: ربط عام (بدون مخزن أو صيدلية)
-    const generic = allMappings.filter(m => !m.warehouseId && !m.pharmacyId);
-
-    // الأولوية: مخزن محدد > صيدلية محددة > عام
-    const coveredByWarehouse = new Set(warehouseSpecific.map(m => m.lineType));
-    const pharmacyFallback = pharmacySpecific.filter(m => !coveredByWarehouse.has(m.lineType));
-    const coveredByPharmacy = new Set([...coveredByWarehouse, ...pharmacyFallback.map(m => m.lineType)]);
-    const genericFallback = generic.filter(m => !coveredByPharmacy.has(m.lineType));
+    const generic: AccountMapping[] = allMappings.filter(m => !m.warehouseId && !m.pharmacyId);
 
     if (!warehouseId && !pharmacyId) {
       return generic;
     }
 
-    return [...warehouseSpecific, ...pharmacyFallback, ...genericFallback];
+    // ── 4. Category-aware account validator ───────────────────────────────
+    function isMappingValid(m: AccountMapping): boolean {
+      if (m.debitAccountId) {
+        const aType = accountTypeMap.get(m.debitAccountId) ?? "";
+        const result = validateAccountCategory(aType, m.lineType, "debit");
+        if (!result.valid) return false;
+      }
+      if (m.creditAccountId) {
+        const aType = accountTypeMap.get(m.creditAccountId) ?? "";
+        const result = validateAccountCategory(aType, m.lineType, "credit");
+        if (!result.valid) return false;
+      }
+      return true;
+    }
+
+    // ── 5. Per-line-type resolution with semantic priority ─────────────────
+    //
+    //  Revenue lines (revenue_drugs, revenue_general, …):
+    //    pharmacy-specific  →  warehouse-specific  →  generic
+    //    (pharmacy drives revenue attribution; warehouse is a physical location)
+    //
+    //  All other lines (inventory, cogs, receivables, vat, …):
+    //    warehouse-specific  →  pharmacy-specific  →  generic
+    //    (warehouse drives cost/stock attribution)
+    //
+    //  Within each tier, the first candidate that passes category validation
+    //  wins. If a candidate fails (e.g. revenue_drugs credit = 12312 asset),
+    //  it is skipped and the next tier is tried. This prevents a wrong
+    //  warehouse-level mapping from overriding a correct pharmacy-level one.
+
+    const allLineTypes = new Set(allMappings.map(m => m.lineType));
+    const resultMap = new Map<string, AccountMapping>();
+
+    for (const lineType of allLineTypes) {
+      const wh = warehouseSpecific.filter(m => m.lineType === lineType);
+      const ph = pharmacySpecific.filter(m => m.lineType === lineType);
+      const ge = generic.filter(m => m.lineType === lineType);
+
+      const orderedCandidates: AccountMapping[] = REVENUE_FIRST_LINE_TYPES.has(lineType)
+        ? [...ph, ...wh, ...ge]  // revenue: pharmacy first
+        : [...wh, ...ph, ...ge]; // others:  warehouse first
+
+      for (const candidate of orderedCandidates) {
+        if (isMappingValid(candidate)) {
+          resultMap.set(lineType, candidate);
+          break;
+        }
+        // Log skipped invalid mapping so it is visible in audit
+        const whyMsg: string[] = [];
+        if (candidate.debitAccountId) {
+          const aType = accountTypeMap.get(candidate.debitAccountId) ?? "unknown";
+          const r = validateAccountCategory(aType, lineType, "debit");
+          if (!r.valid) whyMsg.push(r.message);
+        }
+        if (candidate.creditAccountId) {
+          const aType = accountTypeMap.get(candidate.creditAccountId) ?? "unknown";
+          const r = validateAccountCategory(aType, lineType, "credit");
+          if (!r.valid) whyMsg.push(r.message);
+        }
+        // Fire-and-forget audit warning; do not await to avoid slowing the call path
+        logAcctEvent({
+          sourceType:   transactionType,
+          sourceId:     candidate.id,
+          eventType:    "invalid_mapping_skipped",
+          status:       "completed",
+          errorMessage: `[تحذير] تم تجاهل ربط حساب غير صالح دلالياً — ${whyMsg.join("; ")} — معرف الربط: ${candidate.id}`,
+        }).catch(() => {/* ignore audit log errors */});
+      }
+    }
+
+    return [...resultMap.values()];
   },
 
   buildPatientInvoiceGLLines(this: DatabaseStorage, header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string }[] {
