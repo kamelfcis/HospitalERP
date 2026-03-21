@@ -27,7 +27,7 @@ import { roundMoney } from "../finance-helpers";
 const methods = {
   async regenerateJournalForInvoice(this: DatabaseStorage, invoiceId: string): Promise<JournalEntry | null> {
     const [invoice] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
-    if (!invoice || invoice.status !== "finalized") return null;
+    if (!invoice || !["finalized", "collected"].includes(invoice.status)) return null;
 
     const lines = await db.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, invoiceId));
     let cogsDrugs = 0, cogsSupplies = 0, revenueDrugs = 0, revenueSupplies = 0;
@@ -184,7 +184,7 @@ const methods = {
       ));
     if (existingEntries.length > 0) return null;
 
-    const mappings = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId);
+    const mappings = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId, invoice.pharmacyId);
     const mappingMap = new Map<string, AccountMapping>();
     for (const m of mappings) {
       mappingMap.set(m.lineType, m);
@@ -483,11 +483,12 @@ const methods = {
       try {
         const [invoice] = await db.select({
           warehouseId: salesInvoiceHeaders.warehouseId,
+          pharmacyId: salesInvoiceHeaders.pharmacyId,
           isReturn: salesInvoiceHeaders.isReturn,
         }).from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
 
         const invoiceReceivableIds = new Set<string>();
-        const mappings = await this.getMappingsForTransaction("sales_invoice", invoice?.warehouseId ?? null);
+        const mappings = await this.getMappingsForTransaction("sales_invoice", invoice?.warehouseId ?? null, invoice?.pharmacyId ?? null);
         for (const m of mappings) {
           if (m.lineType === "receivables" && m.debitAccountId) {
             invoiceReceivableIds.add(m.debitAccountId);
@@ -768,7 +769,7 @@ const methods = {
     }
 
     // 2. Account mappings for this warehouse
-    const mappings: AccountMapping[] = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId);
+    const mappings: AccountMapping[] = await this.getMappingsForTransaction("sales_invoice", invoice.warehouseId, invoice.pharmacyId);
     const map = new Map<string, AccountMapping>(
       mappings.map((m) => [m.lineType, m] as [string, AccountMapping]),
     );

@@ -36,6 +36,7 @@ interface MappingRowEditorProps {
   txType:          string;
   usedLineTypes:   Set<string>;
   isWarehouseView: boolean;
+  isPharmacyView:  boolean;
   onUpdateRow:     (key: string, field: keyof MappingRow, value: string) => void;
   onRemoveRow:     (key: string) => void;
 }
@@ -66,7 +67,7 @@ function DynamicAccountBadge({ info, testId }: { info: DynamicSideInfo; testId: 
 }
 
 export function MappingRowEditor({
-  row, spec, txType, usedLineTypes, isWarehouseView,
+  row, spec, txType, usedLineTypes, isWarehouseView, isPharmacyView,
   onUpdateRow, onRemoveRow,
 }: MappingRowEditorProps) {
   const dynSpec = DYNAMIC_LINE_SPECS[txType]?.[row.lineType];
@@ -78,8 +79,9 @@ export function MappingRowEditor({
   const useDebit  = spec ? spec.debitSide  : true;
   const useCredit = spec ? spec.creditSide : true;
 
-  const showGenericFallback = isWarehouseView && row.source === "generic";
+  const showGenericFallback = (isWarehouseView || isPharmacyView) && row.source === "generic";
   const showWarehousePin    = isWarehouseView && row.source === "warehouse";
+  const showPharmacyPin     = isPharmacyView  && row.source === "pharmacy";
 
   const rowBg = !complete && required ? "bg-red-50/60 border-red-100"
               : !complete && cond     ? "bg-amber-50/40"
@@ -117,6 +119,9 @@ export function MappingRowEditor({
         )}
         {showWarehousePin && (
           <span className="text-[9px] text-indigo-500 leading-tight">↳ مستودع محدد</span>
+        )}
+        {showPharmacyPin && (
+          <span className="text-[9px] text-emerald-600 leading-tight">↳ صيدلية محددة</span>
         )}
       </div>
 

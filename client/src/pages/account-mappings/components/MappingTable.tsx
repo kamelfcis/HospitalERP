@@ -20,6 +20,7 @@ interface MappingTableProps {
   txType:          string;
   usedLineTypes:   Set<string>;
   isWarehouseView: boolean;
+  isPharmacyView:  boolean;
   isLoading:       boolean;
   onUpdateRow:     (key: string, field: keyof MappingRow, value: string) => void;
   onRemoveRow:     (key: string) => void;
@@ -27,7 +28,7 @@ interface MappingTableProps {
 }
 
 export function MappingTable({
-  rows, txSpecs, txType, usedLineTypes, isWarehouseView,
+  rows, txSpecs, txType, usedLineTypes, isWarehouseView, isPharmacyView,
   isLoading, onUpdateRow, onRemoveRow, onAddRow,
 }: MappingTableProps) {
   if (isLoading) {
@@ -71,6 +72,7 @@ export function MappingTable({
             txType={txType}
             usedLineTypes={usedLineTypes}
             isWarehouseView={isWarehouseView}
+            isPharmacyView={isPharmacyView}
             onUpdateRow={onUpdateRow}
             onRemoveRow={onRemoveRow}
           />

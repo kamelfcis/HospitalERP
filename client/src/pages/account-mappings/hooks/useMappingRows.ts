@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   type AccountMapping,
   type Warehouse,
+  type Pharmacy,
 } from "@shared/schema";
 import {
   type MappingRow,
@@ -20,6 +21,7 @@ import {
   allLineTypeOptions,
   isRowComplete,
   NO_WAREHOUSE_SELECTOR_TYPES,
+  PHARMACY_SELECTOR_TYPES,
 } from "../types";
 
 export interface UseMappingRowsResult {
@@ -28,6 +30,8 @@ export interface UseMappingRowsResult {
   setSelectedTxType:   (v: string) => void;
   selectedWarehouseId: string;
   setSelectedWarehouseId: (v: string) => void;
+  selectedPharmacyId:  string;
+  setSelectedPharmacyId: (v: string) => void;
 
   // Row state
   rows:          MappingRow[];
@@ -38,14 +42,17 @@ export interface UseMappingRowsResult {
   txSpecs:              Record<string, import("../types").LineTypeSpec>;
   usedLineTypes:        Set<string>;
   isWarehouseView:      boolean;
+  isPharmacyView:       boolean;
   showWarehouseSelector: boolean;
+  showPharmacySelector:  boolean;
   requiredMissing:    MappingRow[];
   conditionalMissing: MappingRow[];
   configured:         MappingRow[];
   setupComplete:      boolean;
 
   // Data
-  warehouses: Warehouse[];
+  warehouses:  Warehouse[];
+  pharmacies:  Pharmacy[];
 
   // Actions
   updateRow: (key: string, field: keyof MappingRow, value: string) => void;
@@ -57,11 +64,12 @@ export interface UseMappingRowsResult {
 export function useMappingRows(): UseMappingRowsResult {
   const [selectedTxType,      setSelectedTxTypeRaw]   = useState<string>(transactionTypes[0]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("__generic__");
+  const [selectedPharmacyId,  setSelectedPharmacyId]  = useState<string>("__generic__");
 
-  // When switching to a tx type whose warehouse is system-resolved, auto-reset the
-  // warehouse filter to "__generic__" so the UI stays consistent.
+  // When switching tx types, reset scope selectors appropriately
   const setSelectedTxType = (v: string) => {
     if (NO_WAREHOUSE_SELECTOR_TYPES.has(v)) setSelectedWarehouseId("__generic__");
+    if (!PHARMACY_SELECTOR_TYPES.has(v))    setSelectedPharmacyId("__generic__");
     setSelectedTxTypeRaw(v);
   };
   const [rows,       setRows]       = useState<MappingRow[]>([]);
@@ -70,6 +78,10 @@ export function useMappingRows(): UseMappingRowsResult {
 
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
+  });
+
+  const { data: pharmacies = [] } = useQuery<Pharmacy[]>({
+    queryKey: ["/api/pharmacies"],
   });
 
   const { data: mappings, isLoading: mappingsLoading } = useQuery<AccountMapping[]>({
@@ -87,36 +99,44 @@ export function useMappingRows(): UseMappingRowsResult {
   useEffect(() => {
     if (mappingsLoading) return;
     const allMappings = mappings ?? [];
+
     const effectiveWarehouseId = selectedWarehouseId === "__generic__" ? null : selectedWarehouseId;
+    const effectivePharmacyId  = selectedPharmacyId  === "__generic__" ? null : selectedPharmacyId;
 
     const warehouseMappings = effectiveWarehouseId
-      ? allMappings.filter(m => m.warehouseId === effectiveWarehouseId)
+      ? allMappings.filter(m => m.warehouseId === effectiveWarehouseId && !m.pharmacyId)
       : [];
-    const genericMappings = allMappings.filter(m => !m.warehouseId);
+    const pharmacyMappings = effectivePharmacyId
+      ? allMappings.filter(m => m.pharmacyId === effectivePharmacyId && !m.warehouseId)
+      : [];
+    const genericMappings = allMappings.filter(m => !m.warehouseId && !m.pharmacyId);
 
-    const suggested  = suggestedLineTypes[selectedTxType] ?? [];
+    const suggested   = suggestedLineTypes[selectedTxType] ?? [];
     const allLineTypes = Array.from(new Set([
       ...warehouseMappings.map(m => m.lineType),
+      ...pharmacyMappings.map(m => m.lineType),
       ...genericMappings.map(m => m.lineType),
       ...suggested,
     ]));
 
     const newRows: MappingRow[] = allLineTypes.map(lt => {
       const warehouseRow = warehouseMappings.find(m => m.lineType === lt);
+      const pharmacyRow  = pharmacyMappings.find(m => m.lineType === lt);
       const genericRow   = genericMappings.find(m => m.lineType === lt);
-      const activeRow    = warehouseRow ?? genericRow;
+      // Priority: warehouse > pharmacy > generic
+      const activeRow = warehouseRow ?? pharmacyRow ?? genericRow;
       return {
         key:             `row-${keyCounter.current++}`,
         lineType:        lt,
         debitAccountId:  activeRow?.debitAccountId  ?? "",
         creditAccountId: activeRow?.creditAccountId ?? "",
-        source: warehouseRow ? "warehouse" : genericRow ? "generic" : "new",
+        source: warehouseRow ? "warehouse" : pharmacyRow ? "pharmacy" : genericRow ? "generic" : "new",
       };
     });
 
     setRows(newRows);
     setHasChanges(false);
-  }, [mappings, mappingsLoading, selectedTxType, selectedWarehouseId]);
+  }, [mappings, mappingsLoading, selectedTxType, selectedWarehouseId, selectedPharmacyId]);
 
   // ── Row actions ────────────────────────────────────────────────────────────
   const updateRow = (key: string, field: keyof MappingRow, value: string) => {
@@ -144,10 +164,12 @@ export function useMappingRows(): UseMappingRowsResult {
   const resetChanges = () => setHasChanges(false);
 
   // ── Derived state ──────────────────────────────────────────────────────────
-  const txSpecs              = lineTypeSpecs[selectedTxType] ?? {};
-  const usedLineTypes        = new Set(rows.map(r => r.lineType));
-  const isWarehouseView      = selectedWarehouseId !== "__generic__";
+  const txSpecs               = lineTypeSpecs[selectedTxType] ?? {};
+  const usedLineTypes         = new Set(rows.map(r => r.lineType));
+  const isWarehouseView       = selectedWarehouseId !== "__generic__";
+  const isPharmacyView        = selectedPharmacyId  !== "__generic__";
   const showWarehouseSelector = !NO_WAREHOUSE_SELECTOR_TYPES.has(selectedTxType);
+  const showPharmacySelector  = PHARMACY_SELECTOR_TYPES.has(selectedTxType);
 
   const requiredMissing    = rows.filter(r => txSpecs[r.lineType]?.required === true   && !isRowComplete(r, txSpecs[r.lineType], selectedTxType));
   const conditionalMissing = rows.filter(r => txSpecs[r.lineType]?.required === "cond" && !isRowComplete(r, txSpecs[r.lineType], selectedTxType));
@@ -157,11 +179,13 @@ export function useMappingRows(): UseMappingRowsResult {
   return {
     selectedTxType,    setSelectedTxType,
     selectedWarehouseId, setSelectedWarehouseId,
+    selectedPharmacyId,  setSelectedPharmacyId,
     rows,       hasChanges,
     isLoading:  mappingsLoading,
-    txSpecs,    usedLineTypes, isWarehouseView, showWarehouseSelector,
+    txSpecs,    usedLineTypes, isWarehouseView, isPharmacyView,
+    showWarehouseSelector, showPharmacySelector,
     requiredMissing, conditionalMissing, configured, setupComplete,
-    warehouses,
+    warehouses, pharmacies,
     updateRow, addRow, removeRow, resetChanges,
   };
 }

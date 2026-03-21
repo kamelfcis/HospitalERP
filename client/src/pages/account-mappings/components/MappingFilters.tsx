@@ -1,20 +1,23 @@
 /**
  * MappingFilters
  *
- * Transaction-type selector + Warehouse override selector.
+ * Transaction-type selector + Warehouse override selector + Pharmacy override selector.
  * The warehouse selector is hidden for transaction types whose warehouse/treasury
  * account is resolved automatically from the source document (sales_invoice,
  * cashier_collection, cashier_refund, warehouse_transfer).
+ * For sales_invoice a pharmacy selector is shown instead so admins can configure
+ * per-pharmacy revenue accounts.
  * Pure presentational — all state lives in useMappingRows.
  */
 
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Building2, Info } from "lucide-react";
+import { Building2, Info, Pill } from "lucide-react";
 import {
   transactionTypeLabels,
   type Warehouse,
+  type Pharmacy,
 } from "@shared/schema";
 import { transactionTypes } from "../types";
 
@@ -23,16 +26,20 @@ interface MappingFiltersProps {
   onTxTypeChange:        (v: string) => void;
   selectedWarehouseId:   string;
   onWarehouseChange:     (v: string) => void;
+  selectedPharmacyId:    string;
+  onPharmacyChange:      (v: string) => void;
   warehouses:            Warehouse[];
-  /** When false, warehouse selector is hidden and a "system-resolved" label is shown instead */
+  pharmacies:            Pharmacy[];
   showWarehouseSelector: boolean;
+  showPharmacySelector:  boolean;
 }
 
 export function MappingFilters({
   selectedTxType, onTxTypeChange,
   selectedWarehouseId, onWarehouseChange,
-  warehouses,
-  showWarehouseSelector,
+  selectedPharmacyId,  onPharmacyChange,
+  warehouses, pharmacies,
+  showWarehouseSelector, showPharmacySelector,
 }: MappingFiltersProps) {
   return (
     <div className="flex items-center gap-4 flex-wrap">
@@ -66,6 +73,27 @@ export function MappingFilters({
               {warehouses.map(w => (
                 <SelectItem key={w.id} value={w.id} data-testid={`option-warehouse-${w.id}`}>
                   {w.nameAr}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : showPharmacySelector ? (
+        /* Pharmacy selector — for sales_invoice only */
+        <div className="flex items-center gap-2">
+          <Pill className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">الصيدلية</span>
+          <Select value={selectedPharmacyId} onValueChange={onPharmacyChange}>
+            <SelectTrigger className="w-[220px]" data-testid="select-pharmacy-filter">
+              <SelectValue placeholder="عام (لجميع الصيدليات)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__generic__" data-testid="option-pharmacy-generic">
+                عام (لجميع الصيدليات)
+              </SelectItem>
+              {pharmacies.map(p => (
+                <SelectItem key={p.id} value={p.id} data-testid={`option-pharmacy-${p.id}`}>
+                  {p.nameAr}
                 </SelectItem>
               ))}
             </SelectContent>

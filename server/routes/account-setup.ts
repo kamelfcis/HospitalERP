@@ -328,12 +328,14 @@ export function registerAccountSetupRoutes(app: Express) {
 
   app.post("/api/account-mappings", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
-      const { transactionType, lineType, debitAccountId, creditAccountId, description, isActive, warehouseId } = req.body;
+      const { transactionType, lineType, debitAccountId, creditAccountId, description, isActive, warehouseId, pharmacyId } = req.body;
       if (!transactionType || !lineType) {
         return res.status(400).json({ message: "نوع العملية ونوع السطر مطلوبان" });
       }
       const mapping = await storage.upsertAccountMapping({
-        transactionType, lineType, debitAccountId, creditAccountId, description, isActive, warehouseId: warehouseId || null
+        transactionType, lineType, debitAccountId, creditAccountId, description, isActive,
+        warehouseId: warehouseId || null,
+        pharmacyId:  pharmacyId  || null,
       });
       res.json(mapping);
     } catch (error: unknown) {
@@ -387,6 +389,7 @@ export function registerAccountSetupRoutes(app: Express) {
           debitAccountId:  m.debitAccountId  || null,
           creditAccountId: m.creditAccountId || null,
           warehouseId:     m.warehouseId     || null,
+          pharmacyId:      m.pharmacyId      || null,
           description:     m.description     || null,
           isActive:        m.isActive !== false,
         });

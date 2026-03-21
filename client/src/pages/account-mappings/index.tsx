@@ -61,8 +61,12 @@ export default function AccountMappings() {
             onTxTypeChange={data.setSelectedTxType}
             selectedWarehouseId={data.selectedWarehouseId}
             onWarehouseChange={data.setSelectedWarehouseId}
+            selectedPharmacyId={data.selectedPharmacyId}
+            onPharmacyChange={data.setSelectedPharmacyId}
             warehouses={data.warehouses}
+            pharmacies={data.pharmacies}
             showWarehouseSelector={data.showWarehouseSelector}
+            showPharmacySelector={data.showPharmacySelector}
           />
         </CardHeader>
 
@@ -75,6 +79,7 @@ export default function AccountMappings() {
             conditionalMissing={data.conditionalMissing}
             configured={data.configured}
             isWarehouseView={data.isWarehouseView}
+            isPharmacyView={data.isPharmacyView}
           />
         )}
 
@@ -85,6 +90,7 @@ export default function AccountMappings() {
             txType={data.selectedTxType}
             usedLineTypes={data.usedLineTypes}
             isWarehouseView={data.isWarehouseView}
+            isPharmacyView={data.isPharmacyView}
             isLoading={data.isLoading}
             onUpdateRow={data.updateRow}
             onRemoveRow={data.removeRow}

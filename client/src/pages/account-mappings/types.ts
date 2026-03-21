@@ -113,7 +113,7 @@ export interface MappingRow {
   lineType:       string;
   debitAccountId: string;
   creditAccountId: string;
-  source: "warehouse" | "generic" | "new";
+  source: "warehouse" | "pharmacy" | "generic" | "new";
 }
 
 // ─── Dynamic line specifications ───────────────────────────────────────────────
@@ -185,16 +185,26 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
 // warehouse in the mapping filters.  The warehouse selector is hidden for
 // these types and replaced with an explanatory label.
 //
-// sales_invoice:      inventory credit resolved from invoice warehouse.glAccountId
 // cashier_collection: treasury debit resolved from cashier shift GL account
 // cashier_refund:     treasury credit resolved from cashier shift (reverse of collection)
 // warehouse_transfer: both source and target warehouse GL resolved from the transfer document
+// sales_invoice:      inventory credit resolved from invoice warehouse.glAccountId
+//                     — BUT revenue accounts can be overridden per-pharmacy (see PHARMACY_SELECTOR_TYPES)
 //
 export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "sales_invoice",
   "cashier_collection",
   "cashier_refund",
   "warehouse_transfer",
+]);
+
+// ─── Transaction types where a pharmacy-level override can be configured ───────
+//
+// sales_invoice: revenue accounts (revenue_drugs, revenue_consumables, etc.)
+//   can be set per-pharmacy so each pharmacy posts to its own revenue account.
+//
+export const PHARMACY_SELECTOR_TYPES: ReadonlySet<string> = new Set([
+  "sales_invoice",
 ]);
 
 // ─── isRowComplete ─────────────────────────────────────────────────────────────

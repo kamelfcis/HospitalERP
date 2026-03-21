@@ -57,6 +57,11 @@ const methods = {
     } else {
       conditions.push(isNull(accountMappings.warehouseId));
     }
+    if (data.pharmacyId) {
+      conditions.push(eq(accountMappings.pharmacyId, data.pharmacyId));
+    } else {
+      conditions.push(isNull(accountMappings.pharmacyId));
+    }
 
     const existing = await db.select().from(accountMappings)
       .where(and(...conditions));
@@ -116,7 +121,7 @@ const methods = {
     });
   },
 
-  async getMappingsForTransaction(this: DatabaseStorage, transactionType: string, warehouseId?: string | null): Promise<AccountMapping[]> {
+  async getMappingsForTransaction(this: DatabaseStorage, transactionType: string, warehouseId?: string | null, pharmacyId?: string | null): Promise<AccountMapping[]> {
     const allMappings = await db.select().from(accountMappings)
       .where(and(
         eq(accountMappings.transactionType, transactionType),
@@ -124,17 +129,30 @@ const methods = {
       ))
       .orderBy(asc(accountMappings.lineType));
 
-    if (!warehouseId) {
-      return allMappings.filter(m => !m.warehouseId);
+    // مستوى 1: ربط مخصص للمخزن
+    const warehouseSpecific = warehouseId
+      ? allMappings.filter(m => m.warehouseId === warehouseId && !m.pharmacyId)
+      : [];
+
+    // مستوى 2: ربط مخصص للصيدلية (بدون مخزن محدد)
+    const pharmacySpecific = pharmacyId
+      ? allMappings.filter(m => m.pharmacyId === pharmacyId && !m.warehouseId)
+      : [];
+
+    // مستوى 3: ربط عام (بدون مخزن أو صيدلية)
+    const generic = allMappings.filter(m => !m.warehouseId && !m.pharmacyId);
+
+    // الأولوية: مخزن محدد > صيدلية محددة > عام
+    const coveredByWarehouse = new Set(warehouseSpecific.map(m => m.lineType));
+    const pharmacyFallback = pharmacySpecific.filter(m => !coveredByWarehouse.has(m.lineType));
+    const coveredByPharmacy = new Set([...coveredByWarehouse, ...pharmacyFallback.map(m => m.lineType)]);
+    const genericFallback = generic.filter(m => !coveredByPharmacy.has(m.lineType));
+
+    if (!warehouseId && !pharmacyId) {
+      return generic;
     }
 
-    const warehouseSpecific = allMappings.filter(m => m.warehouseId === warehouseId);
-    const generic = allMappings.filter(m => !m.warehouseId);
-
-    const warehouseLineTypes = new Set(warehouseSpecific.map(m => m.lineType));
-    const fallbackGeneric = generic.filter(m => !warehouseLineTypes.has(m.lineType));
-
-    return [...warehouseSpecific, ...fallbackGeneric];
+    return [...warehouseSpecific, ...pharmacyFallback, ...genericFallback];
   },
 
   buildPatientInvoiceGLLines(this: DatabaseStorage, header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string }[] {
