@@ -300,4 +300,107 @@ export function registerReportsRoutes(app: Express) {
     });
   });
 
+  // ── GET /api/admin/journal-consistency ──────────────────────────────────────
+  //
+  // Diagnostic report: finds all mismatches between header.journal_status and
+  // the actual journal_entries.status.
+  //
+  // Returns:
+  //   headerPostedEntryDraft  — header says 'posted', journal_entries is 'draft'
+  //   headerPostedEntryFailed — header says 'posted', journal_entries is 'failed'
+  //   headerPostedEntryMissing— header says 'posted', no journal_entries row at all
+  //   headerFailedEntryPosted — header says 'failed', journal_entries is 'posted'
+  //
+  // For admin / owner only.
+  //
+  app.get("/api/admin/journal-consistency", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          h.invoice_number  AS "invoiceNumber",
+          h.status          AS "invoiceStatus",
+          h.journal_status  AS "headerJournalStatus",
+          je.status         AS "actualJournalStatus",
+          je.reference      AS "journalReference",
+          CASE
+            WHEN h.journal_status = 'posted' AND je.status = 'draft'    THEN 'header_posted_entry_draft'
+            WHEN h.journal_status = 'posted' AND je.status = 'failed'   THEN 'header_posted_entry_failed'
+            WHEN h.journal_status = 'posted' AND je.id IS NULL          THEN 'header_posted_entry_missing'
+            WHEN h.journal_status = 'failed' AND je.status = 'posted'   THEN 'header_failed_entry_posted'
+          END AS "mismatchType"
+        FROM sales_invoice_headers h
+        LEFT JOIN journal_entries je
+          ON je.source_type = 'sales_invoice'
+         AND je.source_document_id = h.id
+        WHERE
+          (h.journal_status = 'posted' AND (je.id IS NULL OR je.status != 'posted'))
+          OR
+          (h.journal_status = 'failed' AND je.status = 'posted')
+        ORDER BY h.invoice_number DESC
+        LIMIT 200
+      `);
+
+      const rows = (result as any).rows as Array<Record<string, unknown>>;
+      const summary = {
+        headerPostedEntryDraft:   rows.filter(r => r.mismatchType === "header_posted_entry_draft").length,
+        headerPostedEntryFailed:  rows.filter(r => r.mismatchType === "header_posted_entry_failed").length,
+        headerPostedEntryMissing: rows.filter(r => r.mismatchType === "header_posted_entry_missing").length,
+        headerFailedEntryPosted:  rows.filter(r => r.mismatchType === "header_failed_entry_posted").length,
+        total: rows.length,
+      };
+
+      return res.json({ summary, mismatches: rows, generatedAt: new Date().toISOString() });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── POST /api/admin/journal-consistency/repair ────────────────────────────
+  //
+  // Repairs all mismatches in one atomic batch:
+  //   header_posted_entry_draft   → leave as-is (cashier will post it)
+  //   header_posted_entry_missing → correct header to 'failed'
+  //   header_failed_entry_posted  → correct header to 'posted'
+  //
+  app.post("/api/admin/journal-consistency/repair", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const missing = await db.execute(sql`
+        UPDATE sales_invoice_headers h
+        SET journal_status = 'failed',
+            journal_error = 'قيد مالي مفقود — أعد توليد القيد من شاشة أحداث المحاسبة',
+            updated_at = NOW()
+        WHERE h.journal_status = 'posted'
+          AND NOT EXISTS (
+            SELECT 1 FROM journal_entries je
+            WHERE je.source_type = 'sales_invoice'
+              AND je.source_document_id = h.id
+          )
+        RETURNING h.invoice_number
+      `);
+
+      const wrongFailed = await db.execute(sql`
+        UPDATE sales_invoice_headers h
+        SET journal_status = 'posted', journal_error = NULL, updated_at = NOW()
+        WHERE h.journal_status = 'failed'
+          AND EXISTS (
+            SELECT 1 FROM journal_entries je
+            WHERE je.source_type = 'sales_invoice'
+              AND je.source_document_id = h.id
+              AND je.status = 'posted'
+          )
+        RETURNING h.invoice_number
+      `);
+
+      return res.json({
+        repairedMissing:     (missing as any).rows.length,
+        repairedWrongFailed: (wrongFailed as any).rows.length,
+        repairedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
 }

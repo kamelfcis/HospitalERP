@@ -82,6 +82,9 @@ const methods = {
       vals.push(params.warehouseId);
     }
 
+    // GUARD: check actual journal_entries.status = 'posted', not just the header flag.
+    // The header journal_status='posted' only means the journal entry was CREATED at finalize time
+    // (it starts as 'draft'). The real posting happens at cashier collection.
     const q = `
       SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
              h.warehouse_id AS "warehouseId", w.name_ar AS "warehouseName",
@@ -91,7 +94,13 @@ const methods = {
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
       WHERE h.is_return = false
         AND h.status = 'collected'
-        AND h.journal_status = 'posted'${whereExtra}
+        AND h.journal_status = 'posted'
+        AND EXISTS (
+          SELECT 1 FROM journal_entries je
+          WHERE je.source_type = 'sales_invoice'
+            AND je.source_document_id = h.id
+            AND je.status = 'posted'
+        )${whereExtra}
       ORDER BY h.invoice_date DESC, h.invoice_number DESC
       LIMIT 50
     `;
@@ -111,6 +120,12 @@ const methods = {
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
       WHERE h.id = ${invoiceId} AND h.is_return = false
         AND h.status = 'collected' AND h.journal_status = 'posted'
+        AND EXISTS (
+          SELECT 1 FROM journal_entries je
+          WHERE je.source_type = 'sales_invoice'
+            AND je.source_document_id = h.id
+            AND je.status = 'posted'
+        )
     `);
     if (!hdr.rows.length) return null;
     const header = hdr.rows[0] as Record<string, unknown>;
@@ -161,8 +176,19 @@ const methods = {
       if (orig.status !== "collected") {
         throw new Error("لا يمكن إنشاء مرتجع لأن الفاتورة الأصلية لم تُحصّل بالكامل من الخزنة");
       }
-      if (orig.journal_status !== "completed") {
-        throw new Error("لا يمكن إنشاء مرتجع قبل اكتمال القيد المالي للفاتورة الأصلية");
+      // STRUCTURAL GUARD: verify ACTUAL journal_entries.status, not just the header flag.
+      // header.journal_status='posted' only means the entry was created (as draft) at finalize time.
+      // The entry is only truly posted after cashier collection completes it.
+      const jeCheck = await tx.execute(sql`
+        SELECT status FROM journal_entries
+        WHERE source_type = 'sales_invoice'
+          AND source_document_id = ${data.originalInvoiceId}
+        LIMIT 1
+      `);
+      const jeStatus = (jeCheck.rows[0] as Record<string, unknown> | undefined)?.status as string | undefined;
+      if (jeStatus !== "posted") {
+        const detail = !jeStatus ? "لا يوجد قيد مرتبط بالفاتورة" : `حالة القيد: ${jeStatus}`;
+        throw new Error(`لا يمكن إنشاء مرتجع قبل اكتمال القيد المالي للفاتورة الأصلية (${detail})`);
       }
       if (orig.warehouse_id !== data.warehouseId) throw new Error("المخزن لا يتطابق مع فاتورة البيع الأصلية");
 

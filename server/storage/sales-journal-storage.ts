@@ -101,6 +101,53 @@ const methods = {
     }
   },
 
+  /*
+   * syncInvoiceHeaderJournalStatus — centralised header↔journal_entries sync
+   * ─────────────────────────────────────────────────────────────────────────
+   * Derives the header `journal_status` from the ACTUAL `journal_entries.status`
+   * so the two never diverge.  Call this anywhere you need to be sure the header
+   * reflects ground truth.
+   *
+   * Mapping:
+   *   journal_entries.status = 'posted'           → header = 'posted'
+   *   journal_entries.status = 'draft' | 'failed' → header unchanged (collection will post)
+   *   no journal_entries row at all               → header = 'failed' (if header was 'posted')
+   *
+   * Returns the resolved actual status ('posted' | 'draft' | 'failed' | 'missing').
+   */
+  async syncInvoiceHeaderJournalStatus(this: DatabaseStorage, invoiceId: string): Promise<string> {
+    const [entry] = await db.select({
+      status: journalEntries.status,
+    }).from(journalEntries)
+      .where(and(
+        eq(journalEntries.sourceType, "sales_invoice"),
+        eq(journalEntries.sourceDocumentId, invoiceId)
+      ))
+      .limit(1);
+
+    const actualStatus = entry?.status ?? "missing";
+
+    if (actualStatus === "posted") {
+      await db.update(salesInvoiceHeaders).set({
+        journalStatus: "posted",
+        journalError: null,
+      }).where(and(
+        eq(salesInvoiceHeaders.id, invoiceId),
+        sql`journal_status != 'posted'`
+      ));
+    } else if (actualStatus === "missing") {
+      // If header claims posted but no entry exists, correct to failed
+      await db.update(salesInvoiceHeaders).set({
+        journalStatus: "failed",
+        journalError: "قيد مالي مفقود — أعد توليد القيد من شاشة أحداث المحاسبة",
+      }).where(and(
+        eq(salesInvoiceHeaders.id, invoiceId),
+        eq(salesInvoiceHeaders.journalStatus, "posted")
+      ));
+    }
+    return actualStatus;
+  },
+
   async retryFailedJournals(this: DatabaseStorage): Promise<{ attempted: number, succeeded: number, failed: number }> {
     const failedInvoices = await db.select({
       id: salesInvoiceHeaders.id,
@@ -127,13 +174,17 @@ const methods = {
               eq(journalEntries.sourceType, "sales_invoice"),
               eq(journalEntries.sourceDocumentId, inv.id)
             )).limit(1);
-          if (existing.length > 0) {
+          if (existing.length > 0 && existing[0].status === "posted") {
+            // STRUCTURAL GUARD: only sync header to 'posted' if actual journal entry is posted
             await db.update(salesInvoiceHeaders).set({
               journalStatus: "posted",
               journalError: null,
             }).where(eq(salesInvoiceHeaders.id, inv.id));
             succeeded++;
-            console.log(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - journal already exists, marked as posted`);
+            console.log(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - journal already posted, header synced`);
+          } else if (existing.length > 0) {
+            // Entry exists but not yet posted (still draft) — do not change header, collection will post it
+            console.log(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - journal exists but status=${existing[0].status}, skipping header update`);
           } else {
             failed++;
             console.error(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - could not generate journal (null result)`);

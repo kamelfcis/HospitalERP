@@ -729,6 +729,7 @@ export interface IStorage {
   regenerateJournalForInvoice(invoiceId: string): Promise<JournalEntry | null>;
   retryFailedJournals(): Promise<{ total: number; succeeded: number; failed: number }>;
   checkJournalReadiness(invoiceId: string): Promise<{ ready: boolean; critical: string[]; warnings: string[] }>;
+  syncInvoiceHeaderJournalStatus(invoiceId: string): Promise<string>;
 
   // Receiving corrections
   createReceivingCorrection(receivingId: string, corrections?: Record<string, unknown>[]): Promise<Record<string, unknown>>;
