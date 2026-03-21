@@ -45,6 +45,13 @@ import {
 import { z } from "zod";
 import { evaluateContractForService } from "../lib/contract-rule-evaluator";
 import type { RespondLineInput } from "../storage/contracts-claims-storage";
+import {
+  createApprovalRequest,
+  approveLine,
+  rejectLine,
+  cancelApproval,
+  ApprovalServiceError,
+} from "../lib/contract-approval-service";
 
 export function registerContractRoutes(app: Express) {
   // ──────────────────────────────────────────────────────────────────────────
@@ -637,6 +644,113 @@ export function registerContractRoutes(app: Express) {
         const code = msg.includes("غير موجودة") ? 404 : msg.includes("مُسوَّاة") ? 400 : 500;
         res.status(code).json({ message: msg });
       }
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  APPROVAL WORKFLOW — Phase 4
+  //  POST   /api/approvals/request          — طلب موافقة جديد
+  //  POST   /api/approvals/:id/approve      — قبول
+  //  POST   /api/approvals/:id/reject       — رفض
+  //  POST   /api/approvals/:id/cancel       — إلغاء
+  //  GET    /api/approvals                  — قائمة الطلبات (مع فلتر الحالة)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function handleApprovalError(err: unknown, res: any) {
+    if (err instanceof ApprovalServiceError) {
+      const code = err.code === "NOT_FOUND" ? 404 : 400;
+      return res.status(code).json({ message: err.message });
+    }
+    const msg = err instanceof Error ? err.message : "خطأ في معالجة الموافقة";
+    return res.status(500).json({ message: msg });
+  }
+
+  /** GET /api/approvals — قائمة طلبات الموافقة */
+  app.get("/api/approvals", requireAuth, checkPermission(PERMISSIONS.APPROVALS_VIEW),
+    async (req, res) => {
+      try {
+        const { status, companyId, contractId, dateFrom, dateTo } = req.query as Record<string, string>;
+        const list = await storage.listApprovals({ status, companyId, contractId, dateFrom, dateTo });
+        res.json(list);
+      } catch (err) { handleApprovalError(err, res); }
+    }
+  );
+
+  /** POST /api/approvals/request — إنشاء طلب موافقة */
+  app.post("/api/approvals/request", requireAuth, checkPermission(PERMISSIONS.APPROVALS_MANAGE),
+    async (req, res) => {
+      try {
+        const schema = z.object({
+          patientInvoiceLineId: z.string().min(1),
+          contractId:           z.string().min(1),
+          contractMemberId:     z.string().nullable().optional(),
+          serviceId:            z.string().nullable().optional(),
+          requestedAmount:      z.string().min(1),
+          serviceDescription:   z.string().optional(),
+          notes:                z.string().optional(),
+        });
+        const body = schema.parse(req.body);
+        const result = await createApprovalRequest({
+          ...body,
+          requestedBy: req.session.userId as string,
+        });
+        res.status(201).json(result);
+      } catch (err) { handleApprovalError(err, res); }
+    }
+  );
+
+  /** POST /api/approvals/:id/approve — قبول طلب الموافقة */
+  app.post("/api/approvals/:id/approve", requireAuth, checkPermission(PERMISSIONS.APPROVALS_MANAGE),
+    async (req, res) => {
+      try {
+        const schema = z.object({
+          approvedAmount: z.string().optional(),
+          notes:          z.string().optional(),
+        });
+        const body = schema.parse(req.body);
+        const result = await approveLine({
+          approvalId:     req.params.id,
+          userId:         req.session.userId as string,
+          approvedAmount: body.approvedAmount,
+          notes:          body.notes,
+        });
+        res.json(result);
+      } catch (err) { handleApprovalError(err, res); }
+    }
+  );
+
+  /** POST /api/approvals/:id/reject — رفض طلب الموافقة */
+  app.post("/api/approvals/:id/reject", requireAuth, checkPermission(PERMISSIONS.APPROVALS_MANAGE),
+    async (req, res) => {
+      try {
+        const schema = z.object({
+          rejectionReason: z.string().min(1, "سبب الرفض مطلوب"),
+          notes:           z.string().optional(),
+        });
+        const body = schema.parse(req.body);
+        const result = await rejectLine({
+          approvalId:      req.params.id,
+          userId:          req.session.userId as string,
+          rejectionReason: body.rejectionReason,
+          notes:           body.notes,
+        });
+        res.json(result);
+      } catch (err) { handleApprovalError(err, res); }
+    }
+  );
+
+  /** POST /api/approvals/:id/cancel — إلغاء طلب الموافقة */
+  app.post("/api/approvals/:id/cancel", requireAuth, checkPermission(PERMISSIONS.APPROVALS_MANAGE),
+    async (req, res) => {
+      try {
+        const { notes } = req.body;
+        const result = await cancelApproval({
+          approvalId: req.params.id,
+          userId:     req.session.userId as string,
+          notes,
+        });
+        res.json(result);
+      } catch (err) { handleApprovalError(err, res); }
     }
   );
 }

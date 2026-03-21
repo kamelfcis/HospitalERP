@@ -87,10 +87,13 @@ export async function generateClaimsForInvoice(invoiceId: string): Promise<void>
     // claimStatus was already set to 'generating' by caller — proceed
 
     // ── 2. Fetch eligible lines ────────────────────────────────────────────
-    //   Conditions:
+    //   Conditions (ALL must be satisfied):
     //     - companyShareAmount > 0
     //     - isVoid = false
-    //     - coverageStatus NOT IN ('excluded', 'not_covered')  OR NULL
+    //     - coverageStatus NOT IN ('excluded', 'not_covered') OR NULL
+    //     - approvalStatus IS NULL (non-approval_required lines)
+    //       OR approvalStatus = 'approved' (explicitly approved lines)
+    //     NOTE: pending approval lines are NOT eligible until approved
     const lines = await db
       .select()
       .from(patientInvoiceLines)
@@ -102,6 +105,11 @@ export async function generateClaimsForInvoice(invoiceId: string): Promise<void>
           or(
             isNull(patientInvoiceLines.coverageStatus),
             sql`${patientInvoiceLines.coverageStatus} NOT IN ('excluded', 'not_covered')`
+          ),
+          // Phase 4: approval gate
+          or(
+            isNull(patientInvoiceLines.approvalStatus),
+            sql`${patientInvoiceLines.approvalStatus} = 'approved'`
           )
         )
       );

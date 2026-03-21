@@ -15,11 +15,13 @@ import {
   broadcastToUnit,
 } from "./_shared";
 import { generateClaimsForInvoice } from "../lib/contract-claim-generator";
+import { createApprovalRequest } from "../lib/contract-approval-service";
 import {
   insertPatientInvoiceHeaderSchema,
   insertPatientInvoiceLineSchema,
   insertPatientInvoicePaymentSchema,
   patientInvoiceHeaders,
+  patientInvoiceLines,
 } from "@shared/schema";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
 import { eq } from "drizzle-orm";
@@ -52,6 +54,33 @@ async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Prom
   }).catch(() => {});
 
   return true;
+}
+
+/** Fires approval requests for all approval_required lines — non-blocking */
+async function fireApprovalRequestsForInvoice(invoiceId: string, contractId: string) {
+  try {
+    const lines = await db.select().from(patientInvoiceLines)
+      .where(
+        eq(patientInvoiceLines.headerId, invoiceId)
+      );
+    const approvalLines = lines.filter((l: any) =>
+      (l.coverageStatus === "approval_required") &&
+      !(l.approvalStatus === "pending" || l.approvalStatus === "approved")
+    );
+    for (const l of approvalLines) {
+      const al = l as any;
+      await createApprovalRequest({
+        patientInvoiceLineId: al.id,
+        contractId,
+        contractMemberId:   al.contractMemberId ?? null,
+        serviceId:          al.serviceId ?? null,
+        requestedAmount:    String(al.companyShareAmount ?? al.unitPrice ?? "0"),
+        serviceDescription: al.description ?? "خدمة طبية",
+      }).catch(() => {});
+    }
+  } catch (err: any) {
+    logger.warn({ err: err.message, invoiceId }, "[Approvals] fireApprovalRequests failed (non-fatal)");
+  }
 }
 
 export function registerPatientInvoicesRoutes(app: Express) {
@@ -126,6 +155,13 @@ export function registerPatientInvoicesRoutes(app: Express) {
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
       const result = await storage.createPatientInvoice(headerParsed, linesParsed, paymentsParsed);
+
+      // Phase 4: fire approval requests for approval_required lines (non-blocking)
+      const rh = result as any;
+      if (rh.contractId) {
+        setImmediate(() => fireApprovalRequestsForInvoice(rh.id, rh.contractId));
+      }
+
       res.status(201).json(result);
     } catch (error: unknown) {
       if (error instanceof z.ZodError || (error instanceof Error && error.name === "ZodError")) {
@@ -155,6 +191,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
       const result = await storage.updatePatientInvoice(req.params.id as string, headerParsed, linesParsed, paymentsParsed, expectedVersion != null ? Number(expectedVersion) : undefined);
+
+      // Phase 4: fire approval requests for approval_required lines (non-blocking)
+      const rh2 = result as any;
+      const cid2 = rh2.contractId ?? (headerParsed as any).contractId;
+      if (cid2) {
+        setImmediate(() => fireApprovalRequestsForInvoice(req.params.id as string, cid2));
+      }
+
       res.json(result);
     } catch (error: unknown) {
       if (error instanceof z.ZodError || (error instanceof Error && error.name === "ZodError")) {

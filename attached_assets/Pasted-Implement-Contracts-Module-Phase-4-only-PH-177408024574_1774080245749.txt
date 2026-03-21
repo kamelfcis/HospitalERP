@@ -1,0 +1,291 @@
+Implement Contracts Module — Phase 4 only.
+
+==================================================
+PHASE 4 GOAL
+==================================================
+
+Build a complete Approval Workflow for contract-based services.
+
+This workflow must operationalize:
+- approval_required lines
+- approval lifecycle
+- operator actions
+- auditability
+- safe integration with claims generation
+
+This phase transforms approval_required from a passive flag into an active operational workflow.
+
+Do NOT redesign contracts or rules engine.
+Do NOT change existing evaluator logic except where strictly required for approval behavior.
+
+==================================================
+CORE CONCEPT
+==================================================
+
+Approval is a state machine applied at LINE LEVEL.
+
+Each service line may require approval before it becomes:
+- claim-eligible
+- financially final (for company share)
+
+Approval must be:
+- trackable
+- auditable
+- reversible (within limits)
+- separate from claims settlement
+
+==================================================
+PHASE 4 — SCHEMA
+==================================================
+
+Extend shared/schema/contracts.ts
+
+Create table:
+
+contractApprovals
+
+Fields:
+- id
+- patientInvoiceLineId (nullable string — no FK due to circular constraint)
+- contractId FK
+- contractMemberId FK nullable
+- serviceId nullable
+- approvalStatus enum:
+    pending
+    approved
+    rejected
+    cancelled
+- approvalDecision enum:
+    full_approval
+    partial_approval
+    rejection
+- requestedAmount decimal(18,2)
+- approvedAmount decimal(18,2) nullable
+- rejectionReason text nullable
+- requestedAt timestamp
+- requestedBy
+- decidedAt timestamp nullable
+- decidedBy nullable
+- notes
+- createdAt
+- updatedAt
+
+Indexes:
+- patientInvoiceLineId
+- contractId
+- approvalStatus
+- requestedAt
+- (contractId, approvalStatus)
+- partial index where approvalStatus = 'pending'
+
+Also ensure:
+- patient_invoice_lines.approvalStatus already exists (from Phase 2)
+- this table is the source of truth, line field is cached state
+
+==================================================
+PHASE 4 — APPROVAL STATE MACHINE
+==================================================
+
+Allowed transitions:
+
+pending → approved
+pending → rejected
+pending → cancelled
+
+approved → (locked — no change unless override permission)
+rejected → (locked — unless override permission)
+
+Rules:
+- approval is required only when coverageStatus = 'approval_required'
+- approvalStatus on line must mirror latest contractApprovals state
+- only one active approval per line
+
+==================================================
+PHASE 4 — BACKEND SERVICES
+==================================================
+
+Create:
+server/lib/contract-approval-service.ts
+
+Export:
+- createApprovalRequest(line)
+- approveLine(approvalId, approvedAmount?)
+- rejectLine(approvalId, reason)
+- cancelApproval(approvalId)
+- getApprovalByLine(lineId)
+- listPendingApprovals(filters)
+
+Rules:
+- pure business logic (no HTTP)
+- all DB writes go through storage layer
+- must update:
+    - contractApprovals
+    - patientInvoiceLines.approvalStatus
+    - patientInvoiceLines.companyShareAmount / patientShareAmount if needed
+
+Approval effect:
+- approved:
+    coverageStatus → covered
+    approvalStatus → approved
+- rejected:
+    coverageStatus → not_covered
+    companyShareAmount → 0
+    patientShareAmount → full contractPrice
+    approvalStatus → rejected
+
+==================================================
+PHASE 4 — ROUTES
+==================================================
+
+Add in server/routes/contracts.ts:
+
+POST   /api/approvals/request
+POST   /api/approvals/:id/approve
+POST   /api/approvals/:id/reject
+POST   /api/approvals/:id/cancel
+GET    /api/approvals?status=pending
+
+RBAC permissions:
+- approvals.view
+- approvals.manage
+- approvals.override (optional high-level permission)
+
+Routes must be thin.
+Call approval service only.
+
+==================================================
+PHASE 4 — INTEGRATION WITH EXISTING FLOW
+==================================================
+
+During patient invoice line creation/update:
+
+If evaluator returns:
+coverageStatus = 'approval_required'
+
+Then:
+- automatically create approval request
+- set line.approvalStatus = 'pending'
+- do NOT block invoice save
+
+On approval decision:
+- update line fields accordingly
+- line becomes claim-eligible ONLY after approval
+
+Claims generator update:
+
+Modify contract-claim-generator.ts:
+
+Add condition:
+approvalStatus = 'approved'
+
+Meaning:
+- pending approvals → NOT included in claims
+- rejected → NOT included
+- approved → included
+
+==================================================
+PHASE 4 — UI
+==================================================
+
+Create:
+client/src/pages/approvals/index.tsx
+
+Features:
+- pending approvals queue
+- filters (company, contract, date)
+- table view:
+    service
+    patient
+    contract
+    requested amount
+    status
+    actions
+
+Actions:
+- approve (full / partial amount)
+- reject (reason required)
+- view details
+
+Also update patient invoice UI:
+
+Line display:
+- pending → amber badge
+- approved → green badge
+- rejected → red badge
+
+Add:
+- "Request Approval" button (if missing)
+- show approval history tooltip/panel
+
+==================================================
+PHASE 4 — REFACTOR / COMPONENTIZATION
+==================================================
+
+Mandatory:
+
+- Extract:
+    components/ApprovalTable.tsx
+    components/ApprovalActions.tsx
+    components/ApprovalDialog.tsx
+    hooks/useApprovals.ts
+
+- Keep pages thin (no giant files)
+- No business logic in frontend
+- Reuse existing UI patterns (tables, dialogs)
+
+==================================================
+PHASE 4 — INDEXING
+==================================================
+
+Ensure:
+
+- fast lookup of pending approvals
+- fast lookup by patientInvoiceLineId
+- composite index:
+    (approvalStatus, contractId, requestedAt)
+
+==================================================
+PHASE 4 — AUDITABILITY
+==================================================
+
+Every approval decision must:
+- store decidedBy
+- store timestamp
+- store reason (for rejection)
+- preserve history (do NOT overwrite old decisions if versioning is possible)
+
+==================================================
+PHASE 4 — SAFETY RULES
+==================================================
+
+- Do not allow approval changes after invoice finalized unless override permission
+- Do not break existing invoice flows
+- Do not allow duplicate approval requests for same line
+- Do not allow claims generation for unapproved lines
+
+==================================================
+BEFORE CODING — REQUIRED ANALYSIS
+==================================================
+
+Print:
+
+1) FILES TO MODIFY
+2) APPROVAL INTEGRATION POINTS
+3) CLAIM GENERATOR IMPACT
+4) RISKS TO CURRENT FLOWS
+5) IMPLEMENTATION PLAN
+
+Then implement.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) APPROVAL WORKFLOW SUMMARY
+3) STATE MACHINE IMPLEMENTED
+4) CLAIM INTEGRATION UPDATED
+5) INDEXES ADDED
+6) UI ADDED
+7) RBAC ADDED
+8) ANY RISKS

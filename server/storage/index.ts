@@ -759,6 +759,13 @@ export interface IStorage {
   settleClaimBatch(batchId: string, input: import("./contracts-claims-storage").SettleClaimBatchInput): Promise<import("@shared/schema").ContractClaimBatch>;
   cancelClaimBatch(batchId: string): Promise<import("@shared/schema").ContractClaimBatch>;
 
+  // ── Contract Approvals (الموافقات المسبقة — Phase 4) ──────────────────────
+  createApproval(data: import("@shared/schema").InsertContractApproval & { approvalStatus?: string; requestedBy?: string }): Promise<import("@shared/schema").ContractApproval>;
+  getApprovalById(id: string): Promise<import("@shared/schema").ContractApproval | undefined>;
+  getApprovalByLineId(lineId: string): Promise<import("@shared/schema").ContractApproval | undefined>;
+  updateApproval(id: string, updates: Partial<{ approvalStatus: string; approvalDecision: string; approvedAmount: string; rejectionReason: string; decidedAt: Date; decidedBy: string; notes: string }>): Promise<import("@shared/schema").ContractApproval>;
+  listApprovals(filters?: import("./contracts-approvals-storage").ApprovalFilters): Promise<import("./contracts-approvals-storage").ApprovalWithContext[]>;
+
   [key: string]: unknown;
 }
 
@@ -812,6 +819,7 @@ import companiesMethods from "./contracts-companies-storage";
 import contractsCoreMethods from "./contracts-core-storage";
 import contractsRulesMethods from "./contracts-rules-storage";
 import contractsClaimsMethods from "./contracts-claims-storage";
+import contractsApprovalsMethods from "./contracts-approvals-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -848,6 +856,7 @@ Object.assign(
   contractsCoreMethods,
   contractsRulesMethods,
   contractsClaimsMethods,
+  contractsApprovalsMethods,
 );
 
 export const storage = new DatabaseStorage();

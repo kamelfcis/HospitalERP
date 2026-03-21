@@ -207,6 +207,57 @@ export const contractClaimLines = pgTable("contract_claim_lines", {
   serviceDateIdx:    index("idx_ccl_service_date").on(table.serviceDate),
 }));
 
+// ─── طلبات الموافقة (Contract Approvals) ─────────────────────────────────
+//
+// Phase 4: تحوّل approval_required من علامة سلبية إلى سير عمل تشغيلي فعال.
+// جدول contractApprovals هو مصدر الحقيقة؛ حقل approvalStatus على السطر
+// حالة مخزَّنة (cached state) تُزامَن مع آخر قرار في هذا الجدول.
+
+export const approvalStatusEnum = pgEnum("approval_status", [
+  "pending",    // في انتظار القرار
+  "approved",   // موافق عليه
+  "rejected",   // مرفوض
+  "cancelled",  // ملغى
+]);
+
+export const approvalDecisionEnum = pgEnum("approval_decision", [
+  "full_approval",    // موافقة كاملة على المبلغ المطلوب
+  "partial_approval", // موافقة جزئية
+  "rejection",        // رفض
+]);
+
+export const contractApprovals = pgTable("contract_approvals", {
+  id:                   varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // No FK — circular import gap (documented same as claim lines)
+  patientInvoiceLineId: varchar("patient_invoice_line_id"),
+  contractId:           varchar("contract_id").notNull().references(() => contracts.id),
+  contractMemberId:     varchar("contract_member_id").references(() => contractMembers.id),
+  serviceId:            varchar("service_id"),
+  approvalStatus:       approvalStatusEnum("approval_status").notNull().default("pending"),
+  approvalDecision:     approvalDecisionEnum("approval_decision"),
+  requestedAmount:      decimal("requested_amount", { precision: 18, scale: 2 }).notNull(),
+  approvedAmount:       decimal("approved_amount",  { precision: 18, scale: 2 }),
+  rejectionReason:      text("rejection_reason"),
+  serviceDescription:   text("service_description"),
+  requestedAt:          timestamp("requested_at").notNull().defaultNow(),
+  requestedBy:          varchar("requested_by"),
+  decidedAt:            timestamp("decided_at"),
+  decidedBy:            varchar("decided_by"),
+  notes:                text("notes"),
+  createdAt:            timestamp("created_at").notNull().defaultNow(),
+  updatedAt:            timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  patientLineIdx:        index("idx_ca_patient_line").on(table.patientInvoiceLineId),
+  contractIdx:           index("idx_ca_contract").on(table.contractId),
+  approvalStatusIdx:     index("idx_ca_status").on(table.approvalStatus),
+  requestedAtIdx:        index("idx_ca_requested_at").on(table.requestedAt),
+  contractStatusIdx:     index("idx_ca_contract_status").on(table.contractId, table.approvalStatus),
+  // Composite for fast pending approval queue
+  pendingIdx:            index("idx_ca_pending").on(table.approvalStatus, table.contractId, table.requestedAt),
+  // Note: duplicate-active-approval prevention is enforced at service layer, not DB level
+  // (uniqueIndex not used here because re-request after cancel would create two 'cancelled' rows)
+}));
+
 // ─── Schemas & Types ──────────────────────────────────────────────────────
 
 export const insertContractSchema = createInsertSchema(contracts).omit({
@@ -276,4 +327,27 @@ export const claimLineStatusLabels: Record<string, string> = {
   approved: "مقبول",
   rejected: "مرفوض",
   settled:  "مُسوَّى",
+};
+
+export const insertContractApprovalSchema = createInsertSchema(contractApprovals).omit({
+  id: true, createdAt: true, updatedAt: true,
+  approvalStatus: true, approvalDecision: true,
+  approvedAmount: true, rejectionReason: true,
+  decidedAt: true, decidedBy: true,
+});
+
+export type ContractApproval       = typeof contractApprovals.$inferSelect;
+export type InsertContractApproval = z.infer<typeof insertContractApprovalSchema>;
+
+export const approvalStatusLabels: Record<string, string> = {
+  pending:   "في انتظار القرار",
+  approved:  "موافق عليه",
+  rejected:  "مرفوض",
+  cancelled: "ملغى",
+};
+
+export const approvalDecisionLabels: Record<string, string> = {
+  full_approval:    "موافقة كاملة",
+  partial_approval: "موافقة جزئية",
+  rejection:        "رفض",
 };
