@@ -1,0 +1,119 @@
+Perform release stabilization for Outpatient Improvement — Step 2.
+
+GOAL:
+Formally mark Step 2 as a stable, production-ready milestone and create a clear release tag.
+
+DO NOT modify business logic.
+DO NOT add features.
+DO NOT refactor unrelated code.
+
+This is a release operation only.
+
+==================================================
+REQUIRED ACTIONS
+==================================================
+
+1) FINAL VERIFICATION SNAPSHOT
+Confirm current state:
+
+- no pending TypeScript errors
+- no runtime errors
+- build passes
+- server runs successfully
+- database schema is up to date
+
+Print:
+"Step 2 verification snapshot: OK"
+
+If anything fails, STOP and report.
+
+==================================================
+2) UPDATE PROJECT DOCUMENTATION
+==================================================
+
+Update replit.md (or main project doc):
+
+Add section:
+
+## Outpatient Improvement — Step 2 (Stable)
+
+Include:
+- patient snapshot header
+- structured consultation (SOAP fields)
+- safe doctor templates
+- quick follow-up helpers (text-only)
+- backward compatibility preserved
+- no diagnosis automation
+
+Add note:
+
+"This milestone is production-ready within the implemented scope.
+All changes are backward-compatible and medically safe (no automated decision logic)."
+
+==================================================
+3) CREATE RELEASE TAG
+==================================================
+
+Create a git tag:
+
+outpatient-step2-stable
+
+Rules:
+- tag current HEAD
+- tag message must include:
+
+"Outpatient Step 2 — Stable Release
+
+Includes:
+- Patient snapshot header
+- Structured consultation (SOAP)
+- Safe templates
+- Quick follow-up helpers
+
+Verified:
+- backward compatibility
+- no diagnosis automation
+- no data loss
+"
+
+==================================================
+4) OPTIONAL VERSION BUMP (IF EXISTS)
+==================================================
+
+If project has versioning:
+- bump minor version (e.g. 1.2.0 → 1.3.0)
+- reflect Step 2 milestone
+
+If not present, skip.
+
+==================================================
+5) FINAL OUTPUT
+==================================================
+
+Print EXACTLY:
+
+1) VERIFICATION STATUS
+2) DOCUMENTATION UPDATED
+3) TAG CREATED (with commit hash)
+4) VERSION (if applicable)
+5) ANY ISSUES (if any)
+
+==================================================
+STRICT RULES
+==================================================
+
+- Do NOT change any business logic
+- Do NOT re-run migrations
+- Do NOT touch Step 3
+- Do NOT refactor unrelated modules
+
+This is a release freeze point.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- system stable
+- milestone documented
+- tag created successfully
+- ready for next phase (Step 3)
