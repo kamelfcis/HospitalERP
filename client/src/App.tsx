@@ -65,6 +65,7 @@ const PermissionGroupsPage = lazy(() => import("@/pages/permission-groups/index"
 const AccountingEventsPage = lazy(() => import("@/pages/accounting-events/index"));
 const ContractsPage = lazy(() => import("@/pages/contracts/index"));
 const ContractClaimsPage = lazy(() => import("@/pages/contract-claims/index"));
+const ApprovalsPage = lazy(() => import("@/pages/approvals/index"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -149,6 +150,7 @@ function Router() {
           <Route path="/accounting-events">{() => <G p="journal.post"><AccountingEventsPage /></G>}</Route>
           <Route path="/contracts">{() => <G p="contracts.view"><ContractsPage /></G>}</Route>
           <Route path="/contract-claims">{() => <G p="contracts.claims.view"><ContractClaimsPage /></G>}</Route>
+          <Route path="/approvals">{() => <G p="approvals.view"><ApprovalsPage /></G>}</Route>
           <Route path="/announcements">{() => <G p="settings.account_mappings"><AnnouncementsPage /></G>}</Route>
           <Route path="/clinic-booking">{() => <G p="clinic.view_own"><ClinicBooking /></G>}</Route>
           <Route path="/doctor-consultation/:id">{() => <G p="doctor.consultation"><DoctorConsultation /></G>}</Route>
