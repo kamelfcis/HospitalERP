@@ -187,6 +187,7 @@ export const clinicOrders = pgTable("clinic_orders", {
   index("idx_clinic_orders_status").on(t.status),
   index("idx_clinic_orders_status_type").on(t.status, t.orderType),
   index("idx_clinic_orders_created_at").on(t.createdAt),
+  index("idx_clinic_orders_target_id").on(t.targetId),
 ]);
 
 // Insert schemas

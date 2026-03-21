@@ -497,7 +497,7 @@ export interface IStorage {
     forcedDeptIds: string[] | null,
     lineType?: string | null,
   ): Promise<Record<string, unknown>[]>;
-  getPatientPreviousConsultations(patientId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
+  getPatientPreviousConsultations(patientId: string, limit?: number, allowedClinicIds?: string[] | null): Promise<Array<Record<string, unknown>>>;
   checkPatientInScope(patientId: string, forcedDeptIds: string[] | null): Promise<boolean>;
   checkInvoiceInScope(invoiceId: string, forcedDeptIds: string[] | null): Promise<boolean>;
   checkPatientDuplicateCandidates(
@@ -656,7 +656,7 @@ export interface IStorage {
   getFrequentDrugsNotInFavorites(doctorId: string, minCount?: number, clinicId?: string | null): Promise<Record<string, unknown>[]>;
 
   // الأوامر الطبية
-  getClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<Record<string, unknown>[]>;
+  getClinicOrders(filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string; clinicIds?: string[] }): Promise<Record<string, unknown>[]>;
   getClinicOrder(id: string): Promise<Record<string, unknown> | null>;
   executeClinicOrder(orderId: string, userId: string): Promise<{ invoiceId: string }>;
   cancelClinicOrder(orderId: string): Promise<void>;

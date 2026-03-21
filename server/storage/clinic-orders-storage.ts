@@ -68,16 +68,30 @@ const methods = {
     return rows.rows as Array<Record<string, unknown>>;
   },
 
-  async getClinicOrders(this: DatabaseStorage, filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string }): Promise<Array<Record<string, unknown>>> {
-    const conditions: string[] = [
-      `(cl.consultation_service_id IS NULL OR o.service_id IS DISTINCT FROM cl.consultation_service_id)`,
-    ];
-    if (filters.targetType) conditions.push(`o.target_type = '${filters.targetType}'`);
-    if (filters.status) conditions.push(`o.status = '${filters.status}'`);
-    if (filters.targetId) conditions.push(`o.target_id = '${filters.targetId}'`);
-    if (filters.doctorId) conditions.push(`o.doctor_id = '${filters.doctorId}'`);
-    const where = `WHERE ${conditions.join(' AND ')}`;
-    const rows = await db.execute(sql.raw(`
+  async getClinicOrders(this: DatabaseStorage, filters: { targetType?: string; status?: string; targetId?: string; doctorId?: string; clinicIds?: string[] }): Promise<Array<Record<string, unknown>>> {
+    // Build conditions using parameterized sql template literals — no sql.raw injection.
+    const baseCond = sql`(cl.consultation_service_id IS NULL OR o.service_id IS DISTINCT FROM cl.consultation_service_id)`;
+
+    const targetTypeCond = filters.targetType
+      ? sql`AND o.target_type = ${filters.targetType}`
+      : sql``;
+    const statusCond = filters.status
+      ? sql`AND o.status = ${filters.status}`
+      : sql``;
+    const targetIdCond = filters.targetId
+      ? sql`AND o.target_id = ${filters.targetId}`
+      : sql``;
+    const doctorIdCond = filters.doctorId
+      ? sql`AND o.doctor_id = ${filters.doctorId}`
+      : sql``;
+
+    // Clinic scope: restrict to allowed clinics when provided (non-empty array = scoped)
+    const clinicIdsCond =
+      filters.clinicIds && filters.clinicIds.length > 0
+        ? sql`AND a.clinic_id = ANY(${filters.clinicIds}::varchar[])`
+        : sql``;
+
+    const rows = await db.execute(sql`
       SELECT o.*,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
              s.name_ar AS service_name_ar, s.base_price AS service_price,
@@ -95,9 +109,14 @@ const methods = {
       LEFT JOIN departments dep ON o.target_type = 'department'
         AND dep.id = COALESCE(NULLIF(o.target_id, ''), s.department_id)
       LEFT JOIN items i ON i.id = o.item_id
-      ${where}
+      WHERE ${baseCond}
+        ${targetTypeCond}
+        ${statusCond}
+        ${targetIdCond}
+        ${doctorIdCond}
+        ${clinicIdsCond}
       ORDER BY o.created_at DESC
-    `));
+    `);
     return (rows.rows as Array<Record<string, unknown>>).map((r) => ({
       ...r,
       target_name: (r.resolved_target_name as string) ?? (r.target_name as string),

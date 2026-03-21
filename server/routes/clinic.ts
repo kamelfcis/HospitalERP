@@ -10,6 +10,11 @@ import {
   clinicOrdersClients,
   broadcastClinicOrdersUpdate,
 } from "./_shared";
+import {
+  resolveClinicScope,
+  clinicAllowed,
+  getOrderClinicId,
+} from "../lib/clinic-scope";
 
 function snakeToCamel(obj: unknown): any {
   if (Array.isArray(obj)) return obj.map(snakeToCamel);
@@ -37,8 +42,18 @@ function sseClinicEndpoint(res: Response, clinicId: string) {
 export function registerClinicRoutes(app: Express) {
 
   // ── SSE: تحديثات مواعيد العيادة لحظياً ──────────────────────────────────────
-  app.get("/api/clinic/sse/:clinicId", requireAuth, (req, res) => {
+  app.get("/api/clinic/sse/:clinicId", requireAuth, async (req, res) => {
     const clinicId = req.params.clinicId as string;
+    const userId = req.session.userId!;
+
+    // GAP-01: verify the user is allowed to observe this clinic's stream
+    const perms = await storage.getUserEffectivePermissions(userId);
+    const scope = await resolveClinicScope(userId, perms);
+    if (!clinicAllowed(scope, clinicId)) {
+      res.status(403).json({ message: "غير مصرح لك بمتابعة هذه العيادة" });
+      return;
+    }
+
     sseClinicEndpoint(res, clinicId);
 
     if (!clinicSseClients.has(clinicId)) clinicSseClients.set(clinicId, new Set());
@@ -200,10 +215,20 @@ export function registerClinicRoutes(app: Express) {
   // رد مبلغ موعد عيادة نقدي وإلغاؤه
   app.post("/api/clinic-appointments/:id/cancel-refund", requireAuth, checkPermission("clinic.book"), async (req, res) => {
     try {
+      const userId = req.session.userId!;
+      // GAP-07: verify clinic membership before allowing cancel/refund
+      const perms = await storage.getUserEffectivePermissions(userId);
+      const scope = await resolveClinicScope(userId, perms);
+      if (!scope.all) {
+        const clinicId = await storage.getAppointmentClinicId(req.params.id as string);
+        if (clinicId && !clinicAllowed(scope, clinicId)) {
+          return res.status(403).json({ message: "غير مصرح لك بالتعامل مع هذا الموعد" });
+        }
+      }
       const { refundAmount, cancelAppointment, refundReason } = req.body;
       const result = await storage.cancelAndRefundAppointment(
         req.params.id as string,
-        req.session.userId!,
+        userId,
         refundAmount !== undefined ? parseFloat(refundAmount) : undefined,
         cancelAppointment !== undefined ? Boolean(cancelAppointment) : undefined,
         refundReason ? String(refundReason) : undefined
@@ -243,6 +268,16 @@ export function registerClinicRoutes(app: Express) {
   // تحديث حالة تسليم الخدمة (service_delivered) — يُفعّل الاعتراف بالإيراد إذا كان الموعد منتهياً
   app.patch("/api/clinic-appointments/:id/service-delivered", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
     try {
+      const userId = req.session.userId!;
+      // GAP-06: verify clinic membership (same pattern as PATCH /status)
+      const perms = await storage.getUserEffectivePermissions(userId);
+      const scope = await resolveClinicScope(userId, perms);
+      if (!scope.all) {
+        const clinicId = await storage.getAppointmentClinicId(req.params.id as string);
+        if (clinicId && !clinicAllowed(scope, clinicId)) {
+          return res.status(403).json({ message: "غير مصرح لك بالتعامل مع هذا الموعد" });
+        }
+      }
       const { serviceDelivered } = req.body;
       const aptId = req.params.id as string;
       await db.execute(sql`
@@ -474,7 +509,7 @@ export function registerClinicRoutes(app: Express) {
         return res.status(403).json({ message: "لا تملك صلاحية" });
       }
 
-      const filters: Record<string, string> = {};
+      const filters: { targetType?: string; status?: string; targetId?: string; clinicIds?: string[] } = {};
 
       if (canViewPharmacy && !isAdmin && !canViewOrders) {
         filters.targetType = 'pharmacy';
@@ -487,6 +522,12 @@ export function registerClinicRoutes(app: Express) {
       if (req.query.status as string) filters.status = req.query.status as string;
       if (req.query.targetId as string) filters.targetId = req.query.targetId as string;
 
+      // GAP-02: restrict list to the user's allowed clinics
+      const scope = await resolveClinicScope(userId, perms);
+      if (!scope.all) {
+        filters.clinicIds = scope.clinicIds;
+      }
+
       const orders = await storage.getClinicOrders(filters);
       res.json(snakeToCamel(orders));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -494,18 +535,37 @@ export function registerClinicRoutes(app: Express) {
 
   app.get("/api/clinic-orders/:id", requireAuth, async (req, res) => {
     try {
-      const perms = await storage.getUserEffectivePermissions(req.session.userId!);
+      const userId = req.session.userId!;
+      const perms = await storage.getUserEffectivePermissions(userId);
       const canView = perms.includes("doctor_orders.view") || perms.includes("clinic.pharmacy_orders") || perms.includes("dept_services.create");
       if (!canView) return res.status(403).json({ message: "لا تملك صلاحية لهذا الإجراء" });
       const order = await storage.getClinicOrder(req.params.id as string);
       if (!order) return res.status(404).json({ message: "الأمر غير موجود" });
+      // GAP-03: verify the order belongs to an allowed clinic
+      const scope = await resolveClinicScope(userId, perms);
+      if (!scope.all) {
+        const orderClinicId = await getOrderClinicId(req.params.id as string);
+        if (orderClinicId && !clinicAllowed(scope, orderClinicId)) {
+          return res.status(403).json({ message: "غير مصرح لك بالوصول لهذا الأمر" });
+        }
+      }
       res.json(snakeToCamel(order));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.post("/api/clinic-orders/:id/execute", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
     try {
-      const result = await storage.executeClinicOrder(req.params.id as string, req.session.userId!);
+      const userId = req.session.userId!;
+      // GAP-04: verify the order belongs to an allowed clinic
+      const perms = await storage.getUserEffectivePermissions(userId);
+      const scope = await resolveClinicScope(userId, perms);
+      if (!scope.all) {
+        const orderClinicId = await getOrderClinicId(req.params.id as string);
+        if (orderClinicId && !clinicAllowed(scope, orderClinicId)) {
+          return res.status(403).json({ message: "غير مصرح لك بتنفيذ هذا الأمر" });
+        }
+      }
+      const result = await storage.executeClinicOrder(req.params.id as string, userId);
       broadcastClinicOrdersUpdate();
       res.json(snakeToCamel(result));
     } catch (e: any) { res.status(400).json({ message: e.message }); }
@@ -513,6 +573,16 @@ export function registerClinicRoutes(app: Express) {
 
   app.post("/api/clinic-orders/:id/cancel", requireAuth, checkPermission("doctor_orders.execute"), async (req, res) => {
     try {
+      const userId = req.session.userId!;
+      // GAP-05: verify the order belongs to an allowed clinic
+      const perms = await storage.getUserEffectivePermissions(userId);
+      const scope = await resolveClinicScope(userId, perms);
+      if (!scope.all) {
+        const orderClinicId = await getOrderClinicId(req.params.id as string);
+        if (orderClinicId && !clinicAllowed(scope, orderClinicId)) {
+          return res.status(403).json({ message: "غير مصرح لك بإلغاء هذا الأمر" });
+        }
+      }
       await storage.cancelClinicOrder(req.params.id as string);
       broadcastClinicOrdersUpdate();
       res.json({ ok: true });

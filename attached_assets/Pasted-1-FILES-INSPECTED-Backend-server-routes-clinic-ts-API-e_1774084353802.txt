@@ -1,0 +1,462 @@
+1) FILES INSPECTED
+Backend
+الملف	السبب
+server/routes/clinic.ts	جميع API endpoints للوحدة — 580+ سطر
+server/storage/clinic-master-storage.ts	1274 سطر — العيادات + المواعيد + الاستشارات + محرك محاسبة OPD
+server/storage/clinic-orders-storage.ts	الأوامر الطبية + كشف حساب الطبيب + أوامر خدمات الأقسام
+server/storage/clinic-storage.ts	barrel re-export فقط
+server/routes/patients.ts L175	GET /api/patients/:id/previous-consultations
+shared/schema/clinic.ts	تعريف 9 جداول — الجسر الكامل للبيانات
+shared/permissions.ts	تعريف الصلاحيات وتوزيعها على الأدوار
+Frontend
+الملف	السبب
+client/src/pages/clinic-booking/index.tsx	صفحة الحجز والطابور — orchestrator
+client/src/pages/clinic-booking/components/AppointmentQueue.tsx	قائمة الطابور
+client/src/pages/clinic-booking/components/QueueContent.tsx	محتوى الطابور + أزرار الحالة
+client/src/pages/clinic-booking/components/TurnReceipt.tsx	طباعة ورقة الدور
+client/src/pages/clinic-booking/components/ClinicManagementDialog.tsx	إدارة العيادات
+client/src/pages/clinic-booking/components/AdminSummaryCards.tsx	بطاقات المدير
+client/src/pages/clinic-booking/hooks/useAppointmentQueue.ts	جلب المواعيد + SSE
+client/src/pages/clinic-booking/hooks/useClinicBooking.ts	اختيار العيادة والتاريخ
+client/src/pages/clinic-booking/hooks/useClinicPermissions.ts	صلاحيات المستخدم
+client/src/pages/clinic-booking/types.ts	أنواع بيانات الواجهة
+client/src/pages/doctor-consultation/index.tsx	شاشة الكشف — 196 سطر
+client/src/pages/doctor-consultation/components/ComplaintQuadrant.tsx	ربع الشكوى الرئيسية
+client/src/pages/doctor-consultation/components/DiagnosisQuadrant.tsx	ربع التشخيص
+client/src/pages/doctor-consultation/components/PrescriptionQuadrant.tsx	ربع الروشتة
+client/src/pages/doctor-consultation/components/ServicesQuadrant.tsx	ربع أوامر الخدمات
+client/src/pages/doctor-consultation/components/PatientHistoryPanel.tsx	تاريخ المريض
+client/src/pages/doctor-consultation/components/FavoriteDrugsPanel.tsx	الأدوية المفضلة
+client/src/pages/doctor-consultation/components/DoctorStatementTab.tsx	كشف حساب الطبيب
+client/src/pages/doctor-consultation/components/PrintPrescription.tsx	طباعة الروشتة
+client/src/pages/doctor-consultation/hooks/useDoctorConsultation.ts	منطق الحفظ والبيانات
+client/src/pages/doctor-consultation/hooks/useDoctorStatement.ts	بيانات كشف الحساب
+client/src/pages/doctor-consultation/hooks/useFavoriteDrugs.ts	الأدوية المفضلة
+client/src/pages/doctor-orders/index.tsx	صفحة أوامر الطبيب
+client/src/pages/doctor-orders/components/OrdersTable.tsx	جدول الأوامر
+client/src/pages/doctor-orders/components/OrdersFilterBar.tsx	فلاتر الأوامر
+client/src/pages/doctor-orders/components/ExecuteConfirmDialog.tsx	تأكيد التنفيذ
+client/src/pages/doctor-orders/hooks/useClinicOrders.ts	جلب الأوامر
+client/src/pages/DoctorStatement.tsx	صفحة كشف حساب الطبيب
+client/src/pages/DoctorSettlements.tsx	صفحة تسوية الطبيب
+2) MODULE BOUNDARY
+ما تشمله الوحدة حالياً
+إدارة العيادات (CRUD + تعيين مستخدمين)
+جداول الأطباء (clinic_doctor_schedules)
+الحجز والطابور (تسلسل الأدوار، SSE لحظي)
+الكشف الطبي (شكوى + تشخيص + ملاحظات نصية فقط)
+الروشتة (أدوية نصية اختيارياً مرتبطة بمخزون)
+أوامر الخدمات (تحاليل/أشعة/غيرها) → توجيه لقسم مُحدد
+أوامر الصيدلية (pharmacy orders) → توجيه لصيدلية العيادة
+محرك محاسبة OPD v2 كامل (IFRS 15 — إيراد مؤجل → اعتراف)
+استرداد المبلغ وإلغاء الموعد
+كشف حساب الطبيب
+قائمة أدوية مفضلة per-doctor per-clinic
+تاريخ المريض (الكشوفات السابقة فقط)
+ما لا تشمله الوحدة
+تسجيل العلامات الحيوية (Vitals)
+تفحص سريري هيكلي (Chief Complaint / History / Examination / Assessment / Plan — SOAP structured)
+كود ICD-10 / SNOMED للتشخيص — نص حر فقط
+قوالب/ماكرو للكشف حسب التخصص
+حقول تخصصية (قلب، عظام، أسنان...)
+متابعة follow-up (إنشاء موعد متابعة من شاشة الكشف)
+إحالات referral
+طلب دخول مريض من شاشة الكشف
+طلب عملية جراحية
+إعادة جدولة موعد (reschedule)
+قائمة انتظار waiting list
+إدارة slots مكدسة
+عرض تقويمي calendar view
+نتائج التحاليل/الأشعة مرتبطة بالزيارة
+مرفقات/صور/وثائق على مستوى الزيارة
+لوحة تحكم الطبيب (daily productivity, analytics)
+3) REAL USER JOURNEY
+أ) الاستقبال — حجز موعد جديد
+الخطوة	الصفحة	Route	الجداول
+دخول الاستقبال	/clinic-booking	GET /api/clinic-clinics	clinic_clinics ← scoped by clinic_user_clinic_assignments
+اختيار عيادة + تاريخ	نفس الصفحة	GET /api/clinic-clinics/:id/appointments?date=	clinic_appointments JOIN doctors JOIN patients
+إنشاء حجز	نموذج في QueueContent	POST /api/clinic-clinics/:id/appointments	كتابة في: clinic_appointments, patient_invoice_headers, patient_invoice_lines, treasury_transactions, journal_entries, journal_lines
+SSE يُحدّث الطابور	تلقائي	GET /api/clinic/sse/:clinicId	—
+عند الحجز النقدي يتم فوراً:
+
+إنشاء clinic_appointment بدور تسلسلي (MAX + 1)
+إنشاء فاتورة patient_invoice_headers بحالة finalized
+إنشاء سطر فاتورة patient_invoice_lines بخدمة الكشف
+إنشاء معاملة خزينة treasury_transactions
+ترحيل قيد محاسبي OPD_ADVANCE_RECEIPT (Dr. خزينة / Cr. 21163 إيراد مؤجل)
+إنشاء clinic_order بحالة executed لخدمة الكشف
+ب) وصول المريض — تغيير الحالة
+الخطوة	Route	الجداول
+الاستقبال يضغط "في الكشف"	PATCH /api/clinic-appointments/:id/status body: {status: "in_consultation"}	clinic_appointments UPDATE status
+SSE يُبلّغ الطبيب	broadcast	—
+ج) الطبيب — الكشف
+الخطوة	الصفحة	Route	الجداول
+فتح شاشة الكشف	/doctor-consultation/:appointmentId	GET /api/clinic-consultations/:appointmentId	clinic_consultations JOIN clinic_consultation_drugs JOIN clinic_orders
+كتابة شكوى + تشخيص + ملاحظات	ComplaintQuadrant + DiagnosisQuadrant	—	— (local state)
+إضافة أدوية	PrescriptionQuadrant	—	— (local state)
+إضافة خدمات (تحاليل/أشعة)	ServicesQuadrant	—	— (local state)
+حفظ	POST /api/clinic-consultations	clinic_consultations upsert + clinic_consultation_drugs delete+insert + clinic_orders delete+insert	
+اعتراف الإيراد	PATCH /api/clinic-appointments/:id/service-delivered ثم PATCH /api/clinic-appointments/:id/status {status:"done"}	journal_entries (OPD_REVENUE_RECOGNITION)	
+د) تنفيذ الأوامر — القسم / الصيدلية
+الخطوة	الصفحة	Route	الجداول
+عرض الأوامر المعلقة	/doctor-orders	GET /api/clinic-orders?status=pending	clinic_orders JOIN doctors JOIN clinic_appointments
+تنفيذ أمر خدمة	redirect → /dept-services/:code?clinicOrderIds=...	POST /api/dept-services في storage	patient_invoice_headers, patient_invoice_lines, clinic_orders UPDATE status='executed'
+تنفيذ أمر دواء	PharmacyDrugPopup في doctor-orders	POST /api/clinic-orders/:id/execute	patient_invoice_headers, clinic_orders UPDATE status='executed'
+هـ) إنهاء الزيارة
+الخطوة	Route	الجداول
+ضغط "إنهاء" في شاشة الكشف	PATCH /api/clinic-appointments/:id/service-delivered {serviceDelivered:true} → PATCH status:'done'	clinic_appointments, journal_entries (OPD_REVENUE_RECOGNITION)
+4) APPOINTMENT / BOOKING ENGINE
+ما يوجد ✅
+الحجز الأساسي: اسم المريض، رقم الهاتف، ربط بملف مريض (اختياري)، اختيار طبيب، تاريخ، ملاحظات
+رقم الدور التلقائي: MAX(turn_number) + 1 per (clinic_id, appointment_date)
+حماية من التكرار: يرفض حجز نفس المريض+طبيب+تاريخ إذا كان هناك حجز غير ملغى (server-side check)
+أنواع الدفع: CASH / INSURANCE / CONTRACT (نص حر للتأمين والجهة)
+حالات الموعد: waiting / in_consultation / done / cancelled / no_show
+الإلغاء + الاسترداد: POST /api/clinic-appointments/:id/cancel-refund — استرداد جزئي أو كامل + قيود GL عكسية
+جداول الأطباء: clinic_doctor_schedules يحفظ الطبيب + اليوم + الأوقات + maxAppointments
+SSE لحظي: GET /api/clinic/sse/:clinicId يُبلّغ جميع المستخدمين في العيادة فوراً
+تصفية بالطبيب: الطبيب يرى مواعيده فقط، الاستقبال يرى الكل
+ما هو ضعيف ⚠️
+جداول الأطباء: لا تُستخدم لفرض حد maxAppointments عند الحجز — القيد في الجدول لكن ليس مطبقاً في createAppointment
+رقم الدور: يُحسب MAX+1 بدون queueing mechanism — اثنان في نفس اللحظة قد يحصلان على نفس الدور (تقليل احتمالية بـ FOR UPDATE على صف العيادة لكن غير معصوم)
+تصفية بالتاريخ فقط: لا يوجد تصفية بالطبيب + التاريخ معاً عند الحجز لفحص التعارض بدقة
+ما يغيب تماماً ❌
+إعادة جدولة reschedule: لا يوجد endpoint ولا واجهة — الحل الوحيد إلغاء + حجز جديد
+قائمة انتظار waiting list: غير موجودة
+أنواع المشي walk-in vs مجدول: لا يوجد حقل للتمييز
+إدارة slots: maxAppointments موجود في الجدول لكن غير مُطبَّق للمنع
+Overbooking rule: لا يوجد منطق
+عرض تقويمي calendar: الواجهة day-list فقط — لا calendar view
+تصفية حسب الطبيب في شاشة الاستقبال: الطابور يعرض جميع أطباء اليوم معاً بدون تبويب
+5) DOCTOR CONSULTATION / ENCOUNTER ENGINE
+ما يوجد ✅
+4 أرباع (quadrants):
+ComplaintQuadrant: شكوى رئيسية (نص حر)
+DiagnosisQuadrant: تشخيص (نص حر)
+PrescriptionQuadrant: روشتة أدوية (drugName + dose + frequency + duration + quantity)
+ServicesQuadrant: طلب خدمات (تحاليل/أشعة/خدمات)
+حفظ تلقائي: auto-save flag بـ isDirty state
+لوحة الأدوية المفضلة: FavoriteDrugsPanel يسحب من clinic_doctor_favorite_drugs + يعرض الأدوية الأكثر استخداماً (getFrequentDrugsNotInFavorites)
+ربط أدوية بالمخزون: الروشتة يمكن ربطها بـ item_id لتتبع المخزون
+طباعة الروشتة: PrintPrescription component
+تاريخ المريض: PatientHistoryPanel يعرض آخر 5 زيارات سابقة (شكوى + تشخيص + أدوية)
+كشف حساب الطبيب: تبويب منفصل في شاشة الحجز + صفحة /doctor-statement
+ما هو أساسي فقط ⚠️
+التشخيص: نص حر واحد — بدون ICD-10 / SNOMED / بحث هيكلي
+الشكوى: نص حر واحد — بدون History of Present Illness / Review of Systems
+الملاحظات: حقل نص حر واحد notes — يخلط بين الخطة وملاحظات الفحص
+أوامر الخدمات: بدون تعليمات خاصة لكل أمر (مثل "صائم" للتحاليل)
+ما يغيب تماماً ❌
+العلامات الحيوية (Vitals): لا جدول، لا حقل، لا واجهة — ضغط دم، حرارة، وزن، إلخ
+الفحص السريري Physical Exam: لا توجد
+هيكل SOAP: Subjective / Objective / Assessment / Plan غير مُهيكل
+قوالب Templates/Macros: لا توجد
+حقول تخصصية: لا يوجد فرق بين عيادة قلب وعيادة أسنان في الشاشة
+خطة المتابعة Follow-up Plan: لا حقل مخصص، لا زر "حجز متابعة"
+المرفقات Attachments: لا صور، لا ملفات، لا وثائق على مستوى الزيارة
+الفحص التاريخي Past Medical History / Family History / Allergies: غير مدعوم
+6) PRESCRIPTIONS / ORDERS / PROCEDURES
+الروشتة (Prescriptions)
+نقطة الدخول: PrescriptionQuadrant في /doctor-consultation/:appointmentId
+Route الحفظ: POST /api/clinic-consultations → حقل drugs[]
+التخزين: clinic_consultation_drugs — يحتوي: drugName, dose, frequency, duration, quantity, unitLevel, itemId (nullable FK → items)
+أوامر الصيدلية: عند الحفظ يُنشئ clinic_orders من نوع pharmacy بحالة pending
+هل تُنشئ سطور مالية؟ نعم — عند التنفيذ يُنشئ فاتورة patient_invoice_headers عبر POST /api/clinic-orders/:id/execute
+تتبع التنفيذ: نعم جزئياً — clinic_orders.status = pending / executed / cancelled
+أوامر المختبر (Lab Orders)
+نقطة الدخول: ServicesQuadrant في شاشة الكشف — اختيار خدمة مع targetType='department' وID القسم
+Route الحفظ: POST /api/clinic-consultations → حقل serviceOrders[]
+التخزين: clinic_orders — orderType='service', targetType='department', targetId=قسم المختبر
+التنفيذ: /doctor-orders → redirect → /dept-services/LAB?clinicOrderIds=...&services=...
+هل تُنشئ سطور مالية؟ نعم — saveDeptServiceOrder في clinic-orders-storage.ts يُنشئ فاتورة مستقلة
+تتبع التنفيذ: نعم — clinic_orders.status + executedInvoiceId
+هل تُرتبط النتائج بالزيارة؟ لا — نتائج التحاليل غير موجودة أصلاً في النظام
+أوامر الأشعة (Radiology Orders)
+مثل Lab بالضبط: orderType='service', targetType='department', القسم = قسم الأشعة
+التنفيذ: redirect لـ /dept-services/RADIOLOGY?...
+النتائج: غير موجودة
+الإجراءات والعمليات
+داخل ServicesQuadrant: أي خدمة في الجداول يمكن طلبها كأمر
+لا يوجد: نوع مُخصص للإجراءات أو العمليات في الأوامر
+الإحالات (Referrals)
+غير موجودة — لا جدول، لا واجهة، لا route
+طلب الدخول (Admission Request)
+غير موجود من شاشة الكشف — الدخول يُدار من وحدة الأدمشن بشكل مستقل
+طلب العملية (Surgery Request)
+غير موجود كربط مباشر من الكشف
+7) EXECUTION TRACKING
+ماذا يمكن رؤيته الآن
+السؤال	الإجابة
+عدد الأوامر الكلية per appointment	✅ في getClinicDoctorStatement — حقل total_orders
+عدد المُنفَّذ	✅ حقل executed_orders
+عدد المعلق	✅ حقل pending_orders
+تفصيل: خدمات vs صيدلية	✅ total_service_orders, executed_service_orders, total_pharmacy_orders, executed_pharmacy_orders
+الأوامر بالاسم في صفحة doctor-orders	✅ يعرض الأوامر مع status per order
+نتائج التحاليل مرتبطة بالزيارة	❌ غير موجودة أصلاً
+نتائج الأشعة مرتبطة بالزيارة	❌ غير موجودة
+هل صُرف الدواء من الصيدلية	⚠️ يمكن معرفته من clinic_orders.status = 'executed' لكن لا واجهة تُبيّن ذلك بوضوح للطبيب في شاشته
+هل الأوامر داخلية أم خارجية	❌ لا حقل isExternal في clinic_orders
+الخلاصة: الطبيب يرى إحصاءات execution في كشف حسابه، لكنه لا يرى في شاشة الكشف نفسها ما إذا كان أمره نُفِّذ أم لا.
+
+8) PATIENT HISTORY / LONGITUDINAL VIEW
+ما يوجد ✅
+PatientHistoryPanel في شاشة الكشف: يستدعي GET /api/patients/:id/previous-consultations?limit=5
+البيانات المعروضة: التاريخ، اسم العيادة، اسم الطبيب، الشكوى، التشخيص، الأدوية المكتوبة (بدون الجرعة أحياناً)، رسم الكشف
+الحد: آخر 5 زيارات فقط (حد ثابت في الكود limit=5)
+ما يغيب تماماً ❌
+العنصر	الوضع
+تاريخ التحاليل	❌ غير موجود
+تاريخ الأشعة	❌ غير موجود
+تاريخ الدخول الإكلينيكي	❌ غير مرتبط بشاشة الكشف
+مرفقات الزيارات السابقة	❌ غير موجودة
+Timeline view تسلسل زمني	❌ القائمة فقط بدون timeline
+حساسية الأدوية (Allergies)	❌ غير موجودة في أي جدول
+الأمراض المزمنة	❌ غير موجودة
+الجراحات السابقة	❌ غير موجودة
+أكثر من 5 زيارات	❌ لا pagination في PatientHistoryPanel
+نتائج التحاليل السابقة	❌ غير موجودة في أي جدول
+9) SECRETARY / FRONT DESK CAPABILITIES
+الصلاحيات الافتراضية لدور reception
+PATIENTS_VIEW / PATIENTS_CREATE / PATIENTS_EDIT
+DOCTORS_VIEW / DOCTORS_CREATE / DOCTORS_EDIT
+ADMISSIONS_VIEW / ADMISSIONS_CREATE / ADMISSIONS_MANAGE
+CLINIC_VIEW_OWN   ← يرى عيادته المعينة فقط
+CLINIC_BOOK        ← حجز مواعيد
+ملاحظة: دور reception لا يمتلك CLINIC_MANAGE (لا إعداد عيادات)، ولا DOCTOR_CONSULTATION (لا كشف)، ولا DOCTOR_ORDERS_VIEW (لا أوامر).
+
+ما يمكن للاستقبال فعله
+الإجراء	الدعم
+حجز موعد جديد	✅ POST /api/clinic-clinics/:id/appointments
+عرض طابور اليوم	✅ صفحة /clinic-booking
+تغيير حالة موعد (وصل → في الكشف)	✅ PATCH /api/clinic-appointments/:id/status
+إلغاء + استرداد نقدي	✅ POST /api/clinic-appointments/:id/cancel-refund
+طباعة ورقة الدور	✅ TurnReceipt component
+بحث عن مريض (بالاسم/الهاتف)	⚠️ موجود في نموذج الحجز لكن غير منفصل كصفحة بحث
+تسجيل مريض جديد	✅ عبر PATIENTS_CREATE لكن من صفحة المرضى وليس من الحجز مباشرة
+تذكير المريض / Follow-up	❌ غير موجود
+تحديد موعد متابعة	❌ غير موجود
+الحجز من أكثر من جهاز بالتزامن	✅ SSE يُحدّث
+طباعة قائمة الحجوزات	❌ لا A4 view مخصص للحجوزات
+رسالة SMS / بريد للمريض	❌ غير موجود
+إخلاء ذمة التأمين pre-authorization	❌ غير موجود
+ما يغيب
+لا بحث لحجوزات المريض عبر الأيام (ما هي مواعيد مريض بعينه مستقبلاً)
+لا تأكيد حجز مع/بدون المريض (تمييز confirmed vs tentative)
+لا no-show tracking منظم (تُسجَّل الحالة لكن لا تقارير، لا إجراءات)
+10) DOCTOR CAPABILITIES
+الصلاحيات الافتراضية لدور doctor
+PATIENTS_VIEW
+DOCTORS_VIEW
+ADMISSIONS_VIEW
+SERVICES_VIEW
+ITEMS_VIEW
+DOCTOR_CONSULTATION   ← كتابة كشف وروشتة
+DOCTOR_VIEW_STATEMENT ← كشف حساب الطبيب
+غائب في الدور الافتراضي: DOCTOR_ORDERS_VIEW و DOCTOR_ORDERS_EXECUTE — الطبيب لا يرى صفحة "أوامر الطبيب" ولا ينفذها بدون تعديل مجموعة صلاحياته يدوياً.
+
+ما يمكن للطبيب فعله
+الإجراء	الدعم
+فتح طابور مواعيده	✅ /clinic-booking — يرى مواعيده فقط
+فتح شاشة الكشف	✅ /doctor-consultation/:appointmentId
+كتابة شكوى + تشخيص + ملاحظات	✅ نص حر
+كتابة روشتة	✅ أدوية مع جرعة + تكرار + مدة
+طلب خدمات (تحاليل/أشعة)	✅ ServicesQuadrant
+إنهاء الزيارة	✅ زر "إنهاء الكشف"
+طباعة الروشتة	✅ window.print()
+عرض تاريخ المريض	✅ PatientHistoryPanel (آخر 5)
+إدارة أدويته المفضلة	✅ add/remove من FavoriteDrugsPanel
+كشف حسابه	✅ تبويب "كشف الحساب" + صفحة مستقلة
+رؤية أوامره في doctor-orders	⚠️ غير ممنوحة افتراضياً
+تنفيذ أوامره	⚠️ غير ممنوحة افتراضياً
+رؤية الأثر المالي للزيارة	✅ جزئياً من كشف الحساب
+رؤية نتائج التحاليل/الأشعة	❌ غير موجودة
+إنتاجيته اليومية / analytics	⚠️ كشف الحساب يُظهر بعض الأرقام لكن لا dashboard
+11) FINANCIAL INTEGRATION
+التكامل الفعلي (بالأدلة)
+فاتورة المريض patient_invoice_headers
+عند الحجز النقدي: تُنشأ فاتورة بحالة finalized + سطر خدمة الكشف → storage.createAppointment
+عند الحجز بتأمين/عقد: تُنشأ فاتورة بحالة draft للتحصيل لاحقاً
+عند تنفيذ أمر: تُنشأ فاتورة مستقلة per order عبر executeClinicOrder
+عند تنفيذ خدمة قسم: تُنشأ فاتورة عبر saveDeptServiceOrder
+الكاشير
+عند الحجز النقدي: يُسجَّل في treasury_transactions + patient_invoice_payments تلقائياً
+لا يوجد مرور على كاشير منفصل للمواعيد النقدية — يُحصَّل عند الحجز مباشرة
+التسعير
+سعر الكشف: clinic_service_doctor_prices (per doctor) أو services.base_price كـ fallback
+السعر في نموذج الحجز: لا يمكن تعديله — يُطبَّق تلقائياً
+العقود
+الأساس موجود في Schema: clinic_appointments.companyId, .contractId, .contractMemberId — FKs إلى جداول العقود
+لكن الواجهة لا تستخدمها: نموذج الحجز يستخدم حقلَي نص حر insuranceCompany + payerReference
+الحالة: لا يوجد تكامل حقيقي مع وحدة العقود — FKs موجودة كأساس مستقبلي فقط
+الموافقات
+غير موجودة في مسار العيادة — لا pre-authorization لأوامر الأشعة أو التحاليل
+محاسبة GL
+OPD Accounting Engine v2 كامل ومُفصَّل في clinic-master-storage.ts:
+OPD_ADVANCE_RECEIPT: د. خزينة / ك. 21163 (إيراد مؤجل) — عند الحجز
+OPD_REVENUE_RECOGNITION: د. 21163 / ك. حساب إيراد الخدمة — عند إنهاء الكشف
+OPD_ADVANCE_REVERSAL: قيد عكسي عند الإلغاء
+OPD_REVENUE_REFUND: استرداد بعد الاعتراف
+OPD_NO_SHOW_REVENUE: احتساب إيراد عدم الحضور (account code 4172)
+الإيدمبوتنسية: مُطبَّقة — يتحقق من وجود القيد قبل الإنشاء
+logging: accounting_event_log يسجّل كل محاولة نجاحاً أو فشلاً
+12) CROSS-MODULE INTEGRATIONS
+الوحدة	الدمج	التفاصيل
+المختبر (Lab)	⚠️ جزئي — من جانب واحد	الطبيب يُنشئ clinic_orders → تُنفَّذ بفاتورة dept_service في قسم المختبر. لكن لا يوجد جدول نتائج ولا ربط نتيجة بالزيارة
+الأشعة (Radiology)	⚠️ جزئي — من جانب واحد	مثل المختبر بالضبط — الأمر يوجَّه للقسم، لكن النتائج غير موجودة
+الصيدلية (Pharmacy)	✅ موجود	clinic_orders من نوع pharmacy → صيدلية العيادة defaultPharmacyId → يُنفَّذ عبر PharmacyDrugPopup أو executeClinicOrder → يُنشئ فاتورة مريض
+الأدمشن (Admissions)	❌ غير مرتبط	لا يوجد زر "طلب دخول" في شاشة الكشف. الأدمشن يُدار بشكل مستقل
+العقود (Contracts)	⚠️ أساس فقط	FKs موجودة في schema (companyId, contractId, contractMemberId) لكن الواجهة لا تستخدمها — نص حر فقط
+المطالبات (Claims)	❌ غير مرتبط	مواعيد العيادة لا تُولّد claim_batch_lines حالياً
+المحاسبة / GL	✅ قوي جداً	IFRS 15 OPD Engine v2 كامل — 5 أنواع قيود، idempotency، period lock
+13) SCHEMA / TABLE MAP
+الجدول	Drizzle Object	الغرض	أهم الأعمدة	المرتبطات
+clinic_clinics	clinicClinics	إعدادات العيادة	nameAr, departmentId, defaultPharmacyId, consultationServiceId, treasuryId, secretaryFeeType	departments, warehouses, services, treasuries
+clinic_doctor_schedules	clinicDoctorSchedules	جداول الأطباء	clinicId, doctorId, weekday, startTime, endTime, maxAppointments	clinic_clinics, doctors
+clinic_appointments	clinicAppointments	المواعيد	clinicId, doctorId, patientId, patientName, appointmentDate, turnNumber, status, paymentType, invoiceId, accountingPostedAdvance, accountingPostedRevenue, serviceDelivered, grossAmount, paidAmount, companyId, contractId, contractMemberId	clinic_clinics, doctors, patients, companies, contracts, contractMembers
+clinic_user_clinic_assignments	clinicUserClinicAssignments	ربط مستخدم ↔ عيادة	userId, clinicId	users, clinic_clinics
+clinic_user_doctor_assignments	clinicUserDoctorAssignments	ربط مستخدم ↔ طبيب	userId, doctorId	users, doctors
+clinic_consultations	clinicConsultations	بيانات الكشف	appointmentId (unique), chiefComplaint, diagnosis, notes, consultationFee, discountType, discountValue, finalAmount, paymentStatus	clinic_appointments
+clinic_consultation_drugs	clinicConsultationDrugs	أدوية الروشتة	consultationId, lineNo, itemId, drugName, dose, frequency, duration, quantity, unitLevel, unitPrice	clinic_consultations, items
+clinic_doctor_favorite_drugs	clinicDoctorFavoriteDrugs	المفضلة per-doctor	doctorId, clinicId, itemId, drugName, defaultDose, defaultFrequency, sortOrder	doctors, clinic_clinics, items
+clinic_service_doctor_prices	clinicServiceDoctorPrices	سعر خدمة per-doctor	serviceId, doctorId, price	services, doctors
+clinic_orders	clinicOrders	الأوامر الطبية (تحاليل/أشعة/أدوية)	consultationId, appointmentId, doctorId, orderType (service/pharmacy), targetType, targetId, serviceId, itemId, status (pending/executed/cancelled), executedInvoiceId, executedBy, executedAt	clinic_consultations, clinic_appointments, doctors, services, items
+14) RBAC / PERMISSIONS MAP
+مجموعة الصلاحيات المتعلقة بالعيادة
+الصلاحية	المفتاح
+عرض كل العيادات	clinic.view_all
+عرض عيادته فقط	clinic.view_own
+حجز مواعيد	clinic.book
+إدارة العيادات والجداول	clinic.manage
+كتابة كشف وروشتة	doctor.consultation
+كشف حساب الطبيب	doctor.view_statement
+عرض أوامر الطبيب	doctor_orders.view
+تنفيذ الأوامر	doctor_orders.execute
+توزيع الأدوار الافتراضي
+الدور	الصلاحيات
+admin	كل الصلاحيات
+owner	clinic.view_all + clinic.book + clinic.manage + doctor.consultation + doctor.view_statement + doctor_orders.view + doctor_orders.execute
+reception	clinic.view_own + clinic.book فقط
+doctor (افتراضي)	doctor.consultation + doctor.view_statement فقط — بدون doctor_orders.view أو doctor_orders.execute
+cashier	لا شيء متعلق بالعيادة
+accounts_manager	لا شيء متعلق بالعيادة
+department_admin	doctor_orders.view + doctor_orders.execute
+ملاحظات RBAC
+لا يوجد دور "ممرضة" مُعرَّف في النظام — لا nurse في الأدوار الافتراضية
+لا يوجد دور "مدير عيادة" مُستقل — إدارة العيادات تتم عبر clinic.manage
+لا يوجد دور "مسؤول تأمين" في سياق العيادة
+الطبيب لا يرى أوامره افتراضياً — يحتاج تعديل يدوي في مجموعة الصلاحيات
+15) REPORTS / KPI / ANALYTICS
+التقرير	الوضع
+كشف حساب الطبيب (per doctor, date range)	✅ موجود — /doctor-statement + getClinicDoctorStatement
+إحصاءات الأوامر per appointment	✅ مدمجة في كشف الحساب (total/executed/pending per type)
+بطاقات المدير (عدد المواعيد per clinic في اليوم)	✅ AdminSummaryCards
+إجمالي إيرادات العيادة	❌ لا يوجد
+تقرير الحضور والغياب (no-show rate)	❌ لا يوجد
+متوسط وقت الانتظار	❌ لا يوجد
+عدد المرضى الجدد vs المراجعين	❌ لا يوجد
+التحويلات للدخول	❌ لا يوجد
+قائمة أكثر التشخيصات تكراراً	❌ لا يوجد
+معدل تنفيذ الأوامر	⚠️ يمكن استخراجه من كشف الحساب لكن بدون واجهة مخصصة
+16) WEAK POINTS / PRODUCT GAPS
+ملف الكشف (clinic_consultations) بلا هيكل: حقل notes واحد يخلط الفحص والخطة والرأي. لا يمكن الاستفادة منه analytically.
+
+clinic_orders.status لا يُعرض على الطبيب في شاشة كشفه: الطبيب يكتب أوامراً ثم لا يرى إذا نُفِّذت إلا من صفحة doctor-orders المنفصلة التي لا يملكها افتراضياً.
+
+الدور الافتراضي للطبيب ناقص: الطبيب لا يملك DOCTOR_ORDERS_VIEW بشكل افتراضي — يتطلب تدخلاً يدوياً بعد كل إنشاء مستخدم.
+
+ربط العقود معطل من الواجهة: clinic_appointments يحمل companyId, contractId, contractMemberId لكن نموذج الحجز يستخدم نصاً حراً — القيم هذه دائماً NULL.
+
+لا vitals: أخطر فجوة سريرية — ضغط الدم، الحرارة، الوزن، معدل النبض كلها غير موجودة في أي مكان.
+
+لا نتائج تحاليل أو أشعة: الأوامر تُنشأ وتُنفَّذ لكن النتيجة لا تعود للطبيب من خلال النظام أبداً.
+
+getPatientPreviousConsultations محدود بـ 5: حد ثابت في الكود، لا pagination، لا تصفية.
+
+لا reschedule: إعادة الجدولة تعني إلغاء + حجز جديد يدوياً مع فقدان السياق.
+
+الجدول الزمني clinic_doctor_schedules لا يُطبَّق: maxAppointments موجود لكن لا يمنع الحجز فعلياً. لا تحقق من الأوقات المتاحة.
+
+saveConsultation يحذف ويُعيد إدراج الأدوية كاملاً: Delete+Insert بدلاً من upsert targeted — يمكن أن يُفقد line_no عند الحفظ المتزامن.
+
+clinic_orders.getClinicOrders يبني WHERE بتسلسل نصي (sql.raw): filters.targetType و filters.status تُحقن مباشرة في نص SQL — خطر SQL Injection محتمل.
+
+صفحة DoctorStatement.tsx و DoctorSettlements.tsx قائمتان منفصلتان خارج مجلد doctor-consultation/ — عدم اتساق في بنية المجلدات.
+
+17) KEEP / REFACTOR / ADD
+A. KEEP AS-IS ✅
+OPD Accounting Engine v2 — قوي ومكتمل ومُختبَر (deferred → recognition → reversal → refund → no-show)
+SSE لحظي للطابور — يعمل بشكل ممتاز
+هيكل الأعمدة في clinic_appointments — احترافي (contract FKs موجودة كأساس)
+clinic_orders كـ universal order table — تصميم صحيح يغطي pharmacy + service
+clinic_doctor_favorite_drugs — فكرة قيّمة ومُطبَّقة
+Doctor statement — مفيد للطبيب ومكتمل نسبياً
+B. REFACTOR ⚠️
+clinic-master-storage.ts (1274 سطر): يجب تقسيمه — createAppointment وحدها أكثر من 200 سطر
+clinic_orders.getClinicOrders: استبدال sql.raw بـ Drizzle conditions array لمنع SQL injection
+دور الطبيب الافتراضي: إضافة DOCTOR_ORDERS_VIEW تلقائياً
+نموذج الحجز: ربط حقل التأمين/العقد بـ AccountLookup حقيقي بدل نص حر
+PatientHistoryPanel: إضافة pagination + توسيع المعلومات المعروضة
+C. ADD ❌
+العلامات الحيوية (Vitals): جدول clinic_vitals + واجهة في شاشة الكشف
+ICD-10 Diagnosis Lookup: جدول icd_codes + autocomplete في DiagnosisQuadrant
+نتائج التحاليل والأشعة: جدول lab_results / radiology_results مرتبط بـ clinic_order_id
+Reschedule Appointment: route PATCH /api/clinic-appointments/:id/reschedule + واجهة
+Follow-up Planning: زر "حجز متابعة" في شاشة الكشف يُنشئ موعداً جديداً مع نقل السياق
+لوحة تحكم الطبيب: daily productivity + completion rate + revenue dashboard
+تفعيل contract picker في الحجز: استخدام companyId/contractId/contractMemberId الموجودة
+Doctor Consultation Status Badge: في شاشة الكشف، بادجات الأوامر المعلقة تُحدَّث لحظياً عبر SSE
+تقارير العيادة: no-show rate + daily revenue + new vs returning patients
+Waiting List: جدول clinic_waiting_list + واجهة للاستقبال
+18) PRODUCT MATURITY VERDICT
+المستوى الحالي: 5.5/10 — "وظيفي لكن أساسي"
+
+المحور	التقييم
+الحجز والطابور	7/10 — يعمل جيداً، يفتقر للجدولة والإعادة
+محاسبة OPD	9/10 — من أقوى الأجزاء، IFRS 15 كامل
+الكشف الطبي	4/10 — النص الحر يعمل، لكن لا هيكل سريري
+تتبع الأوامر	5/10 — يمكن تتبع status لكن النتائج غائبة
+تاريخ المريض	3/10 — آخر 5 فقط، لا vitals، لا نتائج
+RBAC	6/10 — القواعد موجودة لكن الطبيب ناقص افتراضياً
+التكامل مع العقود	2/10 — الأساس موجود فقط
+التقارير والتحليلات	3/10 — كشف الحساب فقط
+أقوى ما في الوحدة: محرك المحاسبة OPD + تصميم clinic_orders كجدول أوامر موحد + SSE
+
+أضعف ما في الوحدة: غياب الـ vitals + غياب نتائج التحاليل + غياب ICD-10 + لا reschedule + ربط العقود معطل من الواجهة
+
+19) PHASED RECOMMENDATION
+بناءً على الكود الفعلي:
+
+Phase 1: تصليح الثغرات الحرجة (قصير المدى — أسبوع)
+تفعيل contract picker في نموذج الحجز (FKs موجودة، الواجهة فقط تحتاج تغيير)
+إضافة DOCTOR_ORDERS_VIEW للدور الافتراضي للطبيب
+إصلاح SQL injection في getClinicOrders
+Doctor consultation: إضافة execution badges لحظية
+Phase 2: تقوية الكشف الطبي (2-3 أسابيع)
+إضافة جدول vitals + واجهة في شاشة الكشف
+ICD-10 diagnosis search (جدول + autocomplete)
+تحويل حقل notes إلى حقول مُهيكلة (Exam / Assessment / Plan)
+زر "حجز متابعة" من شاشة الكشف
+Phase 3: إغلاق دورة الأوامر (أسبوعان)
+جدول نتائج التحاليل lab_results مرتبط بـ clinic_orders
+عرض النتائج في شاشة الكشف + PatientHistoryPanel
+Reschedule endpoint + واجهة الاستقبال
+Phase 4: ربط العقود والمطالبات (أسبوعان)
+تفعيل claim_batch_lines لمواعيد العيادة بالتأمين
+Pre-authorization workflow للأوامر
+Company share / patient share حساب في الفاتورة
+Phase 5: التحليلات والإنتاجية (أسبوع)
+لوحة تحكم الطبيب اليومية
+تقارير العيادة: no-show / إيرادات / مرضى جدد
+Waiting list
+20) TOP 10 MISSING THINGS THAT PREVENT THIS MODULE FROM BEING A STRONG SELLABLE OUTPATIENT PRODUCT
+#	الفجوة	الأثر
+1	لا vitals (العلامات الحيوية)	أي نظام OPD بدون vitals غير قابل للبيع لأي مستشفى حقيقي
+2	نتائج التحاليل والأشعة لا تعود للطبيب	الحلقة السريرية مفتوحة — الطبيب يطلب ولا يرى النتيجة
+3	لا reschedule	أساسي جداً — لا يوجد نظام حجز في العالم بدونه
+4	لا ICD-10 للتشخيص	التشخيص النصي الحر لا يمكن الاستفادة منه في تقارير أو مطالبات أو إحصاءات
+5	ربط العقود/التأمين معطل من الواجهة	مرضى التأمين لا يرتبطون بأي contract حقيقي — لا يمكن توليد مطالبات لمواعيد العيادة
+6	الطبيب لا يرى أوامره افتراضياً	Bug تكويني — يحتاج تدخل يدوي بعد كل حساب طبيب
+7	لا تاريخ طولي (Longitudinal View)	الطبيب لا يرى أمراض مزمنة / حساسية / جراحات سابقة — أساسي للسلامة
+8	لا follow-up planning	الزيارة تنتهي بلا موعد متابعة — الاستمرارية العلاجية مفقودة
+9	لا لوحة تحكم للطبيب	الطبيب لا يرى إنتاجيته ولا ديونه ولا أرقامه اليومية بشكل مرئي
+10	لا تقارير OPD	لا no-show rate / لا daily census / لا revenue per clinic — المدير يعمل أعمى

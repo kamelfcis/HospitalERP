@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { resolveClinicScope } from "../lib/clinic-scope";
 
 // ─── Fire-and-forget audit logger ────────────────────────────────────────────
 // Logs sensitive read access without blocking the response.
@@ -174,7 +175,8 @@ export function registerPatientsRoutes(app: Express) {
   // Previous consultations — PATIENTS_VIEW + dept scope check
   app.get("/api/patients/:id/previous-consultations", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const userId = req.session.userId!;
+      const scope = await storage.getUserCashierScope(userId);
       const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
 
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
@@ -184,8 +186,13 @@ export function registerPatientsRoutes(app: Express) {
       const inScope = await storage.checkPatientInScope(req.params.id, forcedDeptIds);
       if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
 
+      // GAP-09: filter returned consultations to the requesting user's allowed clinics
+      const perms = await storage.getUserEffectivePermissions(userId);
+      const clinicScope = await resolveClinicScope(userId, perms);
+      const allowedClinicIds = clinicScope.all ? null : clinicScope.clinicIds;
+
       const limit = parseInt(String(req.query.limit || "5"));
-      const consultations = await storage.getPatientPreviousConsultations(req.params.id, limit);
+      const consultations = await storage.getPatientPreviousConsultations(req.params.id, limit, allowedClinicIds);
       res.json(consultations);
     } catch (error: unknown) {
       res.status(500).json({ message: error instanceof Error ? error.message : String(error) });

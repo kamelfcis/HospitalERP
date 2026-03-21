@@ -478,7 +478,12 @@ const methods = {
     };
   },
 
-  async getPatientPreviousConsultations(this: DatabaseStorage, patientId: string, limit: number = 5): Promise<Array<Record<string, unknown>>> {
+  async getPatientPreviousConsultations(this: DatabaseStorage, patientId: string, limit: number = 5, allowedClinicIds?: string[] | null): Promise<Array<Record<string, unknown>>> {
+    const clinicCond =
+      allowedClinicIds && allowedClinicIds.length > 0
+        ? sql`AND a.clinic_id = ANY(${allowedClinicIds}::varchar[])`
+        : sql``;
+
     const rows = await db.execute(sql`
       SELECT
         c.id,
@@ -499,6 +504,7 @@ const methods = {
       JOIN doctors d ON d.id = a.doctor_id
       JOIN clinic_clinics cl ON cl.id = a.clinic_id
       WHERE a.patient_id = ${patientId}
+        ${clinicCond}
       ORDER BY a.appointment_date DESC, a.turn_number DESC
       LIMIT ${limit}
     `);

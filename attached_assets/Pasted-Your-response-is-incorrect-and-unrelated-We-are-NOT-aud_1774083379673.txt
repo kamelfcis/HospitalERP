@@ -1,0 +1,200 @@
+Your response is incorrect and unrelated.
+
+We are NOT auditing Account Mappings.
+We are auditing the Outpatient Clinics / Ambulatory Care module only.
+
+Do not mention Account Mappings again.
+Do not summarize any unrelated previous task.
+Do not say “all tasks are complete”.
+Do not answer from memory or prior session cache.
+
+You must now inspect the ACTUAL outpatient clinics codebase and return the requested audit only.
+
+==================================================
+CORRECTION — OUTPATIENT CLINICS AUDIT ONLY
+==================================================
+
+This is discovery only.
+Do NOT build anything yet.
+
+Print exactly these sections and nothing else:
+
+1) FILES INSPECTED
+List exact file paths relevant to outpatient clinics:
+- pages
+- routes
+- storage
+- schema
+- hooks
+- components
+- permissions
+- billing links
+- consultation / appointments / queue
+- lab / radiology / prescription / referrals
+- patient history / encounter
+
+For each file:
+- exact path
+- why it matters
+
+2) MODULE BOUNDARY
+What does the outpatient module currently include?
+What does it not include?
+
+3) REAL USER JOURNEY
+Actual current flow for:
+- secretary
+- booking
+- patient arrival
+- doctor consultation
+- follow-up
+- billing
+- completion
+
+For each step:
+- actual page
+- actual route
+- actual tables written/read
+
+4) APPOINTMENT / BOOKING ENGINE
+State what exists, what is missing, and what is weak for:
+- booking
+- reschedule
+- cancel
+- no-show
+- walk-in
+- waiting list
+- queue
+- doctor schedule
+- slot management
+- overbooking
+- calendar/day list
+
+5) DOCTOR CONSULTATION / ENCOUNTER ENGINE
+State what exists, what is basic only, and what is missing for:
+- consultation screen
+- visit note
+- complaint/history/exam
+- diagnosis
+- plan
+- templates
+- specialty fields
+- vitals
+- attachments
+- follow-up planning
+
+6) PRESCRIPTIONS / ORDERS / PROCEDURES
+Explain actual support for:
+- prescriptions
+- lab orders
+- radiology orders
+- procedures
+- referrals
+- admission requests
+- surgery requests
+- internal services
+
+For each:
+- actual entry point
+- actual route/storage
+- whether it creates financial lines
+- whether execution can be tracked
+
+7) EXECUTION TRACKING
+Can the doctor currently see:
+- how many labs ordered
+- which were executed
+- which are pending
+- radiology done vs pending
+- whether prescribed medications were dispensed
+- whether results link back to the visit
+
+Be explicit.
+
+8) PATIENT HISTORY / LONGITUDINAL VIEW
+What exists today for:
+- previous visits
+- diagnoses history
+- prescriptions history
+- labs history
+- radiology history
+- attachments
+- timeline
+- ability to review patient history later
+
+9) SECRETARY / FRONT DESK CAPABILITIES
+Exactly what can secretary do today?
+List actual screens and permissions.
+
+10) DOCTOR CAPABILITIES
+Exactly what can doctor do today?
+List actual screens and permissions.
+
+11) FINANCIAL INTEGRATION
+Explain actual integration with:
+- patient invoices
+- cashier
+- service pricing
+- contracts
+- approvals
+- claims readiness
+- company share / patient share
+- finalization
+
+12) CROSS-MODULE INTEGRATIONS
+Current real integrations with:
+- Lab
+- Radiology
+- Pharmacy
+- Admissions / Inpatient
+- Contracts
+- Claims
+- Accounting / GL
+
+13) SCHEMA / TABLE MAP
+List main outpatient-related tables with:
+- table name
+- drizzle/schema object
+- purpose
+- important columns
+- linked tables
+
+14) RBAC / PERMISSIONS MAP
+Group actual permissions by role:
+- secretary
+- doctor
+- nurse
+- clinic manager
+- cashier
+- insurance officer
+- admin
+
+15) REPORTS / KPI / ANALYTICS
+What currently exists vs partial vs missing?
+
+16) WEAK POINTS / PRODUCT GAPS
+Be brutally honest from the actual codebase.
+
+17) KEEP / REFACTOR / ADD
+Split recommendations into:
+- KEEP
+- REFACTOR
+- ADD
+
+18) PRODUCT MATURITY VERDICT
+Give the real maturity level of the outpatient module.
+
+19) PHASED RECOMMENDATION
+Propose practical development phases based on the REAL current codebase.
+
+20) TOP 10 MISSING THINGS THAT PREVENT THIS MODULE FROM BEING A STRONG SELLABLE OUTPATIENT PRODUCT
+
+==================================================
+IMPORTANT
+==================================================
+
+- Do not mention Account Mappings
+- Do not mention unrelated modules
+- Do not say “complete” without outpatient evidence
+- Use exact file names, route names, and table names
+- This is audit only, not build

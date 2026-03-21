@@ -1,0 +1,76 @@
+We are improving the Outpatient Clinics module step by step.
+
+Do NOT build new features yet.
+
+STEP 0 ONLY:
+Security / Boundary Hardening for clinic isolation.
+
+Critical business rule:
+Each clinic must be isolated.
+A secretary or doctor assigned to Clinic A must NOT see Clinic B operational data unless they explicitly have all-clinics permission.
+
+This includes:
+- appointment queues
+- doctor consultation access
+- clinic orders
+- patient history shown inside clinic workflow
+- dashboards / summaries
+- SSE channels
+- doctor statement if clinic-scoped
+- favorite drugs if clinic-scoped
+- any route returning outpatient data
+
+==================================================
+TASK
+==================================================
+
+Audit and fix clinic isolation only.
+
+Inspect:
+- routes
+- storage
+- hooks
+- SSE
+- queries
+- permission guards
+- clinic_user_clinic_assignments
+- clinic_user_doctor_assignments
+- any use of clinic.view_all / clinic.view_own
+
+==================================================
+REQUIREMENTS
+==================================================
+
+1) Enforce clinic scoping on every outpatient route and query where needed
+2) Enforce doctor scoping where needed
+3) Ensure no clinic queue leaks other clinic data
+4) Ensure PatientHistoryPanel only loads allowed patient history in allowed context
+5) Ensure doctor-orders page respects clinic/doctor scope
+6) Ensure summaries/cards are clinic-scoped unless explicit all-clinics permission
+7) Keep admin/owner/all-clinics users working
+8) Add indexes if query paths need them
+9) Refactor any duplicated scoping logic into reusable helpers/services
+10) Keep routes thin
+
+==================================================
+BEFORE CODING
+==================================================
+
+Print:
+1) FILES TO MODIFY
+2) CURRENT SCOPE GAPS
+3) SECURITY RISKS
+4) IMPLEMENTATION PLAN
+
+Then implement STEP 0 only.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) CLINIC ISOLATION RULES ENFORCED
+3) ROUTES HARDENED
+4) INDEXES ADDED
+5) REFACTOR SUMMARY
+6) ANY REMAINING RISKS
