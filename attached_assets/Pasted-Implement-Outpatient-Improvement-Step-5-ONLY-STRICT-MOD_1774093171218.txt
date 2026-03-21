@@ -1,0 +1,295 @@
+Implement Outpatient Improvement — Step 5 ONLY (STRICT MODE + CONTRACT INTEGRATION ARCHITECTURE).
+
+DO NOT implement anything outside Step 5.
+DO NOT build a parallel insurance system.
+DO NOT create a second claims engine.
+DO NOT duplicate contract logic inside OPD.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Activate real contract usage inside outpatient booking and consultation workflows
+by connecting OPD flows to the EXISTING contracts module foundations.
+
+This step must replace free-text payer behavior with real contract resolution
+where applicable, while preserving backward compatibility.
+
+==================================================
+CRITICAL RULE (NON-NEGOTIABLE)
+==================================================
+
+Use existing contracts module foundations as the single source of truth.
+
+DO NOT:
+- build a second parallel insurance logic
+- create duplicate outpatient contract tables
+- create duplicate approval/share/claim logic in OPD
+- rely on free-text payer fields as the primary path for new records
+
+This step is ONLY:
+- contract lookup
+- contract resolution
+- FK stamping
+- correct downstream readiness
+
+==================================================
+SCOPE
+==================================================
+
+Integrate outpatient booking with real FK-based contract data:
+
+- companyId
+- contractId
+- contractMemberId
+
+Replace free-text payer behavior in outpatient workflow with real contract resolution where applicable.
+
+==================================================
+BOOKING FLOW
+==================================================
+
+When paymentType = CONTRACT or INSURANCE:
+
+Allow:
+- member card lookup
+- company + contract + member resolution
+- storing real FK values on clinic_appointments
+
+Required behavior:
+- resolve member card to the correct contract context using existing contracts data
+- stamp the real FK values on clinic_appointments
+- preserve legacy text fields only for backward compatibility / display fallback if needed
+- do not save inconsistent combinations
+
+STRICT VALIDATION RULES:
+Backend must validate:
+- contractMemberId belongs to contractId
+- contractId belongs to companyId
+- selected paymentType allows contract usage
+- null/empty contract fields are handled safely for non-contract patients
+
+Reject invalid combinations with clear validation errors.
+
+==================================================
+CONSULTATION / DOWNSTREAM EFFECT
+==================================================
+
+Ensure outpatient-created appointment / invoice context can later participate correctly in:
+
+- approvals
+- claims
+- patient share / company share logic
+
+This step is NOT the place to implement those engines.
+It must only stamp the correct upstream contract references so downstream modules can work correctly.
+
+Do NOT:
+- build approvals workflow here
+- build claims submission here
+- build pricing engine duplication here
+
+==================================================
+REAL CONTRACT INTEGRATION RULES
+==================================================
+
+Contracts module must remain the source of truth.
+
+OPD should consume:
+- company
+- contract
+- contract member
+from existing services/storage/routes only.
+
+NO frontend-only contract logic.
+NO duplicated contract resolution rules spread across multiple pages.
+
+==================================================
+RBAC / SCOPE
+==================================================
+
+Respect:
+- clinic isolation
+- existing contract/module permissions
+- patient visibility rules
+
+Backend must enforce scope.
+Frontend must not be trusted as the only gate.
+
+==================================================
+ARCHITECTURE ENFORCEMENT (CRITICAL)
+==================================================
+
+Implementation must improve architecture quality.
+
+Required:
+
+1) SERVICE ISOLATION
+Move contract lookup / resolution / stamping to backend service/storage functions.
+Routes must stay thin.
+
+2) COMPONENTIZATION
+Booking UI must use isolated components for:
+- contract/member lookup input
+- resolved contract summary
+- contract stamping display/state
+
+3) HOOK DESIGN
+Frontend contract lookup state must be isolated in hooks where appropriate.
+Do not inline large lookup/state logic inside booking pages.
+
+4) SINGLE RESPONSIBILITY
+- components = rendering and user interaction
+- hooks = UI state / fetching
+- services/storage = contract resolution and validation
+- routes = thin request/response only
+
+5) PAGE THINNESS
+Do not bloat booking or consultation pages with contract resolution logic.
+
+==================================================
+REFACTOR REQUIREMENTS
+==================================================
+
+Required refactor orientation:
+
+- keep routes thin
+- move contract lookup / stamping to services
+- extract reusable booking contract picker component(s)
+- avoid duplicated lookup code
+- avoid hardcoded mapping logic in multiple places
+- avoid copy-paste validation
+
+Prefer extracting/reusing patterns such as:
+
+- components/ContractMemberLookup.tsx
+- components/ResolvedContractSummary.tsx
+- hooks/useContractResolution.ts
+
+Use exact file names only if appropriate to the codebase; adapt if existing structure suggests a better placement.
+
+==================================================
+DATA SAFETY / BACKWARD COMPATIBILITY
+==================================================
+
+This is critical.
+
+Required:
+- old appointments without companyId/contractId/contractMemberId must continue to load normally
+- legacy payer text fields may remain for fallback/display only
+- existing save/load flows must not break
+- new FK stamping must be additive and backward-compatible
+- old records must not require migration rewrite to remain usable
+
+For NEW contract/insurance OPD records:
+- FK-first behavior should be the primary path
+
+For OLD/legacy records:
+- tolerate missing FK values safely
+
+==================================================
+INDEXING STRATEGY (STRICT)
+==================================================
+
+Indexing must be based on actual query paths, not assumptions.
+
+Confirm or add indexes only where justified by real usage patterns.
+
+Potential useful indexes:
+- clinic_appointments(company_id, contract_id, contract_member_id)
+- clinic_appointments(clinic_id, appointment_date)
+- contract member lookup path actually used in search/resolution
+  (for example member card number, contract member number, or company+memberCard lookup)
+
+STRICT RULES:
+- do NOT add redundant indexes
+- do NOT duplicate existing indexes
+- do NOT index follow-on fields that are not queried
+- verify with actual query pattern / EXPLAIN if needed
+
+==================================================
+UI / UX RULES
+==================================================
+
+Booking flow must stay fast and clear.
+
+Required:
+- contract/member lookup only when paymentType = CONTRACT or INSURANCE
+- clear resolved summary after lookup
+- visible error if member/contract mismatch
+- safe fallback when no contract match exists
+- avoid cluttering non-contract booking flow
+
+Consultation flow:
+- show stamped contract context if relevant
+- do not rebuild payer logic there
+
+==================================================
+IMPLEMENTATION SAFETY RULES
+==================================================
+
+- no free-text payer as primary path for new contract bookings
+- no duplicate contract logic in frontend
+- no claims logic added
+- no approvals logic added
+- no hidden auto-corrections for bad FK combinations
+- no silent fallback from invalid FK to text payer
+- no overfetching contract data
+
+==================================================
+BEFORE CODING (MANDATORY)
+==================================================
+
+Print EXACTLY:
+
+1) FILES TO MODIFY
+2) REAL OPD CONTRACT INTEGRATION POINTS
+3) CONTRACT RESOLUTION / VALIDATION RULES
+4) BACKWARD-COMPATIBILITY PLAN
+5) COMPONENT / HOOK REFACTOR PLAN
+6) INDEXING PLAN (WITH JUSTIFICATION)
+7) IMPLEMENTATION PLAN
+
+STOP.
+
+Wait for approval.
+
+==================================================
+IMPLEMENTATION
+==================================================
+
+After approval:
+Implement Step 5 ONLY.
+
+Do NOT start Step 6.
+Do NOT widen scope.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) CONTRACT PICKER ADDED
+3) REAL FK STAMPING ENABLED
+4) VALIDATION RULES ENFORCED
+5) BACKWARD COMPATIBILITY RETAINED
+6) INDEXES ADDED (WITH JUSTIFICATION)
+7) ARCHITECTURE / REFACTOR SUMMARY
+8) ANY LIMITATIONS
+
+==================================================
+QUALITY BAR
+==================================================
+
+Must be:
+- source-of-truth aligned
+- backward-compatible
+- contract-safe
+- cleanly refactored
+- componentized
+- indexed correctly
+- maintainable
+
+No parallel insurance logic.
+No duplicated business rules.
+Only Step 5 — implemented with strong architecture discipline.
