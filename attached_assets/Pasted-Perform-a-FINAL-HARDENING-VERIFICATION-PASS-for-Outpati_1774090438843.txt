@@ -1,0 +1,252 @@
+Perform a FINAL HARDENING & VERIFICATION PASS for Outpatient Improvement — Step 2.
+
+STRICT GOAL:
+Confirm that Step 2 is complete, safe, backward-compatible, and production-ready.
+Actively try to detect hidden bugs, incorrect assumptions, or unsafe behavior.
+
+DO NOT implement Step 3.
+DO NOT expand scope.
+DO NOT add new features unless required to fix a discovered issue.
+
+==================================================
+REQUIRED OUTPUT FIRST
+==================================================
+
+Print EXACTLY:
+
+1) FILES VERIFIED
+2) SNAPSHOT DATA SOURCES VALIDATION
+3) STRUCTURED CONSULTATION VALIDATION
+4) TEMPLATE SAFETY VALIDATION
+5) BACKWARD COMPATIBILITY VALIDATION
+6) PERFORMANCE & INDEX VALIDATION
+7) RUNTIME TEST SCENARIOS
+8) BUGS FOUND
+9) FIXES APPLIED (IF ANY)
+10) REMAINING RISKS
+
+Then proceed with testing.
+
+==================================================
+CRITICAL VALIDATION AREAS
+==================================================
+
+--------------------------------------------------
+A) PATIENT SNAPSHOT VALIDATION
+--------------------------------------------------
+
+Verify PatientSnapshot is:
+
+- read-only (no edit, no save side-effects)
+- not replacing critical intake visibility incorrectly
+
+Confirm:
+
+1) latest diagnosis is fetched correctly:
+   - must be from latest consultation for the SAME patient
+   - must NOT be from current appointment only
+   - must NOT be random or stale
+
+2) vitals come from intake correctly
+
+3) visit type and reason match intake data
+
+4) if any data is missing:
+   - safe empty state shown
+   - no fake/default data
+
+5) contract/payer data:
+   - must not break if unavailable
+
+6) no frontend-derived medical conclusions
+
+--------------------------------------------------
+B) INTAKE VISIBILITY SAFETY
+--------------------------------------------------
+
+Confirm one of the following is true:
+
+- IntakeSummaryBanner still exists
+OR
+- PatientSnapshot fully includes intake data clearly
+
+Reject if:
+- intake data became hidden or unclear
+- doctor loses visibility of pre-consultation data
+
+--------------------------------------------------
+C) STRUCTURED CONSULTATION VALIDATION
+--------------------------------------------------
+
+Test all combinations:
+
+1) SOAP only (no notes/diagnosis)
+2) notes only (no SOAP)
+3) mixed usage
+4) empty structured fields
+
+Confirm:
+
+- save works in all cases
+- no required-field break
+- no silent overwrite of existing notes
+- no forced mapping between SOAP and diagnosis
+
+--------------------------------------------------
+D) TEMPLATE SAFETY VALIDATION
+--------------------------------------------------
+
+Verify:
+
+- templates are code-based
+- templates insert TEXT ONLY
+- doctor must explicitly choose template
+- inserted content is editable
+
+Reject if:
+
+- any template behaves like diagnosis suggestion
+- any template auto-applies
+- any template locks fields
+- any hidden logic modifies diagnosis
+
+--------------------------------------------------
+E) QUICK ACTIONS VALIDATION
+--------------------------------------------------
+
+Verify:
+
+- follow-up buttons insert text only
+- no auto scheduling
+- no backend side-effects unless explicitly triggered
+
+Reject if:
+
+- any action creates appointments automatically
+- any action modifies DB without explicit save
+
+--------------------------------------------------
+F) BACKWARD COMPATIBILITY VALIDATION
+--------------------------------------------------
+
+Test:
+
+1) open old consultation (pre-Step 2)
+2) save old consultation without SOAP
+3) load consultation with partial data
+
+Confirm:
+
+- no crashes
+- no missing fields
+- no forced migration
+- old UI behavior still valid
+
+--------------------------------------------------
+G) API & SAVE FLOW VALIDATION
+--------------------------------------------------
+
+Verify:
+
+- saveConsultation still works for:
+  - old payload
+  - new payload
+  - mixed payload
+
+- new fields are nullable
+- no required schema breaks
+
+--------------------------------------------------
+H) INDEX VALIDATION
+--------------------------------------------------
+
+Check actual query usage:
+
+If query is:
+- latest consultation by patient → ensure index supports (patient_id, created_at DESC)
+
+Reject:
+- unused or wrong indexes
+- redundant indexes
+
+--------------------------------------------------
+I) PERFORMANCE CHECK
+--------------------------------------------------
+
+Verify:
+
+- no N+1 queries introduced
+- snapshot loading is efficient
+- no unnecessary joins
+
+--------------------------------------------------
+J) UI INTEGRATION VALIDATION
+--------------------------------------------------
+
+Confirm:
+
+- PatientSnapshot renders correctly
+- Structured panel works without lag
+- template picker works
+- no large component bloat
+- page remains fast and responsive
+
+==================================================
+RUNTIME TEST SCENARIOS (MANDATORY)
+==================================================
+
+Run and report:
+
+S1 — open consultation → snapshot loads correctly
+S2 — old consultation → loads without SOAP
+S3 — SOAP-only save → success
+S4 — notes-only save → success
+S5 — template insert → editable → save works
+S6 — follow-up button → inserts text only
+S7 — missing data → safe UI
+S8 — snapshot after multiple visits → latest diagnosis correct
+S9 — reload page → no state corruption
+S10 — concurrent edits (if possible) → no crash
+
+For each:
+- PASS / FAIL
+- reason
+
+==================================================
+FIX POLICY
+==================================================
+
+If any issue is found:
+
+- fix ONLY within Step 2 scope
+- do NOT redesign system
+- do NOT expand features
+
+Then rerun affected tests.
+
+==================================================
+FINAL ACCEPTANCE CRITERIA
+==================================================
+
+System must be:
+
+- backward-compatible
+- medically safe (no diagnosis automation)
+- fast
+- stable
+- clean UI
+- no hidden side effects
+
+==================================================
+FINAL STATEMENT
+==================================================
+
+If everything passes, explicitly state:
+
+"Step 2 is production-ready. No functional or safety risks detected."
+
+If not, clearly list blocking issues.
+
+Do NOT give vague answers.
+Do NOT skip failed scenarios.
+Be strict.

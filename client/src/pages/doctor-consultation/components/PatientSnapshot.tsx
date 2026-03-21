@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp, User, CreditCard, AlertCircle, Stethoscope } from "lucide-react";
+import { ChevronDown, ChevronUp, User, CreditCard, AlertCircle, Stethoscope, CheckCircle2, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useIntake } from "../hooks/useIntake";
 import type { Consultation } from "../types";
@@ -65,12 +65,14 @@ interface Props {
 }
 
 /**
- * Compact read-only patient header shown above the doctor consultation screen.
- * Collapsible to keep the workspace uncluttered.
+ * Compact read-only patient header for doctor consultation.
+ * Replaces IntakeSummaryBanner — shows demographics + intake vitals + payer + latest diagnosis.
+ * Defaults to expanded so doctors always see intake data without extra clicks.
  */
 export function PatientSnapshot({ appointmentId, form }: Props) {
   const { data: intake } = useIntake(appointmentId);
-  const [expanded, setExpanded] = useState(false);
+  // Default expanded so doctors see intake data immediately (mirrors old IntakeSummaryBanner behavior)
+  const [expanded, setExpanded] = useState(true);
 
   const gender = form.patientGender ?? null;
   const age    = form.patientAge ?? null;
@@ -109,6 +111,18 @@ export function PatientSnapshot({ appointmentId, form }: Props) {
           </Badge>
         )}
 
+        {/* intake completion / lock status */}
+        {intake?.completedAt && (
+          <span className="flex items-center gap-1 text-green-600 shrink-0">
+            <CheckCircle2 className="h-3 w-3" />مكتمل
+          </span>
+        )}
+        {intake?.isLocked && (
+          <span className="flex items-center gap-1 text-amber-600 shrink-0">
+            <Lock className="h-3 w-3" />مقفل
+          </span>
+        )}
+
         {/* chronic flags chip */}
         {hasChronicFlags && (
           <span className="flex items-center gap-1 text-orange-600 shrink-0">
@@ -126,7 +140,7 @@ export function PatientSnapshot({ appointmentId, form }: Props) {
           </span>
         )}
 
-        {/* vitals quick peek */}
+        {/* vitals quick peek (collapsed only) */}
         {!expanded && hasVitals && (
           <span className="text-muted-foreground truncate flex-1 text-right">
             {[
@@ -152,7 +166,7 @@ export function PatientSnapshot({ appointmentId, form }: Props) {
             </div>
           )}
 
-          {/* latest diagnosis */}
+          {/* latest diagnosis from previous visit */}
           {form.latestDiagnosis && (
             <div className="text-xs flex items-start gap-1">
               <Stethoscope className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />
@@ -185,6 +199,14 @@ export function PatientSnapshot({ appointmentId, form }: Props) {
               <VitalChip label="SpO₂" value={intake?.spo2} unit="%" />
               <VitalChip label="سكر" value={intake?.randomBloodSugar} unit=" مج/دل" />
             </div>
+          )}
+
+          {/* intake notes from reception */}
+          {intake?.intakeNotes && (
+            <p className="text-xs text-muted-foreground border-t pt-1">
+              <span className="font-medium">ملاحظات الاستقبال: </span>
+              {intake.intakeNotes}
+            </p>
           )}
         </div>
       )}
