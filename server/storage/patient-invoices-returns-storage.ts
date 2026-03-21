@@ -91,7 +91,7 @@ const methods = {
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
       WHERE h.is_return = false
         AND h.status = 'collected'
-        AND h.journal_status = 'completed'${whereExtra}
+        AND h.journal_status = 'posted'${whereExtra}
       ORDER BY h.invoice_date DESC, h.invoice_number DESC
       LIMIT 50
     `;
@@ -110,7 +110,7 @@ const methods = {
       FROM sales_invoice_headers h
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
       WHERE h.id = ${invoiceId} AND h.is_return = false
-        AND h.status = 'collected' AND h.journal_status = 'completed'
+        AND h.status = 'collected' AND h.journal_status = 'posted'
     `);
     if (!hdr.rows.length) return null;
     const header = hdr.rows[0] as Record<string, unknown>;
