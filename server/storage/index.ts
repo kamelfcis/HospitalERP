@@ -464,7 +464,8 @@ export interface IStorage {
   getMyOpenShifts(cashierId: string): Promise<Record<string, unknown>[]>;
   getUserCashierGlAccount(userId: string): Promise<{ glAccountId: string; code: string; name: string; hasPassword: boolean } | null>;
   getShiftById(shiftId: string): Promise<import("@shared/schema").CashierShift | null>;
-  closeCashierShift(shiftId: string, closingCash: string, closedByUserId: string, closedByName: string, isSupervisorOverride?: boolean): Promise<Record<string, unknown>>;
+  closeCashierShift(shiftId: string, closingCash: string, closedByUserId: string, closedByName: string, isSupervisorOverride?: boolean, journalContext?: import("./cashier-storage").ShiftJournalContext): Promise<Record<string, unknown>>;
+  preflightShiftClose(shiftId: string, closingCash: string | number): Promise<{ cashierGlAccountId: string; cashierId: string; cashierName: string; businessDate: string; expectedCash: number; variance: number; periodId: string; custodianAccountId: string; varianceAccountId: string | null }>;
   validateShiftClose(shiftId: string): Promise<{ canClose: boolean; pendingCount: number; hasOtherOpenShift: boolean; otherShift: Record<string, unknown> | null; reasonCode: string; isStale: boolean; hoursOpen: number }>;
     getPendingDocCountForUnit(shift: import("@shared/schema").CashierShift): Promise<number>;
     findOtherOpenShiftForUnit(currentShiftId: string, shift: import("@shared/schema").CashierShift): Promise<import("@shared/schema").CashierShift | null>;
@@ -488,7 +489,7 @@ export interface IStorage {
     closingCash: number;
     expectedCash: number;
     businessDate: string;
-  }): Promise<{ journalId: string | null; warning?: string }>;
+  }): Promise<{ journalId: string }>;
 
   // Patients
   getPatients(limit?: number): Promise<Patient[]>;

@@ -254,51 +254,69 @@ export function registerCashierRoutes(app: Express) {
   });
 
   app.post("/api/cashier/shift/:shiftId/close", requireAuth, async (req, res) => {
+    const shiftId = req.params.shiftId as string;
+    const userId  = (req.session as { userId?: string }).userId!;
     try {
-      const userId = (req.session as { userId?: string }).userId!;
       const { closingCash } = req.body;
       if (closingCash === undefined) return res.status(400).json({ message: "المبلغ النقدي الفعلي مطلوب" });
 
-      // ── جلب بيانات المستخدم ──
+      // ── جلب بيانات المستخدم ──────────────────────────────────────────
       const [userRow] = await db.select({
         fullName: users.fullName,
         role:     users.role,
       }).from(users).where(eq(users.id, userId));
 
-      const fullName           = userRow?.fullName || userId;
+      const fullName            = userRow?.fullName || userId;
       const isAdminOrSupervisor = !!(userRow?.role === "admin" || userRow?.role === "owner");
 
-      // القاعدة 5: التحقق من الملكية — bypass مشرف يُسجَّل
-      const shiftId = req.params.shiftId as string;
+      // ── القاعدة 5: التحقق من الملكية — bypass مشرف يُسجَّل ──────────
       await assertShiftOwnership(shiftId, userId, fullName, isAdminOrSupervisor);
 
-      const closedShift = await storage.closeCashierShift(shiftId, closingCash, userId, fullName, isAdminOrSupervisor);
-
-      // ── قيد GL لإغلاق الوردية (خارج transaction الإغلاق — آمن للفشل) ──
-      if (closedShift && closedShift.glAccountId) {
-        storage.generateShiftCloseJournal({
+      // ── التحقق المسبق الإلزامي (BLOCKING) ───────────────────────────
+      //    يتحقق من: فترة مالية مفتوحة، حساب العهدة (12127)،
+      //    حساب GL الكاشير، وحساب الفروق إن وُجد فرق.
+      //    يرمي 422 بالرسالة العربية الدقيقة عند أي فشل.
+      let preflight: Awaited<ReturnType<typeof storage.preflightShiftClose>>;
+      try {
+        preflight = await storage.preflightShiftClose(shiftId, closingCash);
+      } catch (preflightErr: any) {
+        const msg  = preflightErr instanceof Error ? preflightErr.message : String(preflightErr);
+        const code = preflightErr?.status || 422;
+        logger.warn({
+          event:    "SHIFT_CLOSE_BLOCKED",
           shiftId,
-          cashierGlAccountId: closedShift.glAccountId,
-          cashierId:          closedShift.cashierId,
-          cashierName:        fullName,
-          closingCash:        parseFloat(String(closedShift.closingCash  || 0)),
-          expectedCash:       parseFloat(String(closedShift.expectedCash || 0)),
-          businessDate:       closedShift.businessDate ?? new Date().toISOString().slice(0, 10),
-        }).then(({ journalId, warning }) => {
-          if (warning) logger.warn({ shiftId, warning }, "[SHIFT_CLOSE] تحذير قيد GL");
-          else          logger.info({ shiftId, journalId }, "[SHIFT_CLOSE] قيد GL مُنشأ");
-        }).catch(err => logger.error({ shiftId, err }, "[SHIFT_CLOSE] فشل تشغيل قيد GL"));
-      } else {
-        logger.warn({ shiftId }, "[SHIFT_CLOSE] لا يوجد حساب GL للوردية — لن يُنشأ قيد");
+          cashierId: userId,
+          reason:   msg,
+          code:     preflightErr?.code,
+        }, "[SHIFT_CLOSE] محجوب بواسطة التحقق المسبق");
+        return res.status(code).json({ message: msg });
       }
+
+      // ── إغلاق الوردية + قيد GL في transaction واحدة (ذرية) ──────────
+      const closedShift = await storage.closeCashierShift(
+        shiftId,
+        closingCash,
+        userId,
+        fullName,
+        isAdminOrSupervisor,
+        {
+          periodId:           preflight.periodId,
+          custodianAccountId: preflight.custodianAccountId,
+          varianceAccountId:  preflight.varianceAccountId,
+        },
+      );
 
       res.json(closedShift);
     } catch (e: any) {
       const msg  = e instanceof Error ? e.message : String(e);
       const code = e?.status || 500;
-      if (msg.includes("معلق") || msg.includes("معلّق") || msg.includes("مغلق") || msg.includes("منتهية") || msg.includes("لا يمكن إغلاق")) return res.status(409).json({ message: msg });
+      logger.error({ event: "SHIFT_CLOSE_ERROR", shiftId, userId, err: msg }, "[SHIFT_CLOSE] خطأ");
+      if (code === 422) return res.status(422).json({ message: msg });
       if (code === 403) return res.status(403).json({ message: msg });
       if (code === 404) return res.status(404).json({ message: msg });
+      if (msg.includes("معلق") || msg.includes("معلّق") || msg.includes("مغلق") || msg.includes("منتهية")) {
+        return res.status(409).json({ message: msg });
+      }
       res.status(code === 500 ? 500 : code).json({ message: msg });
     }
   });

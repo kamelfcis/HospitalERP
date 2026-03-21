@@ -152,6 +152,16 @@ export default function UsersManagement() {
   }
 
   function handleSave() {
+    // ── تحقق محاسبي: حساب GL كاشير بدون حساب فروق ──────────────────────
+    if (formData.cashierGlAccountId && !formData.cashierVarianceAccountId) {
+      toast({
+        title: "تحذير: حساب فروق الجرد غير مُحدَّد",
+        description: "هذا المستخدم له حساب كاشير ولكن لم يُعيَّن له حساب فروق الجرد — لن يتمكن من إغلاق الوردية إذا كان هناك فرق نقدي.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const payload: Partial<UserData> = {
       username:           formData.username,
       fullName:           formData.fullName,

@@ -187,12 +187,18 @@ export function UserFormDialog({
 
           {formData.cashierGlAccountId && (
             <div className="space-y-1">
-              <Label>حساب فروق الجرد النقدي</Label>
+              <Label>
+                حساب فروق الجرد النقدي
+                <span className="text-destructive mr-1">*</span>
+              </Label>
               <Select
                 value={formData.cashierVarianceAccountId || "none"}
                 onValueChange={v => onFormChange({ cashierVarianceAccountId: v === "none" ? "" : v })}
               >
-                <SelectTrigger data-testid="select-user-variance-account">
+                <SelectTrigger
+                  data-testid="select-user-variance-account"
+                  className={!formData.cashierVarianceAccountId ? "border-destructive" : ""}
+                >
                   <SelectValue placeholder="اختر حساب الفروق..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -204,9 +210,15 @@ export function UserFormDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                يُستخدم لتسجيل فروق الجرد النقدي عند إغلاق الوردية (52920–52923)
-              </p>
+              {!formData.cashierVarianceAccountId ? (
+                <p className="text-xs text-destructive font-medium">
+                  مطلوب — بدونه لن يتمكن الكاشير من إغلاق وردية بها فرق نقدي
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  يُستخدم لتسجيل فروق الجرد النقدي عند إغلاق الوردية (52920–52923)
+                </p>
+              )}
             </div>
           )}
 

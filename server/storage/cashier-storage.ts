@@ -46,6 +46,13 @@ import { logAcctEvent } from "../lib/accounting-event-logger";
 // ── ثابت: الحد الأقصى لساعات الوردية قبل اعتبارها منتهية ────────────────
 const MAX_SHIFT_HOURS = 24;
 
+// ── نوع: سياق قيد إغلاق الوردية (مُعاد من preflightShiftClose) ──────────
+export interface ShiftJournalContext {
+  periodId:           string;
+  custodianAccountId: string;
+  varianceAccountId:  string | null;
+}
+
 // ── مساعد: استخراج رسالة الخطأ ──────────────────────────────────────────
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -295,6 +302,7 @@ const methods = {
     closedByUserId: string,
     closedByName: string,
     isSupervisorOverride = false,
+    journalContext?: ShiftJournalContext,
   ): Promise<CashierShift> {
     return await db.transaction(async (tx) => {
 
@@ -463,6 +471,95 @@ const methods = {
         details:     auditDetails,
         performedBy: closedByName,
       });
+
+      // ── 7. قيد GL ذري — داخل نفس الـ transaction ──────────────────────
+      if (journalContext) {
+        const closingNum  = parseFloat(closingCash);
+        const expectedNum = parseFloat(expectedCashVal);
+        const varianceNum = closingNum - expectedNum;
+        const absVar      = Math.abs(varianceNum);
+        const glAccountId = shift.glAccountId;
+        const jDesc       = `تسوية وردية ${closedByName} — تحويل نقدية إلى عهدة أمين الخزنة`;
+        const vDesc       = `فروق جرد نقدية — ${closedByName}`;
+
+        // ── بناء أسطر القيد ─────────────────────────────────────────────
+        type JLine = { accountId: string; debit: string; credit: string; desc: string };
+        const lines: JLine[] = [];
+        const closStr = closingNum.toFixed(2);
+        const expStr  = expectedNum.toFixed(2);
+        const absStr  = absVar.toFixed(2);
+
+        if (absVar <= 0.001) {
+          // بدون فروق
+          lines.push({ accountId: journalContext.custodianAccountId, debit: closStr, credit: "0.00", desc: jDesc });
+          lines.push({ accountId: glAccountId!,                      debit: "0.00", credit: closStr, desc: jDesc });
+        } else if (varianceNum > 0) {
+          // فائض: د.12127 = closingCash; ق.كاشير = expectedCash; ق.فروق = variance
+          if (!journalContext.varianceAccountId) throw new Error("INTERNAL: حساب الفروق مطلوب — يجب أن يُحدَّد بواسطة preflight");
+          lines.push({ accountId: journalContext.custodianAccountId,    debit: closStr, credit: "0.00",   desc: jDesc });
+          lines.push({ accountId: glAccountId!,                          debit: "0.00", credit: expStr,   desc: jDesc });
+          lines.push({ accountId: journalContext.varianceAccountId,      debit: "0.00", credit: absStr,   desc: vDesc });
+        } else {
+          // عجز: د.12127 = closingCash; د.فروق = |variance|; ق.كاشير = expectedCash
+          if (!journalContext.varianceAccountId) throw new Error("INTERNAL: حساب الفروق مطلوب — يجب أن يُحدَّد بواسطة preflight");
+          lines.push({ accountId: journalContext.custodianAccountId,    debit: closStr, credit: "0.00",   desc: jDesc });
+          lines.push({ accountId: journalContext.varianceAccountId,     debit: absStr,  credit: "0.00",   desc: vDesc });
+          lines.push({ accountId: glAccountId!,                          debit: "0.00", credit: expStr,   desc: jDesc });
+        }
+
+        // ── فحص التوازن ─────────────────────────────────────────────────
+        const drTotal = lines.reduce((s, l) => s + parseFloat(l.debit),  0);
+        const crTotal = lines.reduce((s, l) => s + parseFloat(l.credit), 0);
+        if (Math.abs(drTotal - crTotal) > 0.001) {
+          throw new Error(`قيد غير متوازن: مدين ${drTotal.toFixed(2)} ≠ دائن ${crTotal.toFixed(2)}`);
+        }
+        if (lines.some(l => !l.accountId)) {
+          throw new Error("سطر قيد يحتوي على حساب فارغ — تحقق من الإعدادات");
+        }
+        if (lines.some(l => parseFloat(l.debit) === 0 && parseFloat(l.credit) === 0)) {
+          throw new Error("سطر قيد بقيمة صفرية — تحقق من مبلغ الوردية");
+        }
+
+        // ── رقم القيد التسلسلي ──────────────────────────────────────────
+        const seqRes    = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS next_num`);
+        const entryNum  = Number((seqRes as any).rows[0].next_num);
+        const reference = `SHIFT-CLOSE-${shiftId.substring(0, 8).toUpperCase()}`;
+
+        // ── إدراج رأس القيد ──────────────────────────────────────────────
+        const jeRes = await tx.execute(sql`
+          INSERT INTO journal_entries
+            (entry_number, entry_date, description, status, period_id,
+             total_debit, total_credit, reference,
+             source_type, source_document_id, source_entry_type, posted_at)
+          VALUES (
+            ${entryNum}, ${updated.business_date}::date, ${jDesc}, 'posted', ${journalContext.periodId},
+            ${drTotal.toFixed(2)}, ${crTotal.toFixed(2)}, ${reference},
+            'cashier_shift_close', ${shiftId}, 'shift_close', now()
+          )
+          RETURNING id
+        `);
+        const journalId = (jeRes as any).rows[0].id;
+
+        // ── إدراج أسطر القيد ────────────────────────────────────────────
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i];
+          await tx.execute(sql`
+            INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
+            VALUES (${journalId}, ${i + 1}, ${l.accountId}, ${l.debit}, ${l.credit}, ${l.desc})
+          `);
+        }
+
+        logger.info({
+          event:          "SHIFT_CLOSE_JOURNAL_CREATED",
+          shiftId,
+          cashierId:      closedByUserId,
+          expectedCash:   expectedNum,
+          actualCash:     closingNum,
+          variance:       varianceNum,
+          journalEntryId: journalId,
+          createdBy:      closedByUserId,
+        }, "[SHIFT_CLOSE] قيد GL أُنشئ بنجاح");
+      }
 
       return updated as CashierShift;
     });
@@ -999,6 +1096,162 @@ const methods = {
   },
 
   // ══════════════════════════════════════════════════════════════════════════
+  //  preflightShiftClose — التحقق المسبق الإلزامي قبل إغلاق الوردية
+  //
+  //  الشروط الأربعة المطلوبة (كلها أو لا شيء):
+  //  1) فترة مالية مفتوحة تغطي business_date
+  //  2) حساب عهدة أمين الخزنة (12127) موجود ونشط
+  //  3) حساب GL الكاشير موجود ونشط
+  //  4) إن كان هناك فرق → حساب فروق الجرد مُعيَّن ونشط
+  //
+  //  يُرجع بيانات الوردية المحسوبة جاهزة لإنشاء القيد
+  //  يرمي خطأ 422 مع رسالة عربية واضحة إن فشل أي شرط
+  // ══════════════════════════════════════════════════════════════════════════
+  async preflightShiftClose(
+    this: DatabaseStorage,
+    shiftId: string,
+    closingCash: string | number,
+  ): Promise<{
+    cashierGlAccountId:   string;
+    cashierId:            string;
+    cashierName:          string;
+    businessDate:         string;
+    expectedCash:         number;
+    variance:             number;
+    periodId:             string;
+    custodianAccountId:   string;
+    varianceAccountId:    string | null;
+  }> {
+    const client = await pool.connect();
+    try {
+      // ── 1. قراءة بيانات الوردية (الحالة مفتوحة فقط) ──────────────────
+      const shiftRes = await client.query(
+        `SELECT id, cashier_id, cashier_name, gl_account_id, opening_cash,
+                business_date
+         FROM cashier_shifts
+         WHERE id = $1 AND status IN ('open', 'stale')
+         LIMIT 1`,
+        [shiftId]
+      );
+      if (!shiftRes.rows.length) {
+        throw Object.assign(new Error("الوردية غير موجودة أو مغلقة بالفعل"), { status: 404 });
+      }
+      const sr = shiftRes.rows[0];
+      const businessDate: string = sr.business_date instanceof Date
+        ? sr.business_date.toISOString().slice(0, 10)
+        : String(sr.business_date);
+
+      // ── 2. حساب النقدية المتوقعة (قراءة فقط — خارج transaction) ────────
+      const [collectRes, refundRes] = await Promise.all([
+        client.query(
+          `SELECT COALESCE(SUM(amount::numeric), 0) AS total FROM cashier_receipts WHERE shift_id = $1`,
+          [shiftId]
+        ),
+        client.query(
+          `SELECT COALESCE(SUM(amount::numeric), 0) AS total FROM cashier_refund_receipts WHERE shift_id = $1`,
+          [shiftId]
+        ),
+      ]);
+      const openingCash    = parseFloat(sr.opening_cash || "0");
+      const totalCollected = parseFloat(collectRes.rows[0].total || "0");
+      const totalRefunded  = parseFloat(refundRes.rows[0].total || "0");
+      const expectedCash   = openingCash + totalCollected - totalRefunded;
+      const variance       = parseFloat(String(closingCash)) - expectedCash;
+
+      // ── 3. شرط: فترة مالية مفتوحة ────────────────────────────────────
+      const periodRes = await client.query(
+        `SELECT id FROM fiscal_periods
+          WHERE start_date <= $1::date
+            AND end_date   >= $1::date
+            AND is_closed = false
+          LIMIT 1`,
+        [businessDate]
+      );
+      if (!periodRes.rows.length) {
+        throw Object.assign(
+          new Error(`لا يمكن إغلاق الوردية لعدم وجود فترة مالية مفتوحة للتاريخ ${businessDate} — يرجى مراجعة الإعدادات المحاسبية`),
+          { status: 422, code: "SHIFT_CLOSE_NO_PERIOD" }
+        );
+      }
+      const periodId = periodRes.rows[0].id;
+
+      // ── 4. شرط: حساب عهدة أمين الخزنة (12127) ─────────────────────────
+      const custRes = await client.query(
+        `SELECT id FROM accounts WHERE code = '12127' AND is_active = true LIMIT 1`
+      );
+      if (!custRes.rows.length) {
+        throw Object.assign(
+          new Error("لا يمكن إغلاق الوردية لعدم وجود حساب عهدة أمين الخزنة (12127) أو إنه غير نشط — يرجى مراجعة شجرة الحسابات"),
+          { status: 422, code: "SHIFT_CLOSE_NO_CUSTODIAN" }
+        );
+      }
+      const custodianAccountId = custRes.rows[0].id;
+
+      // ── 5. شرط: حساب GL الكاشير موجود ونشط ──────────────────────────
+      if (!sr.gl_account_id) {
+        throw Object.assign(
+          new Error("لا يمكن إغلاق الوردية لعدم ربط حساب خزنة بها — يرجى فتح وردية جديدة بعد إعداد الحساب"),
+          { status: 422, code: "SHIFT_CLOSE_NO_GL" }
+        );
+      }
+      const glRes = await client.query(
+        `SELECT id FROM accounts WHERE id = $1 AND is_active = true LIMIT 1`,
+        [sr.gl_account_id]
+      );
+      if (!glRes.rows.length) {
+        throw Object.assign(
+          new Error("حساب الخزنة المرتبط بالوردية غير موجود أو غير نشط — يرجى مراجعة الإعدادات"),
+          { status: 422, code: "SHIFT_CLOSE_GL_INACTIVE" }
+        );
+      }
+
+      // ── 6. شرط: حساب فروق الجرد (إذا كان هناك فرق) ──────────────────
+      let varianceAccountId: string | null = null;
+      if (Math.abs(variance) > 0.001) {
+        const userRes = await client.query(
+          `SELECT cashier_variance_account_id FROM users WHERE id = $1 LIMIT 1`,
+          [sr.cashier_id]
+        );
+        varianceAccountId = userRes.rows[0]?.cashier_variance_account_id ?? null;
+        if (!varianceAccountId) {
+          throw Object.assign(
+            new Error(
+              `لا يمكن إغلاق الوردية — يوجد فرق نقدي ` +
+              `(${variance > 0 ? "فائض" : "عجز"}: ${Math.abs(variance).toFixed(2)} ج.م) ` +
+              `ولم يُعيَّن حساب فروق الجرد لهذا الكاشير — يرجى إعداده من إدارة المستخدمين`
+            ),
+            { status: 422, code: "SHIFT_CLOSE_NO_VARIANCE_ACCT" }
+          );
+        }
+        const varActiveRes = await client.query(
+          `SELECT id FROM accounts WHERE id = $1 AND is_active = true LIMIT 1`,
+          [varianceAccountId]
+        );
+        if (!varActiveRes.rows.length) {
+          throw Object.assign(
+            new Error("حساب فروق الجرد المرتبط بالكاشير غير موجود أو غير نشط — يرجى مراجعة الإعدادات"),
+            { status: 422, code: "SHIFT_CLOSE_VARIANCE_INACTIVE" }
+          );
+        }
+      }
+
+      return {
+        cashierGlAccountId:  sr.gl_account_id,
+        cashierId:           sr.cashier_id,
+        cashierName:         sr.cashier_name,
+        businessDate,
+        expectedCash,
+        variance,
+        periodId,
+        custodianAccountId,
+        varianceAccountId,
+      };
+    } finally {
+      client.release();
+    }
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
   //  generateShiftCloseJournal — قيد GL لإغلاق الوردية
   //
   //  يسجّل نقل النقدية من حساب درج الكاشير (12121–12126) إلى
@@ -1024,7 +1277,7 @@ const methods = {
       expectedCash:     number;
       businessDate:     string;
     }
-  ): Promise<{ journalId: string | null; warning?: string }> {
+  ): Promise<{ journalId: string }> {
     const { shiftId, cashierGlAccountId, cashierId, cashierName, closingCash, expectedCash, businessDate } = params;
     const variance = closingCash - expectedCash;
     const client = await pool.connect();
@@ -1042,18 +1295,19 @@ const methods = {
         return { journalId: existing.rows[0].id };
       }
 
-      // ── 2. حساب عهدة أمين الخزنة (12127) ──────────────────────────────
+      // ── 2. حساب عهدة أمين الخزنة (12127) ─────────────────────── STRICT ──
       const custodianRes = await client.query(
         `SELECT id FROM accounts WHERE code = '12127' AND is_active = true LIMIT 1`
       );
       if (!custodianRes.rows.length) {
-        const msg = "حساب عهدة أمين الخزنة (12127) غير موجود أو غير نشط — يرجى إعداده أولاً";
-        logger.warn({ shiftId }, `[SHIFT_CLOSE_JOURNAL] ${msg}`);
-        return { journalId: null, warning: msg };
+        throw Object.assign(
+          new Error("حساب عهدة أمين الخزنة (12127) غير موجود أو غير نشط — يرجى مراجعة شجرة الحسابات"),
+          { status: 422, code: "SHIFT_CLOSE_NO_CUSTODIAN" }
+        );
       }
       const custodianAccountId = custodianRes.rows[0].id;
 
-      // ── 3. حساب فروق الجرد للكاشير ──────────────────────────────────────
+      // ── 3. حساب فروق الجرد — مطلوب إذا كان هناك فرق (لا fallback) ─────
       let varianceAccountId: string | null = null;
       if (Math.abs(variance) > 0.001) {
         const userRes = await client.query(
@@ -1062,11 +1316,18 @@ const methods = {
         );
         varianceAccountId = userRes.rows[0]?.cashier_variance_account_id ?? null;
         if (!varianceAccountId) {
-          logger.warn({ shiftId, cashierId, variance }, "[SHIFT_CLOSE_JOURNAL] لا يوجد حساب فروق مُهيَّأ — سيُعدَّل قيد الكاشير للتوازن");
+          throw Object.assign(
+            new Error(
+              `لا يمكن إنشاء قيد الوردية — يوجد فرق نقدي ` +
+              `(${variance > 0 ? "فائض" : "عجز"}: ${Math.abs(variance).toFixed(2)} ج.م) ` +
+              `ولم يُعيَّن حساب فروق الجرد لهذا الكاشير`
+            ),
+            { status: 422, code: "SHIFT_CLOSE_NO_VARIANCE_ACCT" }
+          );
         }
       }
 
-      // ── 4. الفترة المالية ────────────────────────────────────────────────
+      // ── 4. الفترة المالية ─────────────────────────────────── STRICT ─────
       const periodRes = await client.query(
         `SELECT id FROM fiscal_periods
           WHERE start_date <= $1::date AND end_date >= $1::date AND is_closed = false
@@ -1074,42 +1335,51 @@ const methods = {
         [businessDate]
       );
       if (!periodRes.rows.length) {
-        const msg = `لا توجد فترة مالية مفتوحة لتاريخ ${businessDate}`;
-        logger.warn({ shiftId, businessDate }, `[SHIFT_CLOSE_JOURNAL] ${msg}`);
-        return { journalId: null, warning: msg };
+        throw Object.assign(
+          new Error(`لا توجد فترة مالية مفتوحة لتاريخ ${businessDate} — يرجى مراجعة الإعدادات المحاسبية`),
+          { status: 422, code: "SHIFT_CLOSE_NO_PERIOD" }
+        );
       }
       const periodId = periodRes.rows[0].id;
 
       // ── 5. إعداد أسطر القيد ─────────────────────────────────────────────
-      //   كل سطر: { accountId, debit, credit, desc }
       const closingStr  = closingCash.toFixed(2);
       const expectedStr = expectedCash.toFixed(2);
       const absVariance = Math.abs(variance);
-      const description = `تسوية وردية ${cashierName} — تحويل نقدية إلى عهدة أمين الخزنة`;
+      const description  = `تسوية وردية ${cashierName} — تحويل نقدية إلى عهدة أمين الخزنة`;
       const varianceDesc = `فروق جرد نقدية — ${cashierName}`;
 
       type Line = { accountId: string; debit: string; credit: string; desc: string };
       const lines: Line[] = [];
 
-      if (Math.abs(variance) <= 0.001 || !varianceAccountId) {
-        // بدون فروق — أو لا يوجد حساب فروق: نُوازن على حساب الكاشير
-        const effectiveCr = varianceAccountId ? expectedStr : closingStr;
-        lines.push({ accountId: custodianAccountId, debit: closingStr, credit: "0.00", desc: description });
-        lines.push({ accountId: cashierGlAccountId,  debit: "0.00", credit: effectiveCr, desc: description });
+      if (absVariance <= 0.001) {
+        // بدون فروق
+        lines.push({ accountId: custodianAccountId, debit: closingStr,              credit: "0.00",                desc: description });
+        lines.push({ accountId: cashierGlAccountId,  debit: "0.00",                credit: closingStr,            desc: description });
       } else if (variance > 0) {
-        // فائض: د. 12127 = closingCash; ق. كاشير = expectedCash; ق. فروق = variance
-        lines.push({ accountId: custodianAccountId, debit: closingStr,           credit: "0.00",           desc: description });
-        lines.push({ accountId: cashierGlAccountId,  debit: "0.00",              credit: expectedStr,      desc: description });
-        lines.push({ accountId: varianceAccountId!,  debit: "0.00",              credit: absVariance.toFixed(2), desc: varianceDesc });
+        // فائض: د.12127 = closingCash; ق.كاشير = expectedCash; ق.فروق = variance
+        lines.push({ accountId: custodianAccountId,   debit: closingStr,            credit: "0.00",                desc: description });
+        lines.push({ accountId: cashierGlAccountId,   debit: "0.00",               credit: expectedStr,           desc: description });
+        lines.push({ accountId: varianceAccountId!,   debit: "0.00",               credit: absVariance.toFixed(2), desc: varianceDesc });
       } else {
-        // عجز: د. 12127 = closingCash; د. فروق = |variance|; ق. كاشير = expectedCash
-        lines.push({ accountId: custodianAccountId, debit: closingStr,           credit: "0.00",           desc: description });
-        lines.push({ accountId: varianceAccountId!,  debit: absVariance.toFixed(2), credit: "0.00",         desc: varianceDesc });
-        lines.push({ accountId: cashierGlAccountId,  debit: "0.00",              credit: expectedStr,      desc: description });
+        // عجز: د.12127 = closingCash; د.فروق = |variance|; ق.كاشير = expectedCash
+        lines.push({ accountId: custodianAccountId,   debit: closingStr,            credit: "0.00",                desc: description });
+        lines.push({ accountId: varianceAccountId!,   debit: absVariance.toFixed(2), credit: "0.00",              desc: varianceDesc });
+        lines.push({ accountId: cashierGlAccountId,   debit: "0.00",               credit: expectedStr,           desc: description });
       }
 
+      // ── فحص السلامة المحاسبية ────────────────────────────────────────────
       const totalDebit  = lines.reduce((s, l) => s + parseFloat(l.debit),  0);
       const totalCredit = lines.reduce((s, l) => s + parseFloat(l.credit), 0);
+      if (Math.abs(totalDebit - totalCredit) > 0.001) {
+        throw new Error(`قيد غير متوازن: مدين ${totalDebit.toFixed(2)} ≠ دائن ${totalCredit.toFixed(2)}`);
+      }
+      if (lines.some(l => !l.accountId)) {
+        throw new Error("سطر قيد يحتوي على حساب فارغ — تحقق من الإعدادات");
+      }
+      if (lines.some(l => parseFloat(l.debit) === 0 && parseFloat(l.credit) === 0)) {
+        throw new Error("سطر قيد بقيمة صفرية — تحقق من مبلغ الوردية");
+      }
 
       // ── 6. رقم القيد التسلسلي ────────────────────────────────────────────
       const seqRes = await client.query(`SELECT nextval('journal_entry_number_seq') AS next_num`);
@@ -1161,7 +1431,7 @@ const methods = {
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});
       logger.error({ shiftId, err }, "[SHIFT_CLOSE_JOURNAL] فشل إنشاء قيد إغلاق الوردية");
-      return { journalId: null, warning: errMsg(err) };
+      throw err;
     } finally {
       client.release();
     }
