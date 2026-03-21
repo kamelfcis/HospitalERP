@@ -1,0 +1,276 @@
+Implement Outpatient Improvement — Step 1 ONLY (STRICT MODE + DOCTOR FAVORITES).
+
+DO NOT implement anything outside this step.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Reduce doctor data entry time by shifting intake work to reception/nursing,
+AND provide reusable doctor-side shortcuts WITHOUT introducing clinical risk.
+
+==================================================
+CRITICAL REQUIREMENTS
+==================================================
+
+1) GUIDED INTAKE TEMPLATES (MANDATORY)
+2) DOCTOR FAVORITES (MANDATORY — SAFE MODE)
+
+==================================================
+STRICT BOUNDARIES (DO NOT VIOLATE)
+==================================================
+
+DO NOT implement:
+- diagnosis automation
+- AI medical suggestions
+- treatment recommendation engine
+- clinical decision support system
+- prescription automation
+- specialty protocol engines
+
+System must NOT behave as a doctor.
+
+==================================================
+SCOPE
+==================================================
+
+Build:
+
+A) Pre-consultation intake (reception/nurse)
+B) Vitals capture
+C) Visit classification
+D) Guided intake templates
+E) Doctor favorites (safe reusable templates)
+
+==================================================
+INTAKE CORE FIELDS
+==================================================
+
+- visitType: new / follow_up / review_results / procedure / urgent
+- reasonForVisit
+- bloodPressure
+- pulse
+- temperature
+- weight
+- height
+- spo2 nullable
+- randomBloodSugar nullable
+- intakeNotes nullable
+- intakeCompletedBy
+- intakeCompletedAt
+
+==================================================
+GUIDED INTAKE TEMPLATES (MANDATORY)
+==================================================
+
+(نفس تفاصيل Step 1 السابقة — بدون تغيير)
+
+[KEEP EXACT SAME TEMPLATE RULES AS PREVIOUS PROMPT]
+
+==================================================
+NEW FEATURE — DOCTOR FAVORITES (SAFE MODE)
+==================================================
+
+Implement a lightweight doctor-side reusable template system.
+
+Purpose:
+- reduce repetitive typing
+- speed consultation documentation
+- standardize doctor notes
+- NOT influence diagnosis logic
+
+--------------------------------------------------
+IMPORTANT SAFETY RULE
+--------------------------------------------------
+
+Favorites MUST NOT represent:
+- confirmed diagnosis
+- automated decisions
+- enforced plans
+
+They are ONLY:
+Reusable text/structure helpers.
+
+--------------------------------------------------
+WHAT DOCTOR CAN SAVE AS FAVORITE
+--------------------------------------------------
+
+Doctor can save:
+
+1) noteTemplate
+2) planTemplate
+3) followUpInstructions
+4) quick clinical phrases
+
+Examples:
+- "Patient complains of..."
+- "Advise follow-up after 3 days"
+- "Continue current medication"
+- "Order CBC + CRP"
+
+--------------------------------------------------
+WHAT IS STRICTLY FORBIDDEN
+--------------------------------------------------
+
+DO NOT create:
+- diagnosis templates
+- auto-diagnosis mapping
+- symptom → diagnosis logic
+- smart clinical inference
+
+--------------------------------------------------
+FAVORITE STRUCTURE
+--------------------------------------------------
+
+Create table:
+clinic_doctor_favorites
+
+Fields:
+- id
+- doctorId
+- clinicId
+- type (note | plan | followup | quick_text)
+- title
+- content (text)
+- isPinned boolean
+- createdAt
+- updatedAt
+
+Indexes:
+- doctorId
+- clinicId
+- type
+
+--------------------------------------------------
+BEHAVIOR
+--------------------------------------------------
+
+Doctor can:
+- save current text as favorite
+- insert favorite into consultation
+- edit before final save
+- pin most-used favorites
+
+System must:
+- never auto-apply favorites
+- require explicit doctor action
+
+--------------------------------------------------
+UI REQUIREMENTS
+--------------------------------------------------
+
+Add:
+
+- "Save as Favorite" button
+- "Insert Favorite" dropdown/panel
+- quick access for pinned favorites
+
+UX must be:
+- fast
+- non-intrusive
+- minimal clicks
+
+==================================================
+SCHEMA (INTAKE TABLE)
+==================================================
+
+(keep same intake schema from previous prompt)
+
+==================================================
+WORKFLOW
+==================================================
+
+Reception/Nurse:
+- perform intake using templates
+
+Doctor:
+- sees intake summary
+- optionally uses favorites
+- manually inserts/edit content
+
+==================================================
+RBAC
+==================================================
+
+Add:
+- clinic.intake.view
+- clinic.intake.manage
+- clinic.favorites.manage
+
+Default:
+- reception: intake manage
+- nurse: intake manage
+- doctor: intake view + favorites manage
+- admin: all
+
+==================================================
+ARCHITECTURE RULES
+==================================================
+
+- keep favorites isolated from intake
+- no coupling between templates and favorites
+- no business logic overlap
+
+==================================================
+CLINIC ISOLATION (CRITICAL)
+==================================================
+
+Favorites must be:
+- scoped by doctorId
+- scoped by clinicId
+
+No cross-clinic leakage.
+
+==================================================
+BEFORE CODING (MANDATORY)
+==================================================
+
+Print EXACTLY:
+
+1) FILES TO MODIFY
+2) INTAKE INTEGRATION POINTS
+3) TEMPLATE IMPLEMENTATION APPROACH
+4) FAVORITES IMPLEMENTATION APPROACH
+5) RBAC IMPACT
+6) IMPLEMENTATION PLAN
+
+STOP.
+
+Wait for approval.
+
+==================================================
+IMPLEMENTATION
+==================================================
+
+After approval:
+Implement Step 1 ONLY.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) SCHEMA CHANGES
+3) INTAKE WORKFLOW ADDED
+4) TEMPLATE SYSTEM ADDED
+5) DOCTOR FAVORITES ADDED
+6) RBAC ADDED
+7) UI COMPONENTS ADDED
+8) INDEXES ADDED
+9) REFACTOR SUMMARY
+10) LIMITATIONS
+
+==================================================
+QUALITY BAR
+==================================================
+
+- production-ready
+- safe medically
+- fast
+- clean
+- extensible
+
+NO diagnosis logic.
+NO shortcuts that risk patients.
+
+ONLY safe structured workflow.

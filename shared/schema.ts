@@ -9,3 +9,4 @@ export * from "./schema/system";
 export * from "./schema/clinic";
 export * from "./schema/companies";
 export * from "./schema/contracts";
+export * from "./schema/intake";
