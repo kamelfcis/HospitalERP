@@ -1,0 +1,221 @@
+Before starting Step 1, apply and respect these implementation rules strictly.
+
+This is a pre-build guardrail message.
+Do NOT start Step 1 until you fully follow these rules.
+
+==================================================
+PRE-STEP-1 GUARDRAILS
+==================================================
+
+We have just completed clinic isolation hardening successfully.
+
+That foundation must NOT be weakened.
+
+The next step is Intake + Vitals, but before you build it, you must respect all the following notes, warnings, prohibitions, and architecture rules.
+
+==================================================
+A) CRITICAL BUSINESS RULES
+==================================================
+
+1) Clinic isolation must remain intact
+- No user assigned to Clinic A may see or edit Clinic B data unless they explicitly have all-clinics permission.
+- This applies to intake data, vitals, queue views, consultation views, summaries, and history panels.
+
+2) Reception remains the main entry point
+- Intake must support the real hospital front-desk workflow.
+- Do not redesign OPD as a doctor-first system.
+- Flow must remain:
+  Reception / Nurse → Intake → Doctor
+
+3) Reduce doctor typing
+- The whole purpose of Step 1 is to reduce doctor data entry time.
+- Do not push more manual typing onto the doctor.
+- Intake should be collected before consultation whenever possible.
+
+==================================================
+B) HARD WARNINGS
+==================================================
+
+1) Do NOT merge intake into clinic_consultations
+This is forbidden.
+Do NOT dump vitals/reason-for-visit into clinic_consultations.
+
+Reason:
+- intake happens before doctor consultation
+- it may be done by reception/nurse
+- it has different lifecycle and permissions
+- it must stay independently structured
+
+Required:
+- create a separate table for intake (clinic_visit_intake or equivalent)
+
+2) Do NOT weaken clinic scope
+- Every intake query and mutation must be clinic-scoped
+- Reuse the new clinic scope helper
+- Do not write custom scattered scope logic again
+
+3) Do NOT put business logic in the frontend
+- frontend only captures and displays
+- validation/business rules belong in backend/service/storage
+- no hidden client-side medical logic
+
+4) Do NOT create giant files
+- no giant page growth
+- no giant route growth
+- no giant storage growth
+
+5) Do NOT touch OPD accounting logic
+- do not change IFRS 15 OPD engine
+- do not modify deferred/revenue/reversal/refund logic
+- intake is operational only in this step
+
+6) Do NOT build fantasy features in Step 1
+Out of scope for Step 1:
+- ICD-10
+- result-entry subsystem
+- referrals
+- admission request workflow
+- follow-up engine
+- templates
+- claims integration
+- approvals integration
+- dashboard analytics
+
+==================================================
+C) REQUIRED ARCHITECTURE RULES
+==================================================
+
+1) Separate intake domain cleanly
+Use separate files for:
+- schema
+- storage/service
+- route handlers
+- frontend components
+- hooks
+
+2) Thin routes
+Routes must only:
+- validate
+- scope-check
+- call storage/service
+- return result
+
+3) Reusable components only
+Extract components such as:
+- IntakeForm
+- IntakeSummaryCard
+- VitalsFields
+- VisitTypeSelector
+
+4) Readable code for weak follow-up developer
+- use very clear names
+- add short comments where business meaning matters
+- avoid clever abstractions
+- avoid hidden side effects
+
+5) Backward compatibility
+- do not break existing booking flow
+- if intake does not exist yet for an appointment, consultation must still load safely
+- doctor screen must gracefully handle “no intake yet”
+
+==================================================
+D) DATA MODEL RULES
+==================================================
+
+1) One intake per appointment
+- appointmentId should be unique in intake table
+
+2) Vitals must be nullable where appropriate
+Do not force medically unnecessary fields every time.
+
+3) Use safe simple field names
+Examples:
+- visitType
+- reasonForVisit
+- bloodPressure
+- pulse
+- temperature
+- weight
+- height
+- spo2
+- randomBloodSugar
+- intakeNotes
+- completedBy
+- completedAt
+
+4) Keep medical data simple in Step 1
+No overengineering.
+
+==================================================
+E) RBAC RULES
+==================================================
+
+Required intent:
+- reception: can create/update intake
+- nurse if role exists: can create/update intake
+- doctor: can view intake, and only edit if explicitly permitted
+- admin/owner: all
+
+Do NOT expose intake editing broadly without permission.
+
+==================================================
+F) INDEXING RULES
+==================================================
+
+You must add indexes for:
+- appointmentId
+- completedBy
+- completedAt
+
+If any clinic/date lookup is introduced, index it too.
+
+Do not skip indexing.
+
+==================================================
+G) UI / UX RULES
+==================================================
+
+1) Intake must be fast
+- compact
+- few clicks
+- no long complicated modal
+- practical for front desk use
+
+2) Doctor view must be read-first
+- doctor should see a compact intake summary at top of consultation
+- not a noisy form unless edit is allowed
+
+3) Respect current clinic workflow
+- do not disrupt queue screen unnecessarily
+- integrate cleanly into current booking/consultation pages
+
+==================================================
+H) ACCEPTANCE CHECKS
+==================================================
+
+Before saying Step 1 is done, ensure all of this is true:
+
+- intake is stored in its own table
+- appointmentId uniqueness is enforced
+- clinic isolation still works
+- reception can fill intake
+- doctor can see intake summary
+- no OPD accounting logic changed
+- routes remain thin
+- components are extracted
+- indexes are added
+- no giant file created
+
+==================================================
+I) BEFORE YOU START STEP 1
+==================================================
+
+Print exactly this short confirmation first:
+
+1) I WILL KEEP INTAKE SEPARATE FROM CONSULTATION
+2) I WILL PRESERVE CLINIC ISOLATION
+3) I WILL NOT TOUCH OPD ACCOUNTING
+4) I WILL KEEP ROUTES THIN AND UI COMPONENTIZED
+5) I WILL BUILD STEP 1 ONLY
+
+Then wait for the Step 1 implementation prompt.
