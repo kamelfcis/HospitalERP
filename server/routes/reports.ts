@@ -448,6 +448,7 @@ export function registerReportsRoutes(app: Express) {
     // without writing anything. Default = false (real repair).
     const dryRun: boolean = req.body?.dryRun === true;
     const triggeredBy: string = (req.session as any).username || (req.session as any).userId || "unknown";
+    const reason: string | undefined = req.body?.reason || undefined;
 
     try {
       // Ghost-detection SELECT — always run (used for both dry-run and real repair)
@@ -469,6 +470,7 @@ export function registerReportsRoutes(app: Express) {
           candidateIds:   candidates.rows.map(r => r.id),
           checkedAt:      new Date().toISOString(),
           triggeredBy,
+          reason:         reason ?? null,
         };
         logger.info(payload, "[CASHIER_CONSISTENCY] dry-run scan complete");
         return res.json(payload);
@@ -492,11 +494,12 @@ export function registerReportsRoutes(app: Express) {
         repairedIds:   result.rows.map(r => r.id),
         repairedAt:    new Date().toISOString(),
         triggeredBy,
+        reason:        reason ?? null,
       };
       logger.info(payload, "[CASHIER_CONSISTENCY] ghost invoices repaired");
       return res.json(payload);
     } catch (err: any) {
-      logger.error({ err: err.message, triggeredBy }, "[CASHIER_CONSISTENCY] repair failed");
+      logger.error({ err: err.message, triggeredBy, reason }, "[CASHIER_CONSISTENCY] repair failed");
       return res.status(500).json({ message: err.message });
     }
   });
