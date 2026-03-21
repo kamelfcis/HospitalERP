@@ -1,0 +1,442 @@
+FEATURE REQUEST — شاشة "تسليم الدرج" / Cash Drawer Handover Report
+
+Goal:
+Build a new production-grade operational screen called:
+
+"تسليم الدرج"
+
+This screen is a cashier-shift summary and handover control report.
+It must be fast, accurate, refreshable, and refactor-friendly.
+
+==================================================
+BUSINESS GOAL
+==================================================
+
+For each cashier shift, display one summarized row containing:
+
+1) رقم/كود الوردية
+2) تاريخ الوردية
+3) وقت الفتح
+4) وقت الإغلاق
+5) اسم الكاشير
+6) إجمالي البيع النقدي
+7) إجمالي البيع الآجل / التعاقد
+8) عدد فواتير البيع
+9) إجمالي المرتجع
+10) عدد فواتير المرتجع
+11) الصافي
+12) المبلغ المحول / المسلم للخزنة الرئيسية
+13) الحالة:
+   - مفتوحة
+   - مغلقة
+
+The screen must support:
+- from date
+- to date
+- cashier filter
+- status filter (all / open / closed)
+- fast loading
+- manual refresh button
+- always-current results
+- future-safe architecture for drilldown/export
+
+==================================================
+IMPORTANT REQUIREMENT — FRESH / UPDATED DATA
+==================================================
+
+This report must show up-to-date data.
+
+Requirements:
+1) Add a clear "تحديث" / Refresh button in the UI
+2) The refresh button must refetch data without full page reload
+3) Data fetching must support fresh server reads
+4) Do not depend on stale cached UI state only
+5) Use the existing app query pattern properly (React Query or current equivalent)
+6) Support accurate re-fetch after:
+   - shift open/close
+   - invoice collection
+   - returns
+   - treasury handover/delivery
+7) If the app already uses invalidation for related cashier-shift flows, integrate with it cleanly
+8) No browser reload hacks
+9) No unstable remounting
+
+Expected behavior:
+- user changes filters → report updates
+- user clicks Refresh → report refetches immediately
+- results reflect latest database state
+
+==================================================
+BUSINESS DEFINITIONS (MUST BE EXPLICIT)
+==================================================
+
+You must inspect the current schema and existing business logic in the codebase.
+Do not invent definitions if the system already has a source of truth.
+
+For each shift, calculate:
+
+A) إجمالي البيع النقدي
+= sum of valid cash sales collected in that shift
+Use the actual existing invoice/collection model already implemented
+Exclude cancelled documents
+Avoid duplicate counting
+
+B) إجمالي البيع الآجل / التعاقد
+= sum of valid non-cash sales in that shift
+This includes deferred / contract / receivable-based sales according to the real payment model in the current app
+
+C) عدد فواتير البيع
+= count of distinct valid sales invoices linked to the shift
+
+D) إجمالي المرتجع
+= total value of valid returns related to the shift according to the actual return workflow in the app
+Inspect the current returns implementation and choose the correct business rule
+Then document it clearly before implementation
+
+E) عدد فواتير المرتجع
+= count of distinct valid return documents for the shift
+
+F) الصافي
+= إجمالي البيع النقدي + إجمالي البيع الآجل/التعاقد - إجمالي المرتجع
+
+G) المبلغ المحول / المسلم للخزنة الرئيسية
+= the actual delivered / transferred amount from the shift to the main treasury
+Use the existing treasury shift close / delivery model already present in the codebase
+Do not invent a fake field if there is already a real source
+
+H) الحالة
+= real shift status from the existing source of truth
+(open / closed)
+
+==================================================
+IMPORTANT NOTE ABOUT *-rpt FILES
+==================================================
+
+I already have *-rpt files in the project.
+
+You must decide intelligently whether those files help.
+
+Rules:
+1) Inspect existing *-rpt files first
+2) If they already contain:
+   - reporting query helpers
+   - report DTOs
+   - reusable aggregation logic
+   - shared filters/pagination/report patterns
+   then reuse them where appropriate
+
+3) If they are:
+   - old
+   - tightly coupled
+   - inconsistent with current architecture
+   - not suitable for this report
+   then do NOT force their use
+
+4) If useful:
+   - extend them cleanly
+   - do not duplicate existing reporting patterns
+   - keep naming and structure aligned with the current report architecture
+
+5) If not useful:
+   - create a clean new implementation and explain why *-rpt reuse was rejected
+
+I want a good architectural decision, not blind reuse and not blind rejection.
+
+==================================================
+ARCHITECTURE / REFACTOR REQUIREMENTS
+==================================================
+
+Do NOT build this as one huge file.
+
+Use clean separation:
+
+Backend:
+1) route/controller
+2) storage/repository/query layer
+3) shared response types/schema
+4) optional report helper module if aligned with existing *-rpt structure
+
+Frontend:
+5) page container
+6) filter bar component
+7) summary table component
+8) totals summary cards component (preferred)
+9) utility/formatter helpers if needed
+
+Keep the implementation composable and easy to extend later.
+
+==================================================
+BACKEND API REQUIREMENTS
+==================================================
+
+Create a dedicated API endpoint, for example:
+GET /api/cashier-shifts/drawer-handover-summary
+
+Supported query params:
+- from
+- to
+- cashierId or cashierName (based on current project patterns)
+- status (all | open | closed)
+- page
+- pageSize
+- sortBy
+- sortDir
+- search (optional only if useful)
+
+Response shape should include:
+- rows
+- totals
+- pagination metadata
+
+Each row should include:
+- shiftId
+- shiftCode / shiftNumber if exists
+- shiftDate or openedAt
+- openedAt
+- closedAt
+- cashierId
+- cashierName
+- cashSalesTotal
+- creditOrContractSalesTotal
+- salesInvoiceCount
+- returnsTotal
+- returnInvoiceCount
+- netTotal
+- transferredToMainTreasury
+- status
+
+Totals section should include:
+- totalCashSales
+- totalCreditOrContractSales
+- totalReturns
+- totalNet
+- totalTransferredToMainTreasury
+- totalSalesInvoiceCount
+- totalReturnInvoiceCount
+
+==================================================
+QUERY / DATA STRATEGY
+==================================================
+
+Use correctness first, then performance.
+
+You must inspect the current schema and identify the real tables/relations for:
+- cashier shifts
+- sales invoices
+- returns
+- collections
+- treasury shift close / delivered cash / main treasury handover
+
+Build this in storage/repository layer only.
+Do not scatter SQL in routes.
+
+Use either:
+A) one well-structured aggregate query
+OR
+B) a small set of safe aggregate queries merged in storage layer
+
+Choose the safer/correcter approach after inspection.
+
+Mandatory query rules:
+- aggregate per shift
+- avoid duplicate multiplication from joins
+- use COUNT(DISTINCT ...) where needed
+- use COALESCE for null-safe numeric totals
+- stable numeric output
+- safe for large datasets
+
+If using multiple aggregate queries:
+- one for base shifts
+- one for sales aggregates
+- one for returns aggregates
+- one for treasury transfer aggregates
+then merge by shiftId safely in code
+
+Do NOT create a fragile mega-join if it risks double counting.
+
+==================================================
+PERFORMANCE / INDEXING REQUIREMENTS
+==================================================
+
+This report must be fast.
+
+Review existing indexes first, then add only justified indexes.
+
+Focus on likely filtering/joining columns such as:
+- shift openedAt / shiftDate / closedAt
+- cashierId
+- shift status
+- sales invoice shift foreign key
+- return shift foreign key
+- collection source/shift foreign key
+- treasury close / handover shift foreign key
+
+Requirements:
+1) reuse existing indexes if sufficient
+2) add only the minimum useful indexes
+3) avoid duplicate overlapping indexes
+4) explain every new index:
+   - index name
+   - table
+   - columns
+   - why needed for this screen
+
+==================================================
+FRONTEND SCREEN REQUIREMENTS
+==================================================
+
+Build a clean screen with:
+
+A) Page header
+- title: تسليم الدرج
+- subtitle: ملخص الورديات وحركة التسليم للخزنة الرئيسية
+
+B) Filters bar
+- من تاريخ
+- إلى تاريخ
+- الكاشير
+- الحالة (الكل / مفتوحة / مغلقة)
+- زر بحث / تطبيق
+- زر إعادة تعيين
+- زر تحديث Refresh واضح
+
+C) Totals summary cards (preferred)
+Show for current filtered result:
+- إجمالي البيع النقدي
+- إجمالي البيع الآجل/التعاقد
+- إجمالي المرتجع
+- الصافي
+- إجمالي المحول للخزنة الرئيسية
+
+D) Results table
+Columns:
+- الوردية
+- التاريخ
+- فتح
+- إغلاق
+- الكاشير
+- البيع النقدي
+- البيع الآجل/التعاقد
+- عدد فواتير البيع
+- إجمالي المرتجع
+- عدد فواتير المرتجع
+- الصافي
+- المحول للخزنة الرئيسية
+- الحالة
+
+E) Status badge
+- مفتوحة
+- مغلقة
+
+F) Empty state
+- no results message
+
+G) Loading state
+- skeleton or loading indicator aligned with current project patterns
+
+H) Error state
+- clear retry option
+
+==================================================
+REFRESH / QUERY BEHAVIOR
+==================================================
+
+This is critical.
+
+Implement proper refresh behavior:
+1) stable query keys based on filters
+2) manual Refresh button calls refetch()
+3) no full page reload
+4) preserve filters during refresh
+5) preserve pagination/sort if present
+6) avoid unstable remounting
+7) avoid broad auth-related invalidations
+8) if appropriate, set sensible staleTime/cacheTime based on current project patterns
+9) make sure recent operational actions can be reflected quickly
+
+If current project pattern uses URL search params for filters, preserve that pattern.
+
+==================================================
+COMPONENTIZATION RULES
+==================================================
+
+Mandatory structure:
+- page container: owns state + query params + fetch hook
+- FilterBar component: filters only
+- SummaryCards component: totals only
+- SummaryTable component: table only
+- optional row/action helpers separated
+- utility file for formatting money/date/status if aligned with project patterns
+
+Do NOT mix:
+- fetching
+- rendering
+- formatting
+- filter parsing
+all in one file
+
+==================================================
+DATA ACCURACY / EDGE CASES
+==================================================
+
+Handle carefully:
+1) shifts with no returns
+2) shifts with no credit/contract sales
+3) still-open shifts
+4) null closedAt
+5) no treasury handover yet
+6) cancelled invoices must not inflate totals
+7) draft or invalid documents must not distort the report
+8) avoid duplicate rows from line-level joins
+9) date filters must be accurate and index-friendly
+10) cashier filter must be efficient
+
+If any definition is ambiguous:
+- inspect current implemented logic
+- align with the existing system behavior
+- document the chosen definition explicitly
+
+==================================================
+OPTIONAL BUT PREFERRED
+==================================================
+
+If easy and safe:
+- support sorting
+- prepare for future export
+- support clicking row to open shift details
+- add lightweight row actions later without redesign
+
+==================================================
+DELIVERABLE FORMAT REQUIRED
+==================================================
+
+Before coding, give me:
+1) exact files you will create/modify
+2) whether *-rpt files will be reused or not, and why
+3) exact business definition for each metric
+4) whether you will use one aggregate query or multiple merged queries
+5) indexes you plan to add/reuse and why
+6) refresh strategy (how the button and cache/refetch behavior will work)
+
+After implementation, give me:
+1) modified files list
+2) architectural summary
+3) exact formulas used for each metric
+4) query strategy used
+5) indexes added or reused
+6) refresh behavior validation
+7) sample real output rows
+8) any ambiguities discovered and how they were resolved
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+- Do NOT build a giant monolithic screen
+- Do NOT hardcode values
+- Do NOT guess business logic if it already exists in the project
+- Do NOT duplicate counting due to unsafe joins
+- Do NOT use browser reloads
+- Do NOT break current cashier shift flows
+- Do NOT force *-rpt reuse unless it is truly beneficial
+- Build this as a fast, accurate, production-grade operational report

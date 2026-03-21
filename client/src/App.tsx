@@ -67,6 +67,7 @@ const ContractsPage = lazy(() => import("@/pages/contracts/index"));
 const ContractClaimsPage       = lazy(() => import("@/pages/contract-claims/index"));
 const ApprovalsPage            = lazy(() => import("@/pages/approvals/index"));
 const ContractsAnalyticsPage   = lazy(() => import("@/pages/contracts-analytics/index"));
+const CashierHandoverPage      = lazy(() => import("@/pages/cashier-handover/index"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -142,6 +143,7 @@ function Router() {
           <Route path="/doctor-statement/:name">{() => <G p="doctors.view"><DoctorStatement /></G>}</Route>
           <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
           <Route path="/cashier-collection">{() => <G p="cashier.view"><CashierCollection /></G>}</Route>
+          <Route path="/cashier-handover">{() => <G p="cashier.view"><CashierHandoverPage /></G>}</Route>
           <Route path="/system-settings">{() => <G p="settings.account_mappings"><SystemSettings /></G>}</Route>
           <Route path="/account-mappings">{() => <G p="settings.account_mappings"><AccountMappings /></G>}</Route>
           <Route path="/drawer-passwords">{() => <G p="settings.drawer_passwords"><DrawerPasswords /></G>}</Route>

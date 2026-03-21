@@ -730,6 +730,7 @@ export interface IStorage {
   retryFailedJournals(): Promise<{ total: number; succeeded: number; failed: number }>;
   checkJournalReadiness(invoiceId: string): Promise<{ ready: boolean; critical: string[]; warnings: string[] }>;
   syncInvoiceHeaderJournalStatus(invoiceId: string): Promise<string>;
+  getDrawerHandoverSummary(filters: import("./cashier-handover-storage").HandoverFilters): Promise<import("./cashier-handover-storage").HandoverSummaryResult>;
 
   // Receiving corrections
   createReceivingCorrection(receivingId: string, corrections?: Record<string, unknown>[]): Promise<Record<string, unknown>>;
@@ -854,6 +855,7 @@ import contractsClaimsMethods from "./contracts-claims-storage";
 import contractsApprovalsMethods from "./contracts-approvals-storage";
 import clinicIntakeMethods from "./clinic-intake-storage";
 import clinicDashboardMethods from "./clinic-dashboard-storage";
+import cashierHandoverMethods from "./cashier-handover-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -893,6 +895,7 @@ Object.assign(
   contractsRulesMethods,
   contractsClaimsMethods,
   contractsApprovalsMethods,
+  cashierHandoverMethods,
 );
 
 export const storage = new DatabaseStorage();
