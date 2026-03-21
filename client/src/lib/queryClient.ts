@@ -10,7 +10,6 @@ async function throwIfResNotOk(res: Response) {
     } catch {}
 
     if (res.status === 401) {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       throw new Error(serverMsg || "انتهت الجلسة، يرجى تسجيل الدخول مجدداً");
     }
 
