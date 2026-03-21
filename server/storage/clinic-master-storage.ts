@@ -797,13 +797,24 @@ const methods = {
       SELECT c.*,
              a.patient_name, a.patient_phone, a.patient_id, a.appointment_date, a.appointment_time,
              a.turn_number, a.status AS appointment_status, a.doctor_id, a.clinic_id,
+             a.gender AS appointment_gender, a.payment_type, a.insurance_company,
              d.name AS doctor_name, d.specialty AS doctor_specialty,
              cl.name_ar AS clinic_name, cl.default_pharmacy_id,
-             cl.consultation_service_id, cl.treasury_id
+             cl.consultation_service_id, cl.treasury_id,
+             p.age AS patient_age, p.gender AS patient_gender,
+             (SELECT cc.diagnosis
+              FROM clinic_consultations cc
+              JOIN clinic_appointments aa ON aa.id = cc.appointment_id
+              WHERE aa.patient_id = a.patient_id
+                AND cc.appointment_id != a.id
+                AND cc.diagnosis IS NOT NULL
+              ORDER BY aa.appointment_date DESC
+              LIMIT 1) AS latest_diagnosis
       FROM clinic_consultations c
       JOIN clinic_appointments a ON a.id = c.appointment_id
       JOIN doctors d ON d.id = a.doctor_id
       JOIN clinic_clinics cl ON cl.id = a.clinic_id
+      LEFT JOIN patients p ON p.id = a.patient_id
       WHERE c.appointment_id = ${appointmentId}
     `);
     if (!consRows.rows.length) {
@@ -811,10 +822,20 @@ const methods = {
         SELECT a.*,
                d.name AS doctor_name, d.specialty AS doctor_specialty,
                cl.name_ar AS clinic_name, cl.default_pharmacy_id,
-               cl.consultation_service_id, cl.treasury_id
+               cl.consultation_service_id, cl.treasury_id,
+               p.age AS patient_age, p.gender AS patient_gender,
+               (SELECT cc.diagnosis
+                FROM clinic_consultations cc
+                JOIN clinic_appointments aa ON aa.id = cc.appointment_id
+                WHERE aa.patient_id = a.patient_id
+                  AND cc.appointment_id != a.id
+                  AND cc.diagnosis IS NOT NULL
+                ORDER BY aa.appointment_date DESC
+                LIMIT 1) AS latest_diagnosis
         FROM clinic_appointments a
         JOIN doctors d ON d.id = a.doctor_id
         JOIN clinic_clinics cl ON cl.id = a.clinic_id
+        LEFT JOIN patients p ON p.id = a.patient_id
         WHERE a.id = ${appointmentId}
       `);
       if (!apptRows.rows.length) return null;
@@ -935,6 +956,7 @@ const methods = {
 
   async saveConsultation(this: DatabaseStorage, data: {
     appointmentId: string; chiefComplaint?: string; diagnosis?: string; notes?: string; createdBy?: string;
+    subjectiveSummary?: string; objectiveSummary?: string; assessmentSummary?: string; planSummary?: string; followUpPlan?: string;
     drugs: { lineNo: number; itemId?: string | null; drugName: string; dose?: string; frequency?: string; duration?: string; notes?: string; unitLevel?: string; quantity?: number; unitPrice?: number }[];
     serviceOrders: { serviceId?: string | null; serviceNameManual?: string; targetId?: string; targetName?: string; unitPrice?: number }[];
   }): Promise<any> {
@@ -956,16 +978,26 @@ const methods = {
       // أنشئ أو حدّث سجل الكشف (بيانات سريرية فقط — بدون بيانات مالية)
       const consRes = await client.query(`
         INSERT INTO clinic_consultations
-          (appointment_id, chief_complaint, diagnosis, notes, created_by, updated_at)
-        VALUES ($1, $2, $3, $4, $5, now())
+          (appointment_id, chief_complaint, diagnosis, notes, created_by,
+           subjective_summary, objective_summary, assessment_summary, plan_summary, follow_up_plan,
+           updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
         ON CONFLICT (appointment_id) DO UPDATE
-          SET chief_complaint = EXCLUDED.chief_complaint,
-              diagnosis       = EXCLUDED.diagnosis,
-              notes           = EXCLUDED.notes,
-              updated_at      = now()
+          SET chief_complaint     = EXCLUDED.chief_complaint,
+              diagnosis           = EXCLUDED.diagnosis,
+              notes               = EXCLUDED.notes,
+              subjective_summary  = EXCLUDED.subjective_summary,
+              objective_summary   = EXCLUDED.objective_summary,
+              assessment_summary  = EXCLUDED.assessment_summary,
+              plan_summary        = EXCLUDED.plan_summary,
+              follow_up_plan      = EXCLUDED.follow_up_plan,
+              updated_at          = now()
         RETURNING *
       `, [data.appointmentId, data.chiefComplaint ?? null, data.diagnosis ?? null,
-          data.notes ?? null, data.createdBy ?? null]);
+          data.notes ?? null, data.createdBy ?? null,
+          data.subjectiveSummary ?? null, data.objectiveSummary ?? null,
+          data.assessmentSummary ?? null, data.planSummary ?? null,
+          data.followUpPlan ?? null]);
       const consultation = consRes.rows[0];
 
       // احفظ الأدوية (حذف ثم إعادة إدراج — idempotent)

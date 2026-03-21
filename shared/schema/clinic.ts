@@ -77,6 +77,7 @@ export const clinicAppointments = pgTable("clinic_appointments", {
   index("idx_clinic_appts_company").on(t.companyId),
   index("idx_clinic_appts_contract").on(t.contractId),
   index("idx_clinic_appts_contract_member").on(t.contractMemberId),
+  index("idx_clinic_appts_patient_date").on(t.patientId, t.appointmentDate),
 ]);
 
 export const clinicUserClinicAssignments = pgTable("clinic_user_clinic_assignments", {
@@ -108,10 +109,18 @@ export const clinicConsultations = pgTable("clinic_consultations", {
   discountValue:   decimal("discount_value", { precision: 10, scale: 2 }).default("0"),
   finalAmount:     decimal("final_amount", { precision: 10, scale: 2 }).default("0"),
   paymentStatus:   varchar("payment_status", { length: 20 }).default("pending"),
+  // ── Structured encounter fields (Step 2 — nullable, additive only) ──────
+  subjectiveSummary:  text("subjective_summary"),
+  objectiveSummary:   text("objective_summary"),
+  assessmentSummary:  text("assessment_summary"),
+  planSummary:        text("plan_summary"),
+  followUpPlan:       text("follow_up_plan"),
   createdBy:       varchar("created_by"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
   updatedAt:       timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("idx_clinic_consultations_created_at").on(t.createdAt),
+]);
 
 export const clinicConsultationDrugs = pgTable("clinic_consultation_drugs", {
   id:             varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -3,7 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Save, Loader2, CheckCircle2, CheckCheck, History, Star } from "lucide-react";
+import { Printer, Save, Loader2, CheckCircle2, CheckCheck, History, Star, ClipboardList } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDoctorConsultation } from "./hooks/useDoctorConsultation";
 import { useFavoriteDrugs } from "./hooks/useFavoriteDrugs";
@@ -14,9 +14,12 @@ import { ServicesQuadrant } from "./components/ServicesQuadrant";
 import { DoctorStatementTab } from "./components/DoctorStatementTab";
 import { PrintPrescription } from "./components/PrintPrescription";
 import { PatientHistoryPanel } from "./components/PatientHistoryPanel";
-import { IntakeSummaryBanner } from "./components/IntakeSummaryBanner";
+import { PatientSnapshot } from "./components/PatientSnapshot";
 import { FavoritesPanel } from "./components/FavoritesPanel";
+import { ConsultationTemplatePicker } from "./components/ConsultationTemplatePicker";
+import { StructuredConsultationPanel } from "./components/StructuredConsultationPanel";
 import { useAuth } from "@/hooks/use-auth";
+import type { ConsultationTemplate } from "./hooks/useConsultationTemplates";
 
 export default function DoctorConsultation() {
   const params = useParams<{ id: string }>();
@@ -25,7 +28,6 @@ export default function DoctorConsultation() {
   const { toast } = useToast();
   const { hasPermission } = useAuth();
 
-  // Which form field to insert favorites into (complaint or notes)
   const [favTarget, setFavTarget] = useState<"chiefComplaint" | "notes">("chiefComplaint");
 
   const {
@@ -53,12 +55,18 @@ export default function DoctorConsultation() {
     removeMutation: removeFav,
   } = useFavoriteDrugs(form.clinicId);
 
-  // Insert favorite text into the currently selected target field
   function handleInsertFavorite(text: string) {
     const current = favTarget === "chiefComplaint" ? (form.chiefComplaint || "") : (form.notes || "");
     const separator = current.trim() ? "\n" : "";
     updateForm(favTarget, current + separator + text);
     toast({ title: "تم إدراج النص", description: `أُضيف إلى: ${favTarget === "chiefComplaint" ? "الشكوى" : "الملاحظات"}` });
+  }
+
+  function handleApplyTemplate(tpl: ConsultationTemplate) {
+    updateForm("subjectiveSummary", tpl.subjectiveSummary);
+    updateForm("objectiveSummary", tpl.objectiveSummary);
+    updateForm("planSummary", tpl.planSummary);
+    toast({ title: `تم تطبيق القالب: ${tpl.label}`, description: "يمكنك تعديل النص بحرية" });
   }
 
   const canUseFavorites = hasPermission("clinic.favorites.manage");
@@ -71,9 +79,7 @@ export default function DoctorConsultation() {
     );
   }
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => window.print();
 
   const handleFinish = async () => {
     const ok = await finishConsultation();
@@ -85,7 +91,7 @@ export default function DoctorConsultation() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] p-3 gap-3" dir="rtl">
-      {/* شريط العنوان */}
+      {/* ── شريط العنوان ── */}
       <div className="flex items-center gap-3 shrink-0">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -118,36 +124,31 @@ export default function DoctorConsultation() {
         <div className="flex items-center gap-2 shrink-0">
           {isSaving ? (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              حفظ...
+              <Loader2 className="h-3 w-3 animate-spin" />حفظ...
             </span>
           ) : !isDirty ? (
             <span className="text-xs text-green-600 flex items-center gap-1">
-              <CheckCircle2 className="h-3 w-3" />
-              محفوظ
+              <CheckCircle2 className="h-3 w-3" />محفوظ
             </span>
           ) : null}
           <Button size="sm" variant="outline" className="gap-1 h-8" onClick={saveNow} data-testid="button-save-consultation">
-            <Save className="h-3 w-3" />
-            حفظ الآن
+            <Save className="h-3 w-3" />حفظ الآن
           </Button>
           <Button size="sm" variant="outline" className="gap-1 h-8" onClick={handlePrint} data-testid="button-print-prescription">
-            <Printer className="h-3 w-3" />
-            طباعة الروشتة
+            <Printer className="h-3 w-3" />طباعة الروشتة
           </Button>
           <Button size="sm" className="gap-1 h-8 bg-green-600 hover:bg-green-700 text-white" onClick={handleFinish} disabled={isSaving} data-testid="button-finish-consultation">
-            <CheckCheck className="h-3 w-3" />
-            إنهاء الكشف
+            <CheckCheck className="h-3 w-3" />إنهاء الكشف
           </Button>
         </div>
       </div>
 
-      {/* بانر بيانات الاستقبال — قراءة فقط للطبيب */}
+      {/* ── Patient Snapshot (replaces IntakeSummaryBanner — shows demographics + vitals + payer) ── */}
       <div className="shrink-0">
-        <IntakeSummaryBanner appointmentId={appointmentId} />
+        <PatientSnapshot appointmentId={appointmentId} form={form} />
       </div>
 
-      {/* التخطيط 2×2 */}
+      {/* ── التخطيط 2×2 ── */}
       <div className="grid grid-cols-2 gap-3 h-40 shrink-0">
         <ComplaintQuadrant
           value={form.chiefComplaint || ""}
@@ -183,11 +184,14 @@ export default function DoctorConsultation() {
         />
       </div>
 
-      {/* التابات */}
+      {/* ── التابات ── */}
       <div className="shrink-0 border-t pt-2">
-        <Tabs defaultValue="consultation">
+        <Tabs defaultValue="structured">
           <TabsList className="h-8">
-            <TabsTrigger value="consultation" className="text-xs h-7">كشف الطبيب</TabsTrigger>
+            <TabsTrigger value="structured" className="text-xs h-7 gap-1" data-testid="tab-structured-consultation">
+              <ClipboardList className="h-3 w-3" />
+              الكشف الهيكلي
+            </TabsTrigger>
             {form.patientId && (
               <TabsTrigger value="history" className="text-xs h-7 gap-1" data-testid="tab-patient-history">
                 <History className="h-3 w-3" />
@@ -202,21 +206,31 @@ export default function DoctorConsultation() {
               </TabsTrigger>
             )}
           </TabsList>
-          <TabsContent value="consultation" className="mt-2">
-            <p className="text-xs text-muted-foreground">البيانات تُحفظ تلقائياً أثناء الكتابة</p>
+
+          {/* ── الكشف الهيكلي: SOAP + قوالب ── */}
+          <TabsContent value="structured" className="mt-2">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-muted-foreground">حقول اختيارية — تُحفظ تلقائياً مع باقي الكشف</span>
+              <ConsultationTemplatePicker onApply={handleApplyTemplate} />
+            </div>
+            <div className="max-h-52 overflow-y-auto">
+              <StructuredConsultationPanel form={form} onChange={updateForm} />
+            </div>
           </TabsContent>
+
           <TabsContent value="history" className="mt-2 max-h-56 overflow-y-auto">
             <PatientHistoryPanel
               patientId={form.patientId}
               currentAppointmentId={appointmentId}
             />
           </TabsContent>
+
           <TabsContent value="statement" className="mt-2">
             <DoctorStatementTab doctorId={form.doctorId} />
           </TabsContent>
+
           {canUseFavorites && (
             <TabsContent value="favorites" className="mt-2">
-              {/* Target selector — doctor picks where to insert text */}
               <div className="flex items-center gap-2 mb-2 text-xs">
                 <span className="text-muted-foreground shrink-0">الإدراج في:</span>
                 <button
@@ -246,7 +260,7 @@ export default function DoctorConsultation() {
         </Tabs>
       </div>
 
-      {/* روشتة الطباعة — مخفية على الشاشة، تظهر عند الطباعة */}
+      {/* ── روشتة الطباعة ── */}
       <PrintPrescription consultation={form} />
     </div>
   );

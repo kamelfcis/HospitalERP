@@ -1,0 +1,140 @@
+Implement Outpatient Improvement — Step 2 only.
+
+GOAL:
+Reduce doctor entry time and modernize consultation workflow.
+
+Build a fast doctor encounter layer on top of the existing consultation module.
+
+==================================================
+SCOPE
+==================================================
+
+Add:
+1) patient snapshot header
+2) lightweight structured consultation fields
+3) quick templates
+4) quick actions for follow-up and orders
+5) keep free-text notes as fallback
+
+Do NOT redesign the whole module.
+Do NOT break existing consultation saving.
+
+==================================================
+PATIENT SNAPSHOT
+==================================================
+
+Show at top of doctor consultation:
+- patient name
+- age / gender
+- visit type
+- reason for visit
+- latest diagnosis
+- chronic flags if available
+- allergies flag placeholder if not yet implemented
+- latest vitals from intake
+- contract / payer chip if available
+- pending orders count / executed orders count if easily available
+
+==================================================
+STRUCTURED CONSULTATION
+==================================================
+
+Extend clinic consultation safely.
+
+Add fields:
+- subjectiveSummary nullable
+- objectiveSummary nullable
+- assessmentSummary nullable
+- planSummary nullable
+- followUpPlan nullable
+
+Keep existing:
+- chiefComplaint
+- diagnosis
+- notes
+
+Do NOT remove old fields.
+Backward-compatible only.
+
+==================================================
+TEMPLATES
+==================================================
+
+Build lightweight doctor templates:
+- general medicine
+- pediatrics
+- orthopedics
+- gynecology
+- ent
+
+Templates should prefill:
+- common subjective/objective/plan phrases
+
+No complex template engine yet.
+Keep it simple and readable.
+
+==================================================
+UI
+==================================================
+
+Improve doctor consultation screen:
+- compact snapshot header
+- structured tabs or sections
+- quick template selector
+- quick follow-up buttons
+- preserve existing drugs/services quadrants
+
+No frontend business logic.
+
+==================================================
+RBAC / SCOPE
+==================================================
+
+Respect clinic and doctor isolation.
+Doctors only see what they are allowed to see.
+
+==================================================
+REFACTOR
+==================================================
+
+Extract:
+- components/PatientSnapshot.tsx
+- components/ConsultationTemplatePicker.tsx
+- components/StructuredConsultationPanel.tsx
+- hooks/useConsultationTemplates.ts
+
+Keep page thin.
+
+==================================================
+INDEXING
+==================================================
+
+Add indexes only if needed for:
+- latest consultations by patient
+- latest diagnosis lookup
+- consultation by appointment
+
+==================================================
+BEFORE CODING
+==================================================
+
+Print:
+1) FILES TO MODIFY
+2) CONSULTATION WEAK POINTS TO FIX
+3) DATA BACKWARD-COMPATIBILITY PLAN
+4) IMPLEMENTATION PLAN
+
+Then implement Step 2 only.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) SNAPSHOT ADDED
+3) STRUCTURED CONSULTATION ADDED
+4) TEMPLATES ADDED
+5) UI COMPONENTS ADDED
+6) INDEXES ADDED
+7) REFACTOR SUMMARY
+8) ANY LIMITATIONS

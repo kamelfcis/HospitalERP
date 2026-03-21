@@ -1,0 +1,294 @@
+Implement Outpatient Improvement — Step 2 ONLY (STRICT MODE).
+
+DO NOT implement anything outside Step 2.
+DO NOT redesign the consultation module.
+DO NOT break existing consultation save/load behavior.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Reduce doctor entry time and modernize the consultation workflow
+by adding a fast structured encounter layer on top of the existing consultation module.
+
+This step must improve usability and speed WITHOUT changing the core business model.
+
+==================================================
+STRICT BOUNDARIES (NON-NEGOTIABLE)
+==================================================
+
+DO NOT implement:
+- diagnosis engine
+- AI suggestions
+- treatment recommendation logic
+- prescription automation
+- medical decision support
+- protocol engine
+- specialty-specific workflow engines
+- full consultation module rewrite
+- breaking DB/API changes
+
+This step is only:
+- better display
+- structured optional documentation
+- reusable safe templates
+- quick actions that connect to existing flows only
+
+==================================================
+SCOPE
+==================================================
+
+Add ONLY:
+
+1) patient snapshot header
+2) lightweight structured consultation fields
+3) quick doctor templates
+4) quick actions for follow-up and orders
+5) keep free-text notes as fallback
+
+==================================================
+PATIENT SNAPSHOT HEADER
+==================================================
+
+Add a compact read-only patient snapshot at the top of doctor consultation.
+
+Display only:
+- patient name
+- age / gender
+- visit type
+- reason for visit
+- latest recorded diagnosis
+- chronic flags if available
+- allergies flag placeholder if not yet implemented
+- latest vitals from intake
+- contract / payer chip if available
+- pending orders count / executed orders count ONLY if easily available from existing data
+
+STRICT RULES:
+- snapshot is read-only
+- no inline editing
+- no frontend business logic
+- no derived medical conclusions
+- if some data is unavailable, show safe empty state instead of fabricating values
+
+==================================================
+STRUCTURED CONSULTATION
+==================================================
+
+Extend consultation data safely and backward-compatibly.
+
+Add nullable fields only:
+- subjectiveSummary
+- objectiveSummary
+- assessmentSummary
+- planSummary
+- followUpPlan
+
+Keep existing fields untouched:
+- chiefComplaint
+- diagnosis
+- notes
+
+STRICT COMPATIBILITY RULES:
+- do not remove old fields
+- do not rename old fields
+- existing consultation save must continue to work
+- existing consultation load must continue to work
+- old records without structured fields must render normally
+- structured fields are optional enhancement only
+
+==================================================
+DOCTOR TEMPLATES (SAFE MODE)
+==================================================
+
+Build lightweight doctor templates.
+
+Supported template groups:
+- general medicine
+- pediatrics
+- orthopedics
+- gynecology
+- ent
+
+Template purpose:
+- prefill common subjective/objective/plan phrases
+- reduce repetitive typing
+- improve consistency
+
+STRICT TEMPLATE RULES:
+- keep templates simple, readable, code-based config
+- no complex template engine
+- no DB-managed admin UI
+- no auto-apply
+- doctor must explicitly choose a template
+- doctor must be able to edit all inserted text
+- templates are text helpers only
+- templates must NOT behave as diagnosis suggestions
+
+==================================================
+QUICK ACTIONS
+==================================================
+
+Add lightweight quick actions ONLY if they connect to existing flows.
+
+Allowed:
+- quick follow-up text insertion
+- quick follow-up duration buttons (if easy and existing model allows)
+- quick order shortcuts that open or prefill existing order flow only
+
+Disallowed:
+- new order engine
+- new scheduling engine
+- auto-generated orders
+- auto-generated treatment plans
+
+==================================================
+UI
+==================================================
+
+Improve doctor consultation screen with minimal disruption.
+
+Required:
+- compact patient snapshot header
+- structured consultation sections or tabs
+- quick template selector
+- quick follow-up helpers
+- preserve existing drugs/services quadrants
+- preserve current free-text workflow
+
+UX goals:
+- fast
+- compact
+- readable
+- low-click
+- no bloated screen
+- no giant single component
+
+==================================================
+DATA SAFETY / BACKWARD COMPATIBILITY
+==================================================
+
+This is critical.
+
+Implementation must be backward-compatible end-to-end.
+
+Required:
+- existing APIs remain functional
+- existing records remain readable
+- structured fields can be null safely
+- old save paths still succeed
+- no migration that requires rewriting old consultation rows
+- fallback to old fields must remain intact
+
+If data model extension is needed, do it as additive nullable columns only.
+
+==================================================
+RBAC / SCOPE
+==================================================
+
+Respect existing clinic and doctor isolation.
+
+Required:
+- doctors only access allowed consultations/patients
+- no cross-clinic leakage
+- no cross-doctor leakage if current rules restrict that
+- snapshot queries must respect existing scope helpers
+
+==================================================
+PERFORMANCE
+==================================================
+
+Keep data fetching lean.
+
+Do not create heavy query chains unless needed.
+
+Use indexes only if necessary for:
+- latest consultations by patient
+- latest diagnosis lookup
+- consultation by appointment
+
+If existing indexes are sufficient, do not add redundant indexes.
+
+==================================================
+REFACTOR / COMPONENTIZATION
+==================================================
+
+Extract exactly these:
+- components/PatientSnapshot.tsx
+- components/ConsultationTemplatePicker.tsx
+- components/StructuredConsultationPanel.tsx
+- hooks/useConsultationTemplates.ts
+
+Keep main page thin.
+Keep routes thin.
+Keep storage/services separate.
+
+==================================================
+IMPLEMENTATION SAFETY RULES
+==================================================
+
+- no frontend-only business decisions
+- no fake data
+- no silent overwrite of existing notes
+- no automatic merging that can corrupt doctor-entered text
+- template insertion must be explicit and editable
+- existing diagnosis and notes fields must remain usable exactly as before
+
+==================================================
+BEFORE CODING (MANDATORY)
+==================================================
+
+Print EXACTLY:
+
+1) FILES TO MODIFY
+2) CONSULTATION WEAK POINTS TO FIX
+3) DATA BACKWARD-COMPATIBILITY PLAN
+4) SNAPSHOT DATA SOURCES
+5) TEMPLATE IMPLEMENTATION APPROACH
+6) QUICK ACTIONS BOUNDARY
+7) IMPLEMENTATION PLAN
+
+STOP.
+
+Wait for approval.
+
+==================================================
+IMPLEMENTATION
+==================================================
+
+After approval:
+Implement Step 2 ONLY.
+
+Do NOT start Step 3.
+Do NOT widen scope.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) SNAPSHOT ADDED
+3) STRUCTURED CONSULTATION ADDED
+4) TEMPLATES ADDED
+5) QUICK ACTIONS ADDED
+6) UI COMPONENTS ADDED
+7) INDEXES ADDED
+8) BACKWARD-COMPATIBILITY CONFIRMED
+9) REFACTOR SUMMARY
+10) ANY LIMITATIONS
+
+==================================================
+QUALITY BAR
+==================================================
+
+Must be:
+- production-practical
+- medically safe
+- backward-compatible
+- fast
+- clean
+- maintainable
+
+No feature creep.
+No diagnosis automation.
+Only Step 2, executed correctly.

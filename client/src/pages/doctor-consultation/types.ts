@@ -36,11 +36,19 @@ export interface Consultation {
   chiefComplaint?: string;
   diagnosis?: string;
   notes?: string;
+  // ── Step 2: structured encounter fields (all nullable) ───────────────────
+  subjectiveSummary?: string;
+  objectiveSummary?: string;
+  assessmentSummary?: string;
+  planSummary?: string;
+  followUpPlan?: string;
   drugs: ConsultationDrug[];
   serviceOrders: ServiceOrder[];
   patientName?: string;
   patientId?: string | null;
   patientPhone?: string;
+  patientAge?: number | null;
+  patientGender?: string | null;
   appointmentDate?: string;
   appointmentTime?: string;
   turnNumber?: number;
@@ -53,6 +61,9 @@ export interface Consultation {
   defaultPharmacyId?: string | null;
   consultationServiceId?: string | null;
   paymentStatus?: string | null;
+  paymentType?: string | null;
+  insuranceCompany?: string | null;
+  latestDiagnosis?: string | null;
 }
 
 export interface FavoriteDrug {

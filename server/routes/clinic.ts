@@ -431,7 +431,9 @@ export function registerClinicRoutes(app: Express) {
 
   app.post("/api/clinic-consultations", requireAuth, checkPermission("doctor.consultation"), async (req, res) => {
     try {
-      const { appointmentId, chiefComplaint, diagnosis, notes, drugs, serviceOrders } = req.body;
+      const { appointmentId, chiefComplaint, diagnosis, notes,
+              subjectiveSummary, objectiveSummary, assessmentSummary, planSummary, followUpPlan,
+              drugs, serviceOrders } = req.body;
       if (!appointmentId) return res.status(400).json({ message: "appointmentId مطلوب" });
       const userId = req.session.userId!;
       const perms = await storage.getUserEffectivePermissions(userId);
@@ -447,6 +449,7 @@ export function registerClinicRoutes(app: Express) {
       const result = await storage.saveConsultation({
         appointmentId,
         chiefComplaint, diagnosis, notes,
+        subjectiveSummary, objectiveSummary, assessmentSummary, planSummary, followUpPlan,
         createdBy: userId,
         drugs: drugs || [],
         serviceOrders: serviceOrders || [],
