@@ -314,6 +314,7 @@ const methods = {
         discountValue: String(actualDiscount.toFixed(2)),
         netTotal: roundMoney(netTotal),
         notes: header.notes || null,
+        createdBy: header.createdBy || null,
         clinicOrderId: header.clinicOrderId || null,
       }).returning();
 

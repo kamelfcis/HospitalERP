@@ -1,0 +1,97 @@
+المشكلة ما زالت قائمة فعليًا:
+تم إنشاء فاتورة جديدة من الواجهة، ومع ذلك حقل "بواسطة" في شاشة cashier-collection ما زال يظهر "—".
+
+إذن لا أريد أي افتراضات أخرى. أريد trace حقيقي end-to-end لفاتورة جديدة واحدة فقط من لحظة الإنشاء حتى العرض في الكاشير.
+
+## المطلوب
+اختبر على فاتورة جديدة واحدة فقط، وسجّل رقمها/ID بوضوح.
+
+### 1) Trace وقت إنشاء الفاتورة
+في مسار create sales invoice:
+- اطبع current authenticated user/session user:
+  - user.id
+  - username
+  - full_name
+- اطبع payload النهائي قبل insert إلى sales_invoice_headers
+- اطبع قيمة created_by التي سيتم حفظها
+- بعد insert مباشرة، اعمل select على نفس الفاتورة واطبع:
+  - id
+  - invoice_code
+  - created_by
+  - status
+
+### 2) Trace أي مرحلة لاحقة قد تستبدل أو تعيد إنشاء الهيدر
+افحص هل يوجد:
+- draft save
+- finalize step
+- collect preparation
+- regenerate header
+- clone/transform invoice
+أي خطوة من هذه قد تنشئ/تعدل sales_invoice_headers مرة أخرى.
+
+في كل خطوة محتملة:
+- اطبع invoice id / code
+- created_by before
+- created_by after
+
+### 3) Trace شاشة cashier-collection
+عند جلب القائمة:
+- اطبع الفاتورة الجديدة نفسها فقط
+- اطبع:
+  - id
+  - invoice_code
+  - created_by
+  - pharmacistName
+
+عند جلب details:
+- اطبع:
+  - header.createdBy
+  - pharmacistName
+  - payload returned to route
+
+### 4) Verify database directly
+بعد إنشاء الفاتورة الجديدة مباشرة، نفّذ query مباشر على DB لنفس الفاتورة:
+SELECT
+  id,
+  invoice_code,
+  created_by,
+  status,
+  created_at
+FROM sales_invoice_headers
+WHERE invoice_code = 'PUT_NEW_INVOICE_CODE_HERE';
+
+ثم:
+SELECT
+  id,
+  username,
+  full_name
+FROM users
+WHERE id = 'PUT_CREATED_BY_HERE';
+
+## أسئلة يجب أن تجيب عنها بوضوح
+1) هل session user موجود وقت إنشاء الفاتورة؟
+2) هل created_by يُمرر إلى insert فعلًا؟
+3) هل DB تخزن created_by بعد الإنشاء؟
+4) هل يوجد step لاحق يمسح created_by أو يستبدل الهيدر؟
+5) هل شاشة الكاشير تقرأ نفس السجل أم سجلًا آخر؟
+6) هل invoice_code الظاهر في الكاشير هو نفس invoice_code الذي تم إنشاؤه فعلًا؟
+
+## قواعد مهمة
+- لا تعمل refactor
+- لا تعمل fix قبل تحديد exact breakpoint
+- لا تقل "البيانات قديمة" — نحن اختبرنا فاتورة جديدة
+- أريد رقم الفاتورة الجديدة المستخدمة في التتبع بوضوح
+
+## المطلوب في الرد
+1) New invoice code tested
+2) Exact create-flow breakpoint
+3) DB value of created_by immediately after insert
+4) Whether created_by is lost later
+5) File and line where the loss happens
+6) Minimal fix plan
+
+وفي النهاية اطبع فقط:
+NEW INVOICE TRACE COMPLETE
+BREAKPOINT FOUND: ...
+CREATED_BY AFTER INSERT: ...
+CREATED_BY AT CASHIER READ: ...
