@@ -1,99 +1,105 @@
 /**
  * SettlementDialog — Phase 5
  *
- * Per-line settlement with optional write-off, GL posting fields,
- * and auto-calculated total.
+ * Per-line settlement entry with optional write-off amounts.
+ *
+ * FILTER RULE: only lines with status === 'approved' are shown.
+ * Pending/rejected lines are excluded from the UI entirely.
+ * Backend enforces the same rule, but the UI prevents confusing errors.
  */
 
 import { useState, useEffect } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button }   from "@/components/ui/button";
+import { Input }    from "@/components/ui/input";
+import { Label }    from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Coins } from "lucide-react";
 import type { SettlementLineInput } from "../hooks/useClaimSettlement";
+
+// ─── Types ────────────────────────────────────────────────────────────────
 
 interface ClaimLine {
   id:                 string;
   serviceDescription: string;
   companyShareAmount:  string;
   approvedAmount?:    string | null;
+  /** Only 'approved' lines appear in the dialog */
   status:             string;
 }
 
-interface SettlementDialogProps {
-  open:       boolean;
-  onClose:    () => void;
-  batchId:    string;
-  batchNumber: string;
-  lines:      ClaimLine[];
-  onSettle:   (payload: {
-    settlementDate:     string;
-    settledAmount:      number;
-    bankAccountId?:     string | null;
-    companyArAccountId?: string | null;
-    referenceNumber?:   string;
-    notes?:             string;
-    lines:              SettlementLineInput[];
-  }) => void;
-  isPending:  boolean;
+export interface SettlePayload {
+  settlementDate:     string;
+  settledAmount:      number;
+  bankAccountId?:     string | null;
+  companyArAccountId?: string | null;
+  referenceNumber?:   string;
+  notes?:             string;
+  lines:              SettlementLineInput[];
 }
+
+interface SettlementDialogProps {
+  open:        boolean;
+  onClose:     () => void;
+  batchNumber: string;
+  /** All lines on the batch — dialog will filter to approved only */
+  lines:       ClaimLine[];
+  onSettle:    (payload: SettlePayload) => void;
+  isPending:   boolean;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
 
 function fmt(v: string | null | undefined) {
   if (!v) return "0.00";
   return parseFloat(v).toLocaleString("ar-EG", { minimumFractionDigits: 2 });
 }
 
-function effectiveAmount(line: ClaimLine): number {
+/** Returns the effective amount the company must pay (approved > claimed fallback) */
+function approvedAmount(line: ClaimLine): number {
   return parseFloat(String(line.approvedAmount ?? line.companyShareAmount ?? "0"));
 }
 
+// ─── Component ────────────────────────────────────────────────────────────
+
 export function SettlementDialog({
-  open, onClose, batchId, batchNumber, lines, onSettle, isPending,
+  open, onClose, batchNumber, lines, onSettle, isPending,
 }: SettlementDialogProps) {
-  const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split("T")[0]);
+  const [settlementDate,  setSettlementDate]  = useState(new Date().toISOString().split("T")[0]);
   const [referenceNumber, setReferenceNumber] = useState("");
   const [bankAccountId,   setBankAccountId]   = useState("");
   const [arAccountId,     setArAccountId]     = useState("");
   const [notes,           setNotes]           = useState("");
 
-  // Per-line settle amounts
+  // Per-line amounts (keyed by line.id)
   const [lineAmounts, setLineAmounts] = useState<Record<string, string>>({});
   const [writeoffs,   setWriteoffs]   = useState<Record<string, string>>({});
-  const [reasons,     setReasons]     = useState<Record<string, string>>({});
 
-  // Initialize from approved lines
-  const settleableLines = lines.filter(l =>
-    l.status === "approved" || l.status === "pending"
+  // ── Only approved lines can be settled (business rule) ─────────────────
+  const approvedLines = lines.filter(l => l.status === "approved");
+
+  // Reset line amounts when dialog opens with fresh data
+  useEffect(() => {
+    if (!open) return;
+    const amounts: Record<string, string> = {};
+    approvedLines.forEach(l => { amounts[l.id] = approvedAmount(l).toFixed(2); });
+    setLineAmounts(amounts);
+    setWriteoffs({});
+  }, [open]);   // intentionally omit approvedLines to avoid re-init on every render
+
+  const totalSettled = approvedLines.reduce(
+    (sum, l) => sum + parseFloat(lineAmounts[l.id] || "0"), 0
   );
 
-  useEffect(() => {
-    if (open) {
-      const amounts: Record<string, string> = {};
-      settleableLines.forEach(l => {
-        amounts[l.id] = effectiveAmount(l).toFixed(2);
-      });
-      setLineAmounts(amounts);
-      setWriteoffs({});
-      setReasons({});
-    }
-  }, [open, lines]);
-
-  const totalSettled = settleableLines.reduce((s, l) => {
-    return s + parseFloat(lineAmounts[l.id] || "0");
-  }, 0);
-
-  const handleSubmit = () => {
-    const settlementLines: SettlementLineInput[] = settleableLines
+  function handleSubmit() {
+    const settlementLines: SettlementLineInput[] = approvedLines
       .filter(l => parseFloat(lineAmounts[l.id] || "0") > 0)
       .map(l => ({
-        claimLineId:      l.id,
-        settledAmount:    parseFloat(lineAmounts[l.id] || "0"),
-        writeOffAmount:   parseFloat(writeoffs[l.id] || "0") || undefined,
-        adjustmentReason: reasons[l.id] || undefined,
+        claimLineId:   l.id,
+        settledAmount: parseFloat(lineAmounts[l.id] || "0"),
+        writeOffAmount: parseFloat(writeoffs[l.id] || "0") || undefined,
       }));
 
     if (settlementLines.length === 0) return;
@@ -102,12 +108,12 @@ export function SettlementDialog({
       settlementDate,
       settledAmount:      totalSettled,
       bankAccountId:      bankAccountId || null,
-      companyArAccountId: arAccountId || null,
+      companyArAccountId: arAccountId  || null,
       referenceNumber:    referenceNumber || undefined,
-      notes:              notes || undefined,
+      notes:              notes          || undefined,
       lines:              settlementLines,
     });
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
@@ -120,7 +126,7 @@ export function SettlementDialog({
         </DialogHeader>
 
         <div className="space-y-5 py-2">
-          {/* General fields */}
+          {/* ── Header fields ────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>تاريخ التسوية <span className="text-destructive">*</span></Label>
@@ -160,19 +166,23 @@ export function SettlementDialog({
             </div>
           </div>
 
-          {/* Per-line settlement amounts */}
+          {/* ── Per-line settlement amounts ───────────────────────────────── */}
           <div className="space-y-2">
             <div className="text-sm font-medium text-muted-foreground border-b pb-1">
-              مبالغ التسوية لكل سطر
+              مبالغ التسوية — السطور المقبولة فقط
+              {approvedLines.length === 0 && (
+                <span className="text-destructive mr-2 text-xs">(لا توجد سطور مقبولة)</span>
+              )}
             </div>
-            {settleableLines.length === 0 ? (
-              <div className="text-sm text-muted-foreground py-4 text-center">
-                لا توجد سطور قابلة للتسوية (يجب أن تكون مقبولة)
-              </div>
+
+            {approvedLines.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                يجب قبول سطور المطالبة أولاً قبل التسوية.
+              </p>
             ) : (
               <div className="space-y-2">
-                {settleableLines.map(line => {
-                  const approved = effectiveAmount(line);
+                {approvedLines.map(line => {
+                  const approved = approvedAmount(line);
                   return (
                     <div key={line.id} className="border rounded-lg p-3 bg-muted/20 space-y-2">
                       <div className="flex items-center justify-between">
@@ -187,10 +197,7 @@ export function SettlementDialog({
                         <div className="col-span-2 space-y-0.5">
                           <Label className="text-xs">مبلغ التسوية</Label>
                           <Input
-                            type="number"
-                            min="0"
-                            max={approved}
-                            step="0.01"
+                            type="number" min="0" max={approved} step="0.01"
                             value={lineAmounts[line.id] ?? approved.toFixed(2)}
                             onChange={e => setLineAmounts(p => ({ ...p, [line.id]: e.target.value }))}
                             className="h-8 text-sm"
@@ -200,9 +207,7 @@ export function SettlementDialog({
                         <div className="space-y-0.5">
                           <Label className="text-xs">شطب</Label>
                           <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="number" min="0" step="0.01"
                             value={writeoffs[line.id] ?? ""}
                             onChange={e => setWriteoffs(p => ({ ...p, [line.id]: e.target.value }))}
                             placeholder="0.00"
@@ -218,7 +223,7 @@ export function SettlementDialog({
             )}
           </div>
 
-          {/* Total */}
+          {/* ── Total ────────────────────────────────────────────────────── */}
           <div className="bg-primary/5 rounded-lg p-3 flex items-center justify-between">
             <span className="text-sm font-medium">إجمالي التسوية</span>
             <span className="text-lg font-bold text-primary">
@@ -242,10 +247,12 @@ export function SettlementDialog({
           <Button variant="outline" onClick={onClose} disabled={isPending}>إلغاء</Button>
           <Button
             onClick={handleSubmit}
-            disabled={isPending || totalSettled <= 0 || !settlementDate}
+            disabled={isPending || totalSettled <= 0 || !settlementDate || approvedLines.length === 0}
             data-testid="button-confirm-settlement"
           >
-            {isPending ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Coins className="h-4 w-4 ml-1" />}
+            {isPending
+              ? <Loader2 className="h-4 w-4 animate-spin ml-1" />
+              : <Coins   className="h-4 w-4 ml-1" />}
             تأكيد التسوية
           </Button>
         </DialogFooter>

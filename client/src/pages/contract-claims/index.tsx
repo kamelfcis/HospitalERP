@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/tabs";
 import {
   SendHorizonal, CheckCircle2, Coins, Ban, Search,
-  ChevronLeft, FileText, Building2, Calendar, AlertCircle, Loader2, BarChart3,
+  ChevronLeft, FileText, Building2, Calendar, AlertCircle, Loader2, BarChart3, History,
 } from "lucide-react";
 
 // ─── Extracted Components ──────────────────────────────────────────────────
@@ -39,7 +39,7 @@ import { SettlementSummary }   from "./components/SettlementSummary";
 import { SettlementDialog }    from "./components/SettlementDialog";
 import { ReconciliationTable } from "./components/ReconciliationTable";
 import {
-  useSettleBatch, useReconciliation,
+  useSettleBatch, useReconciliation, useSettlements,
 } from "./hooks/useClaimSettlement";
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -173,6 +173,11 @@ export default function ContractClaimsPage() {
   const settleMutation = useSettleBatch();
   const { data: reconciliation, isLoading: reconLoading } = useReconciliation(
     activeTab === "reconciliation" ? selectedId : null
+  );
+
+  // Settlement history — only fetch when that tab is active
+  const { data: settlementHistory = [], isLoading: historyLoading } = useSettlements(
+    activeTab === "history" ? selectedId : null
   );
 
   // ── Mutations ──────────────────────────────────────────────────────────
@@ -371,10 +376,14 @@ export default function ContractClaimsPage() {
             {/* Tabs: Lines / Reconciliation */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
               <TabsList className="mx-4 mt-2 w-fit">
-                <TabsTrigger value="lines" className="text-xs">سطور المطالبة</TabsTrigger>
-                <TabsTrigger value="reconciliation" className="text-xs flex items-center gap-1">
+                <TabsTrigger value="lines"           className="text-xs">سطور المطالبة</TabsTrigger>
+                <TabsTrigger value="reconciliation"  className="text-xs flex items-center gap-1">
                   <BarChart3 className="h-3 w-3" />
                   تقرير المطابقة
+                </TabsTrigger>
+                <TabsTrigger value="history"         className="text-xs flex items-center gap-1">
+                  <History className="h-3 w-3" />
+                  سجل التسويات
                 </TabsTrigger>
               </TabsList>
 
@@ -439,6 +448,67 @@ export default function ContractClaimsPage() {
 
               <TabsContent value="reconciliation" className="flex-1 overflow-auto m-0 p-4">
                 <ReconciliationTable data={reconciliation} isLoading={reconLoading} />
+              </TabsContent>
+
+              {/* ── Settlement History Tab ─────────────────────────────── */}
+              <TabsContent value="history" className="flex-1 overflow-auto m-0 p-4">
+                {historyLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : settlementHistory.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-sm gap-2">
+                    <History className="h-5 w-5" />
+                    لا توجد تسويات مسجّلة لهذه الدفعة
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border rounded-md">
+                    <table className="w-full text-xs" dir="rtl">
+                      <thead className="bg-muted/50 text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 text-right">التاريخ</th>
+                          <th className="px-3 py-2 text-right">رقم المرجع</th>
+                          <th className="px-3 py-2 text-right">المبلغ المُسوَّى</th>
+                          <th className="px-3 py-2 text-right">رقم القيد</th>
+                          <th className="px-3 py-2 text-right">ملاحظات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {settlementHistory.map(s => (
+                          <tr key={s.id} className="hover:bg-muted/20" data-testid={`row-settlement-${s.id}`}>
+                            <td className="px-3 py-2 whitespace-nowrap">{s.settlementDate}</td>
+                            <td className="px-3 py-2 text-muted-foreground">
+                              {s.referenceNumber ?? <span className="text-muted-foreground/40">—</span>}
+                            </td>
+                            <td className="px-3 py-2 font-semibold text-green-700 font-mono">
+                              {parseFloat(s.settledAmount).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ج.م
+                            </td>
+                            <td className="px-3 py-2 font-mono text-muted-foreground text-[10px]">
+                              {s.journalEntryId
+                                ? <span className="text-blue-600">{s.journalEntryId.slice(0, 8)}…</span>
+                                : <span className="text-muted-foreground/40">—</span>}
+                            </td>
+                            <td className="px-3 py-2 max-w-xs truncate text-muted-foreground" title={s.notes ?? ""}>
+                              {s.notes ?? <span className="text-muted-foreground/40">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {/* Totals footer */}
+                      <tfoot className="bg-muted/30 font-semibold border-t-2">
+                        <tr>
+                          <td className="px-3 py-2" colSpan={2}>الإجمالي</td>
+                          <td className="px-3 py-2 font-bold text-green-700 font-mono">
+                            {settlementHistory
+                              .reduce((s, r) => s + parseFloat(r.settledAmount), 0)
+                              .toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ج.م
+                          </td>
+                          <td colSpan={2} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </>

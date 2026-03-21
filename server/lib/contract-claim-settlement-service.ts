@@ -107,17 +107,34 @@ export function validateSettlementAmounts(
         `لا يمكن تسوية سطر معلّق — يجب قبوله أولاً: ${claim.serviceDescription}`, "INVALID_STATE"
       );
     }
-    const approvedAmt = parseFloat(String(claim.approvedAmount ?? claim.companyShareAmount ?? "0"));
+    const approvedAmt    = parseFloat(String(claim.approvedAmount ?? claim.companyShareAmount ?? "0"));
     const alreadySettled = parseFloat(String(claim.settledAmountSoFar ?? "0"));
-    const remaining = approvedAmt - alreadySettled;
+    const remaining      = approvedAmt - alreadySettled;
+    const writeOff       = input.writeOffAmount ?? 0;
+
+    if (input.settledAmount < 0) {
+      throw new SettlementServiceError("مبلغ التسوية لا يمكن أن يكون سالباً", "INVALID_AMOUNT");
+    }
+    if (writeOff < 0) {
+      throw new SettlementServiceError("مبلغ الشطب لا يمكن أن يكون سالباً", "INVALID_AMOUNT");
+    }
+
+    // ─── Settlement amount cap ────────────────────────────────────────────
+    // settledAmount must not exceed the remaining (approved − already paid)
     if (input.settledAmount > remaining + 0.005) {
       throw new SettlementServiceError(
-        `مبلغ التسوية (${input.settledAmount}) يتجاوز المتبقي (${remaining.toFixed(2)}) للخدمة: ${claim.serviceDescription}`,
+        `مبلغ التسوية (${input.settledAmount.toFixed(2)}) يتجاوز المتبقي (${remaining.toFixed(2)}) للخدمة: ${claim.serviceDescription}`,
         "AMOUNT_EXCEEDED"
       );
     }
-    if (input.settledAmount < 0) {
-      throw new SettlementServiceError("مبلغ التسوية لا يمكن أن يكون سالباً", "INVALID_AMOUNT");
+
+    // ─── Write-off cap ────────────────────────────────────────────────────
+    // writeOffAmount must not exceed the remaining outstanding on this line
+    if (writeOff > remaining + 0.005) {
+      throw new SettlementServiceError(
+        `مبلغ الشطب (${writeOff.toFixed(2)}) يتجاوز المتبقي (${remaining.toFixed(2)}) للخدمة: ${claim.serviceDescription}`,
+        "WRITEOFF_EXCEEDED"
+      );
     }
   }
 }

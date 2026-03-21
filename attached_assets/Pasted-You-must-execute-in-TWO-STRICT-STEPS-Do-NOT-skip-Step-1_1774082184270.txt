@@ -1,0 +1,280 @@
+You must execute in TWO STRICT STEPS.
+
+- Do NOT skip Step 1
+- Do NOT expand scope
+- Do NOT touch unrelated modules
+- Do NOT mention AccountMappings
+- Keep code extremely clear for a weak follow-up developer
+- Prefer simple, readable, well-named code over clever code
+
+==================================================
+STEP 1 — FINAL HARDENING FIXES (MANDATORY)
+==================================================
+
+Fix ONLY the following issues:
+
+--------------------------------------------------
+1) WRITE-OFF VALIDATION (CRITICAL)
+
+Ensure:
+writeOffAmount <= (approvedAmount - alreadySettledAmount)
+
+Apply inside:
+contract-claim-settlement-service.ts
+
+Behavior:
+- if violated → throw clear error (USER-FACING ARABIC MESSAGE)
+- must be enforced per line before DB insert
+
+--------------------------------------------------
+2) UI FILTER — SETTLEMENT DIALOG
+
+Fix SettlementDialog:
+
+- Only show lines where:
+    status = 'approved'
+
+- Remove 'pending' lines from UI completely
+- Do NOT rely on backend rejection
+
+--------------------------------------------------
+3) SETTLEMENT HISTORY TAB (MISSING UI)
+
+Add new tab:
+
+"سجل التسويات"
+
+Use existing:
+useSettlements hook
+
+Display:
+- settlementDate
+- referenceNumber
+- total settled amount
+- optional journal entry reference
+- notes
+
+Table format (no cards)
+
+--------------------------------------------------
+4) LIGHT REFACTOR (MANDATORY)
+
+- Extract any duplicated settlement logic
+- Keep routes thin
+- Keep service as single source of truth
+- No business logic in frontend
+
+--------------------------------------------------
+
+AFTER STEP 1 PRINT:
+
+1) HARDENING FIXES APPLIED
+2) WRITE-OFF VALIDATION CONFIRMED
+3) UI FILTER CORRECTED
+4) SETTLEMENT HISTORY TAB ADDED
+
+THEN CONTINUE TO STEP 2.
+
+==================================================
+STEP 2 — PHASE 6: ANALYTICS & CONTROL LAYER
+==================================================
+
+GOAL:
+Provide operational + financial visibility for contracts, claims, and AR.
+
+This phase MUST NOT change transactional logic.
+READ-ONLY analytics only.
+
+==================================================
+PHASE 6 — SCOPE (STRICT)
+==================================================
+
+Implement ONLY:
+
+1) AR Aging
+2) Company performance
+3) Claim variance analysis
+4) Control alerts (simple flags)
+
+Do NOT:
+- modify settlement logic
+- modify claim logic
+- build new accounting engine
+
+==================================================
+PHASE 6 — BACKEND (READ-ONLY)
+==================================================
+
+Create:
+server/lib/contracts-analytics-service.ts
+
+Functions:
+
+1) getARAging()
+
+Return buckets:
+- 0–30 days
+- 31–60 days
+- 61–90 days
+- 90+
+
+Based on:
+approvedAmount - settledAmount
+
+--------------------------------------------------
+
+2) getCompanyPerformance()
+
+Return per company:
+- total claimed
+- total approved
+- total settled
+- total outstanding
+- rejection rate %
+
+--------------------------------------------------
+
+3) getClaimVariance()
+
+Return:
+- claimed vs approved
+- variance per batch
+- variance %
+
+--------------------------------------------------
+
+4) getControlFlags()
+
+Return simple alerts:
+- high rejection rate (> configurable %)
+- high outstanding
+- high write-offs
+
+--------------------------------------------------
+
+==================================================
+PHASE 6 — ROUTES
+==================================================
+
+Add:
+
+GET /api/contracts-analytics/ar-aging
+GET /api/contracts-analytics/company-performance
+GET /api/contracts-analytics/variance
+GET /api/contracts-analytics/control-flags
+
+Rules:
+- READ ONLY
+- no side effects
+- simple query + aggregation only
+
+==================================================
+PHASE 6 — INDEXING (IMPORTANT)
+==================================================
+
+Ensure indexes for fast analytics:
+
+- (contract_id, status)
+- (company_id, contract_id)
+- (settlement_date)
+- (approval_status)
+- partial index:
+    outstanding > 0
+
+If index exists → do not duplicate
+
+==================================================
+PHASE 6 — UI
+==================================================
+
+Create:
+
+client/src/pages/contracts-analytics/index.tsx
+
+--------------------------------------------------
+
+Sections:
+
+1) AR Aging Table
+- columns:
+    company
+    0–30
+    31–60
+    61–90
+    90+
+
+--------------------------------------------------
+
+2) Company Performance Table
+- claimed
+- approved
+- settled
+- outstanding
+- rejection %
+
+--------------------------------------------------
+
+3) Variance Table
+- batch
+- claimed
+- approved
+- variance
+
+--------------------------------------------------
+
+4) Alerts Panel
+- simple list (no complex UI)
+
+--------------------------------------------------
+
+==================================================
+UI RULES (VERY IMPORTANT)
+==================================================
+
+- Use tables only (no cards)
+- Keep page thin
+- Extract components:
+
+components/ARAgingTable.tsx
+components/CompanyPerformanceTable.tsx
+components/VarianceTable.tsx
+components/ControlAlerts.tsx
+
+hooks/useContractsAnalytics.ts
+
+==================================================
+REFACTOR RULES
+==================================================
+
+- No giant files
+- Each component single responsibility
+- Naming must be clear (for weak developer)
+- Avoid nested complexity
+- Avoid magic numbers
+- Use comments for business meaning
+
+==================================================
+BEFORE CODING — REQUIRED
+==================================================
+
+Print:
+
+1) FILES TO CREATE
+2) FILES TO MODIFY
+3) ANALYTICS DATA SOURCES
+4) INDEX PLAN
+5) IMPLEMENTATION PLAN
+
+Then implement.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) HARDENING SUMMARY
+2) ANALYTICS MODULE CREATED
+3) ENDPOINTS ADDED
+4) INDEXES ADDED
+5) UI COMPONENTS ADDED
+6) REFACTOR SUMMARY
+7) ANY LIMITATIONS
