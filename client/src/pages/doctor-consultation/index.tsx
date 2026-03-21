@@ -197,7 +197,7 @@ export default function DoctorConsultation() {
             {(form.patientId || form.patientName) && (
               <TabsTrigger value="history" className="text-xs h-7 gap-1" data-testid="tab-patient-history">
                 <History className="h-3 w-3" />
-                تاريخ المريض
+                {form.patientId ? "تاريخ المريض" : "سجل بالاسم"}
               </TabsTrigger>
             )}
             <TabsTrigger value="orders" className="text-xs h-7 gap-1" data-testid="tab-orders-tracking">

@@ -585,8 +585,13 @@ const methods = {
    * getConsultationsByPatientName
    *
    * Same shape as getPatientPreviousConsultations but looks up by patient_name
-   * (case/trim-insensitive) instead of patient_id — used for cash patients who
-   * have no registered patient record.
+   * instead of patient_id — for cash patients who have no registered record.
+   *
+   * MATCH RULES (EXACT only — no fuzzy, no contains, no startsWith):
+   *   LOWER(TRIM(db.patient_name)) = LOWER(TRIM(input))
+   *
+   * Caller MUST pre-normalize the name (trim + collapse spaces) before calling.
+   * This function re-normalizes as a safety net but does NOT broaden the match.
    */
   async getConsultationsByPatientName(
     this: DatabaseStorage,
@@ -596,6 +601,12 @@ const methods = {
     excludeAppointmentId?: string | null,
     clinicIds?: string[] | null
   ): Promise<{ data: Array<Record<string, unknown>>; hasMore: boolean }> {
+    // Safety-net normalization — caller should already have done this
+    const normalizedName = patientName.trim().replace(/\s+/g, " ");
+    if (normalizedName.length < 2) {
+      return { data: [], hasMore: false };
+    }
+
     const clinicCond =
       clinicIds && clinicIds.length > 0
         ? sql`AND a.clinic_id = ANY(${clinicIds}::varchar[])`
@@ -652,7 +663,7 @@ const methods = {
         WHERE status != 'cancelled'
         GROUP BY consultation_id
       ) orders_agg ON orders_agg.consultation_id = c.id
-      WHERE LOWER(TRIM(a.patient_name)) = LOWER(TRIM(${patientName}))
+      WHERE LOWER(TRIM(a.patient_name)) = LOWER(TRIM(${normalizedName}))
         ${clinicCond}
         ${excludeCond}
       ORDER BY COALESCE(a.appointment_date, c.created_at::date) DESC, c.created_at DESC

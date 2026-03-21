@@ -656,8 +656,12 @@ export function registerClinicRoutes(app: Express) {
       if (!perms.includes("doctor.consultation")) {
         return res.status(403).json({ message: "غير مصرح" });
       }
-      const patientName = typeof req.query.patientName === "string" ? req.query.patientName.trim() : "";
-      if (!patientName) return res.status(400).json({ message: "patientName مطلوب" });
+      // Normalize: trim + collapse internal spaces → exact match only, no fuzzy
+      const rawName     = typeof req.query.patientName === "string" ? req.query.patientName : "";
+      const patientName = rawName.trim().replace(/\s+/g, " ");
+      if (patientName.length < 2) {
+        return res.status(400).json({ message: "patientName مطلوب ولا يقل عن حرفين" });
+      }
 
       const limit      = Math.min(parseInt(String(req.query.limit  || "5")),  20);
       const offset     = Math.max(parseInt(String(req.query.offset || "0")),   0);

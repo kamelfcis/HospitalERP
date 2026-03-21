@@ -127,5 +127,7 @@ export function usePatientHistory(
     isLoadingMore,
     hasMore,
     loadMore,
-  };
+    /** 'id' = registered patient (exact FK), 'name' = cash patient name match, null = not fetching */
+    matchType: enabled ? (byId ? "id" : "name") : null,
+  } as const;
 }
