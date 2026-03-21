@@ -660,6 +660,15 @@ export interface IStorage {
   getClinicOrder(id: string): Promise<Record<string, unknown> | null>;
   executeClinicOrder(orderId: string, userId: string): Promise<{ invoiceId: string }>;
   cancelClinicOrder(orderId: string): Promise<void>;
+  getAppointmentOrderTracking(appointmentId: string): Promise<{
+    totalService: number;
+    executedService: number;
+    pendingService: number;
+    totalPharmacy: number;
+    executedPharmacy: number;
+    pendingPharmacy: number;
+    orders: Array<Record<string, unknown>>;
+  }>;
 
   // كشف حساب الطبيب - عيادات
   getClinicDoctorStatement(doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<Record<string, unknown>[]>;

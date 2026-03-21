@@ -14,6 +14,7 @@ import {
   resolveClinicScope,
   clinicAllowed,
   getOrderClinicId,
+  getAppointmentClinicId,
 } from "../lib/clinic-scope";
 
 function snakeToCamel(obj: unknown): any {
@@ -535,6 +536,40 @@ export function registerClinicRoutes(app: Express) {
 
       const orders = await storage.getClinicOrders(filters);
       res.json(snakeToCamel(orders));
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // ── متابعة تنفيذ الطلبات لموعد محدد (Step 3) ─────────────────────────────
+  app.get("/api/clinic-orders/appointment/:appointmentId", requireAuth, async (req, res) => {
+    try {
+      const userId  = req.session.userId!;
+      const role    = req.session.role!;
+      const perms   = await storage.getUserEffectivePermissions(userId);
+      const isAdmin = role === "admin" || role === "owner";
+      const canView = perms.includes("doctor_orders.view") || isAdmin;
+      if (!canView) return res.status(403).json({ message: "لا تملك صلاحية لعرض الطلبات" });
+
+      const appointmentId = req.params.appointmentId as string;
+
+      // Scope: appointment must exist AND belong to user's allowed clinic
+      const apptClinicId = await getAppointmentClinicId(appointmentId);
+      if (!apptClinicId) return res.status(404).json({ message: "الموعد غير موجود" });
+
+      const scope = await resolveClinicScope(userId, perms);
+      if (!scope.all && !clinicAllowed(scope, apptClinicId)) {
+        return res.status(403).json({ message: "غير مصرح لك بالوصول لهذا الموعد" });
+      }
+
+      const tracking = await storage.getAppointmentOrderTracking(appointmentId);
+      res.json({
+        totalService:    tracking.totalService,
+        executedService: tracking.executedService,
+        pendingService:  tracking.pendingService,
+        totalPharmacy:    tracking.totalPharmacy,
+        executedPharmacy: tracking.executedPharmacy,
+        pendingPharmacy:  tracking.pendingPharmacy,
+        orders: snakeToCamel(tracking.orders),
+      });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

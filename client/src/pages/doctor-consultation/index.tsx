@@ -3,7 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Save, Loader2, CheckCircle2, CheckCheck, History, Star, ClipboardList } from "lucide-react";
+import { Printer, Save, Loader2, CheckCircle2, CheckCheck, History, Star, ClipboardList, Activity } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDoctorConsultation } from "./hooks/useDoctorConsultation";
 import { useFavoriteDrugs } from "./hooks/useFavoriteDrugs";
@@ -18,6 +18,7 @@ import { PatientSnapshot } from "./components/PatientSnapshot";
 import { FavoritesPanel } from "./components/FavoritesPanel";
 import { ConsultationTemplatePicker } from "./components/ConsultationTemplatePicker";
 import { StructuredConsultationPanel } from "./components/StructuredConsultationPanel";
+import { OrdersTrackingPanel } from "./components/OrdersTrackingPanel";
 import { useAuth } from "@/hooks/use-auth";
 import type { ConsultationTemplate } from "./hooks/useConsultationTemplates";
 
@@ -198,6 +199,10 @@ export default function DoctorConsultation() {
                 تاريخ المريض
               </TabsTrigger>
             )}
+            <TabsTrigger value="orders" className="text-xs h-7 gap-1" data-testid="tab-orders-tracking">
+              <Activity className="h-3 w-3" />
+              متابعة الطلبات
+            </TabsTrigger>
             <TabsTrigger value="statement" className="text-xs h-7">كشف الحساب</TabsTrigger>
             {canUseFavorites && (
               <TabsTrigger value="favorites" className="text-xs h-7 gap-1" data-testid="tab-doctor-favorites">
@@ -223,6 +228,10 @@ export default function DoctorConsultation() {
               patientId={form.patientId}
               currentAppointmentId={appointmentId}
             />
+          </TabsContent>
+
+          <TabsContent value="orders" className="mt-2 max-h-56 overflow-y-auto">
+            <OrdersTrackingPanel appointmentId={appointmentId} />
           </TabsContent>
 
           <TabsContent value="statement" className="mt-2">

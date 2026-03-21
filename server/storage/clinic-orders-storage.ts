@@ -208,6 +208,55 @@ const methods = {
     await db.execute(sql`UPDATE clinic_orders SET status = 'cancelled' WHERE id = ${orderId} AND status = 'pending'`);
   },
 
+  async getAppointmentOrderTracking(this: DatabaseStorage, appointmentId: string): Promise<{
+    totalService: number;
+    executedService: number;
+    pendingService: number;
+    totalPharmacy: number;
+    executedPharmacy: number;
+    pendingPharmacy: number;
+    orders: Array<Record<string, unknown>>;
+  }> {
+    const rows = await db.execute(sql`
+      SELECT
+        id,
+        order_type,
+        status,
+        executed_at,
+        executed_invoice_id,
+        service_name_manual,
+        drug_name,
+        target_name,
+        created_at,
+        CASE
+          WHEN order_type = 'service'  THEN COALESCE(NULLIF(TRIM(service_name_manual), ''), 'Unnamed order')
+          WHEN order_type = 'pharmacy' THEN COALESCE(NULLIF(TRIM(drug_name), ''), 'Unnamed order')
+          ELSE 'Unnamed order'
+        END AS display_name
+      FROM clinic_orders
+      WHERE appointment_id = ${appointmentId}
+        AND status != 'cancelled'
+      ORDER BY order_type, created_at
+    `);
+
+    const orders = rows.rows as Array<Record<string, unknown>>;
+
+    for (const o of orders) {
+      if (o.status === 'executed' && !o.executed_at) {
+        console.warn(`[clinic-orders] status mismatch: order ${o.id} has status=executed but executed_at IS NULL — trusting status`);
+      }
+    }
+
+    const totalService    = orders.filter(o => o.order_type === 'service').length;
+    const executedService = orders.filter(o => o.order_type === 'service'  && o.status === 'executed').length;
+    const pendingService  = orders.filter(o => o.order_type === 'service'  && o.status === 'pending').length;
+    const totalPharmacy    = orders.filter(o => o.order_type === 'pharmacy').length;
+    const executedPharmacy = orders.filter(o => o.order_type === 'pharmacy' && o.status === 'executed').length;
+    const pendingPharmacy  = orders.filter(o => o.order_type === 'pharmacy' && o.status === 'pending').length;
+
+    return { totalService, executedService, pendingService, totalPharmacy, executedPharmacy, pendingPharmacy, orders };
+  },
+
   async getClinicDoctorStatement(this: DatabaseStorage, doctorId: string | null, dateFrom: string, dateTo: string, clinicId?: string | null): Promise<Array<Record<string, unknown>>> {
     const doctorFilter = doctorId ? sql`AND a.doctor_id = ${doctorId}` : sql``;
     const clinicFilter = clinicId ? sql`AND a.clinic_id = ${clinicId}` : sql``;
