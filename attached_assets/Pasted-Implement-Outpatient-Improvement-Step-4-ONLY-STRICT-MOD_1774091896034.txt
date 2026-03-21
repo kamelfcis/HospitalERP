@@ -1,0 +1,288 @@
+Implement Outpatient Improvement — Step 4 ONLY (STRICT MODE + ARCHITECTURE ENFORCEMENT).
+
+DO NOT implement anything outside Step 4.
+DO NOT build a scheduling engine.
+DO NOT redesign patient records.
+DO NOT create a heavy timeline system.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Make outpatient care longitudinal instead of one-visit-only
+by improving follow-up planning and safe review of previous visits.
+
+This step must:
+- improve doctor awareness of patient history
+- enable safe follow-up planning
+- maintain system performance and clean architecture
+
+==================================================
+STRICT BOUNDARIES (NON-NEGOTIABLE)
+==================================================
+
+DO NOT implement:
+- automatic appointment creation
+- new scheduling subsystem
+- editable historical records
+- full timeline engine
+- cross-clinic unrestricted history
+- speculative or derived medical data
+
+This step is ONLY:
+- follow-up planning (lightweight)
+- history visibility (read-only)
+- pagination
+- safe summaries
+- clean UI
+
+==================================================
+SCOPE
+==================================================
+
+Build ONLY:
+
+1) follow-up planning
+2) expanded patient history
+3) safe doctor review of past visits
+
+==================================================
+FOLLOW-UP PLANNING
+==================================================
+
+Add fields (nullable, additive only):
+
+- followUpAfterDays
+- followUpReason
+- suggestedFollowUpDate
+
+STRICT RULES:
+- no breaking existing consultation save/load
+- fields optional and backward-compatible
+
+Quick buttons:
+- 3 days
+- 7 days
+- 14 days
+- 30 days
+- custom
+
+Behavior:
+- buttons set followUpAfterDays
+- suggestedFollowUpDate = consultationDate + followUpAfterDays
+- doctor can override or clear
+- no hidden logic
+
+OPTIONAL:
+- allow opening existing booking flow ONLY
+- DO NOT auto-create appointments
+- DO NOT build scheduler
+
+==================================================
+PATIENT HISTORY
+==================================================
+
+Enhance PatientHistoryPanel:
+
+Required:
+- remove hard limit of 5 visits
+- implement backend pagination or load-more
+- latest-first ordering
+
+Each visit shows (if data exists):
+- diagnosis
+- prescriptions summary (lightweight)
+- orders summary (lightweight)
+- visit date
+- doctor
+- clinic
+
+STRICT RULES:
+- read-only only
+- summaries must come from real stored data
+- no deep drill-down system
+- no heavy timeline engine
+
+==================================================
+ACCESS / SCOPE SAFETY (CRITICAL)
+==================================================
+
+- backend MUST enforce scope
+- doctor sees only allowed patient history
+- no cross-clinic leakage
+- no frontend-only filtering
+
+==================================================
+PAGINATION (MANDATORY BACKEND)
+==================================================
+
+- implement backend pagination (limit/offset or cursor)
+- default small page size
+- stable ordering (latest first)
+- support "load more"
+
+DO NOT fake pagination in frontend.
+
+==================================================
+ARCHITECTURE ENFORCEMENT (CRITICAL)
+==================================================
+
+You MUST improve architecture quality during implementation.
+
+Required:
+
+1) COMPONENTIZATION
+- FollowUpActions must be isolated, reusable
+- PatientVisitHistoryTable must be isolated
+- avoid inline JSX complexity
+- avoid logic inside large pages
+
+2) HOOK DESIGN
+- usePatientHistory must encapsulate:
+  - pagination
+  - loading states
+  - error handling
+  - caching behavior
+
+3) SEPARATION OF CONCERNS
+- UI components = rendering only
+- hooks = data + state
+- backend = business logic
+- NO mixing responsibilities
+
+4) PAGE THINNESS
+- doctor consultation page must remain thin
+- no large monolithic component
+
+5) REUSABILITY
+- components must be reusable in future modules
+- avoid hardcoded assumptions
+
+==================================================
+REFACTOR REQUIREMENTS
+==================================================
+
+Extract and enforce:
+
+- components/FollowUpActions.tsx
+- components/PatientVisitHistoryTable.tsx
+- hooks/usePatientHistory.ts
+
+Refactor existing PatientHistoryPanel if needed:
+- remove duplication
+- simplify rendering logic
+- improve readability
+
+Reject:
+- copy-paste components
+- duplicated logic
+- inline data fetching
+
+==================================================
+INDEXING STRATEGY (STRICT)
+==================================================
+
+Indexing MUST be driven by actual query patterns.
+
+Required:
+
+- analyze queries used for:
+  - patient history
+  - follow-up lookup (if used)
+
+Add indexes ONLY if:
+- query uses them
+- performance requires them
+
+Potential useful indexes:
+- consultations(patient_id, created_at DESC)
+- appointments(patient_id, appointment_date DESC)
+- followUpDate (ONLY if queried)
+
+STRICT RULES:
+- do NOT add redundant indexes
+- do NOT duplicate existing indexes
+- verify with EXPLAIN if needed
+
+==================================================
+DATA SAFETY / BACKWARD COMPATIBILITY
+==================================================
+
+- no breaking existing APIs
+- old records must load normally
+- new fields nullable
+- no forced migration
+- no rewrite of old data
+
+==================================================
+IMPLEMENTATION SAFETY RULES
+==================================================
+
+- no auto-booking
+- no editing old visits
+- no fake data
+- no hidden side effects
+- no frontend-only validation
+- no overfetching history
+
+==================================================
+BEFORE CODING (MANDATORY)
+==================================================
+
+Print EXACTLY:
+
+1) FILES TO MODIFY
+2) HISTORY LIMITATIONS TO FIX
+3) FOLLOW-UP INTEGRATION POINTS
+4) ACCESS / SCOPE RULES
+5) PAGINATION APPROACH
+6) INDEXING PLAN (WITH JUSTIFICATION)
+7) REFACTOR PLAN
+8) BACKWARD-COMPATIBILITY PLAN
+9) IMPLEMENTATION PLAN
+
+STOP.
+
+Wait for approval.
+
+==================================================
+IMPLEMENTATION
+==================================================
+
+After approval:
+Implement Step 4 ONLY.
+
+Do NOT start Step 5.
+Do NOT expand scope.
+
+==================================================
+FINAL OUTPUT FORMAT
+==================================================
+
+1) MODIFIED FILES
+2) FOLLOW-UP ADDED
+3) HISTORY EXPANDED
+4) PAGINATION ADDED
+5) INDEXES ADDED (WITH JUSTIFICATION)
+6) ARCHITECTURE IMPROVEMENTS
+7) BACKWARD-COMPATIBILITY CONFIRMED
+8) REFACTOR SUMMARY
+9) ANY LIMITATIONS
+
+==================================================
+QUALITY BAR
+==================================================
+
+Must be:
+- clean architecture
+- componentized
+- performant
+- safe
+- backward-compatible
+- maintainable
+
+No shortcuts.
+No overengineering.
+No data leakage.
+
+Only Step 4 — implemented with strong architecture discipline.
