@@ -16,7 +16,7 @@ import type { UserData, UserFormData } from "./types";
 const EMPTY_FORM: UserFormData = {
   username: "", password: "", fullName: "",
   role: "data_entry", departmentId: "", pharmacyId: "",
-  isActive: true, cashierGlAccountId: "", defaultWarehouseId: "",
+  isActive: true, cashierGlAccountId: "", cashierVarianceAccountId: "", defaultWarehouseId: "",
   allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [], hasAllUnits: false,
 };
 
@@ -44,7 +44,10 @@ export default function UsersManagement() {
   const { data: pharmacies = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/pharmacies"] });
   const { data: warehouses = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/warehouses"] });
   const { data: cashierAccounts = [] }  = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({ queryKey: ["/api/drawer-passwords"] });
+  const { data: allAccounts = [] }      = useQuery<{ id: string; code: string; name: string }[]>({ queryKey: ["/api/accounts"] });
   const { items: clinicItems }          = useClinicsLookup();
+
+  const varianceAccounts = allAccounts.filter(a => a.code?.startsWith("5292") && a.code.length > 4);
 
   const createMutation = useMutation({
     mutationFn: async (data: Partial<UserData>) => (await apiRequest("POST", "/api/users", data)).json(),
@@ -108,8 +111,9 @@ export default function UsersManagement() {
       departmentId:        user.departmentId || "",
       pharmacyId:          user.pharmacyId  || "",
       isActive:            user.isActive,
-      cashierGlAccountId:  user.cashierGlAccountId || "",
-      defaultWarehouseId:  user.defaultWarehouseId || "",
+      cashierGlAccountId:          user.cashierGlAccountId       || "",
+      cashierVarianceAccountId:    user.cashierVarianceAccountId  || "",
+      defaultWarehouseId:          user.defaultWarehouseId        || "",
       allowedPharmacyIds:  user.pharmacyId ? [user.pharmacyId] : [],
       allowedDepartmentIds: [],
       allowedClinicIds:    [],
@@ -155,8 +159,9 @@ export default function UsersManagement() {
       departmentId:       formData.departmentId || null,
       pharmacyId:         formData.pharmacyId   || null,
       isActive:           formData.isActive,
-      cashierGlAccountId: formData.cashierGlAccountId || null,
-      defaultWarehouseId: formData.defaultWarehouseId || null,
+      cashierGlAccountId:       formData.cashierGlAccountId       || null,
+      cashierVarianceAccountId: formData.cashierVarianceAccountId  || null,
+      defaultWarehouseId:       formData.defaultWarehouseId        || null,
     };
 
     if (editingUser) {
@@ -227,6 +232,7 @@ export default function UsersManagement() {
         clinics={clinicItems.map(i => ({ id: i.id, nameAr: i.name }))}
         warehouses={warehouses}
         cashierAccounts={cashierAccounts}
+        varianceAccounts={varianceAccounts}
         isPending={isPending}
         onFormChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
         onSave={handleSave}

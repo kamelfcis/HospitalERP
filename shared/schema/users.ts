@@ -43,8 +43,9 @@ export const users = pgTable("users", {
   pharmacyId:          varchar("pharmacy_id"),
   defaultWarehouseId:  varchar("default_warehouse_id"),
   isActive:            boolean("is_active").notNull().default(true),
-  cashierGlAccountId:  text("cashier_gl_account_id"),
-  createdAt:           timestamp("created_at").notNull().defaultNow(),
+  cashierGlAccountId:       text("cashier_gl_account_id"),
+  cashierVarianceAccountId: text("cashier_variance_account_id"),
+  createdAt:                timestamp("created_at").notNull().defaultNow(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { db } from "../db";
+import { db, pool } from "../db";
 import { eq, and, sql, asc, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import {
@@ -996,6 +996,175 @@ const methods = {
       reprintReason: reprintReason || null,
     }).where(eq(cashierRefundReceipts.id, receiptId)).returning();
     return updated;
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  generateShiftCloseJournal — قيد GL لإغلاق الوردية
+  //
+  //  يسجّل نقل النقدية من حساب درج الكاشير (12121–12126) إلى
+  //  حساب عهدة أمين الخزنة (12127)، مع قيد فروق الجرد (529xx).
+  //
+  //  بنية القيد:
+  //   • لا فروق:  د. 12127 = إجمالي; ق. حساب الكاشير = إجمالي
+  //   • فائض:    د. 12127 = closingCash; ق. حساب الكاشير = expectedCash
+  //                                        ق. حساب الفروق   = variance
+  //   • عجز:     د. 12127 = closingCash; د. حساب الفروق   = |variance|
+  //                                        ق. حساب الكاشير = expectedCash
+  //
+  //  خارج أي transaction — آمن للاستدعاء بعد إغلاق الوردية
+  // ══════════════════════════════════════════════════════════════════════════
+  async generateShiftCloseJournal(
+    this: DatabaseStorage,
+    params: {
+      shiftId:          string;
+      cashierGlAccountId: string;
+      cashierId:        string;
+      cashierName:      string;
+      closingCash:      number;
+      expectedCash:     number;
+      businessDate:     string;
+    }
+  ): Promise<{ journalId: string | null; warning?: string }> {
+    const { shiftId, cashierGlAccountId, cashierId, cashierName, closingCash, expectedCash, businessDate } = params;
+    const variance = closingCash - expectedCash;
+    const client = await pool.connect();
+    try {
+      // ── 1. إيديمبوتنت: هل تم إنشاء القيد مسبقاً؟ ──────────────────────
+      const existing = await client.query(
+        `SELECT id FROM journal_entries
+          WHERE source_type = 'cashier_shift_close'
+            AND source_document_id = $1
+          LIMIT 1`,
+        [shiftId]
+      );
+      if (existing.rows.length > 0) {
+        logger.info({ shiftId, journalId: existing.rows[0].id }, "[SHIFT_CLOSE_JOURNAL] idempotent — قيد موجود مسبقاً");
+        return { journalId: existing.rows[0].id };
+      }
+
+      // ── 2. حساب عهدة أمين الخزنة (12127) ──────────────────────────────
+      const custodianRes = await client.query(
+        `SELECT id FROM accounts WHERE code = '12127' AND is_active = true LIMIT 1`
+      );
+      if (!custodianRes.rows.length) {
+        const msg = "حساب عهدة أمين الخزنة (12127) غير موجود أو غير نشط — يرجى إعداده أولاً";
+        logger.warn({ shiftId }, `[SHIFT_CLOSE_JOURNAL] ${msg}`);
+        return { journalId: null, warning: msg };
+      }
+      const custodianAccountId = custodianRes.rows[0].id;
+
+      // ── 3. حساب فروق الجرد للكاشير ──────────────────────────────────────
+      let varianceAccountId: string | null = null;
+      if (Math.abs(variance) > 0.001) {
+        const userRes = await client.query(
+          `SELECT cashier_variance_account_id FROM users WHERE id = $1 LIMIT 1`,
+          [cashierId]
+        );
+        varianceAccountId = userRes.rows[0]?.cashier_variance_account_id ?? null;
+        if (!varianceAccountId) {
+          logger.warn({ shiftId, cashierId, variance }, "[SHIFT_CLOSE_JOURNAL] لا يوجد حساب فروق مُهيَّأ — سيُعدَّل قيد الكاشير للتوازن");
+        }
+      }
+
+      // ── 4. الفترة المالية ────────────────────────────────────────────────
+      const periodRes = await client.query(
+        `SELECT id FROM fiscal_periods
+          WHERE start_date <= $1::date AND end_date >= $1::date AND is_closed = false
+          LIMIT 1`,
+        [businessDate]
+      );
+      if (!periodRes.rows.length) {
+        const msg = `لا توجد فترة مالية مفتوحة لتاريخ ${businessDate}`;
+        logger.warn({ shiftId, businessDate }, `[SHIFT_CLOSE_JOURNAL] ${msg}`);
+        return { journalId: null, warning: msg };
+      }
+      const periodId = periodRes.rows[0].id;
+
+      // ── 5. إعداد أسطر القيد ─────────────────────────────────────────────
+      //   كل سطر: { accountId, debit, credit, desc }
+      const closingStr  = closingCash.toFixed(2);
+      const expectedStr = expectedCash.toFixed(2);
+      const absVariance = Math.abs(variance);
+      const description = `تسوية وردية ${cashierName} — تحويل نقدية إلى عهدة أمين الخزنة`;
+      const varianceDesc = `فروق جرد نقدية — ${cashierName}`;
+
+      type Line = { accountId: string; debit: string; credit: string; desc: string };
+      const lines: Line[] = [];
+
+      if (Math.abs(variance) <= 0.001 || !varianceAccountId) {
+        // بدون فروق — أو لا يوجد حساب فروق: نُوازن على حساب الكاشير
+        const effectiveCr = varianceAccountId ? expectedStr : closingStr;
+        lines.push({ accountId: custodianAccountId, debit: closingStr, credit: "0.00", desc: description });
+        lines.push({ accountId: cashierGlAccountId,  debit: "0.00", credit: effectiveCr, desc: description });
+      } else if (variance > 0) {
+        // فائض: د. 12127 = closingCash; ق. كاشير = expectedCash; ق. فروق = variance
+        lines.push({ accountId: custodianAccountId, debit: closingStr,           credit: "0.00",           desc: description });
+        lines.push({ accountId: cashierGlAccountId,  debit: "0.00",              credit: expectedStr,      desc: description });
+        lines.push({ accountId: varianceAccountId!,  debit: "0.00",              credit: absVariance.toFixed(2), desc: varianceDesc });
+      } else {
+        // عجز: د. 12127 = closingCash; د. فروق = |variance|; ق. كاشير = expectedCash
+        lines.push({ accountId: custodianAccountId, debit: closingStr,           credit: "0.00",           desc: description });
+        lines.push({ accountId: varianceAccountId!,  debit: absVariance.toFixed(2), credit: "0.00",         desc: varianceDesc });
+        lines.push({ accountId: cashierGlAccountId,  debit: "0.00",              credit: expectedStr,      desc: description });
+      }
+
+      const totalDebit  = lines.reduce((s, l) => s + parseFloat(l.debit),  0);
+      const totalCredit = lines.reduce((s, l) => s + parseFloat(l.credit), 0);
+
+      // ── 6. رقم القيد التسلسلي ────────────────────────────────────────────
+      const seqRes = await client.query(`SELECT nextval('journal_entry_number_seq') AS next_num`);
+      const entryNumber = Number(seqRes.rows[0].next_num);
+
+      // ── 7. إدخال قيد دفتر الأستاذ ──────────────────────────────────────
+      await client.query("BEGIN");
+      const jeRes = await client.query(`
+        INSERT INTO journal_entries
+          (entry_number, entry_date, description, status, period_id,
+           total_debit, total_credit, reference,
+           source_type, source_document_id, source_entry_type,
+           posted_at)
+        VALUES ($1, $2::date, $3, 'posted', $4,
+                $5, $6, $7,
+                'cashier_shift_close', $8, 'shift_close',
+                now())
+        RETURNING id
+      `, [
+        entryNumber, businessDate, description, periodId,
+        totalDebit.toFixed(2), totalCredit.toFixed(2),
+        `SHIFT-CLOSE-${shiftId.substring(0, 8).toUpperCase()}`,
+        shiftId,
+      ]);
+      const journalId = jeRes.rows[0].id;
+
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        await client.query(
+          `INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [journalId, i + 1, l.accountId, l.debit, l.credit, l.desc]
+        );
+      }
+      await client.query("COMMIT");
+
+      logger.info(
+        { shiftId, journalId, entryNumber, totalDebit, variance },
+        "[SHIFT_CLOSE_JOURNAL] قيد إغلاق الوردية أُنشئ بنجاح"
+      );
+      logAcctEvent({
+        sourceType: "cashier_shift_close",
+        sourceId:   shiftId,
+        eventType:  "journal_posted",
+        status:     "posted",
+      }).catch(() => {});
+
+      return { journalId };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      logger.error({ shiftId, err }, "[SHIFT_CLOSE_JOURNAL] فشل إنشاء قيد إغلاق الوردية");
+      return { journalId: null, warning: errMsg(err) };
+    } finally {
+      client.release();
+    }
   },
 };
 

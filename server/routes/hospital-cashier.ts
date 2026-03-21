@@ -272,7 +272,27 @@ export function registerCashierRoutes(app: Express) {
       const shiftId = req.params.shiftId as string;
       await assertShiftOwnership(shiftId, userId, fullName, isAdminOrSupervisor);
 
-      res.json(await storage.closeCashierShift(shiftId, closingCash, userId, fullName, isAdminOrSupervisor));
+      const closedShift = await storage.closeCashierShift(shiftId, closingCash, userId, fullName, isAdminOrSupervisor);
+
+      // ── قيد GL لإغلاق الوردية (خارج transaction الإغلاق — آمن للفشل) ──
+      if (closedShift && closedShift.glAccountId) {
+        storage.generateShiftCloseJournal({
+          shiftId,
+          cashierGlAccountId: closedShift.glAccountId,
+          cashierId:          closedShift.cashierId,
+          cashierName:        fullName,
+          closingCash:        parseFloat(String(closedShift.closingCash  || 0)),
+          expectedCash:       parseFloat(String(closedShift.expectedCash || 0)),
+          businessDate:       closedShift.businessDate ?? new Date().toISOString().slice(0, 10),
+        }).then(({ journalId, warning }) => {
+          if (warning) logger.warn({ shiftId, warning }, "[SHIFT_CLOSE] تحذير قيد GL");
+          else          logger.info({ shiftId, journalId }, "[SHIFT_CLOSE] قيد GL مُنشأ");
+        }).catch(err => logger.error({ shiftId, err }, "[SHIFT_CLOSE] فشل تشغيل قيد GL"));
+      } else {
+        logger.warn({ shiftId }, "[SHIFT_CLOSE] لا يوجد حساب GL للوردية — لن يُنشأ قيد");
+      }
+
+      res.json(closedShift);
     } catch (e: any) {
       const msg  = e instanceof Error ? e.message : String(e);
       const code = e?.status || 500;

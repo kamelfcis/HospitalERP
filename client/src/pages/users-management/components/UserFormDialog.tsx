@@ -12,22 +12,24 @@ import type { UserData, UserFormData } from "../types";
 const ROLES = Object.entries(ROLE_LABELS);
 
 interface UserFormDialogProps {
-  open:            boolean;
-  editingUser:     UserData | null;
-  formData:        UserFormData;
-  departments:     { id: string; nameAr: string }[];
-  pharmacies:      { id: string; nameAr: string }[];
-  clinics:         { id: string; nameAr: string }[];
-  warehouses:      { id: string; nameAr: string }[];
-  cashierAccounts: { glAccountId: string; code: string; name: string; hasPassword: boolean }[];
-  isPending:       boolean;
-  onFormChange:    (patch: Partial<UserFormData>) => void;
-  onSave:          () => void;
-  onOpenChange:    (v: boolean) => void;
+  open:              boolean;
+  editingUser:       UserData | null;
+  formData:          UserFormData;
+  departments:       { id: string; nameAr: string }[];
+  pharmacies:        { id: string; nameAr: string }[];
+  clinics:           { id: string; nameAr: string }[];
+  warehouses:        { id: string; nameAr: string }[];
+  cashierAccounts:   { glAccountId: string; code: string; name: string; hasPassword: boolean }[];
+  varianceAccounts:  { id: string; code: string; name: string }[];
+  isPending:         boolean;
+  onFormChange:      (patch: Partial<UserFormData>) => void;
+  onSave:            () => void;
+  onOpenChange:      (v: boolean) => void;
 }
 
 export function UserFormDialog({
-  open, editingUser, formData, departments, pharmacies, clinics, warehouses, cashierAccounts,
+  open, editingUser, formData, departments, pharmacies, clinics, warehouses,
+  cashierAccounts, varianceAccounts,
   isPending, onFormChange, onSave, onOpenChange,
 }: UserFormDialogProps) {
   const showScope = !!formData.cashierGlAccountId;
@@ -182,6 +184,31 @@ export function UserFormDialog({
               الحساب المحاسبي المخصص لهذا الكاشير
             </p>
           </div>
+
+          {formData.cashierGlAccountId && (
+            <div className="space-y-1">
+              <Label>حساب فروق الجرد النقدي</Label>
+              <Select
+                value={formData.cashierVarianceAccountId || "none"}
+                onValueChange={v => onFormChange({ cashierVarianceAccountId: v === "none" ? "" : v })}
+              >
+                <SelectTrigger data-testid="select-user-variance-account">
+                  <SelectValue placeholder="اختر حساب الفروق..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">بدون</SelectItem>
+                  {varianceAccounts.map(a => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} - {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                يُستخدم لتسجيل فروق الجرد النقدي عند إغلاق الوردية (52920–52923)
+              </p>
+            </div>
+          )}
 
           {showScope && (
             <ScopeSelector

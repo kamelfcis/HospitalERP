@@ -480,6 +480,15 @@ export interface IStorage {
   markRefundReceiptPrinted(receiptId: string, printedBy: string, reprintReason?: string): Promise<Record<string, unknown>>;
   getCashierReceipt(receiptId: string): Promise<Record<string, unknown>>;
   getCashierRefundReceipt(receiptId: string): Promise<Record<string, unknown>>;
+  generateShiftCloseJournal(params: {
+    shiftId: string;
+    cashierGlAccountId: string;
+    cashierId: string;
+    cashierName: string;
+    closingCash: number;
+    expectedCash: number;
+    businessDate: string;
+  }): Promise<{ journalId: string | null; warning?: string }>;
 
   // Patients
   getPatients(limit?: number): Promise<Patient[]>;
