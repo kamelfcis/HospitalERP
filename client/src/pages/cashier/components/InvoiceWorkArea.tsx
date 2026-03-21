@@ -236,7 +236,7 @@ function InvoiceRow({
       </TableCell>
       <TableCell className="text-right py-1 px-2">{formatNumber(inv.subtotal)}</TableCell>
       <TableCell className="text-right font-medium py-1 px-2">{formatNumber(inv.netTotal)}</TableCell>
-      <TableCell className="text-right py-1 px-2 text-muted-foreground">{inv.pharmacistName || inv.createdBy || "—"}</TableCell>
+      <TableCell className="text-right py-1 px-2 text-muted-foreground">{inv.pharmacistName || "—"}</TableCell>
       <TableCell className="text-right py-1 px-2">{formatDateShort(inv.createdAt)}</TableCell>
       <TableCell className="text-right py-1 px-2">
         <Badge className={`text-[10px] px-1.5 py-0 ${STATUS_CLASS[inv.status] || ""}`}>

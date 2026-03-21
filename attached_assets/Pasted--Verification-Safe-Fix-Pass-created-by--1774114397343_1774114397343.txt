@@ -1,0 +1,154 @@
+أريد Verification + Safe Fix Pass نهائي خاص بحقل created_by / "بواسطة" في فواتير البيع، مع التركيز على منع أي مشاكل رقابية أو سلوكية مستقبلية.
+
+مهم جدًا:
+- لا تعمل refactor واسع
+- لا تغيّر أي behavior شغال إلا إذا ثبت أنه خطأ
+- لا breaking changes
+- أي إصلاح يكون minimal, additive, backward-compatible
+- أصلح فقط إذا وُجدت المشكلة فعلًا بعد الفحص
+
+━━━━━━━━━━━━━━━━━━
+الهدف
+━━━━━━━━━━━━━━━━━━
+أريد التأكد من 4 مخاطر محددة:
+
+1) هل updateSalesInvoice() قد يغيّر creator الأصلي بالخطأ؟
+2) هل توجد أي مسارات أخرى (غير create و patch/update) تنشئ أو تعدل sales invoices بدون الحفاظ على created_by؟
+3) هل توجد فواتير/مسودات قديمة أخرى created_by فيها NULL وتحتاج فقط audit/report؟
+4) هل قيمة "بواسطة" المعروضة في الكاشير تمثل فعلًا منشئ الفاتورة بشكل ثابت وغير مضلل؟
+
+━━━━━━━━━━━━━━━━━━
+المطلوب أولاً: Verification فقط
+━━━━━━━━━━━━━━━━━━
+
+## A) Creator immutability check
+افحص createSalesInvoice() و updateSalesInvoice() وكل مسار يكتب إلى sales_invoice_headers.
+
+أريد إجابة دقيقة:
+- عند الإنشاء: هل created_by يُكتب من session/auth user؟
+- عند التعديل: هل created_by الموجود في DB محفوظ كما هو؟
+- هل يمكن لمستخدم B أن يفتح draft أنشأها مستخدم A ثم يقوم update فيتغير created_by إلى B؟
+- هل أي merge بين invoice.createdBy / header.createdBy / session user يمكن أن يؤدي إلى overwrite غير مقصود؟
+
+### المطلوب رقابيًا
+created_by = أول منشئ للفatura فقط
+ولا يجب أن يتغير في أي update لاحق
+إلا إذا كان NULL تاريخيًا ونريد فقط تعبئته لأول مرة بشكل آمن
+
+## B) Other write paths check
+ابحث عن كل مسار قد ينشئ أو يحدّث sales_invoice_headers أو ما يعادلها، مثل:
+- create
+- patch/update
+- finalize
+- autosave
+- save draft
+- clone/duplicate
+- convert draft to finalized
+- submit/approve
+- أي service داخل storage أو route يلمس header
+
+أريد جدول واضح:
+- file
+- function/route name
+- create vs update
+- هل يكتب created_by؟
+- هل يحافظ عليه؟
+- هل يوجد خطر overwrite؟
+
+## C) Historical NULL audit
+اعمل audit فقط، بدون أي تعديل تلقائي:
+
+أريد تقريرًا عن الفواتير التي:
+- created_by is null
+
+مع تقسيمها إلى:
+- draft
+- finalized
+- collected
+- cancelled
+
+وأريد:
+- العدد الإجمالي
+- sample invoice codes
+- oldest/newest created_at
+- هل هي test/demo data غالبًا أم mixed
+
+## D) UI semantics check
+تحقق أن الحقل المعروض في الكاشير:
+- label = "بواسطة"
+- value = creator full_name / username fallback
+- لا يوجد أي مكان يسميه "الصيدلي" إذا لم يكن المقصود هو منشئ الفاتورة
+- شاشة التفاصيل لا تقرأ من مصدر مختلف عن source of truth النهائي
+
+━━━━━━━━━━━━━━━━━━
+إذا وُجدت مشكلة — أصلحها بأقل تعديل ممكن
+━━━━━━━━━━━━━━━━━━
+
+## Safe fix rules
+1) لا تغيّر schema الآن إلا إذا كان ضروريًا جدًا
+2) لا تعمل migrations كبيرة
+3) لا backfill تلقائي للفواتير القديمة
+4) لا تعتمد على payload من frontend لتحديد creator إذا كان session/auth هو المصدر الموثوق
+5) إن وُجد خطر overwrite، اجعل المنطق:
+   - عند create: اكتب created_by من session user
+   - عند update:
+     - لو DB.created_by موجود → لا تغيّره
+     - لو DB.created_by = NULL → املأه مرة واحدة فقط من session user
+6) لو توجد مسارات أخرى تكتب الهيدر بدون created_by، أصلحها بنفس القاعدة
+7) لا تكسر أي flow draft/finalize قائم
+
+━━━━━━━━━━━━━━━━━━
+اختبارات إلزامية بعد الفحص/الإصلاح
+━━━━━━━━━━━━━━━━━━
+
+## Test 1 — creator immutability
+- User A ينشئ draft
+- User B يعدل نفس draft
+- User B يعتمدها/يحفظها
+- النتيجة المتوقعة:
+  created_by يظل = User A
+
+## Test 2 — null historical fill only if needed
+- استخدم draft قديمة فيها created_by = NULL
+- عدلها/احفظها بعد الإصلاح
+- النتيجة المتوقعة:
+  لو السياسة المعتمدة تسمح، يتم تعبئتها مرة واحدة فقط
+  ثم لا تتغير بعد ذلك
+
+## Test 3 — new invoice
+- أنشئ فاتورة جديدة
+- اعتمدها
+- افتحها في cashier-collection
+- النتيجة:
+  "بواسطة" يظهر الاسم
+
+## Test 4 — details consistency
+- قارن بين:
+  DB created_by
+  details API pharmacistName / creatorName
+  UI rendered value
+- يجب أن تكون متطابقة معنويًا
+
+━━━━━━━━━━━━━━━━━━
+المطلوب في الرد النهائي
+━━━━━━━━━━━━━━━━━━
+
+أريد الرد النهائي بهذا الترتيب:
+
+1) Verification findings
+2) Creator immutability status
+3) Other write paths inventory
+4) Historical NULL audit summary
+5) UI semantics confirmation
+6) Fixes applied only if needed
+7) Files modified
+8) Before vs after behavior
+9) Test results
+
+وفي النهاية اطبع فقط:
+
+CREATOR IMMUTABILITY VERIFIED: YES/NO
+OVERWRITE RISK FOUND: YES/NO
+OTHER WRITE PATHS REVIEWED: YES/NO
+HISTORICAL NULL AUDIT COMPLETE: YES/NO
+SAFE FIXES APPLIED IF NEEDED: YES/NO
