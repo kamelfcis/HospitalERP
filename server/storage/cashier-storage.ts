@@ -501,21 +501,21 @@ const methods = {
       filtered = results.filter(r => !alreadyCollected.has(r.id));
     }
 
-    // ── إثراء إضافي: اسم الصيدلي الكامل من جدول users ───────────────────
-    const usernameSet = new Set(filtered.map(r => r.createdBy).filter((v): v is string => !!v));
-    const usernames = Array.from(usernameSet);
+    // ── إثراء إضافي: اسم منشئ الفاتورة من جدول users (created_by = UUID) ──
+    const creatorIdSet = new Set(filtered.map(r => r.createdBy).filter((v): v is string => !!v));
+    const creatorIds = Array.from(creatorIdSet);
     const nameMap = new Map<string, string>();
-    if (usernames.length > 0) {
+    if (creatorIds.length > 0) {
       const userRows = await db.execute(sql`
-        SELECT username, full_name FROM users WHERE username = ANY(${usernames})
+        SELECT id, full_name FROM users WHERE id = ANY(${creatorIds})
       `);
       for (const row of (userRows as any).rows) {
-        nameMap.set(row.username, row.full_name);
+        nameMap.set(row.id, row.full_name);
       }
     }
     const enriched = filtered.map(r => ({
       ...r,
-      pharmacistName: (r.createdBy ? nameMap.get(r.createdBy) || r.createdBy : null),
+      pharmacistName: (r.createdBy ? nameMap.get(r.createdBy) || null : null),
     }));
 
     if (search) {
@@ -570,21 +570,21 @@ const methods = {
       filtered = results.filter(r => !alreadyRefunded.has(r.id));
     }
 
-    // ── إثراء إضافي: اسم الصيدلي الكامل من جدول users ───────────────────
-    const usernameSet2 = new Set(filtered.map(r => r.createdBy).filter((v): v is string => !!v));
-    const usernames2 = Array.from(usernameSet2);
+    // ── إثراء إضافي: اسم منشئ الفاتورة من جدول users (created_by = UUID) ──
+    const creatorIdSet2 = new Set(filtered.map(r => r.createdBy).filter((v): v is string => !!v));
+    const creatorIds2 = Array.from(creatorIdSet2);
     const nameMap2 = new Map<string, string>();
-    if (usernames2.length > 0) {
+    if (creatorIds2.length > 0) {
       const userRows = await db.execute(sql`
-        SELECT username, full_name FROM users WHERE username = ANY(${usernames2})
+        SELECT id, full_name FROM users WHERE id = ANY(${creatorIds2})
       `);
       for (const row of (userRows as any).rows) {
-        nameMap2.set(row.username, row.full_name);
+        nameMap2.set(row.id, row.full_name);
       }
     }
     const enriched = filtered.map(r => ({
       ...r,
-      pharmacistName: (r.createdBy ? nameMap2.get(r.createdBy) || r.createdBy : null),
+      pharmacistName: (r.createdBy ? nameMap2.get(r.createdBy) || null : null),
     }));
 
     if (search) {
@@ -617,11 +617,11 @@ const methods = {
     .where(eq(salesInvoiceLines.invoiceId, invoiceId))
     .orderBy(asc(salesInvoiceLines.lineNo));
 
-    // ── إثراء إضافي: اسم الصيدلي الكامل + وقت الفاتورة ─────────────────
-    let pharmacistName: string | null = header.createdBy || null;
+    // ── إثراء إضافي: اسم منشئ الفاتورة (created_by = UUID) + وقت الفاتورة ─
+    let pharmacistName: string | null = null;
     if (header.createdBy) {
       const userResult = await db.execute(sql`
-        SELECT full_name FROM users WHERE username = ${header.createdBy} LIMIT 1
+        SELECT full_name FROM users WHERE id = ${header.createdBy} LIMIT 1
       `);
       const row = (userResult as any).rows[0];
       if (row?.full_name) pharmacistName = row.full_name;

@@ -311,8 +311,8 @@ function SingleInvoiceDetails({
         <span>{formatNumber(details.subtotal)}</span>
         <span className="text-muted-foreground">الصافي:</span>
         <span className="font-medium">{formatNumber(details.netTotal)}</span>
-        <span className="text-muted-foreground">الصيدلي:</span>
-        <span data-testid={`text-${testPrefix}-detail-pharmacist`}>{details.pharmacistName || details.createdBy || "—"}</span>
+        <span className="text-muted-foreground">بواسطة:</span>
+        <span data-testid={`text-${testPrefix}-detail-creator`}>{details.pharmacistName || "—"}</span>
         <span className="text-muted-foreground">التاريخ والوقت:</span>
         <span data-testid={`text-${testPrefix}-detail-datetime`}>{details.invoiceDateTime ? formatDateTime(details.invoiceDateTime) : formatDateShort(details.createdAt)}</span>
       </div>

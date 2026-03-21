@@ -71,7 +71,7 @@ export interface PendingInvoice {
   discountValue: string;
   netTotal: string;
   createdBy: string | null;
-  /** الاسم الكامل للصيدلي (مشتق من جدول users بناءً على createdBy) */
+  /** الاسم الكامل لمنشئ الفاتورة (مشتق من جدول users بناءً على createdBy = UUID) */
   pharmacistName: string | null;
   status: string;
   createdAt: string;
