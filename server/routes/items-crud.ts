@@ -1,15 +1,20 @@
 import { Express } from "express";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
+import multer from "multer";
+import * as XLSX from "xlsx";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { auditLog } from "../route-helpers";
 import { db } from "../db";
+import { pool } from "../db";
 import {
   insertItemSchema,
   insertItemFormTypeSchema,
   insertItemUomSchema,
 } from "@shared/schema";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 export function registerItemsCrudRoutes(app: Express, storage: any) {
   // ===== ITEMS =====
@@ -140,6 +145,237 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
       const { code, nameAr, nameEn, excludeId } = req.query as { code?: string; nameAr?: string; nameEn?: string; excludeId?: string };
       const result = await storage.checkItemUniqueness(code, nameAr, nameEn, excludeId);
       res.json(result);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // تصدير نموذج Excel وشيت الأصناف الحالي
+  // ══════════════════════════════════════════════════════════════════
+  const ITEM_COLUMNS = [
+    { header: "كود الصنف *",          key: "item_code" },
+    { header: "الاسم العربي *",        key: "name_ar" },
+    { header: "الاسم الإنجليزي",       key: "name_en" },
+    { header: "التصنيف",               key: "category",              hint: "دواء | مستلزمات | خدمة" },
+    { header: "نوع الشكل",             key: "form_type" },
+    { header: "سعر الشراء",            key: "purchase_price_last" },
+    { header: "سعر البيع",             key: "sale_price_current" },
+    { header: "الوحدة الكبرى",         key: "major_unit_name" },
+    { header: "الوحدة المتوسطة",       key: "medium_unit_name" },
+    { header: "الوحدة الصغرى",         key: "minor_unit_name" },
+    { header: "كبرى←متوسطة",           key: "major_to_medium" },
+    { header: "كبرى←صغرى",             key: "major_to_minor" },
+    { header: "متوسطة←صغرى",           key: "medium_to_minor" },
+    { header: "ذو صلاحية",             key: "has_expiry",            hint: "نعم | لا" },
+    { header: "مادة سامة",             key: "is_toxic",              hint: "نعم | لا" },
+    { header: "بيع كسري",              key: "allow_fractional_sale", hint: "نعم | لا" },
+    { header: "وصف",                   key: "description" },
+  ];
+
+  app.get("/api/items/export-template", requireAuth, checkPermission(PERMISSIONS.ITEMS_VIEW), async (req, res) => {
+    try {
+      const includeData = req.query.includeData === "true";
+      const wb = XLSX.utils.book_new();
+      const headers = ITEM_COLUMNS.map(c => c.header);
+      const hints   = ITEM_COLUMNS.map(c => c.hint || "");
+      let rows: any[][] = [headers, hints];
+
+      if (includeData) {
+        const { rows: items } = await pool.query(`
+          SELECT i.item_code, i.name_ar, i.name_en,
+                 CASE i.category WHEN 'drug' THEN 'دواء' WHEN 'supply' THEN 'مستلزمات' WHEN 'service' THEN 'خدمة' ELSE i.category END AS category,
+                 ft.form_type_name AS form_type,
+                 i.purchase_price_last, i.sale_price_current,
+                 i.major_unit_name, i.medium_unit_name, i.minor_unit_name,
+                 i.major_to_medium, i.major_to_minor, i.medium_to_minor,
+                 CASE WHEN i.has_expiry THEN 'نعم' ELSE 'لا' END AS has_expiry,
+                 CASE WHEN i.is_toxic THEN 'نعم' ELSE 'لا' END AS is_toxic,
+                 CASE WHEN i.allow_fractional_sale THEN 'نعم' ELSE 'لا' END AS allow_fractional_sale,
+                 i.description
+          FROM items i
+          LEFT JOIN item_form_types ft ON ft.id = i.form_type_id
+          ORDER BY i.item_code
+        `);
+        for (const item of items) {
+          rows.push(ITEM_COLUMNS.map(c => item[c.key] ?? ""));
+        }
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = ITEM_COLUMNS.map((_c, i) => ({ wch: i < 2 ? 20 : i < 4 ? 18 : 14 }));
+
+      const headerRange = XLSX.utils.decode_range(ws["!ref"] || "A1");
+      for (let c = headerRange.s.c; c <= headerRange.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r: 0, c });
+        if (ws[addr]) {
+          ws[addr].s = {
+            font: { bold: true, color: { rgb: "FFFFFF" } },
+            fill: { fgColor: { rgb: "1D4ED8" } },
+            alignment: { horizontal: "center" },
+          };
+        }
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, "الأصناف");
+      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx", cellStyles: true });
+      const filename = includeData ? "items-export.xlsx" : "items-template.xlsx";
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+      res.send(buf);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // استيراد الأصناف من Excel
+  // ══════════════════════════════════════════════════════════════════
+  app.post("/api/items/import", requireAuth, checkPermission(PERMISSIONS.ITEMS_CREATE), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "لم يتم رفع ملف" });
+
+      const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+      if (raw.length === 0) return res.status(400).json({ message: "الملف فارغ أو لا يحتوي على بيانات" });
+
+      const { rows: ftRows } = await pool.query(`SELECT id, form_type_name FROM item_form_types`);
+      const formTypeMap: Record<string, string> = {};
+      for (const ft of ftRows) formTypeMap[ft.form_type_name.trim().toLowerCase()] = ft.id;
+
+      const catMap: Record<string, string> = {
+        "دواء": "drug", "drug": "drug",
+        "مستلزمات": "supply", "supply": "supply",
+        "خدمة": "service", "service": "service",
+      };
+      const boolMap: Record<string, boolean> = {
+        "نعم": true, "yes": true, "true": true, "1": true,
+        "لا": false, "no": false, "false": false, "0": false,
+      };
+
+      const getVal = (row: Record<string, any>, ...keys: string[]): string => {
+        for (const k of keys) {
+          if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== "") return String(row[k]).trim();
+        }
+        return "";
+      };
+
+      const errors: string[] = [];
+      const CHUNK = 200;
+      const validRows: any[] = [];
+
+      for (let i = 0; i < raw.length; i++) {
+        const row = raw[i];
+        const rowNum = i + 3;
+
+        const itemCode = getVal(row, "كود الصنف *", "كود الصنف", "item_code", "كود");
+        const nameAr   = getVal(row, "الاسم العربي *", "الاسم العربي", "name_ar");
+
+        if (!itemCode) { errors.push(`سطر ${rowNum}: كود الصنف فارغ — تخطي`); continue; }
+        if (!nameAr)   { errors.push(`سطر ${rowNum}: الاسم العربي فارغ — تخطي`); continue; }
+
+        const catRaw = getVal(row, "التصنيف", "category").toLowerCase();
+        const cat = catMap[catRaw] || "drug";
+
+        const ftName = getVal(row, "نوع الشكل", "form_type").toLowerCase();
+        let ftId: string | null = null;
+        if (ftName) {
+          if (formTypeMap[ftName]) {
+            ftId = formTypeMap[ftName];
+          } else {
+            const origName = getVal(row, "نوع الشكل", "form_type");
+            const newId = crypto.randomUUID();
+            await pool.query(
+              `INSERT INTO item_form_types (id, form_type_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+              [newId, origName]
+            );
+            const { rows: newFt } = await pool.query(`SELECT id FROM item_form_types WHERE LOWER(form_type_name)=$1`, [ftName]);
+            ftId = newFt[0]?.id || null;
+            if (ftId) formTypeMap[ftName] = ftId;
+          }
+        }
+
+        const parseDec = (v: string) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+        const parseBool = (v: string) => boolMap[v.toLowerCase()] ?? false;
+
+        validRows.push({
+          item_code: itemCode,
+          name_ar: nameAr,
+          name_en: getVal(row, "الاسم الإنجليزي", "name_en") || itemCode,
+          category: cat,
+          form_type_id: ftId,
+          purchase_price_last: parseDec(getVal(row, "سعر الشراء", "purchase_price_last")) ?? 0,
+          sale_price_current:  parseDec(getVal(row, "سعر البيع",  "sale_price_current"))  ?? 0,
+          major_unit_name:  getVal(row, "الوحدة الكبرى",   "major_unit_name")  || null,
+          medium_unit_name: getVal(row, "الوحدة المتوسطة", "medium_unit_name") || null,
+          minor_unit_name:  getVal(row, "الوحدة الصغرى",   "minor_unit_name")  || null,
+          major_to_medium: parseDec(getVal(row, "كبرى←متوسطة", "major_to_medium")),
+          major_to_minor:  parseDec(getVal(row, "كبرى←صغرى",   "major_to_minor")),
+          medium_to_minor: parseDec(getVal(row, "متوسطة←صغرى", "medium_to_minor")),
+          has_expiry:            parseBool(getVal(row, "ذو صلاحية",  "has_expiry")),
+          is_toxic:              parseBool(getVal(row, "مادة سامة",  "is_toxic")),
+          allow_fractional_sale: parseBool(getVal(row, "بيع كسري",   "allow_fractional_sale")),
+          description: getVal(row, "وصف", "description") || null,
+        });
+      }
+
+      for (let s = 0; s < validRows.length; s += CHUNK) {
+        const chunk = validRows.slice(s, s + CHUNK);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        let idx = 1;
+        for (const r of chunk) {
+          placeholders.push(
+            `($${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++})`
+          );
+          values.push(
+            crypto.randomUUID(),
+            r.item_code, r.name_ar, r.name_en, r.category, r.is_toxic,
+            r.form_type_id, r.purchase_price_last, r.sale_price_current,
+            r.major_unit_name, r.medium_unit_name, r.minor_unit_name,
+            r.major_to_medium, r.major_to_minor, r.medium_to_minor,
+            r.has_expiry, r.allow_fractional_sale, r.description
+          );
+        }
+        await pool.query(`
+          INSERT INTO items (
+            id, item_code, name_ar, name_en, category, is_toxic,
+            form_type_id, purchase_price_last, sale_price_current,
+            major_unit_name, medium_unit_name, minor_unit_name,
+            major_to_medium, major_to_minor, medium_to_minor,
+            has_expiry, allow_fractional_sale, description
+          ) VALUES ${placeholders.join(",")}
+          ON CONFLICT (item_code) DO UPDATE SET
+            name_ar               = EXCLUDED.name_ar,
+            name_en               = EXCLUDED.name_en,
+            category              = EXCLUDED.category,
+            is_toxic              = EXCLUDED.is_toxic,
+            form_type_id          = COALESCE(EXCLUDED.form_type_id, items.form_type_id),
+            purchase_price_last   = EXCLUDED.purchase_price_last,
+            sale_price_current    = EXCLUDED.sale_price_current,
+            major_unit_name       = COALESCE(NULLIF(EXCLUDED.major_unit_name,''), items.major_unit_name),
+            medium_unit_name      = COALESCE(NULLIF(EXCLUDED.medium_unit_name,''), items.medium_unit_name),
+            minor_unit_name       = COALESCE(NULLIF(EXCLUDED.minor_unit_name,''), items.minor_unit_name),
+            major_to_medium       = COALESCE(EXCLUDED.major_to_medium, items.major_to_medium),
+            major_to_minor        = COALESCE(EXCLUDED.major_to_minor,  items.major_to_minor),
+            medium_to_minor       = COALESCE(EXCLUDED.medium_to_minor, items.medium_to_minor),
+            has_expiry            = EXCLUDED.has_expiry,
+            allow_fractional_sale = EXCLUDED.allow_fractional_sale,
+            description           = COALESCE(NULLIF(EXCLUDED.description,''), items.description),
+            updated_at            = NOW()
+        `, values);
+      }
+
+      res.json({
+        success: true,
+        total:   validRows.length,
+        skipped: errors.length,
+        errors:  errors.slice(0, 50),
+      });
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
@@ -454,4 +690,5 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
       res.status(500).json({ message: _em });
     }
   });
+
 }
