@@ -329,11 +329,19 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
         });
       }
 
+      // إزالة المكررات — الاحتفاظ بآخر صف لكل item_code
+      const deduped = Object.values(
+        validRows.reduce((acc: Record<string, any>, row: any) => {
+          acc[row.item_code] = row;
+          return acc;
+        }, {})
+      );
+
       // الخريطة: item_code → item_id (لاستخدامها في إدراج الباركود)
       const codeToId: Record<string, string> = {};
 
-      for (let s = 0; s < validRows.length; s += CHUNK) {
-        const chunk = validRows.slice(s, s + CHUNK);
+      for (let s = 0; s < deduped.length; s += CHUNK) {
+        const chunk = deduped.slice(s, s + CHUNK);
         const placeholders: string[] = [];
         const values: any[] = [];
         let idx = 1;
@@ -383,7 +391,7 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
       }
 
       // إدراج الباركودات بعد انتهاء كل الأصناف
-      const barcodeRows = validRows.filter(r => r.barcode && codeToId[r.item_code]);
+      const barcodeRows = deduped.filter((r: any) => r.barcode && codeToId[r.item_code]);
       if (barcodeRows.length > 0) {
         const bPh: string[] = [];
         const bVals: any[] = [];
@@ -399,11 +407,15 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
         `, bVals);
       }
 
+      const dupCount = validRows.length - deduped.length;
       res.json({
         success: true,
-        total:   validRows.length,
-        skipped: errors.length,
-        errors:  errors.slice(0, 50),
+        total:   deduped.length,
+        skipped: errors.length + dupCount,
+        errors:  [
+          ...errors.slice(0, 50),
+          ...(dupCount > 0 ? [`${dupCount} صنف مكرر في الملف — تم الاحتفاظ بآخر قيمة`] : []),
+        ],
       });
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
