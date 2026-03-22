@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateShort } from "@/lib/formatters";
 import type { TransferLineLocal, ExpiryOption } from "../types";
 import { getUnitName, getAvailableUnits, formatAvailability } from "../types";
+import { computeUnitPriceFromBase } from "@/lib/invoice-lines";
 
 interface Props {
   formLines: TransferLineLocal[];
@@ -220,11 +221,11 @@ export function TransferLineTable({
 
                   <td
                     className={`py-0.5 px-2 whitespace-nowrap font-mono font-semibold ${hasMultiPrice ? "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300" : "text-foreground"}`}
-                    title={hasMultiPrice ? "تنبيه: هذا الصنف له أكثر من سعر بيع — تحقق من السعر على العلبة" : "سعر بيع الدفعة"}
+                    title={hasMultiPrice ? "تنبيه: هذا الصنف له أكثر من سعر بيع — تحقق من السعر" : `سعر بيع الدفعة / ${getUnitName(line.item, line.unitLevel)}`}
                     data-testid={`text-lot-price-${idx}`}
                   >
                     {line.lotSalePrice && parseFloat(line.lotSalePrice) > 0
-                      ? parseFloat(line.lotSalePrice).toFixed(2)
+                      ? computeUnitPriceFromBase(parseFloat(line.lotSalePrice), line.unitLevel, line.item).toFixed(2)
                       : "—"}
                   </td>
 
