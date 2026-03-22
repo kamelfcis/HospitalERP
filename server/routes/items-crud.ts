@@ -191,7 +191,7 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
                   ORDER BY ib.created_at LIMIT 1) AS barcode,
                  i.name_ar, i.name_en,
                  CASE i.category WHEN 'drug' THEN 'دواء' WHEN 'supply' THEN 'مستلزمات' WHEN 'service' THEN 'خدمة' ELSE i.category END AS category,
-                 ft.form_type_name AS form_type,
+                 ft.name_ar AS form_type,
                  i.purchase_price_last, i.sale_price_current,
                  i.major_unit_name, i.medium_unit_name, i.minor_unit_name,
                  i.major_to_medium, i.major_to_minor, i.medium_to_minor,
@@ -248,9 +248,9 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
 
       if (raw.length === 0) return res.status(400).json({ message: "الملف فارغ أو لا يحتوي على بيانات" });
 
-      const { rows: ftRows } = await pool.query(`SELECT id, form_type_name FROM item_form_types`);
+      const { rows: ftRows } = await pool.query(`SELECT id, name_ar FROM item_form_types`);
       const formTypeMap: Record<string, string> = {};
-      for (const ft of ftRows) formTypeMap[ft.form_type_name.trim().toLowerCase()] = ft.id;
+      for (const ft of ftRows) formTypeMap[ft.name_ar.trim().toLowerCase()] = ft.id;
 
       const catMap: Record<string, string> = {
         "دواء": "drug", "drug": "drug",
@@ -295,10 +295,10 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
             const origName = getVal(row, "نوع الشكل", "form_type");
             const newId = crypto.randomUUID();
             await pool.query(
-              `INSERT INTO item_form_types (id, form_type_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+              `INSERT INTO item_form_types (id, name_ar) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
               [newId, origName]
             );
-            const { rows: newFt } = await pool.query(`SELECT id FROM item_form_types WHERE LOWER(form_type_name)=$1`, [ftName]);
+            const { rows: newFt } = await pool.query(`SELECT id FROM item_form_types WHERE LOWER(name_ar)=$1`, [ftName]);
             ftId = newFt[0]?.id || null;
             if (ftId) formTypeMap[ftName] = ftId;
           }
