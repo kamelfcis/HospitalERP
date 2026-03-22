@@ -29,8 +29,31 @@ The system uses a RESTful JSON API. Drizzle ORM interacts with PostgreSQL, and Z
 - **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions.
 - **Contracts Module**: Supports master data for insurance/contract companies, contracts, and member cards. Includes a 5-pass rule evaluator for contract coverage, a claims GL accounting system, and an approval workflow.
 - **Account Mappings Module**: Dedicated UI and transactional backend route for bulk updates.
+- **Items Excel Import/Export**: Bulk management of items via xlsx. Export (template or full data), Import with upsert (200/chunk), auto-creates form types, handles barcodes via `item_barcodes`, deduplicates by `item_code`.
 
-## Recent Session Progress (OPD Steps 7+)
+## Recent Session Progress — Items Import/Export (مكتمل ✓)
+
+### ما تم في هذه الجلسة
+- **Excel Export**: `GET /api/items/export-template?includeData=true|false`
+  - خيار 1: نموذج فارغ (18 عمود بالعربي بما فيهم باركود)
+  - خيار 2: تصدير كل الأصناف الحالية مع بياناتها
+- **Excel Import**: `POST /api/items/import`
+  - يقبل ملف xlsx ويعالج بشرائح 200 صنف
+  - upsert بـ `ON CONFLICT (item_code) DO UPDATE`
+  - ينشئ أنواع الأشكال الجديدة تلقائياً (جدول `item_form_types`، عمود `name_ar`)
+  - يحفظ الباركود في `item_barcodes` مع `ON CONFLICT (barcode_value) DO NOTHING`
+  - يزيل المكررات تلقائياً قبل الإدراج (Deduplicate by item_code)
+- **Frontend** (`ItemsList.tsx`): زر "تصدير" (Dropdown) + زر "استيراد" مع file picker وspinner
+- **Route Ordering Fix**: export-template وimport يأتيان قبل `/:id` لمنع التعارض
+- **Bugs Fixed**: `form_type_name` → `name_ar` (اسم العمود الصحيح في item_form_types)
+
+### Critical Notes for Next Session
+- `item_form_types` column = `name_ar` (NOT `form_type_name`)
+- `item_barcodes` is a separate table (FK to items.id, unique on barcode_value)
+- Import route is at line ~240 in `server/routes/items-crud.ts`
+- Route order: export-template(177) → import(240) → /:id(422+)
+
+## Previous Session Progress (OPD Steps 7+)
 
 ### OPD Step 7 — Doctor Orders Grouped View (مكتمل ✓)
 - Backend `getGroupedClinicOrders()` — groups by `(appointmentId, orderType, targetId||targetName)`
