@@ -15,7 +15,8 @@ import { insertSupplierSchema } from "@shared/schema";
 
 export function registerPurchasingRoutes(app: Express) {
   // ===== SUPPLIERS =====
-  app.get("/api/suppliers", async (req, res) => {
+  // Layer 2: requireAuth — supplier data is internal, not public
+  app.get("/api/suppliers", requireAuth, async (req, res) => {
     try {
       const { search, page, pageSize, supplierType, isActive, sortBy, sortDir } = req.query;
       // isActive: "true" = active, "false" = inactive, absent/anything else = active only (management screen passes true/false)
@@ -42,7 +43,8 @@ export function registerPurchasingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/suppliers/search", async (req, res) => {
+  // Layer 2: requireAuth — supplier lookup used in receiving/purchase forms
+  app.get("/api/suppliers/search", requireAuth, async (req, res) => {
     try {
       const q = (req.query.q as string || "").trim();
       const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
@@ -54,7 +56,8 @@ export function registerPurchasingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/suppliers/:id", async (req, res) => {
+  // Layer 2: requireAuth — individual supplier detail
+  app.get("/api/suppliers/:id", requireAuth, async (req, res) => {
     try {
       const supplier = await storage.getSupplier(req.params.id as string);
       if (!supplier) return res.status(404).json({ message: "المورد غير موجود" });
@@ -94,7 +97,8 @@ export function registerPurchasingRoutes(app: Express) {
   });
 
   // ===== SUPPLIER RECEIVING =====
-  app.get("/api/receivings", async (req, res) => {
+  // Layer 2: RECEIVING.VIEW required — receiving list contains financial data
+  app.get("/api/receivings", requireAuth, checkPermission(PERMISSIONS.RECEIVING_VIEW), async (req, res) => {
     try {
       const { supplierId, warehouseId, status, statusFilter, fromDate, toDate, search, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getReceivings({
@@ -116,7 +120,8 @@ export function registerPurchasingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/receivings/check-invoice", async (req, res) => {
+  // Layer 2: requireAuth — invoice uniqueness check used inside receiving form
+  app.get("/api/receivings/check-invoice", requireAuth, async (req, res) => {
     try {
       const { supplierId, supplierInvoiceNo, excludeId } = req.query;
       if (!supplierId || !supplierInvoiceNo) return res.status(400).json({ message: "بيانات ناقصة" });
@@ -132,7 +137,8 @@ export function registerPurchasingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/receivings/:id", async (req, res) => {
+  // Layer 2: RECEIVING.VIEW required — individual receiving detail
+  app.get("/api/receivings/:id", requireAuth, checkPermission(PERMISSIONS.RECEIVING_VIEW), async (req, res) => {
     try {
       const receiving = await storage.getReceiving(req.params.id as string);
       if (!receiving) return res.status(404).json({ message: "المستند غير موجود" });
@@ -326,7 +332,8 @@ export function registerPurchasingRoutes(app: Express) {
   });
 
   // ===== PURCHASE INVOICES =====
-  app.get("/api/purchase-invoices", async (req, res) => {
+  // Layer 2: PURCHASE_INVOICES.VIEW required — financial document list
+  app.get("/api/purchase-invoices", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_VIEW), async (req, res) => {
     try {
       const { supplierId, status, dateFrom, dateTo, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getPurchaseInvoices({
@@ -345,7 +352,8 @@ export function registerPurchasingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/purchase-invoices/:id", async (req, res) => {
+  // Layer 2: PURCHASE_INVOICES.VIEW required — individual purchase invoice
+  app.get("/api/purchase-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_VIEW), async (req, res) => {
     try {
       const invoice = await storage.getPurchaseInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
@@ -470,7 +478,8 @@ export function registerPurchasingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/items/:itemId/hints", async (req, res) => {
+  // Layer 2: requireAuth — item purchase hints used in receiving form
+  app.get("/api/items/:itemId/hints", requireAuth, async (req, res) => {
     try {
       const { supplierId, warehouseId } = req.query;
       const hints = await storage.getItemHints(req.params.itemId as string, (supplierId as string) || "", (warehouseId as string) || "");
@@ -481,7 +490,8 @@ export function registerPurchasingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/items/:itemId/warehouse-stats", async (req, res) => {
+  // Layer 2: requireAuth — inventory stats per item/warehouse, used in purchase forms
+  app.get("/api/items/:itemId/warehouse-stats", requireAuth, async (req, res) => {
     try {
       const stats = await storage.getItemWarehouseStats(req.params.itemId as string);
       res.json(stats);

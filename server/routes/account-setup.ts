@@ -19,7 +19,8 @@ import { validateAccountCategory } from "../lib/account-category-validator";
 const upload = multer({ storage: multer.memoryStorage() });
 
 export function registerAccountSetupRoutes(app: Express) {
-  app.get("/api/reports/trial-balance", async (req, res) => {
+  // Layer 2: REPORTS.TRIAL_BALANCE required — financial data, not public
+  app.get("/api/reports/trial-balance", requireAuth, checkPermission(PERMISSIONS.REPORTS_TRIAL_BALANCE), async (req, res) => {
     try {
       const asOfDate = (req.query.asOfDate as string) || new Date().toISOString().split('T')[0];
       const report = await storage.getTrialBalance(asOfDate);
@@ -30,7 +31,8 @@ export function registerAccountSetupRoutes(app: Express) {
     }
   });
 
-  app.get("/api/reports/income-statement", async (req, res) => {
+  // Layer 2: REPORTS.INCOME_STATEMENT required — financial P&L data, not public
+  app.get("/api/reports/income-statement", requireAuth, checkPermission(PERMISSIONS.REPORTS_INCOME_STATEMENT), async (req, res) => {
     try {
       const today = new Date();
       const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -44,7 +46,8 @@ export function registerAccountSetupRoutes(app: Express) {
     }
   });
 
-  app.get("/api/reports/balance-sheet", async (req, res) => {
+  // Layer 2: REPORTS.BALANCE_SHEET required — financial position data, not public
+  app.get("/api/reports/balance-sheet", requireAuth, checkPermission(PERMISSIONS.REPORTS_BALANCE_SHEET), async (req, res) => {
     try {
       const asOfDate = (req.query.asOfDate as string) || new Date().toISOString().split('T')[0];
       const report = await storage.getBalanceSheet(asOfDate);
@@ -55,7 +58,8 @@ export function registerAccountSetupRoutes(app: Express) {
     }
   });
 
-  app.get("/api/reports/cost-centers", async (req, res) => {
+  // Layer 2: REPORTS.COST_CENTERS required — managerial cost data, not public
+  app.get("/api/reports/cost-centers", requireAuth, checkPermission(PERMISSIONS.REPORTS_COST_CENTERS), async (req, res) => {
     try {
       const today = new Date();
       const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);

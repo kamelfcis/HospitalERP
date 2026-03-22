@@ -11,7 +11,8 @@ import { insertAdmissionSchema } from "@shared/schema";
 export function registerAdmissionsRoutes(app: Express) {
   // ==================== Surgery Types API ====================
 
-  app.get("/api/surgery-types", async (req, res) => {
+  // Layer 2: requireAuth — surgery type lookup used in admissions/OR forms
+  app.get("/api/surgery-types", requireAuth, async (req, res) => {
     try {
       const search = req.query.search as string | undefined;
       res.json(await storage.getSurgeryTypes(search));
@@ -54,7 +55,8 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/surgery-category-prices", async (req, res) => {
+  // Layer 2: requireAuth — pricing data for surgical categories
+  app.get("/api/surgery-category-prices", requireAuth, async (req, res) => {
     try { res.json(await storage.getSurgeryCategoryPrices()); }
     catch (e: any) { res.status(500).json({ message: e.message }); }
   });

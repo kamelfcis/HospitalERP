@@ -1,0 +1,453 @@
+PHASE 2 — ENTERPRISE AUTHORIZATION ARCHITECTURE
+STRICT REFACTOR / COMPOUND PERMISSIONS / INDEXED PERMISSION MODEL
+
+Goal:
+أريد منك تنفيذ Phase 2 لتطوير نظام الصلاحيات الحالي من Hotfix-level protection إلى Enterprise-grade authorization model، لكن بدون هدم النظام، وبدون كسر الـ flows الحالية، وبدون refactor عشوائي. المطلوب هو إعادة تنظيم منطق الصلاحيات الحالي بشكل معماري صارم، واضح، قابل للتوسع، ومفهوم لأي developer أو auditor لاحقًا.
+
+المبدأ الأساسي:
+نحن لا نبدأ من الصفر.
+نحن نبني على الموجود.
+المرحلة السابقة أغلقت الثغرات.
+هذه المرحلة يجب أن:
+- توحّد فلسفة الصلاحيات
+- تنظّم الـ permissions
+- تفصل بوضوح بين View / Action / Scope / Ownership
+- تقلل التكرار
+- تمنع regression
+- تجهز النظام للتوسع المستقبلي
+- تحوّل النظام إلى authorization system منضبط مثل الأنظمة المؤسسية
+
+==================================================
+قواعد صارمة جدًا قبل أي تنفيذ
+==================================================
+
+1) ممنوع الهدم
+- لا تعيد بناء النظام من الصفر
+- لا تحذف منطق قائم سليم
+- لا تكسر شاشات شغالة
+- لا تغيّر الـ business flows لمجرد “النظافة”
+
+2) Refactor منضبط فقط
+- أي refactor يجب أن يكون:
+  - justified
+  - minimal
+  - traceable
+  - backward-safe
+- لا تنقل كود بين ملفات إلا لو في سبب معماري واضح جدًا
+- لا تعمل mega-refactor
+- لا تغيّر naming بشكل واسع بدون migration plan
+
+3) Backend is source of enforcement
+- الـ backend هو الحكم النهائي
+- الـ frontend فقط يعكس الصلاحيات
+- ممنوع أي security by UI
+- أي action لازم يكون backend-enforced
+
+4) Preserve existing working behaviors
+- ownership logic يظل موجودًا حيث هو صحيح
+- scope logic يظل موجودًا حيث هو صحيح
+- لكن يجب دمجهما بشكل منظم داخل authorization model
+- لا تلغِ ownership/scoping لمجرد أن عندنا permissions
+
+5) No permission sprawl
+- لا تضف permissions كثيرة بلا داعٍ
+- لا تخلق permission لكل زر بدون منطق
+- لا تعمل over-engineering
+- المطلوب model متوازن، مش model متضخم
+
+6) No hidden assumptions
+- لا تفترض أن route معين “واضح”
+- لا تفترض أن شاشة معينة لا تحتاج authorization analysis
+- أي قرار لازم يكون مبررًا من الكود الحالي والسلوك الفعلي
+
+7) Do not start coding immediately
+- ابدأ بتحليل وتنظيم نهائي
+- ثم design
+- ثم migration-safe implementation plan
+- ثم التنفيذ المرحلي
+- لا تنفذ دفعة واحدة بدون mapping كامل
+
+==================================================
+الهدف المعماري النهائي
+==================================================
+
+أريد الوصول إلى Authorization Model مكوّن من 4 طبقات واضحة:
+
+1. Access Layer
+- من يدخل الصفحة / الموديول
+
+2. Action Layer
+- من ينشئ / يعدل / يحذف / يعتمد / يرحل / يحصّل / يطبع / يلغي / يعيد فتح
+
+3. Scope Layer
+- على أي نطاق يطبق الإذن
+- مثال:
+  - own clinic
+  - all clinics
+  - own shift
+  - assigned treasury
+  - allowed warehouse
+  - allowed department
+  - visible cost centers
+
+4. State / Business Rule Layer
+- هل المستند في حالة تسمح بهذه العملية أصلًا
+- مثل:
+  - draft فقط
+  - finalized فقط
+  - collected فقط
+  - open fiscal period فقط
+
+هذه الطبقات الأربع يجب أن تكون مميزة بوضوح، لا مختلطة، ولا مستبدلة ببعضها.
+
+==================================================
+المطلوب منك في هذه المرحلة
+==================================================
+
+أريد منك تنفيذ العمل على 3 أجزاء رئيسية:
+
+PART A) FINAL AUTHORIZATION DESIGN
+PART B) SAFE REFACTOR PLAN
+PART C) CONTROLLED IMPLEMENTATION
+
+ولا تنتقل من جزء إلى الجزء التالي إلا بعد إنهاء مخرجاته كاملة.
+
+==================================================
+PART A — FINAL AUTHORIZATION DESIGN
+==================================================
+
+أريد منك أولًا بناء التصميم النهائي الرسمي للصلاحيات داخل السيستم الحالي.
+
+المطلوب:
+
+1) Authorization Philosophy
+استنتج واكتب بوضوح الفلسفة النهائية التي سنعتمدها، مثل:
+- page access is not action permission
+- action permission is not scope
+- scope is not state validation
+- ownership is additional constraint, not substitute for permission
+- UI visibility is not security
+- backend is canonical enforcement point
+
+2) Canonical Permission Taxonomy
+ابنِ taxonomy منظمة جدًا لكل permissions الموجودة والحالية والمطلوبة لاحقًا، مع تصنيف واضح مثل:
+
+- Module Permissions
+- View Permissions
+- Create Permissions
+- Edit Permissions
+- Delete Permissions
+- Approval / Posting Permissions
+- Payment / Collection Permissions
+- Return / Refund Permissions
+- Print / Export Permissions
+- Admin / Settings Permissions
+- Override / Exception Permissions
+- Scoped Permissions
+- Compound / Derived Permissions
+
+أريد taxonomy واضحة، Indexed، ومقسمة تقسيم مؤسسي.
+
+3) Compound Permissions Model
+أريد منك تحديد أين نحتاج Compound Authorization Logic بدل permission واحدة فقط.
+
+أمثلة:
+- collect = permission + open shift ownership + open fiscal period
+- finalize invoice = permission + draft status + valid lines + open period
+- surgery type update = permission + admission scope + allowed state
+- treasury operations = permission + admin config area
+
+المطلوب:
+- حدد كل العمليات التي تعتمد على أكثر من شرط
+- صنف كل شرط: Permission / Scope / Ownership / Business Rule
+- لا تخلطهم
+- لا تختصرهم في شرط واحد غامض
+
+4) Module-by-Module Authorization Matrix
+ابنِ Matrix نهائية لكل modules الموجودة فعلاً، مثل:
+- Sales
+- Sales Returns
+- Patient Invoices
+- Cashier
+- Treasury
+- Accounts
+- Cost Centers
+- Journal Entries
+- Fiscal Periods
+- Inventory / Items
+- Receiving
+- Purchase Invoices
+- Transfers
+- Patients
+- Doctors
+- Admissions
+- Clinic
+- Contracts
+- Reports
+- Users / Roles / Permission Groups
+- Settings / Mappings
+- أي modules أخرى موجودة فعلاً
+
+لكل شاشة/عملية:
+- Module
+- Screen / Route
+- Action
+- Permission Required
+- Scope Rule
+- Ownership Rule
+- State Rule
+- Backend enforcement point
+- Frontend visibility point
+- Whether current code already supports it or needs alignment
+
+5) Indexing / Cataloging Standard
+أريد منك وضع نظام فهرسة وتصنيف واضح للصلاحيات، بحيث يكون عندي Catalog رسمي.
+
+مثال للفهرسة:
+- SALES.VIEW
+- SALES.CREATE
+- SALES.FINALIZE
+- SALES.RETURN.CREATE
+- CASHIER.COLLECT
+- CASHIER.REFUND
+- TREASURY.VIEW
+- TREASURY.MANAGE
+- JOURNAL.POST
+- SETTINGS.ACCOUNT_MAPPINGS
+... إلخ
+
+لكن:
+- لا تغيّر الكود مباشرة لهذا الشكل إلا إذا قررت migration-safe aliasing
+- الفهرسة هنا مطلوبة كـ canonical model
+- لو الأسماء الحالية ستظل كما هي، اعمل mapping table واضح بين:
+  - Current Code
+  - Canonical Indexed Name
+  - Meaning
+  - Used In
+  - Migration need
+
+6) Permission Boundaries
+أريد منك تحديد بوضوح أين تبدأ وتنتهي كل permission.
+مثال:
+- sales.view لا تعني sales.create
+- sales.create لا تعني returns.create إلا إذا قررنا ذلك صراحة
+- cashier.view لا تعني collect
+- users.edit لا تعني permission_groups.manage
+
+7) Reuse vs Split Decisions
+لكل مكان فيه permission reuse غير مثالي:
+- هل سنبقيه؟
+- هل سنفصله؟
+- هل سنؤجله؟
+- لماذا؟
+
+أريد قرارات صريحة، لا رمادية.
+
+==================================================
+PART B — SAFE REFACTOR PLAN
+==================================================
+
+بعد التصميم النهائي، أريد خطة refactor صارمة جدًا ومحدودة جدًا لتنظيم النظام دون كسره.
+
+المطلوب:
+
+1) Identify Refactor Targets Only
+حدد فقط الأماكن التي تستحق refactor فعلاً، مثل:
+- duplicated permission checks
+- scattered helper logic
+- inconsistent route guards
+- repeated ownership checks
+- repeated compound auth logic
+- mixed frontend/backend permission naming
+- dead permissions consumers
+- missing central action policies
+
+لكن:
+- لا تعتبر كل تكرار سيئ
+- لا تعمل refactor للكود المستقر فقط لأجل “الجمال”
+
+2) Centralization Plan
+لو احتجت توحيد المنطق، اقترح أقل abstraction ممكن، مثل:
+- helper صغير
+- policy function صغيرة
+- shared action guard
+- route-level wrapper محدود
+
+ممنوع:
+- authorization framework ضخم
+- class hierarchy معقدة
+- مبالغة في patterns
+
+3) Backward Compatibility
+أي refactor لازم يوضح:
+- ما الذي سيتغير
+- ما الذي لن يتغير
+- ما المخاطر
+- كيف سيتم الحفاظ على التوافق
+
+4) Migration-safe Naming Strategy
+إذا رأيت أن أسماء permissions الحالية غير مثالية:
+- لا تغيّرها wholesale
+- اقترح canonical naming layer
+- أو aliases
+- أو mapping document
+- أو transitional constants
+- لكن بدون كسر seeds أو DB أو existing roles
+
+5) Dead / Weak / Ambiguous Permissions
+افحص:
+- permissions غير المستخدمة
+- permissions المستخدمة frontend فقط
+- permissions معناها غير منضبط
+- permissions reuse غير مناسب
+- permissions واسعة أكثر من اللازم
+
+ثم صنفها:
+- Keep
+- Deprecate later
+- Split later
+- Alias
+- Enforce better
+- Remove only if proven dead and safe
+
+==================================================
+PART C — CONTROLLED IMPLEMENTATION
+==================================================
+
+بعد التصميم والخطة، نفّذ فقط التعديلات الآمنة اللازمة لبدء نقل النظام إلى النموذج النهائي.
+
+مهم جدًا:
+- لا تطبق redesign كامل دفعة واحدة
+- لا تكسر existing roles
+- لا تضف عشرات permissions مرة واحدة
+- نفّذ فقط foundational improvements
+
+المطلوب في التنفيذ:
+
+1) Central Authorization Helpers (only if justified)
+إذا كان هناك منطق متكرر جدًا، يمكنك إنشاء helper صغير/محدود لتجميع:
+- permission check
+- ownership predicate
+- optional scope check
+- optional state check
+
+لكن:
+- لا تبالغ
+- helper يجب أن يكون واضحًا جدًا
+- لا تخفي المنطق داخل abstraction معقد
+
+2) Explicit Compound Guards
+الأماكن التي تحتاج compound guards فعلاً:
+- اجعلها صريحة وواضحة
+- لا تكتب شروط طويلة مبعثرة
+- اجعل القرار قابل للمراجعة
+
+3) Read vs Action Separation
+ابدأ بفصل واضح بين:
+- view routes
+- action routes
+
+خصوصًا في:
+- sales
+- patient invoices
+- cashier
+- treasury
+- accounting
+- reports
+
+4) Scoped Reads Where Needed
+في الأماكن التي requireAuth فقط بسبب flows تشغيلية:
+- لا تكسرها
+- لكن حاول إن أمكن تقديم guard scoped أو action-specific access path
+- لو غير ممكن بأمان الآن، وثّقها بوضوح كـ deferred architectural item
+
+5) Frontend Permission Consumption Cleanup
+فقط إذا لزم:
+- نظّف الاستهلاك المتضارب للصلاحيات
+- وحّد canView / canCreate / canFinalize patterns
+- قلل العشوائية
+- بدون redesign
+
+6) Documentation-in-Code
+أضف comments محدودة جدًا في النقاط المعمارية الحساسة:
+- لماذا هذا permission
+- لماذا ownership وحدها لا تكفي
+- لماذا route معين استثنائي مؤقتًا
+- لماذا endpoint ما زال requireAuth only
+
+==================================================
+ما أريده منك صراحة في المخرجات
+==================================================
+
+أريد الرد النهائي مرتبًا بهذا الشكل بالضبط:
+
+1) EXECUTIVE DECISION
+- هل Phase 2 تستحق التنفيذ؟ ولماذا؟
+- ما الذي ستنقله فعليًا في النظام؟
+
+2) FINAL AUTHORIZATION MODEL
+- الفلسفة النهائية
+- الطبقات الأربع
+- canonical taxonomy
+- indexed catalog
+
+3) MODULE AUTHORIZATION MATRIX
+- جدول شامل منظم لكل module/action
+
+4) COMPOUND AUTHORIZATION MAP
+- العمليات المركبة
+- شروطها
+- تصنيف الشروط
+
+5) REFACTOR TARGETS ONLY
+- الأماكن التي تستحق refactor فقط
+- ولماذا
+- وما الحد الأدنى المطلوب
+
+6) SAFE IMPLEMENTATION PLAN
+- خطوات تنفيذ مرتبة
+- مع ترتيب الأولويات
+- بدون قفزات
+
+7) FILES EXPECTED TO CHANGE
+- الملفات المتوقع تعديلها فقط
+- ولماذا
+
+8) RISKS / REGRESSION SAFETY
+- المخاطر
+- كيف سيتم منع الكسر
+
+9) DEFERRED ITEMS
+- ما الذي لن يُنفذ الآن ولماذا
+
+10) IF IMPLEMENTATION STARTS
+- نفّذ فقط foundational phase
+- لا تتوسع beyond plan
+- لا تضف permissions كثيرة
+- لا تغيّر DB schema جذريًا إلا لو لزم وبأقل حد ممكن
+- لا تبدأ migration كبيرة بدون justification
+
+==================================================
+معايير الجودة الإلزامية
+==================================================
+
+- أريد تصميمًا مؤسسيًا وليس تنظيرًا
+- أريد قرارات صريحة، لا كلام عام
+- أريد احترام الكود الحالي لا تجاهله
+- أريد refactor منضبطًا لا فوضويًا
+- أريد مراعاة compound permissions بوضوح
+- أريد مراعاة الفهرسة والتصنيف الرسمي للصلاحيات
+- أريد بناءً فوق الموجود، لا هدمًا
+- أريد أقل تغيير ممكن مع أعلى أثر معماري
+- أريد كل قرار مبررًا
+- أريد التمييز الواضح بين:
+  - permission
+  - role
+  - scope
+  - ownership
+  - business state
+  - UI visibility
+
+ابدأ الآن بـ PART A أولًا.
+لا تقفز للتنفيذ قبل إنهائه بالكامل.
+ولو اكتشفت أن التنفيذ الآمن يتطلب تنفيذًا مرحليًا، فاذكر ذلك بوضوح.

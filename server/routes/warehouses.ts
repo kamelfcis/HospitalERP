@@ -18,7 +18,8 @@ import { runPilotTestSeed } from "../seeds/pilot-test";
 
 export function registerWarehousesRoutes(app: Express) {
   // ===== WAREHOUSES =====
-  app.get("/api/warehouses", async (req, res) => {
+  // Layer 2: requireAuth — warehouse scope depends on session; unauthenticated access returns all (unintended)
+  app.get("/api/warehouses", requireAuth, async (req, res) => {
     try {
       const userId = req.session?.userId as string | undefined;
       const role   = req.session?.role   as string | undefined;
@@ -102,7 +103,8 @@ export function registerWarehousesRoutes(app: Express) {
   });
 
   // ===== STORE TRANSFERS =====
-  app.get("/api/transfers", async (req, res) => {
+  // Layer 2: TRANSFERS.VIEW required — inventory movement records
+  app.get("/api/transfers", requireAuth, checkPermission(PERMISSIONS.TRANSFERS_VIEW), async (req, res) => {
     try {
       const { fromDate, toDate, sourceWarehouseId, destWarehouseId, status, search, page, pageSize, includeCancelled } = req.query;
 
@@ -129,7 +131,8 @@ export function registerWarehousesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/transfers/:id", async (req, res) => {
+  // Layer 2: TRANSFERS.VIEW required — individual transfer detail
+  app.get("/api/transfers/:id", requireAuth, checkPermission(PERMISSIONS.TRANSFERS_VIEW), async (req, res) => {
     try {
       const transfer = await storage.getTransfer(req.params.id as string);
       if (!transfer) {
@@ -142,7 +145,8 @@ export function registerWarehousesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/transfer/fefo-preview", async (req, res) => {
+  // Layer 2: requireAuth — FEFO preview used in transfer creation form
+  app.get("/api/transfer/fefo-preview", requireAuth, async (req, res) => {
     try {
       const { itemId, warehouseId, requiredQtyInMinor, asOfDate } = req.query;
       if (!itemId || !warehouseId || !requiredQtyInMinor) {
@@ -258,7 +262,8 @@ export function registerWarehousesRoutes(app: Express) {
   });
 
   // ===== TRANSFER PREPARATION =====
-  app.get("/api/transfer-preparation/query", async (req, res) => {
+  // Layer 2: requireAuth — transfer preparation query used in transfers module
+  app.get("/api/transfer-preparation/query", requireAuth, async (req, res) => {
     try {
       const { sourceWarehouseId, destWarehouseId, dateFrom, dateTo } = req.query;
       if (!sourceWarehouseId || !destWarehouseId || !dateFrom || !dateTo) {

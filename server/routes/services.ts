@@ -8,7 +8,9 @@ import { insertServiceSchema, insertPriceListSchema } from "@shared/schema";
 export function registerServicesRoutes(app: Express) {
   // ===== Services =====
 
-  app.get("/api/services", async (req, res) => {
+  // Layer 2: requireAuth — service catalog used in invoicing; any logged-in user may need this
+  // Deferred: SERVICES.VIEW not required here — service lookup is cross-module operational data
+  app.get("/api/services", requireAuth, async (req, res) => {
     try {
       const { search, departmentId, category, active, page, pageSize } = req.query;
       const result = await storage.getServices({
@@ -61,7 +63,8 @@ export function registerServicesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/service-categories", async (req, res) => {
+  // Layer 2: requireAuth — category lookup for service forms
+  app.get("/api/service-categories", requireAuth, async (req, res) => {
     try {
       const categories = await storage.getServiceCategories();
       res.json(categories);
@@ -73,7 +76,8 @@ export function registerServicesRoutes(app: Express) {
 
   // ===== Service Consumables =====
 
-  app.get("/api/services/:id/consumables", async (req, res) => {
+  // Layer 2: requireAuth — consumables linked to service, used in invoicing forms
+  app.get("/api/services/:id/consumables", requireAuth, async (req, res) => {
     try {
       const consumables = await storage.getServiceConsumables(req.params.id as string);
       res.json(consumables);
@@ -108,7 +112,8 @@ export function registerServicesRoutes(app: Express) {
 
   // ===== Price Lists =====
 
-  app.get("/api/price-lists", async (req, res) => {
+  // Layer 2: requireAuth — price list lookup used in patient/sales invoicing
+  app.get("/api/price-lists", requireAuth, async (req, res) => {
     try {
       const lists = await storage.getPriceLists();
       res.json(lists);
@@ -155,7 +160,8 @@ export function registerServicesRoutes(app: Express) {
 
   // ===== Price List Items =====
 
-  app.get("/api/price-lists/:id/items", async (req, res) => {
+  // Layer 2: requireAuth — price list items used in invoicing and OPD
+  app.get("/api/price-lists/:id/items", requireAuth, async (req, res) => {
     try {
       const { search, departmentId, category, page, pageSize } = req.query;
       const result = await storage.getPriceListItems(req.params.id as string, {
