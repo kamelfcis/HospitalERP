@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { SalesInvoiceWithDetails, User } from "@shared/schema";
+import type { SalesInvoiceWithDetails } from "@shared/schema";
+
+// Minimal type for registry pharmacist filter — does NOT require users.view
+interface PharmacistOption {
+  id: string;
+  fullName: string;
+  role: string;
+}
 
 interface RegistryTotals {
   subtotal: number;
@@ -52,8 +59,11 @@ export function useRegistry(today: string, enabled: boolean) {
     enabled,
   });
 
-  const { data: usersData } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  // Dedicated pharmacist lookup — does NOT require users.view permission
+  // Compound Layer 2 decision: SALES_REGISTRY_VIEW users must filter by pharmacist
+  // without needing admin-level user management access
+  const { data: pharmacistData } = useQuery<PharmacistOption[]>({
+    queryKey: ["/api/sales-invoices/pharmacists"],
     enabled,
   });
 
@@ -62,9 +72,7 @@ export function useRegistry(today: string, enabled: boolean) {
   const totalPages = Math.max(1, Math.ceil(totalInvoices / pageSize));
   const totals: RegistryTotals = listData?.totals || { subtotal: 0, discountValue: 0, netTotal: 0 };
 
-  const pharmacistUsers = (usersData || []).filter(u =>
-    ["pharmacist", "cashier", "warehouse_assistant", "admin"].includes(u.role)
-  );
+  const pharmacistUsers = pharmacistData || [];
 
   return {
     filterDateFrom, setFilterDateFrom,

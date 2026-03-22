@@ -33,6 +33,27 @@ async function getWarehouseForbiddenMsg(userId: string, warehouseId: string): Pr
 }
 
 export function registerSalesInvoicesRoutes(app: Express) {
+  // ==================== Sales Invoice Pharmacist Lookup ====================
+  // Layer 2: requireAuth only — pharmacist list for registry filter.
+  // Intentionally does NOT require users.view — cashier/pharmacist role must be
+  // able to filter the registry without admin-level user management permissions.
+  // Returns minimal data (id + fullName) scoped to pharmacist-relevant roles.
+  app.get("/api/sales-invoices/pharmacists", requireAuth, async (req, res) => {
+    try {
+      const result = await pool.query<{ id: string; full_name: string; role: string }>(`
+        SELECT id, full_name, role
+        FROM users
+        WHERE role IN ('pharmacist', 'cashier', 'warehouse_assistant', 'pharmacy_assistant', 'admin', 'owner')
+          AND is_active = true
+        ORDER BY full_name
+      `);
+      res.json(result.rows.map(u => ({ id: u.id, fullName: u.full_name, role: u.role })));
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
   // ==================== Sales Invoices ====================
   
   app.get("/api/sales-invoices", requireAuth, async (req, res) => {

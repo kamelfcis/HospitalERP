@@ -5,8 +5,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Loader2, Plus, ShoppingCart, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatNumber, formatDateShort } from "@/lib/formatters";
 import { salesInvoiceStatusLabels, customerTypeLabels } from "@shared/schema";
-import type { SalesInvoiceWithDetails, Warehouse, User } from "@shared/schema";
+import type { SalesInvoiceWithDetails, Warehouse } from "@shared/schema";
 import { useMemo } from "react";
+
+// Minimal type matching /api/sales-invoices/pharmacists — no users.view required
+interface PharmacistOption { id: string; fullName: string; role: string; }
 
 interface RegistryTotals {
   subtotal: number;
@@ -32,7 +35,7 @@ interface Props {
   deleteVariables: string | undefined;
   confirmDeleteId: string | null;
   warehouses: Warehouse[] | undefined;
-  pharmacistUsers: User[];
+  pharmacistUsers: PharmacistOption[];
   totals: RegistryTotals;
   seedLoading: boolean;
   quickTestLoading: boolean;
