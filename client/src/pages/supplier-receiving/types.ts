@@ -51,7 +51,10 @@ export function calculateQtyInMinor(qtyEntered: number, unitLevel: string, item:
 }
 
 export function getDefaultUnitLevel(item: ItemLike | null | undefined): string {
-  return getSmartDefaultUnitLevel(item);
+  // لإذن الاستلام: دائماً الوحدة الكبرى (نستلم من المورد بالعلبة عادةً، مفيش قيد مخزون)
+  if (item?.majorUnitName) return "major";
+  if (item?.mediumUnitName) return "medium";
+  return "minor";
 }
 
 export function getUnitName(item: ItemLike | null | undefined, unitLevel: string): string {

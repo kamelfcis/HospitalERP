@@ -188,7 +188,11 @@ export function useTransferForm() {
 
   const handleItemSelected = useCallback(
     ({ item, batch }: ItemSelectedPayload) => {
-      const unitLevel = getSmartDefaultUnitLevel(item);
+      // لو اختار دفعة محددة: استخدم كمية الدفعة لتحديد الوحدة (لا الإجمالي)
+      const itemForUnit = batch?.qtyAvailableMinor
+        ? { ...item, availableQtyMinor: batch.qtyAvailableMinor }
+        : item;
+      const unitLevel = getSmartDefaultUnitLevel(itemForUnit);
       const qtyEntered = 1;
       const qtyInMinor = calculateQtyInMinor(qtyEntered, unitLevel, item);
 

@@ -198,7 +198,13 @@ export function SalesInvoiceEditor({
         warehouseId={form.warehouseId}
         invoiceDate={form.invoiceDate}
         excludeServices={false}
-        onItemSelected={({ item }) => linesHook.addItemToLines(item)}
+        onItemSelected={({ item, batch }) =>
+          linesHook.addItemToLines(
+            batch?.qtyAvailableMinor
+              ? { ...item, availableQtyMinor: batch.qtyAvailableMinor }
+              : item
+          )
+        }
       />
 
       <ServiceSearchDialog
