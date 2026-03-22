@@ -14,7 +14,7 @@ import {
 import { insertJournalTemplateSchema } from "@shared/schema";
 
 export function registerJournalEntriesRoutes(app: Express) {
-  app.get("/api/journal-entries", requireAuth, async (req, res) => {
+  app.get("/api/journal-entries", requireAuth, checkPermission(PERMISSIONS.JOURNAL_VIEW), async (req, res) => {
     try {
       const { page, pageSize, status, sourceType, dateFrom, dateTo, search } = req.query;
       const result = await storage.getJournalEntriesPaginated({
@@ -36,7 +36,7 @@ export function registerJournalEntriesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/journal-entries/:id", async (req, res) => {
+  app.get("/api/journal-entries/:id", requireAuth, checkPermission(PERMISSIONS.JOURNAL_VIEW), async (req, res) => {
     try {
       const entry = await storage.getJournalEntry(req.params.id as string);
       if (!entry) {

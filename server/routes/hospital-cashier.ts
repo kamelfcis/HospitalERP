@@ -22,7 +22,8 @@ import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { users, cashierAuditLog } from "@shared/schema";
-import { requireAuth, sseClients, broadcastToUnit } from "./_shared";
+import { requireAuth, checkPermission, sseClients, broadcastToUnit } from "./_shared";
+import { PERMISSIONS } from "@shared/permissions";
 import { logger } from "../lib/logger";
 
 // ── مساعد: التحقق من ملكية الوردية ──────────────────────────────────────
@@ -353,7 +354,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/cashier/collect", requireAuth, async (req, res) => {
+  app.post("/api/cashier/collect", requireAuth, checkPermission(PERMISSIONS.CASHIER_COLLECT), async (req, res) => {
     try {
       const userId = (req.session as { userId?: string }).userId!;
       const { shiftId, invoiceIds, collectedBy, paymentDate } = req.body;
@@ -385,7 +386,7 @@ export function registerCashierRoutes(app: Express) {
     }
   });
 
-  app.post("/api/cashier/refund", requireAuth, async (req, res) => {
+  app.post("/api/cashier/refund", requireAuth, checkPermission(PERMISSIONS.CASHIER_REFUND), async (req, res) => {
     try {
       const userId = (req.session as { userId?: string }).userId!;
       const { shiftId, invoiceIds, refundedBy, paymentDate } = req.body;
@@ -461,17 +462,17 @@ export function registerCashierRoutes(app: Express) {
   });
 
   // ── Treasuries ──────────────────────────────────────────────
-  app.get("/api/treasuries", requireAuth, async (req, res) => {
+  app.get("/api/treasuries", requireAuth, checkPermission(PERMISSIONS.CASHIER_HANDOVER_VIEW), async (req, res) => {
     try { res.json(await storage.getTreasuries()); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/treasuries/summary", requireAuth, async (req, res) => {
+  app.get("/api/treasuries/summary", requireAuth, checkPermission(PERMISSIONS.CASHIER_HANDOVER_VIEW), async (req, res) => {
     try { res.json(await storage.getTreasuriesSummary()); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/treasuries", requireAuth, async (req, res) => {
+  app.post("/api/treasuries", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { name, glAccountId, isActive, notes } = req.body;
       if (!name || !glAccountId) return res.status(400).json({ message: "الاسم والحساب مطلوبان" });

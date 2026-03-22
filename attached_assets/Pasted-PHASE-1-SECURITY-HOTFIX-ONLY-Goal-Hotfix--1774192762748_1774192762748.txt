@@ -1,0 +1,226 @@
+PHASE 1 — SECURITY HOTFIX ONLY
+Goal:
+أريد منك تنفيذ Hotfix أمني دقيق ومحدود لقفل الثغرات المؤكدة في نظام الصلاحيات، بدون أي refactor كبير، وبدون تغيير architecture، وبدون لمس أي flows سليمة، وبدون تعديل UI إلا إذا كان التعديل ضروريًا فقط لعكس الحماية الجديدة. المطلوب هو إغلاق الثغرات الحالية فورًا بأقل تغيير ممكن وأعلى أمان ممكن.
+
+مهم جدًا:
+- نفّذ فقط Hotfix أمني
+- لا تعمل refactor
+- لا تعيد تصميم الصلاحيات الآن
+- لا تغيّر أسماء permissions الحالية
+- لا تضف permissions جديدة الآن إلا إذا كان ذلك ضروريًا جدًا وبشكل صريح في التقرير
+- لا تكسر أي flow قائم سليم
+- لا تغيّر سلوك business logic إلا في حدود منع الوصول غير المصرح به
+- لا تفتح ملفات غير لازمة
+- لا تعمل تحسينات تجميلية
+- لا تلمس frontend إلا إذا كان يعرض action أصبح backend يرفضه، وفي هذه الحالة اخفِ الزر أو عطله فقط
+- التزم بأقل patch ممكن
+
+================================
+الثغرات المطلوب قفلها فورًا
+================================
+
+1) SALES RETURNS — ثغرة حرجة
+Route:
+POST /api/sales-returns
+
+المشكلة:
+الـ route يعمل بـ requireAuth فقط بدون checkPermission.
+أي مستخدم مسجل يمكنه إنشاء مرتجع عبر API مباشرة.
+
+المطلوب:
+- أضف checkPermission المناسب على هذا الـ route
+- استخدم permission الموجود فعليًا في النظام، ولا تخترع permission جديد الآن إلا لو اكتشفت أن الموجود غير مناسب تمامًا
+- إن كان route search أو invoice lookup للمردودات مفتوحًا بدون حماية وكان يجب أن يكون محميًا بنفس منطق الصفحة، اقفله أيضًا بالصلاحية المناسبة
+- راجع كل routes المرتبطة بـ sales returns وليس route واحد فقط، لكن لا توسع خارج النطاق
+
+الهدف:
+أي مستخدم لا يملك صلاحية صحيحة للمردودات لا يستطيع:
+- فتح بيانات المردودات الحساسة
+- البحث عن فواتير المرتجع
+- إنشاء مرتجع
+حتى لو استخدم Postman أو curl
+
+================================
+
+2) TREASURIES CRUD — ثغرة حرجة
+Routes داخل hospital-cashier.ts أو ما يعادلها:
+- GET /api/treasuries
+- POST /api/treasuries
+- PATCH /api/treasuries/:id
+- DELETE /api/treasuries/:id
+- POST /api/user-treasuries
+- DELETE /api/user-treasuries/:...
+وأي routes مشابهة لإدارة الخزائن أو ربط المستخدمين بالخزن
+
+المشكلة:
+هذه العمليات المالية/الإدارية الحساسة تعمل بدون permission check حقيقي.
+
+المطلوب:
+- أضف checkPermission صريح ومناسب لكل route
+- استخدم أقرب permission موجود حاليًا في النظام
+- إذا كانت إدارة الخزائن تتبع شاشة أو permission إداري موجود بالفعل فالتزم به
+- لا تضف permission جديد إلا لو لا يوجد أي permission مناسب إطلاقًا، وفي هذه الحالة:
+  1) اذكر ذلك بوضوح
+  2) أضف أقل permission ممكن
+  3) حدّث seed والمراجع المرتبطة فقط بالحد الأدنى اللازم
+- تأكد أن مستخدم غير مصرح له لا يستطيع CRUD ولا الربط بين مستخدم وخزنة
+
+الهدف:
+إدارة الخزن وربطها بالمستخدمين تصبح backend-protected بالكامل.
+
+================================
+
+3) CASHIER COLLECT / REFUND — حماية ناقصة
+Routes:
+- POST /api/cashier/collect
+- POST /api/cashier/refund
+- وأي route مشابه لتحصيل/رد نقدية
+
+المشكلة:
+الحماية الحالية تعتمد على shift ownership فقط، وليس على permission check.
+هذا غير كافٍ.
+
+المطلوب:
+- أبقِ shift ownership كما هو
+- لكن أضف فوقه checkPermission صريح:
+  - cashier.collect للتحصيل
+  - cashier.refund للمرتجع
+- إذا كان هناك close shift route مهم ويحتاج permission أيضًا، افحصه وحدد هل يجب تقويته الآن بأقل تعديل ممكن
+- لا تكسر منطق الوردية
+- لا تغيّر business rules الخاصة بالوردية
+- فقط اجعل الوصول يتطلب:
+  1) permission صحيح
+  2) ownership/scoped rule صحيح
+
+الهدف:
+التحصيل والمرتجع لا يتمان إلا لو المستخدم:
+- لديه permission
+- وله علاقة صحيحة بالوردية
+
+================================
+
+4) PATIENT INVOICES SURGERY TYPE — ثغرة متوسطة مهمة
+Route:
+PUT /api/patient-invoices/:id/surgery-type
+
+المشكلة:
+تعديل حساس بدون checkPermission واضح.
+
+المطلوب:
+- أضف checkPermission مناسب اعتمادًا على أقرب action منطقي موجود حاليًا
+- لا تخترع صلاحية جديدة إلا عند الضرورة القصوى
+- اشرح في التقرير لماذا اخترت هذه الصلاحية بالذات
+
+================================
+
+5) HIGH-SENSITIVITY GET ENDPOINTS
+راجع وأغلق فقط الـ GET endpoints الحساسة المؤكدة التالية إذا كانت فعلاً بلا checkPermission:
+- GET /api/accounts
+- GET /api/accounts/export
+- GET /api/cost-centers
+- GET /api/journal-entries
+- GET /api/fiscal-periods
+- GET /api/items  ← افحص بعناية قبل التضييق لأنه قد يكون مقصودًا تشغيليًا
+- GET /api/patient-invoices إذا كان مفتوحًا بلا permission
+- GET /api/sales-invoices إذا كان مفتوحًا بلا permission
+
+المطلوب:
+- أضف checkPermission على endpoints الحساسة التي يجب تقييدها
+- لا تكسر flows تشغيلية مقصودة بدون أن تذكر ذلك
+- لو GET /api/items مثلًا مفتوح intentionally لعدة شاشات تشغيلية، لا تغيّره إلا بعد التأكد
+- عند الشك، فضّل حماية البيانات المالية والمحاسبية أولًا:
+  - accounts
+  - accounts export
+  - cost centers
+  - journal entries
+  - fiscal periods
+
+الهدف:
+القراءة الحساسة للبيانات المالية لا تكون متاحة بمجرد login.
+
+================================
+قواعد التنفيذ
+================================
+
+1) Backend first
+- الحماية الحقيقية في backend
+- لا تعتمد على UI
+
+2) Minimal Patch
+- أقل عدد تعديلات ممكن
+- لا refactor
+- لا نقل دوال بين ملفات إلا لو ضروري جدًا
+
+3) Reuse existing primitives
+- استخدم requireAuth و checkPermission الموجودين
+- لا تنشئ authorization framework جديد الآن
+
+4) No silent behavior changes
+- لو route كان يرجع 200 وأصبح الآن يجب أن يرجع 403 لغير المصرح لهم، فهذا مقصود
+- لا تغيّر response shape إلا إذا كان ضروريًا
+- لا تغيّر business logic نفسها
+
+5) Keep existing ownership/scope logic
+- ownership و clinic scope و shift ownership تظل موجودة
+- فقط أضف permission checks فوقها حيث يلزم
+
+6) Frontend sync only when necessary
+- لو زر ظاهر لكن backend أصبح يرفضه، اخفِ الزر أو عطله
+- لا تعمل redesign للواجهة
+- لا توسع في cleanup
+
+================================
+المخرجات المطلوبة
+================================
+
+أريد في النهاية تقرير تنفيذ منظم جدًا بهذا الشكل:
+
+1) Files Modified
+- list of modified files only
+
+2) Exact Hotfixes Applied
+لكل route:
+- route
+- before
+- after
+- permission added
+- why this permission
+
+3) Any Permission Reuse Decisions
+- إذا استخدمت permission موجود لعملية ليست perfect match، اذكر السبب
+
+4) Any New Permission Added
+- ideally none
+- لو أضفت جديد: لماذا كان ضروريًا، وأين أُضيف، وما roles التي أخذته
+
+5) Frontend Adjustments
+- فقط ما تم تعديله ليتماشى مع backend
+
+6) Regression Risk Review
+- هل يوجد flows قد تتأثر؟
+- هل يوجد شاشات كانت تعتمد على endpoint مفتوح وأصبحت تحتاج permission؟
+- اذكر ذلك بوضوح
+
+7) Security Outcome
+- ما الذي أصبح مغلقًا الآن
+- ما الذي لا يزال مؤجلًا للمرحلة التالية
+
+8) Do Not Continue
+- توقف بعد تنفيذ الـ hotfix
+- لا تبدأ phase 2
+- لا تعمل refactor إضافي
+- لا تقترح تحسينات كثيرة
+- فقط نفّذ وأبلغ
+
+================================
+معيار النجاح
+================================
+
+يُعتبر العمل ناجحًا فقط إذا:
+- sales returns لم تعد قابلة للاستخدام بدون permission
+- treasuries CRUD أصبحت محمية
+- cashier collect/refund أصبحت تتطلب permission + ownership
+- surgery-type update أصبح محميًا
+- endpoints المالية الحساسة لم تعد مفتوحة لأي logged-in user
+- لم يتم كسر flows سليمة بلا داعٍ
+- التعديلات بقيت محدودة ومباشرة

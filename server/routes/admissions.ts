@@ -69,7 +69,7 @@ export function registerAdmissionsRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.put("/api/patient-invoices/:id/surgery-type", requireAuth, async (req, res) => {
+  app.put("/api/patient-invoices/:id/surgery-type", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const { surgeryTypeId } = req.body;
       await storage.updateInvoiceSurgeryType(req.params.id as string, surgeryTypeId || null);
@@ -192,7 +192,7 @@ export function registerAdmissionsRoutes(app: Express) {
 
   // ─── Sales Returns ──────────────────────────────────────────────────────────
 
-  app.get("/api/sales-returns/search", requireAuth, async (req, res) => {
+  app.get("/api/sales-returns/search", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
       const { invoiceNumber, receiptBarcode, itemBarcode, itemCode, itemId, dateFrom, dateTo, warehouseId } = req.query as Record<string, string | undefined>;
       if (!invoiceNumber && !receiptBarcode && !itemBarcode && !itemCode && !itemId) {
@@ -206,7 +206,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/sales-returns/invoice/:id", requireAuth, async (req, res) => {
+  app.get("/api/sales-returns/invoice/:id", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
       res.set("Cache-Control", "no-store");
       const invoice = await storage.getSaleInvoiceForReturn(req.params.id as string);
@@ -215,7 +215,7 @@ export function registerAdmissionsRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/sales-returns", requireAuth, async (req, res) => {
+  app.post("/api/sales-returns", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
       const { originalInvoiceId, warehouseId, returnLines, discountType, discountPercent, discountValue, notes } = req.body;
       if (!originalInvoiceId || !returnLines?.length) {
