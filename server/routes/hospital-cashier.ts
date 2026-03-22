@@ -480,14 +480,14 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.patch("/api/treasuries/:id", requireAuth, async (req, res) => {
+  app.patch("/api/treasuries/:id", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { name, glAccountId, isActive, notes } = req.body;
       res.json(await storage.updateTreasury(req.params.id as string, { name, glAccountId, isActive, notes }));
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.delete("/api/treasuries/:id", requireAuth, async (req, res) => {
+  app.delete("/api/treasuries/:id", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try { await storage.deleteTreasury(req.params.id as string); res.json({ ok: true }); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
@@ -499,7 +499,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/treasuries/:id/statement", requireAuth, async (req, res) => {
+  app.get("/api/treasuries/:id/statement", requireAuth, checkPermission(PERMISSIONS.CASHIER_HANDOVER_VIEW), async (req, res) => {
     try {
       const { dateFrom, dateTo } = req.query as Record<string, string>;
       const page     = parseInt(String(req.query.page     || "1"))   || 1;
@@ -508,12 +508,12 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/user-treasuries", requireAuth, async (req, res) => {
+  app.get("/api/user-treasuries", requireAuth, checkPermission(PERMISSIONS.USERS_EDIT), async (req, res) => {
     try { res.json(await storage.getAllUserTreasuries()); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/user-treasuries", requireAuth, async (req, res) => {
+  app.post("/api/user-treasuries", requireAuth, checkPermission(PERMISSIONS.USERS_EDIT), async (req, res) => {
     try {
       const { userId, treasuryId } = req.body;
       if (!userId || !treasuryId) return res.status(400).json({ message: "userId و treasuryId مطلوبان" });
@@ -522,7 +522,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.delete("/api/user-treasuries/:userId", requireAuth, async (req, res) => {
+  app.delete("/api/user-treasuries/:userId", requireAuth, checkPermission(PERMISSIONS.USERS_EDIT), async (req, res) => {
     try { await storage.removeUserTreasury(req.params.userId as string); res.json({ ok: true }); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });

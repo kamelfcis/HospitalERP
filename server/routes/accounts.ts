@@ -43,7 +43,7 @@ export function registerAccountsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/accounts/export", requireAuth, async (req, res) => {
+  app.get("/api/accounts/export", requireAuth, checkPermission(PERMISSIONS.ACCOUNTS_VIEW), async (req, res) => {
     try {
       const userId       = req.session.userId as string;
       const allAccounts  = await storage.getAccounts();
@@ -161,7 +161,7 @@ export function registerAccountsRoutes(app: Express) {
   });
 
   // Cost Centers
-  app.get("/api/cost-centers", requireAuth, async (req, res) => {
+  app.get("/api/cost-centers", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_VIEW), async (req, res) => {
     try {
       const costCenters = await storage.getCostCenters();
       res.json(costCenters);
@@ -171,7 +171,7 @@ export function registerAccountsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cost-centers/export", async (req, res) => {
+  app.get("/api/cost-centers/export", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_VIEW), async (req, res) => {
     try {
       const costCentersList = await storage.getCostCenters();
       
@@ -197,7 +197,7 @@ export function registerAccountsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cost-centers/:id", async (req, res) => {
+  app.get("/api/cost-centers/:id", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_VIEW), async (req, res) => {
     try {
       const costCenter = await storage.getCostCenter(req.params.id as string);
       if (!costCenter) {
@@ -253,7 +253,7 @@ export function registerAccountsRoutes(app: Express) {
   });
 
   // Fiscal Periods
-  app.get("/api/fiscal-periods", async (req, res) => {
+  app.get("/api/fiscal-periods", requireAuth, checkPermission(PERMISSIONS.FISCAL_PERIODS_VIEW), async (req, res) => {
     try {
       const periods = await storage.getFiscalPeriods();
       res.json(periods);

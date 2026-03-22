@@ -1,0 +1,105 @@
+نفّذ الآن الخطة بالكامل كـ Hotfix فعلي في الكود، ولا تكتفِ بالخطة أو الوصف.
+
+المطلوب:
+- طبّق كل التعديلات المذكورة في الخطة السابقة فعليًا داخل الملفات
+- عدّل الكود نفسه
+- لا تكتب Plan جديدة
+- لا تعيد شرح المشكلة فقط
+- لا تتوقف عند What & Why
+- لا تكتفِ بذكر routes
+- نفّذ patch حقيقي في الملفات
+
+التزم بالتالي:
+- أقل تعديل ممكن
+- لا refactor
+- لا redesign
+- لا تغيّر business logic إلا لإضافة الحماية
+- استخدم requireAuth و checkPermission الموجودين
+- لا تضف framework جديد
+- لا تضف permissions جديدة إلا لو اكتشفت استحالة التنفيذ بدونها، وفي هذه الحالة اذكرها بوضوح ونفّذ الحد الأدنى فقط
+
+نفّذ فعليًا الآن هذه البنود في الكود:
+1) Sales returns guard
+- أضف checkPermission المناسب على كل routes الخاصة بـ sales returns
+- search
+- invoice lookup
+- create return
+
+2) Treasury protection
+- أضف checkPermission فعلي على:
+  - GET /api/treasuries
+  - GET /api/treasuries/summary
+  - GET /api/treasuries/:id/statement
+  - POST /api/treasuries
+  - PATCH /api/treasuries/:id
+  - DELETE /api/treasuries/:id
+  - POST /api/user-treasuries
+  - DELETE /api/user-treasuries/:...
+  - GET /api/user-treasuries
+- طبق الصلاحيات التي حددتها في الخطة السابقة
+
+3) Cashier collect/refund
+- أضف checkPermission فعلي على:
+  - POST /api/cashier/collect
+  - POST /api/cashier/refund
+- مع الإبقاء على shift ownership كما هو
+
+4) Surgery type update
+- أضف checkPermission فعلي على:
+  - PUT /api/patient-invoices/:id/surgery-type
+
+5) Financial / sensitive GET endpoints
+- نفّذ الحماية الفعلية على endpoints التي قررت حمايتها في الخطة:
+  - accounts export
+  - cost centers
+  - fiscal periods
+  - journal entries
+  - وما تم الاتفاق عليه في الخطة السابقة فقط
+- لا توسع خارج الخطة
+- لو قررت ترك endpoint كما هو، اتركه كما هو لكن اذكره في التقرير النهائي
+
+6) Frontend sync minimal only if needed
+- فقط لو backend gate الجديد سيؤدي إلى زر ظاهر يضرب 403
+- أخفِ أو عطّل العنصر فقط
+- لا redesign
+
+بعد التنفيذ الفعلي:
+أريد تقرير نهائي بصيغة تنفيذ، وليس خطة، بهذا الشكل بالضبط:
+
+1) EXECUTED
+اكتب بوضوح أنك نفذت التعديلات فعليًا في الكود
+
+2) FILES MODIFIED
+اذكر الملفات التي تم تعديلها فقط
+
+3) EXACT CODE-LEVEL CHANGES APPLIED
+لكل ملف:
+- ما الـ route أو الجزء الذي تم تعديله
+- ما middleware / checkPermission الذي أُضيف فعليًا
+- قبل / بعد باختصار دقيق
+
+4) PERMISSIONS USED
+اذكر كل permission استُخدم فعليًا في التنفيذ، وليس المقترح فقط
+
+5) FRONTEND CHANGES
+اذكر هل تم تعديل الواجهة أم لا، وإن تم، ما الذي تغير فعليًا
+
+6) REGRESSION / IMPACT CHECK
+اذكر المخاطر التشغيلية الفعلية بعد التنفيذ
+
+7) REMAINING DEFERRED ITEMS
+اذكر ما تم تأجيله فعلًا ولم يُنفذ
+
+8) STOP
+توقف بعد التنفيذ والتقرير
+لا تبدأ Phase 2
+لا تكتب اقتراحات عامة
+لا تكتب خطة جديدة
+
+مهم جدًا:
+- أريد تنفيذ فعلي في الملفات
+- لا أريد Proposal
+- لا أريد Plan
+- لا أريد “يمكن تنفيذ”
+- لا أريد “سأقوم”
+- أريد نتيجة تنفيذ منجزة الآن

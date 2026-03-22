@@ -35,7 +35,7 @@ async function getWarehouseForbiddenMsg(userId: string, warehouseId: string): Pr
 export function registerSalesInvoicesRoutes(app: Express) {
   // ==================== Sales Invoices ====================
   
-  app.get("/api/sales-invoices", async (req, res) => {
+  app.get("/api/sales-invoices", requireAuth, async (req, res) => {
     try {
       const { status, dateFrom, dateTo, customerType, search, pharmacistId, warehouseId, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getSalesInvoices({
@@ -57,7 +57,7 @@ export function registerSalesInvoicesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/sales-invoices/journal-failures", async (_req, res) => {
+  app.get("/api/sales-invoices/journal-failures", requireAuth, checkPermission(PERMISSIONS.JOURNAL_POST), async (_req, res) => {
     try {
       const result = await db.select({
         id: salesInvoiceHeaders.id,
@@ -88,7 +88,7 @@ export function registerSalesInvoicesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/sales-invoices/:id/journal-readiness", async (req, res) => {
+  app.get("/api/sales-invoices/:id/journal-readiness", requireAuth, async (req, res) => {
     try {
       const result = await storage.checkJournalReadiness(req.params.id as string);
       res.json(result);
@@ -98,7 +98,7 @@ export function registerSalesInvoicesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/sales-invoices/:id", async (req, res) => {
+  app.get("/api/sales-invoices/:id", requireAuth, async (req, res) => {
     try {
       const invoice = await storage.getSalesInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });

@@ -86,7 +86,7 @@ async function fireApprovalRequestsForInvoice(invoiceId: string, contractId: str
 export function registerPatientInvoicesRoutes(app: Express) {
   // ============= Patient Invoices =============
 
-  app.get("/api/patient-invoices/next-number", async (_req, res) => {
+  app.get("/api/patient-invoices/next-number", requireAuth, async (_req, res) => {
     try {
       const num = await storage.getNextPatientInvoiceNumber();
       res.json({ nextNumber: num });
@@ -107,7 +107,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patient-invoices", async (req, res) => {
+  app.get("/api/patient-invoices", requireAuth, async (req, res) => {
     try {
       const filters = {
         status: req.query.status as string,
@@ -127,7 +127,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patient-invoices/:id", async (req, res) => {
+  app.get("/api/patient-invoices/:id", requireAuth, async (req, res) => {
     try {
       const invoice = await storage.getPatientInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "فاتورة المريض غير موجودة" });
