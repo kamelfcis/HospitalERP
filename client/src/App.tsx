@@ -126,7 +126,7 @@ function Router() {
           <Route path="/supplier-receiving">{() => <G p="receiving.view"><SupplierReceiving /></G>}</Route>
           <Route path="/purchase-invoices">{() => <G p="purchase_invoices.view"><PurchaseInvoice /></G>}</Route>
           <Route path="/sales-invoices">{() => <G p="sales.view"><SalesInvoices /></G>}</Route>
-          <Route path="/sales-returns">{() => <G p="sales.view"><SalesReturns /></G>}</Route>
+          <Route path="/sales-returns">{() => <G p="sales.create"><SalesReturns /></G>}</Route>
           <Route path="/services-pricing">{() => <G p="services.view"><ServicesPricing /></G>}</Route>
           <Route path="/warehouses">{() => <G p="warehouses.view"><Warehouses /></G>}</Route>
           <Route path="/departments">{() => <G p="departments.view"><Departments /></G>}</Route>

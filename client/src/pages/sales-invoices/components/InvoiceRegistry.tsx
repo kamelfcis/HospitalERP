@@ -44,6 +44,7 @@ interface Props {
   onSetFilterPharmacistId: (v: string) => void;
   onSetFilterWarehouseId: (v: string) => void;
   onSetFilterSearch: (v: string) => void;
+  canCreate?: boolean;
   onNewInvoice: () => void;
   onOpenInvoice: (id: string) => void;
   onDeleteClick: (id: string) => void;
@@ -68,6 +69,7 @@ export function InvoiceRegistry({
   listLoading, deletePending, deleteVariables, confirmDeleteId,
   warehouses, pharmacistUsers, totals,
   seedLoading, quickTestLoading,
+  canCreate = true,
   onSetPage, onSetFilterDateFrom, onSetFilterDateTo, onSetFilterStatus, onSetFilterCustomerType, onSetFilterPharmacistId, onSetFilterWarehouseId, onSetFilterSearch,
   onNewInvoice, onOpenInvoice, onDeleteClick, onConfirmDelete, onCancelDelete, onSeedDemo, onQuickTest,
 }: Props) {
@@ -114,18 +116,22 @@ export function InvoiceRegistry({
           <span className="text-xs text-muted-foreground">({totalInvoices} فاتورة)</span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button size="sm" variant="outline" onClick={onSeedDemo} disabled={seedLoading} data-testid="button-seed-demo">
-            {seedLoading ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : null}
-            Seed Demo Data
-          </Button>
-          <Button size="sm" variant="outline" onClick={onQuickTest} disabled={quickTestLoading} data-testid="button-quick-test">
-            {quickTestLoading ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : null}
-            Quick Test Invoice
-          </Button>
-          <Button size="sm" onClick={onNewInvoice} data-testid="button-new-invoice">
-            <Plus className="h-3 w-3 ml-1" />
-            فاتورة جديدة
-          </Button>
+          {canCreate && (
+            <>
+              <Button size="sm" variant="outline" onClick={onSeedDemo} disabled={seedLoading} data-testid="button-seed-demo">
+                {seedLoading ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : null}
+                Seed Demo Data
+              </Button>
+              <Button size="sm" variant="outline" onClick={onQuickTest} disabled={quickTestLoading} data-testid="button-quick-test">
+                {quickTestLoading ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : null}
+                Quick Test Invoice
+              </Button>
+              <Button size="sm" onClick={onNewInvoice} data-testid="button-new-invoice">
+                <Plus className="h-3 w-3 ml-1" />
+                فاتورة جديدة
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -267,7 +273,7 @@ export function InvoiceRegistry({
                     <td className="text-center">{statusBadge(inv.status)}</td>
                     <td className="text-center" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">
-                        {inv.status === "draft" && (
+                        {canCreate && inv.status === "draft" && (
                           <Button
                             variant="ghost"
                             size="icon"

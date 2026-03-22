@@ -15,6 +15,7 @@ import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PERMISSIONS } from "@shared/permissions";
 import type { Warehouse, SalesInvoiceWithDetails } from "@shared/schema";
 
 import { useInvoiceForm }     from "./hooks/useInvoiceForm";
@@ -47,7 +48,8 @@ export default function SalesInvoices() {
   const { canViewRegistry, permissionsReady } = useRoleRouter(editId, navigate);
 
   // ── بيانات المستخدم ────────────────────────────────────────────────────────
-  const { user, allowedWarehouseIds } = useAuth();
+  const { user, allowedWarehouseIds, hasPermission } = useAuth();
+  const canCreate = hasPermission(PERMISSIONS.SALES_CREATE);
 
   // ── بيانات عامة ───────────────────────────────────────────────────────────
   const { data: allWarehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
@@ -394,6 +396,7 @@ export default function SalesInvoices() {
       onSetFilterPharmacistId={registry.setFilterPharmacistId}
       onSetFilterWarehouseId={registry.setFilterWarehouseId}
       onSetFilterSearch={registry.setFilterSearch}
+      canCreate={canCreate}
       onNewInvoice={() => navigate("/sales-invoices?id=new")}
       onOpenInvoice={(id) => navigate(`/sales-invoices?id=${id}`)}
       onDeleteClick={(id) => setConfirmDeleteId(id)}

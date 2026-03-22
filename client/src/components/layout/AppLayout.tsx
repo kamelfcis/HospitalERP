@@ -88,7 +88,7 @@ const mainNavItems: NavItem[] = [
   { title: "إعداد إذن تحويل",         href: "/transfer-preparation", icon: FileSpreadsheet,  permission: "transfers.view" },
   { title: "جرد الأصناف",            href: "/stock-count",        icon: ClipboardList,     permission: "stock_count.view" },
   { title: "فواتير البيع",            href: "/sales-invoices",     icon: ShoppingCart,      permission: "sales.view" },
-  { title: "مردودات المبيعات",        href: "/sales-returns",      icon: Undo2,             permission: "sales.view" },
+  { title: "مردودات المبيعات",        href: "/sales-returns",      icon: Undo2,             permission: "sales.create" },
   { title: "فاتورة مريض",            href: "/patient-invoices",   icon: UserRound,         permission: "patient_invoices.view" },
   { title: "لوحة الأسرّة",            href: "/bed-board",          icon: BedDouble,         permission: "patient_invoices.view" },
   { title: "إدارة الأدوار والغرف",    href: "/room-management",    icon: DoorOpen,          permission: "patient_invoices.view" },

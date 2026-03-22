@@ -9,9 +9,11 @@
 //  │                   → ReturnFooter                      │
 //  └────────────────────────────────────────────────────────┘
 // ============================================================
-import { Undo2, Loader2, AlertCircle } from "lucide-react";
+import { Undo2, Loader2, AlertCircle, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
+import { PERMISSIONS } from "@shared/permissions";
 
 import { useReturnSearch } from "./hooks/useReturnSearch";
 import { useReturnForm }   from "./hooks/useReturnForm";
@@ -23,6 +25,8 @@ import { ReturnFooter }     from "./components/ReturnFooter";
 
 // ============================================================
 export default function SalesReturnsPage() {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission(PERMISSIONS.SALES_CREATE);
   const search = useReturnSearch();
   const form   = useReturnForm();
 
