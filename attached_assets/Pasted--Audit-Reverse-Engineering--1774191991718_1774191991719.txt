@@ -1,0 +1,324 @@
+أريد منك عمل Audit / Reverse Engineering كامل وشامل جدًا لمنطق الصلاحيات داخل السيستم الحالي، وشرح الواقع الفعلي كما هو مطبق الآن داخل المشروع كله، بدون أي تعديل في الكود الآن، وبدون refactor، وبدون إصلاح، وبدون اقتراح تنفيذ. المطلوب الآن فقط: استخراج + تفسير + توثيق + كشف شامل لكل ما يتعلق بالصلاحيات داخل النظام الحالي، مهما كان موزعًا أو مبعثرًا أو غير متسق.
+
+الهدف:
+أريد أن أفهم “منطق الصلاحيات الحقيقي” داخل السيستم كما هو اليوم، صفحة صفحة، route route، زر زر، API API، guard guard، hook hook، middleware middleware، role role، permission permission، condition condition، حتى نراجعه لاحقًا ونبني عليه بدون هدم غير لازم.
+
+ممنوع في هذه المرحلة:
+- ممنوع تعديل أي ملف
+- ممنوع إنشاء ملفات جديدة
+- ممنوع إصلاح الكود
+- ممنوع refactor
+- ممنوع حذف أو إضافة permissions
+- ممنوع تغيير UI
+- ممنوع تغيير backend behavior
+- ممنوع الاكتفاء بملخص عام
+- ممنوع الافتراض
+- ممنوع قول “يبدو” أو “غالبًا” بدون دليل من الكود
+- لا تكتب خطة إصلاح الآن إلا في آخر قسم مستقل وصغير جدًا بعنوان “Potential Future Fixes (Not Applied)”
+
+المطلوب:
+أريد تقرير تشريحي Exhaustive جدًا يطلع كل ما في بطن السيستم بخصوص الصلاحيات، ويشرح المنطق الحالي الفعلي، حتى لو كان فيه تناقضات أو عيوب أو permissive behavior أو حماية ناقصة أو checks ضمنية أو checks متعارضة بين الـ frontend والـ backend.
+
+========================
+القسم 1: خريطة مصادر الصلاحيات داخل المشروع
+========================
+استخرج واذكر كل مكان في المشروع له علاقة بالصلاحيات أو الأدوار أو الحماية أو التحكم في الوصول، مثل:
+- schema / permissions tables / roles tables / role-permission mappings
+- seed files
+- auth middleware
+- permission helpers
+- role helpers
+- route guards
+- server-side authorize functions
+- frontend hooks مثل usePermissions / useAuth / useCurrentUser / hasPermission
+- layout guards
+- page-level guards
+- component-level guards
+- action/button visibility conditions
+- menu/sidebar filtering
+- tabs filtering
+- API-level checks
+- service/storage-level checks
+- special-case conditions
+- hardcoded role names
+- feature flags لو تؤثر على access
+- أي constants files فيها permission codes
+- أي inferred permissions أو fallback logic
+
+لكل مصدر:
+- اسم الملف
+- المسار
+- نوعه (frontend/backend/shared/db/seed)
+- وظيفته بالضبط
+- هل هو source of truth أم مجرد consumer
+- هل هو إلزامي أم تجميلي فقط
+- هل يؤثر على security فعلاً أم فقط على العرض
+
+========================
+القسم 2: قائمة كاملة بكل Permission Codes / Roles الموجودة فعليًا
+========================
+استخرج قائمة كاملة بكل:
+- permission codes
+- permission groups
+- roles
+- role mappings
+- default role grants
+- seeded permissions
+- seeded roles
+- أي special admin/owner bypass
+- أي superuser logic
+- أي wildcard logic
+- أي “if admin allow all” logic
+- أي checks based on role name بدل permission code
+
+أريد الناتج في جدول منظم يحتوي على:
+- Permission Code
+- Display Name إن وجد
+- المكان المعرّف فيه
+- مستخدم في الـ frontend؟ أين؟
+- مستخدم في الـ backend؟ أين؟
+- مربوط بأي roles؟
+- هل مستخدم فعلاً أم dead permission؟
+- هل يوجد أكثر من naming variant لنفس المعنى؟
+- هل فيه permission معرف لكنه غير enforced؟
+- هل فيه action مهمة بدون permission مستقل؟
+
+========================
+القسم 3: منطق التحقق الحالي في الـ Backend
+========================
+حلّل كل routes / controllers / handlers / services / storage functions المتعلقة بالشاشات والعمليات الأساسية، ووضّح بدقة:
+- أين يتم التحقق من الصلاحيات؟
+- هل التحقق في route layer فقط؟
+- هل يوجد service-level enforcement؟
+- هل يوجد storage-level enforcement؟
+- هل يوجد middleware عام؟
+- هل يوجد bypass لبعض الأدوار؟
+- هل توجد APIs لا تتحقق من permission نهائيًا؟
+- هل توجد APIs تكتفي بوجود session فقط؟
+- هل توجد APIs تستخدم role check بدل permission check؟
+- هل توجد APIs تعتمد على ownership بدل permission؟
+- هل توجد APIs منطقها “لو قدر يدخل الصفحة يبقى يعمل action”؟
+- هل توجد APIs فيها mismatch بين اسم الصلاحية وبين الوظيفة؟
+
+لكل API / action:
+- route / endpoint
+- الوظيفة
+- ما الصلاحية المطلوبة فعليًا الآن
+- أين يتم check
+- ماذا يحدث لو المستخدم لا يملكها
+- هل check صريح أم ضمني
+- هل فيه fallback permissive
+- هل فيه bug أو gap واضح
+- هل حماية الـ backend كافية أو لا
+
+========================
+القسم 4: منطق التحقق الحالي في الـ Frontend
+========================
+أريد كشف شامل جدًا لكيفية تصرف الواجهة مع الصلاحيات:
+- الصفحات التي تحتاج permission للدخول
+- الصفحات التي تفتح بمجرد login
+- الأزرار التي تظهر/تختفي حسب permission
+- الأزرار التي لا يوجد عليها check
+- الحقول التي تصبح disabled أو readOnly
+- التبويبات التي تُخفى
+- الـ menus/sidebar items
+- الـ dialogs/modals
+- context menus
+- bulk actions
+- row actions
+- print/finalize/delete/collect/save/create buttons
+- أي logic مبني على canView / canEdit / isAdmin / role === owner
+- أي permission aggregation logic
+- أي derived flags
+- أي custom hooks تؤثر على السلوك
+
+لكل صفحة رئيسية:
+- اسم الصفحة
+- route
+- شرط الدخول
+- ماذا يرى user معه view فقط
+- ماذا يرى user معه create
+- ماذا يرى user معه finalize
+- هل الصفحة فعلاً read-only عند view only أم لا
+- هل يوجد عنصر ظاهر بدون permission check
+- هل الواجهة تعتمد على page access بدل action access
+- هل يوجد تضارب بين ما يظهر في UI وما يسمح به backend
+
+========================
+القسم 5: Matrix تفصيلية “شاشة / عملية / Permission / Enforcement”
+========================
+أريد Matrix كبيرة ومنظمة جدًا تغطي كل modules المهمة في المشروع الحالي، مثل:
+- Sales
+- Purchases
+- Treasury / Cashier
+- Inventory
+- Patients
+- Admissions
+- Pharmacy
+- Contracts / Insurance
+- Accounting / Journals / Mapping
+- Reports
+- Admin / Users / Roles / Settings
+- أي modules أخرى موجودة فعلاً
+
+لكل Module:
+- الشاشة / الصفحة
+- العملية (View / Create / Edit / Delete / Finalize / Collect / Return / Print / Cancel / Reopen ... حسب الموجود فعليًا)
+- Permission المستخدم حاليًا
+- هل الـ UI يتحقق؟
+- هل الـ Backend يتحقق؟
+- هل يوجد gap؟
+- هل يوجد overreach؟
+- هل العملية متاحة خطأً بسبب sales.view أو ما شابهه؟
+- هل العملية تعتمد على status بدل permission؟
+- هل العملية تعتمد على role بدل permission؟
+- هل العملية محمية بالكامل أم جزئيًا أم غير محمية
+
+========================
+القسم 6: كشف التناقضات والثغرات والمنطق الضمني
+========================
+أريد قائمة صريحة جدًا بكل تناقض أو ثغرة أو تصميم غير نظيف، مثل:
+- UI يخفي زر لكن API مفتوح
+- UI يظهر زر لكن API سترفض
+- صفحة تحتاج view فقط لكن تسمح عمليًا بـ create/edit
+- action لا يملك permission مستقل
+- permission واحدة مستخدمة لعدة وظائف مختلفة
+- role names مستخدمة بدل permission codes
+- implicit admin bypass
+- default allow behavior
+- missing deny behavior
+- permissions موجودة في seed وغير مستخدمة
+- checks في frontend فقط
+- checks في backend فقط
+- inconsistencies في naming
+- duplicated logic
+- dead code
+- dead permissions
+- orphan roles
+- routes guarded incorrectly
+- components reused بدون guard
+- أي places فيها security by UI only
+- أي actions مبنية على hidden button وليس backend rejection
+
+لكل نقطة:
+- الوصف
+- الملف/المكان
+- لماذا تعتبر gap أو inconsistency
+- تأثيرها العملي
+- severity: high / medium / low
+
+========================
+القسم 7: Trace حقيقي لسيناريوهات المستخدمين
+========================
+أريد محاكاة واقعية مبنية على الكود الحالي لعدة مستخدمين/أدوار، مثل:
+- مستخدم معه sales.view فقط
+- مستخدم معه sales.view + sales.create
+- مستخدم معه sales.view + sales.finalize
+- كاشير
+- صيدلي
+- محاسب
+- owner / admin
+- user محدود الصلاحيات
+
+لكل Persona:
+- ما الصفحات التي يستطيع فتحها
+- ما الأزرار التي تظهر له
+- ما العمليات التي يستطيع تنفيذها فعليًا
+- ما العمليات التي ستفشل في backend حتى لو ظهرت
+- ما العمليات التي قد تنجح خطأً
+- هل يوجد privilege leakage
+- هل يوجد فرق بين “يشوف” و“يعمل” أم لا
+
+========================
+القسم 8: Source of Truth الحقيقي
+========================
+استنتج من الكود الحالي:
+- ما هو المصدر الحقيقي للصلاحيات الآن؟
+هل هو:
+1) database
+2) seed files
+3) shared constants
+4) backend middleware
+5) frontend hooks
+6) مزيج غير منضبط
+
+ثم وضّح:
+- أين يحصل الانفصال بين المصادر
+- هل المشروع عنده canonical permission model أم لا
+- هل هناك أكثر من تعريف لنفس الصلاحية أو نفس المعنى
+- هل الـ UI والـ backend يقرآن من نفس التعريف أم لا
+
+========================
+القسم 9: Missing Permission Boundaries
+========================
+استخرج العمليات التي لا يوجد لها حدود صلاحيات واضحة، مثل:
+- صفحة مفتوحة لكن داخلها كل شيء متاح
+- create/edit/finalize/delete تحت نفس gate
+- save draft ليس له permission مستقل
+- print ليس له permission مستقل
+- collect ليس له permission مستقل
+- reopen/cancel/return ليس لها gates واضحة
+- admin screens محمية جزئيًا فقط
+- reports أو exports غير محمية بشكل كافٍ
+
+المطلوب هنا ليس الإصلاح، بل فقط:
+- كشف العمليات
+- تحديد ما gate الحالي لها
+- توضيح لماذا هذا غير دقيق أو غير كاف
+
+========================
+القسم 10: كيف النظام “بيفكر” حاليًا
+========================
+أريد في النهاية شرحًا تحليليًا مكتوبًا بلغة واضحة يجاوب على السؤال:
+“ما هي فلسفة الصلاحيات الحالية داخل السيستم كما هي الآن فعليًا؟”
+
+اشرح هل النظام الحالي أقرب إلى:
+- page-access model
+- action-based model
+- hybrid messy model
+- role-driven model
+- permission-driven model شكليًا فقط
+- UI-driven gating
+- backend-driven gating
+- mixed inconsistent enforcement
+
+وأريد هذا القسم يكون صريح جدًا ويشرح:
+- أين الخلط
+- أين القوة
+- أين الضعف
+- ما الذي يمكن البناء عليه دون هدم
+
+========================
+طريقة الإخراج المطلوبة
+========================
+أريد التقرير النهائي مرتبًا بهذا الشكل:
+
+1) Executive Summary
+2) Permission Sources Inventory
+3) Roles and Permissions Catalog
+4) Backend Enforcement Analysis
+5) Frontend Enforcement Analysis
+6) Module-by-Module Permission Matrix
+7) Gaps / Contradictions / Risks
+8) User Persona Traces
+9) Current Authorization Philosophy
+10) Potential Future Fixes (Not Applied)
+
+مهم جدًا:
+- التقرير يجب أن يكون طويل، عميق، وصريح
+- لا تختصر
+- لا تكتفي بأمثلة
+- غطّي المشروع كله
+- اذكر أسماء الملفات والمسارات والدوال/الـ routes/الـ hooks بوضوح
+- اعتمد على قراءة فعلية للكود
+- لو شيء غير موجود قل “غير موجود”
+- لو شيء غير واضح قل “لم أجد دليلاً كافيًا”
+- لا تفترض
+- لا تصلح
+- لا تكتب code diff
+- لا تغيّر أي شيء
+- فقط استخرج الحقيقة الحالية كاملة كما هي
+
+وفي آخر التقرير فقط، وتحت عنوان صغير منفصل:
+Potential Future Fixes (Not Applied)
+اكتب نقاط مختصرة جدًا عن الاتجاهات العامة الممكنة لاحقًا، بدون تنفيذ وبدون تعديل فعلي الآن.
