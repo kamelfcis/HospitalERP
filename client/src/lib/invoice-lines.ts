@@ -91,8 +91,9 @@ export function getSmartDefaultUnitLevel(item: ItemLike | null | undefined): str
     // مخزون كافٍ لعلبة كاملة واحدة على الأقل (أو لا يوجد معامل تحويل)
     if (maj2min <= 0 || availMinor >= maj2min) return "major";
     // أقل من علبة — جرّب الوحدة الوسطى
+    // نشترط med2min > 1: لو 1 امبول = 1 سنتي (mediumToMinor=1) نتجاهل الوسطى وننزل للصغرى
     const med2min = getEffectiveMediumToMinor(item);
-    if (item.mediumUnitName && med2min > 0 && availMinor >= med2min) return "medium";
+    if (item.mediumUnitName && med2min > 1 && availMinor >= med2min) return "medium";
     // أقل من وحدة وسطى — استخدم الصغرى إن وُجدت
     if (item.minorUnitName) return "minor";
     return "major"; // لا يوجد مخزون أصلاً — افتراضي

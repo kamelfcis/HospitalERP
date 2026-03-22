@@ -109,7 +109,7 @@ export function getSmartDefaultUnitLevel(item: ItemUnitConfig | null | undefined
   if (item.majorUnitName) {
     if (maj2min <= 0 || availMinor >= maj2min) return "major";
     const med2min = getEffectiveMediumToMinor(item);
-    if (item.mediumUnitName && med2min > 0 && availMinor >= med2min) return "medium";
+    if (item.mediumUnitName && med2min > 1 && availMinor >= med2min) return "medium";
     if (item.minorUnitName) return "minor";
     return "major";
   }
