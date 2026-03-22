@@ -5,6 +5,7 @@ export interface ItemUnitConfig {
   majorToMedium?: number | string | null;
   majorToMinor?: number | string | null;
   mediumToMinor?: number | string | null;
+  availableQtyMinor?: string | number | null;
 }
 
 export function getEffectiveMajorToMinor(item: ItemUnitConfig | null | undefined): number {
@@ -94,6 +95,26 @@ export function itemHasMediumUnit(item: ItemUnitConfig | null | undefined): bool
   const m2med = parseFloat(String(item.majorToMedium));
   const med2min = parseFloat(String(item.mediumToMinor));
   return (m2med > 1) || (med2min > 1) || !!item.mediumUnitName;
+}
+
+/**
+ * الوحدة الافتراضية الذكية — تفحص المخزون المتاح قبل اختيار الوحدة الكبرى.
+ * مشتركة مع invoice-lines.ts بنفس المنطق.
+ */
+export function getSmartDefaultUnitLevel(item: ItemUnitConfig | null | undefined): string {
+  if (!item) return "major";
+  const availMinor = parseFloat(String(item.availableQtyMinor ?? "0")) || 0;
+  const maj2min    = parseFloat(String(item.majorToMinor    ?? "0")) || 0;
+
+  if (item.majorUnitName) {
+    if (maj2min <= 0 || availMinor >= maj2min) return "major";
+    const med2min = getEffectiveMediumToMinor(item);
+    if (item.mediumUnitName && med2min > 0 && availMinor >= med2min) return "medium";
+    if (item.minorUnitName) return "minor";
+    return "major";
+  }
+  if (item.mediumUnitName) return "medium";
+  return "minor";
 }
 
 export function getUnitName(item: ItemUnitConfig | null | undefined, unitLevel: string): string {

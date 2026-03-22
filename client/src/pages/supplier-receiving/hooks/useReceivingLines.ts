@@ -68,9 +68,11 @@ export function useReceivingLines(): UseReceivingLinesReturn {
       const copy = [...prev];
       const line = { ...copy[index], ...updates };
       if ("qtyEntered" in updates || "bonusQty" in updates || "unitLevel" in updates) {
-        const qty    = updates.qtyEntered ?? line.qtyEntered;
-        const bonus  = updates.bonusQty ?? line.bonusQty;
-        const unit   = updates.unitLevel ?? line.unitLevel;
+        const unitChanged = "unitLevel" in updates && updates.unitLevel !== line.unitLevel;
+        // تغيير الوحدة يُعيد الكمية لـ 1 ومكافأة الكمية لـ 0
+        const qty   = unitChanged ? 1 : (updates.qtyEntered ?? line.qtyEntered);
+        const bonus = unitChanged ? 0 : (updates.bonusQty  ?? line.bonusQty);
+        const unit  = updates.unitLevel ?? line.unitLevel;
         line.qtyEntered      = qty;
         line.bonusQty        = bonus;
         line.qtyInMinor      = calculateQtyInMinor(qty, unit, line.item);

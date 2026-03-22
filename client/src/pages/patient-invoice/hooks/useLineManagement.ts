@@ -11,6 +11,7 @@ import {
   convertSmallestToDisplayQty,
   itemHasMajorUnit,
   itemHasMediumUnit,
+  getSmartDefaultUnitLevel,
 } from "../utils/units";
 
 // ── Domain types ───────────────────────────────────────────────────────────────
@@ -230,9 +231,7 @@ export function useLineManagement({
 
   // ── Add item line (with FEFO) ──────────────────────────────────────────────
   const addItemLine = useCallback(async (item: ItemSearchResult, lineType: "drug" | "consumable" | "equipment") => {
-    const hasMajor  = itemHasMajorUnit(item);
-    const hasMedium = itemHasMediumUnit(item);
-    const defaultUnit: "major" | "medium" | "minor" = hasMajor ? "major" : hasMedium ? "medium" : "minor";
+    const defaultUnit = getSmartDefaultUnitLevel(item) as "major" | "medium" | "minor";
     const baseSalePrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
     const unitPrice = computeUnitPriceFromBase(baseSalePrice, defaultUnit, item);
 

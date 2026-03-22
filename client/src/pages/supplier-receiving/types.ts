@@ -2,7 +2,7 @@
  * types.ts — الـ types والـ helpers المشتركة لشاشة استلام الموردين
  */
 
-import { ItemLike } from "@/lib/invoice-lines";
+import { ItemLike, getSmartDefaultUnitLevel } from "@/lib/invoice-lines";
 
 // ── نوع سطر الاستلام المحلي ───────────────────────────────────────────────
 export interface ReceivingLineLocal {
@@ -51,8 +51,7 @@ export function calculateQtyInMinor(qtyEntered: number, unitLevel: string, item:
 }
 
 export function getDefaultUnitLevel(item: ItemLike | null | undefined): string {
-  if (item?.majorUnitName) return "major";
-  return "minor";
+  return getSmartDefaultUnitLevel(item);
 }
 
 export function getUnitName(item: ItemLike | null | undefined, unitLevel: string): string {
