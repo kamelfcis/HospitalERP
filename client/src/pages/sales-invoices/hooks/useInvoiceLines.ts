@@ -7,6 +7,7 @@ import {
   computeUnitPriceFromBase,
   computeLineTotal,
   convertMinorToDisplayQty,
+  getSmartDefaultUnitLevel,
 } from "@/lib/invoice-lines";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,10 +189,9 @@ export function useInvoiceLines(
       const ln      = { ...target, ...patch };
 
       if (patch.unitLevel) {
-        // تحويل الكمية من الوحدة القديمة للجديدة بدون خسارة في القيمة
-        const oldMinor = calculateQtyInMinor(target.qty, target.unitLevel, target.item);
-        ln.qty         = convertMinorToDisplayQty(oldMinor, patch.unitLevel, target.item);
-        ln.salePrice   = computeUnitPriceFromBase(ln.baseSalePrice, ln.unitLevel, ln.item);
+        // تغيير الوحدة يُعيد الكمية لـ 1 بدلاً من تحويل الكمية الحالية
+        ln.qty       = 1;
+        ln.salePrice = computeUnitPriceFromBase(ln.baseSalePrice, patch.unitLevel, ln.item);
       }
 
       ln.lineTotal   = computeLineTotal(ln.qty, ln.baseSalePrice, ln.unitLevel, ln.item);
@@ -246,12 +246,13 @@ export function useInvoiceLines(
       const existingMinor      = existingForItem.reduce(
         (s, l) => s + calculateQtyInMinor(l.qty, l.unitLevel, l.item), 0,
       );
+      const smartDefault       = getSmartDefaultUnitLevel(itemData);
       const overrideQty        = overrides?.qty ?? 1;
-      const overrideUnit       = overrides?.unitLevel ?? "major";
+      const overrideUnit       = overrides?.unitLevel ?? smartDefault;
       const additionalMinor    = calculateQtyInMinor(overrideQty, overrideUnit, itemData);
       const totalRequiredMinor = existingMinor + additionalMinor;
       const unitLevel          = overrides?.unitLevel
-        ?? (existingForItem.length > 0 ? existingForItem[0].unitLevel : "major");
+        ?? (existingForItem.length > 0 ? existingForItem[0].unitLevel : smartDefault);
 
       setFefoLoading(true);
       try {
@@ -283,7 +284,7 @@ export function useInvoiceLines(
     }
 
     // ── مسار عادي (صنف بدون صلاحية) ─────────────────────────────────────────
-    const targetUnit = overrides?.unitLevel ?? "major";
+    const targetUnit = overrides?.unitLevel ?? getSmartDefaultUnitLevel(itemData);
     const targetQty  = overrides?.qty ?? 1;
 
     if (!overrides) {

@@ -74,6 +74,34 @@ export function getUnitOptions(item: ItemLike | null | undefined): UnitOption[] 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// الوحدة الافتراضية الذكية
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * تحدد الوحدة الافتراضية بناءً على المخزون المتاح.
+ * إذا المخزون أقل من علبة كاملة → تنتقل للوحدة التالية الأصغر.
+ * تُستخدم عند إضافة صنف من البحث في جميع الشاشات.
+ */
+export function getSmartDefaultUnitLevel(item: ItemLike | null | undefined): string {
+  if (!item) return "major";
+  const availMinor = parseFloat(String(item.availableQtyMinor ?? "0")) || 0;
+  const maj2min    = parseFloat(String(item.majorToMinor    ?? "0")) || 0;
+
+  if (item.majorUnitName) {
+    // مخزون كافٍ لعلبة كاملة واحدة على الأقل (أو لا يوجد معامل تحويل)
+    if (maj2min <= 0 || availMinor >= maj2min) return "major";
+    // أقل من علبة — جرّب الوحدة الوسطى
+    const med2min = getEffectiveMediumToMinor(item);
+    if (item.mediumUnitName && med2min > 0 && availMinor >= med2min) return "medium";
+    // أقل من وحدة وسطى — استخدم الصغرى إن وُجدت
+    if (item.minorUnitName) return "minor";
+    return "major"; // لا يوجد مخزون أصلاً — افتراضي
+  }
+  if (item.mediumUnitName) return "medium";
+  return "minor";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // معاملات التحويل
 // ─────────────────────────────────────────────────────────────────────────────
 

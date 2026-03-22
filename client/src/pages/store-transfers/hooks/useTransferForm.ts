@@ -7,6 +7,7 @@ import {
   calculateQtyInMinor,
   getDefaultUnitLevel,
 } from "../types";
+import { getSmartDefaultUnitLevel } from "@/lib/invoice-lines";
 import type { ItemSelectedPayload } from "@/components/ItemFastSearch/types";
 import { useTransferLines } from "./sub-hooks/useTransferLines";
 import { useTransferAutoSave } from "./sub-hooks/useTransferAutoSave";
@@ -187,7 +188,7 @@ export function useTransferForm() {
 
   const handleItemSelected = useCallback(
     ({ item, batch }: ItemSelectedPayload) => {
-      const unitLevel = getDefaultUnitLevel(item);
+      const unitLevel = getSmartDefaultUnitLevel(item);
       const qtyEntered = 1;
       const qtyInMinor = calculateQtyInMinor(qtyEntered, unitLevel, item);
 

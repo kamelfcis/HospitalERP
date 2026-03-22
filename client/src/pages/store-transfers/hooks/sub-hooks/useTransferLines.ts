@@ -269,10 +269,10 @@ export function useTransferLines({
       if (!line) return;
 
       if (line.item?.hasExpiry) {
-        const sameItemLines = lines.filter((l) => l.itemId === line.itemId);
-        const totalQtyInMinor = sameItemLines.reduce((sum, l) => sum + l.qtyInMinor, 0);
+        // تغيير الوحدة يُعيد الكمية لـ 1 في الوحدة الجديدة ويشغّل FEFO لوحدة واحدة فقط
+        const oneUnitInMinor = calculateQtyInMinor(1, newUnitLevel, line.item);
 
-        if (totalQtyInMinor <= 0) {
+        if (oneUnitInMinor <= 0) {
           setFormLines((prev) => {
             const copy = [...prev];
             copy[index] = { ...copy[index], unitLevel: newUnitLevel };
@@ -286,7 +286,7 @@ export function useTransferLines({
           const params = new URLSearchParams({
             itemId: line.itemId,
             warehouseId: sourceWarehouseId,
-            requiredQtyInMinor: String(totalQtyInMinor),
+            requiredQtyInMinor: String(oneUnitInMinor),
             asOfDate: transferDate,
           });
           const res = await fetch(`/api/transfer/fefo-preview?${params}`);
@@ -298,43 +298,42 @@ export function useTransferLines({
             return;
           }
 
-          const convertMinorToDisplay = (minorQty: number): number => {
-            let displayQty = minorQty;
-            if (newUnitLevel === "major") displayQty = minorQty / (parseFloat(String(line.item?.majorToMinor || "0")) || 1);
-            else if (newUnitLevel === "medium") displayQty = minorQty / getEffectiveMediumToMinor(line.item);
-            const rounded = Math.round(displayQty * 10000) / 10000;
-            if (Math.abs(rounded - Math.round(rounded)) < 0.005) return Math.round(rounded);
-            return rounded;
-          };
-
-          const newLines: TransferLineLocal[] = preview.allocations
-            .filter((a: TransferFefoAllocation) => parseFloat(a.allocatedQty) > 0)
-            .map((alloc: TransferFefoAllocation) => ({
-              id: crypto.randomUUID(),
-              itemId: line.itemId,
-              item: line.item,
-              unitLevel: newUnitLevel,
-              qtyEntered: convertMinorToDisplay(parseFloat(alloc.allocatedQty)),
-              qtyInMinor: parseFloat(alloc.allocatedQty),
-              selectedExpiryDate: alloc.expiryDate || null,
-              selectedExpiryMonth: alloc.expiryMonth || null,
-              selectedExpiryYear: alloc.expiryYear || null,
-              availableQtyMinor: alloc.qtyAvailableMinor || "0",
-              notes: line.notes,
-              fefoLocked: true,
-              lotSalePrice: alloc.lotSalePrice,
-            }));
+          // أول تخصيص يكون السطر الرئيسي بكمية 1 في الوحدة الجديدة
+          const firstAlloc = preview.allocations.find(
+            (a: TransferFefoAllocation) => parseFloat(a.allocatedQty) > 0,
+          );
+          if (!firstAlloc) {
+            toast({ title: "الكمية غير متاحة بهذه الوحدة", variant: "destructive" });
+            setFefoLoadingIndex(null);
+            return;
+          }
 
           const sameItemIndexes = lines
             .map((l, i) => (l.itemId === line.itemId ? i : -1))
             .filter((i) => i >= 0)
             .reverse();
 
+          const newLine: TransferLineLocal = {
+            id: crypto.randomUUID(),
+            itemId: line.itemId,
+            item: line.item,
+            unitLevel: newUnitLevel,
+            qtyEntered: 1,
+            qtyInMinor: oneUnitInMinor,
+            selectedExpiryDate: firstAlloc.expiryDate || null,
+            selectedExpiryMonth: firstAlloc.expiryMonth || null,
+            selectedExpiryYear: firstAlloc.expiryYear || null,
+            availableQtyMinor: firstAlloc.qtyAvailableMinor || "0",
+            notes: line.notes,
+            fefoLocked: true,
+            lotSalePrice: firstAlloc.lotSalePrice,
+          };
+
           setFormLines((prev) => {
             let copy = [...prev];
             sameItemIndexes.forEach((idx) => copy.splice(idx, 1));
             const insertAt = Math.min(...sameItemIndexes.map((i) => i).reverse());
-            copy.splice(insertAt, 0, ...newLines);
+            copy.splice(insertAt, 0, newLine);
             return copy;
           });
         } catch (err: unknown) {
@@ -343,10 +342,15 @@ export function useTransferLines({
           setFefoLoadingIndex(null);
         }
       } else {
-        const qtyInMinor = calculateQtyInMinor(Number(line.qtyEntered), newUnitLevel, line.item);
+        // صنف بدون صلاحية: تغيير الوحدة يُعيد الكمية لـ 1 في الوحدة الجديدة
         setFormLines((prev) => {
           const copy = [...prev];
-          copy[index] = { ...copy[index], unitLevel: newUnitLevel, qtyInMinor };
+          copy[index] = {
+            ...copy[index],
+            unitLevel: newUnitLevel,
+            qtyEntered: 1,
+            qtyInMinor: calculateQtyInMinor(1, newUnitLevel, line.item),
+          };
           return copy;
         });
       }
