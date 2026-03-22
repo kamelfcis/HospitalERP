@@ -4,21 +4,13 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Search, PackageX, Package, ChevronLeft, AlertCircle } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
+import { formatAvailability } from "@/lib/invoice-lines";
 import type {
   ItemFastSearchProps, FastSearchItem, BatchOption, SearchMode, FastSearchResponse,
 } from "./types";
 
 const DEBOUNCE_MS = 200;
 const PAGE_SIZE   = 40;
-
-/** تحويل الكمية من الوحدة الصغرى إلى الوحدة الكبرى للعرض */
-function toMajorDisplay(qtyMinor: number, item: FastSearchItem): { qty: number; unit: string } {
-  const factor = parseFloat(item.majorToMinor ?? "0") || 0;
-  if (factor > 1 && item.majorUnitName) {
-    return { qty: qtyMinor / factor, unit: item.majorUnitName };
-  }
-  return { qty: qtyMinor, unit: item.minorUnitName || "" };
-}
 
 function parsePriceFilter(q: string): { nameQ: string; minPrice?: number; maxPrice?: number } {
   const rangeMatch = q.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
@@ -224,13 +216,11 @@ export function ItemFastSearch({
   const currentItem = highlighted >= 0 ? items[highlighted] : null;
   const showBatchPanel = batchMode && currentItem?.hasExpiry;
 
-  // ── شارة المخزون ────────────────────────────────────────────────────────
+  // ── شارة المخزون — تستخدم formatAvailability المشتركة (علبة + قرص بدل كسور) ──
   const StockBadge = ({ item }: { item: FastSearchItem }) => {
     const qtyMinor = parseFloat(item.availableQtyMinor ?? "0");
-    const { qty: displayQty, unit } = toMajorDisplay(qtyMinor, item);
-    const label = `${formatNumber(displayQty)}${unit ? ` ${unit}` : ""}`;
+    const label = formatAvailability(item.availableQtyMinor, "major", item);
     if (hideStockWarning) {
-      // وضع الاستلام: لا تلوين — فقط الرقم بالوحدة الكبرى
       return (
         <span className="inline-flex items-center gap-1 text-muted-foreground text-[12px]">
           <Package className="h-3.5 w-3.5" />
@@ -452,11 +442,10 @@ export function ItemFastSearch({
                   {batches.map((b, i) => {
                     const isSel = selectedBatch?.expiryDate === b.expiryDate;
                     const qtyMinor = parseFloat(b.qtyAvailableMinor);
-                    const { qty: displayQty, unit: batchUnit } = currentItem
-                      ? toMajorDisplay(qtyMinor, currentItem)
-                      : { qty: qtyMinor, unit: "" };
                     const expiryLabel = `${String(b.expiryMonth).padStart(2, "0")}/${b.expiryYear}`;
-                    const qtyLabel = `${formatNumber(displayQty)}${batchUnit ? ` ${batchUnit}` : ""}`;
+                    const qtyLabel = currentItem
+                      ? formatAvailability(b.qtyAvailableMinor, "major", currentItem)
+                      : String(qtyMinor);
                     return (
                       <div
                         key={i}
