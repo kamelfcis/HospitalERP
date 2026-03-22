@@ -156,6 +156,7 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
   // ══════════════════════════════════════════════════════════════════
   const ITEM_COLUMNS = [
     { header: "كود الصنف *",          key: "item_code" },
+    { header: "باركود",               key: "barcode" },
     { header: "الاسم العربي *",        key: "name_ar" },
     { header: "الاسم الإنجليزي",       key: "name_en" },
     { header: "التصنيف",               key: "category",              hint: "دواء | مستلزمات | خدمة" },
@@ -184,7 +185,11 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
 
       if (includeData) {
         const { rows: items } = await pool.query(`
-          SELECT i.item_code, i.name_ar, i.name_en,
+          SELECT i.item_code,
+                 (SELECT ib.barcode_value FROM item_barcodes ib
+                  WHERE ib.item_id = i.id AND ib.is_active = true
+                  ORDER BY ib.created_at LIMIT 1) AS barcode,
+                 i.name_ar, i.name_en,
                  CASE i.category WHEN 'drug' THEN 'دواء' WHEN 'supply' THEN 'مستلزمات' WHEN 'service' THEN 'خدمة' ELSE i.category END AS category,
                  ft.form_type_name AS form_type,
                  i.purchase_price_last, i.sale_price_current,
@@ -304,6 +309,7 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
 
         validRows.push({
           item_code: itemCode,
+          barcode:   getVal(row, "باركود", "barcode") || null,
           name_ar: nameAr,
           name_en: getVal(row, "الاسم الإنجليزي", "name_en") || itemCode,
           category: cat,
@@ -323,6 +329,9 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
         });
       }
 
+      // الخريطة: item_code → item_id (لاستخدامها في إدراج الباركود)
+      const codeToId: Record<string, string> = {};
+
       for (let s = 0; s < validRows.length; s += CHUNK) {
         const chunk = validRows.slice(s, s + CHUNK);
         const placeholders: string[] = [];
@@ -341,7 +350,7 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
             r.has_expiry, r.allow_fractional_sale, r.description
           );
         }
-        await pool.query(`
+        const { rows: returned } = await pool.query(`
           INSERT INTO items (
             id, item_code, name_ar, name_en, category, is_toxic,
             form_type_id, purchase_price_last, sale_price_current,
@@ -367,7 +376,27 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
             allow_fractional_sale = EXCLUDED.allow_fractional_sale,
             description           = COALESCE(NULLIF(EXCLUDED.description,''), items.description),
             updated_at            = NOW()
+          RETURNING id, item_code
         `, values);
+
+        for (const row of returned) codeToId[row.item_code] = row.id;
+      }
+
+      // إدراج الباركودات بعد انتهاء كل الأصناف
+      const barcodeRows = validRows.filter(r => r.barcode && codeToId[r.item_code]);
+      if (barcodeRows.length > 0) {
+        const bPh: string[] = [];
+        const bVals: any[] = [];
+        let bi = 1;
+        for (const r of barcodeRows) {
+          bPh.push(`($${bi++},$${bi++},$${bi++})`);
+          bVals.push(codeToId[r.item_code], r.barcode, "EAN13");
+        }
+        await pool.query(`
+          INSERT INTO item_barcodes (item_id, barcode_value, barcode_type)
+          VALUES ${bPh.join(",")}
+          ON CONFLICT (barcode_value) DO NOTHING
+        `, bVals);
       }
 
       res.json({
