@@ -44,6 +44,8 @@ export function useAutoSave({
 
   const performAutoSave = useCallback(async () => {
     if (formStatus !== "draft" || !supplierId || !warehouseId) return;
+    // لا تحفظ إذن استلام جديد فارغ — لا معنى لحفظ نموذج بدون أصناف
+    if (!editingReceivingId && formLines.length === 0) return;
 
     const payload = buildPayload();
     const dataKey = JSON.stringify(payload);
@@ -70,20 +72,23 @@ export function useAutoSave({
     } catch {
       setAutoSaveStatus("error");
     }
-  }, [formStatus, supplierId, warehouseId, editingReceivingId, buildPayload, onIdAssigned]);
+  }, [formStatus, supplierId, warehouseId, editingReceivingId, formLines, buildPayload, onIdAssigned]);
 
   // حفظ كل 15 ثانية
   useEffect(() => {
     if (formStatus !== "draft" || !supplierId || !warehouseId) return;
+    // لا نبدأ العد التنازلي لإذن استلام جديد بدون أصناف
+    if (!editingReceivingId && formLines.length === 0) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(performAutoSave, 15000);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [supplierId, warehouseId, supplierInvoiceNo, receiveDate, formNotes, formLines, performAutoSave, formStatus]);
+  }, [supplierId, warehouseId, supplierInvoiceNo, receiveDate, formNotes, formLines, editingReceivingId, performAutoSave, formStatus]);
 
   // beacon عند إغلاق التبويب
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (formStatus !== "draft" || !supplierId || !warehouseId) return;
+      if (!editingReceivingId && formLines.length === 0) return;
       const payload = buildPayload();
       navigator.sendBeacon(
         "/api/receivings/auto-save",

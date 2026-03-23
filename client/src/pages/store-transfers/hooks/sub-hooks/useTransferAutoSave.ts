@@ -54,6 +54,8 @@ export function useTransferAutoSave({
 
   const performAutoSave = useCallback(async () => {
     if (formStatus !== "draft" || !sourceWarehouseId || !destWarehouseId) return;
+    // لا تحفظ إذن تحويل جديد فارغ — لا معنى لحفظ نموذج بدون أصناف
+    if (!editingTransferId && formLines.length === 0) return;
     const payload = buildAutoSavePayload();
     const dataStr = JSON.stringify(payload);
     if (dataStr === lastAutoSaveDataRef.current) return;
@@ -77,18 +79,21 @@ export function useTransferAutoSave({
     } catch {
       setAutoSaveStatus("error");
     }
-  }, [formStatus, sourceWarehouseId, destWarehouseId, buildAutoSavePayload, editingTransferId, setEditingTransferId, setFormTransferNumber]);
+  }, [formStatus, sourceWarehouseId, destWarehouseId, formLines, buildAutoSavePayload, editingTransferId, setEditingTransferId, setFormTransferNumber]);
 
   useEffect(() => {
     if (formStatus !== "draft" || !sourceWarehouseId || !destWarehouseId) return;
+    // لا نبدأ العد التنازلي لإذن تحويل جديد بدون أصناف
+    if (!editingTransferId && formLines.length === 0) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => { performAutoSave(); }, 15000);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [formStatus, sourceWarehouseId, destWarehouseId, transferDate, formNotes, formLines, performAutoSave]);
+  }, [formStatus, sourceWarehouseId, destWarehouseId, editingTransferId, transferDate, formNotes, formLines, performAutoSave]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (formStatus !== "draft" || !sourceWarehouseId || !destWarehouseId) return;
+      if (!editingTransferId && formLines.length === 0) return;
       const payload = buildAutoSavePayload();
       const dataStr = JSON.stringify(payload);
       if (dataStr === lastAutoSaveDataRef.current) return;
