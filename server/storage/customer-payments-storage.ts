@@ -23,6 +23,7 @@ export interface CustomerBalanceResult {
   name:           string;
   phone:          string | null;
   totalInvoiced:  string;
+  totalReturns:   string;
   totalPaid:      string;
   currentBalance: string;
 }
@@ -48,15 +49,17 @@ export interface ReceiptReportRow extends CustomerCreditInvoiceRow {
 export async function getCustomerBalance(
   customerId: string
 ): Promise<CustomerBalanceResult | null> {
-  const res = await db.execute(sql`
+  const res = await pool.query(`
     SELECT
       c.id                                                   AS customer_id,
       c.name,
       c.phone,
       COALESCE(inv.total_invoiced, 0)::numeric               AS total_invoiced,
+      COALESCE(ret.total_returns,  0)::numeric               AS total_returns,
       COALESCE(pay.total_paid,    0)::numeric                AS total_paid,
       (
         COALESCE(inv.total_invoiced, 0)::numeric
+        - COALESCE(ret.total_returns, 0)::numeric
         - COALESCE(pay.total_paid,   0)::numeric
       )                                                      AS current_balance
     FROM pharmacy_credit_customers c
@@ -64,19 +67,29 @@ export async function getCustomerBalance(
       SELECT customer_id, SUM(net_total::numeric) AS total_invoiced
       FROM   sales_invoice_headers
       WHERE  customer_type = 'credit'
-        AND  status        = 'finalized'
+        AND  is_return     = false
+        AND  status        IN ('finalized', 'collected')
       GROUP  BY customer_id
     ) inv ON inv.customer_id = c.id
+    LEFT JOIN (
+      SELECT customer_id, SUM(net_total::numeric) AS total_returns
+      FROM   sales_invoice_headers
+      WHERE  customer_type = 'credit'
+        AND  is_return     = true
+        AND  status        IN ('finalized', 'collected')
+        AND  customer_id   IS NOT NULL
+      GROUP  BY customer_id
+    ) ret ON ret.customer_id = c.id
     LEFT JOIN (
       SELECT cr.customer_id, SUM(crl.amount_paid::numeric) AS total_paid
       FROM   customer_receipt_lines crl
       JOIN   customer_receipts cr ON cr.id = crl.receipt_id
       GROUP  BY cr.customer_id
     ) pay ON pay.customer_id = c.id
-    WHERE c.id = ${customerId}
-  `);
+    WHERE c.id = $1
+  `, [customerId]);
 
-  const rows = (res as any).rows as any[];
+  const rows = res.rows;
   if (!rows.length) return null;
   const r = rows[0];
   return {
@@ -84,6 +97,7 @@ export async function getCustomerBalance(
     name:           r.name,
     phone:          r.phone ?? null,
     totalInvoiced:  Number(r.total_invoiced).toFixed(2),
+    totalReturns:   Number(r.total_returns).toFixed(2),
     totalPaid:      Number(r.total_paid).toFixed(2),
     currentBalance: Number(r.current_balance).toFixed(2),
   };

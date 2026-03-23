@@ -23,6 +23,7 @@ export interface SupplierBalanceResult {
   nameAr:          string;
   openingBalance:  string;
   totalInvoiced:   string;
+  totalReturns:    string;
   totalPaid:       string;
   currentBalance:  string;
 }
@@ -87,6 +88,7 @@ export async function getSupplierBalance(
     nameAr:         r.name_ar,
     openingBalance: Number(r.opening_balance).toFixed(2),
     totalInvoiced:  Number(r.total_invoiced).toFixed(2),
+    totalReturns:   "0.00",
     totalPaid:      Number(r.total_paid).toFixed(2),
     currentBalance: Number(r.current_balance).toFixed(2),
   };

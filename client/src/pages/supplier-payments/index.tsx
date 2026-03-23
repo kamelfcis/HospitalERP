@@ -36,6 +36,7 @@ import type { Supplier, SupplierInvoicePaymentRow } from "@shared/schema/purchas
 interface BalanceResult {
   openingBalance: string;
   totalInvoiced:  string;
+  totalReturns:   string;
   totalPaid:      string;
   currentBalance: string;
 }
@@ -150,10 +151,15 @@ function BalanceStrip({ supplierId }: { supplierId: string }) {
   const bal = parseFloat(data.currentBalance);
 
   return (
-    <div className="flex items-center gap-3 text-xs">
+    <div className="flex items-center gap-3 text-xs flex-wrap">
       <span className="text-muted-foreground">
         ذمم: <strong>{formatCurrency(data.totalInvoiced)}</strong>
       </span>
+      {parseFloat(data.totalReturns) > 0 && (
+        <span className="text-orange-600 dark:text-orange-400">
+          مرتجع: <strong>{formatCurrency(data.totalReturns)}</strong>
+        </span>
+      )}
       <span className="text-green-600 dark:text-green-400">
         مسدد: <strong>{formatCurrency(data.totalPaid)}</strong>
       </span>

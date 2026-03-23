@@ -38,6 +38,7 @@ interface BalanceResult {
   name:           string;
   phone:          string | null;
   totalInvoiced:  string;
+  totalReturns:   string;
   totalPaid:      string;
   currentBalance: string;
 }
@@ -111,6 +112,13 @@ function BalanceStrip({ balance }: { balance: BalanceResult }) {
         إجمالي الفواتير:
         <strong>{formatCurrency(balance.totalInvoiced)}</strong>
       </span>
+      {parseFloat(balance.totalReturns) > 0 && (
+        <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
+          <CircleDollarSign className="h-3.5 w-3.5" />
+          مرتجع:
+          <strong>{formatCurrency(balance.totalReturns)}</strong>
+        </span>
+      )}
       <span className="flex items-center gap-1">
         <CircleDollarSign className="h-3.5 w-3.5 text-green-600" />
         محصّل:
