@@ -48,6 +48,7 @@ export interface CreateReturnLineInput {
   purchaseInvoiceLineId: string;
   lotId:                 string;
   qtyReturned:           number;   // in minor units
+  vatRateOverride?:      number;   // optional: user-corrected VAT rate (falls back to invoice line)
 }
 
 export interface CreatePurchaseReturnInput {
@@ -324,7 +325,10 @@ async function validateAndEnrichLines(
     // unit_cost ALWAYS from invoice line, NOT from lot
     const isFreeItem = parseMoney(invLine.purchasePrice) === 0;
     const unitCost   = isFreeItem ? 0 : parseMoney(invLine.purchasePrice);
-    const vatRate    = parseMoney(invLine.vatRate);
+    // vatRate: use user-provided override (correction) if given, else fall back to invoice line
+    const vatRate    = line.vatRateOverride != null && !isNaN(line.vatRateOverride)
+      ? line.vatRateOverride
+      : parseMoney(invLine.vatRate);
 
     const { subtotal, vatAmount, lineTotal } = computeReturnLineTotals(
       line.qtyReturned, unitCost, vatRate, isFreeItem

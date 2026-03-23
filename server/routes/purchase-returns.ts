@@ -141,6 +141,7 @@ export function registerPurchaseReturnRoutes(app: Express) {
           purchaseInvoiceLineId: l.purchaseInvoiceLineId,
           lotId:                 l.lotId,
           qtyReturned:           parseFloat(l.qtyReturned),
+          vatRateOverride:       l.vatRateOverride != null ? parseFloat(l.vatRateOverride) : undefined,
         })),
       });
 

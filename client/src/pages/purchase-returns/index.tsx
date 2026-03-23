@@ -632,6 +632,7 @@ function CreateReturnTab() {
         purchaseInvoiceLineId: l.purchaseInvoiceLineId,
         lotId:                 l.lotId,
         qtyReturned:           parseFloat(l.qtyReturned),
+        vatRateOverride:       parseFloat(l.vatRate) || 0,
       })),
     });
   };
@@ -790,8 +791,8 @@ function CreateReturnTab() {
                                 ض.ق.م% <Info className="h-3 w-3 text-muted-foreground" />
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-[200px] text-center text-xs">
-                              نسبة الضريبة مستوردة من الفاتورة الأصلية ومحسوبة تلقائياً — لا يمكن تعديلها هنا
+                            <TooltipContent side="top" className="max-w-[220px] text-center text-xs">
+                              نسبة الضريبة مستوردة تلقائياً من الفاتورة الأصلية — يمكن تعديلها لتصحيح أخطاء الإدخال
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -821,7 +822,25 @@ function CreateReturnTab() {
                           <td className="p-2 text-center">
                             {l.isFreeItem ? <span className="text-muted-foreground">—</span> : formatCurrency(l.purchasePrice)}
                           </td>
-                          <td className="p-2 text-center">{parseFloat(l.vatRate).toFixed(0)}%</td>
+                          <td className="p-2 text-center">
+                            {l.isFreeItem ? (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            ) : (
+                              <div className="flex items-center justify-center gap-0.5">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="1"
+                                  value={l.vatRate}
+                                  onChange={e => updateLine(idx, { vatRate: e.target.value })}
+                                  className="h-7 w-14 text-xs text-center px-1"
+                                  data-testid={`vat-rate-${l.purchaseInvoiceLineId}`}
+                                />
+                                <span className="text-xs text-muted-foreground">%</span>
+                              </div>
+                            )}
+                          </td>
                           <td className="p-2">
                             <LotSelector
                               itemId={l.itemId}
