@@ -48,6 +48,7 @@ export interface CreateReturnLineInput {
   purchaseInvoiceLineId: string;
   lotId:                 string;
   qtyReturned:           number;   // in minor units
+  bonusQtyReturned?:     number;   // bonus/gift qty being returned (affects VAT base, not subtotal)
   vatRateOverride?:      number;   // optional: user-corrected VAT rate (falls back to invoice line)
 }
 
@@ -71,6 +72,7 @@ export interface ReturnLineDisplay {
   lotExpiryDate:         string | null;
   lotQtyAvailable:       string;
   qtyReturned:           string;
+  bonusQtyReturned:      string;
   unitCost:              string;
   isFreeItem:            boolean;
   vatRate:               string;
@@ -227,16 +229,20 @@ export async function getNextReturnNumber(): Promise<number> {
 
 // ─── computeReturnLineTotals ──────────────────────────────────────────────────
 // Pure computation — no DB access. Always call server-side.
+// VAT base = (qtyReturned + bonusQtyReturned) × cost  [mirrors purchase invoice logic]
+// subtotal  =  qtyReturned                × cost       [only paid units]
 function computeReturnLineTotals(
-  qtyReturned: number,
-  unitCost:    number,
-  vatRate:     number,
-  isFreeItem:  boolean
+  qtyReturned:      number,
+  unitCost:         number,
+  vatRate:          number,
+  isFreeItem:       boolean,
+  bonusQtyReturned: number = 0
 ): { subtotal: string; vatAmount: string; lineTotal: string } {
-  const cost       = isFreeItem ? 0 : unitCost;
-  const subtotal   = roundMoney(qtyReturned * cost);
-  const vatAmount  = roundMoney(parseFloat(subtotal) * vatRate / 100);
-  const lineTotal  = roundMoney(parseFloat(subtotal) + parseFloat(vatAmount));
+  const cost     = isFreeItem ? 0 : unitCost;
+  const subtotal = roundMoney(qtyReturned * cost);
+  const vatBase  = (qtyReturned + bonusQtyReturned) * cost;
+  const vatAmount = roundMoney(vatBase * vatRate / 100);
+  const lineTotal = roundMoney(parseFloat(subtotal) + parseFloat(vatAmount));
   return { subtotal, vatAmount, lineTotal };
 }
 
@@ -252,6 +258,7 @@ async function validateAndEnrichLines(
   itemId:                string;
   lotId:                 string;
   qtyReturned:           string;
+  bonusQtyReturned:      string;
   unitCost:              string;
   isFreeItem:            boolean;
   vatRate:               string;
@@ -323,25 +330,29 @@ async function validateAndEnrichLines(
     }
 
     // unit_cost ALWAYS from invoice line, NOT from lot
-    const isFreeItem = parseMoney(invLine.purchasePrice) === 0;
-    const unitCost   = isFreeItem ? 0 : parseMoney(invLine.purchasePrice);
+    const isFreeItem        = parseMoney(invLine.purchasePrice) === 0;
+    const unitCost          = isFreeItem ? 0 : parseMoney(invLine.purchasePrice);
+    const bonusQtyReturned  = line.bonusQtyReturned != null && !isNaN(line.bonusQtyReturned)
+      ? Math.max(0, line.bonusQtyReturned)
+      : 0;
     // vatRate: use user-provided override (correction) if given, else fall back to invoice line
-    const vatRate    = line.vatRateOverride != null && !isNaN(line.vatRateOverride)
+    const vatRate           = line.vatRateOverride != null && !isNaN(line.vatRateOverride)
       ? line.vatRateOverride
       : parseMoney(invLine.vatRate);
 
     const { subtotal, vatAmount, lineTotal } = computeReturnLineTotals(
-      line.qtyReturned, unitCost, vatRate, isFreeItem
+      line.qtyReturned, unitCost, vatRate, isFreeItem, bonusQtyReturned
     );
 
     enriched.push({
       purchaseInvoiceLineId: invLine.id,
-      itemId:   invLine.itemId,
-      lotId:    line.lotId,
-      qtyReturned: roundQty(line.qtyReturned),
-      unitCost:    String(unitCost.toFixed(4)),
+      itemId:           invLine.itemId,
+      lotId:            line.lotId,
+      qtyReturned:      roundQty(line.qtyReturned),
+      bonusQtyReturned: roundQty(bonusQtyReturned),
+      unitCost:         String(unitCost.toFixed(4)),
       isFreeItem,
-      vatRate:     String(vatRate.toFixed(4)),
+      vatRate:          String(vatRate.toFixed(4)),
       vatAmount,
       subtotal,
       lineTotal,
@@ -587,6 +598,7 @@ export async function createPurchaseReturn(
         itemId:                l.itemId,
         lotId:                 l.lotId,
         qtyReturned:           l.qtyReturned,
+        bonusQtyReturned:      l.bonusQtyReturned,
         unitCost:              l.unitCost,
         isFreeItem:            l.isFreeItem,
         vatRate:               l.vatRate,
@@ -760,8 +772,9 @@ export async function getPurchaseReturnById(id: string): Promise<PurchaseReturnW
     id: string; purchase_invoice_line_id: string; item_id: string;
     item_name_ar: string; item_code: string; lot_id: string;
     lot_expiry_date: string | null; lot_qty_available: string;
-    qty_returned: string; unit_cost: string; is_free_item: boolean;
-    vat_rate: string; vat_amount: string; subtotal: string; line_total: string;
+    qty_returned: string; bonus_qty_returned: string; unit_cost: string;
+    is_free_item: boolean; vat_rate: string; vat_amount: string;
+    subtotal: string; line_total: string;
   }>(
     `SELECT
        prl.id, prl.purchase_invoice_line_id, prl.item_id,
@@ -769,7 +782,7 @@ export async function getPurchaseReturnById(id: string): Promise<PurchaseReturnW
        prl.lot_id,
        il.expiry_date AS lot_expiry_date,
        il.qty_in_minor AS lot_qty_available,
-       prl.qty_returned, prl.unit_cost, prl.is_free_item,
+       prl.qty_returned, prl.bonus_qty_returned, prl.unit_cost, prl.is_free_item,
        prl.vat_rate, prl.vat_amount, prl.subtotal, prl.line_total
      FROM purchase_return_lines prl
      JOIN items i           ON i.id  = prl.item_id
@@ -809,6 +822,7 @@ export async function getPurchaseReturnById(id: string): Promise<PurchaseReturnW
       lotExpiryDate:         l.lot_expiry_date ? String(l.lot_expiry_date).slice(0, 10) : null,
       lotQtyAvailable:       l.lot_qty_available,
       qtyReturned:           l.qty_returned,
+      bonusQtyReturned:      l.bonus_qty_returned,
       unitCost:              l.unit_cost,
       isFreeItem:            l.is_free_item,
       vatRate:               l.vat_rate,

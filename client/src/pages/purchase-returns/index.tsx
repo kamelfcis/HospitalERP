@@ -73,17 +73,19 @@ interface AvailableLot {
 
 interface ReturnLineEntry {
   purchaseInvoiceLineId: string;
-  itemId: string;
+  itemId:     string;
   itemNameAr: string;
-  itemCode: string;
-  invoiceQty: string;
-  purchasePrice: string;
-  vatRate: string;
-  isFreeItem: boolean;
-  lotId: string;
-  qtyReturned: string;
+  itemCode:   string;
+  invoiceQty:      string;
+  invoiceBonusQty: string;   // bonus qty from original invoice (for display/reference)
+  purchasePrice:   string;
+  vatRate:         string;
+  isFreeItem:      boolean;
+  lotId:           string;
+  qtyReturned:     string;
+  bonusQtyReturned: string;  // user-entered: how many bonus units are being returned
   // computed
-  subtotal: number;
+  subtotal:  number;
   vatAmount: number;
   lineTotal: number;
 }
@@ -123,22 +125,29 @@ interface ReturnDetail {
     itemCode: string;
     lotId: string;
     lotExpiryDate: string | null;
-    qtyReturned: string;
-    unitCost: string;
+    qtyReturned:      string;
+    bonusQtyReturned: string;
+    unitCost:  string;
     isFreeItem: boolean;
-    vatRate: string;
-    vatAmount: string;
-    subtotal: string;
-    lineTotal: string;
+    vatRate:    string;
+    vatAmount:  string;
+    subtotal:   string;
+    lineTotal:  string;
   }[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function computeLine(qty: number, unitCost: number, vatRate: number, isFreeItem: boolean) {
+// VAT base = (qty + bonusQty) × cost  [mirrors purchase invoice formula]
+// subtotal  =  qty             × cost  [only paid units]
+function computeLine(
+  qty: number, unitCost: number, vatRate: number,
+  isFreeItem: boolean, bonusQty: number = 0
+) {
   const cost     = isFreeItem ? 0 : unitCost;
   const subtotal = Math.round(qty * cost * 100) / 100;
-  const vatAmt   = Math.round(subtotal * vatRate / 100 * 100) / 100;
+  const vatBase  = (qty + bonusQty) * cost;
+  const vatAmt   = Math.round(vatBase * vatRate / 100 * 100) / 100;
   return { subtotal, vatAmount: vatAmt, lineTotal: subtotal + vatAmt };
 }
 
@@ -263,8 +272,9 @@ function PrintContent({ ret }: { ret: ReturnDetail }) {
         <thead>
           <tr className="bg-gray-100">
             <th className="border p-1 text-right">الصنف</th>
-            <th className="border p-1 text-right">اللوت</th>
+            <th className="border p-1 text-center">اللوت</th>
             <th className="border p-1 text-center">الكمية</th>
+            <th className="border p-1 text-center">هدية</th>
             <th className="border p-1 text-center">السعر</th>
             <th className="border p-1 text-center">الإجمالي</th>
             <th className="border p-1 text-center">الضريبة</th>
@@ -277,6 +287,9 @@ function PrintContent({ ret }: { ret: ReturnDetail }) {
               <td className="border p-1">{l.itemNameAr} {l.isFreeItem && <span>(هدية)</span>}</td>
               <td className="border p-1 text-center">{l.lotExpiryDate ?? "—"}</td>
               <td className="border p-1 text-center">{parseFloat(l.qtyReturned).toFixed(2)}</td>
+              <td className="border p-1 text-center">
+                {parseFloat(l.bonusQtyReturned) > 0 ? parseFloat(l.bonusQtyReturned).toFixed(2) : "—"}
+              </td>
               <td className="border p-1 text-center">{formatCurrency(l.unitCost)}</td>
               <td className="border p-1 text-center">{formatCurrency(l.subtotal)}</td>
               <td className="border p-1 text-center">{formatCurrency(l.vatAmount)}</td>
@@ -286,7 +299,7 @@ function PrintContent({ ret }: { ret: ReturnDetail }) {
         </tbody>
         <tfoot>
           <tr className="font-bold bg-gray-50">
-            <td className="border p-1" colSpan={4} />
+            <td className="border p-1" colSpan={5} />
             <td className="border p-1 text-center">{formatCurrency(ret.subtotal)}</td>
             <td className="border p-1 text-center">{formatCurrency(ret.taxTotal)}</td>
             <td className="border p-1 text-center">{formatCurrency(ret.grandTotal)}</td>
@@ -340,6 +353,7 @@ function DetailModal({ returnId, onClose }: { returnId: string; onClose: () => v
                   <th className="text-right p-2 border">الصنف</th>
                   <th className="text-center p-2 border">انتهاء اللوت</th>
                   <th className="text-center p-2 border">الكمية</th>
+                  <th className="text-center p-2 border">هدية</th>
                   <th className="text-center p-2 border">سعر الوحدة</th>
                   <th className="text-center p-2 border">الإجمالي</th>
                   <th className="text-center p-2 border">ض.ق.م</th>
@@ -355,6 +369,9 @@ function DetailModal({ returnId, onClose }: { returnId: string; onClose: () => v
                     </td>
                     <td className="p-2 border text-center">{l.lotExpiryDate ?? "—"}</td>
                     <td className="p-2 border text-center">{parseFloat(l.qtyReturned).toFixed(2)}</td>
+                    <td className="p-2 border text-center">
+                      {parseFloat(l.bonusQtyReturned) > 0 ? parseFloat(l.bonusQtyReturned).toFixed(2) : "—"}
+                    </td>
                     <td className="p-2 border text-center">{formatCurrency(l.unitCost)}</td>
                     <td className="p-2 border text-center">{formatCurrency(l.subtotal)}</td>
                     <td className="p-2 border text-center">{formatCurrency(l.vatAmount)}</td>
@@ -364,7 +381,7 @@ function DetailModal({ returnId, onClose }: { returnId: string; onClose: () => v
               </tbody>
               <tfoot>
                 <tr className="font-bold bg-muted/30">
-                  <td className="p-2 border" colSpan={4} />
+                  <td className="p-2 border" colSpan={5} />
                   <td className="p-2 border text-center">{formatCurrency(data.subtotal)}</td>
                   <td className="p-2 border text-center">{formatCurrency(data.taxTotal)}</td>
                   <td className="p-2 border text-center text-primary">{formatCurrency(data.grandTotal)}</td>
@@ -552,11 +569,13 @@ function CreateReturnTab() {
       itemNameAr:            l.itemNameAr,
       itemCode:              l.itemCode,
       invoiceQty:            l.qty,
+      invoiceBonusQty:       l.bonusQty,
       purchasePrice:         l.purchasePrice,
       vatRate:               l.vatRate,
       isFreeItem:            l.isFreeItem,
       lotId:                 "",
       qtyReturned:           "",
+      bonusQtyReturned:      "",
       subtotal:              0,
       vatAmount:             0,
       lineTotal:             0,
@@ -574,15 +593,16 @@ function CreateReturnTab() {
     return { subtotal, taxTotal, grandTotal };
   }, [lines]);
 
-  // Recompute a single line when lot or qty changes
+  // Recompute a single line when qty / bonus / vatRate / lot changes
   const updateLine = useCallback((idx: number, patch: Partial<ReturnLineEntry>) => {
     setLines(prev => {
-      const next = [...prev];
-      const l    = { ...next[idx], ...patch };
-      const qty  = parseFloat(l.qtyReturned) || 0;
-      const cost = parseFloat(l.purchasePrice) || 0;
-      const rate = parseFloat(l.vatRate) || 0;
-      const { subtotal, vatAmount, lineTotal } = computeLine(qty, cost, rate, l.isFreeItem);
+      const next  = [...prev];
+      const l     = { ...next[idx], ...patch };
+      const qty   = parseFloat(l.qtyReturned)     || 0;
+      const bonus = parseFloat(l.bonusQtyReturned) || 0;
+      const cost  = parseFloat(l.purchasePrice)    || 0;
+      const rate  = (() => { const v = parseFloat(String(l.vatRate)); return isNaN(v) ? 0 : v; })();
+      const { subtotal, vatAmount, lineTotal } = computeLine(qty, cost, rate, l.isFreeItem, bonus);
       next[idx] = { ...l, subtotal, vatAmount, lineTotal };
       return next;
     });
@@ -632,6 +652,7 @@ function CreateReturnTab() {
         purchaseInvoiceLineId: l.purchaseInvoiceLineId,
         lotId:                 l.lotId,
         qtyReturned:           parseFloat(l.qtyReturned),
+        bonusQtyReturned:      parseFloat(l.bonusQtyReturned) || 0,
         vatRateOverride:       parseFloat(l.vatRate) || 0,
       })),
     });
@@ -781,8 +802,22 @@ function CreateReturnTab() {
                   <thead>
                     <tr className="bg-muted/50 border-b">
                       <th className="text-right p-2 min-w-[160px]">الصنف</th>
-                      <th className="text-center p-2 w-[80px]">كمية الفاتورة</th>
-                      <th className="text-center p-2 w-[90px]">سعر الشراء</th>
+                      <th className="text-center p-2 w-[75px]">كمية الفاتورة</th>
+                      <th className="text-center p-2 w-[65px]">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex items-center justify-center gap-1 cursor-help">
+                                هدية <Info className="h-3 w-3 text-muted-foreground" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[220px] text-center text-xs">
+                              كمية البونص المرتجع — تؤثر على وعاء الضريبة فقط، لا على المبلغ الأساسي
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </th>
+                      <th className="text-center p-2 w-[85px]">سعر الشراء</th>
                       <th className="text-center p-2 w-[60px]">
                         <TooltipProvider>
                           <Tooltip>
@@ -797,11 +832,11 @@ function CreateReturnTab() {
                           </Tooltip>
                         </TooltipProvider>
                       </th>
-                      <th className="text-right p-2 min-w-[220px]">اللوت</th>
-                      <th className="text-center p-2 w-[100px]">كمية المرتجع</th>
-                      <th className="text-center p-2 w-[90px]">قبل الضريبة</th>
-                      <th className="text-center p-2 w-[75px]">ض.ق.م</th>
-                      <th className="text-center p-2 w-[90px]">الصافي</th>
+                      <th className="text-right p-2 min-w-[210px]">اللوت</th>
+                      <th className="text-center p-2 w-[95px]">كمية المرتجع</th>
+                      <th className="text-center p-2 w-[85px]">قبل الضريبة</th>
+                      <th className="text-center p-2 w-[70px]">ض.ق.م</th>
+                      <th className="text-center p-2 w-[85px]">الصافي</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -819,6 +854,24 @@ function CreateReturnTab() {
                             )}
                           </td>
                           <td className="p-2 text-center">{parseFloat(l.invoiceQty).toFixed(2)}</td>
+                          {/* Bonus qty returned */}
+                          <td className="p-2 text-center">
+                            {parseFloat(l.invoiceBonusQty) > 0 ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                max={parseFloat(l.invoiceBonusQty)}
+                                step="0.01"
+                                value={l.bonusQtyReturned}
+                                onChange={e => updateLine(idx, { bonusQtyReturned: e.target.value })}
+                                className="h-7 text-xs text-center px-1 w-full"
+                                placeholder="0"
+                                data-testid={`bonus-qty-${l.purchaseInvoiceLineId}`}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground text-[10px]">—</span>
+                            )}
+                          </td>
                           <td className="p-2 text-center">
                             {l.isFreeItem ? <span className="text-muted-foreground">—</span> : formatCurrency(l.purchasePrice)}
                           </td>
