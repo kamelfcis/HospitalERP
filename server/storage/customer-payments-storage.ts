@@ -12,7 +12,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { customerReceipts, customerReceiptLines, pharmacyCreditCustomers } from "@shared/schema/invoicing";
 import type { CustomerCreditInvoiceRow } from "@shared/schema/invoicing";
 
@@ -259,15 +259,31 @@ export async function searchCreditCustomers(
   pharmacyId?: string | null,
   limit = 30
 ): Promise<{ id: string; name: string; phone: string | null }[]> {
-  const res = await db.execute(sql`
-    SELECT id, name, phone
-    FROM   pharmacy_credit_customers
-    WHERE  (${search} = '' OR name ILIKE ${'%' + search + '%'} OR phone ILIKE ${'%' + search + '%'})
-      AND  (${pharmacyId ?? null} IS NULL OR pharmacy_id = ${pharmacyId ?? null})
-    ORDER  BY name
-    LIMIT  ${limit}
-  `);
-  return ((res as any).rows as any[]).map((r) => ({
+  const params: unknown[] = [];
+  let idx = 1;
+  const conditions: string[] = [];
+
+  if (search && search.trim()) {
+    const pattern = `%${search.trim()}%`;
+    conditions.push(`(name ILIKE $${idx} OR phone ILIKE $${idx})`);
+    params.push(pattern);
+    idx++;
+  }
+
+  if (pharmacyId) {
+    conditions.push(`pharmacy_id = $${idx}`);
+    params.push(pharmacyId);
+    idx++;
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  params.push(limit);
+  const res = await pool.query(
+    `SELECT id, name, phone FROM pharmacy_credit_customers ${whereClause} ORDER BY name LIMIT $${idx}`,
+    params
+  );
+  return res.rows.map((r: any) => ({
     id:    r.id,
     name:  r.name,
     phone: r.phone ?? null,

@@ -29,21 +29,21 @@ export interface CreditCustomer {
 }
 
 interface Props {
-  value:       string;
-  onChange:    (id: string, customer: CreditCustomer) => void;
-  pharmacyId?: string | null;
-  disabled?:   boolean;
-  showAddBtn?: boolean;
+  value:         string;
+  onChange:      (id: string, customer: CreditCustomer) => void;
+  pharmacyId?:   string | null;
+  disabled?:     boolean;
+  showAddBtn?:   boolean;
 }
 
 // ─── QuickAddDialog ────────────────────────────────────────────────────────────
 function QuickAddDialog({
   open, onClose, pharmacyId, onCreated,
 }: {
-  open:       boolean;
-  onClose:    () => void;
+  open:        boolean;
+  onClose:     () => void;
   pharmacyId?: string | null;
-  onCreated:  (c: CreditCustomer) => void;
+  onCreated:   (c: CreditCustomer) => void;
 }) {
   const { toast } = useToast();
   const [name,  setName]  = useState("");
@@ -114,13 +114,14 @@ function QuickAddDialog({
 
 // ─── CreditCustomerCombobox ────────────────────────────────────────────────────
 export function CreditCustomerCombobox({ value, onChange, pharmacyId, disabled, showAddBtn = true }: Props) {
-  const [open,     setOpen]     = useState(false);
-  const [search,   setSearch]   = useState("");
-  const [addOpen,  setAddOpen]  = useState(false);
-  const { toast } = useToast();
+  const [open,          setOpen]          = useState(false);
+  const [search,        setSearch]        = useState("");
+  const [addOpen,       setAddOpen]       = useState(false);
+  // نحفظ آخر عميل تم اختياره لنعرض اسمه حتى لو تغيرت نتائج البحث
+  const [selectedCache, setSelectedCache] = useState<CreditCustomer | null>(null);
 
   const { data, isLoading } = useQuery<{ customers: CreditCustomer[] }>({
-    queryKey: ["/api/credit-customers", search, pharmacyId],
+    queryKey: ["/api/credit-customers", search, pharmacyId ?? ""],
     queryFn: async () => {
       const qs = new URLSearchParams();
       if (search)     qs.set("search", search);
@@ -131,12 +132,22 @@ export function CreditCustomerCombobox({ value, onChange, pharmacyId, disabled, 
   });
 
   const customers = data?.customers ?? [];
-  const selected  = customers.find((c) => c.id === value);
+
+  // العميل المحدد: إما من القائمة الحالية وإلا من الكاش المحلي
+  const selectedInList = customers.find((c) => c.id === value);
+  const displayName    = selectedInList?.name ?? selectedCache?.name ?? "";
+
+  const handleSelect = (c: CreditCustomer) => {
+    setSelectedCache(c);
+    onChange(c.id, c);
+    setOpen(false);
+    setSearch("");
+  };
 
   return (
     <>
       <div className="flex items-center gap-1">
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSearch(""); }}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
@@ -146,43 +157,47 @@ export function CreditCustomerCombobox({ value, onChange, pharmacyId, disabled, 
               data-testid="combo-credit-customer"
             >
               <span className="truncate">
-                {selected ? selected.name : "اختر عميلاً..."}
+                {value && displayName ? displayName : "اختر عميلاً..."}
               </span>
               <ChevronsUpDown className="h-3 w-3 opacity-50 shrink-0 mr-1" />
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-[260px] p-0" align="start" dir="rtl">
-            <Command>
+            {/*
+              shouldFilter={false}: نحن نُنجز الفلترة على السيرفر عبر search state،
+              فتعطيل الفلترة الداخلية لـ Command يمنع اختفاء العناصر عند الكتابة
+            */}
+            <Command shouldFilter={false}>
               <CommandInput
                 placeholder="ابحث بالاسم أو الهاتف..."
                 value={search}
                 onValueChange={setSearch}
                 className="h-8 text-sm"
               />
-              {isLoading
-                ? <div className="py-4 text-center text-xs text-muted-foreground">جاري البحث...</div>
-                : (
-                  <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
-                    لا توجد نتائج
-                  </CommandEmpty>
-                )
-              }
-              <CommandGroup>
-                {customers.map((c) => (
-                  <CommandItem
-                    key={c.id}
-                    value={c.id}
-                    onSelect={() => { onChange(c.id, c); setOpen(false); setSearch(""); }}
-                    className="text-sm"
-                  >
-                    <Check className={`ml-2 h-3 w-3 ${value === c.id ? "opacity-100" : "opacity-0"}`} />
-                    <div>
-                      <p className="font-medium">{c.name}</p>
-                      {c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}
-                    </div>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              {isLoading ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">جاري البحث...</div>
+              ) : customers.length === 0 ? (
+                <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                  لا توجد نتائج
+                </CommandEmpty>
+              ) : (
+                <CommandGroup>
+                  {customers.map((c) => (
+                    <CommandItem
+                      key={c.id}
+                      value={c.id}
+                      onSelect={() => handleSelect(c)}
+                      className="text-sm cursor-pointer"
+                    >
+                      <Check className={`ml-2 h-3 w-3 shrink-0 ${value === c.id ? "opacity-100" : "opacity-0"}`} />
+                      <div>
+                        <p className="font-medium">{c.name}</p>
+                        {c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
             </Command>
           </PopoverContent>
         </Popover>
@@ -205,7 +220,7 @@ export function CreditCustomerCombobox({ value, onChange, pharmacyId, disabled, 
         open={addOpen}
         onClose={() => setAddOpen(false)}
         pharmacyId={pharmacyId}
-        onCreated={(c) => { onChange(c.id, c); }}
+        onCreated={(c) => { setSelectedCache(c); onChange(c.id, c); }}
       />
     </>
   );
