@@ -624,7 +624,7 @@ export interface IStorage {
   getChatUnreadCount(userId: string): Promise<number>;
 
   // Sales Returns
-  searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<Record<string, unknown>[]>;
+  searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string; allowedWarehouseIds?: string[] }): Promise<Record<string, unknown>[]>;
   getSaleInvoiceForReturn(invoiceId: string): Promise<Record<string, unknown> | null>;
   createSalesReturn(data: { originalInvoiceId: string; warehouseId: string; returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[]; discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string }): Promise<Record<string, unknown>>;
 

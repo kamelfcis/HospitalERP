@@ -196,11 +196,35 @@ export function registerAdmissionsRoutes(app: Express) {
 
   app.get("/api/sales-returns/search", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
+      const userId = req.session.userId!;
+      const role   = req.session.role as string | undefined;
       const { invoiceNumber, receiptBarcode, itemBarcode, itemCode, itemId, dateFrom, dateTo, warehouseId } = req.query as Record<string, string | undefined>;
       if (!invoiceNumber && !receiptBarcode && !itemBarcode && !itemCode && !itemId) {
         return res.status(400).json({ message: "يجب إدخال رقم فاتورة أو باركود إيصال أو صنف للبحث" });
       }
-      const results = await storage.searchSaleInvoicesForReturn({ invoiceNumber, receiptBarcode, itemBarcode, itemCode, itemId, dateFrom, dateTo, warehouseId });
+
+      // تقييد المخزن: المستخدمون غير المديرين يرون مخازنهم المخصصة فقط
+      const fullAccessRoles = ["admin", "accountant", "manager"];
+      let allowedWarehouseIds: string[] | undefined;
+      let effectiveWarehouseId = warehouseId;
+
+      if (!fullAccessRoles.includes(role || "")) {
+        const assigned = await storage.getUserWarehouses(userId);
+        if (assigned.length > 0) {
+          allowedWarehouseIds = assigned.map((w) => w.id);
+          // إذا اختار المستخدم مخزناً غير مصرح له به نتجاهله
+          if (warehouseId && !allowedWarehouseIds.includes(warehouseId)) {
+            effectiveWarehouseId = undefined;
+          }
+        }
+      }
+
+      const results = await storage.searchSaleInvoicesForReturn({
+        invoiceNumber, receiptBarcode, itemBarcode, itemCode, itemId,
+        dateFrom, dateTo,
+        warehouseId: effectiveWarehouseId,
+        allowedWarehouseIds,
+      });
       res.json(results);
     } catch (e: any) {
       logger.error({ err: e.message }, "[SALES_RETURNS_SEARCH]");

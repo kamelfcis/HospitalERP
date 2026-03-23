@@ -2,7 +2,7 @@
 //  SearchView — شاشة البحث عن فاتورة مبيعات
 //  تحتوي على: أزرار وضع البحث + حقول الإدخال + جدول النتائج
 // ============================================================
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, FileText, Barcode, Package, Loader2, Hash, ScanBarcode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +72,15 @@ export function SearchView(props: Props) {
   } = props;
 
   const { data: warehouses = [] } = useQuery<any[]>({ queryKey: ["/api/warehouses"] });
+
+  // ضبط المخزن تلقائياً إذا كان للمستخدم مخزن واحد فقط
+  useEffect(() => {
+    if (warehouses.length === 1 && !warehouseId) {
+      setWarehouseId(warehouses[0].id);
+    }
+  }, [warehouses, warehouseId, setWarehouseId]);
+
+  const isWarehouseLocked = warehouses.length === 1;
 
   const isDirectMode = DIRECT_INPUT_MODES.includes(searchMode);
   const showDateFilters = ["item", "itemBarcode", "itemCode"].includes(searchMode);
@@ -144,17 +153,27 @@ export function SearchView(props: Props) {
         {/* فلتر المخزن */}
         <div>
           <label className="text-xs font-semibold text-muted-foreground mb-1 block">المخزن</label>
-          <select
-            value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
-            className="h-9 text-sm border rounded px-2 bg-background text-foreground min-w-[140px]"
-            data-testid="select-warehouse"
-          >
-            <option value="">الكل</option>
-            {warehouses.map((w: any) => (
-              <option key={w.id} value={w.id}>{w.nameAr || w.name_ar || w.name}</option>
-            ))}
-          </select>
+          {isWarehouseLocked ? (
+            <div
+              className="h-9 text-sm border rounded px-2 bg-muted text-foreground min-w-[140px] flex items-center font-semibold"
+              data-testid="select-warehouse"
+              title="مخزنك المخصص"
+            >
+              {warehouses[0]?.nameAr || warehouses[0]?.name_ar || ""}
+            </div>
+          ) : (
+            <select
+              value={warehouseId}
+              onChange={(e) => setWarehouseId(e.target.value)}
+              className="h-9 text-sm border rounded px-2 bg-background text-foreground min-w-[140px]"
+              data-testid="select-warehouse"
+            >
+              <option value="">الكل</option>
+              {warehouses.map((w: any) => (
+                <option key={w.id} value={w.id}>{w.nameAr || w.name_ar || w.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         <Button

@@ -38,7 +38,7 @@ const methods = {
    *   journal_status = 'completed' → القيد المحاسبي مكتمل
    * لا يجوز مرتجع على فاتورة مرحّلة (finalized) لم يُحصَّل بعد.
    */
-  async searchSaleInvoicesForReturn(this: DatabaseStorage, params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string }): Promise<any[]> {
+  async searchSaleInvoicesForReturn(this: DatabaseStorage, params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string; allowedWarehouseIds?: string[] }): Promise<any[]> {
     let resolvedItemId: string | null = null;
 
     if (params.itemBarcode) {
@@ -80,6 +80,11 @@ const methods = {
     if (params.warehouseId) {
       whereExtra += ` AND h.warehouse_id = $${idx++}`;
       vals.push(params.warehouseId);
+    } else if (params.allowedWarehouseIds && params.allowedWarehouseIds.length > 0) {
+      // تقييد البحث بالمخازن المسموح بها لهذا المستخدم
+      const placeholders = params.allowedWarehouseIds.map(() => `$${idx++}`).join(", ");
+      whereExtra += ` AND h.warehouse_id IN (${placeholders})`;
+      params.allowedWarehouseIds.forEach((id) => vals.push(id));
     }
 
     // GUARD: check actual journal_entries.status = 'posted', not just the header flag.
