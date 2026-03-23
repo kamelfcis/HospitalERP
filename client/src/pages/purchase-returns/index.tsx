@@ -571,7 +571,7 @@ function CreateReturnTab() {
       invoiceQty:            l.qty,
       invoiceBonusQty:       l.bonusQty,
       purchasePrice:         l.purchasePrice,
-      vatRate:               l.vatRate,
+      vatRate:               parseFloat(l.vatRate || "0").toFixed(2),
       isFreeItem:            l.isFreeItem,
       lotId:                 "",
       qtyReturned:           "",
@@ -594,6 +594,28 @@ function CreateReturnTab() {
     }
     return { subtotal, taxTotal, grandTotal };
   }, [lines]);
+
+  // Arrow-key navigation across table inputs
+  // cols: 0=bonus, 1=vat, 2=qty
+  const NAV_COLS = 3;
+  const handleNavKey = useCallback((
+    e: React.KeyboardEvent<HTMLInputElement>,
+    rowIdx: number,
+    col: number
+  ) => {
+    let targetRow = rowIdx;
+    let targetCol = col;
+    if (e.key === "ArrowDown")  { targetRow = rowIdx + 1; }
+    else if (e.key === "ArrowUp")   { targetRow = rowIdx - 1; }
+    else if (e.key === "ArrowRight") { targetCol = (col + 1) % NAV_COLS; }
+    else if (e.key === "ArrowLeft")  { targetCol = (col - 1 + NAV_COLS) % NAV_COLS; }
+    else return;
+    e.preventDefault();
+    const el = document.querySelector<HTMLInputElement>(
+      `[data-nav-row="${targetRow}"][data-nav-col="${targetCol}"]`
+    );
+    el?.focus();
+  }, []);
 
   // Recompute a single line when qty / bonus / vatRate / lot changes
   const updateLine = useCallback((idx: number, patch: Partial<ReturnLineEntry>) => {
@@ -866,9 +888,12 @@ function CreateReturnTab() {
                                 step="0.01"
                                 value={l.bonusQtyReturned}
                                 onChange={e => updateLine(idx, { bonusQtyReturned: e.target.value })}
+                                onKeyDown={e => handleNavKey(e, idx, 0)}
                                 className="h-7 text-xs text-center px-1 w-full"
                                 placeholder="0"
                                 data-testid={`bonus-qty-${l.purchaseInvoiceLineId}`}
+                                data-nav-row={idx}
+                                data-nav-col={0}
                               />
                             ) : (
                               <span className="text-muted-foreground text-[10px]">—</span>
@@ -889,8 +914,11 @@ function CreateReturnTab() {
                                   step="1"
                                   value={l.vatRate}
                                   onChange={e => updateLine(idx, { vatRate: e.target.value })}
+                                  onKeyDown={e => handleNavKey(e, idx, 1)}
                                   className="h-7 w-14 text-xs text-center px-1"
                                   data-testid={`vat-rate-${l.purchaseInvoiceLineId}`}
+                                  data-nav-row={idx}
+                                  data-nav-col={1}
                                 />
                                 <span className="text-xs text-muted-foreground">%</span>
                               </div>
@@ -911,12 +939,15 @@ function CreateReturnTab() {
                               step="0.01"
                               value={l.qtyReturned}
                               onChange={e => updateLine(idx, { qtyReturned: e.target.value })}
+                              onKeyDown={e => handleNavKey(e, idx, 2)}
                               className={cn(
                                 "h-7 text-xs text-center",
                                 hasQty && !l.lotId ? "border-destructive" : ""
                               )}
                               placeholder="0"
                               data-testid={`qty-input-${l.purchaseInvoiceLineId}`}
+                              data-nav-row={idx}
+                              data-nav-col={2}
                             />
                             {hasQty && !l.lotId && (
                               <div className="text-[10px] text-destructive mt-0.5">اختر اللوت</div>
