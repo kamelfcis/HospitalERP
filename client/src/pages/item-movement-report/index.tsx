@@ -435,12 +435,14 @@ export default function ItemMovementReport() {
       </div>
 
       {/* ── Filters ── */}
-      <div className="rounded-lg border bg-card p-4 space-y-4 print:hidden">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="rounded-lg border bg-card p-3 space-y-3 print:hidden">
 
-          {/* Item selector */}
-          <div className="space-y-1.5 lg:col-span-2">
-            <Label className="text-sm font-medium">الصنف <span className="text-destructive">*</span></Label>
+        {/* ── Main filter row ── */}
+        <div className="flex flex-wrap items-end gap-2">
+
+          {/* Item selector — wider */}
+          <div className="flex-1 min-w-[240px] space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">الصنف <span className="text-destructive">*</span></Label>
             <ItemCombobox
               value={itemId}
               displayName={`${itemCode} — ${itemDisplayName}`}
@@ -455,10 +457,10 @@ export default function ItemMovementReport() {
           </div>
 
           {/* Warehouse */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">المستودع</Label>
+          <div className="w-[160px] space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">المستودع</Label>
             <Select value={warehouseId} onValueChange={setWarehouseId} data-testid="select-warehouse">
-              <SelectTrigger>
+              <SelectTrigger className="h-9 text-sm">
                 <SelectValue placeholder="جميع المستودعات" />
               </SelectTrigger>
               <SelectContent>
@@ -471,55 +473,66 @@ export default function ItemMovementReport() {
           </div>
 
           {/* Unit level */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">وحدة العرض</Label>
+          <div className="w-[120px] space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">الوحدة</Label>
             <Select value={unitLevel} onValueChange={v => setUnitLevel(v as UnitLevel)} data-testid="select-unit-level">
-              <SelectTrigger>
+              <SelectTrigger className="h-9 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="major">
-                  {rows.length > 0 ? (rows[0].majorUnitName ?? "وحدة كبيرة") : "وحدة كبيرة"}
+                  {rows.length > 0 ? (rows[0].majorUnitName ?? "كبيرة") : "كبيرة"}
                 </SelectItem>
                 <SelectItem value="medium">
-                  {rows.length > 0 ? (rows[0].mediumUnitName ?? "وحدة وسط") : "وحدة وسط"}
+                  {rows.length > 0 ? (rows[0].mediumUnitName ?? "وسط") : "وسط"}
                 </SelectItem>
                 <SelectItem value="minor">
-                  {rows.length > 0 ? (rows[0].minorUnitName ?? "وحدة صغيرة") : "وحدة صغيرة"}
+                  {rows.length > 0 ? (rows[0].minorUnitName ?? "صغيرة") : "صغيرة"}
                 </SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* From date */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">من تاريخ</Label>
+          <div className="w-[140px] space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">من تاريخ</Label>
             <Input
               type="date"
               value={fromDate}
               onChange={e => setFromDate(e.target.value)}
-              className="text-sm"
+              className="h-9 text-sm"
               data-testid="input-from-date"
             />
           </div>
 
           {/* To date */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">إلى تاريخ</Label>
+          <div className="w-[140px] space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">إلى تاريخ</Label>
             <Input
               type="date"
               value={toDate}
               onChange={e => setToDate(e.target.value)}
-              className="text-sm"
+              className="h-9 text-sm"
               data-testid="input-to-date"
             />
           </div>
+
+          {/* Generate button aligned to bottom */}
+          <Button
+            onClick={handleGenerate}
+            disabled={!itemId || isFetching}
+            className="h-9 shrink-0 self-end"
+            data-testid="button-generate-report"
+          >
+            {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <span className="mr-1">توليد</span>
+          </Button>
         </div>
 
-        {/* Movement type filters */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Label className="text-sm font-medium">أنواع الحركات</Label>
+        {/* ── Movement type filters ── */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-2.5">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs font-medium text-muted-foreground">أنواع الحركات:</span>
             <button
               onClick={toggleAllTypes}
               className="text-xs text-primary hover:underline"
@@ -528,38 +541,24 @@ export default function ItemMovementReport() {
               {selectedTypes.size === ALL_TX_TYPES.length ? "إلغاء الكل" : "تحديد الكل"}
             </button>
           </div>
-          <div className="flex flex-wrap gap-3">
-            {ALL_TX_TYPES.map(type => {
-              const cfg = TX_CONFIG[type];
-              const Icon = cfg.icon;
-              return (
-                <label
-                  key={type}
-                  className="flex items-center gap-1.5 cursor-pointer select-none"
-                  data-testid={`checkbox-type-${type}`}
-                >
-                  <Checkbox
-                    checked={selectedTypes.has(type)}
-                    onCheckedChange={() => toggleType(type)}
-                  />
-                  <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-sm">{cfg.label}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Generate button */}
-        <div className="flex justify-end pt-1">
-          <Button
-            onClick={handleGenerate}
-            disabled={!itemId || isFetching}
-            data-testid="button-generate-report"
-          >
-            {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            <span className="mr-1">توليد التقرير</span>
-          </Button>
+          {ALL_TX_TYPES.map(type => {
+            const cfg = TX_CONFIG[type];
+            const Icon = cfg.icon;
+            return (
+              <label
+                key={type}
+                className="flex items-center gap-1.5 cursor-pointer select-none"
+                data-testid={`checkbox-type-${type}`}
+              >
+                <Checkbox
+                  checked={selectedTypes.has(type)}
+                  onCheckedChange={() => toggleType(type)}
+                />
+                <Icon className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs">{cfg.label}</span>
+              </label>
+            );
+          })}
         </div>
       </div>
 
