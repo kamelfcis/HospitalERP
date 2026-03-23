@@ -5,6 +5,10 @@ import {
 } from "lucide-react";
 import { salesInvoiceStatusLabels, customerTypeLabels } from "@shared/schema";
 import type { Warehouse } from "@shared/schema";
+import {
+  CreditCustomerCombobox,
+  type CreditCustomer,
+} from "@/components/shared/CreditCustomerCombobox";
 
 interface Props {
   isNew: boolean;
@@ -19,6 +23,8 @@ interface Props {
   setInvoiceDate: (v: string) => void;
   customerType: string;
   setCustomerType: (v: string) => void;
+  customerId: string;
+  setCustomerId: (id: string, c: CreditCustomer) => void;
   customerName: string;
   setCustomerName: (v: string) => void;
   contractCompany: string;
@@ -49,7 +55,8 @@ function statusBadge(status: string) {
 export function InvoiceHeaderBar({
   isNew, isDraft, invoiceNumber, status, fefoLoading, autoSaveStatus,
   warehouseId, setWarehouseId, invoiceDate, setInvoiceDate,
-  customerType, setCustomerType, customerName, setCustomerName,
+  customerType, setCustomerType, customerId, setCustomerId,
+  customerName, setCustomerName,
   contractCompany, setContractCompany,
   barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef,
   warehouses, finalizePending, readinessBadge,
@@ -148,7 +155,15 @@ export function InvoiceHeaderBar({
         </div>
         <div className="flex items-center gap-1">
           <span className="font-semibold">العميل:</span>
-          {isDraft ? (
+          {isDraft && customerType === "credit" ? (
+            <CreditCustomerCombobox
+              value={customerId}
+              onChange={(id, c) => {
+                setCustomerId(id, c);
+                setCustomerName(c.name);
+              }}
+            />
+          ) : isDraft ? (
             <input
               type="text"
               value={customerName}

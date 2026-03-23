@@ -4,6 +4,7 @@ export interface InvoiceFormState {
   warehouseId:      string;
   invoiceDate:      string;
   customerType:     string;
+  customerId:       string;
   customerName:     string;
   contractCompany:  string;
   discountPct:      number;
@@ -15,6 +16,7 @@ export function useInvoiceForm(today: string) {
   const [warehouseId,      setWarehouseId]      = useState("");
   const [invoiceDate,      setInvoiceDate]      = useState(today);
   const [customerType,     setCustomerType]     = useState("cash");
+  const [customerId,       setCustomerId]       = useState("");
   const [customerName,     setCustomerName]     = useState("");
   const [contractCompany,  setContractCompany]  = useState("");
   const [discountPct,      setDiscountPct]      = useState(0);
@@ -25,6 +27,7 @@ export function useInvoiceForm(today: string) {
     setWarehouseId(defaults?.warehouseId      ?? "");
     setInvoiceDate(defaults?.invoiceDate      ?? today);
     setCustomerType(defaults?.customerType    ?? "cash");
+    setCustomerId(defaults?.customerId        ?? "");
     setCustomerName(defaults?.customerName    ?? "");
     setContractCompany(defaults?.contractCompany ?? "");
     setDiscountPct(defaults?.discountPct      ?? 0);
@@ -48,6 +51,7 @@ export function useInvoiceForm(today: string) {
     warehouseId,     setWarehouseId,
     invoiceDate,     setInvoiceDate,
     customerType,    setCustomerType,
+    customerId,      setCustomerId,
     customerName,    setCustomerName,
     contractCompany, setContractCompany,
     discountPct,     setDiscountPct,

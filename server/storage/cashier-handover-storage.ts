@@ -28,6 +28,14 @@
 import { pool } from "../db";
 import type { DatabaseStorage } from "./index";
 
+export interface CreditInvoiceItem {
+  invoiceId: string;
+  invoiceNumber: number;
+  customerName: string | null;
+  netTotal: number;
+  invoiceDate: string;
+}
+
 export interface HandoverShiftRow {
   shiftId: string;
   shiftDate: string | null;
@@ -50,6 +58,7 @@ export interface HandoverShiftRow {
   returnInvoiceCount: number;
   netTotal: number;
   transferredToTreasury: number;
+  creditInvoices: CreditInvoiceItem[];
 }
 
 export interface HandoverTotals {
@@ -217,7 +226,46 @@ const methods = {
     ]);
 
     const total = parseInt(countResult.rows[0]?.total || "0");
-    const rows = dataResult.rows as HandoverShiftRow[];
+    const baseRows = dataResult.rows as Omit<HandoverShiftRow, "creditInvoices">[];
+
+    // ── تحميل فواتير الآجل لكل وردية ────────────────────────────────────────
+    const shiftIds = baseRows.map(r => r.shiftId).filter(Boolean);
+    const creditInvoiceMap = new Map<string, CreditInvoiceItem[]>();
+    if (shiftIds.length > 0) {
+      const placeholders = shiftIds.map((_, i) => `$${i + 1}`).join(", ");
+      const ciResult = await pool.query<{
+        invoiceId: string; invoiceNumber: number; customerName: string | null;
+        netTotal: number; invoiceDate: string; shiftId: string;
+      }>(`
+        SELECT id AS "invoiceId",
+               invoice_number AS "invoiceNumber",
+               customer_name  AS "customerName",
+               net_total::float AS "netTotal",
+               invoice_date   AS "invoiceDate",
+               claimed_by_shift_id AS "shiftId"
+        FROM sales_invoice_headers
+        WHERE is_return = false
+          AND customer_type = 'credit'
+          AND status IN ('finalized', 'collected')
+          AND claimed_by_shift_id IN (${placeholders})
+        ORDER BY invoice_date, invoice_number
+      `, shiftIds);
+      for (const ci of ciResult.rows) {
+        if (!creditInvoiceMap.has(ci.shiftId)) creditInvoiceMap.set(ci.shiftId, []);
+        creditInvoiceMap.get(ci.shiftId)!.push({
+          invoiceId: ci.invoiceId,
+          invoiceNumber: ci.invoiceNumber,
+          customerName: ci.customerName,
+          netTotal: ci.netTotal,
+          invoiceDate: ci.invoiceDate,
+        });
+      }
+    }
+
+    const rows: HandoverShiftRow[] = baseRows.map(r => ({
+      ...r,
+      creditInvoices: creditInvoiceMap.get(r.shiftId) ?? [],
+    }));
 
     const totals: HandoverTotals = {
       totalCashSales:             rows.reduce((s, r) => s + r.cashSalesTotal, 0),

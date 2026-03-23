@@ -7,6 +7,7 @@ interface AutoSaveParams {
   warehouseId: string;
   invoiceDate: string;
   customerType: string;
+  customerId: string;
   customerName: string;
   contractCompany: string;
   discountPct: number;
@@ -31,7 +32,7 @@ export function useAutoSave(params: AutoSaveParams) {
   const autoSaveIdRef = useRef<string | null>(null);
 
   const {
-    isDraft, warehouseId, invoiceDate, customerType, customerName, contractCompany,
+    isDraft, warehouseId, invoiceDate, customerType, customerId, customerName, contractCompany,
     discountPct, discountValue, subtotal, netTotal, notes, lines, editId, isNew,
     onNewInvoiceSaved,
   } = params;
@@ -53,6 +54,7 @@ export function useAutoSave(params: AutoSaveParams) {
       warehouseId,
       invoiceDate,
       customerType,
+      customerId: customerType === "credit" ? (customerId || null) : null,
       customerName: customerName || null,
       contractCompany: customerType === "contract" ? contractCompany : null,
       discountPercent: discountPct,
@@ -74,7 +76,7 @@ export function useAutoSave(params: AutoSaveParams) {
     }));
     const existingId = autoSaveIdRef.current || (editId !== "new" ? editId : undefined);
     return { header, lines: linesPayload, existingId };
-  }, [warehouseId, invoiceDate, customerType, customerName, contractCompany, discountPct, discountValue, subtotal, netTotal, notes, lines, editId]);
+  }, [warehouseId, invoiceDate, customerType, customerId, customerName, contractCompany, discountPct, discountValue, subtotal, netTotal, notes, lines, editId]);
 
   const performAutoSave = useCallback(async () => {
     if (!isDraft || !warehouseId) return;

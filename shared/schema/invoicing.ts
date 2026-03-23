@@ -89,6 +89,23 @@ export const serviceConsumables = pgTable("service_consumables", {
   uniqueServiceItem: uniqueIndex("idx_sc_unique").on(table.serviceId, table.itemId),
 }));
 
+// ─── Pharmacy Credit Customers — عملاء الآجل ─────────────────────────────────
+export const pharmacyCreditCustomers = pgTable("pharmacy_credit_customers", {
+  id:        varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name:      text("name").notNull(),
+  phone:     varchar("phone", { length: 30 }),
+  notes:     text("notes"),
+  pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  nameIdx:     index("idx_pcc_name").on(t.name),
+  pharmacyIdx: index("idx_pcc_pharmacy").on(t.pharmacyId),
+}));
+
+export const insertPharmacyCreditCustomerSchema = createInsertSchema(pharmacyCreditCustomers).omit({ id: true, createdAt: true });
+export type InsertPharmacyCreditCustomer = z.infer<typeof insertPharmacyCreditCustomerSchema>;
+export type PharmacyCreditCustomer = typeof pharmacyCreditCustomers.$inferSelect;
+
 export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   invoiceNumber: integer("invoice_number").notNull().unique(),
@@ -96,6 +113,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id),
   pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
   customerType: customerTypeEnum("customer_type").notNull().default("cash"),
+  customerId: varchar("customer_id").references(() => pharmacyCreditCustomers.id),
   customerName: text("customer_name"),
   contractCompany: text("contract_company"),
   // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
@@ -134,6 +152,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   statusJournalIdx: index("idx_sales_inv_status_journal").on(table.status, table.journalStatus),
   companyIdx:       index("idx_sales_inv_company").on(table.companyId),
   contractIdx:      index("idx_sales_inv_contract").on(table.contractId),
+  customerIdx:      index("idx_sales_inv_customer").on(table.customerId),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {
@@ -163,6 +182,47 @@ export const salesInvoiceLines = pgTable("sales_invoice_lines", {
   companyIdx:      index("idx_sales_lines_company").on(table.companyId),
   contractIdx:     index("idx_sales_lines_contract").on(table.contractId),
 }));
+
+// ─── Customer Receipts — تحصيل الآجل ────────────────────────────────────────
+export const customerReceipts = pgTable("customer_receipts", {
+  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receiptNumber: integer("receipt_number").notNull().default(0),
+  customerId:    varchar("customer_id").notNull().references(() => pharmacyCreditCustomers.id),
+  receiptDate:   date("receipt_date").notNull(),
+  totalAmount:   decimal("total_amount", { precision: 18, scale: 2 }).notNull(),
+  paymentMethod: varchar("payment_method", { length: 30 }).notNull().default("cash"),
+  reference:     varchar("reference", { length: 100 }),
+  notes:         text("notes"),
+  createdBy:     varchar("created_by"),
+  createdAt:     timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  customerIdx: index("idx_cr_customer").on(t.customerId),
+  dateIdx:     index("idx_cr_date").on(t.receiptDate),
+}));
+
+export const customerReceiptLines = pgTable("customer_receipt_lines", {
+  id:         varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receiptId:  varchar("receipt_id").notNull().references(() => customerReceipts.id, { onDelete: "cascade" }),
+  invoiceId:  varchar("invoice_id").notNull().references(() => salesInvoiceHeaders.id),
+  amountPaid: decimal("amount_paid", { precision: 18, scale: 2 }).notNull(),
+}, (t) => ({
+  receiptIdx: index("idx_crl_receipt").on(t.receiptId),
+  invoiceIdx: index("idx_crl_invoice").on(t.invoiceId),
+}));
+
+export const insertCustomerReceiptSchema = createInsertSchema(customerReceipts).omit({ id: true, createdAt: true });
+export type InsertCustomerReceipt = z.infer<typeof insertCustomerReceiptSchema>;
+export type CustomerReceipt = typeof customerReceipts.$inferSelect;
+export type CustomerReceiptLine = typeof customerReceiptLines.$inferSelect;
+
+export type CustomerCreditInvoiceRow = {
+  invoiceId:     string;
+  invoiceNumber: number;
+  invoiceDate:   string;
+  netTotal:      string;
+  totalPaid:     string;
+  remaining:     string;
+};
 
 export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

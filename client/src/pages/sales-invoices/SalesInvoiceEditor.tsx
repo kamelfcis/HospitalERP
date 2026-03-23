@@ -147,6 +147,8 @@ export function SalesInvoiceEditor({
         setInvoiceDate={form.setInvoiceDate}
         customerType={form.customerType}
         setCustomerType={form.setCustomerType}
+        customerId={form.customerId}
+        setCustomerId={(id, c) => { form.setCustomerId(id); form.setCustomerName(c.name); }}
         customerName={form.customerName}
         setCustomerName={form.setCustomerName}
         contractCompany={form.contractCompany}

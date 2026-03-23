@@ -52,6 +52,7 @@ import {
   GitMerge,
   KeyRound,
   AlertCircle,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -85,6 +86,7 @@ const mainNavItems: NavItem[] = [
   { title: "استلام من مورد",          href: "/supplier-receiving", icon: Truck,             permission: "receiving.view" },
   { title: "فواتير الشراء",           href: "/purchase-invoices",  icon: Receipt,           permission: "purchase_invoices.view" },
   { title: "سداد الموردين",           href: "/supplier-payments",  icon: Banknote,          permission: "receiving.view" },
+  { title: "تحصيل الآجل",            href: "/customer-payments",  icon: CreditCard,        permission: "sales.view" },
   { title: "تحويل مخزني",            href: "/store-transfers",    icon: ArrowLeftRight,    permission: "transfers.view" },
   { title: "إعداد إذن تحويل",         href: "/transfer-preparation", icon: FileSpreadsheet,  permission: "transfers.view" },
   { title: "جرد الأصناف",            href: "/stock-count",        icon: ClipboardList,     permission: "stock_count.view" },
