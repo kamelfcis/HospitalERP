@@ -1,0 +1,110 @@
+export interface SupplierItem {
+  id: string;
+  code: string;
+  nameAr: string;
+  supplierType: string;
+}
+
+export interface InvoiceItem {
+  id: string;
+  invoiceNumber: number;
+  invoiceDate: string;
+  netPayable: string;
+  warehouseId: string;
+  warehouseNameAr: string;
+  supplierInvoiceNo: string;
+  totalReturns: string;
+}
+
+export interface InvoiceLine {
+  id: string;
+  itemId: string;
+  itemNameAr: string;
+  itemCode: string;
+  unitLevel: string;
+  qty: string;
+  bonusQty: string;
+  purchasePrice: string;
+  vatRate: string;
+  vatAmount: string;
+  valueBeforeVat: string;
+  isFreeItem: boolean;
+}
+
+export interface AvailableLot {
+  id: string;
+  warehouseId: string;
+  expiryDate: string | null;
+  purchasePrice: string;
+  qtyInMinor: string;
+}
+
+export interface ReturnLineEntry {
+  purchaseInvoiceLineId: string;
+  itemId:     string;
+  itemNameAr: string;
+  itemCode:   string;
+  invoiceQty:      string;
+  invoiceBonusQty: string;
+  purchasePrice:   string;
+  vatRate:         string;
+  isFreeItem:      boolean;
+  lotId:           string;
+  qtyReturned:     string;
+  bonusQtyReturned: string;
+  subtotal:  number;
+  vatAmount: number;
+  lineTotal: number;
+}
+
+export interface ReturnRecord {
+  id: string;
+  returnNumber: number;
+  returnDate: string;
+  subtotal: string;
+  taxTotal: string;
+  grandTotal: string;
+  notes: string | null;
+  journalStatus: string | null;
+  supplierNameAr: string;
+  warehouseNameAr: string;
+  invoiceNumber: number;
+  supplierInvoiceNo: string;
+}
+
+export interface ReturnDetail {
+  id: string;
+  returnNumber: number;
+  returnDate: string;
+  subtotal: string;
+  taxTotal: string;
+  grandTotal: string;
+  notes: string | null;
+  journalStatus: string | null;
+  journalEntryId: string | null;
+  supplierNameAr: string;
+  warehouseNameAr: string;
+  invoiceNumber: number;
+  supplierInvoiceNo: string;
+  lines: {
+    id: string;
+    itemNameAr: string;
+    itemCode: string;
+    lotId: string;
+    lotExpiryDate: string | null;
+    qtyReturned:      string;
+    bonusQtyReturned: string;
+    unitCost:  string;
+    isFreeItem: boolean;
+    vatRate:    string;
+    vatAmount:  string;
+    subtotal:   string;
+    lineTotal:  string;
+  }[];
+}
+
+export interface ReturnTotals {
+  subtotal:   number;
+  taxTotal:   number;
+  grandTotal: number;
+}
