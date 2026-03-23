@@ -1,20 +1,19 @@
 /*
  * ═══════════════════════════════════════════════════════════════════════════════
  *  شاشة سداد الموردين — Supplier Payments
+ *  Layout: header (title + tabs) → supplier row → controls bar → TABLE (hero)
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useMemo, useCallback } from "react";
-import { useQuery, useMutation }          from "@tanstack/react-query";
-import { useToast }                        from "@/hooks/use-toast";
-import { apiRequest, queryClient }         from "@/lib/queryClient";
-import { formatCurrency, formatDateShort } from "@/lib/formatters";
-import { Input }                           from "@/components/ui/input";
-import { Button }                          from "@/components/ui/button";
-import { Badge }                           from "@/components/ui/badge";
-import { Label }                           from "@/components/ui/label";
-import { Textarea }                        from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useState, useMemo, useCallback, useRef, KeyboardEvent } from "react";
+import { useQuery, useMutation }           from "@tanstack/react-query";
+import { useToast }                         from "@/hooks/use-toast";
+import { apiRequestJson, queryClient } from "@/lib/queryClient";
+import { formatCurrency, formatDateShort }  from "@/lib/formatters";
+import { Input }                            from "@/components/ui/input";
+import { Button }                           from "@/components/ui/button";
+import { Badge }                            from "@/components/ui/badge";
+import { Label }                            from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -27,17 +26,13 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ChevronsUpDown, Check, Banknote, AlertTriangle, FileText, Loader2, Save,
-  RefreshCw, CircleDollarSign,
+  RefreshCw, CircleDollarSign, Hash,
 } from "lucide-react";
-import type { Supplier }                  from "@shared/schema/purchasing";
-import type { SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
+import type { Supplier, SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface BalanceResult {
-  supplierId:     string;
-  code:           string;
-  nameAr:         string;
   openingBalance: string;
   totalInvoiced:  string;
   totalPaid:      string;
@@ -57,33 +52,30 @@ interface ReportResult {
   totalRemaining:  string;
 }
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
+type ActiveTab = "payment" | "report";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const today = () => new Date().toISOString().split("T")[0];
 
-function cn(...classes: (string | false | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
+function cx(...cls: (string | false | undefined | null)[]) {
+  return cls.filter(Boolean).join(" ");
 }
 
 // ─── SupplierCombobox ─────────────────────────────────────────────────────────
 
 function SupplierCombobox({
   value, onChange,
-}: {
-  value: string;
-  onChange: (id: string) => void;
-}) {
+}: { value: string; onChange: (id: string) => void }) {
   const [open,   setOpen]   = useState(false);
   const [search, setSearch] = useState("");
 
   const { data } = useQuery<{ suppliers: Supplier[]; total: number }>({
     queryKey: ["/api/suppliers", search],
-    queryFn: async () => {
-      const url = search
-        ? `/api/suppliers?search=${encodeURIComponent(search)}&pageSize=30`
-        : `/api/suppliers?pageSize=30`;
-      const res = await fetch(url, { credentials: "include" });
-      return res.json();
+    queryFn:  async () => {
+      const qs = search ? `search=${encodeURIComponent(search)}&` : "";
+      const r = await fetch(`/api/suppliers?${qs}pageSize=30`, { credentials: "include" });
+      return r.json();
     },
     staleTime: 30_000,
   });
@@ -95,39 +87,35 @@ function SupplierCombobox({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between text-right"
+          variant="outline" role="combobox" aria-expanded={open}
+          className="w-[280px] justify-between text-right gap-2"
           data-testid="supplier-combobox"
         >
-          {selected
-            ? `${selected.nameAr} (${selected.code})`
-            : "ابحث باسم المورد أو الكود..."}
-          <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0 mr-2" />
+          <span className="truncate text-sm">
+            {selected ? `${selected.nameAr} (${selected.code})` : "ابحث باسم المورد أو الكود..."}
+          </span>
+          <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0" align="start">
+      <PopoverContent className="w-[340px] p-0" align="start">
         <Command shouldFilter={false}>
           <CommandInput
-            placeholder="اسم المورد أو الكود..."
-            value={search}
-            onValueChange={setSearch}
+            placeholder="اسم أو كود..."
+            value={search} onValueChange={setSearch}
             className="text-right"
           />
           <CommandEmpty>لا توجد نتائج</CommandEmpty>
-          <CommandGroup className="max-h-60 overflow-y-auto">
+          <CommandGroup className="max-h-56 overflow-y-auto">
             {suppliers.map((s) => (
               <CommandItem
-                key={s.id}
-                value={s.id}
-                onSelect={() => { onChange(s.id); setOpen(false); }}
-                className="flex justify-between"
-                data-testid={`supplier-option-${s.id}`}
+                key={s.id} value={s.id}
+                onSelect={() => { onChange(s.id); setOpen(false); setSearch(""); }}
+                className="flex justify-between gap-2"
+                data-testid={`supplier-opt-${s.id}`}
               >
                 <span className="text-muted-foreground text-xs">{s.code}</span>
-                <span>{s.nameAr}</span>
-                {value === s.id && <Check className="h-4 w-4 text-primary shrink-0" />}
+                <span className="flex-1 text-right">{s.nameAr}</span>
+                {value === s.id && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
               </CommandItem>
             ))}
           </CommandGroup>
@@ -137,64 +125,43 @@ function SupplierCombobox({
   );
 }
 
-// ─── BalanceCard ──────────────────────────────────────────────────────────────
+// ─── BalanceStrip (compact inline) ───────────────────────────────────────────
 
-function BalanceCard({ supplierId }: { supplierId: string }) {
+function BalanceStrip({ supplierId }: { supplierId: string }) {
   const { data, isLoading } = useQuery<BalanceResult>({
     queryKey: ["/api/supplier-payments/balance", supplierId],
-    queryFn: async () => {
-      const res = await fetch(`/api/supplier-payments/balance/${supplierId}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("فشل تحميل رصيد المورد");
-      return res.json();
+    queryFn:  async () => {
+      const r = await fetch(`/api/supplier-payments/balance/${supplierId}`, { credentials: "include" });
+      if (!r.ok) throw new Error("فشل تحميل الرصيد");
+      return r.json();
     },
     enabled: !!supplierId,
     staleTime: 10_000,
   });
 
   if (isLoading) return (
-    <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
-      <Loader2 className="h-4 w-4 animate-spin" />
-      <span>جارٍ تحميل الرصيد...</span>
-    </div>
+    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+      <Loader2 className="h-3 w-3 animate-spin" /> جارٍ تحميل الرصيد...
+    </span>
   );
   if (!data) return null;
 
-  const balance = parseFloat(data.currentBalance);
+  const bal = parseFloat(data.currentBalance);
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-lg border bg-muted/30">
-      <div className="text-center">
-        <p className="text-xs text-muted-foreground mb-1">رصيد افتتاحي</p>
-        <p className="font-semibold text-sm" data-testid="balance-opening">
-          {formatCurrency(data.openingBalance)}
-        </p>
-      </div>
-      <div className="text-center">
-        <p className="text-xs text-muted-foreground mb-1">إجمالي الفواتير</p>
-        <p className="font-semibold text-sm text-orange-600" data-testid="balance-invoiced">
-          {formatCurrency(data.totalInvoiced)}
-        </p>
-      </div>
-      <div className="text-center">
-        <p className="text-xs text-muted-foreground mb-1">إجمالي المدفوع</p>
-        <p className="font-semibold text-sm text-green-600" data-testid="balance-paid">
-          {formatCurrency(data.totalPaid)}
-        </p>
-      </div>
-      <div className="text-center">
-        <p className="text-xs text-muted-foreground mb-1">الرصيد الحالي</p>
-        <p
-          className={cn(
-            "font-bold text-base",
-            balance > 0 ? "text-red-600" : balance < 0 ? "text-blue-600" : "text-green-600"
-          )}
-          data-testid="balance-current"
-        >
-          {formatCurrency(data.currentBalance)}
-        </p>
-      </div>
+    <div className="flex items-center gap-3 text-xs">
+      <span className="text-muted-foreground">
+        ذمم: <strong>{formatCurrency(data.totalInvoiced)}</strong>
+      </span>
+      <span className="text-green-600 dark:text-green-400">
+        مسدد: <strong>{formatCurrency(data.totalPaid)}</strong>
+      </span>
+      <span className={cx(
+        "font-bold",
+        bal > 0 ? "text-red-600" : bal < 0 ? "text-blue-600" : "text-green-600"
+      )} data-testid="balance-current">
+        رصيد: {formatCurrency(data.currentBalance)}
+      </span>
     </div>
   );
 }
@@ -204,307 +171,356 @@ function BalanceCard({ supplierId }: { supplierId: string }) {
 function PaymentTab({ supplierId }: { supplierId: string }) {
   const { toast } = useToast();
 
-  // invoice list
-  const { data: invoices = [], isLoading, refetch } = useQuery<SupplierInvoicePaymentRow[]>({
+  // Next payment number
+  const { data: nextNumData } = useQuery<{ nextNumber: number }>({
+    queryKey: ["/api/supplier-payments/next-number"],
+    queryFn:  async () => {
+      const r = await fetch("/api/supplier-payments/next-number", { credentials: "include" });
+      return r.json();
+    },
+    staleTime: 0,
+  });
+  const paymentNumber = nextNumData?.nextNumber ?? 1;
+
+  // Invoices
+  const { data: invoices = [], isLoading } = useQuery<SupplierInvoicePaymentRow[]>({
     queryKey: ["/api/supplier-payments/invoices", supplierId],
-    queryFn: async () => {
-      const res = await fetch(
-        `/api/supplier-payments/invoices/${supplierId}?status=unpaid`,
-        { credentials: "include" }
-      );
-      if (!res.ok) throw new Error("فشل تحميل الفواتير");
-      return res.json();
+    queryFn:  async () => {
+      const r = await fetch(`/api/supplier-payments/invoices/${supplierId}?status=unpaid`, {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("فشل تحميل الفواتير");
+      return r.json();
     },
     enabled: !!supplierId,
     staleTime: 5_000,
   });
 
-  // payment inputs: invoiceId → amount string
-  const [inputs, setInputs] = useState<Record<string, string>>({});
+  // Payment state
+  const [inputs, setInputs]           = useState<Record<string, string>>({});
+  const [paymentDate, setPaymentDate] = useState(today());
+  const [payMethod,   setPayMethod]   = useState("bank");
+  const [reference,   setReference]   = useState("");
+  const [notes,       setNotes]       = useState("");
+  const [distAmt,     setDistAmt]     = useState("");
 
-  // payment header fields
-  const [paymentDate,   setPaymentDate]   = useState(today());
-  const [reference,     setReference]     = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("bank");
-  const [notes,         setNotes]         = useState("");
-  const [distributeAmt, setDistributeAmt] = useState("");
-
-  // computed totals
-  const totalDistributed = useMemo(() =>
-    Object.values(inputs).reduce((s, v) => s + (parseFloat(v) || 0), 0),
+  // Computed
+  const totalDistributed = useMemo(
+    () => Object.values(inputs).reduce((s, v) => s + (parseFloat(v) || 0), 0),
     [inputs]
   );
-
-  const totalRemaining = useMemo(() =>
-    invoices.reduce((s, r) => s + parseFloat(r.remaining), 0),
+  const totalRemaining = useMemo(
+    () => invoices.reduce((s, r) => s + parseFloat(r.remaining), 0),
     [invoices]
   );
+  const diff = (parseFloat(distAmt) || 0) - totalDistributed;
 
-  const diff = (parseFloat(distributeAmt) || 0) - totalDistributed;
-
-  const handleInput = useCallback((invoiceId: string, val: string) => {
-    setInputs((prev) => ({ ...prev, [invoiceId]: val }));
+  const handleInput = useCallback((id: string, val: string) => {
+    setInputs((p) => ({ ...p, [id]: val }));
   }, []);
 
+  // ── Keyboard navigation ────────────────────────────────────────────────────
+  // Each payment input has data-row-index attr; ArrowUp/Down moves focus
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  const handleCellKeyDown = useCallback((
+    e: KeyboardEvent<HTMLInputElement>,
+    rowIndex: number
+  ) => {
+    if (!tableRef.current) return;
+    const inputs = Array.from(
+      tableRef.current.querySelectorAll<HTMLInputElement>("[data-payment-input]")
+    );
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      inputs[rowIndex + 1]?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      inputs[rowIndex - 1]?.focus();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      inputs[rowIndex + 1]?.focus();
+    }
+  }, []);
+
+  // ── Auto-distribute ────────────────────────────────────────────────────────
   const handleAutoDistribute = () => {
-    const amt = parseFloat(distributeAmt);
+    const amt = parseFloat(distAmt);
     if (!amt || amt <= 0) {
-      toast({ title: "أدخل المبلغ الذي ستدفعه للمورد أولاً", variant: "destructive" });
+      toast({ title: "أدخل المبلغ أولاً", variant: "destructive" });
       return;
     }
-    let remaining = amt;
-    const newInputs: Record<string, string> = {};
+    let rem = amt;
+    const n: Record<string, string> = {};
     for (const inv of invoices) {
-      if (remaining <= 0) { newInputs[inv.invoiceId] = ""; continue; }
-      const rem = parseFloat(inv.remaining);
-      const pay = Math.min(rem, remaining);
-      newInputs[inv.invoiceId] = pay > 0 ? pay.toFixed(2) : "";
-      remaining -= pay;
+      if (rem <= 0) { n[inv.invoiceId] = ""; continue; }
+      const pay = Math.min(parseFloat(inv.remaining), rem);
+      n[inv.invoiceId] = pay > 0 ? pay.toFixed(2) : "";
+      rem -= pay;
     }
-    setInputs(newInputs);
+    setInputs(n);
   };
 
+  // ── Save payment ───────────────────────────────────────────────────────────
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: () => {
       const lines = invoices
         .filter((inv) => (parseFloat(inputs[inv.invoiceId] ?? "0") || 0) > 0)
-        .map((inv) => ({
-          invoiceId:  inv.invoiceId,
-          amountPaid: parseFloat(inputs[inv.invoiceId]),
-        }));
-
+        .map((inv) => ({ invoiceId: inv.invoiceId, amountPaid: parseFloat(inputs[inv.invoiceId]) }));
       if (!lines.length) throw new Error("لم تُدخل أي مبالغ للسداد");
-
-      return apiRequest("POST", "/api/supplier-payments", {
-        supplierId,
-        paymentDate,
-        totalAmount:   totalDistributed,
-        reference:     reference || null,
-        notes:         notes || null,
-        paymentMethod,
-        lines,
-      });
+      return apiRequestJson<{ paymentId: string; paymentNumber: number }>(
+        "POST", "/api/supplier-payments", {
+          supplierId,
+          paymentDate,
+          totalAmount:   totalDistributed,
+          reference:     reference || null,
+          notes:         notes || null,
+          paymentMethod: payMethod,
+          lines,
+        }
+      );
     },
-    onSuccess: () => {
-      toast({ title: "تم حفظ السداد بنجاح" });
-      setInputs({});
-      setDistributeAmt("");
+    onSuccess: (body) => {
+      toast({ title: `تم حفظ السداد رقم #${String(body.paymentNumber).padStart(4, "0")} بنجاح` });
+      setInputs({}); setDistAmt("");
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-payments/invoices", supplierId] });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-payments/balance", supplierId] });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-payments/report", supplierId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-payments/next-number"] });
     },
     onError: (err: Error) => {
-      toast({ title: "خطأ في حفظ السداد", description: err.message, variant: "destructive" });
+      toast({ title: "خطأ في الحفظ", description: err.message, variant: "destructive" });
     },
   });
 
   if (isLoading) return (
-    <div className="flex items-center justify-center h-40 gap-2 text-muted-foreground">
+    <div className="flex-1 flex items-center justify-center gap-2 text-muted-foreground">
       <Loader2 className="h-5 w-5 animate-spin" />
       <span>جارٍ تحميل الفواتير...</span>
     </div>
   );
 
   if (!invoices.length) return (
-    <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
-      <Check className="h-8 w-8 text-green-500" />
-      <p>لا توجد فواتير غير مسددة لهذا المورد</p>
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <Check className="h-10 w-10 text-green-500" />
+      <p className="text-sm">لا توجد فواتير غير مسددة لهذا المورد</p>
     </div>
   );
 
   return (
-    <div className="space-y-4">
-      {/* Payment header */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border rounded-lg bg-muted/20">
-        <div className="space-y-1">
-          <Label className="text-xs">تاريخ السداد</Label>
+    <div className="flex-1 flex flex-col min-h-0 gap-2">
+
+      {/* ── Controls bar ─────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-end gap-2 p-2 rounded-lg border bg-muted/20 shrink-0">
+
+        {/* Payment number badge */}
+        <div className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 text-primary font-bold text-sm shrink-0">
+          <Hash className="h-3.5 w-3.5" />
+          <span data-testid="payment-number">{String(paymentNumber).padStart(4, "0")}</span>
+        </div>
+
+        {/* Date */}
+        <div className="flex items-center gap-1">
+          <Label className="text-xs text-muted-foreground shrink-0">التاريخ</Label>
           <Input
-            type="date"
-            value={paymentDate}
+            type="date" value={paymentDate}
             onChange={(e) => setPaymentDate(e.target.value)}
+            className="h-7 w-[130px] text-xs"
             data-testid="input-payment-date"
           />
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">طريقة الدفع</Label>
-          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-            <SelectTrigger data-testid="select-payment-method">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="bank">تحويل بنكي</SelectItem>
-              <SelectItem value="check">شيك</SelectItem>
-              <SelectItem value="cash">نقداً</SelectItem>
-              <SelectItem value="transfer">حوالة</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">رقم المرجع / الشيك</Label>
+
+        {/* Method */}
+        <Select value={payMethod} onValueChange={setPayMethod}>
+          <SelectTrigger className="h-7 w-[110px] text-xs" data-testid="select-method">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="bank">تحويل بنكي</SelectItem>
+            <SelectItem value="check">شيك</SelectItem>
+            <SelectItem value="cash">نقداً</SelectItem>
+            <SelectItem value="transfer">حوالة</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Reference */}
+        <div className="flex items-center gap-1">
+          <Label className="text-xs text-muted-foreground shrink-0">مرجع</Label>
           <Input
-            placeholder="اختياري"
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
+            placeholder="رقم الشيك / التحويل"
+            value={reference} onChange={(e) => setReference(e.target.value)}
+            className="h-7 w-[140px] text-xs"
             data-testid="input-reference"
           />
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">ملاحظات</Label>
+
+        {/* Notes */}
+        <div className="flex items-center gap-1">
+          <Label className="text-xs text-muted-foreground shrink-0">ملاحظة</Label>
           <Input
             placeholder="اختياري"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            value={notes} onChange={(e) => setNotes(e.target.value)}
+            className="h-7 w-[140px] text-xs"
             data-testid="input-notes"
           />
         </div>
-      </div>
 
-      {/* Auto-distribute bar */}
-      <div className="flex flex-wrap items-end gap-3 p-3 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
-        <div className="space-y-1 flex-1 min-w-[160px]">
-          <Label className="text-xs text-blue-700 dark:text-blue-300">
-            المبلغ الذي ستدفعه للمورد
-          </Label>
+        {/* Divider */}
+        <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
+
+        {/* Distribute amount */}
+        <div className="flex items-center gap-1">
+          <Label className="text-xs text-blue-600 dark:text-blue-400 shrink-0">سيُدفع</Label>
           <Input
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="0.00"
-            value={distributeAmt}
-            onChange={(e) => setDistributeAmt(e.target.value)}
-            className="text-left ltr"
-            data-testid="input-distribute-amount"
+            type="number" min="0" step="0.01" placeholder="0.00"
+            value={distAmt} onChange={(e) => setDistAmt(e.target.value)}
+            className="h-7 w-[110px] text-xs text-left ltr"
+            data-testid="input-distribute"
           />
         </div>
+
         <Button
-          variant="outline"
+          variant="outline" size="sm"
           onClick={handleAutoDistribute}
-          className="border-blue-400 text-blue-700 hover:bg-blue-100"
+          className="h-7 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
           data-testid="button-auto-distribute"
         >
-          <RefreshCw className="h-4 w-4 me-1" />
+          <RefreshCw className="h-3 w-3 me-1" />
           توزيع تلقائي
         </Button>
 
-        {/* diff indicator */}
-        {distributeAmt && (
-          <div className={cn(
-            "flex items-center gap-1 px-3 py-2 rounded-md text-sm font-semibold",
+        {/* Diff indicator */}
+        {distAmt && (
+          <div className={cx(
+            "flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold shrink-0",
             Math.abs(diff) < 0.01
               ? "bg-green-100 text-green-700"
               : diff > 0
               ? "bg-orange-100 text-orange-700"
               : "bg-red-100 text-red-700"
-          )} data-testid="distribution-diff">
-            {Math.abs(diff) < 0.01 ? (
-              <><Check className="h-4 w-4" /> مطابق تماماً</>
-            ) : diff > 0 ? (
-              <><AlertTriangle className="h-4 w-4" /> متبقى غير موزّع: {formatCurrency(diff)}</>
-            ) : (
-              <><AlertTriangle className="h-4 w-4" /> زيادة في التوزيع: {formatCurrency(Math.abs(diff))}</>
-            )}
+          )} data-testid="diff-indicator">
+            {Math.abs(diff) < 0.01
+              ? <><Check className="h-3.5 w-3.5" /> مطابق</>
+              : diff > 0
+              ? <><AlertTriangle className="h-3.5 w-3.5" /> غير موزّع: {formatCurrency(diff)}</>
+              : <><AlertTriangle className="h-3.5 w-3.5" /> زيادة: {formatCurrency(Math.abs(diff))}</>}
           </div>
         )}
       </div>
 
-      {/* Invoice table */}
-      <div className="border rounded-lg overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/50">
-              <TableHead className="text-right text-xs w-[90px]">كود الفاتورة</TableHead>
-              <TableHead className="text-right text-xs">رقم فاتورة المورد</TableHead>
-              <TableHead className="text-right text-xs w-[80px]">رقم المطالبة</TableHead>
-              <TableHead className="text-right text-xs w-[100px]">التاريخ</TableHead>
-              <TableHead className="text-left text-xs">صافي الفاتورة</TableHead>
-              <TableHead className="text-left text-xs">المسدد سابقاً</TableHead>
-              <TableHead className="text-left text-xs">الباقي</TableHead>
-              <TableHead className="text-left text-xs w-[130px]">المدفوع الآن</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {invoices.map((inv) => {
-              const remaining   = parseFloat(inv.remaining);
-              const inputVal    = inputs[inv.invoiceId] ?? "";
-              const inputAmount = parseFloat(inputVal) || 0;
-              const isOver      = inputAmount > remaining + 0.005;
+      {/* ── Invoice table (hero) ──────────────────────────────────────────── */}
+      <div ref={tableRef} className="flex-1 min-h-0 border rounded-lg overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
+              <TableRow>
+                <TableHead className="text-right text-xs w-[80px]">#</TableHead>
+                <TableHead className="text-right text-xs">رقم فاتورة المورد</TableHead>
+                <TableHead className="text-right text-xs w-[80px]">رقم المطالبة</TableHead>
+                <TableHead className="text-right text-xs w-[95px]">التاريخ</TableHead>
+                <TableHead className="text-left text-xs">صافي الفاتورة</TableHead>
+                <TableHead className="text-left text-xs">مسدد سابقاً</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-orange-600">الباقي</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-primary w-[130px]">
+                  المدفوع الآن ▾
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invoices.map((inv, idx) => {
+                const remaining   = parseFloat(inv.remaining);
+                const inputVal    = inputs[inv.invoiceId] ?? "";
+                const inputAmount = parseFloat(inputVal) || 0;
+                const isOver      = inputAmount > remaining + 0.005;
+                const hasPaid     = inputAmount > 0;
 
-              return (
-                <TableRow
-                  key={inv.invoiceId}
-                  className={isOver ? "bg-red-50 dark:bg-red-950/20" : ""}
-                  data-testid={`invoice-row-${inv.invoiceId}`}
-                >
-                  <TableCell className="font-mono text-xs">{inv.invoiceNumber}</TableCell>
-                  <TableCell className="text-xs">{inv.supplierInvoiceNo || "—"}</TableCell>
-                  <TableCell className="text-xs font-mono">
-                    {inv.receivingNumber ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
-                  <TableCell className="text-left text-xs font-mono">
-                    {formatCurrency(inv.netPayable)}
-                  </TableCell>
-                  <TableCell className="text-left text-xs font-mono text-muted-foreground">
-                    {parseFloat(inv.totalPaid) > 0 ? formatCurrency(inv.totalPaid) : "—"}
-                  </TableCell>
-                  <TableCell className="text-left text-xs font-mono font-semibold text-orange-600">
-                    {formatCurrency(inv.remaining)}
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      min="0"
-                      max={remaining}
-                      step="0.01"
-                      placeholder="0.00"
-                      value={inputVal}
-                      onChange={(e) => handleInput(inv.invoiceId, e.target.value)}
-                      className={cn(
-                        "h-7 text-left ltr text-xs w-[120px]",
-                        isOver ? "border-red-400 focus-visible:ring-red-400" : ""
-                      )}
-                      data-testid={`input-payment-${inv.invoiceId}`}
-                    />
-                    {isOver && (
-                      <p className="text-red-500 text-[10px] mt-0.5">يتجاوز المتبقي</p>
+                return (
+                  <TableRow
+                    key={inv.invoiceId}
+                    className={cx(
+                      isOver ? "bg-red-50 dark:bg-red-950/20" : "",
+                      hasPaid ? "bg-green-50/40 dark:bg-green-950/10" : ""
                     )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-          <TableFooter>
-            <TableRow className="font-bold bg-muted/30">
-              <TableCell colSpan={4} className="text-right text-xs">الإجمالي</TableCell>
-              <TableCell className="text-left text-xs font-mono">
-                {formatCurrency(invoices.reduce((s, r) => s + parseFloat(r.netPayable), 0))}
-              </TableCell>
-              <TableCell className="text-left text-xs font-mono">
-                {formatCurrency(invoices.reduce((s, r) => s + parseFloat(r.totalPaid), 0))}
-              </TableCell>
-              <TableCell className="text-left text-xs font-mono text-orange-600">
-                {formatCurrency(totalRemaining)}
-              </TableCell>
-              <TableCell className="text-left text-xs font-mono text-green-600" data-testid="total-distributed">
-                {formatCurrency(totalDistributed)}
-              </TableCell>
-            </TableRow>
-          </TableFooter>
-        </Table>
+                    data-testid={`row-invoice-${inv.invoiceId}`}
+                  >
+                    <TableCell className="font-mono text-xs">{inv.invoiceNumber}</TableCell>
+                    <TableCell className="text-xs">{inv.supplierInvoiceNo || "—"}</TableCell>
+                    <TableCell className="text-xs font-mono text-muted-foreground">
+                      {inv.receivingNumber ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
+                    <TableCell className="text-left text-xs font-mono">
+                      {formatCurrency(inv.netPayable)}
+                    </TableCell>
+                    <TableCell className="text-left text-xs font-mono text-muted-foreground">
+                      {parseFloat(inv.totalPaid) > 0 ? formatCurrency(inv.totalPaid) : "—"}
+                    </TableCell>
+                    <TableCell className="text-left text-xs font-mono font-semibold text-orange-600">
+                      {formatCurrency(inv.remaining)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <Input
+                          type="number" min="0" max={remaining} step="0.01"
+                          placeholder="0.00"
+                          value={inputVal}
+                          onChange={(e) => handleInput(inv.invoiceId, e.target.value)}
+                          onKeyDown={(e) => handleCellKeyDown(e, idx)}
+                          className={cx(
+                            "h-7 w-[118px] text-left ltr text-xs font-mono",
+                            isOver ? "border-red-400 focus-visible:ring-red-400" : "focus-visible:ring-primary"
+                          )}
+                          data-payment-input
+                          data-row-index={idx}
+                          data-testid={`input-pay-${inv.invoiceId}`}
+                        />
+                        {isOver && (
+                          <span className="text-red-500 text-[10px]">يتجاوز المتبقي</span>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+            <TableFooter className="sticky bottom-0 bg-muted/80 backdrop-blur-sm">
+              <TableRow className="font-bold">
+                <TableCell colSpan={4} className="text-right text-xs">الإجمالي</TableCell>
+                <TableCell className="text-left text-xs font-mono">
+                  {formatCurrency(invoices.reduce((s, r) => s + parseFloat(r.netPayable), 0))}
+                </TableCell>
+                <TableCell className="text-left text-xs font-mono text-muted-foreground">
+                  {formatCurrency(invoices.reduce((s, r) => s + parseFloat(r.totalPaid), 0))}
+                </TableCell>
+                <TableCell className="text-left text-xs font-mono text-orange-600">
+                  {formatCurrency(totalRemaining)}
+                </TableCell>
+                <TableCell className="text-left text-xs font-mono text-green-700" data-testid="total-distributed">
+                  {formatCurrency(totalDistributed)}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
+        </div>
       </div>
 
-      {/* Save button */}
-      <div className="flex justify-end gap-3">
+      {/* ── Footer ───────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between shrink-0">
+        <div className="text-sm text-muted-foreground">
+          {invoices.length} فاتورة غير مسددة
+        </div>
         <Button
           onClick={() => mutation.mutate()}
           disabled={mutation.isPending || totalDistributed <= 0}
           className="gap-2"
-          data-testid="button-save-payment"
+          data-testid="button-save"
         >
           {mutation.isPending
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <Save className="h-4 w-4" />}
-          حفظ سداد {totalDistributed > 0 ? `(${formatCurrency(totalDistributed)})` : ""}
+          {totalDistributed > 0
+            ? `حفظ سداد ${formatCurrency(totalDistributed)}`
+            : "لم يُدخل مبالغ"}
         </Button>
       </div>
     </div>
@@ -518,13 +534,13 @@ function ReportTab({ supplierId }: { supplierId: string }) {
 
   const { data, isLoading, refetch } = useQuery<ReportResult>({
     queryKey: ["/api/supplier-payments/report", supplierId, statusFilter],
-    queryFn: async () => {
-      const res = await fetch(
+    queryFn:  async () => {
+      const r = await fetch(
         `/api/supplier-payments/report/${supplierId}?status=${statusFilter}`,
         { credentials: "include" }
       );
-      if (!res.ok) throw new Error("فشل تحميل التقرير");
-      return res.json();
+      if (!r.ok) throw new Error("فشل تحميل التقرير");
+      return r.json();
     },
     enabled: !!supplierId,
     staleTime: 5_000,
@@ -533,14 +549,12 @@ function ReportTab({ supplierId }: { supplierId: string }) {
   const rows = data?.rows ?? [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Label className="text-sm shrink-0">عرض الفواتير:</Label>
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as any)}
-        >
-          <SelectTrigger className="w-[180px]" data-testid="select-report-filter">
+    <div className="flex-1 flex flex-col min-h-0 gap-2">
+      {/* Filter bar */}
+      <div className="flex items-center gap-2 shrink-0">
+        <Label className="text-xs text-muted-foreground shrink-0">عرض:</Label>
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+          <SelectTrigger className="h-7 w-[170px] text-xs" data-testid="report-filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -549,40 +563,50 @@ function ReportTab({ supplierId }: { supplierId: string }) {
             <SelectItem value="paid">المسددة فقط</SelectItem>
           </SelectContent>
         </Select>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => refetch()}
-          data-testid="button-report-refresh"
-        >
-          <RefreshCw className="h-4 w-4" />
+        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => refetch()}>
+          <RefreshCw className="h-3.5 w-3.5" />
         </Button>
+        {/* Summary pills */}
+        {data && (
+          <div className="flex gap-2 text-xs ms-2">
+            <span className="px-2 py-0.5 rounded bg-muted">
+              إجمالي: <strong>{formatCurrency(data.totalNetPayable)}</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-green-100 text-green-700">
+              مسدد: <strong>{formatCurrency(data.totalPaid)}</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-700">
+              متبقي: <strong>{formatCurrency(data.totalRemaining)}</strong>
+            </span>
+          </div>
+        )}
       </div>
 
+      {/* Table */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-40 gap-2 text-muted-foreground">
+        <div className="flex-1 flex items-center justify-center gap-2 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
           <span>جارٍ تحميل التقرير...</span>
         </div>
       ) : !rows.length ? (
-        <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
-          <FileText className="h-8 w-8" />
-          <p>لا توجد بيانات بهذا الفلتر</p>
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+          <FileText className="h-8 w-8 opacity-40" />
+          <p className="text-sm">لا توجد بيانات بهذا الفلتر</p>
         </div>
       ) : (
-        <>
-          <div className="border rounded-lg overflow-hidden">
+        <div className="flex-1 min-h-0 border rounded-lg overflow-hidden flex flex-col">
+          <div className="flex-1 overflow-y-auto">
             <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="text-right text-xs w-[90px]">كود الفاتورة</TableHead>
+              <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
+                <TableRow>
+                  <TableHead className="text-right text-xs w-[80px]">#</TableHead>
                   <TableHead className="text-right text-xs">رقم فاتورة المورد</TableHead>
                   <TableHead className="text-right text-xs w-[80px]">رقم المطالبة</TableHead>
-                  <TableHead className="text-right text-xs w-[100px]">التاريخ</TableHead>
+                  <TableHead className="text-right text-xs w-[95px]">التاريخ</TableHead>
                   <TableHead className="text-left text-xs">صافي الفاتورة</TableHead>
                   <TableHead className="text-left text-xs">المسدد</TableHead>
                   <TableHead className="text-left text-xs">المتبقي</TableHead>
-                  <TableHead className="text-right text-xs">الحالة</TableHead>
+                  <TableHead className="text-right text-xs w-[80px]">الحالة</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -590,10 +614,10 @@ function ReportTab({ supplierId }: { supplierId: string }) {
                   const remaining = parseFloat(row.remaining);
                   const isPaid    = remaining <= 0.005;
                   return (
-                    <TableRow key={row.invoiceId} data-testid={`report-row-${row.invoiceId}`}>
+                    <TableRow key={row.invoiceId} data-testid={`rpt-row-${row.invoiceId}`}>
                       <TableCell className="font-mono text-xs">{row.invoiceNumber}</TableCell>
                       <TableCell className="text-xs">{row.supplierInvoiceNo || "—"}</TableCell>
-                      <TableCell className="text-xs font-mono">
+                      <TableCell className="text-xs font-mono text-muted-foreground">
                         {row.receivingNumber ?? "—"}
                       </TableCell>
                       <TableCell className="text-xs">{formatDateShort(row.invoiceDate)}</TableCell>
@@ -603,39 +627,36 @@ function ReportTab({ supplierId }: { supplierId: string }) {
                       <TableCell className="text-left text-xs font-mono text-green-600">
                         {parseFloat(row.totalPaid) > 0 ? formatCurrency(row.totalPaid) : "—"}
                       </TableCell>
-                      <TableCell className={cn(
+                      <TableCell className={cx(
                         "text-left text-xs font-mono font-semibold",
                         isPaid ? "text-muted-foreground" : "text-orange-600"
                       )}>
-                        {isPaid ? "مسدد" : formatCurrency(row.remaining)}
+                        {isPaid ? "—" : formatCurrency(row.remaining)}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant={isPaid ? "default" : "outline"}
-                          className={cn(
-                            "text-[10px]",
-                            isPaid
-                              ? "bg-green-100 text-green-700 border-green-200"
-                              : "border-orange-300 text-orange-600"
-                          )}
-                        >
-                          {isPaid ? "مسدد" : "غير مسدد"}
+                        <Badge className={cx(
+                          "text-[10px] px-1.5",
+                          isPaid
+                            ? "bg-green-100 text-green-700 border-green-200 hover:bg-green-100"
+                            : "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-50"
+                        )} variant="outline">
+                          {isPaid ? "مسدد" : "متبقي"}
                         </Badge>
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
-              <TableFooter>
-                <TableRow className="font-bold bg-muted/30">
+              <TableFooter className="sticky bottom-0 bg-muted/80 backdrop-blur-sm">
+                <TableRow className="font-bold">
                   <TableCell colSpan={4} className="text-right text-xs">الإجمالي</TableCell>
-                  <TableCell className="text-left text-xs font-mono" data-testid="report-total-net">
+                  <TableCell className="text-left text-xs font-mono">
                     {formatCurrency(data?.totalNetPayable)}
                   </TableCell>
-                  <TableCell className="text-left text-xs font-mono text-green-600" data-testid="report-total-paid">
+                  <TableCell className="text-left text-xs font-mono text-green-600">
                     {formatCurrency(data?.totalPaid)}
                   </TableCell>
-                  <TableCell className="text-left text-xs font-mono text-orange-600" data-testid="report-total-remaining">
+                  <TableCell className="text-left text-xs font-mono text-orange-600">
                     {formatCurrency(data?.totalRemaining)}
                   </TableCell>
                   <TableCell />
@@ -643,27 +664,7 @@ function ReportTab({ supplierId }: { supplierId: string }) {
               </TableFooter>
             </Table>
           </div>
-
-          {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 rounded-lg border bg-muted/20 text-center">
-              <p className="text-xs text-muted-foreground mb-1">إجمالي الفواتير</p>
-              <p className="font-bold text-sm">{formatCurrency(data?.totalNetPayable)}</p>
-            </div>
-            <div className="p-3 rounded-lg border bg-green-50 dark:bg-green-950/20 text-center">
-              <p className="text-xs text-green-700 dark:text-green-300 mb-1">إجمالي المسدد</p>
-              <p className="font-bold text-sm text-green-700 dark:text-green-300">
-                {formatCurrency(data?.totalPaid)}
-              </p>
-            </div>
-            <div className="p-3 rounded-lg border bg-orange-50 dark:bg-orange-950/20 text-center">
-              <p className="text-xs text-orange-700 dark:text-orange-300 mb-1">إجمالي المتبقي</p>
-              <p className="font-bold text-sm text-orange-700 dark:text-orange-300">
-                {formatCurrency(data?.totalRemaining)}
-              </p>
-            </div>
-          </div>
-        </>
+        </div>
       )}
     </div>
   );
@@ -673,59 +674,72 @@ function ReportTab({ supplierId }: { supplierId: string }) {
 
 export default function SupplierPaymentsPage() {
   const [supplierId, setSupplierId] = useState("");
+  const [activeTab,  setActiveTab]  = useState<ActiveTab>("payment");
 
   return (
-    <div className="container mx-auto px-4 py-6 space-y-5 max-w-6xl">
-      {/* Page header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-primary/10">
-          <CircleDollarSign className="h-6 w-6 text-primary" />
+    <div className="flex flex-col h-[calc(100vh-56px)] overflow-hidden">
+
+      {/* ── Header bar ───────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-4 px-4 py-2 border-b shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-primary/10">
+            <CircleDollarSign className="h-5 w-5 text-primary" />
+          </div>
+          <h1 className="text-base font-bold">سداد الموردين</h1>
         </div>
-        <div>
-          <h1 className="text-xl font-bold">سداد الموردين</h1>
-          <p className="text-sm text-muted-foreground">إدارة وتسوية مستحقات الموردين</p>
-        </div>
+
+        {/* Inline tabs — only visible when supplier is selected */}
+        {supplierId && (
+          <div className="flex items-center border rounded-lg overflow-hidden text-sm">
+            <button
+              onClick={() => setActiveTab("payment")}
+              className={cx(
+                "px-4 py-1.5 transition-colors font-medium",
+                activeTab === "payment"
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted text-muted-foreground"
+              )}
+              data-testid="tab-payment"
+            >
+              سداد الفواتير
+            </button>
+            <button
+              onClick={() => setActiveTab("report")}
+              className={cx(
+                "px-4 py-1.5 transition-colors font-medium border-r",
+                activeTab === "report"
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted text-muted-foreground"
+              )}
+              data-testid="tab-report"
+            >
+              تقرير المدفوعات
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Supplier selector */}
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">اختر المورد</Label>
-        <div className="max-w-md">
-          <SupplierCombobox value={supplierId} onChange={setSupplierId} />
+      {/* ── Content ──────────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-h-0 px-4 py-2 gap-2">
+
+        {/* Supplier row + balance */}
+        <div className="flex items-center gap-3 shrink-0 flex-wrap">
+          <SupplierCombobox value={supplierId} onChange={(id) => { setSupplierId(id); }} />
+          {supplierId && <BalanceStrip supplierId={supplierId} />}
         </div>
+
+        {/* Tab content */}
+        {!supplierId ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground border-2 border-dashed rounded-xl">
+            <Banknote className="h-12 w-12 opacity-30" />
+            <p className="text-sm">اختر مورداً لعرض فواتيره وإجراء السداد</p>
+          </div>
+        ) : activeTab === "payment" ? (
+          <PaymentTab supplierId={supplierId} />
+        ) : (
+          <ReportTab supplierId={supplierId} />
+        )}
       </div>
-
-      {!supplierId ? (
-        <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground border-2 border-dashed rounded-xl">
-          <Banknote className="h-10 w-10 opacity-40" />
-          <p>اختر مورداً لعرض فواتيره وإجراء السداد</p>
-        </div>
-      ) : (
-        <>
-          {/* Balance */}
-          <BalanceCard supplierId={supplierId} />
-
-          {/* Tabs */}
-          <Tabs defaultValue="payment" className="space-y-4">
-            <TabsList className="grid grid-cols-2 w-[300px]">
-              <TabsTrigger value="payment" data-testid="tab-payment">
-                سداد الفواتير
-              </TabsTrigger>
-              <TabsTrigger value="report" data-testid="tab-report">
-                تقرير المدفوعات
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="payment" className="space-y-0">
-              <PaymentTab supplierId={supplierId} />
-            </TabsContent>
-
-            <TabsContent value="report" className="space-y-0">
-              <ReportTab supplierId={supplierId} />
-            </TabsContent>
-          </Tabs>
-        </>
-      )}
     </div>
   );
 }

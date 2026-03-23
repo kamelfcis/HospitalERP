@@ -212,6 +212,7 @@ export type PurchaseInvoiceWithDetails = PurchaseInvoiceHeader & {
 // رأس السداد: كل عملية دفع للمورد (قد تشمل عدة فواتير)
 export const supplierPayments = pgTable("supplier_payments", {
   id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  paymentNumber: integer("payment_number").notNull().default(0),
   supplierId:    varchar("supplier_id").notNull().references(() => suppliers.id),
   paymentDate:   date("payment_date").notNull(),
   totalAmount:   decimal("total_amount", { precision: 18, scale: 2 }).notNull(),

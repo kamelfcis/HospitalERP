@@ -139,11 +139,20 @@ export async function getSupplierInvoices(
   }));
 }
 
+// ─── getNextPaymentNumber ─────────────────────────────────────────────────────
+// يُحدد الرقم التسلسلي التالي لعملية السداد
+export async function getNextPaymentNumber(): Promise<number> {
+  const res = await db.execute(
+    sql`SELECT COALESCE(MAX(payment_number), 0) + 1 AS next_num FROM supplier_payments`
+  );
+  return Number((res as any).rows[0]?.next_num ?? 1);
+}
+
 // ─── createSupplierPayment ────────────────────────────────────────────────────
 // atomic: يُدرج رأس السداد + سطور التوزيع في transaction واحدة
 export async function createSupplierPayment(
   input: CreatePaymentInput
-): Promise<{ paymentId: string }> {
+): Promise<{ paymentId: string; paymentNumber: number }> {
   if (!input.lines.length) throw new Error("لا توجد فواتير مُحددة للسداد");
   if (input.totalAmount <= 0) throw new Error("مبلغ السداد يجب أن يكون أكبر من الصفر");
 
@@ -155,9 +164,16 @@ export async function createSupplierPayment(
   }
 
   const result = await db.transaction(async (tx) => {
+    // احجز الرقم التسلسلي داخل الـ transaction لتجنب التعارض
+    const numRes = await tx.execute(
+      sql`SELECT COALESCE(MAX(payment_number), 0) + 1 AS next_num FROM supplier_payments`
+    );
+    const paymentNumber = Number((numRes as any).rows[0]?.next_num ?? 1);
+
     const [payment] = await tx
       .insert(supplierPayments)
       .values({
+        paymentNumber,
         supplierId:    input.supplierId,
         paymentDate:   input.paymentDate,
         totalAmount:   String(input.totalAmount),
@@ -166,7 +182,7 @@ export async function createSupplierPayment(
         paymentMethod: input.paymentMethod,
         createdBy:     input.createdBy ?? null,
       })
-      .returning({ id: supplierPayments.id });
+      .returning({ id: supplierPayments.id, paymentNumber: supplierPayments.paymentNumber });
 
     await tx.insert(supplierPaymentLines).values(
       input.lines.map((l) => ({
@@ -179,7 +195,7 @@ export async function createSupplierPayment(
     return payment;
   });
 
-  return { paymentId: result.id };
+  return { paymentId: result.id, paymentNumber: result.paymentNumber };
 }
 
 // ─── getSupplierPaymentReport ─────────────────────────────────────────────────

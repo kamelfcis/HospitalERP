@@ -12,6 +12,7 @@ import {
   getSupplierInvoices,
   createSupplierPayment,
   getSupplierPaymentReport,
+  getNextPaymentNumber,
 } from "../storage/supplier-payments-storage";
 
 
@@ -38,6 +39,16 @@ function parseStatus(
 }
 
 export function registerSupplierPaymentRoutes(app: Express) {
+  // GET /api/supplier-payments/next-number
+  app.get("/api/supplier-payments/next-number", requireAuth, async (_req, res) => {
+    try {
+      const nextNum = await getNextPaymentNumber();
+      res.json({ nextNumber: nextNum });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // GET /api/supplier-payments/balance/:supplierId
   app.get("/api/supplier-payments/balance/:supplierId", requireAuth, async (req, res) => {
     try {
