@@ -19,7 +19,7 @@
  *  • Ctrl+F        → التركيز على حقل البحث السريع
  *  • Enter داخل حقل الكمية → حفظ والانتقال للصف التالي
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo, type MutableRefObject } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -463,6 +463,134 @@ function SmartQtyCell({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  LineRow — memoized single row
+//
+//  Why memo is effective here:
+//   • `line`         → same object reference for rows the server hasn't changed
+//   • `localCount`   → string extracted from Map, changes ONLY for the edited row
+//   • `isFocused`    → boolean, changes only when arrow-key navigation moves focus
+//   • `shouldActivate` → boolean, changes only for the row being activated
+//   • all callbacks  → stabilised via useCallback / filteredLinesRef in parent
+//   → result: typing in row N skips re-rendering all other rows
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface LineRowProps {
+  line:           SessionLine;
+  idx:            number;
+  sessionId:      string;
+  isDraft:        boolean;
+  localCount:     string;
+  isFocused:      boolean;
+  shouldActivate: boolean;
+  rowRefs:        MutableRefObject<Map<string, HTMLTableRowElement>>;
+  onLocalChange:  (lineId: string, newMinor: string) => void;
+  onDeleteLine:   (lineId: string) => void;
+  onSetFocused:   (idx: number) => void;
+  onActivated:    () => void;
+  onEnterAtRow:   (idx: number) => void;
+}
+
+const LineRow = memo(function LineRow({
+  line, idx, sessionId, isDraft, localCount, isFocused, shouldActivate,
+  rowRefs, onLocalChange, onDeleteLine, onSetFocused, onActivated, onEnterAtRow,
+}: LineRowProps) {
+  const countedMinor = parseFloat(localCount);
+  const systemMinor  = parseFloat(line.systemQtyMinor);
+  const diff    = countedMinor - systemMinor;
+  const diffVal = diff * parseFloat(line.unitCost);
+
+  const rowColor =
+    diff > 0.0001  ? "bg-green-500/5 hover:bg-green-500/10" :
+    diff < -0.0001 ? "bg-destructive/5 hover:bg-destructive/10" :
+                     "hover:bg-muted/40";
+
+  return (
+    <TableRow
+      ref={el => {
+        if (el) rowRefs.current.set(line.id, el);
+        else    rowRefs.current.delete(line.id);
+      }}
+      onClick={() => onSetFocused(idx)}
+      className={[
+        "transition-colors cursor-default",
+        rowColor,
+        isFocused ? "ring-1 ring-inset ring-primary bg-primary/5" : "",
+      ].join(" ")}
+      data-testid={`row-line-${line.id}`}
+    >
+      <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
+      <TableCell className="font-mono text-xs">{line.itemCode}</TableCell>
+      <TableCell>
+        <div>
+          <p className="text-sm font-medium leading-tight">{line.itemNameAr}</p>
+          {line.majorUnitName ? (
+            <p className="text-xs text-muted-foreground">
+              {[line.majorUnitName, line.mediumUnitName, line.minorUnitName].filter(Boolean).join(" / ")}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">{line.itemCategory}</p>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-center text-xs">
+        {line.expiryDate ? formatDate(line.expiryDate) : "—"}
+      </TableCell>
+      <TableCell className="text-center font-mono text-sm text-muted-foreground">
+        {fmtQty(line.systemQtyMinor)}
+        {line.minorUnitName && (
+          <span className="text-xs text-muted-foreground mr-0.5">{line.minorUnitName}</span>
+        )}
+      </TableCell>
+      <TableCell className="text-center">
+        <SmartQtyCell
+          line={line}
+          sessionId={sessionId}
+          disabled={!isDraft}
+          onLocalChange={onLocalChange}
+          shouldActivate={shouldActivate}
+          onActivated={onActivated}
+          onEnterConfirm={() => onEnterAtRow(idx)}
+        />
+      </TableCell>
+      <TableCell className={`text-center font-mono text-sm font-semibold ${
+        diff > 0.0001  ? "text-green-600" :
+        diff < -0.0001 ? "text-destructive" :
+                         "text-muted-foreground"
+      }`}>
+        {diff > 0.0001 ? "+" : ""}{fmtQty(diff)}
+      </TableCell>
+      <TableCell className={`text-center font-mono text-sm font-semibold ${
+        diffVal > 0 ? "text-green-600" :
+        diffVal < 0 ? "text-destructive" :
+                      "text-muted-foreground"
+      }`}>
+        {diffVal !== 0 && diffVal > 0 ? "+" : ""}{fmtMoney(diffVal)}
+      </TableCell>
+      {isDraft && (
+        <TableCell>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost" size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteLine(line.id);
+                }}
+                data-testid={`btn-delete-line-${line.id}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>حذف السطر</TooltipContent>
+          </Tooltip>
+        </TableCell>
+      )}
+    </TableRow>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  LineTable
 // ─────────────────────────────────────────────────────────────────────────────
 export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, onLoadItems }: Props) {
@@ -541,6 +669,29 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
     }
     return result;
   }, [lines, searchTerm, showVariance, showUncounted, localCounts]);
+
+  // ── Stable ref so onEnterAtRow never closes over a stale filteredLines ────
+  const filteredLinesRef = useRef(filteredLines);
+  useEffect(() => { filteredLinesRef.current = filteredLines; }, [filteredLines]);
+
+  // These callbacks are passed to the memoized LineRow. Keeping them stable
+  // (useCallback with empty or state-setter deps) ensures LineRow's memo check
+  // passes for unchanged rows.
+  const onEnterAtRow = useCallback((idx: number) => {
+    const fl = filteredLinesRef.current;
+    const nextIdx = idx + 1;
+    if (nextIdx < fl.length) {
+      setFocusedRowIdx(nextIdx);
+      setPendingActivateId(fl[nextIdx].id);
+    } else {
+      setFocusedRowIdx(idx);
+    }
+  }, []);
+  const onSetFocused   = useCallback((idx: number) => setFocusedRowIdx(idx), []);
+  const onActivatedCb  = useCallback(() => setPendingActivateId(null), []);
+  const onDeleteLineCb = useCallback((lineId: string) => {
+    deleteLineMutation.mutate(lineId);
+  }, []); // deleteLineMutation.mutate is stable in TanStack Query v5
 
   // Clamp focusedRowIdx when filteredLines shrinks
   const safeFocusedIdx =
@@ -713,122 +864,24 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
                 </TableCell>
               </TableRow>
             ) : (
-              filteredLines.map((line, idx) => {
-                const countedMinor = parseFloat(localCounts.get(line.id) ?? line.countedQtyMinor);
-                const systemMinor  = parseFloat(line.systemQtyMinor);
-                const diff         = countedMinor - systemMinor;
-                const diffVal      = diff * parseFloat(line.unitCost);
-
-                const isFocusedRow = safeFocusedIdx === idx;
-
-                const rowColor =
-                  diff > 0.0001   ? "bg-green-500/5 hover:bg-green-500/10" :
-                  diff < -0.0001  ? "bg-destructive/5 hover:bg-destructive/10" :
-                                    "hover:bg-muted/40";
-
-                const isBeingActivated = pendingActivateId === line.id;
-
-                return (
-                  <TableRow
-                    key={line.id}
-                    ref={el => {
-                      if (el) rowRefs.current.set(line.id, el);
-                      else rowRefs.current.delete(line.id);
-                    }}
-                    onClick={() => setFocusedRowIdx(idx)}
-                    className={[
-                      "transition-colors cursor-default",
-                      rowColor,
-                      isFocusedRow
-                        ? "ring-1 ring-inset ring-primary bg-primary/5"
-                        : "",
-                    ].join(" ")}
-                    data-testid={`row-line-${line.id}`}
-                  >
-                    <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
-                    <TableCell className="font-mono text-xs">{line.itemCode}</TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-sm font-medium leading-tight">{line.itemNameAr}</p>
-                        {line.majorUnitName ? (
-                          <p className="text-xs text-muted-foreground">
-                            {[line.majorUnitName, line.mediumUnitName, line.minorUnitName]
-                              .filter(Boolean).join(" / ")}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">{line.itemCategory}</p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center text-xs">
-                      {line.expiryDate ? formatDate(line.expiryDate) : "—"}
-                    </TableCell>
-                    <TableCell className="text-center font-mono text-sm text-muted-foreground">
-                      {fmtQty(line.systemQtyMinor)}
-                      {line.minorUnitName && (
-                        <span className="text-xs text-muted-foreground mr-0.5">
-                          {line.minorUnitName}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <SmartQtyCell
-                        line={line}
-                        sessionId={sessionId}
-                        disabled={!isDraft}
-                        onLocalChange={onLocalChange}
-                        shouldActivate={isBeingActivated}
-                        onActivated={() => setPendingActivateId(null)}
-                        onEnterConfirm={() => {
-                          // advance to next row and activate its qty cell
-                          const nextIdx = idx + 1;
-                          if (nextIdx < filteredLines.length) {
-                            setFocusedRowIdx(nextIdx);
-                            setPendingActivateId(filteredLines[nextIdx].id);
-                          } else {
-                            setFocusedRowIdx(idx);
-                          }
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell className={`text-center font-mono text-sm font-semibold ${
-                      diff > 0.0001  ? "text-green-600" :
-                      diff < -0.0001 ? "text-destructive" :
-                                       "text-muted-foreground"
-                    }`}>
-                      {diff > 0.0001 ? "+" : ""}{fmtQty(diff)}
-                    </TableCell>
-                    <TableCell className={`text-center font-mono text-sm font-semibold ${
-                      diffVal > 0 ? "text-green-600" :
-                      diffVal < 0 ? "text-destructive" :
-                                    "text-muted-foreground"
-                    }`}>
-                      {diffVal !== 0 && diffVal > 0 ? "+" : ""}{fmtMoney(diffVal)}
-                    </TableCell>
-                    {isDraft && (
-                      <TableCell>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost" size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteLineMutation.mutate(line.id);
-                              }}
-                              disabled={deleteLineMutation.isPending}
-                              data-testid={`btn-delete-line-${line.id}`}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>حذف السطر</TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                );
-              })
+              filteredLines.map((line, idx) => (
+                <LineRow
+                  key={line.id}
+                  line={line}
+                  idx={idx}
+                  sessionId={sessionId}
+                  isDraft={isDraft}
+                  localCount={localCounts.get(line.id) ?? line.countedQtyMinor}
+                  isFocused={safeFocusedIdx === idx}
+                  shouldActivate={pendingActivateId === line.id}
+                  rowRefs={rowRefs}
+                  onLocalChange={onLocalChange}
+                  onDeleteLine={onDeleteLineCb}
+                  onSetFocused={onSetFocused}
+                  onActivated={onActivatedCb}
+                  onEnterAtRow={onEnterAtRow}
+                />
+              ))
             )}
           </TableBody>
         </Table>

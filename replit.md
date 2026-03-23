@@ -15,6 +15,11 @@ The user interface features a professional design, a collapsible sidebar, A4 pri
 ### Technical Implementations
 The system utilizes a RESTful JSON API. Drizzle ORM manages PostgreSQL interactions, and Zod with `drizzle-zod` handles validation. Concurrency and idempotency are managed using `FOR UPDATE` row locks and optimistic concurrency. Financial accuracy is maintained through server-side recomputation with `HALF_UP` rounding. Critical system settings are cached. Centralized error handling provides Arabic messages and specific HTTP status codes. Inventory management includes expired batch blocking and FEFO. An audit trail covers critical operations, and automated backup/restore is supported. OPD billing implements IFRS revenue deferral. A centralized lookup architecture ensures consistent data fetching.
 
+### Performance Optimizations
+- **React.memo on table rows**: `ReturnLineRow` (purchase-returns) and `LineRow` (stock-count) are memoized. Uses `filteredLinesRef` pattern so `onEnterAtRow` callback stays stable. Stable props: `localCount` (string from Map), `isFocused` (bool), `shouldActivate` (bool); callbacks stable via `useCallback`.
+- **Vendor chunking** (`vite.config.ts`): `manualChunks` splits `vendor-react`, `vendor-query`, `vendor-radix`, `vendor-icons`, `vendor-router` for better browser caching on repeat visits.
+- **xlsx**: Server-side only; no client import needed.
+
 ### Feature Specifications
 -   **Financial Management**: Includes Chart of Accounts, Cost Centers, Journal Entries, Fiscal Period controls, IFRS-compliant reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger), and automatic journal entry generation.
 -   **Inventory & Sales**: Manages supplier receiving, sales invoicing (barcode, FEFO), sales returns, patient invoicing (services, drugs, consumables), patient admissions, and master data.
