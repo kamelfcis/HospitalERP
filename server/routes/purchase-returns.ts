@@ -34,6 +34,7 @@ export function registerPurchaseReturnRoutes(app: Express) {
       const lines = await getPurchaseInvoiceLinesForReturn(req.params.invoiceId);
       res.json(lines);
     } catch (err: any) {
+      console.error("[PR] invoice-lines error:", err.message, err.stack?.split("\n")[1]);
       res.status(500).json({ message: err.message });
     }
   });
