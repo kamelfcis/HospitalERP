@@ -31,6 +31,37 @@ The system uses a RESTful JSON API. Drizzle ORM interacts with PostgreSQL, and Z
 - **Account Mappings Module**: Dedicated UI and transactional backend route for bulk updates.
 - **Items Excel Import/Export**: Bulk management of items via xlsx. Export (template or full data), Import with upsert (200/chunk), auto-creates form types, handles barcodes via `item_barcodes`, deduplicates by `item_code`.
 
+## Recent Session Progress — Supplier Payments Module (مكتمل ✓)
+
+### ما تم في هذه الجلسة
+- **DB Schema**: جدولا `supplier_payments` + `supplier_payment_lines` مع فهارس compound
+- **Backend Storage** (`supplier-payments-storage.ts`):
+  - `getSupplierBalance` — رصيد المورد (افتتاحي + مُفوتَر + مسدد + حالي)
+  - `getSupplierInvoices` — فواتير مورد مع حالة السداد (CTE سريع)
+  - `getNextPaymentNumber` — الرقم التسلسلي التالي
+  - `createSupplierPayment` — إنشاء سداد atomic داخل transaction
+  - `getSupplierPaymentReport` — تقرير تفصيلي بفلتر حالة
+- **Backend Routes** (`/api/supplier-payments/*`): 5 مسارات مسجَّلة
+- **Frontend** (`client/src/pages/supplier-payments/index.tsx`):
+  - صفحة كاملة بتصميم compact: SupplierCombobox + BalanceStrip + ControlsBar + InvoiceTable hero + ReportTab
+  - ترتيب تصاعدي/تنازلي بنقرة على رأس أي عمود (`SortHead` component)
+  - Checkboxes لاسترشادية: تحديد صفوف وعرض إجمالي الباقي للمحدد في تذييل الجدول
+  - ملاحة لوحة مفاتيح داخل خانات المبالغ (↑↓ Enter)
+  - توزيع تلقائي للمبلغ على الفواتير بترتيب الشاشة
+- **Navigation**: مسار `/supplier-payments` + عنصر "سداد الموردين" في القائمة الجانبية
+- **GL Journal Integration**:
+  - أُضيف `supplier_payment` لـ `transactionTypeLabels` + `mappingLineTypeLabels`
+  - نوع سطر جديد `ap_settlement`: Dr ذمم موردين (liability) / Cr بنك-خزنة (asset)
+  - أُضيف لـ `lineTypeSpecs`, `suggestedLineTypes`, `ACCOUNT_CATEGORY_RULES`, `NO_WAREHOUSE_SELECTOR_TYPES`
+  - بعد كل حفظ: `generateJournalEntry` (fire-and-forget) يُنشئ القيد تلقائياً
+
+### Critical Notes for Supplier Payments
+- `paymentNumber` = MAX+1 داخل db.transaction (لا race condition)
+- القيد: sourceType=`supplier_payment`, lineType=`ap_settlement`, amount=totalAmount
+- لا warehouse selector في ربط الحسابات لهذا النوع (مضاف لـ NO_WAREHOUSE_SELECTOR_TYPES)
+- `ap_settlement` في ACCOUNT_CATEGORY_RULES: `{ debit: ["liability"], credit: ["asset"] }`
+- مختلف عن `payables` الموجود (الذي يُستخدم دائناً في فواتير الشراء)
+
 ## Recent Session Progress — Sales Return Accounting (مكتمل ✓)
 
 ### ما تم في هذه الجلسة
