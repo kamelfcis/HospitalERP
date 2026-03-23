@@ -157,8 +157,8 @@ export async function getPurchaseInvoiceLinesForReturn(invoiceId: string): Promi
   }>(
     `SELECT
        pil.id, pil.item_id,
-       i.name_ar AS item_name_ar,
-       i.code    AS item_code,
+       i.name_ar    AS item_name_ar,
+       i.item_code  AS item_code,
        pil.unit_level, pil.qty, pil.bonus_qty,
        pil.purchase_price, pil.vat_rate, pil.vat_amount, pil.value_before_vat,
        COALESCE(SUM(prl.qty_returned::numeric), 0)::text AS already_returned
@@ -166,7 +166,7 @@ export async function getPurchaseInvoiceLinesForReturn(invoiceId: string): Promi
      JOIN items i ON i.id = pil.item_id
      LEFT JOIN purchase_return_lines prl ON prl.purchase_invoice_line_id = pil.id
      WHERE pil.invoice_id = $1
-     GROUP BY pil.id, i.name_ar, i.code
+     GROUP BY pil.id, i.name_ar, i.item_code
      ORDER BY i.name_ar`,
     [invoiceId]
   );
@@ -761,7 +761,7 @@ export async function getPurchaseReturnById(id: string): Promise<PurchaseReturnW
   }>(
     `SELECT
        prl.id, prl.purchase_invoice_line_id, prl.item_id,
-       i.name_ar AS item_name_ar, i.code AS item_code,
+       i.name_ar AS item_name_ar, i.item_code AS item_code,
        prl.lot_id,
        il.expiry_date AS lot_expiry_date,
        il.qty_in_minor AS lot_qty_available,
