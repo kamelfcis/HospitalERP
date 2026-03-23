@@ -115,28 +115,36 @@ export async function getSupplierInvoices(
 ): Promise<SupplierInvoicePaymentRow[]> {
   const havingClause =
     status === "unpaid"
-      ? sql`HAVING (pih.net_payable::numeric - COALESCE(SUM(spl.amount_paid::numeric), 0)) > 0.005`
+      ? sql`HAVING (pih.net_payable::numeric - COALESCE(iret.inv_returns, 0) - COALESCE(SUM(spl.amount_paid::numeric), 0)) > 0.005`
       : status === "paid"
-      ? sql`HAVING (pih.net_payable::numeric - COALESCE(SUM(spl.amount_paid::numeric), 0)) <= 0.005`
+      ? sql`HAVING (pih.net_payable::numeric - COALESCE(iret.inv_returns, 0) - COALESCE(SUM(spl.amount_paid::numeric), 0)) <= 0.005`
       : sql``;
 
   const res = await db.execute(sql`
     SELECT
-      pih.id                                                              AS invoice_id,
+      pih.id                                                                                      AS invoice_id,
       pih.invoice_number,
       pih.supplier_invoice_no,
       rh.receiving_number,
       pih.invoice_date,
-      pih.net_payable::numeric                                            AS net_payable,
-      COALESCE(SUM(spl.amount_paid::numeric), 0)                         AS total_paid,
-      (pih.net_payable::numeric - COALESCE(SUM(spl.amount_paid::numeric), 0)) AS remaining
+      pih.net_payable::numeric                                                                    AS net_payable,
+      COALESCE(iret.inv_returns, 0)                                                              AS invoice_returns,
+      COALESCE(SUM(spl.amount_paid::numeric), 0)                                                AS total_paid,
+      (pih.net_payable::numeric - COALESCE(iret.inv_returns, 0) - COALESCE(SUM(spl.amount_paid::numeric), 0)) AS remaining
     FROM   purchase_invoice_headers pih
-    LEFT JOIN receiving_headers       rh  ON rh.id  = pih.receiving_id
-    LEFT JOIN supplier_payment_lines  spl ON spl.invoice_id = pih.id
+    LEFT JOIN receiving_headers       rh   ON rh.id  = pih.receiving_id
+    LEFT JOIN supplier_payment_lines  spl  ON spl.invoice_id = pih.id
+    LEFT JOIN (
+      SELECT purchase_invoice_id, SUM(grand_total::numeric) AS inv_returns
+      FROM   purchase_return_headers
+      WHERE  finalized_at IS NOT NULL
+      GROUP  BY purchase_invoice_id
+    ) iret ON iret.purchase_invoice_id = pih.id
     WHERE  pih.supplier_id = ${supplierId}
       AND  pih.status       = 'approved_costed'
     GROUP  BY pih.id, pih.invoice_number, pih.supplier_invoice_no,
-              rh.receiving_number, pih.invoice_date, pih.net_payable
+              rh.receiving_number, pih.invoice_date, pih.net_payable,
+              iret.inv_returns
     ${havingClause}
     ORDER  BY pih.invoice_date ASC, pih.invoice_number ASC
   `);
@@ -148,6 +156,7 @@ export async function getSupplierInvoices(
     receivingNumber:   r.receiving_number != null ? Number(r.receiving_number) : null,
     invoiceDate:       r.invoice_date,
     netPayable:        Number(r.net_payable).toFixed(2),
+    invoiceReturns:    Number(r.invoice_returns).toFixed(2),
     totalPaid:         Number(r.total_paid).toFixed(2),
     remaining:         Number(r.remaining).toFixed(2),
   }));
@@ -220,37 +229,46 @@ export async function getSupplierPaymentReport(
 ): Promise<{
   rows: PaymentReportRow[];
   totalNetPayable:  string;
+  totalReturns:     string;
   totalPaid:        string;
   totalRemaining:   string;
 }> {
   const havingClause =
     status === "unpaid"
-      ? sql`HAVING (pih.net_payable::numeric - COALESCE(SUM(spl.amount_paid::numeric), 0)) > 0.005`
+      ? sql`HAVING (pih.net_payable::numeric - COALESCE(iret.inv_returns, 0) - COALESCE(SUM(spl.amount_paid::numeric), 0)) > 0.005`
       : status === "paid"
-      ? sql`HAVING (pih.net_payable::numeric - COALESCE(SUM(spl.amount_paid::numeric), 0)) <= 0.005`
+      ? sql`HAVING (pih.net_payable::numeric - COALESCE(iret.inv_returns, 0) - COALESCE(SUM(spl.amount_paid::numeric), 0)) <= 0.005`
       : sql``;
 
   const res = await db.execute(sql`
     SELECT
-      pih.id                                                              AS invoice_id,
+      pih.id                                                                                      AS invoice_id,
       pih.invoice_number,
       pih.supplier_invoice_no,
       rh.receiving_number,
       pih.invoice_date,
-      pih.net_payable::numeric                                            AS net_payable,
-      COALESCE(SUM(spl.amount_paid::numeric), 0)                         AS total_paid,
-      (pih.net_payable::numeric - COALESCE(SUM(spl.amount_paid::numeric), 0)) AS remaining,
-      MIN(sp.id::text)                                                   AS payment_id,
-      MIN(sp.payment_date::text)                                         AS payment_date,
-      MIN(sp.reference)                                                  AS payment_ref
+      pih.net_payable::numeric                                                                    AS net_payable,
+      COALESCE(iret.inv_returns, 0)                                                              AS invoice_returns,
+      COALESCE(SUM(spl.amount_paid::numeric), 0)                                                AS total_paid,
+      (pih.net_payable::numeric - COALESCE(iret.inv_returns, 0) - COALESCE(SUM(spl.amount_paid::numeric), 0)) AS remaining,
+      MIN(sp.id::text)                                                                           AS payment_id,
+      MIN(sp.payment_date::text)                                                                 AS payment_date,
+      MIN(sp.reference)                                                                          AS payment_ref
     FROM   purchase_invoice_headers pih
-    LEFT JOIN receiving_headers       rh  ON rh.id  = pih.receiving_id
-    LEFT JOIN supplier_payment_lines  spl ON spl.invoice_id = pih.id
-    LEFT JOIN supplier_payments       sp  ON sp.id  = spl.payment_id
+    LEFT JOIN receiving_headers       rh   ON rh.id  = pih.receiving_id
+    LEFT JOIN supplier_payment_lines  spl  ON spl.invoice_id = pih.id
+    LEFT JOIN supplier_payments       sp   ON sp.id  = spl.payment_id
+    LEFT JOIN (
+      SELECT purchase_invoice_id, SUM(grand_total::numeric) AS inv_returns
+      FROM   purchase_return_headers
+      WHERE  finalized_at IS NOT NULL
+      GROUP  BY purchase_invoice_id
+    ) iret ON iret.purchase_invoice_id = pih.id
     WHERE  pih.supplier_id = ${supplierId}
       AND  pih.status       = 'approved_costed'
     GROUP  BY pih.id, pih.invoice_number, pih.supplier_invoice_no,
-              rh.receiving_number, pih.invoice_date, pih.net_payable
+              rh.receiving_number, pih.invoice_date, pih.net_payable,
+              iret.inv_returns
     ${havingClause}
     ORDER  BY pih.invoice_date ASC, pih.invoice_number ASC
   `);
@@ -262,6 +280,7 @@ export async function getSupplierPaymentReport(
     receivingNumber:   r.receiving_number != null ? Number(r.receiving_number) : null,
     invoiceDate:       r.invoice_date,
     netPayable:        Number(r.net_payable).toFixed(2),
+    invoiceReturns:    Number(r.invoice_returns).toFixed(2),
     totalPaid:         Number(r.total_paid).toFixed(2),
     remaining:         Number(r.remaining).toFixed(2),
     paymentId:         r.payment_id ?? null,
@@ -270,12 +289,14 @@ export async function getSupplierPaymentReport(
   }));
 
   const totNetPayable = rows.reduce((s, r) => s + parseFloat(r.netPayable), 0);
+  const totReturns    = rows.reduce((s, r) => s + parseFloat(r.invoiceReturns), 0);
   const totPaid       = rows.reduce((s, r) => s + parseFloat(r.totalPaid), 0);
   const totRemaining  = rows.reduce((s, r) => s + parseFloat(r.remaining), 0);
 
   return {
     rows,
     totalNetPayable:  totNetPayable.toFixed(2),
+    totalReturns:     totReturns.toFixed(2),
     totalPaid:        totPaid.toFixed(2),
     totalRemaining:   totRemaining.toFixed(2),
   };

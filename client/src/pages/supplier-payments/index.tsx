@@ -50,6 +50,7 @@ interface ReportRow extends SupplierInvoicePaymentRow {
 interface ReportResult {
   rows:            ReportRow[];
   totalNetPayable: string;
+  totalReturns:    string;
   totalPaid:       string;
   totalRemaining:  string;
 }
@@ -537,6 +538,7 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
                 <SortHead label="رقم المطالبة"    col="receivingNumber"  cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[90px]" />
                 <SortHead label="التاريخ"          col="invoiceDate"      cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[95px]" />
                 <TableHead className="text-left text-xs">صافي الفاتورة</TableHead>
+                <TableHead className="text-left text-xs text-red-600">مرتجع</TableHead>
                 <SortHead label="مسدد سابقاً"     col="totalPaid"        cur={sortKey} dir={sortDir} onSort={handleSort} className="text-left" />
                 <SortHead label="الباقي"           col="remaining"        cur={sortKey} dir={sortDir} onSort={handleSort} className="text-left font-semibold text-orange-600" />
                 <TableHead className="text-left text-xs font-semibold text-primary w-[130px]">
@@ -580,6 +582,9 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
                     <TableCell className="text-left text-xs font-mono">
                       {formatCurrency(inv.netPayable)}
                     </TableCell>
+                    <TableCell className="text-left text-xs font-mono text-red-500">
+                      {parseFloat(inv.invoiceReturns) > 0 ? formatCurrency(inv.invoiceReturns) : "—"}
+                    </TableCell>
                     <TableCell className="text-left text-xs font-mono text-muted-foreground">
                       {parseFloat(inv.totalPaid) > 0 ? formatCurrency(inv.totalPaid) : "—"}
                     </TableCell>
@@ -622,6 +627,7 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
                   </TableCell>
                   <TableCell className="text-left text-xs font-mono text-muted-foreground py-1.5">—</TableCell>
                   <TableCell className="text-left text-xs font-mono text-muted-foreground py-1.5">—</TableCell>
+                  <TableCell className="text-left text-xs font-mono text-muted-foreground py-1.5">—</TableCell>
                   <TableCell className="text-left text-xs font-mono font-semibold text-blue-700 dark:text-blue-300 py-1.5" data-testid="selected-remaining-total">
                     {formatCurrency(selectedTotal)}
                   </TableCell>
@@ -632,6 +638,9 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
                 <TableCell colSpan={5} className="text-right text-xs">الإجمالي</TableCell>
                 <TableCell className="text-left text-xs font-mono">
                   {formatCurrency(invoices.reduce((s, r) => s + parseFloat(r.netPayable), 0))}
+                </TableCell>
+                <TableCell className="text-left text-xs font-mono text-red-500">
+                  {formatCurrency(invoices.reduce((s, r) => s + parseFloat(r.invoiceReturns), 0))}
                 </TableCell>
                 <TableCell className="text-left text-xs font-mono text-muted-foreground">
                   {formatCurrency(invoices.reduce((s, r) => s + parseFloat(r.totalPaid), 0))}
@@ -716,6 +725,11 @@ function ReportTab({ supplierId }: { supplierId: string }) {
             <span className="px-2 py-0.5 rounded bg-muted">
               إجمالي: <strong>{formatCurrency(data.totalNetPayable)}</strong>
             </span>
+            {parseFloat(data.totalReturns) > 0 && (
+              <span className="px-2 py-0.5 rounded bg-red-100 text-red-700">
+                مرتجع: <strong>{formatCurrency(data.totalReturns)}</strong>
+              </span>
+            )}
             <span className="px-2 py-0.5 rounded bg-green-100 text-green-700">
               مسدد: <strong>{formatCurrency(data.totalPaid)}</strong>
             </span>
@@ -748,6 +762,7 @@ function ReportTab({ supplierId }: { supplierId: string }) {
                   <TableHead className="text-right text-xs w-[80px]">رقم المطالبة</TableHead>
                   <TableHead className="text-right text-xs w-[95px]">التاريخ</TableHead>
                   <TableHead className="text-left text-xs">صافي الفاتورة</TableHead>
+                  <TableHead className="text-left text-xs text-red-600">مرتجع</TableHead>
                   <TableHead className="text-left text-xs">المسدد</TableHead>
                   <TableHead className="text-left text-xs">المتبقي</TableHead>
                   <TableHead className="text-right text-xs w-[80px]">الحالة</TableHead>
@@ -767,6 +782,9 @@ function ReportTab({ supplierId }: { supplierId: string }) {
                       <TableCell className="text-xs">{formatDateShort(row.invoiceDate)}</TableCell>
                       <TableCell className="text-left text-xs font-mono">
                         {formatCurrency(row.netPayable)}
+                      </TableCell>
+                      <TableCell className="text-left text-xs font-mono text-red-500">
+                        {parseFloat(row.invoiceReturns) > 0 ? formatCurrency(row.invoiceReturns) : "—"}
                       </TableCell>
                       <TableCell className="text-left text-xs font-mono text-green-600">
                         {parseFloat(row.totalPaid) > 0 ? formatCurrency(row.totalPaid) : "—"}
@@ -796,6 +814,9 @@ function ReportTab({ supplierId }: { supplierId: string }) {
                   <TableCell colSpan={4} className="text-right text-xs">الإجمالي</TableCell>
                   <TableCell className="text-left text-xs font-mono">
                     {formatCurrency(data?.totalNetPayable)}
+                  </TableCell>
+                  <TableCell className="text-left text-xs font-mono text-red-500">
+                    {formatCurrency(data?.totalReturns)}
                   </TableCell>
                   <TableCell className="text-left text-xs font-mono text-green-600">
                     {formatCurrency(data?.totalPaid)}

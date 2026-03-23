@@ -251,6 +251,7 @@ export type SupplierInvoicePaymentRow = {
   receivingNumber:    number | null;
   invoiceDate:        string;
   netPayable:         string;
+  invoiceReturns:     string;
   totalPaid:          string;
   remaining:          string;
 };
