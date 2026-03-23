@@ -117,11 +117,12 @@ const clinicNavItems: NavItem[] = [
 ];
 
 const reportNavItems: NavItem[] = [
-  { title: "ميزان المراجعة",       href: "/reports/trial-balance",    icon: Scale,    permission: "reports.trial_balance" },
-  { title: "قائمة الدخل",         href: "/reports/income-statement",  icon: TrendingUp, permission: "reports.income_statement" },
-  { title: "الميزانية العمومية",    href: "/reports/balance-sheet",    icon: BarChart3,  permission: "reports.balance_sheet" },
-  { title: "تقارير مراكز التكلفة", href: "/reports/cost-centers",     icon: PieChart,   permission: "reports.cost_centers" },
-  { title: "كشف حساب",            href: "/reports/account-ledger",   icon: FileText,   permission: "reports.account_ledger" },
+  { title: "ميزان المراجعة",       href: "/reports/trial-balance",    icon: Scale,         permission: "reports.trial_balance" },
+  { title: "قائمة الدخل",         href: "/reports/income-statement",  icon: TrendingUp,    permission: "reports.income_statement" },
+  { title: "الميزانية العمومية",    href: "/reports/balance-sheet",    icon: BarChart3,     permission: "reports.balance_sheet" },
+  { title: "تقارير مراكز التكلفة", href: "/reports/cost-centers",     icon: PieChart,      permission: "reports.cost_centers" },
+  { title: "كشف حساب",            href: "/reports/account-ledger",   icon: FileText,      permission: "reports.account_ledger" },
+  { title: "حركة صنف",            href: "/reports/item-movement",    icon: ClipboardList, permission: "reports.account_ledger" },
 ];
 
 const systemNavItems: NavItem[] = [

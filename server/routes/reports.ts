@@ -43,6 +43,8 @@ import {
   type RefreshKey,
 } from "../lib/rpt-refresh-orchestrator";
 import { storage } from "../storage";
+import * as XLSX from "xlsx";
+import { getItemMovementReport } from "../storage/item-movement-report-storage";
 
 // ── Admin guard helper ────────────────────────────────────────────────────────
 function requireAdmin(req: Request, res: Response): boolean {
@@ -183,6 +185,145 @@ export function registerReportsRoutes(app: Express) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error({ err: msg }, "[reports] item-movements error");
       return res.status(500).json({ error: "خطأ في استرجاع تقرير الحركات" });
+    }
+  });
+
+  // ── GET /api/reports/item-movement-detail ────────────────────────────────────
+  //
+  // تقرير حركة صنف التفصيلي — كل حركة فردية مع الرصيد الجاري
+  //
+  // Query params:
+  //   itemId      (required) — UUID
+  //   warehouseId (optional) — UUID
+  //   fromDate    (optional) — YYYY-MM-DD
+  //   toDate      (optional) — YYYY-MM-DD
+  //   txTypes     (optional) — comma-separated: receiving,sales_invoice,...
+  //
+  app.get("/api/reports/item-movement-detail", requireAuth, async (req, res) => {
+    try {
+      const {
+        itemId,
+        warehouseId,
+        fromDate,
+        toDate,
+        txTypes: txTypesRaw,
+      } = req.query as Record<string, string | undefined>;
+
+      if (!itemId) {
+        return res.status(400).json({ error: "itemId مطلوب" });
+      }
+
+      const txTypes = txTypesRaw
+        ? txTypesRaw.split(",").map((t) => t.trim()).filter(Boolean)
+        : undefined;
+
+      const rows = await getItemMovementReport({
+        itemId,
+        warehouseId: warehouseId || undefined,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        txTypes,
+      });
+
+      return res.json({ rows });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, "[reports] item-movement-detail error");
+      return res.status(500).json({ error: "خطأ في استرجاع تقرير حركة الصنف" });
+    }
+  });
+
+  // ── GET /api/reports/item-movement-detail/export ─────────────────────────────
+  //
+  // تصدير تقرير حركة الصنف إلى Excel
+  //
+  app.get("/api/reports/item-movement-detail/export", requireAuth, async (req, res) => {
+    try {
+      const {
+        itemId,
+        warehouseId,
+        fromDate,
+        toDate,
+        txTypes: txTypesRaw,
+        unitLevel = "minor",
+      } = req.query as Record<string, string | undefined>;
+
+      if (!itemId) {
+        return res.status(400).json({ error: "itemId مطلوب" });
+      }
+
+      const txTypes = txTypesRaw
+        ? txTypesRaw.split(",").map((t) => t.trim()).filter(Boolean)
+        : undefined;
+
+      const rows = await getItemMovementReport({
+        itemId,
+        warehouseId: warehouseId || undefined,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        txTypes,
+      });
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "لا توجد بيانات للتصدير" });
+      }
+
+      const first = rows[0];
+      const majorToMinor = first.majorToMinor || 1;
+      const mediumToMinor = first.mediumToMinor || 1;
+
+      function convertQty(minor: number): number {
+        if (unitLevel === "major" && majorToMinor > 1) return minor / majorToMinor;
+        if (unitLevel === "medium" && mediumToMinor > 1) return minor / mediumToMinor;
+        return minor;
+      }
+
+      function unitName(): string {
+        if (unitLevel === "major") return first.majorUnitName || "كبيرة";
+        if (unitLevel === "medium") return first.mediumUnitName || "وسط";
+        return first.minorUnitName || "صغيرة";
+      }
+
+      const TX_LABELS: Record<string, string> = {
+        receiving:       "استلام شراء",
+        sales_invoice:   "فاتورة مبيعات",
+        patient_invoice: "فاتورة مريض",
+        transfer:        "تحويل مخزن",
+        stock_count:     "جرد دوري",
+        purchase_return: "مرتجع مشتريات",
+      };
+
+      const u = unitName();
+      const excelData = rows.map((r, idx) => ({
+        "#": idx + 1,
+        "التاريخ":          new Date(r.txDate).toLocaleDateString("ar-EG"),
+        "الوقت":            new Date(r.txDate).toLocaleTimeString("ar-EG"),
+        "نوع الحركة":       TX_LABELS[r.referenceType] ?? r.referenceType,
+        "الاتجاه":          r.txType === "in" ? "وارد" : "صادر",
+        [`الكمية (${u})`]:  parseFloat(convertQty(r.qtyChangeMinor).toFixed(4)),
+        [`الرصيد (${u})`]:  parseFloat(convertQty(r.balanceAfterMinor).toFixed(4)),
+        "سعر الشراء":       r.unitCost ?? r.lotPurchasePrice,
+        "سعر البيع":        r.lotSalePrice,
+        "المستودع":         r.warehouseName,
+        "رقم المستند":      r.documentNumber ?? "",
+        "فاتورة المورد":    r.supplierInvoiceNo ?? "",
+        "المستخدم":         r.userName ?? "—",
+        "هدية":             r.isBonus ? "نعم" : "",
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "حركة الصنف");
+      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+      const itemName = rows[0].itemName.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, "_");
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="item-movement-${itemName}.xlsx"`);
+      return res.send(buf);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, "[reports] item-movement-detail/export error");
+      return res.status(500).json({ error: "خطأ في تصدير التقرير" });
     }
   });
 
