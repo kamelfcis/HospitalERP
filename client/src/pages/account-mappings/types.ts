@@ -29,9 +29,9 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     payables_consumables: { required: "cond", condition: "لموردي المستلزمات",       debitSide: false, creditSide: true  },
   },
   sales_invoice: {
-    revenue_drugs:       { required: true,   debitSide: true, creditSide: true },
-    revenue_consumables: { required: true,   debitSide: true, creditSide: true },
-    revenue_general:     { required: "cond", condition: "للبنود العامة",            debitSide: true, creditSide: true },
+    revenue_drugs:       { required: "cond", condition: "إيراد الأدوية — أو اضبط إيراد عام كبديل موحد",       debitSide: true, creditSide: true },
+    revenue_consumables: { required: "cond", condition: "إيراد المستلزمات — أو اضبط إيراد عام كبديل موحد",   debitSide: true, creditSide: true },
+    revenue_general:     { required: "cond", condition: "بديل موحد لإيراد الأدوية والمستلزمات معاً",          debitSide: true, creditSide: true },
     cogs_drugs:          { required: "cond", condition: "عند احتساب التكلفة",       debitSide: true, creditSide: true },
     cogs_supplies:       { required: "cond", condition: "عند احتساب التكلفة",       debitSide: true, creditSide: true },
     discount_allowed:    { required: "cond", condition: "عند وجود خصم",             debitSide: true, creditSide: true },
