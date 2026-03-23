@@ -30,6 +30,7 @@ interface ItemMovementRow {
   txType: "in" | "out";
   referenceType: string;
   referenceId: string;
+  isReturn: boolean;
   qtyChangeMinor: number;
   unitCost: number | null;
   balanceAfterMinor: number;
@@ -46,6 +47,8 @@ interface ItemMovementRow {
   warehouseName: string;
   documentNumber: string | null;
   supplierInvoiceNo: string | null;
+  supplierName: string | null;
+  transferOtherWarehouse: string | null;
   userName: string | null;
 }
 
@@ -59,15 +62,16 @@ type UnitLevel = "major" | "medium" | "minor";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TX_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  receiving:       { label: "استلام شراء",     color: "bg-emerald-100 text-emerald-800 border-emerald-200",  icon: TrendingUp },
-  sales_invoice:   { label: "فاتورة مبيعات",  color: "bg-red-100 text-red-800 border-red-200",             icon: TrendingDown },
-  patient_invoice: { label: "فاتورة مريض",    color: "bg-orange-100 text-orange-800 border-orange-200",    icon: TrendingDown },
-  transfer:        { label: "تحويل مخزن",     color: "bg-blue-100 text-blue-800 border-blue-200",          icon: ArrowLeftRight },
-  stock_count:     { label: "جرد دوري",       color: "bg-gray-100 text-gray-800 border-gray-200",          icon: ClipboardList },
-  purchase_return: { label: "مرتجع مشتريات",  color: "bg-yellow-100 text-yellow-800 border-yellow-200",   icon: RotateCcw },
+  receiving:       { label: "استلام شراء",     color: "bg-emerald-100 text-emerald-800 border-emerald-200",   icon: TrendingUp },
+  sales_invoice:   { label: "فاتورة مبيعات",  color: "bg-red-100 text-red-800 border-red-200",              icon: TrendingDown },
+  sales_return:    { label: "مرتجع مبيعات",   color: "bg-purple-100 text-purple-800 border-purple-200",     icon: RotateCcw },
+  patient_invoice: { label: "فاتورة مريض",    color: "bg-orange-100 text-orange-800 border-orange-200",     icon: TrendingDown },
+  transfer:        { label: "تحويل مخزن",     color: "bg-blue-100 text-blue-800 border-blue-200",           icon: ArrowLeftRight },
+  stock_count:     { label: "جرد دوري",       color: "bg-gray-100 text-gray-800 border-gray-200",           icon: ClipboardList },
+  purchase_return: { label: "مرتجع مشتريات",  color: "bg-yellow-100 text-yellow-800 border-yellow-200",    icon: RotateCcw },
 };
 
-const ALL_TX_TYPES = Object.keys(TX_CONFIG);
+const ALL_TX_TYPES = ["receiving", "sales_invoice", "patient_invoice", "transfer", "stock_count", "purchase_return"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function convertQty(minor: number, level: UnitLevel, majorToMinor: number, mediumToMinor: number): number {
@@ -602,7 +606,7 @@ export default function ItemMovementReport() {
                     <TableHead className="text-foreground">الوقت</TableHead>
                     <TableHead className="text-foreground">نوع الحركة</TableHead>
                     <TableHead className="text-foreground">مستند</TableHead>
-                    <TableHead className="text-foreground">فاتورة مورد</TableHead>
+                    <TableHead className="text-foreground">مورد / فاتورة / مخزن</TableHead>
                     <TableHead className="text-left text-foreground">الكمية</TableHead>
                     <TableHead className="text-left text-foreground">الرصيد</TableHead>
                     <TableHead className="text-left text-foreground print:hidden">سعر الشراء</TableHead>
@@ -621,12 +625,40 @@ export default function ItemMovementReport() {
                     </TableRow>
                   ) : (
                     rows.map((row, idx) => {
-                      const cfg = TX_CONFIG[row.referenceType] ?? { label: row.referenceType, color: "bg-gray-100 text-gray-700 border-gray-200", icon: Package };
+                      // للمرتجع مبيعات: نستخدم إعداد مختلف
+                      const cfgKey = (row.referenceType === "sales_invoice" && row.isReturn) ? "sales_return" : row.referenceType;
+                      const cfg = TX_CONFIG[cfgKey] ?? { label: row.referenceType, color: "bg-gray-100 text-gray-700 border-gray-200", icon: Package };
                       const Icon = cfg.icon;
                       const qtyConverted = convertQty(row.qtyChangeMinor, unitLevel, row.majorToMinor, row.mediumToMinor);
                       const balConverted = convertQty(row.balanceAfterMinor, unitLevel, row.majorToMinor, row.mediumToMinor);
                       const { date, time } = fmtDateTime(row.txDate);
                       const isIn = row.txType === "in";
+
+                      // خلية "مورد / فاتورة / مخزن"
+                      const refCell = (() => {
+                        if (row.referenceType === "receiving") {
+                          return (
+                            <span className="flex flex-col gap-0.5">
+                              {row.supplierName && <span className="font-medium text-foreground">{row.supplierName}</span>}
+                              {row.supplierInvoiceNo && <span className="font-mono text-[10px] text-muted-foreground">{row.supplierInvoiceNo}</span>}
+                              {!row.supplierName && !row.supplierInvoiceNo && <span className="text-muted-foreground">—</span>}
+                            </span>
+                          );
+                        }
+                        if (row.referenceType === "purchase_return") {
+                          return <span className="font-medium">{row.supplierName ?? "—"}</span>;
+                        }
+                        if (row.referenceType === "transfer" && row.transferOtherWarehouse) {
+                          return (
+                            <span className="flex items-center gap-1 text-blue-700">
+                              <ArrowLeftRight className="h-3 w-3 shrink-0" />
+                              <span>{row.transferOtherWarehouse}</span>
+                            </span>
+                          );
+                        }
+                        return <span className="text-muted-foreground">—</span>;
+                      })();
+
                       return (
                         <TableRow
                           key={row.id}
@@ -654,9 +686,7 @@ export default function ItemMovementReport() {
                           <TableCell className="font-mono text-muted-foreground">
                             {row.documentNumber ?? "—"}
                           </TableCell>
-                          <TableCell className="font-mono text-muted-foreground text-[11px]">
-                            {row.supplierInvoiceNo ?? "—"}
-                          </TableCell>
+                          <TableCell>{refCell}</TableCell>
                           <TableCell className={cn("text-left font-semibold tabular-nums", isIn ? "text-emerald-700" : "text-red-600")}>
                             {isIn ? "+" : "−"}{fmtQty(Math.abs(qtyConverted))}
                           </TableCell>
