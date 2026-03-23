@@ -40,7 +40,7 @@ export function useInvoiceLines() {
         purchasePrice,
         lineDiscountPct,
         lineDiscountValue:parseFloat(String(ln.lineDiscountValue))|| 0,
-        vatRate:          parseFloat(String(ln.vatRate))          || 14,
+        vatRate:          (() => { const v = parseFloat(String(ln.vatRate)); return isNaN(v) ? 14 : v; })(),
         valueBeforeVat:   parseFloat(String(ln.valueBeforeVat))   || 0,
         vatAmount:        parseFloat(String(ln.vatAmount))        || 0,
         valueAfterVat:    parseFloat(String(ln.valueAfterVat))    || 0,

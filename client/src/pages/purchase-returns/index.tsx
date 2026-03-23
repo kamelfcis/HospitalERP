@@ -23,8 +23,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   CheckIcon, ChevronsUpDown, Plus, Trash2, RotateCcw,
-  FileText, Printer, AlertTriangle, CheckCircle, Loader2
+  FileText, Printer, AlertTriangle, CheckCircle, Loader2, Info
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -779,12 +780,25 @@ function CreateReturnTab() {
                   <thead>
                     <tr className="bg-muted/50 border-b">
                       <th className="text-right p-2 min-w-[160px]">الصنف</th>
-                      <th className="text-center p-2 w-[80px]">فاتورة</th>
-                      <th className="text-center p-2 w-[90px]">السعر</th>
-                      <th className="text-center p-2 w-[50px]">ض%</th>
+                      <th className="text-center p-2 w-[80px]">كمية الفاتورة</th>
+                      <th className="text-center p-2 w-[90px]">سعر الشراء</th>
+                      <th className="text-center p-2 w-[60px]">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex items-center justify-center gap-1 cursor-help">
+                                ض.ق.م% <Info className="h-3 w-3 text-muted-foreground" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[200px] text-center text-xs">
+                              نسبة الضريبة مستوردة من الفاتورة الأصلية ومحسوبة تلقائياً — لا يمكن تعديلها هنا
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </th>
                       <th className="text-right p-2 min-w-[220px]">اللوت</th>
                       <th className="text-center p-2 w-[100px]">كمية المرتجع</th>
-                      <th className="text-center p-2 w-[90px]">إجمالي</th>
+                      <th className="text-center p-2 w-[90px]">قبل الضريبة</th>
                       <th className="text-center p-2 w-[75px]">ض.ق.م</th>
                       <th className="text-center p-2 w-[90px]">الصافي</th>
                     </tr>
