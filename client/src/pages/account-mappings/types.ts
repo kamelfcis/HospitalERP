@@ -86,6 +86,16 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     stock_gain: { required: "cond", condition: "عند وجود فوائض في الجرد", debitSide: false, creditSide: true  },
     stock_loss: { required: "cond", condition: "عند وجود عجز في الجرد",   debitSide: true,  creditSide: false },
   },
+  // ── سداد موردين ─────────────────────────────────────────────────────────────
+  // القيد: مدين ذمم موردين (تخفيض الذمة) / دائن البنك أو الخزنة (تخفيض الأصل)
+  supplier_payment: {
+    ap_settlement: {
+      required: true,
+      condition: "مدين: ذمم الموردين — دائن: حساب البنك / الخزنة",
+      debitSide: true,
+      creditSide: true,
+    },
+  },
   // ── مردود مبيعات ────────────────────────────────────────────────────────────
   // القيد يعكس فاتورة البيع على مرحلتين:
   // م1 (عند الإنشاء):  مدين: إيراد — دائن: مدينون (وسيط)  +  مدين: مخزون — دائن: تكلفة
@@ -113,6 +123,7 @@ export const suggestedLineTypes: Record<string, string[]> = {
   warehouse_transfer:        ["inventory"],
   doctor_payable_settlement: ["doctor_payable", "cash", "receivable_clear"],
   stock_count_adjustment:    ["stock_gain", "stock_loss"],
+  supplier_payment:          ["ap_settlement"],
 };
 
 // Derived sets reused across multiple components
@@ -218,6 +229,8 @@ export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "cashier_collection",
   "cashier_refund",
   "warehouse_transfer",
+  "supplier_payment",
+  "doctor_payable_settlement",
 ]);
 
 // ─── Transaction types where a pharmacy-level override can be configured ───────
@@ -277,6 +290,9 @@ export const ACCOUNT_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
   stock_loss:           { debit: ["expense", "equity"]                                  },
 
   returns:              { debit: ["revenue"],              credit: ["asset"]             },
+
+  // Supplier payment: Dr = AP (liability), Cr = Bank/Cash (asset)
+  ap_settlement:        { debit: ["liability"],            credit: ["asset"]             },
 };
 
 /**

@@ -279,6 +279,7 @@ export const transactionTypeLabels: Record<string, string> = {
   warehouse_transfer:        "تحويلات مخزنية",
   doctor_payable_settlement: "تسوية مستحقات الطبيب",
   stock_count_adjustment:    "تسوية جرد مخزني",
+  supplier_payment:          "سداد موردين",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
@@ -316,6 +317,8 @@ export const mappingLineTypeLabels: Record<string, string> = {
   // Stock count adjustment
   stock_gain:           "إيراد فوائض الجرد",
   stock_loss:           "خسائر عجز الجرد",
+  // Supplier payment
+  ap_settlement:        "تسوية ذمم موردين (دفع)",
   // Generic
   other:                "أخرى",
 };
