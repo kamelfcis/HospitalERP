@@ -31,6 +31,24 @@ The system uses a RESTful JSON API. Drizzle ORM interacts with PostgreSQL, and Z
 - **Account Mappings Module**: Dedicated UI and transactional backend route for bulk updates.
 - **Items Excel Import/Export**: Bulk management of items via xlsx. Export (template or full data), Import with upsert (200/chunk), auto-creates form types, handles barcodes via `item_barcodes`, deduplicates by `item_code`.
 
+## Recent Session Progress — Sales Return Accounting (مكتمل ✓)
+
+### ما تم في هذه الجلسة
+- **نظام قيد المرتجعات (مرحلتان)**:
+  - **م1 (عند الإنشاء):** `generateSalesReturnJournal()` — Dr إيراد + Dr مخزون / Cr مدينون (وسيط) + Cr تكلفة
+  - **م2 (عند صرف الكاشير):** `completeSalesReturnWithCash()` — يستبدل حساب المدينون بالخزنة ويرحّل القيد
+- **`sales_return` في واجهة الحسابات**: أضيف لـ `transactionTypeLabels`, `lineTypeSpecs`, `DYNAMIC_LINE_SPECS`
+- **حركات المخزون عند الإرجاع**: يُسجَّل `inventory_lot_movements` (txType='in') لكل سطر مرتجع أثناء التحديث داخل الـ transaction
+- **الكاشير**: `refundInvoices()` يستدعي `completeSalesReturnWithCash` بدلاً من `completeSalesJournalsWithCash`
+- **IStorage**: أضيف توقيعا `generateSalesReturnJournal` و`completeSalesReturnWithCash`
+- **معاينة القيد في شاشة ربط الحسابات**: `SalesReturnJournalPreview` يعرض هيكل القيد المرئي بالمرحلتين عند اختيار `sales_return`
+
+### Critical Notes for Sales Return Accounting
+- `generateSalesReturnJournal` = DRAFT journal عند الإنشاء (source_type='sales_return')
+- `completeSalesReturnWithCash` = يستبدل سطر مدينون بالخزنة ويُغيّر الحالة لـ posted
+- استدعاء `generateSalesReturnJournal` يتم خارج الـ db.transaction كـ fire-and-forget (غير حاسم)
+- `inventory_lot_movements.referenceType = 'sales_return'` للإرجاع (txType='in')
+
 ## Recent Session Progress — Items Import/Export (مكتمل ✓)
 
 ### ما تم في هذه الجلسة

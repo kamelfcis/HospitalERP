@@ -992,20 +992,19 @@ const methods = {
 
       const result = { receipts, totalRefunded: totalRefunded.toFixed(2), count: receipts.length };
 
-      // إكمال القيود المحاسبية خارج transaction — مُسجَّل الآن في accounting_event_log
-      self.completeSalesJournalsWithCash(
+      // إكمال قيود المرحلة الثانية للمردودات (عكس قيد الخزنة) خارج الـ transaction
+      self.completeSalesReturnWithCash(
         invoiceIds,
         shiftRow.gl_account_id || null,
-        shiftRow.pharmacy_id || "",
       ).catch((err: unknown) => {
         const msg = errMsg(err);
-        logger.error({ err: msg, invoiceIds }, "[CASHIER_REFUND] completeSalesJournalsWithCash: top-level failure");
+        logger.error({ err: msg, invoiceIds }, "[CASHIER_REFUND] completeSalesReturnWithCash: top-level failure");
         logAcctEvent({
-          sourceType:   "cashier_collection",
+          sourceType:   "sales_return",
           sourceId:     shiftId,
           eventType:    "cashier_refund_journals_top_level_failure",
           status:       "failed",
-          errorMessage: `فشل على مستوى الوردية عند إنشاء قيود الاسترداد: ${msg}. المرتجعات المتأثرة: ${invoiceIds.join(', ')}`,
+          errorMessage: `فشل في قيود صرف المرتجعات: ${msg}. المتأثرة: ${invoiceIds.join(', ')}`,
         }).catch(() => {});
       });
 

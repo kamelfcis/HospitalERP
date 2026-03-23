@@ -270,6 +270,7 @@ export const journalStatusLabels: Record<string, string> = {
 
 export const transactionTypeLabels: Record<string, string> = {
   sales_invoice:             "فاتورة مبيعات",
+  sales_return:              "مردود مبيعات",
   patient_invoice:           "فاتورة مريض",
   receiving:                 "استلام مورد",
   purchase_invoice:          "فاتورة مشتريات",

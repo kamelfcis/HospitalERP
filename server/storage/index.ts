@@ -830,6 +830,8 @@ export interface DatabaseStorage extends IStorage {
   generateSalesInvoiceJournalInTx(tx: unknown, invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number): Promise<JournalEntry | null>;
   generateSalesInvoiceJournal(invoiceId: string, invoice: SalesInvoiceHeader, cogsDrugs: number, cogsSupplies: number, revenueDrugs: number, revenueSupplies: number): Promise<JournalEntry | null>;
   completeSalesJournalsWithCash(invoiceIds: string[], cashGlAccountId: string | null, pharmacyId: string): Promise<void>;
+  generateSalesReturnJournal(returnId: string): Promise<void>;
+  completeSalesReturnWithCash(invoiceIds: string[], cashGlAccountId: string | null): Promise<void>;
   createCashierCollectionJournals(invoiceIds: string[], cashGlAccountOverride: string | null, pharmacyId: string): Promise<void>;
   generatePurchaseInvoiceJournal(invoiceId: string, invoice: PurchaseInvoiceHeader): Promise<JournalEntry | null>;
   getMappingsForTransaction(sourceType: string, warehouseId?: string | null, pharmacyId?: string | null): Promise<AccountMapping[]>;

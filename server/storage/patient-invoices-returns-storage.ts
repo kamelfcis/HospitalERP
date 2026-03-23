@@ -9,7 +9,7 @@
  */
 
 import { db, pool } from "../db";
-import { eq, desc, and, sql, asc, gte, lte, ilike } from "drizzle-orm";
+import { eq, desc, and, sql, asc, gte, lte, ilike, inArray } from "drizzle-orm";
 import {
   services,
   departments,
@@ -18,6 +18,8 @@ import {
   patientInvoiceLines,
   patientInvoicePayments,
   auditLog,
+  inventoryLots,
+  inventoryLotMovements,
 } from "@shared/schema";
 import type {
   PatientInvoiceHeader,
@@ -30,6 +32,7 @@ import type {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney, parseMoney } from "../finance-helpers";
+import { logger } from "../lib/logger";
 
 const methods = {
   /*
@@ -168,7 +171,7 @@ const methods = {
     returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[];
     discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string;
   }): Promise<any> {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       // ensure return validation and insert run atomically to prevent double return
       const origHeader = await tx.execute(sql`
         SELECT id, invoice_date, warehouse_id, customer_type, customer_name, contract_company, pharmacy_id,
@@ -283,14 +286,31 @@ const methods = {
              ${rl.salePrice}, ${rl.lineTotal}, ${rl.expiryMonth ?? null}, ${rl.expiryYear ?? null}, ${rl.lotId ?? null})
         `);
 
+        // ── تحديث المخزون + تسجيل حركة الإرجاع ─────────────────────────
         if (rl.lotId) {
           await tx.execute(sql`
             UPDATE inventory_lots
             SET qty_in_minor = qty_in_minor + ${parseFloat(rl.qtyInMinor)}, updated_at = NOW()
             WHERE id = ${rl.lotId}
           `);
+
+          // حركة مخزون (داخل = بضاعة راجعة) لأغراض التقارير والقيود
+          const lotRow = await tx.execute(sql`
+            SELECT purchase_price FROM inventory_lots WHERE id = ${rl.lotId} LIMIT 1
+          `);
+          const unitCost = (lotRow.rows[0] as Record<string, unknown>)?.purchase_price ?? "0";
+
+          await tx.insert(inventoryLotMovements).values({
+            lotId:           rl.lotId,
+            warehouseId:     data.warehouseId,
+            txType:          "in",
+            qtyChangeInMinor: String(parseFloat(rl.qtyInMinor)),
+            unitCost:        String(unitCost),
+            referenceType:   "sales_return",
+            referenceId:     returnId,
+          });
         } else {
-          await tx.execute(sql`
+          const lotResult = await tx.execute(sql`
             UPDATE inventory_lots
             SET qty_in_minor = qty_in_minor + ${parseFloat(rl.qtyInMinor)}, updated_at = NOW()
             WHERE id = (
@@ -301,12 +321,34 @@ const methods = {
               ORDER BY expiry_year NULLS LAST, expiry_month NULLS LAST
               LIMIT 1
             )
+            RETURNING id, purchase_price
           `);
+          const updatedLot = lotResult.rows[0] as Record<string, unknown> | undefined;
+          if (updatedLot?.id) {
+            await tx.insert(inventoryLotMovements).values({
+              lotId:           updatedLot.id as string,
+              warehouseId:     data.warehouseId,
+              txType:          "in",
+              qtyChangeInMinor: String(parseFloat(rl.qtyInMinor)),
+              unitCost:        String(updatedLot.purchase_price ?? "0"),
+              referenceType:   "sales_return",
+              referenceId:     returnId,
+            });
+          }
         }
       }
 
       return { id: returnId, invoiceNumber: returnNumber, netTotal: netTotal.toFixed(2) };
     });
+
+    // ── قيد المرحلة الأولى خارج الـ transaction (غير حاسم للعملية) ──────
+    const createdId = result.id as string;
+    this.generateSalesReturnJournal(createdId).catch((err: unknown) => {
+      logger.error({ returnId: createdId, err: err instanceof Error ? err.message : String(err) },
+        "[SALES_RETURN] generateSalesReturnJournal: background failure — return was created successfully");
+    });
+
+    return result;
   },
 };
 

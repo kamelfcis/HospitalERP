@@ -11,10 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Settings, Save, Loader2, Plus } from "lucide-react";
 import { useMappingRows } from "./hooks/useMappingRows";
 import { useMappingSave }  from "./hooks/useMappingSave";
-import { MappingFilters }          from "./components/MappingFilters";
-import { MappingStatusBar }        from "./components/MappingStatusBar";
-import { WarehouseTransferNotice } from "./components/WarehouseTransferNotice";
-import { MappingTable }            from "./components/MappingTable";
+import { MappingFilters }              from "./components/MappingFilters";
+import { MappingStatusBar }            from "./components/MappingStatusBar";
+import { WarehouseTransferNotice }     from "./components/WarehouseTransferNotice";
+import { MappingTable }                from "./components/MappingTable";
+import { SalesReturnJournalPreview }   from "./components/SalesReturnJournalPreview";
 
 export default function AccountMappings() {
   const data = useMappingRows();
@@ -98,6 +99,11 @@ export default function AccountMappings() {
           />
         </CardContent>
       </Card>
+
+      {/* ── معاينة بنود القيد لمردود المبيعات ── */}
+      {data.selectedTxType === "sales_return" && !data.isLoading && (
+        <SalesReturnJournalPreview rows={data.rows} />
+      )}
 
     </div>
   );

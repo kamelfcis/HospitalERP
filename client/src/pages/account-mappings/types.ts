@@ -87,11 +87,25 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     stock_gain: { required: "cond", condition: "عند وجود فوائض في الجرد", debitSide: false, creditSide: true  },
     stock_loss: { required: "cond", condition: "عند وجود عجز في الجرد",   debitSide: true,  creditSide: false },
   },
+  // ── مردود مبيعات ────────────────────────────────────────────────────────────
+  // القيد يعكس فاتورة البيع على مرحلتين:
+  // م1 (عند الإنشاء):  مدين: إيراد — دائن: مدينون (وسيط)  +  مدين: مخزون — دائن: تكلفة
+  // م2 (عند الصرف):    يُستبدل "مدينون دائن" بـ "خزنة دائن" (فلوس خارجة)
+  sales_return: {
+    receivables:         { required: true,   condition: "حساب وسيط — يُستبدل بالخزنة عند صرف الكاشير", debitSide: false, creditSide: true  },
+    revenue_drugs:       { required: "cond", condition: "لعكس إيراد الأدوية",       debitSide: true,  creditSide: false },
+    revenue_consumables: { required: "cond", condition: "لعكس إيراد المستلزمات",     debitSide: true,  creditSide: false },
+    revenue_general:     { required: "cond", condition: "لعكس الإيراد العام",        debitSide: true,  creditSide: false },
+    cogs_drugs:          { required: "cond", condition: "لعكس تكلفة الأدوية",        debitSide: false, creditSide: true  },
+    cogs_supplies:       { required: "cond", condition: "لعكس تكلفة المستلزمات",     debitSide: false, creditSide: true  },
+    inventory:           { required: "cond", condition: "استعادة مخزون (مدين — من GL المخزن)", debitSide: true, creditSide: false },
+  },
 };
 
 // Ordered list of suggested line types per transaction type (controls default row order)
 export const suggestedLineTypes: Record<string, string[]> = {
   sales_invoice:             ["revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "discount_allowed", "vat_output", "returns"],
+  sales_return:              ["receivables", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "inventory"],
   patient_invoice:           ["cash", "receivables", "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment"],
   receiving:                 ["inventory", "payables"],
   purchase_invoice:          ["inventory", "vat_input", "discount_earned", "payables_drugs", "payables_consumables"],
@@ -158,6 +172,16 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
       },
     },
   },
+  // ── مردود مبيعات: المخزون مدين (يُحدد تلقائياً من GL المخزن) ──────────────
+  sales_return: {
+    inventory: {
+      debit: {
+        label:       "مدين: يُحدد تلقائياً من حساب GL المخزن",
+        tooltip:     "حساب المخزون يُحدد تلقائياً من حساب GL المرتبط بالمخزن في فاتورة الأصل. عند الإرجاع، ترجع البضاعة للمخزن (مدين). لا تحتاج لضبط يدوي.",
+        hasFallback: false,
+      },
+    },
+  },
   stock_count_adjustment: {
     // Surplus: Dr side is the warehouse GL account (resolved from session warehouse)
     stock_gain: {
@@ -193,6 +217,7 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
 //
 export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "sales_invoice",
+  "sales_return",
   "cashier_collection",
   "cashier_refund",
   "warehouse_transfer",
