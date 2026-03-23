@@ -78,6 +78,8 @@ export function useAutoSave(params: AutoSaveParams) {
 
   const performAutoSave = useCallback(async () => {
     if (!isDraft || !warehouseId) return;
+    // لا تحفظ فاتورة جديدة فارغة — لا معنى لحفظها ولا لإنشاء قيد فارغ
+    if (isNew && lines.length === 0) return;
     const payload = buildPayload();
     const dataStr = JSON.stringify(payload);
     if (dataStr === lastAutoSaveDataRef.current) return;
@@ -116,18 +118,21 @@ export function useAutoSave(params: AutoSaveParams) {
     } catch {
       setAutoSaveStatus("error");
     }
-  }, [isDraft, warehouseId, buildPayload, isNew]);
+  }, [isDraft, warehouseId, buildPayload, isNew, lines]);
 
   useEffect(() => {
     if (!isDraft || !warehouseId) return;
+    // لا نبدأ العد التنازلي إذا كانت الفاتورة جديدة وفارغة
+    if (isNew && lines.length === 0) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => { performAutoSave(); }, 15000);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [isDraft, warehouseId, invoiceDate, customerType, customerName, contractCompany, discountPct, discountValue, lines, notes, performAutoSave]);
+  }, [isDraft, warehouseId, isNew, lines, invoiceDate, customerType, customerName, contractCompany, discountPct, discountValue, notes, performAutoSave]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (!isDraft || !warehouseId) return;
+      if (isNew && lines.length === 0) return;
       const payload = buildPayload();
       const dataStr = JSON.stringify(payload);
       if (dataStr === lastAutoSaveDataRef.current) return;
