@@ -575,7 +575,7 @@ function CreateReturnTab() {
       isFreeItem:            l.isFreeItem,
       lotId:                 "",
       qtyReturned:           "",
-      bonusQtyReturned:      "",
+      bonusQtyReturned:      l.bonusQty,
       subtotal:              0,
       vatAmount:             0,
       lineTotal:             0,
