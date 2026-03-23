@@ -26,7 +26,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ChevronsUpDown, Check, Banknote, AlertTriangle, FileText, Loader2, Save,
-  RefreshCw, CircleDollarSign, Hash,
+  RefreshCw, CircleDollarSign, Hash, ChevronUp, ChevronDown,
 } from "lucide-react";
 import type { Supplier, SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
 
@@ -166,6 +166,46 @@ function BalanceStrip({ supplierId }: { supplierId: string }) {
   );
 }
 
+// ─── SortHead ─────────────────────────────────────────────────────────────────
+
+type SortKey = "invoiceNumber" | "supplierInvoiceNo" | "receivingNumber" | "invoiceDate" | "totalPaid" | "remaining";
+type SortDir = "asc" | "desc";
+
+function SortHead({
+  label, col, cur, dir, onSort,
+  className = "",
+}: {
+  label: string;
+  col: SortKey;
+  cur: SortKey;
+  dir: SortDir;
+  onSort: (k: SortKey) => void;
+  className?: string;
+}) {
+  const active = cur === col;
+  return (
+    <TableHead className={cx("cursor-pointer select-none", className)}>
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={cx(
+          "flex items-center gap-0.5 text-xs font-medium",
+          active ? "text-primary" : "text-muted-foreground hover:text-foreground"
+        )}
+      >
+        {label}
+        <span className="flex flex-col ms-0.5">
+          {active && dir === "asc"
+            ? <ChevronUp className="h-3 w-3" />
+            : active && dir === "desc"
+            ? <ChevronDown className="h-3 w-3" />
+            : <ChevronsUpDown className="h-3 w-3 opacity-40" />}
+        </span>
+      </button>
+    </TableHead>
+  );
+}
+
 // ─── PaymentTab ───────────────────────────────────────────────────────────────
 
 function PaymentTab({ supplierId }: { supplierId: string }) {
@@ -203,6 +243,39 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
   const [reference,   setReference]   = useState("");
   const [notes,       setNotes]       = useState("");
   const [distAmt,     setDistAmt]     = useState("");
+
+  // Sort state
+  const [sortKey, setSortKey] = useState<SortKey>("invoiceDate");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const handleSort = useCallback((col: SortKey) => {
+    setSortDir((d) => sortKey === col ? (d === "asc" ? "desc" : "asc") : "asc");
+    setSortKey(col);
+  }, [sortKey]);
+
+  // Sorted invoices
+  const sortedInvoices = useMemo(() => {
+    const arr = [...invoices];
+    const sign = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (sortKey) {
+        case "invoiceNumber":
+          return sign * (parseInt(String(a.invoiceNumber)) - parseInt(String(b.invoiceNumber)));
+        case "supplierInvoiceNo":
+          return sign * (a.supplierInvoiceNo ?? "").localeCompare(b.supplierInvoiceNo ?? "", "ar");
+        case "receivingNumber":
+          return sign * ((a.receivingNumber ?? 0) - (b.receivingNumber ?? 0));
+        case "invoiceDate":
+          return sign * a.invoiceDate.localeCompare(b.invoiceDate);
+        case "totalPaid":
+          return sign * (parseFloat(a.totalPaid) - parseFloat(b.totalPaid));
+        case "remaining":
+          return sign * (parseFloat(a.remaining) - parseFloat(b.remaining));
+        default: return 0;
+      }
+    });
+    return arr;
+  }, [invoices, sortKey, sortDir]);
 
   // Computed
   const totalDistributed = useMemo(
@@ -252,7 +325,7 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
     }
     let rem = amt;
     const n: Record<string, string> = {};
-    for (const inv of invoices) {
+    for (const inv of sortedInvoices) {
       if (rem <= 0) { n[inv.invoiceId] = ""; continue; }
       const pay = Math.min(parseFloat(inv.remaining), rem);
       n[inv.invoiceId] = pay > 0 ? pay.toFixed(2) : "";
@@ -414,20 +487,20 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
               <TableRow>
-                <TableHead className="text-right text-xs w-[80px]">#</TableHead>
-                <TableHead className="text-right text-xs">رقم فاتورة المورد</TableHead>
-                <TableHead className="text-right text-xs w-[80px]">رقم المطالبة</TableHead>
-                <TableHead className="text-right text-xs w-[95px]">التاريخ</TableHead>
+                <SortHead label="#"               col="invoiceNumber"    cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[80px]" />
+                <SortHead label="كود فاتورة المورد" col="supplierInvoiceNo" cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right" />
+                <SortHead label="رقم المطالبة"    col="receivingNumber"  cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[90px]" />
+                <SortHead label="التاريخ"          col="invoiceDate"      cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[95px]" />
                 <TableHead className="text-left text-xs">صافي الفاتورة</TableHead>
-                <TableHead className="text-left text-xs">مسدد سابقاً</TableHead>
-                <TableHead className="text-left text-xs font-semibold text-orange-600">الباقي</TableHead>
+                <SortHead label="مسدد سابقاً"     col="totalPaid"        cur={sortKey} dir={sortDir} onSort={handleSort} className="text-left" />
+                <SortHead label="الباقي"           col="remaining"        cur={sortKey} dir={sortDir} onSort={handleSort} className="text-left font-semibold text-orange-600" />
                 <TableHead className="text-left text-xs font-semibold text-primary w-[130px]">
-                  المدفوع الآن ▾
+                  المدفوع الآن
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {invoices.map((inv, idx) => {
+              {sortedInvoices.map((inv, idx) => {
                 const remaining   = parseFloat(inv.remaining);
                 const inputVal    = inputs[inv.invoiceId] ?? "";
                 const inputAmount = parseFloat(inputVal) || 0;
