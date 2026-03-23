@@ -314,7 +314,8 @@ export default function ItemMovementReport() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set(ALL_TX_TYPES));
-  const [queryParams, setQueryParams] = useState<Record<string, string> | null>(null);
+  const [queryUrl, setQueryUrl] = useState<string | null>(null);
+  const [lastParams, setLastParams] = useState<Record<string, string> | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const { data: warehouses = [] } = useQuery<{ id: string; nameAr: string }[]>({
@@ -322,15 +323,14 @@ export default function ItemMovementReport() {
   });
 
   const { data, isFetching, error } = useQuery<{ rows: ItemMovementRow[] }>({
-    queryKey: ["/api/reports/item-movement-detail", queryParams],
-    enabled: !!queryParams,
+    queryKey: [queryUrl],
+    enabled: !!queryUrl,
     staleTime: 30_000,
   });
 
   const rows = data?.rows ?? [];
 
-  function handleGenerate() {
-    if (!itemId) return;
+  function buildParams(): Record<string, string> {
     const params: Record<string, string> = { itemId };
     if (warehouseId && warehouseId !== "all") params.warehouseId = warehouseId;
     if (fromDate) params.fromDate = fromDate;
@@ -338,13 +338,20 @@ export default function ItemMovementReport() {
     if (selectedTypes.size > 0 && selectedTypes.size < ALL_TX_TYPES.length) {
       params.txTypes = Array.from(selectedTypes).join(",");
     }
-    setQueryParams(params);
+    return params;
+  }
+
+  function handleGenerate() {
+    if (!itemId) return;
+    const params = buildParams();
+    setLastParams(params);
+    setQueryUrl(`/api/reports/item-movement-detail?${new URLSearchParams(params)}`);
   }
 
   function handleExport() {
-    if (!queryParams) return;
+    if (!lastParams) return;
     setExporting(true);
-    const qs = new URLSearchParams({ ...queryParams, unitLevel });
+    const qs = new URLSearchParams({ ...lastParams, unitLevel });
     const url = `/api/reports/item-movement-detail/export?${qs}`;
     const a = document.createElement("a");
     a.href = url;
@@ -437,7 +444,8 @@ export default function ItemMovementReport() {
                 setItemId(id);
                 setItemDisplayName(name);
                 setItemCode(code);
-                setQueryParams(null);
+                setQueryUrl(null);
+                setLastParams(null);
               }}
             />
           </div>
@@ -623,7 +631,7 @@ export default function ItemMovementReport() {
                         <TableRow
                           key={row.id}
                           className={cn(
-                            "text-xs hover:bg-muted/30 transition-colors",
+                            "text-xs hover:bg-muted/30 transition-colors [&>td]:py-3",
                             row.isBonus && "bg-amber-50/40 hover:bg-amber-50/60"
                           )}
                           data-testid={`row-movement-${row.id}`}
@@ -711,14 +719,14 @@ export default function ItemMovementReport() {
       )}
 
       {/* ── Empty state ── */}
-      {!queryParams && !isFetching && (
+      {!queryUrl && !isFetching && (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground print:hidden">
           <Package className="h-12 w-12 mb-3 opacity-30" />
           <p className="text-sm">اختر صنفاً ثم اضغط «توليد التقرير» لعرض الحركات</p>
         </div>
       )}
 
-      {queryParams && !isFetching && rows.length === 0 && (
+      {queryUrl && !isFetching && rows.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground print:hidden">
           <ClipboardList className="h-12 w-12 mb-3 opacity-30" />
           <p className="text-sm">لا توجد حركات للصنف المحدد في النطاق الزمني والفلاتر المختارة</p>
