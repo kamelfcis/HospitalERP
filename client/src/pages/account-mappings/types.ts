@@ -215,7 +215,6 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
 //                     — BUT revenue accounts can be overridden per-pharmacy (see PHARMACY_SELECTOR_TYPES)
 //
 export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
-  "sales_invoice",
   "sales_return",
   "cashier_collection",
   "cashier_refund",

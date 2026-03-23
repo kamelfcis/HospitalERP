@@ -2,11 +2,15 @@
  * MappingFilters
  *
  * Transaction-type selector + Warehouse override selector + Pharmacy override selector.
- * The warehouse selector is hidden for transaction types whose warehouse/treasury
- * account is resolved automatically from the source document (sales_invoice,
- * cashier_collection, cashier_refund, warehouse_transfer).
- * For sales_invoice a pharmacy selector is shown instead so admins can configure
- * per-pharmacy revenue accounts.
+ *
+ * For sales_invoice, BOTH selectors are shown:
+ *   - Warehouse selector: for department-specific revenue (OR, ICU, etc.)
+ *   - Pharmacy selector:  for pharmacy-specific revenue (each pharmacy's own account)
+ *   They are mutually exclusive — selecting one auto-resets the other.
+ *
+ * For other transaction types, only the warehouse selector is shown (if applicable),
+ * or an explanatory label if the warehouse/treasury is resolved automatically.
+ *
  * Pure presentational — all state lives in useMappingRows.
  */
 
@@ -41,6 +45,17 @@ export function MappingFilters({
   warehouses, pharmacies,
   showWarehouseSelector, showPharmacySelector,
 }: MappingFiltersProps) {
+
+  const handleWarehouseChange = (v: string) => {
+    onWarehouseChange(v);
+    if (v !== "__generic__") onPharmacyChange("__generic__");
+  };
+
+  const handlePharmacyChange = (v: string) => {
+    onPharmacyChange(v);
+    if (v !== "__generic__") onWarehouseChange("__generic__");
+  };
+
   return (
     <div className="flex items-center gap-4 flex-wrap">
       {/* Transaction type */}
@@ -57,12 +72,12 @@ export function MappingFilters({
         </SelectContent>
       </Select>
 
-      {/* Warehouse selector — only for transaction types with configurable warehouse */}
-      {showWarehouseSelector ? (
+      {/* Warehouse selector */}
+      {showWarehouseSelector && (
         <div className="flex items-center gap-2">
           <Building2 className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">المستودع</span>
-          <Select value={selectedWarehouseId} onValueChange={onWarehouseChange}>
+          <span className="text-sm text-muted-foreground">المستودع / القسم</span>
+          <Select value={selectedWarehouseId} onValueChange={handleWarehouseChange}>
             <SelectTrigger className="w-[220px]" data-testid="select-warehouse-filter">
               <SelectValue placeholder="عام (لجميع المستودعات)" />
             </SelectTrigger>
@@ -78,12 +93,14 @@ export function MappingFilters({
             </SelectContent>
           </Select>
         </div>
-      ) : showPharmacySelector ? (
-        /* Pharmacy selector — for sales_invoice only */
+      )}
+
+      {/* Pharmacy selector */}
+      {showPharmacySelector && (
         <div className="flex items-center gap-2">
           <Pill className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm text-muted-foreground">الصيدلية</span>
-          <Select value={selectedPharmacyId} onValueChange={onPharmacyChange}>
+          <Select value={selectedPharmacyId} onValueChange={handlePharmacyChange}>
             <SelectTrigger className="w-[220px]" data-testid="select-pharmacy-filter">
               <SelectValue placeholder="عام (لجميع الصيدليات)" />
             </SelectTrigger>
@@ -99,7 +116,10 @@ export function MappingFilters({
             </SelectContent>
           </Select>
         </div>
-      ) : (
+      )}
+
+      {/* Info label when both selectors are hidden */}
+      {!showWarehouseSelector && !showPharmacySelector && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-md px-3 py-1.5">
           <Info className="h-4 w-4 shrink-0 text-blue-500" />
           <span>المخزن/الصيدلية أو الخزنة يُحدد تلقائياً من المستند — لا يتم اختياره هنا</span>
