@@ -36,7 +36,6 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     cogs_supplies:       { required: "cond", condition: "عند احتساب التكلفة",       debitSide: true, creditSide: true },
     discount_allowed:    { required: "cond", condition: "عند وجود خصم",             debitSide: true, creditSide: true },
     vat_output:          { required: "cond", condition: "عند وجود ضريبة",           debitSide: true, creditSide: true },
-    returns:             { required: "cond", condition: "عند وجود مرتجع",           debitSide: true, creditSide: true },
   },
   patient_invoice: {
     cash:                { required: "cond", condition: "للمرضى النقديين",          debitSide: true, creditSide: true },
@@ -104,7 +103,7 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
 
 // Ordered list of suggested line types per transaction type (controls default row order)
 export const suggestedLineTypes: Record<string, string[]> = {
-  sales_invoice:             ["revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "discount_allowed", "vat_output", "returns"],
+  sales_invoice:             ["revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "discount_allowed", "vat_output"],
   sales_return:              ["receivables", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "inventory"],
   patient_invoice:           ["cash", "receivables", "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment"],
   receiving:                 ["inventory", "payables"],
