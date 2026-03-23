@@ -13,6 +13,7 @@ import { formatCurrency, formatDateShort }  from "@/lib/formatters";
 import { Input }                            from "@/components/ui/input";
 import { Button }                           from "@/components/ui/button";
 import { Badge }                            from "@/components/ui/badge";
+import { Checkbox }                         from "@/components/ui/checkbox";
 import { Label }                            from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -244,6 +245,25 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
   const [notes,       setNotes]       = useState("");
   const [distAmt,     setDistAmt]     = useState("");
 
+  // Selection state (for reference total)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const handleToggle = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleToggleAll = useCallback((ids: string[]) => {
+    setSelected((prev) => {
+      const allChecked = ids.every((id) => prev.has(id));
+      if (allChecked) return new Set();
+      return new Set(ids);
+    });
+  }, []);
+
   // Sort state
   const [sortKey, setSortKey] = useState<SortKey>("invoiceDate");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -276,6 +296,14 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
     });
     return arr;
   }, [invoices, sortKey, sortDir]);
+
+  // Selection totals (reference only)
+  const selectedTotal = useMemo(
+    () => sortedInvoices
+      .filter((inv) => selected.has(inv.invoiceId))
+      .reduce((s, inv) => s + parseFloat(inv.remaining), 0),
+    [sortedInvoices, selected]
+  );
 
   // Computed
   const totalDistributed = useMemo(
@@ -487,6 +515,17 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
               <TableRow>
+                <TableHead className="w-8 px-2">
+                  <Checkbox
+                    checked={
+                      sortedInvoices.length > 0 &&
+                      sortedInvoices.every((i) => selected.has(i.invoiceId))
+                    }
+                    onCheckedChange={() => handleToggleAll(sortedInvoices.map((i) => i.invoiceId))}
+                    aria-label="تحديد الكل"
+                    data-testid="checkbox-select-all"
+                  />
+                </TableHead>
                 <SortHead label="#"               col="invoiceNumber"    cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[80px]" />
                 <SortHead label="كود فاتورة المورد" col="supplierInvoiceNo" cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right" />
                 <SortHead label="رقم المطالبة"    col="receivingNumber"  cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[90px]" />
@@ -507,15 +546,25 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
                 const isOver      = inputAmount > remaining + 0.005;
                 const hasPaid     = inputAmount > 0;
 
+                const isSelected = selected.has(inv.invoiceId);
                 return (
                   <TableRow
                     key={inv.invoiceId}
                     className={cx(
                       isOver ? "bg-red-50 dark:bg-red-950/20" : "",
-                      hasPaid ? "bg-green-50/40 dark:bg-green-950/10" : ""
+                      hasPaid && !isSelected ? "bg-green-50/40 dark:bg-green-950/10" : "",
+                      isSelected ? "bg-blue-50/60 dark:bg-blue-950/20" : ""
                     )}
                     data-testid={`row-invoice-${inv.invoiceId}`}
                   >
+                    <TableCell className="w-8 px-2">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => handleToggle(inv.invoiceId)}
+                        aria-label={`تحديد فاتورة ${inv.invoiceNumber}`}
+                        data-testid={`checkbox-row-${inv.invoiceId}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-mono text-xs">{inv.invoiceNumber}</TableCell>
                     <TableCell className="text-xs">{inv.supplierInvoiceNo || "—"}</TableCell>
                     <TableCell className="text-xs font-mono text-muted-foreground">
@@ -557,8 +606,24 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
               })}
             </TableBody>
             <TableFooter className="sticky bottom-0 bg-muted/80 backdrop-blur-sm">
+              {selected.size > 0 && (
+                <TableRow className="bg-blue-100/70 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200">
+                  <TableCell colSpan={5} className="text-right text-xs font-medium py-1.5">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Check className="h-3 w-3" />
+                      محدد: {selected.size} {selected.size === 1 ? "فاتورة" : "فواتير"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-left text-xs font-mono text-muted-foreground py-1.5">—</TableCell>
+                  <TableCell className="text-left text-xs font-mono text-muted-foreground py-1.5">—</TableCell>
+                  <TableCell className="text-left text-xs font-mono font-semibold text-blue-700 dark:text-blue-300 py-1.5" data-testid="selected-remaining-total">
+                    {formatCurrency(selectedTotal)}
+                  </TableCell>
+                  <TableCell className="py-1.5" />
+                </TableRow>
+              )}
               <TableRow className="font-bold">
-                <TableCell colSpan={4} className="text-right text-xs">الإجمالي</TableCell>
+                <TableCell colSpan={5} className="text-right text-xs">الإجمالي</TableCell>
                 <TableCell className="text-left text-xs font-mono">
                   {formatCurrency(invoices.reduce((s, r) => s + parseFloat(r.netPayable), 0))}
                 </TableCell>
