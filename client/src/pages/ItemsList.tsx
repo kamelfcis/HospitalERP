@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,8 @@ export default function ItemsList() {
   const [deleteItemName, setDeleteItemName] = useState<string>("");
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searchFocused = useRef(false);
   const limit = 20;
 
   const handleExport = (includeData: boolean) => {
@@ -122,6 +124,13 @@ export default function ItemsList() {
       if (!res.ok) throw new Error("Failed to fetch items");
       return res.json();
     },
+  });
+
+  // يعيد التركيز لحقل البحث بعد كل re-render إذا كان المستخدم كاتب فيه
+  useEffect(() => {
+    if (searchFocused.current && searchRef.current && document.activeElement !== searchRef.current) {
+      searchRef.current.focus();
+    }
   });
 
   const deleteMutation = useMutation({
@@ -223,10 +232,13 @@ export default function ItemsList() {
         <div className="flex items-center gap-2">
           <Search className="h-3 w-3 text-muted-foreground" />
           <Input
+            ref={searchRef}
             type="text"
             placeholder="بحث بالكود أو الاسم (استخدم % للبحث المتقدم)"
             value={searchInput}
             onChange={(e) => { setSearchInput(e.target.value); setPage(1); }}
+            onFocus={() => { searchFocused.current = true; }}
+            onBlur={() => { searchFocused.current = false; }}
             className="peachtree-input w-64"
             data-testid="input-search"
           />
