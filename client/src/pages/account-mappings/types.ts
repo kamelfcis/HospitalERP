@@ -215,7 +215,6 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
 //                     — BUT revenue accounts can be overridden per-pharmacy (see PHARMACY_SELECTOR_TYPES)
 //
 export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
-  "sales_return",
   "cashier_collection",
   "cashier_refund",
   "warehouse_transfer",
@@ -223,11 +222,12 @@ export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
 
 // ─── Transaction types where a pharmacy-level override can be configured ───────
 //
-// sales_invoice: revenue accounts (revenue_drugs, revenue_consumables, etc.)
-//   can be set per-pharmacy so each pharmacy posts to its own revenue account.
+// sales_invoice / sales_return: revenue accounts can be set per-pharmacy or per-warehouse.
+// The backend getMappingsForTransaction supports both scopes for these types.
 //
 export const PHARMACY_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "sales_invoice",
+  "sales_return",
 ]);
 
 // ─── Account category rules (mirrors server/lib/account-category-validator) ────
