@@ -37,6 +37,7 @@ import { registerAccountingEventRoutes } from "./accounting-events";
 import { registerContractRoutes }           from "./contracts";
 import { registerContractsAnalyticsRoutes } from "./contracts-analytics";
 import { registerCashierHandoverRoutes }    from "./cashier-handover";
+import { registerSupplierPaymentRoutes }   from "./supplier-payments";
 
 export { broadcastToPharmacy, broadcastBedBoardUpdate } from "./_shared";
 
@@ -59,6 +60,7 @@ export async function registerRoutes(
   registerContractRoutes(app);
   registerContractsAnalyticsRoutes(app);
   registerCashierHandoverRoutes(app);
+  registerSupplierPaymentRoutes(app);
 
   return httpServer;
 }

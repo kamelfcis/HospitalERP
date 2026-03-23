@@ -208,6 +208,52 @@ export type PurchaseInvoiceWithDetails = PurchaseInvoiceHeader & {
   lines?: PurchaseInvoiceLineWithItem[];
 };
 
+// ─── Supplier Payments ──────────────────────────────────────────────────────
+// رأس السداد: كل عملية دفع للمورد (قد تشمل عدة فواتير)
+export const supplierPayments = pgTable("supplier_payments", {
+  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  supplierId:    varchar("supplier_id").notNull().references(() => suppliers.id),
+  paymentDate:   date("payment_date").notNull(),
+  totalAmount:   decimal("total_amount", { precision: 18, scale: 2 }).notNull(),
+  reference:     varchar("reference", { length: 100 }),
+  notes:         text("notes"),
+  paymentMethod: varchar("payment_method", { length: 30 }).notNull().default("bank"),
+  createdBy:     varchar("created_by"),
+  createdAt:     timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  supplierIdx: index("idx_sp_supplier").on(t.supplierId),
+  dateIdx:     index("idx_sp_date").on(t.paymentDate),
+}));
+
+// سطور السداد: توزيع المبلغ على الفواتير
+export const supplierPaymentLines = pgTable("supplier_payment_lines", {
+  id:          varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  paymentId:   varchar("payment_id").notNull().references(() => supplierPayments.id, { onDelete: "cascade" }),
+  invoiceId:   varchar("invoice_id").notNull().references(() => purchaseInvoiceHeaders.id),
+  amountPaid:  decimal("amount_paid", { precision: 18, scale: 2 }).notNull(),
+}, (t) => ({
+  paymentIdx: index("idx_spl_payment").on(t.paymentId),
+  invoiceIdx: index("idx_spl_invoice").on(t.invoiceId),
+}));
+
+// Schemas & Types
+export const insertSupplierPaymentSchema = createInsertSchema(supplierPayments).omit({ id: true, createdAt: true });
+export type InsertSupplierPayment = z.infer<typeof insertSupplierPaymentSchema>;
+export type SupplierPayment = typeof supplierPayments.$inferSelect;
+export type SupplierPaymentLine = typeof supplierPaymentLines.$inferSelect;
+
+// Virtual type for invoice-with-payment-status
+export type SupplierInvoicePaymentRow = {
+  invoiceId:          string;
+  invoiceNumber:      number;
+  supplierInvoiceNo:  string;
+  receivingNumber:    number | null;
+  invoiceDate:        string;
+  netPayable:         string;
+  totalPaid:          string;
+  remaining:          string;
+};
+
 // Labels
 export const receivingStatusLabels: Record<string, string> = {
   draft: "مسودة",
