@@ -3,7 +3,7 @@ import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, ind
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { receivingStatusEnum, purchaseInvoiceStatusEnum, unitLevelEnum } from "./enums";
-import { items, warehouses } from "./inventory";
+import { items, warehouses, inventoryLots } from "./inventory";
 
 export const suppliers = pgTable("suppliers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -254,6 +254,69 @@ export type SupplierInvoicePaymentRow = {
   totalPaid:          string;
   remaining:          string;
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Purchase Returns — مرتجعات المشتريات
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const purchaseReturnHeaders = pgTable("purchase_return_headers", {
+  id:                  varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  returnNumber:        integer("return_number").notNull(),
+  purchaseInvoiceId:   varchar("purchase_invoice_id").notNull().references(() => purchaseInvoiceHeaders.id),
+  supplierId:          varchar("supplier_id").notNull().references(() => suppliers.id),
+  warehouseId:         varchar("warehouse_id").notNull().references(() => warehouses.id),
+  returnDate:          date("return_date").notNull(),
+  subtotal:            decimal("subtotal",   { precision: 18, scale: 2 }).notNull().default("0"),
+  taxTotal:            decimal("tax_total",  { precision: 18, scale: 2 }).notNull().default("0"),
+  grandTotal:          decimal("grand_total",{ precision: 18, scale: 2 }).notNull().default("0"),
+  notes:               text("notes"),
+  createdBy:           varchar("created_by"),
+  journalEntryId:      varchar("journal_entry_id"),
+  journalStatus:       text("journal_status").default("none"),
+  journalError:        text("journal_error"),
+  finalizedAt:         timestamp("finalized_at"),
+  createdAt:           timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  numberIdx:   uniqueIndex("idx_pr_number").on(table.returnNumber),
+  invoiceIdx:  index("idx_pr_invoice").on(table.purchaseInvoiceId),
+  supplierIdx: index("idx_pr_supplier").on(table.supplierId),
+  dateIdx:     index("idx_pr_date").on(table.returnDate),
+}));
+
+export const purchaseReturnLines = pgTable("purchase_return_lines", {
+  id:                    varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  returnId:              varchar("return_id").notNull().references(() => purchaseReturnHeaders.id, { onDelete: "cascade" }),
+  purchaseInvoiceLineId: varchar("purchase_invoice_line_id").notNull().references(() => purchaseInvoiceLines.id),
+  itemId:                varchar("item_id").notNull().references(() => items.id),
+  lotId:                 varchar("lot_id").notNull().references(() => inventoryLots.id),
+  qtyReturned:           decimal("qty_returned", { precision: 18, scale: 4 }).notNull(),
+  unitCost:              decimal("unit_cost",    { precision: 18, scale: 4 }).notNull().default("0"),
+  isFreeItem:            boolean("is_free_item").notNull().default(false),
+  vatRate:               decimal("vat_rate",     { precision: 8,  scale: 4 }).notNull().default("0"),
+  vatAmount:             decimal("vat_amount",   { precision: 18, scale: 2 }).notNull().default("0"),
+  subtotal:              decimal("subtotal",     { precision: 18, scale: 2 }).notNull().default("0"),
+  lineTotal:             decimal("line_total",   { precision: 18, scale: 2 }).notNull().default("0"),
+  createdAt:             timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  returnIdx:      index("idx_prl_return").on(table.returnId),
+  lotIdx:         index("idx_prl_lot").on(table.lotId),
+  invLineIdx:     index("idx_prl_invoice_line").on(table.purchaseInvoiceLineId),
+}));
+
+// Insert schemas
+export const insertPurchaseReturnHeaderSchema = createInsertSchema(purchaseReturnHeaders).omit({
+  id: true, returnNumber: true, createdAt: true, finalizedAt: true,
+  journalEntryId: true, journalStatus: true, journalError: true,
+});
+export const insertPurchaseReturnLineSchema = createInsertSchema(purchaseReturnLines).omit({
+  id: true, createdAt: true,
+});
+
+// Types
+export type PurchaseReturnHeader = typeof purchaseReturnHeaders.$inferSelect;
+export type PurchaseReturnLine   = typeof purchaseReturnLines.$inferSelect;
+export type InsertPurchaseReturnHeader = z.infer<typeof insertPurchaseReturnHeaderSchema>;
+export type InsertPurchaseReturnLine   = z.infer<typeof insertPurchaseReturnLineSchema>;
 
 // Labels
 export const receivingStatusLabels: Record<string, string> = {

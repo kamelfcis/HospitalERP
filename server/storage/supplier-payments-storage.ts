@@ -11,7 +11,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { supplierPayments, supplierPaymentLines } from "@shared/schema/purchasing";
 import type { SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
 
@@ -50,45 +50,57 @@ export interface PaymentReportRow extends SupplierInvoicePaymentRow {
 export async function getSupplierBalance(
   supplierId: string
 ): Promise<SupplierBalanceResult | null> {
-  const res = await db.execute(sql`
-    SELECT
-      s.id                                                               AS supplier_id,
-      s.code,
-      s.name_ar,
-      COALESCE(s.opening_balance, 0)::numeric                           AS opening_balance,
-      COALESCE(inv.total_invoiced, 0)::numeric                          AS total_invoiced,
-      COALESCE(pay.total_paid,    0)::numeric                           AS total_paid,
-      (
-        COALESCE(s.opening_balance, 0)::numeric
-        + COALESCE(inv.total_invoiced, 0)::numeric
-        - COALESCE(pay.total_paid,    0)::numeric
-      )                                                                  AS current_balance
-    FROM suppliers s
-    LEFT JOIN (
-      SELECT supplier_id, SUM(net_payable::numeric) AS total_invoiced
-      FROM   purchase_invoice_headers
-      WHERE  status = 'approved_costed'
-      GROUP  BY supplier_id
-    ) inv ON inv.supplier_id = s.id
-    LEFT JOIN (
-      SELECT sp.supplier_id, SUM(spl.amount_paid::numeric) AS total_paid
-      FROM   supplier_payment_lines spl
-      JOIN   supplier_payments sp ON sp.id = spl.payment_id
-      GROUP  BY sp.supplier_id
-    ) pay ON pay.supplier_id = s.id
-    WHERE s.id = ${supplierId}
-  `);
+  const res = await pool.query<{
+    supplier_id: string; code: string; name_ar: string;
+    opening_balance: string; total_invoiced: string;
+    total_returns: string; total_paid: string; current_balance: string;
+  }>(
+    `SELECT
+       s.id                                                                AS supplier_id,
+       s.code,
+       s.name_ar,
+       COALESCE(s.opening_balance, 0)::numeric                            AS opening_balance,
+       COALESCE(inv.total_invoiced, 0)::numeric                           AS total_invoiced,
+       COALESCE(ret.total_returns,  0)::numeric                           AS total_returns,
+       COALESCE(pay.total_paid,     0)::numeric                           AS total_paid,
+       (
+         COALESCE(s.opening_balance,   0)::numeric
+         + COALESCE(inv.total_invoiced, 0)::numeric
+         - COALESCE(ret.total_returns,  0)::numeric
+         - COALESCE(pay.total_paid,     0)::numeric
+       )                                                                   AS current_balance
+     FROM suppliers s
+     LEFT JOIN (
+       SELECT supplier_id, SUM(net_payable::numeric) AS total_invoiced
+       FROM   purchase_invoice_headers
+       WHERE  status = 'approved_costed'
+       GROUP  BY supplier_id
+     ) inv ON inv.supplier_id = s.id
+     LEFT JOIN (
+       SELECT supplier_id, SUM(grand_total::numeric) AS total_returns
+       FROM   purchase_return_headers
+       WHERE  finalized_at IS NOT NULL
+       GROUP  BY supplier_id
+     ) ret ON ret.supplier_id = s.id
+     LEFT JOIN (
+       SELECT sp.supplier_id, SUM(spl.amount_paid::numeric) AS total_paid
+       FROM   supplier_payment_lines spl
+       JOIN   supplier_payments sp ON sp.id = spl.payment_id
+       GROUP  BY sp.supplier_id
+     ) pay ON pay.supplier_id = s.id
+     WHERE s.id = $1`,
+    [supplierId]
+  );
 
-  const rows = (res as any).rows as any[];
-  if (!rows.length) return null;
-  const r = rows[0];
+  if (!res.rows.length) return null;
+  const r = res.rows[0];
   return {
     supplierId:     r.supplier_id,
     code:           r.code,
     nameAr:         r.name_ar,
     openingBalance: Number(r.opening_balance).toFixed(2),
     totalInvoiced:  Number(r.total_invoiced).toFixed(2),
-    totalReturns:   "0.00",
+    totalReturns:   Number(r.total_returns).toFixed(2),
     totalPaid:      Number(r.total_paid).toFixed(2),
     currentBalance: Number(r.current_balance).toFixed(2),
   };

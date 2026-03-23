@@ -1,0 +1,487 @@
+أريد تنفيذ موديول Purchase Returns (مرتجع مشتريات) في النظام، لكن التنفيذ يجب أن يكون صارم جدًا من ناحية المحاسبة والمخزون والضرائب، مع مراعاة الريفاكتور والكمبوندات وعدم تكرار الكود.
+
+مهم جدًا:
+- لا تبدأ بكتابة كود عشوائي
+- اعمل أولًا تحليل دقيق للوضع الحالي في المشروع
+- ابحث عن أي functions / helpers / compounds / validators / journal builders / inventory movements / tax calculators / shared schemas / shared selectors / reusable UI patterns موجودة بالفعل ويمكن إعادة استخدامها
+- المطلوب هو reuse + refactor-first وليس نسخ ولصق
+- ممنوع تكرار نفس منطق التحقق أو الحساب في أكثر من مكان
+- لو فيه كود جاهز مشابه في sales returns / purchase receiving / inventory issue / supplier payments / journals / taxes استخدمه أو اعمل extraction مشترك
+- أي منطق حساس لازم يكون في shared service/helper واضح وقابل للاختبار
+- أي عملية مالية/مخزنية نهائية لازم تكون atomic داخل transaction
+- قبل أي تنفيذ، اطبع لي Analysis Report واضح ومنظم حسب المراحل أدناه
+- لا تبدأ التنفيذ إلا بعد أن تعرض تقرير التحليل الكامل
+
+==================================================
+القرار الوظيفي النهائي المعتمد
+==================================================
+
+موديول Purchase Return يعمل كالآتي:
+
+1) المستند Final مباشرة
+- لا يوجد Draft
+- عند الحفظ يتم الاعتماد النهائي فورًا
+
+2) مخزن واحد فقط لكل مستند
+- لا يسمح بأكثر من مخزن داخل نفس المرتجع
+
+3) فاتورة الشراء الأصلية إجبارية
+- المستخدم يجب أن يختار Purchase Invoice أصلية
+- لا يسمح بحفظ مرتجع بدون فاتورة شراء مرجعية
+
+4) المورد يُسحب من فاتورة الشراء المختارة
+- لا يسمح باختيار فاتورة تخص مورد مختلف
+- المورد والفاتورة يجب أن يكونا متطابقين دائمًا
+
+5) الأصناف المسموح بإرجاعها
+- فقط الأصناف الموجودة أصلًا داخل فاتورة الشراء المختارة
+- لا يسمح بإضافة صنف غير موجود في الفاتورة
+
+6) التسعير
+- سعر شراء الوحدة في سطر المرتجع يجب أن يكون هو نفس سعر شراء الوحدة من فاتورة الشراء المختارة
+- هذا التحقق يجب أن يكون حاسمًا جدًا
+- لا يتم أخذ سعر الشراء من اللوت
+- اللوت يستخدم فقط لتحديد مصدر الخصم الفعلي من المخزون
+- لو الصنف هدية / free item:
+  - يكون بدون قيمة شراء
+  - unit cost = 0
+  - لكن الضريبة قد تظل موجودة إن كانت موجودة فعليًا وفق تصميم الفاتورة الأصلية
+
+7) اللوت / الباتش
+- المستخدم يختار لوت متاح من نفس المخزن المختار
+- لا يسمح باختيار لوت من مخزن آخر
+- لا يسمح بكمية أكبر من المتاح في اللوت
+- يجب إعادة التحقق وقت الحفظ النهائي داخل transaction
+
+8) الضرائب
+- يجب وجود خانة ضريبة على سطر المرتجع
+- إذا كان السطر المرتجع خاضعًا لضريبة في الفاتورة الأصلية، يجب أن يرجع بالضريبة أيضًا
+- إذا كان السطر هدية وقيمته صفر لكن عليه ضريبة في الأصل، يجب التعامل معه بشكل صحيح وفق بيانات الفاتورة الأصلية
+- لا أريد أي خطأ في حساب الضريبة
+- أريد منطق واضح جدًا: هل الضريبة تُسحب من الفاتورة الأصلية؟ هل تُحسب بالنسبة؟ هل تُخزن amount مباشر؟ وضّح ذلك قبل التنفيذ
+
+9) الحفظ النهائي يجب أن ينفذ:
+- خصم الكمية من inventory lot
+- إنشاء inventory lot movement كحركة out
+- إنشاء GL journal
+- تحديث المستند كـ finalized
+- تحديث supplier payments totalReturns من المرتجعات النهائية فقط
+
+10) القيد المحاسبي
+- القيد الأساسي:
+  Credit Inventory
+  Debit Accounts Payable / Supplier
+- ولو هناك ضريبة مرتجعة، يجب إدراج أثرها بشكل صحيح محاسبيًا حسب تصميم النظام الحالي
+- لا تفترض أي شيء، بل افحص كيف النظام الحالي يتعامل مع Purchase Tax / Input VAT / Supplier balances
+
+==================================================
+المطلوب منك الآن: تنفيذ العمل على مراحل صارمة
+==================================================
+
+========================
+PHASE 0 — Discovery & Analysis Only
+========================
+
+في هذه المرحلة لا تنفذ أي كود.
+اعمل فقط تحليل شامل للمشروع الحالي، ثم اطبع تقرير منظم جدًا بعنوان:
+
+PURCHASE RETURNS DISCOVERY REPORT
+
+ويجب أن يشمل التقرير الآتي:
+
+A) Existing reusable backend logic
+- shared transaction helpers
+- inventory lot decrement logic
+- inventory movement creation logic
+- journal creation logic
+- supplier balance calculation logic
+- tax calculation logic
+- purchase invoice reading logic
+- reusable validators
+- existing returns / receivings / stock issue patterns
+- أي compounds / services / helpers / factories جاهزة
+
+B) Existing reusable frontend patterns
+- combobox patterns
+- line editor patterns
+- tax fields patterns
+- print view patterns
+- totals footer patterns
+- sidebar route registration pattern
+- list/report tab pattern
+
+C) Existing DB structures relevant to this module
+- purchase invoice headers/lines
+- inventory lots
+- lot movements
+- supplier tables
+- payments tables
+- tax fields
+- journal tables
+- audit log tables
+
+D) Risks and gaps
+- ما الموجود وجاهز reuse
+- ما يحتاج refactor/extraction
+- ما هو المفقود ويحتاج بناء جديد
+
+E) Refactor opportunities
+- ما المنطق الذي يجب استخراجه إلى shared service
+- ما الذي يجب عدم نسخه
+- ما الأماكن المتوقع أن يحدث فيها duplication لو لم نعمل refactor
+
+في نهاية Phase 0 اطبع فقط:
+1) الملفات ذات الصلة
+2) ما الذي سيعاد استخدامه
+3) ما الذي سيعاد refactor
+4) ما الذي سيُنشأ جديدًا
+5) أهم 10 مخاطر يجب منعها
+
+ولا تكتب كود بعد.
+
+========================
+PHASE 1 — Design Contract Before Coding
+========================
+
+بعد التحليل، اكتب تصميم نهائي واضح جدًا قبل التنفيذ بعنوان:
+
+PURCHASE RETURNS FINAL DESIGN CONTRACT
+
+ويجب أن يشمل:
+
+1) Header fields
+- return number
+- purchase invoice id
+- supplier id
+- warehouse id
+- return date
+- status
+- subtotal
+- tax total
+- grand total
+- notes
+- created by / finalized by / finalized at
+- journal id / journal status
+- print metadata
+- أي حقول إضافية لازمة
+
+2) Line fields
+- item id
+- lot id
+- warehouse id
+- batch number / lot display metadata
+- qty returned
+- unit cost
+- is free item / is gift
+- taxable flag
+- tax rate / tax amount
+- line subtotal
+- line total
+- source purchase invoice line id إن لزم
+- qty_before / qty_after إن لزم
+- audit metadata
+
+3) Validation rules
+- لا حفظ بدون purchase invoice
+- لا حفظ بدون warehouse
+- لا حفظ بدون lines
+- لا صنف خارج الفاتورة
+- لا lot خارج المخزن
+- لا qty <= 0
+- لا qty أكبر من رصيد اللوت
+- لا qty تجعل إجمالي المرتجع لنفس الفاتورة والصنف يتجاوز كمية الفاتورة
+- unit cost يجب أن يساوي سعر الفاتورة الأصلية بدقة تامة
+- لو gift/free item فـ unit cost = 0
+- tax behavior must match original invoice rules
+- journal failure = full rollback
+- inventory failure = full rollback
+
+4) Tax rules
+أريد تعريفًا قاطعًا جدًا لكيفية حساب الضريبة:
+- هل الضريبة تُقرأ من سطر الفاتورة الأصلية؟
+- هل السطر المرتجع يرث taxable / tax rate / tax method من الفاتورة الأصلية؟
+- كيف يتم التعامل مع هدية بدون قيمة ولكن لها ضريبة؟
+- كيف يتم التعامل مع inclusive vs exclusive tax لو النظام يدعم ذلك؟
+- كيف يتم تخزين tax amount على السطر وعلى الهيدر؟
+- ما الذي يدخل القيد المحاسبي بالضبط؟
+اكتب القرار النهائي بوضوح قبل التنفيذ.
+
+5) Accounting rules
+- القيد الأساسي
+- أثر الضريبة إن وجدت
+- الربط مع supplier subledger
+- متى يعتبر return مؤثرًا في supplier payments
+- current balance impact
+
+6) Audit rules
+- ما الذي يسجل في كل save/finalize
+- من أنشأ
+- ما اللوت
+- ما الكمية
+- ما السعر
+- ما الضريبة
+- ما رقم الفاتورة الأصلية
+- ما رقم القيد
+
+في نهاية Phase 1:
+لا تنفذ كود بعد
+فقط اعرض design contract النهائي
+
+========================
+PHASE 2 — Refactor Plan Before Implementation
+========================
+
+بعد اعتماد التصميم، أريد منك أن تبني خطة refactor واضحة جدًا بعنوان:
+
+PURCHASE RETURNS REFACTOR PLAN
+
+وتشمل:
+
+1) Shared backend extractions
+- helper لاستخراج line pricing from purchase invoice
+- helper للتحقق أن item موجود في الفاتورة
+- helper للتحقق أن price يطابق الفاتورة
+- helper لتحضير taxes from original purchase invoice line
+- helper لتحضير inventory lot validation
+- helper لإنشاء lot movement
+- helper لإنشاء journal lines
+- helper لحساب header totals
+- helper لتحديث supplier returns totals
+
+2) Shared frontend extractions
+- invoice selector compound
+- warehouse selector compound
+- return lines compound
+- lot selector compound
+- totals summary compound
+- print component
+- reusable validation messages
+
+3) Indexing plan
+راجع بعناية الفهارس المطلوبة واقترحها بدقة، خصوصًا على:
+- purchase_return_headers
+- purchase_return_lines
+- purchase_invoice_lines
+- inventory_lots
+- inventory_lot_movements
+- supplier payments queries
+- queries that compute total returns and current balance
+
+4) Performance plan
+- منع N+1 queries
+- أفضل طريقة لجلب invoice lines
+- أفضل طريقة لجلب available lots لنفس المخزن والأصناف
+- أفضل طريقة للتحقق من returned qty history
+
+5) Concurrency plan
+- row locking
+- transaction boundaries
+- preventing negative lot balance
+- double submit prevention
+- idempotency if needed
+
+في نهاية Phase 2:
+لا تنفذ بعد
+اعرض الخطة فقط
+
+========================
+PHASE 3 — Backend Implementation
+========================
+
+بعد إنهاء التحليل والتصميم والريفاكتور بلان، نفّذ الـ backend فقط.
+
+المطلوب في هذه المرحلة:
+
+A) Schema
+أنشئ الجداول والحقول اللازمة فقط بعد مراجعة ما هو موجود أصلًا.
+لا تنشئ حقولًا مكررة لو يوجد ما يكفي.
+راعِ naming consistency مع المشروع الحالي.
+
+B) Storage / services
+نفذ بمنهج shared reusable services وليس functions مكررة داخل routes.
+افصل بوضوح:
+- read services
+- validation services
+- finalize service
+- accounting/tax preparation
+- inventory posting
+- supplier totals integration
+
+C) Strict validations
+أريد validations حاسمة جدًا مع رسائل خطأ واضحة.
+
+D) Final save transaction
+داخل transaction واحدة:
+- validate invoice + supplier + warehouse
+- validate lines
+- validate original invoice quantities
+- validate invoice prices
+- validate tax fields
+- validate lot availability
+- re-check availability with lock
+- decrement lots
+- insert lot movements
+- insert header/lines
+- create journal
+- update status finalized
+- commit only if all succeeded
+
+E) Journal and tax handling
+يجب أن يكون واضحًا جدًا ومرتبطًا بتصميم الضرائب الموجود أصلًا في المشروع.
+لا تبني tax logic منفصل لو هناك logic جاهز.
+استخدم reusable journal builder لو موجود أو اعمل extraction مشترك.
+
+F) Supplier Payments integration
+حدّث totalReturns ليعكس المرتجعات النهائية الفعلية فقط.
+راجع current balance formula بالكامل.
+
+بعد Phase 3 اطبع:
+- الملفات المعدلة
+- الملفات الجديدة
+- ما الذي أعيد استخدامه
+- ما الذي تم refactor له
+- كل validation added
+- كل index added
+- كل risk closed
+
+========================
+PHASE 4 — Frontend Implementation
+========================
+
+نفّذ الواجهة فقط بعد اكتمال backend.
+
+المطلوب:
+
+1) صفحة Purchase Returns واضحة وبسيطة
+2) اختيار Purchase Invoice إجباري أولًا
+3) بعد اختيار الفاتورة:
+- يتم تحديد supplier تلقائيًا
+- تظهر فقط الأصناف الموجودة في الفاتورة
+- يتم جلب سعر الشراء الصحيح من الفاتورة
+- يظهر هل السطر free/gift أم لا
+- تظهر الضريبة وحالتها
+4) اختيار warehouse إجباري
+5) اختيار lot من نفس المخزن فقط
+6) line editor واضح جدًا:
+- item
+- lot
+- available qty
+- invoice unit cost
+- gift flag
+- tax info
+- qty
+- subtotal
+- tax
+- total
+7) لا يوجد draft button
+8) يوجد Final Save فقط
+9) قبل الحفظ النهائي:
+- confirmation summary واضح
+10) بعد الحفظ:
+- print view
+- success message
+- prevent resubmit
+11) history/report tab
+- list finalized returns
+- filter by supplier / invoice / date
+- print support
+
+مهم:
+- reuse compounds and existing design patterns
+- لا تكرر line editor إن كان يوجد شبيه في النظام
+- راعِ consistency مع بقية المشروع
+
+========================
+PHASE 5 — Verification & Hardening
+========================
+
+بعد التنفيذ، أريد مراجعة قاسية جدًا بعنوان:
+
+PURCHASE RETURNS HARDENING REPORT
+
+ويجب أن تشمل:
+
+1) Validation matrix
+- كل rule
+- أين يتم التحقق منها
+- ماذا يحدث لو فشلت
+
+2) Tax verification matrix
+- regular item taxable
+- regular item non-taxable
+- free item taxable
+- free item non-taxable
+- mixed invoice
+- partial return
+- rounding cases
+
+3) Pricing verification matrix
+- هل unit cost دائمًا من الفاتورة؟
+- هل يمكن أن يتسرب سعر من lot بدل invoice؟
+- هل free item = 0 دائمًا؟
+- هل تمنع mismatch تمامًا؟
+
+4) Inventory verification matrix
+- lot from wrong warehouse
+- insufficient qty
+- concurrent finalize
+- deleted/blocked lot
+- multiple lots for same item
+
+5) Accounting verification matrix
+- no tax
+- with tax
+- free item with tax
+- mixed lines
+- supplier balance impact
+- journal failure rollback
+
+6) Refactor verification
+- ما الذي تم توحيده
+- ما الذي لم يعد مكررًا
+- ما reusable helpers/components التي أُنشئت
+- أين تم تقليل duplication فعلًا
+
+7) Open issues
+- أي شيء غير محسوم
+- أي assumption
+- أي شيء يحتاج قرار مني
+
+==================================================
+قواعد صارمة جدًا أثناء التنفيذ
+==================================================
+
+- لا تكرر code business logic في route + storage + frontend
+- أي منطق pricing / tax / validation / totals يجب أن يكون shared وواضح
+- أي field مالي يجب أن يكون محسوبًا بدقة decimal صحيحة
+- انتبه جدًا لـ rounding
+- راجع minor units / quantity precision
+- لا تستخدم سعر lot بدل سعر invoice
+- لا تسمح لأي سطر أن يخرج عن الفاتورة الأصلية
+- لا تسمح لأي سطر free item أن يأخذ unit cost غير صفر
+- لا تسمح بحساب ضريبة بشكل مرتجل
+- لا تسمح بحفظ finalized return إذا فشل القيد أو فشل lot posting
+- لا تسمح current balance أن يتحدث من مستندات غير نهائية
+- لا تنس الفهرسة
+- لا تنس audit log
+- لا تنس print data completeness
+- افحص ما إذا كان هناك compound أو helper جاهز قبل كتابة أي كود جديد
+- أي تكرار تراه استخرجه إلى shared reusable function/component/service
+
+==================================================
+شكل الرد المطلوب منك في كل مرحلة
+==================================================
+
+في كل مرحلة التزم بما يلي:
+1) What I inspected
+2) What I found
+3) What I will reuse
+4) What I will refactor
+5) What I will build new
+6) Risks
+7) Decision
+
+ولا تقفز مباشرة للكود قبل إنهاء المراحل السابقة.
+
+ابدأ الآن فقط بـ PHASE 0 — Discovery & Analysis Only
+ولا تنفذ أي كود بعد.

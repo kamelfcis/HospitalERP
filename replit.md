@@ -33,6 +33,7 @@ The system utilizes a RESTful JSON API. Drizzle ORM manages PostgreSQL interacti
 -   **Customer Credit Payments Module**: Manages customer credit, including `customerId` handling for credit-type customers, restoration of `customerId` on invoice load, and integration into cashier handover summaries.
 -   **Supplier Payments Module**: Manages supplier payments with dedicated database schemas, backend storage for balances and invoices, routes for payment creation and reporting, and a comprehensive frontend for payment processing and GL journal integration.
 -   **Sales Return Accounting**: Implements a two-stage journal entry system for sales returns, integrating with inventory movements and cashier refunds, with visual journal preview in account mapping.
+-   **Purchase Returns Module (مرتجع مشتريات)**: Full module for returning purchased items to suppliers. Features: invoice-linked returns (`purchase_return_headers` + `purchase_return_lines`), free lot selection from the invoice's warehouse, atomic lot decrement with `inventory_lot_movements (tx_type='out', reference_type='purchase_return')`, GL journal reversal (Dr AP / Cr Inventory + Cr VAT Input) reusing `purchase_invoice` account mappings, and live `totalReturns` in the Supplier Payments balance strip. UI: two-tab page (create + history), supplier combobox, invoice selector, line editor with lot selector, confirmation dialog, print view. Route: `/purchase-returns`.
 
 ## External Dependencies
 
