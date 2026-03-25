@@ -78,7 +78,7 @@ export default function SalesInvoices() {
   const form           = useInvoiceForm(today);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
-  const linesHook = useInvoiceLines(form.warehouseId, form.invoiceDate, barcodeInputRef);
+  const linesHook = useInvoiceLines(form.warehouseId, form.invoiceDate);
   const { lines, setLines } = linesHook;
 
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.lineTotal, 0), [lines]);
