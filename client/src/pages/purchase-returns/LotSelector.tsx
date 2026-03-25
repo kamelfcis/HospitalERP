@@ -5,15 +5,16 @@ import type { AvailableLot } from "./types";
 interface Props {
   itemId: string;
   warehouseId: string;
+  isFreeItem: boolean;
   value: string;
   onChange: (v: string) => void;
 }
 
-export function LotSelector({ itemId, warehouseId, value, onChange }: Props) {
+export function LotSelector({ itemId, warehouseId, isFreeItem, value, onChange }: Props) {
   const { data: lots = [], isLoading } = useQuery<AvailableLot[]>({
-    queryKey: ["/api/purchase-returns/lots", itemId, warehouseId],
+    queryKey: ["/api/purchase-returns/lots", itemId, warehouseId, isFreeItem],
     queryFn: () =>
-      fetch(`/api/purchase-returns/lots?itemId=${itemId}&warehouseId=${warehouseId}`)
+      fetch(`/api/purchase-returns/lots?itemId=${itemId}&warehouseId=${warehouseId}&isFreeItem=${isFreeItem}`)
         .then(r => r.json()),
     enabled: !!(itemId && warehouseId),
   });

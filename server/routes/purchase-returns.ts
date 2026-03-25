@@ -45,11 +45,11 @@ export function registerPurchaseReturnRoutes(app: Express) {
   // ?itemId=xxx&warehouseId=xxx
   app.get("/api/purchase-returns/lots", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { itemId, warehouseId } = req.query as Record<string, string>;
+      const { itemId, warehouseId, isFreeItem } = req.query as Record<string, string>;
       if (!itemId || !warehouseId) {
         return res.status(400).json({ message: "itemId و warehouseId مطلوبان." });
       }
-      const lots = await getAvailableLots(itemId, warehouseId);
+      const lots = await getAvailableLots(itemId, warehouseId, isFreeItem === "true");
       res.json(lots);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

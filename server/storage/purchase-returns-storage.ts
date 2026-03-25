@@ -191,8 +191,19 @@ export async function getPurchaseInvoiceLinesForReturn(invoiceId: string): Promi
 }
 
 // ─── getAvailableLots ─────────────────────────────────────────────────────────
-// Returns lots with available qty > 0 for a given item + warehouse
-export async function getAvailableLots(itemId: string, warehouseId: string): Promise<AvailableLot[]> {
+// Returns lots with available qty > 0 for a given item + warehouse.
+// isFreeItem = true  → only lots with purchase_price = 0 (bonus/gift lots)
+// isFreeItem = false → only lots with purchase_price > 0 (paid lots)
+// This prevents selecting a bonus lot for a paid invoice line and vice-versa.
+export async function getAvailableLots(
+  itemId: string,
+  warehouseId: string,
+  isFreeItem: boolean = false,
+): Promise<AvailableLot[]> {
+  const priceFilter = isFreeItem
+    ? `AND purchase_price = 0`
+    : `AND purchase_price > 0`;
+
   const res = await pool.query<{
     id: string; warehouse_id: string; expiry_date: string | null;
     expiry_month: number | null; expiry_year: number | null;
@@ -201,10 +212,11 @@ export async function getAvailableLots(itemId: string, warehouseId: string): Pro
     `SELECT id, warehouse_id, expiry_date, expiry_month, expiry_year,
             purchase_price, qty_in_minor
      FROM inventory_lots
-     WHERE item_id   = $1
+     WHERE item_id      = $1
        AND warehouse_id = $2
        AND qty_in_minor > 0
-       AND is_active = true
+       AND is_active    = true
+       ${priceFilter}
      ORDER BY expiry_date ASC NULLS LAST, created_at ASC`,
     [itemId, warehouseId]
   );
@@ -326,6 +338,22 @@ async function validateAndEnrichLines(
       throw new Error(
         `اللوت للصنف "${invLine.itemNameAr}": الكمية المتاحة (${lotQty.toFixed(4)}) ` +
         `أقل من الكمية المطلوبة (${line.qtyReturned.toFixed(4)}).`
+      );
+    }
+
+    // Guard: prevent selecting a bonus/free lot for a paid invoice line and vice-versa
+    const lotPurchasePrice = parseMoney(lot.purchasePrice as string);
+    const invLineIsFree    = parseMoney(invLine.purchasePrice) === 0;
+    if (invLineIsFree && lotPurchasePrice > 0) {
+      throw new Error(
+        `الصنف "${invLine.itemNameAr}": سطر الفاتورة مجاني (هدية) ` +
+        `ولكن اللوت المختار له سعر شراء — يجب اختيار لوت مجاني.`
+      );
+    }
+    if (!invLineIsFree && lotPurchasePrice === 0) {
+      throw new Error(
+        `الصنف "${invLine.itemNameAr}": سطر الفاتورة مدفوع ` +
+        `ولكن اللوت المختار مجاني (بونص) — يجب اختيار لوت مدفوع.`
       );
     }
 

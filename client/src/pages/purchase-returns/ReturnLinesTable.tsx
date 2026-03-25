@@ -95,11 +95,12 @@ const ReturnLineRow = memo(function ReturnLineRow({
         )}
       </td>
 
-      {/* Lot selector */}
+      {/* Lot selector — shows paid lots for paid lines, free lots for free lines */}
       <td className="p-2">
         <LotSelector
           itemId={line.itemId}
           warehouseId={warehouseId}
+          isFreeItem={line.isFreeItem}
           value={line.lotId}
           onChange={v => updateLine(idx, { lotId: v })}
         />
