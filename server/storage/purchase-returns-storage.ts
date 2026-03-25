@@ -858,7 +858,8 @@ export async function getPurchaseReturnById(id: string): Promise<PurchaseReturnW
     createdAt:       new Date(),
     supplierNameAr:  h.supplier_name,
     warehouseNameAr: h.warehouse_name,
-    invoiceNumber:   h.invoice_number,
+    invoiceNumber:      h.invoice_number,
+    supplierInvoiceNo:  h.supplier_invoice_no || null,
     lines: linesRes.rows.map(l => ({
       id:                    l.id,
       purchaseInvoiceLineId: l.purchase_invoice_line_id,
