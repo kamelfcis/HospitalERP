@@ -88,15 +88,16 @@ export function registerPurchaseReturnRoutes(app: Express) {
   });
 
   // ── GET /api/purchase-returns ─────────────────────────────────────────────
-  // ?supplierId=&purchaseInvoiceId=&fromDate=&toDate=&page=&pageSize=
+  // ?supplierId=&purchaseInvoiceId=&fromDate=&toDate=&search=&page=&pageSize=
   app.get("/api/purchase-returns", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { supplierId, purchaseInvoiceId, fromDate, toDate, page, pageSize } = req.query as Record<string, string>;
+      const { supplierId, purchaseInvoiceId, fromDate, toDate, search, page, pageSize } = req.query as Record<string, string>;
       const result = await listPurchaseReturns({
         supplierId,
         purchaseInvoiceId,
         fromDate,
         toDate,
+        search,
         page:     page     ? parseInt(page,     10) : 1,
         pageSize: pageSize ? parseInt(pageSize, 10) : 50,
       });

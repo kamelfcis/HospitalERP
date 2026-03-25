@@ -87,10 +87,11 @@ export interface ReturnLineDisplay {
 }
 
 export interface PurchaseReturnWithDetails extends PurchaseReturnHeader {
-  invoiceNumber:   number;
-  supplierNameAr:  string;
-  warehouseNameAr: string;
-  lines:           ReturnLineDisplay[];
+  invoiceNumber:     number;
+  supplierNameAr:    string;
+  warehouseNameAr:   string;
+  supplierInvoiceNo: string | null;
+  lines:             ReturnLineDisplay[];
 }
 
 export interface AvailableLot {
@@ -707,6 +708,7 @@ export async function listPurchaseReturns(params: {
   purchaseInvoiceId?: string;
   fromDate?:          string;
   toDate?:            string;
+  search?:            string;
   page?:              number;
   pageSize?:          number;
 }) {
@@ -714,7 +716,7 @@ export async function listPurchaseReturns(params: {
   const offset = (page - 1) * pageSize;
 
   const conditions: string[] = ["prh.finalized_at IS NOT NULL"];
-  const args: string[] = [];
+  const args: (string | number)[] = [];
   let idx = 1;
 
   if (params.supplierId) {
@@ -732,6 +734,13 @@ export async function listPurchaseReturns(params: {
   if (params.toDate) {
     conditions.push(`prh.return_date <= $${idx++}`);
     args.push(params.toDate);
+  }
+  if (params.search?.trim()) {
+    const p = idx++;
+    conditions.push(
+      `(s.name_ar ILIKE $${p} OR pih.supplier_invoice_no ILIKE $${p} OR pih.invoice_number::text ILIKE $${p})`
+    );
+    args.push(`%${params.search.trim()}%`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

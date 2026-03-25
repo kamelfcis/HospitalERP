@@ -59,7 +59,10 @@ export function PrintContent({ ret }: Props) {
           </tr>
         </tfoot>
       </table>
-      {ret.notes && <p><strong>ملاحظات:</strong> {ret.notes}</p>}
+      <div className="mt-3 border-t pt-2">
+        <strong>ملاحظات: </strong>
+        <span>{ret.notes || "—"}</span>
+      </div>
     </div>
   );
 }
