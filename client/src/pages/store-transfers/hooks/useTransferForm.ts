@@ -161,13 +161,23 @@ export function useTransferForm() {
           setFormLines((prev) =>
             prev.map((ln) => {
               const opts = optsByItem[ln.itemId] || [];
+              // مجموع الرصيد الكلي من كل الدفعات المتاحة في مخزن المصدر
+              const totalAvailMinor = opts.reduce(
+                (sum, o) => sum + (parseFloat(o.qtyAvailableMinor) || 0),
+                0,
+              );
+              let updated = { ...ln };
+              // تحديث الرصيد المتاح بالرصيد الفعلي الحالي (للمسودة التي لم تُنفَّذ)
+              if (totalAvailMinor > 0) {
+                updated.availableQtyMinor = String(totalAvailMinor);
+              }
               if (ln.selectedExpiryMonth && ln.selectedExpiryYear) {
                 const match = opts.find(
                   (o) => o.expiryMonth === ln.selectedExpiryMonth && o.expiryYear === ln.selectedExpiryYear
                 );
-                if (match?.lotSalePrice) return { ...ln, lotSalePrice: match.lotSalePrice };
+                if (match?.lotSalePrice) updated = { ...updated, lotSalePrice: match.lotSalePrice };
               }
-              return ln;
+              return updated;
             })
           );
 
