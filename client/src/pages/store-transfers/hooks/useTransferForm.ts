@@ -206,7 +206,7 @@ export function useTransferForm() {
         selectedExpiryDate: batch?.expiryDate || null,
         selectedExpiryMonth: batch?.expiryMonth ?? null,
         selectedExpiryYear: batch?.expiryYear ?? null,
-        availableQtyMinor: batch?.qtyAvailableMinor || item.availableQtyMinor || "0",
+        availableQtyMinor: item.availableQtyMinor || "0",
         notes: "",
         fefoLocked: !!batch || !item.hasExpiry,
         lotSalePrice: batch?.lotSalePrice,

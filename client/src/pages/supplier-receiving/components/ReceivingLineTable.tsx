@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ExpiryInput } from "@/components/ui/expiry-input";
 import type { ReceivingLineLocal, LineError } from "../types";
 import { getUnitName } from "../types";
+import { formatAvailability } from "@/lib/invoice-lines";
 
 // ── أعمدة التنقل (بالترتيب من اليمين في RTL) ─────────────────────────────
 const NAV_QTY      = 0;
@@ -430,9 +431,9 @@ function LineRow({
       <td className="py-0.5 px-1 whitespace-nowrap text-muted-foreground font-mono text-[10px]">
         {line.lastSalePriceHint != null ? line.lastSalePriceHint.toFixed(2) : "—"}
       </td>
-      <td className="py-0.5 px-1 whitespace-nowrap text-muted-foreground font-mono text-[10px] max-w-[60px] truncate"
-          title={line.onHandInWarehouse}>
-        {line.onHandInWarehouse}
+      <td className="py-0.5 px-1 whitespace-nowrap text-muted-foreground font-mono text-[11px] max-w-[80px] truncate"
+          title={formatAvailability(line.onHandInWarehouse, line.unitLevel, line.item)}>
+        {formatAvailability(line.onHandInWarehouse, line.unitLevel, line.item)}
       </td>
 
       {/* إحصاء */}

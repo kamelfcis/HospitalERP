@@ -170,7 +170,7 @@ function ItemCombobox({ value, displayName, onChange }: ItemComboboxProps) {
       >
         <Package className="h-4 w-4 text-muted-foreground shrink-0" />
         {value ? (
-          <span className="flex-1 text-sm truncate">{displayName}</span>
+          <span className="flex-1 text-sm font-semibold text-foreground truncate">{displayName}</span>
         ) : (
           <span className="flex-1 text-sm text-muted-foreground">اختر صنفاً...</span>
         )}
