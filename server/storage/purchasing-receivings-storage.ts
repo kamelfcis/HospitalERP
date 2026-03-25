@@ -12,7 +12,7 @@
  */
 
 import { db } from "../db";
-import { eq, desc, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull } from "drizzle-orm";
+import { eq, desc, and, gte, lte, gt, sql, or, ilike, asc, isNull, isNotNull } from "drizzle-orm";
 import { logAcctEvent } from "../lib/accounting-event-logger";
 import { logger } from "../lib/logger";
 import {
@@ -533,8 +533,24 @@ const methods = {
   },
 
   async getItemHints(this: DatabaseStorage, itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }> {
-    const lastReceivingLine = await db.select({
+    // ─── آخر سعر شراء حقيقي (غير صفري) من آخر استلام ───────────────────────
+    // نبحث عن آخر سطر استلام به سعر شراء > 0 لتجنب إرجاع سعر أصناف الهدايا/البونص
+    const [lastPricedLine] = await db.select({
       purchasePrice: receivingLines.purchasePrice,
+    })
+    .from(receivingLines)
+    .innerJoin(receivingHeaders, eq(receivingLines.receivingId, receivingHeaders.id))
+    .where(and(
+      eq(receivingLines.itemId, itemId),
+      or(eq(receivingHeaders.status, 'posted'), eq(receivingHeaders.status, 'posted_qty_only')),
+      eq(receivingLines.isRejected, false),
+      gt(receivingLines.purchasePrice, sql`0`),
+    ))
+    .orderBy(desc(receivingHeaders.postedAt))
+    .limit(1);
+
+    // ─── آخر سعر بيع من آخر استلام (بصرف النظر عن سعر الشراء) ──────────────
+    const [lastSaleLine] = await db.select({
       salePrice: receivingLines.salePrice,
       salePriceHint: receivingLines.salePriceHint,
     })
@@ -547,9 +563,9 @@ const methods = {
     ))
     .orderBy(desc(receivingHeaders.postedAt))
     .limit(1);
-    
+
     const [item] = await db.select().from(items).where(eq(items.id, itemId));
-    
+
     let onHandMinor = "0";
     if (warehouseId) {
       const [onHandResult] = await db.select({
@@ -561,11 +577,15 @@ const methods = {
       ));
       onHandMinor = onHandResult?.total || "0";
     }
-    
-    const lastLine = lastReceivingLine[0];
+
+    // آخر سعر شراء: من آخر استلام غير صفري → ثم من حقل الصنف كاحتياط
+    const lastPurchasePrice =
+      lastPricedLine?.purchasePrice ||
+      (item?.purchasePriceLast && parseFloat(item.purchasePriceLast) > 0 ? item.purchasePriceLast : null);
+
     return {
-      lastPurchasePrice: lastLine?.purchasePrice || item?.purchasePriceLast || null,
-      lastSalePrice: lastLine?.salePrice || lastLine?.salePriceHint || null,
+      lastPurchasePrice: lastPurchasePrice ?? null,
+      lastSalePrice: lastSaleLine?.salePrice || lastSaleLine?.salePriceHint || null,
       currentSalePrice: item?.salePriceCurrent || "0",
       onHandMinor,
     };
