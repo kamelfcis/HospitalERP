@@ -4,23 +4,25 @@ import { HistoryTab } from "./HistoryTab";
 
 export default function PurchaseReturnsPage() {
   return (
-    <div className="p-6 space-y-4 min-h-screen" dir="rtl">
-      <div>
-        <h1 className="text-2xl font-bold">مرتجعات المشتريات</h1>
-        <p className="text-muted-foreground text-sm">إرجاع أصناف للموردين مع خصم المخزون وتسوية الذمم</p>
-      </div>
-
+    <div className="p-4 space-y-3 min-h-screen" dir="rtl">
       <Tabs defaultValue="create">
-        <TabsList>
-          <TabsTrigger value="create" data-testid="tab-create">إنشاء مرتجع</TabsTrigger>
-          <TabsTrigger value="history" data-testid="tab-history">سجل المرتجعات</TabsTrigger>
-        </TabsList>
+        {/* Header + tabs on the same row */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold leading-tight">مرتجعات المشتريات</h1>
+            <p className="text-muted-foreground text-xs">إرجاع أصناف للموردين مع خصم المخزون وتسوية الذمم</p>
+          </div>
+          <TabsList>
+            <TabsTrigger value="create" data-testid="tab-create">إنشاء مرتجع</TabsTrigger>
+            <TabsTrigger value="history" data-testid="tab-history">سجل المرتجعات</TabsTrigger>
+          </TabsList>
+        </div>
 
-        <TabsContent value="create" className="mt-4">
+        <TabsContent value="create" className="mt-2">
           <CreateReturnTab />
         </TabsContent>
 
-        <TabsContent value="history" className="mt-4">
+        <TabsContent value="history" className="mt-2">
           <HistoryTab />
         </TabsContent>
       </Tabs>

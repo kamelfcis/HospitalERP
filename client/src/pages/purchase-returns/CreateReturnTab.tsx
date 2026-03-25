@@ -180,7 +180,7 @@ export function CreateReturnTab() {
   const selectedInvoice = invoices.find(i => i.id === invoiceId);
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-2" dir="rtl">
 
       {/* Success banner */}
       {successId && (
@@ -288,15 +288,15 @@ export function CreateReturnTab() {
       {/* ── Step 2: Lines ── */}
       {invoiceId && (
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="py-2 px-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">٢. أصناف المرتجع</CardTitle>
+              <CardTitle className="text-sm">٢. أصناف المرتجع</CardTitle>
               <div className="text-xs text-muted-foreground">
-                أدخل الكمية المرتجعة واختر اللوت لكل صنف تريد إرجاعه
+                أدخل الكمية المرتجعة واختر اللوت — الهدية تُحسب ضريبة فقط
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <ReturnLinesTable
               lines={lines}
               warehouseId={warehouseId}

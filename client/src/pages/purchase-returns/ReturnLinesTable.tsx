@@ -9,13 +9,7 @@ import { cn } from "@/lib/utils";
 import { LotSelector } from "./LotSelector";
 import type { ReturnLineEntry } from "./types";
 
-// ─── Memoized row — only re-renders when THIS row's data changes ────────────
-//
-// Why memo works here:
-//  • `line` ref changes ONLY for the row being edited (updateLine spreads a new obj)
-//  • `updateLine` / `handleNavKey` are useCallback with no deps (stable)
-//  • `warehouseId` is a string primitive
-//  → all other rows skip re-render entirely when the user types in one row
+// ─── Memoized row ─────────────────────────────────────────────────────────────
 
 interface RowProps {
   line: ReturnLineEntry;
@@ -28,51 +22,42 @@ interface RowProps {
 const ReturnLineRow = memo(function ReturnLineRow({
   line, idx, warehouseId, handleNavKey, updateLine,
 }: RowProps) {
-  const hasQty  = parseFloat(line.qtyReturned) > 0;
-  const isValid = hasQty && !!line.lotId;
+  const hasQty      = parseFloat(line.qtyReturned) > 0;
+  const hasBonusQty = parseFloat(line.invoiceBonusQty) > 0;
+  const isValid     = hasQty && !!line.lotId;
 
   return (
-    <tr className={cn("border-b", isValid ? "bg-green-50/30 dark:bg-green-950/10" : "")}>
-      <td className="p-2">
-        <div className="font-medium">{line.itemNameAr}</div>
+    <tr className={cn("border-b hover:bg-muted/20", isValid ? "bg-green-50/30 dark:bg-green-950/10" : "")}>
+
+      {/* الصنف */}
+      <td className="p-1.5">
+        <div className="font-medium text-xs leading-tight">{line.itemNameAr}</div>
         <div className="text-muted-foreground text-[10px]">{line.itemCode}</div>
         {line.isFreeItem && (
-          <Badge variant="outline" className="text-[10px] mt-0.5">هدية</Badge>
-        )}
-      </td>
-      <td className="p-2 text-center">{parseFloat(line.invoiceQty).toFixed(2)}</td>
-
-      {/* Bonus qty returned */}
-      <td className="p-2 text-center">
-        {parseFloat(line.invoiceBonusQty) > 0 ? (
-          <Input
-            type="number"
-            min="0"
-            max={parseFloat(line.invoiceBonusQty)}
-            step="0.01"
-            value={line.bonusQtyReturned}
-            onChange={e => updateLine(idx, { bonusQtyReturned: e.target.value })}
-            onKeyDown={e => handleNavKey(e, idx, 0)}
-            className="h-7 text-xs text-center px-1 w-full"
-            placeholder="0"
-            data-testid={`bonus-qty-${line.purchaseInvoiceLineId}`}
-            data-nav-row={idx}
-            data-nav-col={0}
-          />
-        ) : (
-          <span className="text-muted-foreground text-[10px]">—</span>
+          <Badge variant="outline" className="text-[10px] mt-0.5 h-4 px-1">هدية</Badge>
         )}
       </td>
 
-      {/* Purchase price */}
-      <td className="p-2 text-center">
+      {/* كمية الفاتورة */}
+      <td className="p-1.5 text-center text-xs">{parseFloat(line.invoiceQty).toFixed(2)}</td>
+
+      {/* هدية الفاتورة — read-only info */}
+      <td className="p-1.5 text-center text-xs">
+        {hasBonusQty
+          ? <span className="font-medium text-amber-600">{parseFloat(line.invoiceBonusQty).toFixed(2)}</span>
+          : <span className="text-muted-foreground">—</span>
+        }
+      </td>
+
+      {/* سعر الشراء */}
+      <td className="p-1.5 text-center text-xs">
         {line.isFreeItem
           ? <span className="text-muted-foreground">—</span>
           : formatCurrency(line.purchasePrice)}
       </td>
 
-      {/* VAT rate */}
-      <td className="p-2 text-center">
+      {/* ض.ق.م% */}
+      <td className="p-1.5 text-center">
         {line.isFreeItem ? (
           <span className="text-muted-foreground text-xs">—</span>
         ) : (
@@ -85,18 +70,18 @@ const ReturnLineRow = memo(function ReturnLineRow({
               value={line.vatRate}
               onChange={e => updateLine(idx, { vatRate: e.target.value })}
               onKeyDown={e => handleNavKey(e, idx, 1)}
-              className="h-7 w-14 text-xs text-center px-1"
+              className="h-7 w-12 text-xs text-center px-1"
               data-testid={`vat-rate-${line.purchaseInvoiceLineId}`}
               data-nav-row={idx}
               data-nav-col={1}
             />
-            <span className="text-xs text-muted-foreground">%</span>
+            <span className="text-[10px] text-muted-foreground">%</span>
           </div>
         )}
       </td>
 
-      {/* Lot selector — isFreeItem from server invoice line data (purchasePrice===0) */}
-      <td className="p-2">
+      {/* اللوت */}
+      <td className="p-1.5">
         <LotSelector
           itemId={line.itemId}
           warehouseId={warehouseId}
@@ -106,8 +91,8 @@ const ReturnLineRow = memo(function ReturnLineRow({
         />
       </td>
 
-      {/* Qty returned */}
-      <td className="p-2">
+      {/* كمية المرتجع */}
+      <td className="p-1.5">
         <Input
           type="number"
           min="0"
@@ -129,13 +114,38 @@ const ReturnLineRow = memo(function ReturnLineRow({
         )}
       </td>
 
-      <td className="p-2 text-center font-mono">
+      {/* هدية المرتجع — editable, only if invoice has bonus qty */}
+      <td className="p-1.5 text-center">
+        {hasBonusQty ? (
+          <Input
+            type="number"
+            min="0"
+            max={parseFloat(line.invoiceBonusQty)}
+            step="0.01"
+            value={line.bonusQtyReturned}
+            onChange={e => updateLine(idx, { bonusQtyReturned: e.target.value })}
+            onKeyDown={e => handleNavKey(e, idx, 0)}
+            className="h-7 text-xs text-center px-1 w-full"
+            placeholder="0"
+            data-testid={`bonus-qty-${line.purchaseInvoiceLineId}`}
+            data-nav-row={idx}
+            data-nav-col={0}
+          />
+        ) : (
+          <span className="text-muted-foreground text-[10px]">—</span>
+        )}
+      </td>
+
+      {/* قبل الضريبة */}
+      <td className="p-1.5 text-center font-mono text-xs">
         {line.subtotal  > 0 ? formatCurrency(line.subtotal)  : "—"}
       </td>
-      <td className="p-2 text-center font-mono">
+      {/* ض.ق.م */}
+      <td className="p-1.5 text-center font-mono text-xs">
         {line.vatAmount > 0 ? formatCurrency(line.vatAmount) : "—"}
       </td>
-      <td className="p-2 text-center font-mono font-medium">
+      {/* الصافي */}
+      <td className="p-1.5 text-center font-mono text-xs font-medium">
         {line.lineTotal > 0 ? formatCurrency(line.lineTotal) : "—"}
       </td>
     </tr>
@@ -164,10 +174,10 @@ export function ReturnLinesTable({ lines, warehouseId, loadingLines, handleNavKe
     <div className="rounded-lg border overflow-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className="bg-muted/50 border-b">
-            <th className="text-right p-2 min-w-[160px]">الصنف</th>
-            <th className="text-center p-2 w-[75px]">كمية الفاتورة</th>
-            <th className="text-center p-2 w-[65px]">
+          <tr className="bg-muted/50 border-b text-[11px]">
+            <th className="text-right p-1.5 min-w-[150px]">الصنف</th>
+            <th className="text-center p-1.5 w-[65px]">كمية الفات.</th>
+            <th className="text-center p-1.5 w-[55px]">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -175,14 +185,14 @@ export function ReturnLinesTable({ lines, warehouseId, loadingLines, handleNavKe
                       هدية <Info className="h-3 w-3 text-muted-foreground" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[220px] text-center text-xs">
-                    كمية البونص المرتجع — تؤثر على وعاء الضريبة فقط، لا على المبلغ الأساسي
+                  <TooltipContent side="top" className="max-w-[200px] text-center text-xs">
+                    كمية الهدية في فاتورة الشراء — للاستئناس فقط
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </th>
-            <th className="text-center p-2 w-[85px]">سعر الشراء</th>
-            <th className="text-center p-2 w-[60px]">
+            <th className="text-center p-1.5 w-[80px]">سعر الشراء</th>
+            <th className="text-center p-1.5 w-[58px]">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -191,16 +201,30 @@ export function ReturnLinesTable({ lines, warehouseId, loadingLines, handleNavKe
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[220px] text-center text-xs">
-                    نسبة الضريبة مستوردة تلقائياً من الفاتورة الأصلية — يمكن تعديلها لتصحيح أخطاء الإدخال
+                    نسبة الضريبة مستوردة من الفاتورة — يمكن تعديلها
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </th>
-            <th className="text-right p-2 min-w-[210px]">اللوت</th>
-            <th className="text-center p-2 w-[95px]">كمية المرتجع</th>
-            <th className="text-center p-2 w-[85px]">قبل الضريبة</th>
-            <th className="text-center p-2 w-[70px]">ض.ق.م</th>
-            <th className="text-center p-2 w-[85px]">الصافي</th>
+            <th className="text-right p-1.5 min-w-[160px]">اللوت</th>
+            <th className="text-center p-1.5 w-[80px]">كمية المرتجع</th>
+            <th className="text-center p-1.5 w-[70px]">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex items-center justify-center gap-1 cursor-help text-amber-600">
+                      هدية مرتجع <Info className="h-3 w-3" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[220px] text-center text-xs">
+                    كمية الهدية المرتجعة — تُحسب عليها ضريبة فقط، بدون تكلفة شراء
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </th>
+            <th className="text-center p-1.5 w-[80px]">قبل الضريبة</th>
+            <th className="text-center p-1.5 w-[65px]">ض.ق.م</th>
+            <th className="text-center p-1.5 w-[80px]">الصافي</th>
           </tr>
         </thead>
         <tbody>
