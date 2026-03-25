@@ -166,6 +166,28 @@ async function resolvePricing(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// مساعد: يُعيد إدراج سطور FEFO في نفس موضع الصنف الأصلي
+// ─────────────────────────────────────────────────────────────────────────────
+function spliceItemLines(
+  prev: SalesLineLocal[],
+  itemId: string,
+  newLines: SalesLineLocal[],
+): SalesLineLocal[] {
+  const insertAt      = prev.findIndex((l) => l.itemId === itemId);
+  const withoutItem   = prev.filter((l) => l.itemId !== itemId);
+  if (insertAt < 0) {
+    return [...withoutItem, ...newLines];
+  }
+  // كم صنف (من أصناف أخرى) يسبق أول ظهور لهذا الصنف في القائمة المفلترة؟
+  const posInFiltered = prev.slice(0, insertAt).filter((l) => l.itemId !== itemId).length;
+  return [
+    ...withoutItem.slice(0, posInFiltered),
+    ...newLines,
+    ...withoutItem.slice(posInFiltered),
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // الـ Hook الرئيسي
 // ─────────────────────────────────────────────────────────────────────────────
 export function useInvoiceLines(
@@ -271,10 +293,7 @@ export function useInvoiceLines(
           return;
         }
 
-        setLines((prev) => [
-          ...prev.filter((l) => l.itemId !== itemData.id),
-          ...(result.lines ?? []),
-        ]);
+        setLines((prev) => spliceItemLines(prev, itemData.id, result.lines ?? []));
       } catch (err: unknown) {
         toast({ title: "خطأ في توزيع الصلاحية", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
       } finally {
@@ -369,10 +388,7 @@ export function useInvoiceLines(
           return;
         }
 
-        setLines((prev) => [
-          ...prev.filter((l) => l.itemId !== line.itemId),
-          ...(result.lines ?? []),
-        ]);
+        setLines((prev) => spliceItemLines(prev, line.itemId, result.lines ?? []));
       } catch (err: unknown) {
         toast({ title: "خطأ في توزيع الصلاحية", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
       } finally {
