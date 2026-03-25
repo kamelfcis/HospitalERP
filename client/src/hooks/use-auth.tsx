@@ -11,6 +11,7 @@ interface AuthUser {
   pharmacyId: string | null;
   isActive: boolean;
   defaultWarehouseId: string | null;
+  defaultPurchaseWarehouseId: string | null;
 }
 
 interface AuthData {

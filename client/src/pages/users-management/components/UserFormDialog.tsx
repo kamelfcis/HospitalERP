@@ -137,13 +137,13 @@ export function UserFormDialog({
           </div>
 
           <div className="space-y-1">
-            <Label>المستودع الافتراضي</Label>
+            <Label>المخزن الافتراضي للبيع</Label>
             <Select
               value={formData.defaultWarehouseId || "none"}
               onValueChange={v => onFormChange({ defaultWarehouseId: v === "none" ? "" : v })}
             >
               <SelectTrigger data-testid="select-user-default-warehouse">
-                <SelectValue placeholder="اختر المستودع الافتراضي" />
+                <SelectValue placeholder="اختر المخزن الافتراضي للبيع" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">بدون</SelectItem>
@@ -153,7 +153,28 @@ export function UserFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              يُختار تلقائياً عند إنشاء فاتورة جديدة
+              يُختار تلقائياً عند إنشاء فاتورة بيع جديدة
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <Label>المخزن الافتراضي للشراء</Label>
+            <Select
+              value={formData.defaultPurchaseWarehouseId || "none"}
+              onValueChange={v => onFormChange({ defaultPurchaseWarehouseId: v === "none" ? "" : v })}
+            >
+              <SelectTrigger data-testid="select-user-default-purchase-warehouse">
+                <SelectValue placeholder="اختر المخزن الافتراضي للشراء" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">بدون</SelectItem>
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              يُختار تلقائياً عند إنشاء استلام أو فاتورة شراء جديدة
             </p>
           </div>
 

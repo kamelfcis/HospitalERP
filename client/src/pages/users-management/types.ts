@@ -9,6 +9,7 @@ export interface UserData {
   cashierGlAccountId:          string | null;
   cashierVarianceAccountId:    string | null;
   defaultWarehouseId:          string | null;
+  defaultPurchaseWarehouseId:  string | null;
   createdAt:                   string;
 }
 
@@ -23,6 +24,7 @@ export interface UserFormData {
   cashierGlAccountId:          string;
   cashierVarianceAccountId:    string;
   defaultWarehouseId:          string;
+  defaultPurchaseWarehouseId:  string;
   allowedPharmacyIds:          string[];
   allowedDepartmentIds:        string[];
   allowedClinicIds:            string[];

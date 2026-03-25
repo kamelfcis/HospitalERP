@@ -16,7 +16,8 @@ import type { UserData, UserFormData } from "./types";
 const EMPTY_FORM: UserFormData = {
   username: "", password: "", fullName: "",
   role: "data_entry", departmentId: "", pharmacyId: "",
-  isActive: true, cashierGlAccountId: "", cashierVarianceAccountId: "", defaultWarehouseId: "",
+  isActive: true, cashierGlAccountId: "", cashierVarianceAccountId: "",
+  defaultWarehouseId: "", defaultPurchaseWarehouseId: "",
   allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [], hasAllUnits: false,
 };
 
@@ -111,9 +112,10 @@ export default function UsersManagement() {
       departmentId:        user.departmentId || "",
       pharmacyId:          user.pharmacyId  || "",
       isActive:            user.isActive,
-      cashierGlAccountId:          user.cashierGlAccountId       || "",
-      cashierVarianceAccountId:    user.cashierVarianceAccountId  || "",
-      defaultWarehouseId:          user.defaultWarehouseId        || "",
+      cashierGlAccountId:          user.cashierGlAccountId            || "",
+      cashierVarianceAccountId:    user.cashierVarianceAccountId      || "",
+      defaultWarehouseId:          user.defaultWarehouseId             || "",
+      defaultPurchaseWarehouseId:  user.defaultPurchaseWarehouseId    || "",
       allowedPharmacyIds:  user.pharmacyId ? [user.pharmacyId] : [],
       allowedDepartmentIds: [],
       allowedClinicIds:    [],
@@ -169,9 +171,10 @@ export default function UsersManagement() {
       departmentId:       formData.departmentId || null,
       pharmacyId:         formData.pharmacyId   || null,
       isActive:           formData.isActive,
-      cashierGlAccountId:       formData.cashierGlAccountId       || null,
-      cashierVarianceAccountId: formData.cashierVarianceAccountId  || null,
-      defaultWarehouseId:       formData.defaultWarehouseId        || null,
+      cashierGlAccountId:          formData.cashierGlAccountId              || null,
+      cashierVarianceAccountId:    formData.cashierVarianceAccountId        || null,
+      defaultWarehouseId:          formData.defaultWarehouseId              || null,
+      defaultPurchaseWarehouseId:  formData.defaultPurchaseWarehouseId      || null,
     };
 
     if (editingUser) {

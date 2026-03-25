@@ -11,13 +11,14 @@ import { userRoleEnum } from "./enums";
 //  is_system = true  →  مجموعة مُولَّدة من الأدوار الحالية، لا تُحذف.
 // ─────────────────────────────────────────────────────────────────────────────
 export const permissionGroups = pgTable("permission_groups", {
-  id:          varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name:        text("name").notNull().unique(),
-  description: text("description"),
-  isSystem:    boolean("is_system").notNull().default(false),
-  systemKey:   varchar("system_key"),           // مفتاح الدور الأصلي (owner, admin, pharmacist…) — للمجموعات النظامية فقط
-  sortOrder:   integer("sort_order").notNull().default(0),
-  createdAt:   timestamp("created_at").notNull().defaultNow(),
+  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name:          text("name").notNull().unique(),
+  description:   text("description"),
+  isSystem:      boolean("is_system").notNull().default(false),
+  systemKey:     varchar("system_key"),         // مفتاح الدور الأصلي (owner, admin, pharmacist…) — للمجموعات النظامية فقط
+  sortOrder:     integer("sort_order").notNull().default(0),
+  seedSnapshot:  text("seed_snapshot"),         // JSON array of last-seeded permissions — used by delta sync to detect truly new permissions
+  createdAt:     timestamp("created_at").notNull().defaultNow(),
 });
 
 export const groupPermissions = pgTable("group_permissions", {
@@ -41,8 +42,9 @@ export const users = pgTable("users", {
   permissionGroupId:   varchar("permission_group_id").references(() => permissionGroups.id),
   departmentId:        varchar("department_id"),
   pharmacyId:          varchar("pharmacy_id"),
-  defaultWarehouseId:  varchar("default_warehouse_id"),
-  isActive:            boolean("is_active").notNull().default(true),
+  defaultWarehouseId:          varchar("default_warehouse_id"),
+  defaultPurchaseWarehouseId:  varchar("default_purchase_warehouse_id"),
+  isActive:                    boolean("is_active").notNull().default(true),
   cashierGlAccountId:       text("cashier_gl_account_id"),
   cashierVarianceAccountId: text("cashier_variance_account_id"),
   createdAt:                timestamp("created_at").notNull().defaultNow(),

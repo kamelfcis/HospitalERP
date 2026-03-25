@@ -6,6 +6,8 @@
 
 import type { Express, Request, Response } from "express";
 import { requireAuth }           from "./_shared";
+import { storage }               from "../storage";
+import { assertUserWarehouseAllowed } from "../lib/warehouse-guard";
 import {
   getApprovedInvoicesForSupplier,
   getPurchaseInvoiceLinesForReturn,
@@ -110,6 +112,10 @@ export function registerPurchaseReturnRoutes(app: Express) {
       if (!body.warehouseId) {
         return res.status(400).json({ message: "المخزن مطلوب." });
       }
+
+      const whGuardMsg = await assertUserWarehouseAllowed(req.session.userId!, body.warehouseId, storage);
+      if (whGuardMsg) return res.status(403).json({ message: whGuardMsg });
+
       if (!body.returnDate) {
         return res.status(400).json({ message: "تاريخ المرتجع مطلوب." });
       }

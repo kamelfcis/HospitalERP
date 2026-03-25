@@ -15,6 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Plus, Truck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth }  from "@/hooks/use-auth";
 import type { Warehouse, Supplier } from "@shared/schema";
 
 import { useReceivingForm }      from "./hooks/useReceivingForm";
@@ -31,6 +32,7 @@ import { ReceivingEditor }   from "./components/ReceivingEditor";
 
 export default function SupplierReceiving() {
   const { toast }    = useToast();
+  const { user }     = useAuth();
   const [, navigate] = useLocation();
 
   const [activeTab,         setActiveTab]         = useState("log");
@@ -65,6 +67,14 @@ export default function SupplierReceiving() {
     resetAutoSave: autoSave.resetAutoSave,
     setActiveTab,
   });
+
+  // ── تهيئة المخزن الافتراضي للشراء عند فتح نموذج جديد ───────────────────
+  useEffect(() => {
+    const defaultPurchaseWhId = user?.defaultPurchaseWarehouseId;
+    if (!form.editingReceivingId && !form.warehouseId && defaultPurchaseWhId) {
+      form.setWarehouseId(defaultPurchaseWhId);
+    }
+  }, [user?.defaultPurchaseWarehouseId]);
 
   // ── فحص ازدواجية فاتورة المورد ──────────────────────────────────────────
   const invoiceCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,8 +132,12 @@ export default function SupplierReceiving() {
     });
 
   // ── Reset + Mutations ─────────────────────────────────────────────────────
-  const handleNew = () =>
+  const handleNew = () => {
     form.resetForm(lines.resetLines, autoSave.resetAutoSave, supplierSearch.resetSupplier);
+    if (user?.defaultPurchaseWarehouseId) {
+      form.setWarehouseId(user.defaultPurchaseWarehouseId);
+    }
+  };
 
   const mutations = useReceivingMutations({
     supplierId:         form.supplierId,

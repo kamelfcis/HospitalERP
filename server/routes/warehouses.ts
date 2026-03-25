@@ -15,6 +15,7 @@ import {
 } from "./_shared";
 import { insertWarehouseSchema } from "@shared/schema";
 import { runPilotTestSeed } from "../seeds/pilot-test";
+import { assertUserWarehousesAllowed } from "../lib/warehouse-guard";
 
 export function registerWarehousesRoutes(app: Express) {
   // ===== WAREHOUSES =====
@@ -178,6 +179,14 @@ export function registerWarehousesRoutes(app: Express) {
       if (!sourceWarehouseId || !destinationWarehouseId) {
         return res.status(400).json({ message: "يجب اختيار مخزن المصدر والوجهة" });
       }
+
+      const whGuardMsg = await assertUserWarehousesAllowed(
+        req.session.userId!,
+        [sourceWarehouseId, destinationWarehouseId],
+        storage,
+      );
+      if (whGuardMsg) return res.status(403).json({ message: whGuardMsg });
+
       const safeLines = Array.isArray(lines) ? lines.filter((l: any) => l.itemId) : [];
       const safeHeader = { transferDate: transferDate || new Date().toISOString().split("T")[0], sourceWarehouseId, destinationWarehouseId, notes: notes || null };
 
@@ -210,6 +219,13 @@ export function registerWarehousesRoutes(app: Express) {
       if (!lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: "يجب إضافة سطر واحد على الأقل" });
       }
+
+      const whGuardMsg = await assertUserWarehousesAllowed(
+        req.session.userId!,
+        [sourceWarehouseId, destinationWarehouseId],
+        storage,
+      );
+      if (whGuardMsg) return res.status(403).json({ message: whGuardMsg });
 
       const header = { transferDate, sourceWarehouseId, destinationWarehouseId, notes: notes || null };
       const transfer = await storage.createDraftTransfer(header, lines);

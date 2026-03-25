@@ -1,0 +1,225 @@
+أريد تنفيذ تحسين شامل ومنظم لمنطق المخازن الافتراضية وصلاحيات المخازن للمستخدمين داخل النظام، بشكل enterprise-grade، مع refactor نظيف، ومنع تكرار المنطق، وفرض القيود من الـ backend، مع الحفاظ على السلوك الحالي الآمن وعدم كسر البيانات أو الجلسات.
+
+# الهدف النهائي
+أريد أن يكون لكل مستخدم:
+1) مخزن افتراضي للبيع
+2) مخزن افتراضي للشراء
+3) قائمة المخازن المتاحة له
+
+وأريد أن يكون سلوك الشاشات كالتالي:
+- فاتورة بيع جديدة: يختار النظام تلقائياً مخزن البيع الافتراضي للمستخدم عند إنشاء الفاتورة، بدون حاجة لاختيار يدوي في البداية
+- فاتورة/استلام شراء جديد: يختار النظام تلقائياً مخزن الشراء الافتراضي للمستخدم عند إنشاء المستند، بدون حاجة لاختيار يدوي في البداية
+- تحويلات المخزن: تظل قائمة اختيار، لكن تعرض فقط المخازن المتاحة للمستخدم، بدون أي تغيير على السلوك الوظيفي الحالي سوى التأكد من سلامة الفلترة والـ backend enforcement
+
+مهم جداً:
+- “الاختيار التلقائي” لا يعني الاعتماد على الـ frontend فقط
+- الـ backend هو مصدر الحقيقة
+- أي مستند بيع أو شراء يجب أن يُرفض إذا استخدم مخزناً خارج نطاق user_warehouses
+- أي default warehouse يجب أن يكون ضمن allowed warehouses
+- أريد التنفيذ بشكل قابل للتوسع، ومنظم، وبدون نسخ نفس المنطق في أكثر من hook أو screen
+
+# الوضع الحالي المعروف
+- يوجد default_warehouse_id في users ويُستخدم للبيع
+- يوجد user_warehouses كقائمة المخازن المتاحة للمستخدم
+- لا يوجد default_purchase_warehouse_id
+- شاشة الشراء/استلام الموردين تبدأ بدون مخزن افتراضي
+- التحويلات تعتمد على /api/warehouses وتعرض المخازن المتاحة
+- واجهة إدارة المستخدمين لا تميز بوضوح بين مخزن البيع ومخزن الشراء
+
+# المطلوب الوظيفي
+## 1) نموذج البيانات
+أضف في users:
+- default_warehouse_id = مخزن افتراضي للبيع (الموجود حالياً)
+- default_purchase_warehouse_id = مخزن افتراضي للشراء (جديد)
+
+مع الإبقاء على:
+- user_warehouses = قائمة المخازن المتاحة للمستخدم
+
+## 2) قواعد الصحة والرقابة
+طبّق القواعد التالية بشكل صارم:
+- إذا كان default_warehouse_id غير null، فيجب أن يكون ضمن user_warehouses
+- إذا كان default_purchase_warehouse_id غير null، فيجب أن يكون ضمن user_warehouses
+- عند إنشاء أو تعديل أي فاتورة بيع، يجب أن يكون warehouseId ضمن user_warehouses
+- عند إنشاء أو تعديل أي فاتورة/استلام شراء، يجب أن يكون warehouseId ضمن user_warehouses
+- عند إنشاء أو تعديل أي تحويل مخزني، يجب أن يكون sourceWarehouseId و destinationWarehouseId ضمن user_warehouses
+- لا تعتمد على الواجهة وحدها أبداً
+
+## 3) سلوك الشاشات
+### أ) المبيعات
+- عند فتح فاتورة بيع جديدة:
+  - يتم تحميل default sales warehouse تلقائياً للمستخدم
+  - هذا هو السلوك الافتراضي الأولي
+  - لا تكسر سلوك الفاتورة الحالية
+- إذا كان المستخدم لديه صلاحية تغيير المخزن، يمكنه تغييره فقط إلى مخزن ضمن user_warehouses
+- إذا لم يكن لديه صلاحية تغيير المخزن، اجعل التحكم read-only أو مخفي حسب التصميم الحالي
+
+### ب) الشراء / استلام الموردين
+- عند فتح مستند استلام/شراء جديد:
+  - يتم تحميل default purchase warehouse تلقائياً للمستخدم
+  - بدلاً من الحقل الفارغ الحالي
+- إذا لم يوجد default purchase warehouse صالح، يبقى الحقل فارغاً
+- إذا اختار المستخدم مخزناً يدوياً، لا يتم overwrite لاحقاً بسبب hydration أو re-render
+- لو المخزن الافتراضي لم يعد ضمن /api/warehouses أو لم يعد مسموحاً به، لا تستخدمه
+
+### ج) التحويلات
+- أبقِ التحويلات كقائمة اختيار
+- اعرض فقط المخازن المسموحة للمستخدم من /api/warehouses
+- تأكد من وجود backend validation صارم أيضاً
+- لا تغيّر سلوك التحويلات إلا إذا كانت هناك ثغرة أو تكرار منطقي يحتاج refactor
+
+## 4) واجهة إدارة المستخدمين
+أريد في شاشة/حوار تعديل المستخدم:
+- حقل واضح باسم "المخزن الافتراضي للبيع"
+- حقل واضح باسم "المخزن الافتراضي للشراء"
+- قسم "المخازن المتاحة" كما هو
+- يفضّل أن dropdowns الخاصة بالافتراضيات تعرض فقط المخازن الموجودة حالياً ضمن user_warehouses المختارة في نفس النموذج
+- عند الحفظ:
+  - إذا كان أي default خارج allowed warehouses يتم رفض الحفظ برسالة واضحة
+- راعِ عدم كسر أي مستخدم حالي لا يملك default purchase warehouse
+
+## 5) الـ auth / session
+أضف defaultPurchaseWarehouseId إلى:
+- /api/auth/me
+- أي auth/session serializer
+- أي login hydration
+- useAuth hook
+- أي user types / DTOs في الفرونت
+
+أريد consistency كامل:
+- بعد login
+- بعد refresh
+- بعد reload
+- بعد فتح أي شاشة تعتمد على بيانات المستخدم
+
+# المطلوب الهندسي (مهم جداً)
+أريد تنفيذ نظيف ومحترف، وليس patch سريع.
+
+## 6) Refactor مطلوب
+ابحث عن أي تكرار لمنطق:
+- resolve default warehouse
+- validate warehouse against user scope
+- load available warehouses
+- initialize new forms with user defaults
+
+ثم:
+- استخرج هذا المنطق إلى utilities / helpers / shared hooks / server-side guards قابلة لإعادة الاستخدام
+- لا تكرر نفس الشرط في أكثر من ملف بصيغ مختلفة
+- اجعل منطق التحقق في backend مركزي قدر الإمكان
+
+أمثلة متوقعة:
+- helper/server guard لحساب allowed warehouse ids للمستخدم
+- helper للتحقق من warehouseId المرسل
+- helper في frontend لتهيئة default warehouse للنماذج الجديدة بدون overwrite لاختيار المستخدم
+- توحيد naming بين defaultWarehouseId و defaultPurchaseWarehouseId عبر كل الطبقات
+
+## 7) Compound components / architecture hygiene
+راجع إن كانت هناك مكونات أو hooks يمكن توحيدها أو تنظيمها:
+- شاشة المستخدمين
+- hooks الخاصة بالمبيعات
+- hooks الخاصة بالاستلام/الشراء
+- أي combobox / warehouse selector
+
+لو يوجد تكرار أو coupling غير نظيف:
+- اقترح refactor محدود وآمن
+- لا تعيد بناء النظام بالكامل
+- حسّن فقط ما يخدم المهمة فعلاً ويمنع تراكم الدين الفني
+
+## 8) الفهرسة والأداء
+راجع هل توجد فهارس لازمة أو ناقصة لدعم هذا التعديل، خاصةً في:
+- users.default_purchase_warehouse_id
+- user_warehouses.user_id
+- user_warehouses.warehouse_id
+- أي joins أو where clauses ستُستخدم كثيراً في التحقق أو إدارة المستخدمين
+
+أريد منك:
+- مراجعة الفهارس الحالية
+- اقتراح ما يلزم فقط
+- عدم إضافة فهارس عبثية
+- عدم كسر الفهارس/القيود الموجودة
+- مراعاة أن أي FK أو filter شائع يجب أن يكون له indexing مناسب
+
+## 9) الـ backend enforcement
+أريد مراجعة كل endpoints أو services أو storage التي تنشئ أو تحدّث:
+- sales invoices
+- supplier receiving / purchase receiving
+- stock transfers
+- users update
+
+ثم:
+- طبّق validation موحّد وصريح
+- امنع أي API client من تمرير warehouse خارج scope
+- اجعل رسائل الخطأ واضحة ومفهومة
+- لا تعتمد على أن /api/warehouses مفلتر فقط
+
+# التنفيذ المطلوب
+## 10) قبل التعديل
+أريد أولاً:
+- تحليل التصميم الحالي المتأثر بالمهمة
+- تحديد جميع الملفات التي يجب تعديلها
+- تحديد أماكن التكرار أو الضعف أو الثغرات
+- تحديد هل توجد أماكن إضافية غير المذكورة تحتاج تعديل
+
+## 11) ثم التنفيذ
+نفّذ التعديل كاملاً بشكل نظيف ومترابط يشمل:
+- schema
+- storage
+- routes
+- auth/session
+- frontend types
+- users management UI
+- sales defaults
+- purchase defaults
+- transfer validation
+- refactor helpers
+- indexing review
+
+## 12) ثم أعطني مخرجات مرتبة جداً
+بعد التنفيذ أريد تقريراً مرتباً بهذه الصيغة:
+1) MODIFIED FILES
+2) SCHEMA CHANGES
+3) API / BACKEND CHANGES
+4) FRONTEND CHANGES
+5) REFACTOR SUMMARY
+6) INDEX REVIEW
+7) VALIDATION RULES ENFORCED
+8) RISKS / EDGE CASES
+9) TEST SCENARIOS
+10) ANY FOLLOW-UP RECOMMENDATIONS
+
+# قيود مهمة
+- لا تنفذ تنفيذ سطحي
+- لا تجعلها مجرد قيمة default في الواجهة بدون backend enforcement
+- لا تكسر المبيعات الحالية
+- لا تكسر التحويلات الحالية
+- لا تغيّر user_warehouses model نفسه
+- لا تضف تعقيداً غير لازم
+- لا تستخدم حلول مكررة أو متناثرة
+- حافظ على naming موحد وواضح
+- راعِ الـ null handling جيداً
+- راعِ backward compatibility
+- راعِ أن النظام ERP للمستشفى/الصيدلية ويحتاج رقابة داخلية قوية
+
+# ملفات مرجعية مبدئية
+- shared/schema/users.ts
+- server/storage/users-storage.ts
+- server/routes/auth.ts
+- server/routes/users.ts (أو route المستخدمين المقابل)
+- client/src/hooks/use-auth.tsx
+- client/src/pages/supplier-receiving/hooks/useReceivingForm.ts
+- client/src/pages/sales-invoices/hooks/useLoadInvoice.ts
+- client/src/pages/users-management/components/UserFormDialog.tsx
+- client/src/pages/users-management/types.ts
+- client/src/pages/users-management/index.tsx
+
+ابحث أيضاً عن أي ملفات أخرى مرتبطة بإنشاء أو تعديل:
+- sales invoice
+- supplier receiving
+- stock transfers
+- warehouse selectors
+- user session mapping
+
+أريد منك أن تعمل بعقلية senior engineer / architect:
+- حدّد الحقيقة الحالية من الكود
+- اقترح refactor ذكي ومحدود
+- نفّذ بأقل مخاطرة
+- وامنحني نتيجة نظيفة قابلة للمراجعة والإطلاق

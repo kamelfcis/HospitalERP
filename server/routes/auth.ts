@@ -182,7 +182,7 @@ export async function registerAuthRoutes(app: Express) {
   app.patch("/api/users/:id", requireAuth, checkPermission("users.edit"), async (req, res) => {
     try {
       const { id } = req.params;
-      const { username, password, fullName, role, departmentId, pharmacyId, isActive, cashierGlAccountId, defaultWarehouseId, cashierVarianceAccountId } = req.body;
+      const { username, password, fullName, role, departmentId, pharmacyId, isActive, cashierGlAccountId, defaultWarehouseId, defaultPurchaseWarehouseId, cashierVarianceAccountId } = req.body;
 
       const updateData: any = {};
       if (username !== undefined) updateData.username = username;
@@ -194,6 +194,7 @@ export async function registerAuthRoutes(app: Express) {
       if (cashierGlAccountId !== undefined) updateData.cashierGlAccountId = cashierGlAccountId || null;
       if (cashierVarianceAccountId !== undefined) updateData.cashierVarianceAccountId = cashierVarianceAccountId || null;
       if (defaultWarehouseId !== undefined) updateData.defaultWarehouseId = defaultWarehouseId || null;
+      if (defaultPurchaseWarehouseId !== undefined) updateData.defaultPurchaseWarehouseId = defaultPurchaseWarehouseId || null;
       if (password) {
         updateData.password = await bcrypt.hash(password, 10);
       }

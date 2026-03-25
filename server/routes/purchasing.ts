@@ -12,6 +12,7 @@ import {
   validateReceivingLines,
 } from "./_shared";
 import { insertSupplierSchema } from "@shared/schema";
+import { assertUserWarehouseAllowed } from "../lib/warehouse-guard";
 
 export function registerPurchasingRoutes(app: Express) {
   // ===== SUPPLIERS =====
@@ -162,7 +163,10 @@ export function registerPurchasingRoutes(app: Express) {
       if (!supplierId || !warehouseId) {
         return res.status(400).json({ message: "يجب اختيار المورد والمخزن أولاً للحفظ التلقائي" });
       }
-      
+
+      const whGuardMsg = await assertUserWarehouseAllowed(req.session.userId!, warehouseId, storage);
+      if (whGuardMsg) return res.status(403).json({ message: whGuardMsg });
+
       if (!supplierInvoiceNo) {
         supplierInvoiceNo = `__AUTO_${Date.now()}`;
       }
@@ -204,8 +208,12 @@ export function registerPurchasingRoutes(app: Express) {
       if (!header.supplierId) return res.status(400).json({ message: "المورد مطلوب" });
       if (!header.receiveDate) return res.status(400).json({ message: "تاريخ الاستلام مطلوب" });
       if (!header.supplierInvoiceNo?.trim()) return res.status(400).json({ message: "رقم فاتورة المورد مطلوب" });
+      if (!header.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
       if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
-      
+
+      const whGuardMsg = await assertUserWarehouseAllowed(req.session.userId!, header.warehouseId, storage);
+      if (whGuardMsg) return res.status(403).json({ message: whGuardMsg });
+
       const isUnique = await storage.checkSupplierInvoiceUnique(header.supplierId, header.supplierInvoiceNo);
       if (!isUnique) return res.status(409).json({ message: "رقم فاتورة المورد مكرر لنفس المورد" });
       
