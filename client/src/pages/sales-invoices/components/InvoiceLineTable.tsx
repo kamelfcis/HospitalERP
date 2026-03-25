@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { X, BarChart3, Lock } from "lucide-react";
 import { formatNumber, formatQty } from "@/lib/formatters";
@@ -9,10 +9,18 @@ import {
 import type { SalesLineLocal } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ترتيب الأعمدة للتنقل بالأسهم (من اليسار إلى اليمين في DOM)
+// في RTL: السهم الأيسر = للأمام (عمود أعلى index)، السهم الأيمن = للخلف
+// ─────────────────────────────────────────────────────────────────────────────
+const GRID_COLS = ["unit", "qty", "expiry"] as const;
+type GridCol = (typeof GRID_COLS)[number];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // QtyCell — controlled input محمي من double-call
 // ─────────────────────────────────────────────────────────────────────────────
 interface QtyCellProps {
   line:           SalesLineLocal;
+  rowIndex:       number;
   fefoLoading:    boolean;
   pendingQtyRef:  React.MutableRefObject<Map<string, string>>;
   onQtyConfirm:   (tempId: string) => void;
@@ -21,7 +29,7 @@ interface QtyCellProps {
 }
 
 const QtyCell = memo(function QtyCell({
-  line, fefoLoading, pendingQtyRef, onQtyConfirm, barcodeInputRef, testId,
+  line, rowIndex, fefoLoading, pendingQtyRef, onQtyConfirm, barcodeInputRef, testId,
 }: QtyCellProps) {
   const [localVal, setLocalVal] = useState(String(line.qty));
 
@@ -46,10 +54,13 @@ const QtyCell = memo(function QtyCell({
           e.preventDefault();
           barcodeInputRef.current?.focus();
         }
+        // ArrowUp/Down/Left/Right handled by container (bubble up)
       }}
       className="peachtree-input w-[64px] text-center"
       disabled={fefoLoading}
       data-testid={testId}
+      data-grid-row={rowIndex}
+      data-grid-col="qty"
     />
   );
 });
@@ -76,9 +87,74 @@ export function InvoiceLineTable({
   lines, isDraft, fefoLoading, pendingQtyRef,
   onUpdateLine, onRemoveLine, onQtyConfirm, onOpenStats, barcodeInputRef,
 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // ── التنقل بالأسهم ──────────────────────────────────────────────────────
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const rowAttr = target.dataset.gridRow;
+    const colAttr = target.dataset.gridCol as GridCol | undefined;
+    if (!rowAttr || !colAttr) return;
+
+    const isSelect = target.tagName === "SELECT";
+    const row    = parseInt(rowAttr, 10);
+    const colIdx = GRID_COLS.indexOf(colAttr);
+    if (colIdx < 0) return;
+
+    let nextRow = row;
+    let nextCol = colIdx;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      nextRow = row + 1;
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      nextRow = row - 1;
+    } else if (e.key === "ArrowLeft" && !isSelect) {
+      // RTL: السهم الأيسر = تقدّم = العمود التالي (index أعلى)
+      e.preventDefault();
+      nextCol = colIdx + 1;
+      if (nextCol >= GRID_COLS.length) { nextRow = row + 1; nextCol = 0; }
+    } else if (e.key === "ArrowRight" && !isSelect) {
+      // RTL: السهم الأيمن = تراجع = العمود السابق (index أقل)
+      e.preventDefault();
+      nextCol = colIdx - 1;
+      if (nextCol < 0) { nextRow = row - 1; nextCol = GRID_COLS.length - 1; }
+    } else {
+      return;
+    }
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    // ابحث عن العنصر المستهدف — وإن لم يوجد العمود (مثلاً خلية صلاحية لصنف بدون تاريخ)، ابحث عن أقرب عمود
+    const seek = (r: number, startCol: number): HTMLElement | null => {
+      // جرّب العمود المطلوب أولاً
+      const el = container.querySelector<HTMLElement>(
+        `[data-grid-row="${r}"][data-grid-col="${GRID_COLS[startCol]}"]`,
+      );
+      if (el) return el;
+      // ابحث في الاتجاهين
+      for (let c = startCol + 1; c < GRID_COLS.length; c++) {
+        const f = container.querySelector<HTMLElement>(`[data-grid-row="${r}"][data-grid-col="${GRID_COLS[c]}"]`);
+        if (f) return f;
+      }
+      for (let c = startCol - 1; c >= 0; c--) {
+        const f = container.querySelector<HTMLElement>(`[data-grid-row="${r}"][data-grid-col="${GRID_COLS[c]}"]`);
+        if (f) return f;
+      }
+      return null;
+    };
+
+    const el = seek(nextRow, nextCol);
+    if (el) {
+      el.focus();
+      if (el instanceof HTMLInputElement) el.select();
+    }
+  }, []);
 
   return (
-    <div className="flex-1 overflow-auto p-2">
+    <div ref={containerRef} className="flex-1 overflow-auto p-2" onKeyDown={handleKeyDown}>
       <table className="peachtree-grid w-full text-[12px]" data-testid="table-lines">
         <thead>
           <tr className="peachtree-grid-header">
@@ -106,7 +182,7 @@ export function InvoiceLineTable({
                 {/* # */}
                 <td className="text-center text-muted-foreground">{i + 1}</td>
 
-                {/* ── اسم الصنف — Item Card ──────────────────────────── */}
+                {/* ── اسم الصنف ──────────────────────────────────────── */}
                 <td className="max-w-[200px]">
                   <div className="flex flex-col gap-0.5">
                     <span
@@ -148,6 +224,8 @@ export function InvoiceLineTable({
                       onChange={(e) => onUpdateLine(i, { unitLevel: e.target.value })}
                       className="peachtree-select w-full"
                       data-testid={`select-unit-${i}`}
+                      data-grid-row={i}
+                      data-grid-col="unit"
                     >
                       {getUnitOptions(ln.item).map((opt) => (
                         <option
@@ -174,6 +252,7 @@ export function InvoiceLineTable({
                   {isDraft ? (
                     <QtyCell
                       line={ln}
+                      rowIndex={i}
                       fefoLoading={fefoLoading}
                       pendingQtyRef={pendingQtyRef}
                       onQtyConfirm={onQtyConfirm}
@@ -185,7 +264,7 @@ export function InvoiceLineTable({
                   )}
                 </td>
 
-                {/* ── سعر البيع — دائماً للقراءة فقط (سعر النظام) ─────── */}
+                {/* سعر البيع */}
                 <td className="text-center">
                   <span
                     className="flex items-center justify-center gap-0.5 peachtree-amount"
@@ -202,7 +281,7 @@ export function InvoiceLineTable({
                   {formatNumber(ln.lineTotal)}
                 </td>
 
-                {/* ── الصلاحية — FEFO onChange ─────────────────────────── */}
+                {/* الصلاحية */}
                 <td className="text-center text-[11px]">
                   <ExpiryCell
                     line={ln}
@@ -261,7 +340,7 @@ export function InvoiceLineTable({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ExpiryCell — خلية الصلاحية مع FEFO onChange (تحديث السعر من الدُفعة)
+// ExpiryCell
 // ─────────────────────────────────────────────────────────────────────────────
 interface ExpiryCellProps {
   line:         SalesLineLocal;
@@ -273,6 +352,8 @@ interface ExpiryCellProps {
 
 function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: ExpiryCellProps) {
   if (!ln.item?.hasExpiry) return <span className="text-muted-foreground">—</span>;
+
+  const gridAttrs = { "data-grid-row": i, "data-grid-col": "expiry" } as const;
 
   // ── حالة 1: fefoLocked — سطور موزّعة تلقائياً بـ FEFO ───────────────────
   if (isDraft && ln.fefoLocked && ln.expiryOptions && ln.expiryOptions.length > 0) {
@@ -287,7 +368,6 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
             expiryYear:  opt.expiryYear,
             lotId:       opt.lotId || null,
           };
-          // تحديث السعر من الدُفعة — حدث نظامي لا إدخال مستخدم
           if (opt.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
             const newBase  = parseFloat(opt.lotSalePrice);
             updates.baseSalePrice = newBase;
@@ -302,6 +382,7 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
         title={ln.expiryMonth && ln.expiryYear
           ? `${String(ln.expiryMonth).padStart(2, "0")}/${ln.expiryYear}`
           : "اختر الصلاحية"}
+        {...gridAttrs}
       >
         {ln.expiryOptions.map((opt) => (
           <option key={opt.lotId} value={opt.lotId}>
@@ -313,7 +394,6 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
   }
 
   // ── حالة 2: اختيار يدوي من قائمة الدُفعات المتاحة ───────────────────────
-  // يُحدّث السعر تلقائياً من سعر الدُفعة — حدث نظامي
   if (isDraft && ln.expiryOptions && ln.expiryOptions.length > 0) {
     return (
       <select
@@ -332,7 +412,6 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
             expiryYear:  y || null,
             lotId:       opt?.lotId || null,
           };
-          // تحديث السعر من الدُفعة — حدث نظامي
           if (opt?.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
             const newBase = parseFloat(opt.lotSalePrice);
             updates.baseSalePrice = newBase;
@@ -344,6 +423,7 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
         }}
         className={`peachtree-select w-full ${needsExpiry ? "border-yellow-400" : ""}`}
         data-testid={`select-expiry-${i}`}
+        {...gridAttrs}
       >
         <option value="">— اختر —</option>
         {ln.expiryOptions.map((opt) => (
