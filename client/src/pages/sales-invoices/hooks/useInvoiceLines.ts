@@ -340,8 +340,13 @@ export function useInvoiceLines(
     const line         = currentLines[index];
     if (!line) return;
 
-    const pendingVal  = pendingQtyRef.current.get(tempId);
-    const qtyEntered  = parseFloat(pendingVal ?? String(line.qty)) || 0;
+    // ── خروج سريع إن لم يُغيَّر المستخدم الكمية أصلاً ──────────────────────
+    // pendingQtyRef فارغ = المستخدم تنقَّل بالسهم دون كتابة شيء
+    // → لا داعي لأي حساب FEFO أو شبكة = تنقل سلس فوري
+    const pendingVal = pendingQtyRef.current.get(tempId);
+    if (pendingVal === undefined) return;
+
+    const qtyEntered = parseFloat(pendingVal) || 0;
     if (qtyEntered <= 0) {
       toast({ title: "كمية غير صحيحة", variant: "destructive" });
       return;
