@@ -70,7 +70,7 @@ const ReturnLineRow = memo(function ReturnLineRow({
               value={line.vatRate}
               onChange={e => updateLine(idx, { vatRate: e.target.value })}
               onKeyDown={e => handleNavKey(e, idx, 1)}
-              className="h-7 w-12 text-xs text-center px-1"
+              className="h-7 w-16 text-xs text-center px-1"
               data-testid={`vat-rate-${line.purchaseInvoiceLineId}`}
               data-nav-row={idx}
               data-nav-col={1}
