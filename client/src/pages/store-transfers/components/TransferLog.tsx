@@ -62,21 +62,21 @@ export function TransferLog({
       <div className="peachtree-toolbar flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-1">
           <Label className="text-[10px] text-muted-foreground whitespace-nowrap">تاريخ من</Label>
-          <Input
+          <input
             type="date"
             value={filterFromDate}
             onChange={(e) => setFilterFromDate(e.target.value)}
-            className="h-7 text-[11px] px-1 w-[120px]"
+            className="peachtree-input w-[135px]"
             data-testid="filter-from-date"
           />
         </div>
         <div className="flex items-center gap-1">
           <Label className="text-[10px] text-muted-foreground whitespace-nowrap">تاريخ إلى</Label>
-          <Input
+          <input
             type="date"
             value={filterToDate}
             onChange={(e) => setFilterToDate(e.target.value)}
-            className="h-7 text-[11px] px-1 w-[120px]"
+            className="peachtree-input w-[135px]"
             data-testid="filter-to-date"
           />
         </div>
