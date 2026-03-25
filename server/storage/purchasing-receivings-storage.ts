@@ -535,6 +535,13 @@ const methods = {
   async getItemHints(this: DatabaseStorage, itemId: string, supplierId: string, warehouseId: string): Promise<{ lastPurchasePrice: string | null; lastSalePrice: string | null; currentSalePrice: string; onHandMinor: string }> {
     // ─── آخر سعر شراء حقيقي (غير صفري) من آخر استلام ───────────────────────
     // نبحث عن آخر سطر استلام به سعر شراء > 0 لتجنب إرجاع سعر أصناف الهدايا/البونص
+    // posted_costed = استلام مرحّل ومحوّل لفاتورة شراء (الحالة النهائية)
+    const isPostedStatus = or(
+      eq(receivingHeaders.status, 'posted'),
+      eq(receivingHeaders.status, 'posted_qty_only'),
+      eq(receivingHeaders.status, 'posted_costed'),
+    );
+
     const [lastPricedLine] = await db.select({
       purchasePrice: receivingLines.purchasePrice,
     })
@@ -542,7 +549,7 @@ const methods = {
     .innerJoin(receivingHeaders, eq(receivingLines.receivingId, receivingHeaders.id))
     .where(and(
       eq(receivingLines.itemId, itemId),
-      or(eq(receivingHeaders.status, 'posted'), eq(receivingHeaders.status, 'posted_qty_only')),
+      isPostedStatus,
       eq(receivingLines.isRejected, false),
       gt(receivingLines.purchasePrice, sql`0`),
     ))
@@ -558,7 +565,7 @@ const methods = {
     .innerJoin(receivingHeaders, eq(receivingLines.receivingId, receivingHeaders.id))
     .where(and(
       eq(receivingLines.itemId, itemId),
-      or(eq(receivingHeaders.status, 'posted'), eq(receivingHeaders.status, 'posted_qty_only')),
+      isPostedStatus,
       eq(receivingLines.isRejected, false),
     ))
     .orderBy(desc(receivingHeaders.postedAt))
