@@ -33,7 +33,6 @@ import type { SalesLineLocal } from "./types";
 import type { InvoiceFormHandlers } from "./hooks/useInvoiceForm";
 import type { useInvoiceLines }     from "./hooks/useInvoiceLines";
 import type { useInvoiceMutations } from "./hooks/useInvoiceMutations";
-import type { useAutoSave }         from "./hooks/useAutoSave";
 import type { useItemSearch }       from "./hooks/useItemSearch";
 import type { useServiceSearch }    from "./hooks/useServiceSearch";
 import type { useStatsDialog }      from "./hooks/useStatsDialog";
@@ -68,7 +67,6 @@ interface SalesInvoiceEditorProps {
   // hooks
   linesHook:       ReturnType<typeof useInvoiceLines>;
   mutationsHook:   ReturnType<typeof useInvoiceMutations>;
-  autoSaveHook:    ReturnType<typeof useAutoSave>;
   itemSearchHook:  ReturnType<typeof useItemSearch>;
   serviceSearchHook: ReturnType<typeof useServiceSearch>;
   statsHook:       ReturnType<typeof useStatsDialog>;
@@ -116,7 +114,7 @@ export function SalesInvoiceEditor({
   editId, isNew, isDraft, invoiceDetail, detailLoading,
   warehouses, form, lines, subtotal, netTotal,
   barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef, onBarcodeScan,
-  linesHook, mutationsHook, autoSaveHook, itemSearchHook, serviceSearchHook,
+  linesHook, mutationsHook, itemSearchHook, serviceSearchHook,
   statsHook, onBack,
 }: SalesInvoiceEditorProps) {
 
@@ -140,7 +138,6 @@ export function SalesInvoiceEditor({
         invoiceNumber={invoiceDetail?.invoiceNumber?.toString()}
         status={invoiceDetail?.status}
         fefoLoading={linesHook.fefoLoading}
-        autoSaveStatus={autoSaveHook.autoSaveStatus}
         warehouseId={form.warehouseId}
         setWarehouseId={form.setWarehouseId}
         invoiceDate={form.invoiceDate}

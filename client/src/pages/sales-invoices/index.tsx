@@ -8,6 +8,8 @@
  *   URL بدون ?id  → InvoiceRegistry (قائمة الفواتير)
  *   URL ?id=new   → SalesInvoiceEditor (فاتورة جديدة)
  *   URL ?id=UUID  → SalesInvoiceEditor (تحرير فاتورة موجودة)
+ *
+ * لا يوجد حفظ تلقائي (auto-save) ولا مسودات — الحفظ مباشر عند الاعتماد فقط.
  */
 import { useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,17 +20,16 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PERMISSIONS } from "@shared/permissions";
 import type { Warehouse, SalesInvoiceWithDetails } from "@shared/schema";
 
-import { useInvoiceForm }     from "./hooks/useInvoiceForm";
-import { useInvoiceLines }    from "./hooks/useInvoiceLines";
+import { useInvoiceForm }      from "./hooks/useInvoiceForm";
+import { useInvoiceLines }     from "./hooks/useInvoiceLines";
 import { useInvoiceMutations } from "./hooks/useInvoiceMutations";
-import { useAutoSave }        from "./hooks/useAutoSave";
-import { useItemSearch }      from "./hooks/useItemSearch";
-import { useServiceSearch }   from "./hooks/useServiceSearch";
-import { useStatsDialog }     from "./hooks/useStatsDialog";
-import { useRegistry }        from "./hooks/useRegistry";
-import { useLoadInvoice }     from "./hooks/useLoadInvoice";
-import { useBarcodeScanner }  from "./hooks/useBarcodeScanner";
-import { useRoleRouter }      from "./hooks/useRoleRouter";
+import { useItemSearch }       from "./hooks/useItemSearch";
+import { useServiceSearch }    from "./hooks/useServiceSearch";
+import { useStatsDialog }      from "./hooks/useStatsDialog";
+import { useRegistry }         from "./hooks/useRegistry";
+import { useLoadInvoice }      from "./hooks/useLoadInvoice";
+import { useBarcodeScanner }   from "./hooks/useBarcodeScanner";
+import { useRoleRouter }       from "./hooks/useRoleRouter";
 
 import { SalesInvoiceEditor } from "./SalesInvoiceEditor";
 import { InvoiceRegistry }    from "./components/InvoiceRegistry";
@@ -84,7 +85,7 @@ export default function SalesInvoices() {
   const netTotal = useMemo(() => +(subtotal - form.discountValue).toFixed(2), [subtotal, form.discountValue]);
 
   // ── تحميل الفاتورة الموجودة ───────────────────────────────────────────────
-  const { loadedIdRef } = useLoadInvoice({
+  useLoadInvoice({
     invoiceDetail, isNew, warehouses,
     defaultWarehouseId: user?.defaultWarehouseId,
     form, setLines,
@@ -97,25 +98,6 @@ export default function SalesInvoices() {
   const serviceSearchHook = useServiceSearch(
     form.warehouseId, form.invoiceDate, linesHook.addItemToLines,
   );
-
-  const autoSaveHook = useAutoSave({
-    isDraft:         !!isDraft,
-    warehouseId:     form.warehouseId,
-    invoiceDate:     form.invoiceDate,
-    customerType:    form.customerType,
-    customerId:      form.customerId,
-    customerName:    form.customerName,
-    contractCompany: form.contractCompany,
-    discountPct:     form.discountPct,
-    discountValue:   form.discountValue,
-    subtotal, netTotal,
-    notes:           form.notes,
-    lines, editId, isNew,
-    // عند أول auto-save لفاتورة جديدة: سجّل الـ ID الجديد في loadedIdRef
-    // قبل أن يُغيّر window.history.replaceState الـ URL، حتى لا تُعيد
-    // useLoadInvoice ضبط الـ lines عند وصول detail query
-    onNewInvoiceSaved: (newId) => { loadedIdRef.current = newId; },
-  });
 
   const clinicOrderId = params.get("clinicOrderId");
   const clinicOrderIdsParam = params.get("clinicOrderIds");
@@ -142,10 +124,8 @@ export default function SalesInvoices() {
     clinicOrderId:   savedClinicOrderIds[0] || null,
     clinicOrderIds:  savedClinicOrderIds,
     lines,
-    onSaveSuccess:   () => {},
-    onFinalizeSuccess: () => { setSavedClinicOrderIds([]); },
-    lastAutoSaveDataRef: autoSaveHook.lastAutoSaveDataRef,
-    setAutoSaveStatus:   autoSaveHook.setAutoSaveStatus,
+    onSaveSuccess:      () => {},
+    onFinalizeSuccess:  () => { setSavedClinicOrderIds([]); },
     navigate,
   });
 
@@ -352,7 +332,6 @@ export default function SalesInvoices() {
         onBarcodeScan={barcode.handleBarcodeInputSubmit}
         linesHook={linesHook}
         mutationsHook={mutationsHook}
-        autoSaveHook={autoSaveHook}
         itemSearchHook={itemSearchHook}
         serviceSearchHook={serviceSearchHook}
         statsHook={statsHook}

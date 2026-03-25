@@ -16,7 +16,6 @@ interface Props {
   invoiceNumber?: string;
   status?: string;
   fefoLoading: boolean;
-  autoSaveStatus: "idle" | "saving" | "saved" | "error";
   warehouseId: string;
   setWarehouseId: (v: string) => void;
   invoiceDate: string;
@@ -53,7 +52,7 @@ function statusBadge(status: string) {
 }
 
 export function InvoiceHeaderBar({
-  isNew, isDraft, invoiceNumber, status, fefoLoading, autoSaveStatus,
+  isNew, isDraft, invoiceNumber, status, fefoLoading,
   warehouseId, setWarehouseId, invoiceDate, setInvoiceDate,
   customerType, setCustomerType, customerId, setCustomerId,
   customerName, setCustomerName,
@@ -76,12 +75,6 @@ export function InvoiceHeaderBar({
           </h1>
           {!isNew && status && statusBadge(status)}
           {fefoLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
-          {autoSaveStatus === "saving" && (
-            <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              جاري الحفظ التلقائي...
-            </span>
-          )}
         </div>
         {isDraft && (
           <div className="flex items-center gap-2">

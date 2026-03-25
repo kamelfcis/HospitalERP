@@ -22,8 +22,6 @@ interface MutationParams {
   lines: SalesLineLocal[];
   onSaveSuccess: (id?: string) => void;
   onFinalizeSuccess: () => void;
-  lastAutoSaveDataRef: React.MutableRefObject<string>;
-  setAutoSaveStatus: (s: "idle" | "saving" | "saved" | "error") => void;
   navigate: (path: string) => void;
 }
 
@@ -73,8 +71,6 @@ export function useInvoiceMutations(p: MutationParams) {
     },
     onSuccess: (data) => {
       toast({ title: "تم الحفظ بنجاح" });
-      p.lastAutoSaveDataRef.current = "";
-      p.setAutoSaveStatus("idle");
       queryClient.invalidateQueries({ queryKey: ["/api/sales-invoices"] });
       if (p.isNew && data?.id) {
         p.navigate(`/sales-invoices?id=${data.id}`);
