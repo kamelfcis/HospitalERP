@@ -44,6 +44,22 @@ export function useLines() {
     return result;
   }, [lines, excludeCovered, sortSourceAsc, sortDestAsc]);
 
+  /** عدد الأصناف المخفية لأن مخزن المصدر فارغ منها */
+  const noSourceStockCount = useMemo(
+    () => lines.filter((l) => !l._excluded && (parseFloat(l.source_stock) || 0) === 0).length,
+    [lines],
+  );
+
+  /** عدد الأصناف المخفية بسبب اكتفاء الوجهة (فقط من لديها رصيد مصدر) */
+  const coveredCount = useMemo(() => {
+    if (!excludeCovered) return 0;
+    return lines.filter((l) => {
+      if (l._excluded || (parseFloat(l.source_stock) || 0) === 0) return false;
+      const m2m = getMajorToMinor(l);
+      return toMajor(parseFloat(l.dest_stock) || 0, m2m) >= toMajor(parseFloat(l.total_sold) || 0, m2m);
+    }).length;
+  }, [lines, excludeCovered]);
+
   const handleExcludeItem = useCallback((itemId: string) => {
     setLines((prev) => prev.map((l) => (l.item_id === itemId ? { ...l, _excluded: true } : l)));
   }, []);
@@ -108,5 +124,6 @@ export function useLines() {
     handleBulkExclude, handleResetExclusions,
     handleQtyChange, handleExcludeItem, handleFillSuggested,
     linesWithQty, totalItems, excludedCount,
+    noSourceStockCount, coveredCount,
   };
 }

@@ -39,6 +39,8 @@ export interface PrepContextValue {
   excludedCount: number;
   totalItems: number;
   linesWithQty: number;
+  noSourceStockCount: number;
+  coveredCount: number;
 
   sourceName: string;
   destName: string;
