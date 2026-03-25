@@ -167,18 +167,26 @@ async function _backfillSystemKeys(): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  [ب] Delta Sync — يضيف الصلاحيات الجديدة التي أُضيفت للـ code بعد الـ seed الأول
+//  [ب] Delta Sync — يضيف فقط الصلاحيات الجديدة حقاً في الكود
 //
-//  المشكلة القديمة: كانت تقارن صلاحيات الكود بصلاحيات الـ DB مباشرةً، فلو
-//  المسؤول شال صلاحية يدوياً من مجموعة نظامية، كانت تُضاف تاني عند كل إعادة تشغيل.
+//  المبدأ:
+//   • seed_snapshot = JSON array مرتّب من permission keys كما حددها الكود في آخر مزامنة
+//   • عند كل تشغيل: trulyNew = currentCode − previousSnapshot  (جديدة في الكود)
+//   • نضيف trulyNew إلى DB إن لم تكن موجودة بالفعل
+//   • نحدّث snapshot فقط بعد نجاح العملية كلها (داخل transaction)
+//   • العملية additive فقط — لا يُحذف شيء من DB تلقائياً
 //
-//  الحل: نحتفظ بـ seed_snapshot (JSON) لكل مجموعة نظامية يمثل آخر مجموعة صلاحيات
-//  حددها الكود. عند المزامنة نضيف فقط الصلاحيات التي:
-//    (أ) موجودة في الكود الآن  AND
-//    (ب) لم تكن موجودة في الـ snapshot السابق (أي إضافة جديدة حقيقية في الكود)
-//  هكذا الصلاحيات التي أزالها المسؤول يدوياً لا تُضاف مجدداً.
+//  سياسة أول تشغيل (seed_snapshot = NULL):
+//   • نعتبر كل صلاحيات الكود الحالية "سابقة" → trulyNew = []
+//   • لا يُضاف شيء (تجنّب إعادة صلاحيات أزالها المسؤول يدوياً من قبل)
+//   • نحفظ snapshot فقط لتأسيس الخط القاعدي للمزامنات التالية
+//
+//  سياسة snapshot تالف (parse error):
+//   • نعتبله كـ NULL (خط قاعدي حالي فقط، بدون إضافات)
+//   • أكثر أماناً من اعتباره فارغاً (لو فارغ هيضيف كل الصلاحيات)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** تأكد من وجود عمود seed_snapshot — آمن ومتعدد التشغيل (DDL transactional في PostgreSQL) */
 async function _ensureSeedSnapshotColumn(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE permission_groups
@@ -186,8 +194,28 @@ async function _ensureSeedSnapshotColumn(): Promise<void> {
   `);
 }
 
+/** تسلسل ثابت: مرتّب أبجدياً + بدون مكررات */
+function _serializeSnapshot(keys: string[]): string {
+  return JSON.stringify([...new Set(keys)].sort());
+}
+
+/** تحليل snapshot مع fallback آمن */
+function _parseSnapshot(raw: string | null, currentCodeSet: Set<string>): Set<string> {
+  if (!raw) {
+    // أول تشغيل: اعتبر كل صلاحيات الكود الحالية "سابقة" → trulyNew = []
+    return currentCodeSet;
+  }
+  try {
+    return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    // snapshot تالف: نفس سياسة أول تشغيل (لا نضيف شيئاً، فقط نصلح الـ snapshot)
+    logger.warn("[PERM_GROUPS_SEED] corrupt seed_snapshot detected — treating as baseline (no additions)");
+    return currentCodeSet;
+  }
+}
+
 async function _deltaSyncPermissions(): Promise<void> {
-  // تأكد من وجود العمود (آمن ومتعدد التشغيل)
+  // ① تأكد من وجود عمود seed_snapshot خارج الـ loop (DDL مرة واحدة)
   await _ensureSeedSnapshotColumn();
 
   let totalAdded = 0;
@@ -195,66 +223,64 @@ async function _deltaSyncPermissions(): Promise<void> {
   for (const [roleKey, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
     if (perms.length === 0) continue;
 
-    // ابحث عن المجموعة النظامية باستخدام system_key (المفتاح الثابت)
-    const grpRows = await db.execute(sql`
-      SELECT id, seed_snapshot FROM permission_groups
-      WHERE  is_system  = true
-        AND  system_key = ${roleKey}
-      LIMIT 1
-    `);
-    const grpRow  = (grpRows as any).rows[0] as { id: string; seed_snapshot: string | null } | undefined;
-    if (!grpRow) continue;
+    // ② الصلاحيات المعرّفة في الكود لهذا الدور — مرتّبة وبدون تكرار
+    const currentCodeSet = new Set([...new Set(perms)].sort());
+    const currentCodeArr = [...currentCodeSet];
+    const newSnapshotStr = _serializeSnapshot(currentCodeArr);
 
-    const groupId            = grpRow.id;
-    const currentCodeSet     = new Set([...new Set(perms)]);
-    const currentCodeArr     = [...currentCodeSet];
-
-    // الـ snapshot السابق — ما كان الكود يوفّره في آخر مزامنة
-    let previousSnapshotSet: Set<string>;
-    if (grpRow.seed_snapshot) {
-      try {
-        previousSnapshotSet = new Set(JSON.parse(grpRow.seed_snapshot) as string[]);
-      } catch {
-        previousSnapshotSet = new Set(); // snapshot تالف → تعامل كأول مرة
-      }
-    } else {
-      // أول مرة بعد الـ migration — لا snapshot سابق
-      // نعتبر كل صلاحيات الكود الحالية "سابقة" حتى لا نُضيف ما قد شاله المسؤول من قبل
-      previousSnapshotSet = currentCodeSet;
-    }
-
-    // الصلاحيات "الجديدة حقاً في الكود" = موجودة في الكود الآن ولم تكن في الـ snapshot السابق
-    const trulyNew = currentCodeArr.filter(p => !previousSnapshotSet.has(p));
-
-    if (trulyNew.length > 0) {
-      // الصلاحيات الموجودة في الـ DB حالياً لهذه المجموعة
-      const existingRows = await db.execute(sql`
-        SELECT permission FROM group_permissions WHERE group_id = ${groupId}
+    // ③ كل عملية مجموعة في transaction مستقلة:
+    //    قراءة snapshot → تحديد trulyNew → insert → تحديث snapshot
+    //    لو أي خطوة فشلت، يُرجَع كل شيء ولا يُحدَّث snapshot
+    await db.transaction(async (tx) => {
+      // قراءة المجموعة النظامية
+      const grpRows = await tx.execute(sql`
+        SELECT id, seed_snapshot FROM permission_groups
+        WHERE  is_system  = true
+          AND  system_key = ${roleKey}
+        LIMIT 1
       `);
-      const existingSet = new Set(
-        ((existingRows as any).rows as any[]).map((r: any) => r.permission as string)
-      );
+      const grpRow = (grpRows as any).rows[0] as
+        { id: string; seed_snapshot: string | null } | undefined;
+      if (!grpRow) return; // لا توجد مجموعة نظامية لهذا الدور → تخطّ
 
-      const toAdd = trulyNew.filter(p => !existingSet.has(p));
-      if (toAdd.length > 0) {
-        for (const permission of toAdd) {
-          await db.execute(sql`
-            INSERT INTO group_permissions (group_id, permission)
-            VALUES (${groupId}, ${permission})
-            ON CONFLICT (group_id, permission) DO NOTHING
-          `);
+      const groupId           = grpRow.id;
+      const previousSnapshot  = _parseSnapshot(grpRow.seed_snapshot, currentCodeSet);
+
+      // الصلاحيات الجديدة حقاً = في الكود الآن ولم تكن في آخر snapshot
+      const trulyNew = currentCodeArr.filter(p => !previousSnapshot.has(p));
+
+      if (trulyNew.length > 0) {
+        // اقرأ ما هو موجود في DB حالياً (داخل نفس الـ transaction للاتساق)
+        const existingRows = await tx.execute(sql`
+          SELECT permission FROM group_permissions WHERE group_id = ${groupId}
+        `);
+        const existingSet = new Set(
+          ((existingRows as any).rows as any[]).map((r: any) => r.permission as string)
+        );
+
+        const toAdd = trulyNew.filter(p => !existingSet.has(p));
+        if (toAdd.length > 0) {
+          for (const permission of toAdd) {
+            await tx.execute(sql`
+              INSERT INTO group_permissions (group_id, permission)
+              VALUES (${groupId}, ${permission})
+              ON CONFLICT (group_id, permission) DO NOTHING
+            `);
+          }
+          logger.info(
+            `[PERM_GROUPS_SEED] delta: added ${toAdd.length} new permissions to "${roleKey}" group`
+          );
+          totalAdded += toAdd.length;
         }
-        logger.info(`[PERM_GROUPS_SEED] delta: added ${toAdd.length} new permissions to "${roleKey}" group`);
-        totalAdded += toAdd.length;
       }
-    }
 
-    // حدّث الـ snapshot دائماً ليعكس ما يعرّفه الكود الآن
-    await db.execute(sql`
-      UPDATE permission_groups
-      SET    seed_snapshot = ${JSON.stringify(currentCodeArr)}
-      WHERE  id = ${groupId}
-    `);
+      // ④ حدّث snapshot فقط بعد نجاح الـ inserts (داخل نفس الـ transaction)
+      await tx.execute(sql`
+        UPDATE permission_groups
+        SET    seed_snapshot = ${newSnapshotStr}
+        WHERE  id = ${groupId}
+      `);
+    });
   }
 
   if (totalAdded > 0) {
