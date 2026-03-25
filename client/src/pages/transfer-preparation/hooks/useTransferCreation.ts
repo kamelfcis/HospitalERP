@@ -103,6 +103,7 @@ export function useTransferCreation(
             selectedExpiryDate: alloc.expiryDate || null,
             expiryMonth: alloc.expiryMonth || null,
             expiryYear: alloc.expiryYear || null,
+            availableAtSaveMinor: line.source_stock,
             lineNo,
             notes: "",
           });
