@@ -20,6 +20,68 @@ The system utilizes a RESTful JSON API. Drizzle ORM manages PostgreSQL interacti
 - **Vendor chunking** (`vite.config.ts`): `manualChunks` splits `vendor-react`, `vendor-query`, `vendor-radix`, `vendor-icons`, `vendor-router` for better browser caching on repeat visits.
 - **xlsx**: Server-side only; no client import needed.
 
+### Grid Navigation + Scanner Pattern (MANDATORY for all data-entry screens)
+This pattern was perfected in `client/src/pages/sales-invoices/` and **must be reused** in any screen with a table of editable quantity/numeric cells and a barcode scanner. Reference implementation:
+- `InvoiceLineTable.tsx` — grid container + `QtyCell`
+- `useInvoiceLines.ts` — `handleQtyConfirm` with early exit
+- `useBarcodeScanner.ts` — global scanner listener
+
+#### Three-rule architecture:
+
+**Rule 1 — Uncontrolled QtyCell (zero re-renders on navigation)**
+```tsx
+const inputRef = useRef<HTMLInputElement>(null);
+
+// Sync from external state only when NOT focused
+useEffect(() => {
+  const el = inputRef.current;
+  if (el && document.activeElement !== el) {
+    el.value = String(line.qty);
+    pendingQtyRef.current.delete(line.tempId);
+  }
+}, [line.qty, line.unitLevel, line.tempId]);
+
+<input
+  ref={inputRef}
+  defaultValue={String(line.qty)}   // NOT value= (uncontrolled)
+  onChange={(e) => pendingQtyRef.current.set(line.tempId, e.target.value)}
+  onFocus={(e) => { pendingQtyRef.current.delete(line.tempId); e.target.select(); }}
+  onBlur={() => onQtyConfirm(line.tempId)}
+  data-grid-row={rowIndex}
+  data-grid-col="qty"
+/>
+```
+*Key: NO useState, NO setLocalVal, NO React state update on focus → zero re-renders during navigation.*
+
+**Rule 2 — Early exit in qty confirmation (zero network on arrow navigation)**
+```tsx
+const handleQtyConfirm = useCallback(async (tempId: string) => {
+  const pendingVal = pendingQtyRef.current.get(tempId);
+  if (pendingVal === undefined) return;  // ← user just navigated, didn't type → exit immediately
+  // ... rest of FEFO / updateLine logic
+}, [...]);
+```
+*Key: `pendingQtyRef` only has a value when the user TYPED something. Arrow navigation leaves it empty → instant return.*
+
+**Rule 3 — Global scanner listener (scanner works from any focused element)**
+```tsx
+// In useBarcodeScanner.ts: attach to document, not to barcode input
+document.addEventListener("keydown", handleKeyDown);
+// Filter: e.key.length !== 1 → skip arrow/ctrl/etc. keys
+// Filter: e.key !== "Enter" → handled separately for scan end
+```
+*Key: scanner reads from ANY focused element (qty cell, body, anywhere). Never force-focus the barcode input on every navigation.*
+
+**Arrow navigation in container:**
+```tsx
+// data-grid-row / data-grid-col attributes on each cell
+// Container div onKeyDown:
+if (e.key === "ArrowDown") { e.preventDefault(); nextRow = row + 1; }
+if (e.key === "ArrowUp")   { e.preventDefault(); nextRow = row - 1; }
+// seek(nextRow, nextCol) → querySelector → el.focus()
+```
+Enter/Tab in QtyCell → focus barcode input (scanner handoff).
+
 ### Feature Specifications
 -   **Financial Management**: Includes Chart of Accounts, Cost Centers, Journal Entries, Fiscal Period controls, IFRS-compliant reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger), and automatic journal entry generation.
 -   **Inventory & Sales**: Manages supplier receiving, sales invoicing (barcode, FEFO), sales returns, patient invoicing (services, drugs, consumables), patient admissions, and master data.
