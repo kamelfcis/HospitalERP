@@ -1,0 +1,186 @@
+أريد إغلاق مشكلة اختيار اللوت (مدفوع/مجاني) في مرتجع الشراء إغلاقًا نهائيًا (UI + API + Backend + DB) بدون أي ثغرات، مع توحيد المنطق ومنع التكرار ومعالجة كل الحالات الطرفية.
+
+# الهدف
+منع تمامًا اختيار:
+- لوت مجاني (purchase_price = 0) لسطر مرتجع مدفوع
+- أو لوت مدفوع لسطر مرتجع مجاني
+
+مع توحيد تعريف نوع اللوت (free/paid) في كل الطبقات، والتعامل مع NULL والقيم غير الصالحة، وإظهار رسائل خطأ واضحة.
+
+---
+
+# المطلوب تنفيذًا
+
+## 1) توحيد تعريف نوع اللوت (Single Source of Truth)
+لا أريد منطق مكرر أو متضارب.
+
+أنشئ Helper مركزي واحد فقط يُستخدم في:
+- getAvailableLots
+- createPurchaseReturn
+- أي Validation أخرى
+
+مثال:
+- resolvePurchaseLotKind(lot) => 'free' | 'paid' | 'invalid'
+
+القواعد:
+- purchase_price = 0  => free
+- purchase_price > 0  => paid
+- purchase_price IS NULL => invalid (لا يُسمح باستخدامه)
+
+لا أريد أي تفسير آخر في أي ملف.
+
+---
+
+## 2) قاعدة البيانات / Query Layer
+في getAvailableLots:
+- أضف فلترة حسب isFreeItem باستخدام نفس helper المنطقي
+- لا تُظهر أي lot حيث purchase_price IS NULL
+- تأكد أن:
+  - اللوت لنفس itemId
+  - اللوت لنفس warehouse (إن كان مطلوب)
+  - اللوت صالح (غير ملغي / غير مغلق إن كان عندك حالات)
+
+---
+
+## 3) API Layer (/api/purchase-returns/lots)
+- استقبل isFreeItem كـ query param
+- parsing صارم:
+  - "true" => true
+  - "false" => false
+  - أي قيمة أخرى => reject 400
+
+- لا تعتمد فقط على الفلترة القادمة من query:
+  - طبّق نفس المنطق في السيرفر
+  - لا ترجع لوتات غير مطابقة
+
+---
+
+## 4) Frontend (LotSelector + ReturnLinesTable)
+- LotSelector يستقبل isFreeItem
+- يمررها للـ API
+- لا يعرض أي lot مخالف
+
+- ReturnLinesTable:
+  - يمرر isFreeItem من السطر بشكل صحيح
+  - لا يوجد أي fallback صامت
+
+- لا تعتمد على UI فقط، هذا فقط تحسين تجربة
+
+---
+
+## 5) Backend Validation (createPurchaseReturn) — أهم جزء
+لكل سطر مرتجع:
+1) اجلب اللوت من DB
+2) حدّد نوعه باستخدام helper المركزي
+3) قارن مع line.isFreeItem
+
+القواعد:
+- لو line.isFreeItem = false => يجب أن يكون lot = paid
+- لو line.isFreeItem = true  => يجب أن يكون lot = free
+- لو lot = invalid => رفض مباشر
+
+عند المخالفة:
+- أرجع خطأ واضح:
+  - "لا يمكن اختيار لوت مجاني لسطر مرتجع مدفوع"
+  - "لا يمكن اختيار لوت مدفوع لسطر مرتجع مجاني"
+  - "اللوت غير صالح (سعر شراء غير محدد)"
+
+---
+
+## 6) Validation إضافي (لا تكتفِ بالنوع)
+لكل سطر:
+- تحقق أن lot.itemId = line.itemId
+- تحقق أن الكمية المرتجعة ≤ الكمية المتاحة
+- تحقق أن اللوت صالح للمرتجع (ليس ملغياً أو مغلقاً)
+- لا تسمح بأي bypass عبر API
+
+---
+
+## 7) التعامل مع NULL و Legacy Data
+- أي lot بـ purchase_price = NULL:
+  - لا يظهر في LotSelector
+  - لا يُقبل في createPurchaseReturn
+  - أرجع خطأ واضح
+
+- إذا وُجد draft قديم فيه lot مخالف:
+  - عند التحميل: أظهر warning واضح
+  - عند الحفظ: رفض مع رسالة واضحة
+
+---
+
+## 8) Refactor — منع التكرار
+- استخرج منطق:
+  - تحديد نوع اللوت
+  - validation
+إلى helper مشترك
+
+- لا أريد نفس الشرط مكرر في:
+  - query
+  - route
+  - service
+بصيغ مختلفة
+
+---
+
+## 9) الأداء والفهارس
+راجع:
+- index على ItemTransaction (ItemID, purchase_price)
+- index على (warehouse_id, item_id)
+- لا تضف فهارس عشوائية
+- تأكد أن استعلام getAvailableLots لا يعمل full scan
+
+---
+
+## 10) اختبارات إلزامية
+نفّذ واختبر السيناريوهات:
+
+### Test 1
+استلام:
+- 10 مدفوع
+- 2 بونص  
+سطر مرتجع مدفوع يرى فقط المدفوع
+
+### Test 2
+سطر مرتجع مجاني يرى فقط البونص
+
+### Test 3
+API call:
+- isFreeItem=false + lot مجاني => FAIL
+
+### Test 4
+API call:
+- isFreeItem=true + lot مدفوع => FAIL
+
+### Test 5
+lot.purchase_price = NULL => لا يظهر + لا يقبل
+
+### Test 6
+draft قديم بلوت مخالف => warning + رفض عند الحفظ
+
+---
+
+# المطلوب في الرد
+أريد تقرير واضح:
+
+1) MODIFIED FILES
+2) HELPER ADDED (تحديد نوع اللوت)
+3) DB QUERY CHANGES
+4) API CHANGES
+5) FRONTEND CHANGES
+6) VALIDATION LOGIC
+7) NULL HANDLING
+8) INDEX REVIEW
+9) TEST RESULTS
+10) EDGE CASES
+
+---
+
+# قيود صارمة
+- لا تعتمد على UI فقط
+- لا تكرر المنطق
+- لا تستخدم شروط مختلفة في أماكن مختلفة
+- لا تسمح بأي silent fallback
+- لا تكسر البيانات الحالية
+- الكود يجب أن يكون واضح وقابل للمراجعة
+
+أريد تنفيذ نظيف كـ production fix، وليس patch سريع.

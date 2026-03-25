@@ -8,6 +8,9 @@ import type { Express, Request, Response } from "express";
 import { requireAuth }           from "./_shared";
 import { storage }               from "../storage";
 import { assertUserWarehouseAllowed } from "../lib/warehouse-guard";
+import { db } from "../db";
+import { eq } from "drizzle-orm";
+import { purchaseInvoiceLines } from "../../shared/schema/purchasing";
 import {
   getApprovedInvoicesForSupplier,
   getPurchaseInvoiceLinesForReturn,
@@ -42,14 +45,29 @@ export function registerPurchaseReturnRoutes(app: Express) {
   });
 
   // ── GET /api/purchase-returns/lots ────────────────────────────────────────
-  // ?itemId=xxx&warehouseId=xxx
+  // ?itemId=xxx&warehouseId=xxx&invoiceLineId=xxx
+  // isFreeItem is derived SERVER-SIDE from the actual invoice line purchase_price,
+  // so the client cannot forge it.
   app.get("/api/purchase-returns/lots", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { itemId, warehouseId, isFreeItem } = req.query as Record<string, string>;
+      const { itemId, warehouseId, invoiceLineId } = req.query as Record<string, string>;
       if (!itemId || !warehouseId) {
         return res.status(400).json({ message: "itemId و warehouseId مطلوبان." });
       }
-      const lots = await getAvailableLots(itemId, warehouseId, isFreeItem === "true");
+
+      // Derive isFreeItem from the actual invoice line (server-side, client is NOT trusted)
+      let isFreeItem = false;
+      if (invoiceLineId) {
+        const [invLine] = await db
+          .select({ purchasePrice: purchaseInvoiceLines.purchasePrice })
+          .from(purchaseInvoiceLines)
+          .where(eq(purchaseInvoiceLines.id, invoiceLineId));
+        if (invLine) {
+          isFreeItem = parseFloat(invLine.purchasePrice as string) === 0;
+        }
+      }
+
+      const lots = await getAvailableLots(itemId, warehouseId, isFreeItem);
       res.json(lots);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
