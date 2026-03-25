@@ -44,6 +44,8 @@ export interface ShiftTotals {
   openingCash: string;
   totalCollected: string;
   collectCount: number;
+  totalDeferred: string;
+  deferredCount: number;
   totalRefunded: string;
   refundCount: number;
   netCash: string;

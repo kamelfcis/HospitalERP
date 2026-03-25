@@ -1016,8 +1016,10 @@ const methods = {
   async getShiftTotals(this: DatabaseStorage, shiftId: string): Promise<{
     totalCollected: string;
     totalRefunded: string;
+    totalDeferred: string;
     collectCount: number;
     refundCount: number;
+    deferredCount: number;
     openingCash: string;
     netCash: string;
     netCollected: string;
@@ -1034,6 +1036,16 @@ const methods = {
       count: sql<number>`COUNT(*)`,
     }).from(cashierRefundReceipts).where(eq(cashierRefundReceipts.shiftId, shiftId));
 
+    const deferredRes = await db.execute(sql`
+      SELECT COALESCE(SUM(net_total), 0)::text AS total, COUNT(*)::int AS count
+      FROM sales_invoice_headers
+      WHERE claimed_by_shift_id = ${shiftId}
+        AND is_return = false
+        AND customer_type = 'credit'
+        AND status IN ('finalized', 'collected')
+    `);
+    const deferredRow = (deferredRes as any).rows[0];
+
     const durationRes = await db.execute(sql`
       SELECT opening_cash, status,
              EXTRACT(EPOCH FROM (NOW() - opened_at)) / 3600 AS hours_open
@@ -1043,6 +1055,8 @@ const methods = {
 
     const totalCollected = collectResult?.total || "0";
     const totalRefunded  = refundResult?.total  || "0";
+    const totalDeferred  = deferredRow?.total   || "0";
+    const deferredCount  = parseInt(deferredRow?.count || "0", 10);
     const openingCash    = shiftRow?.opening_cash || "0";
     const hoursOpen      = parseFloat(shiftRow?.hours_open || "0");
     const isStale        = hoursOpen > MAX_SHIFT_HOURS || shiftRow?.status === "stale";
@@ -1052,9 +1066,11 @@ const methods = {
     return {
       openingCash,
       totalCollected,
-      collectCount: collectResult?.count || 0,
+      totalDeferred,
+      collectCount:  collectResult?.count || 0,
       totalRefunded,
-      refundCount:  refundResult?.count || 0,
+      refundCount:   refundResult?.count  || 0,
+      deferredCount,
       netCash,
       netCollected,
       hoursOpen,
