@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useEffect, useRef, useCallback, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { X, BarChart3, Lock } from "lucide-react";
 import { formatNumber, formatQty } from "@/lib/formatters";
@@ -31,26 +31,32 @@ interface QtyCellProps {
 const QtyCell = memo(function QtyCell({
   line, rowIndex, fefoLoading, pendingQtyRef, onQtyConfirm, barcodeInputRef, testId,
 }: QtyCellProps) {
-  const [localVal, setLocalVal] = useState(String(line.qty));
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  // عند تغيُّر الكمية من الخارج (FEFO / updateLine):
+  // إن لم يكن المستخدم مُركِّزاً على هذا الحقل الآن → حدِّث DOM مباشرة
+  // (بدون setState → بدون re-render → بدون أي تلعثم)
   useEffect(() => {
-    setLocalVal(String(line.qty));
-    pendingQtyRef.current.delete(line.tempId);
+    const el = inputRef.current;
+    if (el && document.activeElement !== el) {
+      el.value = String(line.qty);
+      pendingQtyRef.current.delete(line.tempId);
+    }
   }, [line.qty, line.unitLevel, line.tempId, pendingQtyRef]);
 
   return (
     <input
+      ref={inputRef}
       type="number"
       step="0.001"
       min="0.001"
-      value={localVal}
+      defaultValue={String(line.qty)}
       onChange={(e) => {
-        setLocalVal(e.target.value);
+        // فقط سجِّل القيمة المعلقة — لا setState — لا re-render
         pendingQtyRef.current.set(line.tempId, e.target.value);
       }}
       onFocus={(e) => {
-        // عند التركيز (بالأسهم أو النقر): أعِد القيمة الصحيحة وحدد الكل
-        setLocalVal(String(line.qty));
+        // امسح أي قيمة معلقة قديمة وحدد الكل — بدون setState
         pendingQtyRef.current.delete(line.tempId);
         e.target.select();
       }}
