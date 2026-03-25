@@ -1,11 +1,13 @@
 import { useState, useCallback } from "react";
-import { Loader2, ChevronLeft, ChevronRight, Wand2, Search, Filter } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, Wand2, Search, Filter, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
 import type { Warehouse } from "@shared/schema";
 import type { TransferLineLocal } from "../types";
+
+type SuggestionReason = "sales_gap" | "destination_zero" | "covered";
 
 interface SuggestionRow {
   itemId: string;
@@ -17,7 +19,12 @@ interface SuggestionRow {
   sourceQtyMinor: number;
   destQtyMinor: number;
   destSalesMinor: number;
+  /** الاحتياج = max(0, مبيعات − رصيد_الوجهة) */
+  needMinor: number;
+  /** المقترح = min(needMinor, رصيد_المصدر) */
   suggestedMinor: number;
+  sourceInsufficient: boolean;
+  suggestionReason: SuggestionReason;
 }
 
 interface Props {
@@ -35,17 +42,60 @@ function toMajorQty(minor: number, majorToMinor: number): string {
   return val % 1 === 0 ? val.toFixed(0) : val.toFixed(2);
 }
 
-export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehouseId, onFillLines }: Props) {
-  const today = new Date().toISOString().split("T")[0];
-  const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
+function ReasonBadge({ reason, sourceInsufficient }: { reason: SuggestionReason; sourceInsufficient: boolean }) {
+  if (reason === "sales_gap") {
+    return (
+      <div className="flex flex-col gap-0.5 items-center">
+        <Badge
+          className="text-[9px] px-1 py-0 bg-amber-500 text-white no-default-hover-elevate no-default-active-elevate"
+          title="مبيعات الوجهة تتجاوز رصيدها الحالي"
+        >
+          عجز مبيعات
+        </Badge>
+        {sourceInsufficient && (
+          <Badge
+            variant="destructive"
+            className="text-[9px] px-1 py-0 no-default-hover-elevate no-default-active-elevate"
+            title="رصيد المصدر أقل من الاحتياج — الكمية المقترحة مقصوصة حسب المتاح"
+          >
+            مصدر غير كافٍ
+          </Badge>
+        )}
+      </div>
+    );
+  }
+  if (reason === "destination_zero") {
+    return (
+      <Badge
+        variant="secondary"
+        className="text-[9px] px-1 py-0"
+        title="الوجهة فارغة — يُقترح مراجعة الكمية يدوياً"
+      >
+        الوجهة صفر
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      className="text-[9px] px-1 py-0 bg-green-600 text-white no-default-hover-elevate no-default-active-elevate"
+      title="رصيد الوجهة يغطي مبيعات الفترة"
+    >
+      مكتفٍ
+    </Badge>
+  );
+}
 
-  const [dateFrom, setDateFrom]         = useState(firstOfMonth);
-  const [dateTo, setDateTo]             = useState(today);
-  const [excludeCovered, setExcludeCovered] = useState(true);
-  const [search, setSearch]             = useState("");
+export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehouseId, onFillLines }: Props) {
+  const today         = new Date().toISOString().split("T")[0];
+  const firstOfMonth  = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
+
+  const [dateFrom,        setDateFrom]        = useState(firstOfMonth);
+  const [dateTo,          setDateTo]          = useState(today);
+  const [excludeCovered,  setExcludeCovered]  = useState(true);
+  const [search,          setSearch]          = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [page, setPage]                 = useState(1);
-  const [debounceTimer, setDebounceTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [page,            setPage]            = useState(1);
+  const [debounceTimer,   setDebounceTimer]   = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const canQuery = !!sourceWarehouseId && !!destWarehouseId && !!dateFrom && !!dateTo;
 
@@ -79,14 +129,19 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
     setDebounceTimer(t);
   }, [debounceTimer]);
 
-  const handleFill = useCallback(() => {
-    const eligible = rows.filter((r) => r.suggestedMinor > 0);
-    if (!eligible.length) return;
+  /*
+   * handleFill — يملأ أسطر إذن التحويل بالأصناف الظاهرة في هذه الصفحة فقط.
+   * الكمية المستخدمة هي suggestedMinor (مقصوصة برصيد المصدر) وليس needMinor.
+   * الأصناف التي suggestedMinor=0 (وجهة صفر بدون مبيعات) لا تُضاف تلقائياً.
+   */
+  const eligibleRows = rows.filter((r) => r.suggestedMinor > 0);
 
-    const lines: TransferLineLocal[] = eligible.map((r) => {
-      const unitLevel = "major";
+  const handleFill = useCallback(() => {
+    if (!eligibleRows.length) return;
+
+    const lines: TransferLineLocal[] = eligibleRows.map((r) => {
       const qtyInMinor = r.suggestedMinor;
-      const majorQty = r.majorToMinor > 0 ? qtyInMinor / r.majorToMinor : qtyInMinor;
+      const majorQty   = r.majorToMinor > 0 ? qtyInMinor / r.majorToMinor : qtyInMinor;
       const qtyEntered = Math.ceil(majorQty * 10000) / 10000;
 
       const fakeItem = {
@@ -106,7 +161,7 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
         id: crypto.randomUUID(),
         itemId: r.itemId,
         item: fakeItem,
-        unitLevel,
+        unitLevel: "major" as const,
         qtyEntered,
         qtyInMinor,
         selectedExpiryDate: null,
@@ -119,7 +174,7 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
     });
 
     onFillLines(lines);
-  }, [rows, onFillLines]);
+  }, [eligibleRows, onFillLines]);
 
   if (!sourceWarehouseId || !destWarehouseId) {
     return (
@@ -132,7 +187,7 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
   return (
     <div className="space-y-2" dir="rtl">
 
-      {/* ── Filters ────────────────────────────────────────────────────────── */}
+      {/* ── Filters ───────────────────────────────────────────────────────── */}
       <div className="peachtree-toolbar flex items-center gap-2 flex-wrap text-[12px]">
         <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
 
@@ -149,11 +204,18 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
             className="peachtree-input w-[135px]" data-testid="sug-to-date" />
         </div>
 
-        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+        {/* Exclude-covered checkbox with tooltip */}
+        <label
+          className="flex items-center gap-1.5 cursor-pointer select-none group relative"
+          title="يتم استبعاد الصنف إذا كان رصيد الوجهة الحالي يغطي مبيعات الفترة المحددة، دون اعتبار حد أدنى أو مخزون أمان. الأصناف التي الوجهة فارغة تماماً تظهر دائماً."
+        >
           <input type="checkbox" checked={excludeCovered}
             onChange={(e) => { setExcludeCovered(e.target.checked); setPage(1); }}
             className="w-3.5 h-3.5" data-testid="sug-exclude-covered" />
-          <span className="text-xs whitespace-nowrap">استبعاد الأصناف المكتفية</span>
+          <span className="text-xs whitespace-nowrap">
+            استبعاد الأصناف التي يغطي رصيدها مبيعات الفترة
+          </span>
+          <Info className="h-3 w-3 text-muted-foreground" />
         </label>
 
         <div className="flex items-center gap-1 flex-1 min-w-[160px]">
@@ -170,26 +232,44 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
         )}
       </div>
 
-      {/* ── Header strip ───────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-1">
+      {/* ── Header strip ──────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-1 gap-2 flex-wrap">
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
           <span>📦 <strong className="text-foreground">{sourceName}</strong> → <strong className="text-foreground">{destName}</strong></span>
           <span>الفترة: {dateFrom} → {dateTo}</span>
         </div>
-        <Button
-          size="sm"
-          variant="default"
-          onClick={handleFill}
-          disabled={rows.filter((r) => r.suggestedMinor > 0).length === 0}
-          data-testid="button-fill-suggested"
-          className="gap-1.5"
-        >
-          <Wand2 className="h-3.5 w-3.5" />
-          ملء الكميات المقترحة ({rows.filter((r) => r.suggestedMinor > 0).length})
-        </Button>
+
+        <div className="flex flex-col items-end gap-0.5">
+          <Button
+            size="sm"
+            variant="default"
+            onClick={handleFill}
+            disabled={eligibleRows.length === 0}
+            data-testid="button-fill-suggested"
+            className="gap-1.5"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            ملء الكميات المقترحة ({eligibleRows.length})
+          </Button>
+          <span className="text-[10px] text-muted-foreground">
+            يتم ملء كميات الأصناف الظاهرة في هذه الصفحة فقط
+          </span>
+        </div>
       </div>
 
-      {/* ── Table ──────────────────────────────────────────────────────────── */}
+      {/* ── Legend ────────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 px-1 text-[10px] text-muted-foreground">
+        <span className="font-medium">الكميات بالوحدة الكبرى •</span>
+        <span className="text-[10px]">
+          <span className="font-medium text-foreground">الاحتياج</span> = مبيعات الوجهة − رصيد الوجهة
+        </span>
+        <span className="text-muted-foreground">|</span>
+        <span className="text-[10px]">
+          <span className="font-medium text-foreground">المقترح</span> = الاحتياج مقصوص برصيد المصدر
+        </span>
+      </div>
+
+      {/* ── Table ─────────────────────────────────────────────────────────── */}
       {isLoading ? (
         <div className="space-y-1 p-2">
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
@@ -206,20 +286,35 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
                 <th className="py-0.5 px-2 text-center whitespace-nowrap">رصيد {sourceName}</th>
                 <th className="py-0.5 px-2 text-center whitespace-nowrap">رصيد {destName}</th>
                 <th className="py-0.5 px-2 text-center whitespace-nowrap">مبيعات {destName}</th>
-                <th className="py-0.5 px-2 text-center whitespace-nowrap">الكمية المقترحة</th>
-                <th className="py-0.5 px-2 text-center whitespace-nowrap">حالة</th>
+                <th
+                  className="py-0.5 px-2 text-center whitespace-nowrap"
+                  title="الاحتياج = max(0, مبيعات الوجهة − رصيد الوجهة)"
+                >
+                  الاحتياج
+                </th>
+                <th
+                  className="py-0.5 px-2 text-center whitespace-nowrap"
+                  title="الكمية المقترحة = min(الاحتياج, رصيد المصدر)"
+                >
+                  المقترح
+                </th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">الحالة</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, i) => {
-                const isCovered   = row.suggestedMinor <= 0 && row.destSalesMinor > 0;
-                const isNew       = row.destQtyMinor === 0 && row.destSalesMinor === 0;
+                const mtu          = row.majorToMinor || 1;
                 const hasSuggestion = row.suggestedMinor > 0;
-                const mtu = row.majorToMinor || 1;
+                const rowBg = row.suggestionReason === "sales_gap"
+                  ? " bg-amber-50/40 dark:bg-amber-900/10"
+                  : row.suggestionReason === "destination_zero"
+                    ? " bg-blue-50/30 dark:bg-blue-900/10"
+                    : "";
                 return (
                   <tr key={row.itemId}
-                    className={`peachtree-grid-row${hasSuggestion ? " bg-amber-50/40 dark:bg-amber-900/10" : ""}`}
-                    data-testid={`row-sug-${row.itemId}`}>
+                    className={`peachtree-grid-row${rowBg}`}
+                    data-testid={`row-sug-${row.itemId}`}
+                  >
                     <td className="py-0 px-2 h-7 text-center align-middle text-muted-foreground">
                       {(page - 1) * PAGE_SIZE + i + 1}
                     </td>
@@ -230,35 +325,45 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
                     <td className="py-0 px-2 h-7 text-center align-middle text-muted-foreground">
                       {row.majorUnitName || "—"}
                     </td>
+
+                    {/* رصيد المصدر */}
                     <td className="py-0 px-2 h-7 text-center align-middle peachtree-amount font-medium">
                       {toMajorQty(row.sourceQtyMinor, mtu)}
                     </td>
+
+                    {/* رصيد الوجهة */}
                     <td className={`py-0 px-2 h-7 text-center align-middle peachtree-amount ${row.destQtyMinor === 0 ? "text-destructive" : ""}`}>
                       {toMajorQty(row.destQtyMinor, mtu)}
                     </td>
+
+                    {/* مبيعات الوجهة في الفترة */}
                     <td className="py-0 px-2 h-7 text-center align-middle peachtree-amount text-blue-600 dark:text-blue-400">
                       {row.destSalesMinor > 0 ? toMajorQty(row.destSalesMinor, mtu) : "—"}
                     </td>
+
+                    {/* الاحتياج = need */}
+                    <td className={`py-0 px-2 h-7 text-center align-middle peachtree-amount ${row.needMinor > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                      {row.needMinor > 0 ? toMajorQty(row.needMinor, mtu) : "—"}
+                    </td>
+
+                    {/* الكمية المقترحة = suggested (مقصوصة برصيد المصدر) */}
                     <td className={`py-0 px-2 h-7 text-center align-middle peachtree-amount font-bold ${hasSuggestion ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}>
                       {hasSuggestion ? toMajorQty(row.suggestedMinor, mtu) : "—"}
                     </td>
+
+                    {/* الحالة */}
                     <td className="py-0 px-2 h-7 text-center align-middle">
-                      {isNew && (
-                        <Badge variant="secondary" className="text-[9px] px-1 py-0">جديد</Badge>
-                      )}
-                      {isCovered && (
-                        <Badge className="text-[9px] px-1 py-0 bg-green-600 text-white no-default-hover-elevate no-default-active-elevate">مكتفي</Badge>
-                      )}
-                      {hasSuggestion && (
-                        <Badge className="text-[9px] px-1 py-0 bg-amber-500 text-white no-default-hover-elevate no-default-active-elevate">يحتاج تحويل</Badge>
-                      )}
+                      <ReasonBadge
+                        reason={row.suggestionReason}
+                        sourceInsufficient={row.sourceInsufficient}
+                      />
                     </td>
                   </tr>
                 );
               })}
               {rows.length === 0 && !isLoading && (
                 <tr>
-                  <td colSpan={9} className="text-center text-muted-foreground py-8">
+                  <td colSpan={10} className="text-center text-muted-foreground py-8">
                     {canQuery ? "لا توجد أصناف مطابقة" : "اختر الفترة الزمنية للعرض"}
                   </td>
                 </tr>
@@ -268,7 +373,7 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
         </div>
       )}
 
-      {/* ── Pagination ─────────────────────────────────────────────────────── */}
+      {/* ── Pagination ────────────────────────────────────────────────────── */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 py-2 text-[11px]">
           <Button variant="outline" size="sm" disabled={page <= 1}

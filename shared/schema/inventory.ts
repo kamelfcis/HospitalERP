@@ -201,6 +201,9 @@ export const inventoryLotMovements = pgTable("inventory_lot_movements", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   lotTxDateIdx: index("idx_lot_movements_lot_txdate").on(table.lotId, table.txDate),
+  /* فهرس لاستعلام الاقتراح الذكي في التحويلات المخزنية */
+  warehouseTxTypeRefDateIdx: index("idx_lot_movements_wh_txtype_ref_date")
+    .on(table.warehouseId, table.txType, table.referenceType, table.txDate),
 }));
 
 export const storeTransfers = pgTable("store_transfers", {
