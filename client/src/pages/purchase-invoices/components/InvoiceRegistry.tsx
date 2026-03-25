@@ -28,8 +28,9 @@ export function InvoiceRegistry({ suppliers }: Props) {
   const { toast }    = useToast();
   const [, navigate] = useLocation();
 
-  const [filterDateFrom,   setFilterDateFrom]   = useState("");
-  const [filterDateTo,     setFilterDateTo]     = useState("");
+  const today = new Date().toISOString().split("T")[0];
+  const [filterDateFrom,   setFilterDateFrom]   = useState(today);
+  const [filterDateTo,     setFilterDateTo]     = useState(today);
   const [filterSupplierId, setFilterSupplierId] = useState("all");
   const [filterStatus,     setFilterStatus]     = useState("all");
   const [page,             setPage]             = useState(1);
