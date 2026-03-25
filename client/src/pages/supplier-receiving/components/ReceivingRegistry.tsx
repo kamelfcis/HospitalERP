@@ -84,7 +84,7 @@ export function ReceivingRegistry({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" dir="rtl">
       {/* ── فلاتر ── */}
       <div className="peachtree-toolbar space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
