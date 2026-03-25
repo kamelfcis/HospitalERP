@@ -140,9 +140,15 @@ export function useMappingRows(): UseMappingRowsResult {
 
   // ── Row actions ────────────────────────────────────────────────────────────
   const updateRow = (key: string, field: keyof MappingRow, value: string) => {
-    setRows(prev => prev.map(r =>
-      r.key === key ? { ...r, [field]: value, source: "new" as const } : r
-    ));
+    setRows(prev => prev.map(r => {
+      if (r.key !== key) return r;
+      const updated: MappingRow = { ...r, [field]: value, source: "new" as const };
+      if (field === "lineType") {
+        updated.debitAccountId  = "";
+        updated.creditAccountId = "";
+      }
+      return updated;
+    }));
     setHasChanges(true);
   };
 

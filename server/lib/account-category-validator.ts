@@ -57,6 +57,8 @@ export const LINE_TYPE_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
   stock_loss:           { debit: ["expense", "equity"]                                  },
 
   returns:              { debit: ["revenue"],              credit: ["asset"]            },
+
+  ap_settlement:        { debit: ["liability"],            credit: ["asset"]             },
 };
 
 /** Arabic labels for account_type enum values */
