@@ -48,6 +48,12 @@ const QtyCell = memo(function QtyCell({
         setLocalVal(e.target.value);
         pendingQtyRef.current.set(line.tempId, e.target.value);
       }}
+      onFocus={(e) => {
+        // عند التركيز (بالأسهم أو النقر): أعِد القيمة الصحيحة وحدد الكل
+        setLocalVal(String(line.qty));
+        pendingQtyRef.current.delete(line.tempId);
+        e.target.select();
+      }}
       onBlur={() => onQtyConfirm(line.tempId)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === "Tab") {

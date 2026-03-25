@@ -47,6 +47,12 @@ export function useBarcodeScanner({
   // ─── معالجة الباركود (مشتركة بين المسار العالمي والمسار القديم) ──────────
   const processBarcode = useCallback(async (code: string) => {
     if (processingRef.current || !warehouseId) return;
+
+    // احفظ العنصر المُركَّز عليه الآن لاستعادته بعد انتهاء المسح
+    // — لو كان حقل الباركود أو لا شيء → ارجع للباركود
+    // — لو كان خلية في الجدول → ارجع إليها (حتى لا يُكسر موضع التنقل)
+    const prevFocused = document.activeElement as HTMLElement | null;
+
     processingRef.current = true;
     setBarcodeLoading(true);
     setBarcodeDisplay(code);
@@ -93,7 +99,21 @@ export function useBarcodeScanner({
       setBarcodeDisplay("");
       setBarcodeLoading(false);
       processingRef.current = false;
-      setTimeout(() => barcodeInputRef.current?.focus(), 50);
+
+      // أعِد التركيز بذكاء:
+      // • إذا كان العنصر السابق لا يزال في الـ DOM → أعِده
+      // • إذا لم يكن (أو كان body / null) → اذهب لحقل الباركود
+      setTimeout(() => {
+        if (
+          prevFocused &&
+          prevFocused !== document.body &&
+          document.contains(prevFocused)
+        ) {
+          prevFocused.focus();
+        } else {
+          barcodeInputRef.current?.focus();
+        }
+      }, 50);
     }
   }, [warehouseId, addItemToLines, pendingQtyRef, onScanComplete, toast, barcodeInputRef]);
 
