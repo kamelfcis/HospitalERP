@@ -43,12 +43,14 @@ export function InvoiceRegistry({ suppliers }: Props) {
   if (filterDateFrom) qsParams.set("dateFrom", filterDateFrom);
   if (filterDateTo)   qsParams.set("dateTo",   filterDateTo);
 
-  const { data: listData, isLoading } = useQuery<{ data: PurchaseInvoiceWithDetails[]; total: number }>({
+  const { data: listData, isLoading } = useQuery<{ data: PurchaseInvoiceWithDetails[]; total: number; sumTotalAfterVat: number; sumNetPayable: number }>({
     queryKey: [`/api/purchase-invoices?${qsParams}`],
   });
 
-  const invoices    = listData?.data  || [];
-  const totalPages  = Math.max(1, Math.ceil((listData?.total || 0) / PAGE_SIZE));
+  const invoices       = listData?.data  || [];
+  const totalPages     = Math.max(1, Math.ceil((listData?.total || 0) / PAGE_SIZE));
+  const sumTotalAfterVat = listData?.sumTotalAfterVat ?? 0;
+  const sumNetPayable    = listData?.sumNetPayable    ?? 0;
 
   // ── حذف ──────────────────────────────────────────────────────────────────
   const deleteMutation = useMutation({
@@ -122,26 +124,26 @@ export function InvoiceRegistry({ suppliers }: Props) {
           <table className="peachtree-grid w-full text-[12px]" data-testid="table-invoices">
             <thead>
               <tr className="peachtree-grid-header">
-                <th className="py-1 px-2 text-right whitespace-nowrap">#</th>
-                <th className="py-1 px-2 text-right whitespace-nowrap">رقم الفاتورة</th>
-                <th className="py-1 px-2 text-right whitespace-nowrap">المورد</th>
-                <th className="py-1 px-2 text-right whitespace-nowrap">رقم فاتورة المورد</th>
-                <th className="py-1 px-2 text-right whitespace-nowrap">التاريخ</th>
-                <th className="py-1 px-2 text-right whitespace-nowrap">الحالة</th>
-                <th className="py-1 px-2 text-right whitespace-nowrap">الإجمالي</th>
-                <th className="py-1 px-2 text-right whitespace-nowrap">صافي المستحق</th>
-                <th className="py-1 px-2 text-center whitespace-nowrap">إجراءات</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">#</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">رقم الفاتورة</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">المورد</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">رقم فاتورة المورد</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">التاريخ</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">الحالة</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">الإجمالي</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">صافي المستحق</th>
+                <th className="py-0.5 px-2 text-center whitespace-nowrap">إجراءات</th>
               </tr>
             </thead>
             <tbody>
               {invoices.map((inv, i) => (
                 <tr key={inv.id} className="peachtree-grid-row" data-testid={`row-invoice-${inv.id}`}>
-                  <td className="py-0.5 px-2 text-center">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                  <td className="py-0.5 px-2 text-center font-mono">{inv.invoiceNumber}</td>
-                  <td className="py-0.5 px-2">{inv.supplier?.nameAr || supplierName(inv.supplierId)}</td>
-                  <td className="py-0.5 px-2 text-center">{inv.supplierInvoiceNo}</td>
-                  <td className="py-0.5 px-2 text-center">{formatDateShort(inv.invoiceDate)}</td>
-                  <td className="py-0.5 px-2 text-center">
+                  <td className="py-0 px-2 h-7 text-center align-middle">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                  <td className="py-0 px-2 h-7 text-center align-middle font-mono">{inv.invoiceNumber}</td>
+                  <td className="py-0 px-2 h-7 text-center align-middle">{inv.supplier?.nameAr || supplierName(inv.supplierId)}</td>
+                  <td className="py-0 px-2 h-7 text-center align-middle">{inv.supplierInvoiceNo}</td>
+                  <td className="py-0 px-2 h-7 text-center align-middle">{formatDateShort(inv.invoiceDate)}</td>
+                  <td className="py-0 px-2 h-7 text-center align-middle">
                     <Badge
                       className={inv.status === "approved_costed" ? "bg-green-600 text-white no-default-hover-elevate no-default-active-elevate" : ""}
                       variant={inv.status === "draft" ? "secondary" : "default"}
@@ -150,9 +152,9 @@ export function InvoiceRegistry({ suppliers }: Props) {
                       {purchaseInvoiceStatusLabels[inv.status] || inv.status}
                     </Badge>
                   </td>
-                  <td className="py-0.5 px-2 text-center peachtree-amount">{formatNumber(inv.totalAfterVat)}</td>
-                  <td className="py-0.5 px-2 text-center peachtree-amount font-bold">{formatNumber(inv.netPayable)}</td>
-                  <td className="py-0.5 px-2 text-center">
+                  <td className="py-0 px-2 h-7 text-center align-middle peachtree-amount">{formatNumber(inv.totalAfterVat)}</td>
+                  <td className="py-0 px-2 h-7 text-center align-middle peachtree-amount font-bold">{formatNumber(inv.netPayable)}</td>
+                  <td className="py-0 px-2 h-7 text-center align-middle">
                     <div className="flex items-center justify-center gap-1">
                       <Button variant="ghost" size="icon"
                         onClick={() => navigate(`/purchase-invoices?id=${inv.id}`)}
@@ -177,6 +179,22 @@ export function InvoiceRegistry({ suppliers }: Props) {
                 <tr><td colSpan={9} className="text-center text-muted-foreground py-6">لا توجد فواتير</td></tr>
               )}
             </tbody>
+            {invoices.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-primary/30 bg-primary/5">
+                  <td colSpan={6} className="py-1 px-3 text-center align-middle font-bold text-[11px] text-muted-foreground whitespace-nowrap">
+                    إجمالي الفواتير ({listData?.total || 0} فاتورة)
+                  </td>
+                  <td className="py-1 px-2 text-center align-middle peachtree-amount font-bold text-[12px]" data-testid="tfoot-sum-total">
+                    {formatNumber(sumTotalAfterVat)}
+                  </td>
+                  <td className="py-1 px-2 text-center align-middle peachtree-amount font-bold text-[13px] text-primary" data-testid="tfoot-sum-net">
+                    {formatNumber(sumNetPayable)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}

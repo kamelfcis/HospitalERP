@@ -35,7 +35,7 @@ const coreMethods = {
     return (result?.max || 0) + 1;
   },
 
-  async getPurchaseInvoices(filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: PurchaseInvoiceWithDetails[]; total: number}> {
+  async getPurchaseInvoices(filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: PurchaseInvoiceWithDetails[]; total: number; sumTotalAfterVat: number; sumNetPayable: number}> {
     const conditions = [];
     if (filters.supplierId) conditions.push(eq(purchaseInvoiceHeaders.supplierId, filters.supplierId));
     if (filters.status && filters.status !== "all") {
@@ -51,7 +51,11 @@ const coreMethods = {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(purchaseInvoiceHeaders).where(whereClause);
+    const [aggResult] = await db.select({
+      count: sql<number>`count(*)`,
+      sumTotalAfterVat: sql<number>`coalesce(sum(${purchaseInvoiceHeaders.totalAfterVat}), 0)`,
+      sumNetPayable:    sql<number>`coalesce(sum(${purchaseInvoiceHeaders.netPayable}), 0)`,
+    }).from(purchaseInvoiceHeaders).where(whereClause);
 
     const headers = await db.select().from(purchaseInvoiceHeaders)
       .where(whereClause)
@@ -66,7 +70,12 @@ const coreMethods = {
       data.push({ ...h, supplier: sup, warehouse: wh });
     }
 
-    return { data, total: Number(countResult.count) };
+    return {
+      data,
+      total: Number(aggResult.count),
+      sumTotalAfterVat: Number(aggResult.sumTotalAfterVat),
+      sumNetPayable:    Number(aggResult.sumNetPayable),
+    };
   },
 
   async getPurchaseInvoice(id: string): Promise<PurchaseInvoiceWithDetails | undefined> {
