@@ -18,6 +18,11 @@
 import { db, pool } from "../db";
 import { eq, and, gt, sql, inArray, lte, gte, asc } from "drizzle-orm";
 import {
+  resolvePurchaseLotKind,
+  lotKindMatchesLine,
+  lotKindMismatchMessage,
+} from "../lib/purchase-lot-kind";
+import {
   purchaseReturnHeaders,
   purchaseReturnLines,
   purchaseInvoiceHeaders,
@@ -191,19 +196,23 @@ export async function getPurchaseInvoiceLinesForReturn(invoiceId: string): Promi
 }
 
 // ─── getAvailableLots ─────────────────────────────────────────────────────────
-// Returns lots with available qty > 0 for a given item + warehouse.
-// isFreeItem = true  → only lots with purchase_price = 0 (bonus/gift lots)
-// isFreeItem = false → only lots with purchase_price > 0 (paid lots)
-// This prevents selecting a bonus lot for a paid invoice line and vice-versa.
+// Returns available lots for a given item + warehouse filtered by lot kind.
+//
+// Uses resolvePurchaseLotKind (from purchase-lot-kind.ts) as the single
+// source of truth — the SQL filter below must stay in sync with that helper:
+//   paid lots  → purchase_price > 0
+//   free lots  → purchase_price = 0
+//   invalid    → excluded by IS NOT NULL + never returned (price<0 impossible via DB insert)
+//
+// Existing index idx_lots_item_warehouse (item_id, warehouse_id) covers the
+// main WHERE conditions — no additional index needed.
 export async function getAvailableLots(
   itemId: string,
   warehouseId: string,
-  isFreeItem: boolean = false,
+  isFreeItem: boolean,
 ): Promise<AvailableLot[]> {
-  const priceFilter = isFreeItem
-    ? `AND purchase_price = 0`
-    : `AND purchase_price > 0`;
-
+  // Parameterized boolean prevents any string-interpolation risk.
+  // $3::boolean CASE expression mirrors resolvePurchaseLotKind logic exactly.
   const res = await pool.query<{
     id: string; warehouse_id: string; expiry_date: string | null;
     expiry_month: number | null; expiry_year: number | null;
@@ -212,23 +221,36 @@ export async function getAvailableLots(
     `SELECT id, warehouse_id, expiry_date, expiry_month, expiry_year,
             purchase_price, qty_in_minor
      FROM inventory_lots
-     WHERE item_id      = $1
-       AND warehouse_id = $2
-       AND qty_in_minor > 0
-       AND is_active    = true
-       ${priceFilter}
+     WHERE item_id          = $1
+       AND warehouse_id     = $2
+       AND qty_in_minor     > 0
+       AND is_active        = true
+       AND purchase_price   IS NOT NULL
+       AND CASE WHEN $3::boolean
+             THEN purchase_price::numeric  = 0
+             ELSE purchase_price::numeric  > 0
+           END
      ORDER BY expiry_date ASC NULLS LAST, created_at ASC`,
-    [itemId, warehouseId]
+    [itemId, warehouseId, isFreeItem]
   );
-  return res.rows.map(r => ({
-    id:            r.id,
-    warehouseId:   r.warehouse_id,
-    expiryDate:    r.expiry_date ? String(r.expiry_date).slice(0, 10) : null,
-    expiryMonth:   r.expiry_month,
-    expiryYear:    r.expiry_year,
-    purchasePrice: r.purchase_price,
-    qtyInMinor:    r.qty_in_minor,
-  }));
+
+  // Post-fetch defense: apply helper to every row so even a SQL quirk cannot
+  // leak a lot of the wrong kind.  resolvePurchaseLotKind is the single source.
+  const lots: AvailableLot[] = [];
+  for (const r of res.rows) {
+    const kind = resolvePurchaseLotKind(r.purchase_price);
+    if (!lotKindMatchesLine(kind, isFreeItem)) continue; // should never trigger
+    lots.push({
+      id:            r.id,
+      warehouseId:   r.warehouse_id,
+      expiryDate:    r.expiry_date ? String(r.expiry_date).slice(0, 10) : null,
+      expiryMonth:   r.expiry_month,
+      expiryYear:    r.expiry_year,
+      purchasePrice: r.purchase_price,
+      qtyInMinor:    r.qty_in_minor,
+    });
+  }
+  return lots;
 }
 
 // ─── getNextReturnNumber ──────────────────────────────────────────────────────
@@ -341,24 +363,14 @@ async function validateAndEnrichLines(
       );
     }
 
-    // Guard: prevent selecting a bonus/free lot for a paid invoice line and vice-versa
-    const lotPurchasePrice = parseMoney(lot.purchasePrice as string);
-    const invLineIsFree    = parseMoney(invLine.purchasePrice) === 0;
-    if (invLineIsFree && lotPurchasePrice > 0) {
-      throw new Error(
-        `الصنف "${invLine.itemNameAr}": سطر الفاتورة مجاني (هدية) ` +
-        `ولكن اللوت المختار له سعر شراء — يجب اختيار لوت مجاني.`
-      );
-    }
-    if (!invLineIsFree && lotPurchasePrice === 0) {
-      throw new Error(
-        `الصنف "${invLine.itemNameAr}": سطر الفاتورة مدفوع ` +
-        `ولكن اللوت المختار مجاني (بونص) — يجب اختيار لوت مدفوع.`
-      );
-    }
+    // ── Lot-kind guard (uses central helper — single source of truth) ──────────
+    // Derives kind from the actual DB lot, not from anything the client sent.
+    const lotKind    = resolvePurchaseLotKind(lot.purchasePrice);
+    const isFreeItem = parseMoney(invLine.purchasePrice) === 0;
+    const kindErr    = lotKindMismatchMessage(invLine.itemNameAr, lotKind, isFreeItem);
+    if (kindErr) throw new Error(kindErr);
 
     // unit_cost ALWAYS from invoice line, NOT from lot
-    const isFreeItem        = parseMoney(invLine.purchasePrice) === 0;
     const unitCost          = isFreeItem ? 0 : parseMoney(invLine.purchasePrice);
     const bonusQtyReturned  = line.bonusQtyReturned != null && !isNaN(line.bonusQtyReturned)
       ? Math.max(0, line.bonusQtyReturned)

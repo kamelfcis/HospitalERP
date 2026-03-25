@@ -8,9 +8,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth }           from "./_shared";
 import { storage }               from "../storage";
 import { assertUserWarehouseAllowed } from "../lib/warehouse-guard";
-import { db } from "../db";
-import { eq } from "drizzle-orm";
-import { purchaseInvoiceLines } from "../../shared/schema/purchasing";
+import { parseIsFreeItemParam } from "../lib/purchase-lot-kind";
 import {
   getApprovedInvoicesForSupplier,
   getPurchaseInvoiceLinesForReturn,
@@ -45,26 +43,31 @@ export function registerPurchaseReturnRoutes(app: Express) {
   });
 
   // ── GET /api/purchase-returns/lots ────────────────────────────────────────
-  // ?itemId=xxx&warehouseId=xxx&invoiceLineId=xxx
-  // isFreeItem is derived SERVER-SIDE from the actual invoice line purchase_price,
-  // so the client cannot forge it.
+  // ?itemId=xxx&warehouseId=xxx&isFreeItem=true|false
+  //
+  // isFreeItem is STRICTLY parsed — only "true" or "false" accepted (400 otherwise).
+  // The value comes from the invoice line data the UI fetched from the server,
+  // so it is already server-sourced.
+  //
+  // Defense-in-depth: getAvailableLots applies a post-fetch filter using the
+  // central resolvePurchaseLotKind helper, so even a SQL quirk cannot leak a
+  // lot of the wrong kind.
+  //
+  // The real security gate is createPurchaseReturn, which independently resolves
+  // the lot kind from the DB lot and compares against the invoice line — the
+  // client's isFreeItem value plays no role there.
   app.get("/api/purchase-returns/lots", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { itemId, warehouseId, invoiceLineId } = req.query as Record<string, string>;
+      const { itemId, warehouseId, isFreeItem: isFreeItemParam } = req.query as Record<string, string>;
       if (!itemId || !warehouseId) {
         return res.status(400).json({ message: "itemId و warehouseId مطلوبان." });
       }
 
-      // Derive isFreeItem from the actual invoice line (server-side, client is NOT trusted)
-      let isFreeItem = false;
-      if (invoiceLineId) {
-        const [invLine] = await db
-          .select({ purchasePrice: purchaseInvoiceLines.purchasePrice })
-          .from(purchaseInvoiceLines)
-          .where(eq(purchaseInvoiceLines.id, invoiceLineId));
-        if (invLine) {
-          isFreeItem = parseFloat(invLine.purchasePrice as string) === 0;
-        }
+      const isFreeItem = parseIsFreeItemParam(isFreeItemParam);
+      if (isFreeItem === null) {
+        return res.status(400).json({
+          message: "isFreeItem مطلوب ويجب أن يكون 'true' أو 'false' فقط.",
+        });
       }
 
       const lots = await getAvailableLots(itemId, warehouseId, isFreeItem);
