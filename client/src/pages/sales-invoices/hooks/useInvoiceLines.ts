@@ -388,6 +388,31 @@ export function useInvoiceLines(
         }
 
         setLines((prev) => spliceItemLines(prev, line.itemId, result.lines ?? []));
+
+        // ── استعادة التركيز بعد FEFO ──────────────────────────────────────────
+        // FEFO يستبدل السطور بـ tempId جديدة → الخلية التي انتقل إليها المستخدم
+        // قد تختفي من الـ DOM فيضيع التركيز (يذهب لـ body تلقائياً).
+        // • إن كان التركيز على عنصر مفيد (خلية أخرى / باركود) → لا نتدخل
+        // • إن كان ضاع (body / null) → ابحث عن أول خلية كمية بعد آخر سطر للصنف
+        setTimeout(() => {
+          const active = document.activeElement;
+          if (!active || active === document.body) {
+            // جد موضع آخر سطر لهذا الصنف في السطور المحدَّثة
+            const updatedLines = linesRef.current;
+            const lastItemIdx  = updatedLines.reduce(
+              (last, l, i) => (l.itemId === line.itemId ? i : last), -1,
+            );
+            const focusRowIdx = lastItemIdx + 1;
+            const nextEl = document.querySelector<HTMLElement>(
+              `[data-grid-row="${focusRowIdx}"][data-grid-col="qty"]`,
+            );
+            if (nextEl) {
+              nextEl.focus();
+              if (nextEl instanceof HTMLInputElement) nextEl.select();
+            }
+            // إن لم يوجد صف تالٍ → ابقَ على body (الاسكنر العالمي يعمل منه)
+          }
+        }, 50);
       } catch (err: unknown) {
         toast({ title: "خطأ في توزيع الصلاحية", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
       } finally {
@@ -395,15 +420,11 @@ export function useInvoiceLines(
       }
     } else {
       // ── مسار عادي ──────────────────────────────────────────────────────────
+      // لا نُغيّر التركيز: Enter/Tab أرسله للباركود في QtyCell.onKeyDown،
+      // وArrowDown أرسله للخلية التالية قبل تشغيل هذه الدالة
       updateLine(index, { qty: qtyEntered });
     }
-
-    // لا نُعيد التركيز هنا:
-    // • Enter/Tab في خلية الكمية → يُرسل التركيز للباركود مباشرة (في QtyCell.onKeyDown)
-    // • ArrowDown/Up → التركيز ينتقل للخلية التالية قبل تشغيل هذه الدالة
-    // • مسار FEFO → يُعيد رسم السطور بـ tempId جديدة، فلو أجبرنا الباركود
-    //   سيُسرق التركيز بعد ثوانٍ؛ الاسكنر العالمي يعمل من أي مكان على أي حال
-  }, [warehouseId, invoiceDate, toast, updateLine]);
+  }, [warehouseId, invoiceDate, toast, updateLine, linesRef]);
 
   return {
     lines, setLines,
