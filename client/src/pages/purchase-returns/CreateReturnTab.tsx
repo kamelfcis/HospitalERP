@@ -236,7 +236,9 @@ export function CreateReturnTab() {
                 <SelectContent>
                   {invoices.map(inv => (
                     <SelectItem key={inv.id} value={inv.id}>
-                      #{inv.invoiceNumber} — {formatDateShort(inv.invoiceDate)}
+                      {inv.receivingNumber ? `استلام #${inv.receivingNumber}` : `فاتورة #${inv.invoiceNumber}`}
+                      {inv.supplierInvoiceNo ? ` — ${inv.supplierInvoiceNo}` : ""}
+                      {" — "}{formatDateShort(inv.invoiceDate)}
                       {inv.totalReturns && parseFloat(inv.totalReturns) > 0
                         ? ` (مرتجع: ${formatCurrency(inv.totalReturns)})`
                         : ""}

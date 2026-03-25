@@ -40,14 +40,18 @@ export function LotSelector({ itemId, warehouseId, isFreeItem, value, onChange }
         />
       </SelectTrigger>
       <SelectContent>
-        {lots.map(l => (
-          <SelectItem key={l.id} value={l.id}>
-            {l.expiryDate
-              ? `ت.انتهاء: ${l.expiryDate} | متاح: ${parseFloat(l.qtyInMinor).toFixed(2)}`
-              : `بدون تاريخ | متاح: ${parseFloat(l.qtyInMinor).toFixed(2)}`
-            }
-          </SelectItem>
-        ))}
+        {lots.map(l => {
+          const expLabel = l.expiryDate
+            ? `ت.انتهاء: ${l.expiryDate}`
+            : l.expiryMonth && l.expiryYear
+              ? `ت.انتهاء: ${String(l.expiryMonth).padStart(2, "0")}/${l.expiryYear}`
+              : "بدون تاريخ";
+          return (
+            <SelectItem key={l.id} value={l.id}>
+              {expLabel} | متاح: {parseFloat(l.qtyInMinor).toFixed(2)}
+            </SelectItem>
+          );
+        })}
       </SelectContent>
     </Select>
   );

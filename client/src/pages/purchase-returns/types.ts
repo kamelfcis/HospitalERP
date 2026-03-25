@@ -14,6 +14,7 @@ export interface InvoiceItem {
   warehouseNameAr: string;
   supplierInvoiceNo: string;
   totalReturns: string;
+  receivingNumber: number | null;
 }
 
 export interface InvoiceLine {
@@ -35,6 +36,8 @@ export interface AvailableLot {
   id: string;
   warehouseId: string;
   expiryDate: string | null;
+  expiryMonth: number | null;
+  expiryYear: number | null;
   purchasePrice: string;
   qtyInMinor: string;
 }
