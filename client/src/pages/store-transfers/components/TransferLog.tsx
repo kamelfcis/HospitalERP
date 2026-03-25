@@ -58,7 +58,7 @@ export function TransferLog({
   deleteDraftMutation,
 }: Props) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" dir="rtl">
       <div className="peachtree-toolbar flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-1">
           <Label className="text-[10px] text-muted-foreground whitespace-nowrap">تاريخ من</Label>

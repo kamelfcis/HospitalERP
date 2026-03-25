@@ -3,8 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import type { Warehouse, StoreTransferWithDetails } from "@shared/schema";
 
 export function useTransferLog() {
-  const [filterFromDate, setFilterFromDate] = useState("");
-  const [filterToDate, setFilterToDate] = useState("");
+  const today = new Date().toISOString().split("T")[0];
+  const [filterFromDate, setFilterFromDate] = useState(today);
+  const [filterToDate, setFilterToDate] = useState(today);
   const [filterSourceWarehouse, setFilterSourceWarehouse] = useState("");
   const [filterDestWarehouse, setFilterDestWarehouse] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
