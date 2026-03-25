@@ -8,6 +8,7 @@ import { useBarcodeScanner } from "./hooks/useBarcodeScanner";
 import { useAvailabilityPopup } from "./hooks/useAvailabilityPopup";
 import { TransferLog } from "./components/TransferLog";
 import { TransferEditor } from "./components/TransferEditor";
+import { TransferSuggestion } from "./components/TransferSuggestion";
 import { AvailabilityPopup } from "./components/AvailabilityPopup";
 
 export default function StoreTransfers() {
@@ -83,6 +84,7 @@ export default function StoreTransfers() {
         <TabsList className="mb-2 no-print">
           <TabsTrigger value="log" data-testid="tab-log">سجل التحويلات</TabsTrigger>
           <TabsTrigger value="form" data-testid="tab-form">إذن تحويل</TabsTrigger>
+          <TabsTrigger value="suggest" data-testid="tab-suggest">اقتراح ذكي</TabsTrigger>
         </TabsList>
 
         <TabsContent value="log" className="space-y-2">
@@ -156,6 +158,18 @@ export default function StoreTransfers() {
             onReset={form.resetForm}
             saveDraftMutation={mutations.saveDraftMutation}
             postTransferMutation={mutations.postTransferMutation}
+          />
+        </TabsContent>
+
+        <TabsContent value="suggest" className="space-y-2">
+          <TransferSuggestion
+            warehouses={log.warehouses}
+            sourceWarehouseId={form.sourceWarehouseId}
+            destWarehouseId={form.destWarehouseId}
+            onFillLines={(lines) => {
+              form.setFormLines(lines);
+              setActiveTab("form");
+            }}
           />
         </TabsContent>
       </Tabs>

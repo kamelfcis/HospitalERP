@@ -16,6 +16,7 @@ import {
 import { insertWarehouseSchema } from "@shared/schema";
 import { runPilotTestSeed } from "../seeds/pilot-test";
 import { assertUserWarehousesAllowed } from "../lib/warehouse-guard";
+import { getTransferSuggestions } from "../storage/transfer-suggestion-storage";
 
 export function registerWarehousesRoutes(app: Express) {
   // ===== WAREHOUSES =====
@@ -104,6 +105,31 @@ export function registerWarehousesRoutes(app: Express) {
   });
 
   // ===== STORE TRANSFERS =====
+
+  // Smart suggestion — MUST be before /:id route
+  app.get("/api/transfers/smart-suggestion", requireAuth, checkPermission(PERMISSIONS.TRANSFERS_VIEW), async (req, res) => {
+    try {
+      const { sourceWarehouseId, destWarehouseId, dateFrom, dateTo, excludeCovered, search, page, pageSize } = req.query;
+      if (!sourceWarehouseId || !destWarehouseId || !dateFrom || !dateTo) {
+        return res.status(400).json({ message: "sourceWarehouseId, destWarehouseId, dateFrom, dateTo مطلوبة" });
+      }
+      const result = await getTransferSuggestions({
+        sourceWarehouseId: sourceWarehouseId as string,
+        destWarehouseId: destWarehouseId as string,
+        dateFrom: dateFrom as string,
+        dateTo: dateTo as string,
+        excludeCovered: excludeCovered === "true",
+        search: (search as string) || "",
+        page: page ? parseInt(page as string) : 1,
+        pageSize: pageSize ? parseInt(pageSize as string) : 50,
+      });
+      res.json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: msg });
+    }
+  });
+
   // Layer 2: TRANSFERS.VIEW required — inventory movement records
   app.get("/api/transfers", requireAuth, checkPermission(PERMISSIONS.TRANSFERS_VIEW), async (req, res) => {
     try {
