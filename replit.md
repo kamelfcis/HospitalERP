@@ -31,7 +31,7 @@ The system utilizes a RESTful JSON API. Drizzle ORM manages PostgreSQL interacti
 -   **Department Services Orders**: Unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
 -   **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine (patient accommodation with `hours_24`/`hotel_noon` billing), Bed Board with real-time updates, and a Surgery Types System.
 -   **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation and lot adjustments.
--   **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions.
+-   **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions. Individual user permissions (overrides + doctor link + clinic assignments) are accessible from the same page via `?userId=` query param — no separate dialog; the permissions icon in Users Management navigates there directly.
 -   **Contracts Module**: Supports master data for insurance/contract companies, contracts, and member cards. Includes a 5-pass rule evaluator for contract coverage, a claims GL accounting system, and an approval workflow.
 -   **Account Mappings Module**: Dedicated UI and transactional backend route for bulk updates.
 -   **Items Excel Import/Export**: Bulk management of items via xlsx. Export (template or full data), Import with upsert, auto-creates form types, handles barcodes via `item_barcodes`, deduplicates by `item_code`.

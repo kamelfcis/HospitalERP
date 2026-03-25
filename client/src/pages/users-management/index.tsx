@@ -5,11 +5,11 @@ import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
 import { useClinicsLookup } from "@/hooks/lookups/useClinicsLookup";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus } from "lucide-react";
 import { UserCard } from "./components/UserCard";
 import { UserFormDialog } from "./components/UserFormDialog";
-import { PermissionsDialog } from "./components/PermissionsDialog";
 import { AccountScopeDialog } from "./components/AccountScopeDialog";
 import type { UserData, UserFormData } from "./types";
 
@@ -24,6 +24,7 @@ const EMPTY_FORM: UserFormData = {
 export default function UsersManagement() {
   const { hasPermission } = useAuth();
   const { toast }         = useToast();
+  const [, navigate]      = useLocation();
 
   const canCreate = hasPermission("users.create");
   const canEdit   = hasPermission("users.edit");
@@ -33,9 +34,6 @@ export default function UsersManagement() {
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [formData,    setFormData]    = useState<UserFormData>(EMPTY_FORM);
   const [scopeLoading, setScopeLoading] = useState(false);
-
-  const [showPermDialog, setShowPermDialog] = useState(false);
-  const [permUserId,     setPermUserId]     = useState<string | null>(null);
 
   const [showScopeDialog, setShowScopeDialog] = useState(false);
   const [scopeUser,        setScopeUser]       = useState<UserData | null>(null);
@@ -191,8 +189,7 @@ export default function UsersManagement() {
   }
 
   function handleOpenPerms(userId: string) {
-    setPermUserId(userId);
-    setShowPermDialog(true);
+    navigate(`/permission-groups?userId=${userId}`);
   }
 
   function handleOpenAcctScope(user: UserData) {
@@ -250,15 +247,6 @@ export default function UsersManagement() {
         onFormChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
         onSave={handleSave}
         onOpenChange={setShowDialog}
-      />
-
-      <PermissionsDialog
-        userId={permUserId}
-        open={showPermDialog}
-        onOpenChange={(open) => {
-          setShowPermDialog(open);
-          if (!open) setPermUserId(null);
-        }}
       />
 
       <AccountScopeDialog
