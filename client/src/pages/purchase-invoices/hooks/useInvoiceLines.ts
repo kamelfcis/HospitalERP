@@ -21,12 +21,13 @@ export function useInvoiceLines() {
 
       // نحسب lineDiscountPct دايماً من السعرين — مصدر الحقيقة
       // لو القيمة المخزّنة صفر (بيانات قديمة) تُحسب تلقائياً
+      // القاعدة العامة: خانتان عشريتان فقط في كل الأرقام المالية
       const storedPct     = parseFloat(String(ln.lineDiscountPct)) || 0;
       const derivedPct    = sellingPrice > 0 && sellingPrice >= purchasePrice
-        ? +((sellingPrice - purchasePrice) / sellingPrice * 100).toFixed(4)
+        ? +((sellingPrice - purchasePrice) / sellingPrice * 100).toFixed(2)
         : 0;
-      // نستخدم القيمة المخزّنة لو موجودة، وإلا نشتق من السعرين
-      const lineDiscountPct = storedPct > 0 ? storedPct : derivedPct;
+      // نستخدم القيمة المخزّنة لو موجودة (مُقرَّبة لخانتين)، وإلا نشتق من السعرين
+      const lineDiscountPct = storedPct > 0 ? +storedPct.toFixed(2) : derivedPct;
 
       const line: InvoiceLineLocal = {
         id:               ln.id,
