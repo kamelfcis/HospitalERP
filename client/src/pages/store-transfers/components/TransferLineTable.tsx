@@ -1,6 +1,6 @@
 import { Loader2, Trash2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatDateShort } from "@/lib/formatters";
+import { formatDateShort, formatQty } from "@/lib/formatters";
 import type { TransferLineLocal, ExpiryOption } from "../types";
 import { getUnitName, getAvailableUnits, formatAvailability } from "../types";
 import { computeUnitPriceFromBase } from "@/lib/invoice-lines";
@@ -132,7 +132,7 @@ export function TransferLineTable({
                     title={hasMultiPrice ? "تنبيه: هذا الصنف له أكثر من سعر بيع" : ""}
                   >
                     {isViewOnly ? (
-                      <span data-testid={`text-qty-${idx}`}>{line.qtyEntered}</span>
+                      <span data-testid={`text-qty-${idx}`}>{formatQty(line.qtyEntered)}</span>
                     ) : (
                       <input
                         key={`qty-${line.id}-${line.qtyEntered}`}

@@ -12,6 +12,7 @@ import { ExpiryInput } from "@/components/ui/expiry-input";
 import type { ReceivingLineLocal, LineError } from "../types";
 import { getUnitName } from "../types";
 import { formatAvailability } from "@/lib/invoice-lines";
+import { formatQty } from "@/lib/formatters";
 
 // ── أعمدة التنقل (بالترتيب من اليمين في RTL) ─────────────────────────────
 const NAV_QTY      = 0;
@@ -257,7 +258,7 @@ function LineRow({
 
       {/* الكمية — NAV_QTY = 0 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
-        {isViewOnly ? <span data-testid={`text-qty-${idx}`}>{line.qtyEntered}</span> : (
+        {isViewOnly ? <span data-testid={`text-qty-${idx}`}>{formatQty(line.qtyEntered)}</span> : (
           <input
             ref={(el) => {
               if (el) qtyInputRefs.current.set(idx, el);
@@ -277,7 +278,7 @@ function LineRow({
 
       {/* هدية — NAV_BONUS = 1 */}
       <td className="py-0.5 px-2 whitespace-nowrap">
-        {isViewOnly ? <span>{line.bonusQty}</span> : (
+        {isViewOnly ? <span>{formatQty(line.bonusQty)}</span> : (
           <input
             ref={(el) => registerNav(idx, NAV_BONUS, el)}
             type="number" value={line.bonusQty || ""}

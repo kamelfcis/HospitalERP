@@ -3,6 +3,7 @@
 //  لكل سطر: الكمية المتاحة + وحدة الإرجاع + الكمية المرتجعة + السعر + الإجمالي
 // ============================================================
 import { Input } from "@/components/ui/input";
+import { formatQty } from "@/lib/formatters";
 import type { ReturnLine } from "../types";
 import {
   getUnitName,
@@ -108,7 +109,7 @@ function ReturnLineRow({ line, idx, onChangeQty, onChangeUnit }: RowProps) {
       </td>
 
       {/* الكمية المباعة */}
-      <td className="py-1.5 px-2 text-center font-semibold">{line.qty}</td>
+      <td className="py-1.5 px-2 text-center font-semibold">{formatQty(line.qty)}</td>
 
       {/* مرتجع سابق — يُعرض باللون البرتقالي تحذيراً */}
       <td className="py-1.5 px-2 text-center text-orange-600 font-semibold">

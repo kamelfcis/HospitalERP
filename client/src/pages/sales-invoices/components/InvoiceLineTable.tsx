@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { X, BarChart3, Lock } from "lucide-react";
-import { formatNumber } from "@/lib/formatters";
+import { formatNumber, formatQty } from "@/lib/formatters";
 import {
   formatAvailability, getUnitOptions,
   computeUnitPriceFromBase, computeLineTotal,
@@ -181,7 +181,7 @@ export function InvoiceLineTable({
                       testId={`input-qty-${i}`}
                     />
                   ) : (
-                    <span className="peachtree-amount">{formatNumber(ln.qty)}</span>
+                    <span className="peachtree-amount">{formatQty(ln.qty)}</span>
                   )}
                 </td>
 

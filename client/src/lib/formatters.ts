@@ -9,6 +9,16 @@ export function formatCurrency(amount: number | string | null | undefined): stri
   }) + " ج.م";
 }
 
+// Format a quantity value — max 2 decimal places, no trailing zeros
+// Used for all quantity columns across pharmacy, transfers, and receiving screens
+export function formatQty(qty: number | string | null | undefined): string {
+  if (qty === null || qty === undefined) return "0";
+  const num = typeof qty === "string" ? parseFloat(qty) : qty;
+  if (isNaN(num)) return "0";
+  // Round to 2dp then strip trailing zeros: 10.333 → "10.33", 10.5 → "10.5", 10.0 → "10"
+  return parseFloat(num.toFixed(2)).toString();
+}
+
 // Format number without currency symbol
 export function formatNumber(amount: number | string | null | undefined): string {
   if (amount === null || amount === undefined) return "0.00";
