@@ -17,6 +17,18 @@ import {
   type ReceivingHeader,
 } from "@shared/schema";
 
+/**
+ * normalizeClaimNumber — توحيد صيغة رقم المطالبة قبل الحفظ أو الفلترة
+ *   - trim المسافات من الطرفين
+ *   - إزالة المسافات حول الشرطة المائلة (  2 / 2026  → 2/2026)
+ *   - يُعيد null لو القيمة فارغة بعد التنظيف
+ */
+export function normalizeClaimNumber(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const n = v.trim().replace(/\s*\/\s*/g, "/");
+  return n || null;
+}
+
 const coreMethods = {
   async getNextPurchaseInvoiceNumber(): Promise<number> {
     const [result] = await db.select({ max: sql<number>`COALESCE(MAX(invoice_number), 0)` }).from(purchaseInvoiceHeaders);
@@ -160,7 +172,9 @@ const coreMethods = {
       if (headerUpdates?.discountValue !== undefined) updateSet.discountValue = String(headerUpdates.discountValue);
       if (headerUpdates?.notes !== undefined) updateSet.notes = headerUpdates.notes;
       if (headerUpdates?.invoiceDate) updateSet.invoiceDate = headerUpdates.invoiceDate;
-      if (headerUpdates?.claimNumber !== undefined) updateSet.claimNumber = headerUpdates.claimNumber || null;
+      if (headerUpdates?.claimNumber !== undefined) {
+        updateSet.claimNumber = normalizeClaimNumber(headerUpdates.claimNumber);
+      }
 
       await tx.update(purchaseInvoiceHeaders).set(updateSet).where(eq(purchaseInvoiceHeaders.id, invoiceId));
 

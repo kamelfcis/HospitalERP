@@ -429,11 +429,15 @@ export function registerPurchasingRoutes(app: Express) {
         return res.status(409).json({ message: "لا يمكن تعديل فاتورة معتمدة ومُسعّرة", code: "INVOICE_APPROVED" });
       }
       const { lines, ...headerUpdates } = req.body;
+      const claimTrimmed = (headerUpdates.claimNumber ?? "").trim().replace(/\s*\/\s*/g, "/");
+      if (!claimTrimmed) {
+        return res.status(400).json({ message: "رقم المطالبة مطلوب", code: "CLAIM_NUMBER_REQUIRED" });
+      }
       const discountErrors = validateInvoiceLineDiscounts(lines);
       if (discountErrors.length > 0) {
         return res.status(400).json({ message: "أخطاء في بيانات الخصم", lineErrors: discountErrors });
       }
-      const result = await storage.savePurchaseInvoice(req.params.id as string, lines, headerUpdates);
+      const result = await storage.savePurchaseInvoice(req.params.id as string, lines, { ...headerUpdates, claimNumber: claimTrimmed });
       res.json(result);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
@@ -462,6 +466,10 @@ export function registerPurchasingRoutes(app: Express) {
       if (invoice.status !== "draft") return res.status(409).json({ message: "الفاتورة معتمدة بالفعل", code: "ALREADY_APPROVED" });
 
       await storage.assertPeriodOpen(invoice.invoiceDate as string);
+
+      if (!invoice.claimNumber?.trim()) {
+        return res.status(400).json({ message: "رقم المطالبة مطلوب قبل الاعتماد", code: "CLAIM_NUMBER_REQUIRED" });
+      }
 
       if (invoice.lines && Array.isArray(invoice.lines)) {
         const discountErrors = validateInvoiceLineDiscounts(invoice.lines as Array<Record<string, unknown>>);

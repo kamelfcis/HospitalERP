@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { supplierPayments, supplierPaymentLines } from "@shared/schema/purchasing";
 import type { SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
+import { normalizeClaimNumber } from "./purchasing-invoices-core-storage";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -122,8 +123,9 @@ export async function getSupplierInvoices(
       ? sql`HAVING (pih.net_payable::numeric - COALESCE(iret.inv_returns, 0) - COALESCE(SUM(spl.amount_paid::numeric), 0)) <= 0.005`
       : sql``;
 
-  const claimFilter = claimNumber
-    ? sql`AND pih.claim_number = ${claimNumber}`
+  const normalizedClaim = normalizeClaimNumber(claimNumber);
+  const claimFilter = normalizedClaim
+    ? sql`AND pih.claim_number = ${normalizedClaim}`
     : sql``;
 
   const res = await db.execute(sql`

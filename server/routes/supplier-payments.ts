@@ -67,7 +67,8 @@ export function registerSupplierPaymentRoutes(app: Express) {
     try {
       const supplierId  = String(req.params.supplierId);
       const status      = parseStatus(req.query.status, "unpaid");
-      const claimNumber = req.query.claimNumber ? String(req.query.claimNumber) : null;
+      const rawClaim    = req.query.claimNumber ? String(req.query.claimNumber) : null;
+      const claimNumber = rawClaim?.trim().replace(/\s*\/\s*/g, "/") || null;
       const rows = await getSupplierInvoices(supplierId, status, claimNumber);
       res.json(rows);
     } catch (err: any) {
