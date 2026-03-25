@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -387,10 +387,38 @@ export default function ItemMovementReport() {
 
   const selectedWarehouseName = warehouses.find(w => w.id === warehouseId)?.nameAr;
 
+  // ── خيارات الوحدات المتاحة بناءً على إعداد الصنف الفعلي ──────────────────
+  const unitOptions = useMemo((): Array<{ value: UnitLevel; label: string }> => {
+    if (rows.length === 0) return [
+      { value: "major",  label: "كبيرة" },
+      { value: "medium", label: "وسط"   },
+      { value: "minor",  label: "صغيرة" },
+    ];
+    const f = rows[0];
+    const opts: Array<{ value: UnitLevel; label: string }> = [];
+    // الوحدة الكبرى: متاحة فقط إذا كان اسمها معرَّفاً ومعامل التحويل > 1
+    if (f.majorUnitName && f.majorToMinor > 1) {
+      opts.push({ value: "major",  label: f.majorUnitName });
+    }
+    // الوحدة الوسطى: متاحة فقط إذا كان اسمها معرَّفاً ومعامل التحويل > 1
+    if (f.mediumUnitName && f.mediumToMinor > 1) {
+      opts.push({ value: "medium", label: f.mediumUnitName });
+    }
+    // الوحدة الصغرى دائماً متاحة — إن لم يكن للصنف sub-units فهي وحدته الوحيدة
+    const minorLabel = f.minorUnitName || (f.majorToMinor <= 1 ? (f.majorUnitName ?? "وحدة") : "صغيرة");
+    opts.push({ value: "minor", label: minorLabel });
+    return opts;
+  }, [rows]);
+
+  // إذا تغيّر الصنف وأصبح unitLevel المختار غير متاح → اختر الأول المتاح
+  useEffect(() => {
+    if (!unitOptions.find(u => u.value === unitLevel)) {
+      setUnitLevel(unitOptions[0]?.value ?? "minor");
+    }
+  }, [unitOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const unitName = rows.length > 0
-    ? unitLevel === "major" ? (rows[0].majorUnitName ?? "وحدة كبيرة")
-    : unitLevel === "medium" ? (rows[0].mediumUnitName ?? "وحدة وسط")
-    : (rows[0].minorUnitName ?? "وحدة صغيرة")
+    ? (unitOptions.find(u => u.value === unitLevel)?.label ?? "وحدة")
     : "وحدة";
 
   return (
@@ -480,15 +508,11 @@ export default function ItemMovementReport() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="major">
-                  {rows.length > 0 ? (rows[0].majorUnitName ?? "كبيرة") : "كبيرة"}
-                </SelectItem>
-                <SelectItem value="medium">
-                  {rows.length > 0 ? (rows[0].mediumUnitName ?? "وسط") : "وسط"}
-                </SelectItem>
-                <SelectItem value="minor">
-                  {rows.length > 0 ? (rows[0].minorUnitName ?? "صغيرة") : "صغيرة"}
-                </SelectItem>
+                {unitOptions.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
