@@ -336,6 +336,11 @@ export function useInvoiceLines(
 
   // ── تأكيد تعديل الكمية (يعيد حساب FEFO إن لزم) ───────────────────────────
   const handleQtyConfirm = useCallback(async (tempId: string) => {
+    // احفظ مكان التركيز الحالي لاستعادته بعد الانتهاء
+    // — إن كان المستخدم انتقل بسهم لخلية أخرى → يبقى فيها
+    // — إن ضغط Enter/Tab → التركيز كان انتقل للباركود فيعود إليه
+    const prevFocused = document.activeElement as HTMLElement | null;
+
     const currentLines = linesRef.current;
     const index        = currentLines.findIndex((l) => l.tempId === tempId);
     const line         = currentLines[index];
@@ -399,7 +404,20 @@ export function useInvoiceLines(
       updateLine(index, { qty: qtyEntered });
     }
 
-    setTimeout(() => barcodeInputRef.current?.focus(), 50);
+    // أعِد التركيز لمكانه قبل بدء العملية:
+    // — خلية جدول (انتقل بسهم) → يبقى فيها
+    // — حقل باركود / body / null → اذهب للباركود
+    setTimeout(() => {
+      if (
+        prevFocused &&
+        prevFocused !== document.body &&
+        document.contains(prevFocused)
+      ) {
+        prevFocused.focus();
+      } else {
+        barcodeInputRef.current?.focus();
+      }
+    }, 50);
   }, [warehouseId, invoiceDate, toast, updateLine, barcodeInputRef]);
 
   return {
