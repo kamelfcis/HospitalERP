@@ -12,17 +12,18 @@ import { buildLinePayload } from "../types";
 export type AutoSaveStatus = "idle" | "saving" | "saved" | "error";
 
 interface Params {
-  editId:       string | null;
-  isDraft:      boolean;
-  lines:        InvoiceLineLocal[];
-  invoiceDate:  string;
-  notes:        string;
-  discountType: string;
-  discountValue:number;
+  editId:        string | null;
+  isDraft:       boolean;
+  lines:         InvoiceLineLocal[];
+  invoiceDate:   string;
+  notes:         string;
+  discountType:  string;
+  discountValue: number;
+  claimNumber:   string;
 }
 
 export function useAutoSave({
-  editId, isDraft, lines, invoiceDate, notes, discountType, discountValue,
+  editId, isDraft, lines, invoiceDate, notes, discountType, discountValue, claimNumber,
 }: Params) {
   const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>("idle");
   const lastSavedRef = useRef<string>("");
@@ -30,8 +31,8 @@ export function useAutoSave({
 
   const buildPayload = useCallback(() => ({
     lines:        lines.map(buildLinePayload),
-    discountType, discountValue, invoiceDate, notes,
-  }), [lines, discountType, discountValue, invoiceDate, notes]);
+    discountType, discountValue, invoiceDate, notes, claimNumber,
+  }), [lines, discountType, discountValue, invoiceDate, notes, claimNumber]);
 
   // ── الحفظ الفعلي ────────────────────────────────────────────────────────
   const performAutoSave = useCallback(async () => {
@@ -56,7 +57,7 @@ export function useAutoSave({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(performAutoSave, 15000);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [isDraft, editId, lines, invoiceDate, notes, discountType, discountValue, performAutoSave]);
+  }, [isDraft, editId, lines, invoiceDate, notes, discountType, discountValue, claimNumber, performAutoSave]);
 
   // ── الحفظ قبل إغلاق الصفحة ────────────────────────────────────────────
   useEffect(() => {

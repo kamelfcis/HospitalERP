@@ -160,6 +160,7 @@ const coreMethods = {
       if (headerUpdates?.discountValue !== undefined) updateSet.discountValue = String(headerUpdates.discountValue);
       if (headerUpdates?.notes !== undefined) updateSet.notes = headerUpdates.notes;
       if (headerUpdates?.invoiceDate) updateSet.invoiceDate = headerUpdates.invoiceDate;
+      if (headerUpdates?.claimNumber !== undefined) updateSet.claimNumber = headerUpdates.claimNumber || null;
 
       await tx.update(purchaseInvoiceHeaders).set(updateSet).where(eq(purchaseInvoiceHeaders.id, invoiceId));
 

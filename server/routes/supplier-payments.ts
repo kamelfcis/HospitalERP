@@ -62,12 +62,13 @@ export function registerSupplierPaymentRoutes(app: Express) {
     }
   });
 
-  // GET /api/supplier-payments/invoices/:supplierId?status=unpaid|paid|all
+  // GET /api/supplier-payments/invoices/:supplierId?status=unpaid|paid|all&claimNumber=...
   app.get("/api/supplier-payments/invoices/:supplierId", requireAuth, async (req, res) => {
     try {
-      const supplierId = String(req.params.supplierId);
-      const status = parseStatus(req.query.status, "unpaid");
-      const rows = await getSupplierInvoices(supplierId, status);
+      const supplierId  = String(req.params.supplierId);
+      const status      = parseStatus(req.query.status, "unpaid");
+      const claimNumber = req.query.claimNumber ? String(req.query.claimNumber) : null;
+      const rows = await getSupplierInvoices(supplierId, status, claimNumber);
       res.json(rows);
     } catch (err: any) {
       res.status(400).json({ message: err.message });

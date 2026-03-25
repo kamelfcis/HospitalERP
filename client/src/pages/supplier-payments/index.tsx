@@ -230,11 +230,15 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
   });
   const paymentNumber = nextNumData?.nextNumber ?? 1;
 
+  // Claim filter state
+  const [claimFilter, setClaimFilter] = useState("");
+
   // Invoices
   const { data: invoices = [], isLoading } = useQuery<SupplierInvoicePaymentRow[]>({
-    queryKey: ["/api/supplier-payments/invoices", supplierId],
+    queryKey: ["/api/supplier-payments/invoices", supplierId, claimFilter],
     queryFn:  async () => {
-      const r = await fetch(`/api/supplier-payments/invoices/${supplierId}?status=unpaid`, {
+      const qs = claimFilter ? `&claimNumber=${encodeURIComponent(claimFilter)}` : "";
+      const r = await fetch(`/api/supplier-payments/invoices/${supplierId}?status=unpaid${qs}`, {
         credentials: "include",
       });
       if (!r.ok) throw new Error("فشل تحميل الفواتير");
@@ -473,6 +477,18 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
           />
         </div>
 
+        {/* Claim filter */}
+        <div className="flex items-center gap-1">
+          <Label className="text-xs text-muted-foreground shrink-0">رقم المطالبة</Label>
+          <Input
+            placeholder="مثال: 2/2026"
+            value={claimFilter}
+            onChange={(e) => setClaimFilter(e.target.value)}
+            className="h-7 w-[110px] text-xs font-mono"
+            data-testid="input-claim-filter"
+          />
+        </div>
+
         {/* Divider */}
         <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
 
@@ -535,7 +551,8 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
                 </TableHead>
                 <SortHead label="#"               col="invoiceNumber"    cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[80px]" />
                 <SortHead label="كود فاتورة المورد" col="supplierInvoiceNo" cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right" />
-                <SortHead label="رقم المطالبة"    col="receivingNumber"  cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[90px]" />
+                <SortHead label="أذن استلام"       col="receivingNumber"  cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[90px]" />
+                <TableHead className="text-right text-xs w-[95px]">رقم المطالبة</TableHead>
                 <SortHead label="التاريخ"          col="invoiceDate"      cur={sortKey} dir={sortDir} onSort={handleSort} className="text-right w-[95px]" />
                 <TableHead className="text-left text-xs">صافي الفاتورة</TableHead>
                 <TableHead className="text-left text-xs text-red-600">مرتجع</TableHead>
@@ -577,6 +594,9 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
                     <TableCell className="text-xs">{inv.supplierInvoiceNo || "—"}</TableCell>
                     <TableCell className="text-xs font-mono text-muted-foreground">
                       {inv.receivingNumber ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono text-primary font-semibold">
+                      {inv.claimNumber || "—"}
                     </TableCell>
                     <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
                     <TableCell className="text-left text-xs font-mono">

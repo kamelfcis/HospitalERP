@@ -41,8 +41,9 @@ export default function PurchaseInvoices() {
   const invoiceLines = useInvoiceLines();
   const discount     = useInvoiceDiscount(invoiceLines.lines);
 
-  const [invoiceDate, setInvoiceDate] = useState("");
-  const [notes,       setNotes]       = useState("");
+  const [invoiceDate,  setInvoiceDate]  = useState("");
+  const [notes,        setNotes]        = useState("");
+  const [claimNumber,  setClaimNumber]  = useState("");
 
   const [confirmApproveOpen, setConfirmApproveOpen] = useState(false);
 
@@ -51,6 +52,7 @@ export default function PurchaseInvoices() {
     if (!invoiceDetail) return;
     setInvoiceDate(invoiceDetail.invoiceDate);
     setNotes(invoiceDetail.notes || "");
+    setClaimNumber(invoiceDetail.claimNumber || "");
     invoiceLines.setLines(invoiceLines.mapServerLines(invoiceDetail.lines || []));
     discount.loadDiscount(
       invoiceDetail.discountType || "value",
@@ -65,7 +67,7 @@ export default function PurchaseInvoices() {
   const autoSave = useAutoSave({
     editId, isDraft,
     lines:         invoiceLines.lines,
-    invoiceDate, notes,
+    invoiceDate, notes, claimNumber,
     discountType:  discount.discountType,
     discountValue: discount.discountValue,
   });
@@ -74,7 +76,7 @@ export default function PurchaseInvoices() {
   const mutations = useInvoiceMutations({
     editId,
     lines:         invoiceLines.lines,
-    invoiceDate, notes,
+    invoiceDate, notes, claimNumber,
     discountType:  discount.discountType,
     discountValue: discount.discountValue,
     onSaveSuccess:    autoSave.resetAutoSave,
@@ -96,7 +98,9 @@ export default function PurchaseInvoices() {
       isPending={mutations.isPending}
       invoiceDate={invoiceDate}
       notes={notes}
+      claimNumber={claimNumber}
       onInvoiceDateChange={setInvoiceDate}
+      onClaimNumberChange={setClaimNumber}
       onSave={() => mutations.saveMutation.mutate()}
       onApprove={() => mutations.approveMutation.mutate()}
       confirmApproveOpen={confirmApproveOpen}

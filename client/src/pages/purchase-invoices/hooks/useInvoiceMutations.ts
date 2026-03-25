@@ -19,13 +19,14 @@ interface Params {
   notes:         string;
   discountType:  string;
   discountValue: number;
+  claimNumber:   string;
   onSaveSuccess?:    () => void;
   onApproveSuccess?: () => void;
   onDeleteSuccess?:  () => void;
 }
 
 export function useInvoiceMutations({
-  editId, lines, invoiceDate, notes, discountType, discountValue,
+  editId, lines, invoiceDate, notes, discountType, discountValue, claimNumber,
   onSaveSuccess, onApproveSuccess, onDeleteSuccess,
 }: Params) {
   const { toast } = useToast();
@@ -33,12 +34,13 @@ export function useInvoiceMutations({
   // بناء body مشترك للحفظ والاعتماد
   const buildBody = () => ({
     lines: lines.map(buildLinePayload),
-    discountType, discountValue, invoiceDate, notes,
+    discountType, discountValue, invoiceDate, notes, claimNumber,
   });
 
   // ── حفظ ─────────────────────────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!claimNumber.trim()) throw new Error("رقم المطالبة مطلوب قبل الحفظ");
       const errorText = formatLineErrors(lines);
       if (errorText) throw new Error(`لا يمكن الحفظ بسبب أخطاء في بيانات الأصناف:\n${errorText}`);
       await apiRequest("PATCH", `/api/purchase-invoices/${editId}`, buildBody());
@@ -57,6 +59,7 @@ export function useInvoiceMutations({
   // ── اعتماد وتسعير ────────────────────────────────────────────────────────
   const approveMutation = useMutation({
     mutationFn: async () => {
+      if (!claimNumber.trim()) throw new Error("رقم المطالبة مطلوب قبل الاعتماد");
       const errorText = formatLineErrors(lines);
       if (errorText) throw new Error(`لا يمكن الاعتماد بسبب أخطاء في بيانات الأصناف:\n${errorText}`);
       await apiRequest("PATCH", `/api/purchase-invoices/${editId}`, buildBody());

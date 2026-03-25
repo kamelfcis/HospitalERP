@@ -30,9 +30,11 @@ interface Props {
   isPending:      boolean;
 
   // ── حقول الرأس ─────────────────────────────────────────────────────────
-  invoiceDate: string;
-  notes:       string;
-  onInvoiceDateChange: (v: string) => void;
+  invoiceDate:  string;
+  notes:        string;
+  claimNumber:  string;
+  onInvoiceDateChange:  (v: string) => void;
+  onClaimNumberChange:  (v: string) => void;
 
   // ── actions ────────────────────────────────────────────────────────────
   onSave:    () => void;
@@ -46,7 +48,8 @@ interface Props {
 export function InvoiceEditor({
   invoiceDetail, isLoading,
   invoiceLines, discount, autoSaveStatus, isPending,
-  invoiceDate, notes, onInvoiceDateChange,
+  invoiceDate, notes, claimNumber,
+  onInvoiceDateChange, onClaimNumberChange,
   onSave, onApprove,
   confirmApproveOpen, setConfirmApproveOpen,
 }: Props) {
@@ -143,6 +146,25 @@ export function InvoiceEditor({
               className="peachtree-input w-[130px]" data-testid="input-invoice-date" />
           ) : (
             <span data-testid="text-invoice-date">{formatDateShort(invoiceDate)}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className={`font-semibold ${isDraft && !claimNumber ? "text-red-500" : ""}`}>
+            رقم المطالبة<span className="text-red-500">*</span>:
+          </span>
+          {isDraft ? (
+            <input
+              type="text"
+              value={claimNumber}
+              onChange={(e) => onClaimNumberChange(e.target.value)}
+              placeholder="مثال: 2/2026"
+              className={`peachtree-input w-[110px] ${!claimNumber ? "border-red-400 focus:ring-red-400" : ""}`}
+              data-testid="input-claim-number"
+            />
+          ) : (
+            <span className="font-mono text-primary" data-testid="text-claim-number">
+              {claimNumber || "—"}
+            </span>
           )}
         </div>
       </div>

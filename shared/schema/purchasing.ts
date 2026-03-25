@@ -111,17 +111,19 @@ export const purchaseInvoiceHeaders = pgTable("purchase_invoice_headers", {
   totalAfterVat: decimal("total_after_vat", { precision: 18, scale: 2 }).notNull().default("0"),
   totalLineDiscounts: decimal("total_line_discounts", { precision: 18, scale: 2 }).notNull().default("0"),
   netPayable: decimal("net_payable", { precision: 18, scale: 2 }).notNull().default("0"),
+  claimNumber: text("claim_number"),
   notes: text("notes"),
   approvedAt: timestamp("approved_at"),
   approvedBy: varchar("approved_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
-  numberIdx: index("idx_pi_number").on(table.invoiceNumber),
-  supplierIdx: index("idx_pi_supplier").on(table.supplierId),
+  numberIdx:    index("idx_pi_number").on(table.invoiceNumber),
+  supplierIdx:  index("idx_pi_supplier").on(table.supplierId),
   receivingIdx: index("idx_pi_receiving").on(table.receivingId),
-  statusIdx: index("idx_pi_status").on(table.status),
-  dateIdx: index("idx_pi_date").on(table.invoiceDate),
+  statusIdx:    index("idx_pi_status").on(table.status),
+  dateIdx:      index("idx_pi_date").on(table.invoiceDate),
+  claimIdx:     index("idx_pi_claim").on(table.supplierId, table.claimNumber),
 }));
 
 export const purchaseInvoiceLines = pgTable("purchase_invoice_lines", {
@@ -250,6 +252,7 @@ export type SupplierInvoicePaymentRow = {
   supplierInvoiceNo:  string;
   receivingNumber:    number | null;
   invoiceDate:        string;
+  claimNumber:        string | null;
   netPayable:         string;
   invoiceReturns:     string;
   totalPaid:          string;

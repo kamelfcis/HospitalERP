@@ -109,9 +109,11 @@ export async function getSupplierBalance(
 // ─── getSupplierInvoices ──────────────────────────────────────────────────────
 // يجلب فواتير المورد مع (مسدد / متبقى) — مفهرس بـ supplier_id + status
 // status: 'unpaid' | 'paid' | 'all'
+// claimNumber: فلتر اختياري برقم المطالبة
 export async function getSupplierInvoices(
   supplierId: string,
-  status: "unpaid" | "paid" | "all" = "unpaid"
+  status: "unpaid" | "paid" | "all" = "unpaid",
+  claimNumber?: string | null,
 ): Promise<SupplierInvoicePaymentRow[]> {
   const havingClause =
     status === "unpaid"
@@ -120,6 +122,10 @@ export async function getSupplierInvoices(
       ? sql`HAVING (pih.net_payable::numeric - COALESCE(iret.inv_returns, 0) - COALESCE(SUM(spl.amount_paid::numeric), 0)) <= 0.005`
       : sql``;
 
+  const claimFilter = claimNumber
+    ? sql`AND pih.claim_number = ${claimNumber}`
+    : sql``;
+
   const res = await db.execute(sql`
     SELECT
       pih.id                                                                                      AS invoice_id,
@@ -127,6 +133,7 @@ export async function getSupplierInvoices(
       pih.supplier_invoice_no,
       rh.receiving_number,
       pih.invoice_date,
+      pih.claim_number,
       pih.net_payable::numeric                                                                    AS net_payable,
       COALESCE(iret.inv_returns, 0)                                                              AS invoice_returns,
       COALESCE(SUM(spl.amount_paid::numeric), 0)                                                AS total_paid,
@@ -142,9 +149,10 @@ export async function getSupplierInvoices(
     ) iret ON iret.purchase_invoice_id = pih.id
     WHERE  pih.supplier_id = ${supplierId}
       AND  pih.status       = 'approved_costed'
+      ${claimFilter}
     GROUP  BY pih.id, pih.invoice_number, pih.supplier_invoice_no,
               rh.receiving_number, pih.invoice_date, pih.net_payable,
-              iret.inv_returns
+              pih.claim_number, iret.inv_returns
     ${havingClause}
     ORDER  BY pih.invoice_date ASC, pih.invoice_number ASC
   `);
@@ -155,6 +163,7 @@ export async function getSupplierInvoices(
     supplierInvoiceNo: r.supplier_invoice_no,
     receivingNumber:   r.receiving_number != null ? Number(r.receiving_number) : null,
     invoiceDate:       r.invoice_date,
+    claimNumber:       r.claim_number ?? null,
     netPayable:        Number(r.net_payable).toFixed(2),
     invoiceReturns:    Number(r.invoice_returns).toFixed(2),
     totalPaid:         Number(r.total_paid).toFixed(2),
