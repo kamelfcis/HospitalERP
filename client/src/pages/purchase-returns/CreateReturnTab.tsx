@@ -6,7 +6,6 @@ import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { RotateCcw, FileText, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
@@ -205,14 +204,15 @@ export function CreateReturnTab() {
 
       {/* ── Step 1: Header ── */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-2 pt-3 px-4">
           <CardTitle className="text-base">١. بيانات المرتجع</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <CardContent className="px-4 pb-3 space-y-2">
 
+          {/* السطر الأول: المورد | الفاتورة | التاريخ | المخزن */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="space-y-1">
-              <Label>المورد <span className="text-destructive">*</span></Label>
+              <Label className="text-xs text-muted-foreground">المورد <span className="text-destructive">*</span></Label>
               <SupplierCombobox
                 value={supplierId}
                 onChange={v => { setSupplierId(v); setInvoiceId(""); setLines([]); }}
@@ -220,7 +220,7 @@ export function CreateReturnTab() {
             </div>
 
             <div className="space-y-1">
-              <Label>فاتورة الشراء <span className="text-destructive">*</span></Label>
+              <Label className="text-xs text-muted-foreground">فاتورة الشراء <span className="text-destructive">*</span></Label>
               <InvoiceCombobox
                 invoices={invoices}
                 value={invoiceId}
@@ -231,7 +231,7 @@ export function CreateReturnTab() {
             </div>
 
             <div className="space-y-1">
-              <Label>تاريخ المرتجع <span className="text-destructive">*</span></Label>
+              <Label className="text-xs text-muted-foreground">تاريخ المرتجع <span className="text-destructive">*</span></Label>
               <Input
                 type="date"
                 value={returnDate}
@@ -241,40 +241,47 @@ export function CreateReturnTab() {
               />
             </div>
 
-            {warehouseName && (
-              <div className="space-y-1">
-                <Label className="text-muted-foreground">المخزن (مسحوب من الفاتورة)</Label>
-                <div className="h-9 px-3 py-2 text-sm border rounded-md bg-muted/30">{warehouseName}</div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">المخزن</Label>
+              <div className="h-9 px-3 py-2 text-sm border rounded-md bg-muted/30 text-muted-foreground truncate">
+                {warehouseName || "—"}
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* السطر الثاني: ملاحظات + ملخص الفاتورة */}
+          <div className="flex gap-3 items-center">
+            <div className="flex-1 space-y-1">
+              <Label className="text-xs text-muted-foreground">ملاحظات</Label>
+              <Input
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="ملاحظات اختيارية…"
+                className="h-9"
+                data-testid="notes-input"
+              />
+            </div>
 
             {selectedInvoice && (
-              <div className="md:col-span-2 bg-muted/30 rounded-md p-3 text-sm space-y-1">
-                <div className="flex gap-4 flex-wrap">
-                  <span><strong>رقم الفاتورة:</strong> {selectedInvoice.supplierInvoiceNo || "—"}</span>
-                  <span><strong>صافي الفاتورة:</strong> {formatCurrency(selectedInvoice.netPayable)}</span>
-                  {parseFloat(selectedInvoice.totalReturns) > 0 && (
-                    <span className="text-amber-600">
-                      <strong>مرتجع سابق:</strong> {formatCurrency(selectedInvoice.totalReturns)}
-                    </span>
-                  )}
-                </div>
+              <div className="flex gap-2 flex-wrap items-center pt-5 text-xs shrink-0">
+                <span className="px-2 py-1 rounded-md bg-muted border">
+                  <span className="text-muted-foreground">رقم الفاتورة: </span>
+                  <strong>{selectedInvoice.supplierInvoiceNo || "—"}</strong>
+                </span>
+                <span className="px-2 py-1 rounded-md bg-muted border">
+                  <span className="text-muted-foreground">صافي: </span>
+                  <strong>{formatCurrency(selectedInvoice.netPayable)}</strong>
+                </span>
+                {parseFloat(selectedInvoice.totalReturns) > 0 && (
+                  <span className="px-2 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-700">
+                    <span>مرتجع سابق: </span>
+                    <strong>{formatCurrency(selectedInvoice.totalReturns)}</strong>
+                  </span>
+                )}
               </div>
             )}
           </div>
 
-          {invoiceId && (
-            <div className="mt-4 space-y-1">
-              <Label>ملاحظات</Label>
-              <Textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="ملاحظات اختيارية…"
-                rows={2}
-                data-testid="notes-input"
-              />
-            </div>
-          )}
         </CardContent>
       </Card>
 
