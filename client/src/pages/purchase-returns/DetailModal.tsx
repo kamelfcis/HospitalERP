@@ -43,7 +43,11 @@ export function DetailModal({ returnId, onClose }: Props) {
               <div><span className="text-muted-foreground">المخزن: </span><strong>{data.warehouseNameAr}</strong></div>
               <div>
                 <span className="text-muted-foreground">فاتورة المشتريات: </span>
-                <strong>#{data.invoiceNumber} ({data.supplierInvoiceNo})</strong>
+                <strong>#{data.invoiceNumber}</strong>
+                {data.supplierInvoiceNo && (
+                  <span className="text-muted-foreground"> — فاتورة المورد: </span>
+                )}
+                {data.supplierInvoiceNo && <strong>{data.supplierInvoiceNo}</strong>}
               </div>
               <div>
                 <span className="text-muted-foreground">تاريخ المرتجع: </span>

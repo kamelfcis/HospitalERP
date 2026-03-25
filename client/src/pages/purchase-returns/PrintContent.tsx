@@ -16,8 +16,10 @@ export function PrintContent({ ret }: Props) {
       <div className="grid grid-cols-2 gap-4 mb-4 border p-2 rounded">
         <div><strong>المورد:</strong> {ret.supplierNameAr}</div>
         <div><strong>المخزن:</strong> {ret.warehouseNameAr}</div>
-        <div><strong>فاتورة الشراء:</strong> #{ret.invoiceNumber}</div>
-        <div><strong>رقم الفاتورة:</strong> {ret.supplierInvoiceNo}</div>
+        <div>
+          <strong>فاتورة الشراء:</strong> #{ret.invoiceNumber}
+          {ret.supplierInvoiceNo && <span> — فاتورة المورد: {ret.supplierInvoiceNo}</span>}
+        </div>
       </div>
       <table className="w-full border-collapse border text-xs mb-4">
         <thead>
