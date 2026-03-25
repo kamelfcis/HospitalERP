@@ -239,11 +239,9 @@ async function generatePurchaseInvoiceJournalInTx(
     throw new Error(`الفترة المحاسبية لتاريخ ${invoice.invoiceDate} مغلقة أو غير موجودة. لا يمكن اعتماد الفاتورة.`);
   }
 
-  // Step G: Next entry number — inside tx to prevent race conditions
-  const [numRow] = await tx
-    .select({ max: sql<number>`COALESCE(MAX(entry_number), 0)` })
-    .from(journalEntries);
-  const entryNumber = (numRow?.max || 0) + 1;
+  // Step G: Next entry number — uses the DB sequence to prevent duplicate-key races
+  const seqResult = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS next_num`);
+  const entryNumber = Number((seqResult.rows[0] as Record<string, unknown>).next_num);
 
   // Step H: Insert journal entry header + lines via tx
   // status = "posted" directly — اعتماد الفاتورة هو حدث التفويض، لا معنى لإبقائه مسودة

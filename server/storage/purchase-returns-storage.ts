@@ -495,11 +495,9 @@ async function generatePurchaseReturnJournalInTx(
     throw new Error(`الفترة المحاسبية لتاريخ ${returnDoc.returnDate} مغلقة أو غير موجودة.`);
   }
 
-  // Next entry number
-  const [numRow] = await tx
-    .select({ max: sql<number>`COALESCE(MAX(entry_number), 0)` })
-    .from(journalEntries);
-  const entryNumber = (numRow?.max || 0) + 1;
+  // Next entry number — uses the DB sequence to prevent duplicate-key races
+  const seqResult = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS next_num`);
+  const entryNumber = Number((seqResult.rows[0] as Record<string, unknown>).next_num);
 
   const [entry] = await tx.insert(journalEntries).values({
     entryNumber,
