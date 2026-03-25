@@ -44,6 +44,7 @@ interface ItemMovementRow {
   minorUnitName: string | null;
   majorToMinor: number;
   mediumToMinor: number;
+  majorToMedium: number;
   warehouseName: string;
   documentNumber: string | null;
   supplierInvoiceNo: string | null;
@@ -74,9 +75,35 @@ const TX_CONFIG: Record<string, { label: string; color: string; icon: React.Elem
 const ALL_TX_TYPES = ["receiving", "sales_invoice", "patient_invoice", "transfer", "stock_count", "purchase_return"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function convertQty(minor: number, level: UnitLevel, majorToMinor: number, mediumToMinor: number): number {
-  if (level === "major" && majorToMinor > 1) return minor / majorToMinor;
-  if (level === "medium" && mediumToMinor > 1) return minor / mediumToMinor;
+/**
+ * تحويل qty_in_minor لعرضها بالوحدة المطلوبة.
+ *
+ * القاعدة: qty_in_minor يُخزَّن بالوحدة الصغرى الحقيقية إذا majorToMinor > 1.
+ *          إذا majorToMinor = 1 (NULL في DB) فالقيمة مخزَّنة بالوحدة الكبرى (علبة).
+ *
+ * حالات العرض:
+ *  major  → إذا majorToMinor > 1 : اقسم عليه. وإلا: أظهر كما هي (القيمة مخزونة بالعلبة).
+ *  medium → إذا mediumToMinor > 1: اقسم عليه.
+ *           إذا majorToMinor = 1 (مخزون بعلبة) ومفيش minor حقيقي: اضرب في majorToMedium.
+ *  minor  → أظهر كما هي (القيمة في وحدتها الصغرى).
+ */
+function convertQty(
+  minor: number,
+  level: UnitLevel,
+  majorToMinor: number,
+  mediumToMinor: number,
+  majorToMedium: number = 1,
+): number {
+  if (level === "major") {
+    if (majorToMinor > 1) return minor / majorToMinor;
+    return minor; // مخزون بالعلبة — أظهر كما هي
+  }
+  if (level === "medium") {
+    if (mediumToMinor > 1) return minor / mediumToMinor;
+    // لا يوجد وحدة صغرى حقيقية → المخزون بالعلبة → اضرب في majorToMedium
+    if (majorToMinor <= 1 && majorToMedium > 1) return minor * majorToMedium;
+    return minor;
+  }
   return minor;
 }
 
@@ -237,10 +264,11 @@ function SummaryBar({ rows, unitLevel }: SummaryBarProps) {
   if (rows.length === 0) return null;
 
   const first = rows[0];
-  const mt = first.majorToMinor;
-  const me = first.mediumToMinor;
+  const mt  = first.majorToMinor;
+  const me  = first.mediumToMinor;
+  const m2m = first.majorToMedium;
 
-  const conv = (m: number) => convertQty(m, unitLevel, mt, me);
+  const conv = (m: number) => convertQty(m, unitLevel, mt, me, m2m);
 
   const totals = rows.reduce<Record<string, number>>((acc, r) => {
     const t = r.referenceType;
@@ -388,6 +416,10 @@ export default function ItemMovementReport() {
   const selectedWarehouseName = warehouses.find(w => w.id === warehouseId)?.nameAr;
 
   // ── خيارات الوحدات المتاحة بناءً على إعداد الصنف الفعلي ──────────────────
+  // القاعدة التصميمية:
+  //   • إذا majorToMinor > 1  → القاعدة وحدة صغرى  (minor)   → نعرض major + [medium] + minor
+  //   • إذا majorToMinor = 1 ومعامل وسطى > 1 → القاعدة علبة  (major)   → نعرض major + medium
+  //   • إذا وحدة واحدة فقط → نعرض major فقط
   const unitOptions = useMemo((): Array<{ value: UnitLevel; label: string }> => {
     if (rows.length === 0) return [
       { value: "major",  label: "كبيرة" },
@@ -396,17 +428,33 @@ export default function ItemMovementReport() {
     ];
     const f = rows[0];
     const opts: Array<{ value: UnitLevel; label: string }> = [];
-    // الوحدة الكبرى: متاحة فقط إذا كان اسمها معرَّفاً ومعامل التحويل > 1
-    if (f.majorUnitName && f.majorToMinor > 1) {
-      opts.push({ value: "major",  label: f.majorUnitName });
+
+    const hasMinor  = f.majorToMinor > 1;          // هل هناك وحدة صغرى حقيقية؟
+    const hasMedium = f.majorToMedium > 1;          // هل هناك وحدة وسطى؟
+    const hasMediumTrue = f.mediumToMinor > 1;      // وسطى مع minor حقيقي
+
+    // الوحدة الكبرى (علبة): تظهر دائماً إذا كان لها اسم
+    if (f.majorUnitName) {
+      opts.push({ value: "major", label: f.majorUnitName });
     }
-    // الوحدة الوسطى: متاحة فقط إذا كان اسمها معرَّفاً ومعامل التحويل > 1
-    if (f.mediumUnitName && f.mediumToMinor > 1) {
+
+    // الوحدة الوسطى (شريط):
+    //   حالة 1 — وسطى+صغرى معاً (ثلاث وحدات): تظهر إذا mediumToMinor > 1
+    //   حالة 2 — وسطى فقط بدون صغرى حقيقية:  تظهر إذا majorToMedium > 1
+    if (f.mediumUnitName && (hasMediumTrue || (!hasMinor && hasMedium))) {
       opts.push({ value: "medium", label: f.mediumUnitName });
     }
-    // الوحدة الصغرى دائماً متاحة — إن لم يكن للصنف sub-units فهي وحدته الوحيدة
-    const minorLabel = f.minorUnitName || (f.majorToMinor <= 1 ? (f.majorUnitName ?? "وحدة") : "صغيرة");
-    opts.push({ value: "minor", label: minorLabel });
+
+    // الوحدة الصغرى: تظهر فقط إذا كانت هناك وحدة صغرى حقيقية (majorToMinor > 1)
+    if (hasMinor && f.minorUnitName) {
+      opts.push({ value: "minor", label: f.minorUnitName });
+    }
+
+    // احتياطي: لا خيار → أظهر وحدة واحدة
+    if (opts.length === 0) {
+      opts.push({ value: "major", label: f.majorUnitName ?? f.minorUnitName ?? "وحدة" });
+    }
+
     return opts;
   }, [rows]);
 
@@ -652,8 +700,8 @@ export default function ItemMovementReport() {
                       const cfgKey = (row.referenceType === "sales_invoice" && row.isReturn) ? "sales_return" : row.referenceType;
                       const cfg = TX_CONFIG[cfgKey] ?? { label: row.referenceType, color: "bg-gray-100 text-gray-700 border-gray-200", icon: Package };
                       const Icon = cfg.icon;
-                      const qtyConverted = convertQty(row.qtyChangeMinor, unitLevel, row.majorToMinor, row.mediumToMinor);
-                      const balConverted = convertQty(row.balanceAfterMinor, unitLevel, row.majorToMinor, row.mediumToMinor);
+                      const qtyConverted = convertQty(row.qtyChangeMinor, unitLevel, row.majorToMinor, row.mediumToMinor, row.majorToMedium);
+                      const balConverted = convertQty(row.balanceAfterMinor, unitLevel, row.majorToMinor, row.mediumToMinor, row.majorToMedium);
                       const { date, time } = fmtDateTime(row.txDate);
                       const isIn = row.txType === "in";
 
@@ -749,9 +797,10 @@ export default function ItemMovementReport() {
                   <div className="flex flex-wrap gap-4 text-xs justify-end">
                     {(() => {
                       const first = rows[0];
-                      const mt = first.majorToMinor;
-                      const me = first.mediumToMinor;
-                      const conv = (m: number) => convertQty(m, unitLevel, mt, me);
+                      const mt  = first.majorToMinor;
+                      const me  = first.mediumToMinor;
+                      const m2m = first.majorToMedium;
+                      const conv = (m: number) => convertQty(m, unitLevel, mt, me, m2m);
                       const totalIn = rows.filter(r => r.txType === "in").reduce((s, r) => s + r.qtyChangeMinor, 0);
                       const totalOut = rows.filter(r => r.txType === "out").reduce((s, r) => s + Math.abs(r.qtyChangeMinor), 0);
                       const lastBalance = rows[rows.length - 1].balanceAfterMinor;

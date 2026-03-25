@@ -20,6 +20,7 @@ export interface ItemMovementRow {
   minorUnitName: string | null;
   majorToMinor: number;
   mediumToMinor: number;
+  majorToMedium: number;
   warehouseName: string;
   documentNumber: string | null;
   supplierInvoiceNo: string | null;
@@ -62,6 +63,7 @@ export async function getItemMovementReport(
       i.minor_unit_name                                     AS "minorUnitName",
       COALESCE(i.major_to_minor, 1)::float8                AS "majorToMinor",
       COALESCE(i.medium_to_minor, 1)::float8               AS "mediumToMinor",
+      COALESCE(i.major_to_medium, 1)::float8               AS "majorToMedium",
       COALESCE(w.name_ar, '—')                             AS "warehouseName",
 
       -- رقم المستند من جدول المرجع
