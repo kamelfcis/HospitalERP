@@ -9,9 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RotateCcw, FileText, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
 import { SupplierCombobox } from "./SupplierCombobox";
+import { InvoiceCombobox } from "./InvoiceCombobox";
 import { ReturnLinesTable } from "./ReturnLinesTable";
 import { DetailModal } from "./DetailModal";
 import { computeLine } from "./utils";
@@ -221,32 +221,13 @@ export function CreateReturnTab() {
 
             <div className="space-y-1">
               <Label>فاتورة الشراء <span className="text-destructive">*</span></Label>
-              <Select
+              <InvoiceCombobox
+                invoices={invoices}
                 value={invoiceId}
-                onValueChange={setInvoiceId}
-                disabled={!supplierId || invoices.length === 0}
-              >
-                <SelectTrigger data-testid="invoice-select">
-                  <SelectValue placeholder={
-                    !supplierId       ? "اختر المورد أولاً" :
-                    invoices.length === 0 ? "لا توجد فواتير معتمدة" :
-                    "اختر فاتورة الشراء…"
-                  } />
-                </SelectTrigger>
-                <SelectContent>
-                  {invoices.map(inv => (
-                    <SelectItem key={inv.id} value={inv.id}>
-                      {inv.receivingNumber ? `استلام #${inv.receivingNumber}` : `فاتورة #${inv.invoiceNumber}`}
-                      {inv.supplierInvoiceNo ? ` — ${inv.supplierInvoiceNo}` : ""}
-                      {" — "}{formatDateShort(inv.invoiceDate)}
-                      {inv.totalReturns && parseFloat(inv.totalReturns) > 0
-                        ? ` (مرتجع: ${formatCurrency(inv.totalReturns)})`
-                        : ""}
-                      — {inv.warehouseNameAr}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={v => { setInvoiceId(v); }}
+                disabled={!supplierId}
+                noSupplier={!supplierId}
+              />
             </div>
 
             <div className="space-y-1">
