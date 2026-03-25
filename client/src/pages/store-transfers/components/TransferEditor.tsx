@@ -121,7 +121,7 @@ export function TransferEditor({
   return (
     <div className="space-y-2" onClick={handleFormContainerClick}>
       {/* Header fields */}
-      <fieldset className="peachtree-grid p-2">
+      <fieldset className="peachtree-grid p-2" dir="rtl">
         <legend className="text-xs font-semibold px-1">بيانات إذن التحويل</legend>
         <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-1 w-[100px]">
@@ -134,13 +134,13 @@ export function TransferEditor({
               data-testid="input-transfer-number"
             />
           </div>
-          <div className="space-y-1 w-[120px]">
+          <div className="space-y-1 w-[135px]">
             <Label className="text-[10px] text-muted-foreground">تاريخ التحويل</Label>
-            <Input
+            <input
               type="date"
               value={transferDate}
               onChange={(e) => setTransferDate(e.target.value)}
-              className="h-7 text-[11px] px-1"
+              className="peachtree-input w-full"
               disabled={isViewOnly}
               data-testid="input-transfer-date"
             />
