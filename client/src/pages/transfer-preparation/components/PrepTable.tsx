@@ -11,7 +11,7 @@ export function PrepTable() {
     sortSourceAsc, setSortSourceAsc,
     sortDestAsc, setSortDestAsc,
     handleQtyChange, handleExcludeItem,
-    noSourceStockCount, coveredCount,
+    coveredCount,
   } = usePrep();
 
   const inputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
@@ -84,18 +84,13 @@ export function PrepTable() {
             <tr>
               <td colSpan={11} className="py-6 text-center">
                 {linesCount === 0 ? (
-                  <p className="text-muted-foreground text-sm">لا توجد بيانات مبيعات في الوجهة خلال الفترة المختارة</p>
+                  <p className="text-muted-foreground text-sm">لا توجد أصناف بمخزن المصدر أو مبيعات بمخزن الوجهة خلال الفترة المختارة</p>
                 ) : (
                   <div className="space-y-1.5">
-                    <p className="text-muted-foreground text-sm">لا توجد أصناف قابلة للتحويل في الوقت الحالي</p>
-                    {noSourceStockCount > 0 && (
-                      <p className="text-xs text-orange-600 dark:text-orange-400">
-                        ▸ {noSourceStockCount} صنف لديه مبيعات في الوجهة لكن مخزن المصدر فارغ منه
-                      </p>
-                    )}
+                    <p className="text-muted-foreground text-sm">لا توجد أصناف قابلة للتحويل بعد الفلترة</p>
                     {coveredCount > 0 && (
                       <p className="text-xs text-green-600 dark:text-green-400">
-                        ▸ {coveredCount} صنف رصيد الوجهة يغطي مبيعاته (مكتفٍ) — قم بإلغاء تفعيل "استبعاد المكتفية" للعرض
+                        ▸ {coveredCount} صنف مكتفٍ (رصيد الوجهة يغطي المبيعات) — يمكن إلغاء "استبعاد المكتفية" لعرضه
                       </p>
                     )}
                   </div>
@@ -124,7 +119,8 @@ function PrepRow({ line, idx, onQtyChange, onExclude, onKeyDown, inputRef }: {
   const transferQty = parseFloat(line._transferQty) || 0;
   const sourceInsufficient = (parseFloat(line.source_stock) || 0) <= 0;
   const transferExceedsSource = transferQty > sourceStock;
-  const destCoversNeed = destStock >= totalSold;
+  // "مكتفٍ" = الوجهة لها رصيد فعلي ويكفي المبيعات
+  const destCoversNeed = destStock > 0 && destStock >= totalSold;
 
   return (
     <tr className={`border-b hover:bg-muted/30 ${sourceInsufficient ? "opacity-50" : ""}`} data-testid={`row-prep-${idx}`}>

@@ -317,7 +317,7 @@ export function registerWarehousesRoutes(app: Express) {
 
       const result = await db.execute(sql`
         WITH sales_retail AS (
-          SELECT l.item_id, SUM(l.qty_in_minor::numeric) as total_sold_minor
+          SELECT l.item_id, SUM(l.qty_in_minor::numeric) AS total_sold_minor
           FROM sales_invoice_lines l
           JOIN sales_invoice_headers h ON l.invoice_id = h.id
           WHERE h.warehouse_id = ${destWarehouseId as string}
@@ -335,7 +335,7 @@ export function registerWarehousesRoutes(app: Express) {
                 WHEN l.unit_level = 'medium' THEN l.quantity::numeric * COALESCE(i.medium_to_minor::numeric, 1)
                 ELSE l.quantity::numeric
               END
-            ) as total_sold_minor
+            ) AS total_sold_minor
           FROM patient_invoice_lines l
           JOIN patient_invoice_headers h ON l.header_id = h.id
           JOIN items i ON l.item_id = i.id
@@ -349,7 +349,7 @@ export function registerWarehousesRoutes(app: Express) {
           GROUP BY l.item_id
         ),
         combined AS (
-          SELECT item_id, SUM(total_sold_minor) as total_sold
+          SELECT item_id, SUM(total_sold_minor) AS total_sold
           FROM (
             SELECT * FROM sales_retail
             UNION ALL
@@ -359,22 +359,26 @@ export function registerWarehousesRoutes(app: Express) {
         ),
         source_stock AS (
           SELECT item_id,
-            SUM(qty_in_minor::numeric) as stock,
+            SUM(qty_in_minor::numeric) AS stock,
             MIN(CASE WHEN qty_in_minor::numeric > 0 AND expiry_year IS NOT NULL
               THEN make_date(expiry_year, GREATEST(COALESCE(expiry_month, 1), 1), 1)
-            END) as nearest_expiry
+            END) AS nearest_expiry
           FROM inventory_lots
-          WHERE warehouse_id = ${sourceWarehouseId as string} AND is_active = true AND qty_in_minor::numeric > 0
+          WHERE warehouse_id = ${sourceWarehouseId as string}
+            AND is_active = true
+            AND qty_in_minor::numeric > 0
           GROUP BY item_id
         ),
         dest_stock AS (
-          SELECT item_id, SUM(qty_in_minor::numeric) as stock
+          SELECT item_id, SUM(qty_in_minor::numeric) AS stock
           FROM inventory_lots
-          WHERE warehouse_id = ${destWarehouseId as string} AND is_active = true AND qty_in_minor::numeric > 0
+          WHERE warehouse_id = ${destWarehouseId as string}
+            AND is_active = true
+            AND qty_in_minor::numeric > 0
           GROUP BY item_id
         )
         SELECT
-          c.item_id,
+          ss.item_id,
           i.item_code,
           i.name_ar,
           i.has_expiry,
@@ -383,17 +387,23 @@ export function registerWarehousesRoutes(app: Express) {
           i.medium_unit_name,
           i.major_to_minor::text,
           i.medium_to_minor::text,
-          c.total_sold::text,
-          COALESCE(ss.stock, 0)::text as source_stock,
-          COALESCE(ds.stock, 0)::text as dest_stock,
+          COALESCE(c.total_sold, 0)::text  AS total_sold,
+          ss.stock::text                   AS source_stock,
+          COALESCE(ds.stock, 0)::text      AS dest_stock,
           ss.nearest_expiry
-        FROM combined c
-        JOIN items i ON c.item_id = i.id
-        LEFT JOIN source_stock ss ON c.item_id = ss.item_id
-        LEFT JOIN dest_stock ds ON c.item_id = ds.item_id
+        FROM source_stock ss
+        JOIN  items i  ON i.id = ss.item_id
+        LEFT JOIN combined   c  ON c.item_id  = ss.item_id
+        LEFT JOIN dest_stock ds ON ds.item_id = ss.item_id
         WHERE i.is_active = true
-          AND c.total_sold > 0
-        ORDER BY c.total_sold DESC
+          AND (
+            COALESCE(c.total_sold, 0) > 0   -- له مبيعات في الوجهة
+            OR COALESCE(ds.stock, 0)  = 0   -- أو الوجهة فارغة تماماً
+          )
+        ORDER BY
+          CASE WHEN COALESCE(c.total_sold, 0) > 0 THEN 0 ELSE 1 END,
+          COALESCE(c.total_sold, 0) DESC,
+          i.name_ar
       `);
 
       res.json(result.rows);

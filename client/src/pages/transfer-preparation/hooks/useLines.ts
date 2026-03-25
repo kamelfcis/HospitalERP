@@ -20,12 +20,16 @@ export function useLines() {
 
   const visibleLines = useMemo(() => {
     let result = lines.filter((l) => !l._excluded);
+    // source_stock > 0 مضمون من البكند الآن — الفلتر احتياطي فقط
     result = result.filter((l) => (parseFloat(l.source_stock) || 0) > 0);
 
     if (excludeCovered) {
       result = result.filter((l) => {
-        const m2m = getMajorToMinor(l);
-        return toMajor(parseFloat(l.dest_stock) || 0, m2m) < toMajor(parseFloat(l.total_sold) || 0, m2m);
+        const m2m        = getMajorToMinor(l);
+        const destStock  = toMajor(parseFloat(l.dest_stock)  || 0, m2m);
+        const totalSold  = toMajor(parseFloat(l.total_sold)  || 0, m2m);
+        // أظهر: عجز مبيعات (dest < sold) أو الوجهة فارغة تماماً (dest = 0)
+        return destStock < totalSold || destStock === 0;
       });
     }
 
@@ -55,8 +59,11 @@ export function useLines() {
     if (!excludeCovered) return 0;
     return lines.filter((l) => {
       if (l._excluded || (parseFloat(l.source_stock) || 0) === 0) return false;
-      const m2m = getMajorToMinor(l);
-      return toMajor(parseFloat(l.dest_stock) || 0, m2m) >= toMajor(parseFloat(l.total_sold) || 0, m2m);
+      const m2m       = getMajorToMinor(l);
+      const destStock = toMajor(parseFloat(l.dest_stock) || 0, m2m);
+      const totalSold = toMajor(parseFloat(l.total_sold) || 0, m2m);
+      // "مكتفٍ" = الوجهة لها رصيد وتغطي المبيعات (dest > 0 AND dest >= sold)
+      return destStock > 0 && destStock >= totalSold;
     }).length;
   }, [lines, excludeCovered]);
 
