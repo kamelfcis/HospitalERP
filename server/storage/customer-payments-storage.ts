@@ -200,16 +200,16 @@ export async function createCustomerReceipt(
   const resolvedShiftId: string | null =
     input.shiftId ?? (input.glAccountId ? await resolveShiftFromGlAccount(input.glAccountId) : null);
 
-  // ── جلب حساب الذمم من ربط الحسابات (مدين/دائن) ──────────────────────────
+  // ── جلب حساب الذمم: نستخدم ربط sales_invoice / receivables ──────────────
   let arAccountId:  string | null = null;
   let glDebitId:    string | null = null;
   let glCreditId:   string | null = null;
   if (input.glAccountId) {
     const mappings = await db.select().from(accountMappings)
-      .where(sql`transaction_type = 'credit_customer_receipt'`);
-    const arMapping = mappings.find((m) => m.lineType === "receivable");
+      .where(sql`transaction_type = 'sales_invoice'`);
+    const arMapping = mappings.find((m) => m.lineType === "receivables");
     if (arMapping) {
-      arAccountId = arMapping.debitAccountId || arMapping.creditAccountId || null;
+      arAccountId = arMapping.debitAccountId || null;
       glDebitId   = input.glAccountId;
       glCreditId  = arAccountId;
     }
