@@ -1089,7 +1089,11 @@ const methods = {
       parseFloat(totalRefunded) -
       parseFloat(supplierPaid)
     ).toFixed(2);
-    const netCollected     = (parseFloat(totalCollected) - parseFloat(totalRefunded)).toFixed(2);
+    const netCollected     = (
+      parseFloat(totalCollected) +
+      parseFloat(creditCollected) -
+      parseFloat(totalRefunded)
+    ).toFixed(2);
 
     return {
       openingCash,
