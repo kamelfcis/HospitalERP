@@ -104,18 +104,30 @@ const methods = {
   },
 
   async getSalesInvoice(this: DatabaseStorage, id: string): Promise<SalesInvoiceWithDetails | undefined> {
-    const [h] = await db.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
-    if (!h) return undefined;
-    const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
-    const lines = await db.select().from(salesInvoiceLines)
-      .where(eq(salesInvoiceLines.invoiceId, h.id))
+    // استعلام واحد للرأس + المستودع بدلاً من استعلامين
+    const headerRows = await db
+      .select({ header: salesInvoiceHeaders, warehouse: warehouses })
+      .from(salesInvoiceHeaders)
+      .leftJoin(warehouses, eq(warehouses.id, salesInvoiceHeaders.warehouseId))
+      .where(eq(salesInvoiceHeaders.id, id))
+      .limit(1);
+    if (!headerRows.length) return undefined;
+    const { header: h, warehouse: wh } = headerRows[0];
+
+    // استعلام واحد للسطور + الأصناف بدلاً من N استعلام (كان N+2 وأصبح 2)
+    const lineRows = await db
+      .select({ line: salesInvoiceLines, item: items })
+      .from(salesInvoiceLines)
+      .leftJoin(items, eq(items.id, salesInvoiceLines.itemId))
+      .where(eq(salesInvoiceLines.invoiceId, id))
       .orderBy(asc(salesInvoiceLines.lineNo));
-    const linesWithItems: SalesInvoiceLineWithItem[] = [];
-    for (const line of lines) {
-      const [item] = await db.select().from(items).where(eq(items.id, line.itemId!));
-      linesWithItems.push({ ...line, item });
-    }
-    return { ...h, warehouse: wh, lines: linesWithItems };
+
+    const linesWithItems: SalesInvoiceLineWithItem[] = lineRows.map(r => ({
+      ...r.line,
+      item: r.item ?? undefined,
+    }));
+
+    return { ...h, warehouse: wh ?? undefined, lines: linesWithItems };
   },
 
   /**

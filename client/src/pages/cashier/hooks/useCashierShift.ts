@@ -40,7 +40,7 @@ export function useCashierShift() {
     queryKey: ["/api/cashier/units"],
   });
 
-  // ── جلب الوردية النشطة (تحديث كل 30 ثانية) ──────────────
+  // ── جلب الوردية النشطة (تحديث كل 60 ثانية) ──────────────
   const { data: myOpenShift, isLoading: shiftLoading } = useQuery<CashierShift | null>({
     queryKey: ["/api/cashier/my-open-shift"],
     queryFn: async () => {
@@ -48,7 +48,8 @@ export function useCashierShift() {
       if (!res.ok) throw new Error("فشل جلب بيانات الوردية");
       return res.json();
     },
-    refetchInterval: 180_000,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
   });
 
   // ── حساب GL للمستخدم ─────────────────────────────────────
@@ -70,7 +71,7 @@ export function useCashierShift() {
   const shiftUnitType  = activeShift?.unitType || selectedUnitType || "pharmacy";
   const shiftUnitId    = activeShift?.pharmacyId || activeShift?.departmentId || selectedUnitId;
 
-  // ── إجماليات الوردية ─────────────────────────────────────
+  // ── إجماليات الوردية (لحظية عبر SSE + polling كل 20 ث كشبكة أمان) ───
   const { data: shiftTotals } = useQuery<ShiftTotals>({
     queryKey: ["/api/cashier/shift", shiftId, "totals"],
     queryFn: async () => {
@@ -79,6 +80,8 @@ export function useCashierShift() {
       return res.json();
     },
     enabled: !!shiftId && hasActiveShift,
+    refetchInterval: 20_000,
+    staleTime: 5_000,
   });
 
   // ── حسابات مالية ─────────────────────────────────────────

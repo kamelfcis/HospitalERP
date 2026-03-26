@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -150,8 +150,8 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
                 const hasCreditInvoices = (row.creditInvoices?.length ?? 0) > 0;
                 const isExpanded = expandedShifts.has(row.shiftId);
                 return (
-                  <>
-                    <TableRow key={row.shiftId} className="hover:bg-muted/30" data-testid={`row-shift-${row.shiftId}`}>
+                  <Fragment key={row.shiftId}>
+                    <TableRow className="hover:bg-muted/30" data-testid={`row-shift-${row.shiftId}`}>
                       <TableCell className="font-mono text-xs text-muted-foreground" data-testid={`text-shift-id-${row.shiftId}`}>
                         {shiftShortId(row.shiftId)}
                       </TableCell>
@@ -215,9 +215,9 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
                       </TableCell>
                     </TableRow>
                     {hasCreditInvoices && isExpanded && (
-                      <CreditInvoicesSubRow key={`ci-${row.shiftId}`} items={row.creditInvoices!} />
+                      <CreditInvoicesSubRow items={row.creditInvoices!} />
                     )}
-                  </>
+                  </Fragment>
                 );
               })
             )}
