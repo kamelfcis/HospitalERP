@@ -150,9 +150,11 @@ export function registerCustomerPaymentRoutes(app: Express) {
       const parsed = createReceiptSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
 
+      const userId = (req as any).user?.id ?? null;
       const result = await createCustomerReceipt({
         ...parsed.data,
-        createdBy: (req as any).user?.id ?? null,
+        createdBy: userId,
+        userId,
         lines: parsed.data.lines.map((l) => ({ invoiceId: l.invoiceId, amountPaid: l.amountPaid })),
       });
 

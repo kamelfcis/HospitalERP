@@ -40,6 +40,7 @@ export interface CreateReceiptInput {
   createdBy?:    string | null;
   glAccountId?:  string | null;
   shiftId?:      string | null;
+  userId?:       string | null;
   lines: { invoiceId: string; amountPaid: number }[];
 }
 
@@ -170,7 +171,6 @@ export async function getNextReceiptNumber(): Promise<number> {
 }
 
 // ─── resolveShiftFromGlAccount ────────────────────────────────────────────────
-// يبحث عن الوردية المفتوحة المرتبطة بحساب الخزنة المُختار، ويعيد shiftId أو null
 async function resolveShiftFromGlAccount(glAccountId: string): Promise<string | null> {
   const res = await db.execute(sql`
     SELECT id FROM cashier_shifts
@@ -179,6 +179,20 @@ async function resolveShiftFromGlAccount(glAccountId: string): Promise<string | 
     LIMIT 1
   `);
   return (res as any).rows[0]?.id ?? null;
+}
+
+// ─── resolveShiftFromUserId ───────────────────────────────────────────────────
+// يبحث عن وردية مفتوحة للمستخدم مباشرةً (fallback عندما لا تُحدَّد خزنة)
+async function resolveShiftFromUserId(userId: string): Promise<{ shiftId: string; glAccountId: string | null } | null> {
+  const res = await db.execute(sql`
+    SELECT id, gl_account_id FROM cashier_shifts
+    WHERE cashier_id = ${userId} AND status = 'open'
+    ORDER BY opened_at DESC
+    LIMIT 1
+  `);
+  const row = (res as any).rows[0];
+  if (!row) return null;
+  return { shiftId: row.id, glAccountId: row.gl_account_id ?? null };
 }
 
 // ─── createCustomerReceipt ────────────────────────────────────────────────────
@@ -196,21 +210,35 @@ export async function createCustomerReceipt(
     );
   }
 
-  // ── حل وردية الكاشير تلقائياً إذا لم تُرسَل من الـ frontend ───────────────
-  const resolvedShiftId: string | null =
-    input.shiftId ?? (input.glAccountId ? await resolveShiftFromGlAccount(input.glAccountId) : null);
+  // ── حل وردية الكاشير: 3 مراحل ───────────────────────────────────────────
+  // 1) shiftId صريح  2) resolve من glAccountId  3) وردية مفتوحة للمستخدم
+  let resolvedShiftId: string | null    = input.shiftId ?? null;
+  let effectiveGlAccountId: string | null = input.glAccountId ?? null;
+
+  if (!resolvedShiftId && effectiveGlAccountId) {
+    resolvedShiftId = await resolveShiftFromGlAccount(effectiveGlAccountId);
+  }
+
+  if (!resolvedShiftId && (input.userId ?? input.createdBy)) {
+    const uid = (input.userId ?? input.createdBy)!;
+    const userShift = await resolveShiftFromUserId(uid);
+    if (userShift) {
+      resolvedShiftId      = userShift.shiftId;
+      effectiveGlAccountId = effectiveGlAccountId ?? userShift.glAccountId;
+    }
+  }
 
   // ── جلب حساب الذمم: نستخدم ربط sales_invoice / receivables ──────────────
   let arAccountId:  string | null = null;
   let glDebitId:    string | null = null;
   let glCreditId:   string | null = null;
-  if (input.glAccountId) {
+  if (effectiveGlAccountId) {
     const mappings = await db.select().from(accountMappings)
       .where(sql`transaction_type = 'sales_invoice'`);
     const arMapping = mappings.find((m) => m.lineType === "receivables");
     if (arMapping) {
       arAccountId = arMapping.debitAccountId || null;
-      glDebitId   = input.glAccountId;
+      glDebitId   = effectiveGlAccountId;
       glCreditId  = arAccountId;
     }
   }

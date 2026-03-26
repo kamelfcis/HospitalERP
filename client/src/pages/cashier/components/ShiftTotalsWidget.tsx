@@ -81,16 +81,18 @@ export function ShiftTotalsWidget({ totals }: Props) {
             valueClass="text-amber-600 dark:text-amber-400"
           />
 
-          {/* تحصيل الآجل */}
-          {parseFloat(totals.creditCollected ?? "0") > 0 && (
-            <Row
-              label="تحصيل الآجل"
-              value={totals.creditCollected}
-              count={totals.creditCount}
-              testId="text-credit-collected"
-              valueClass="text-blue-600 dark:text-blue-400"
-            />
-          )}
+          {/* تحصيل الآجل — يظهر دائماً */}
+          <Row
+            label="تحصيل الآجل"
+            value={totals.creditCollected ?? "0"}
+            count={totals.creditCount ?? 0}
+            testId="text-credit-collected"
+            valueClass={
+              parseFloat(totals.creditCollected ?? "0") > 0
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-muted-foreground"
+            }
+          />
 
           {/* تحصيل التوصيل — يظهر دائماً */}
           <Row
