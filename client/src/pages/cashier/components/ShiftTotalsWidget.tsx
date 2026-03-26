@@ -81,6 +81,17 @@ export function ShiftTotalsWidget({ totals }: Props) {
             valueClass="text-amber-600 dark:text-amber-400"
           />
 
+          {/* تحصيل الآجل */}
+          {parseFloat(totals.creditCollected ?? "0") > 0 && (
+            <Row
+              label="تحصيل الآجل"
+              value={totals.creditCollected}
+              count={totals.creditCount}
+              testId="text-credit-collected"
+              valueClass="text-blue-600 dark:text-blue-400"
+            />
+          )}
+
           {/* المرتجعات */}
           <Row
             label="المرتجعات"

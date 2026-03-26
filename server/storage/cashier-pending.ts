@@ -62,10 +62,12 @@ export const PENDING_RECEIPT_GUARD_SQL = `
   AND NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id)
 `.trim();
 
-/** Full WHERE predicate: sales invoice pending collection */
+/** Full WHERE predicate: sales invoice pending collection
+ *  ⚠ فواتير الآجل (customer_type='credit') مستثناة — تُحصَّل عبر شاشة تحصيل الآجل فقط */
 export const PENDING_SALES_SQL = `
   sih.status   = 'finalized'
   AND sih.is_return = false
+  AND sih.customer_type != 'credit'
   ${PENDING_RECEIPT_GUARD_SQL}
 `.trim();
 

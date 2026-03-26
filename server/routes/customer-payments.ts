@@ -7,6 +7,7 @@
 import type { Express } from "express";
 import { requireAuth }   from "./_shared";
 import { z }             from "zod";
+import { pool }          from "../db";
 import {
   getCustomerBalance,
   getCustomerCreditInvoices,
@@ -24,6 +25,8 @@ const createReceiptSchema = z.object({
   paymentMethod: z.enum(["cash", "bank", "card", "check", "transfer"]).default("cash"),
   reference:     z.string().max(100).optional().nullable(),
   notes:         z.string().optional().nullable(),
+  glAccountId:   z.string().optional().nullable(),
+  shiftId:       z.string().optional().nullable(),
   lines: z.array(z.object({
     invoiceId:  z.string().uuid(),
     amountPaid: z.number().positive(),
@@ -40,6 +43,30 @@ function parseStatus(
 }
 
 export function registerCustomerPaymentRoutes(app: Express) {
+
+  // ── GET /api/customer-payments/open-shifts ────────────────────────────────
+  // يُعيد الوردات المفتوحة للاختيار كخزنة عند التحصيل
+  app.get("/api/customer-payments/open-shifts", requireAuth, async (_req, res) => {
+    try {
+      const result = await pool.query<{
+        id: string; shift_number: number; started_at: string;
+        cashier_name: string; pharmacy_name: string; gl_account_id: string | null;
+      }>(`
+        SELECT cs.id, cs.shift_number, cs.started_at,
+               cs.cashier_name,
+               COALESCE(p.name_ar, '') AS pharmacy_name,
+               cs.gl_account_id
+        FROM cashier_shifts cs
+        LEFT JOIN pharmacies p ON p.id = cs.pharmacy_id
+        WHERE cs.status = 'open'
+        ORDER BY cs.started_at DESC
+        LIMIT 50
+      `);
+      res.json({ shifts: result.rows });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   // ── GET /api/credit-customers ─────────────────────────────────────────────
   app.get("/api/credit-customers", requireAuth, async (req, res) => {

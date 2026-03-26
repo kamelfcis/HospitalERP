@@ -194,10 +194,14 @@ export const customerReceipts = pgTable("customer_receipts", {
   reference:     varchar("reference", { length: 100 }),
   notes:         text("notes"),
   createdBy:     varchar("created_by"),
+  glAccountId:   varchar("gl_account_id").references(() => accounts.id),
+  shiftId:       varchar("shift_id"),
+  journalEntryId: varchar("journal_entry_id"),
   createdAt:     timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   customerIdx: index("idx_cr_customer").on(t.customerId),
   dateIdx:     index("idx_cr_date").on(t.receiptDate),
+  shiftIdx:    index("idx_cr_shift").on(t.shiftId),
 }));
 
 export const customerReceiptLines = pgTable("customer_receipt_lines", {

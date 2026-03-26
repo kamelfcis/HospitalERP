@@ -52,6 +52,8 @@ export interface ShiftTotals {
   netCollected: string;
   hoursOpen: number;
   isStale: boolean;
+  creditCollected: string;
+  creditCount: number;
 }
 
 // ── حساب GL المرتبط بالمستخدم (خزنة الكاشير) ─────────────

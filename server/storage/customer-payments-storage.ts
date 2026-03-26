@@ -14,7 +14,9 @@
 import { sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { customerReceipts, customerReceiptLines, pharmacyCreditCustomers } from "@shared/schema/invoicing";
+import { journalEntries, journalLines, accountMappings } from "@shared/schema/finance";
 import type { CustomerCreditInvoiceRow } from "@shared/schema/invoicing";
+import { logger } from "../lib/logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,8 @@ export interface CreateReceiptInput {
   reference?:    string | null;
   notes?:        string | null;
   createdBy?:    string | null;
+  glAccountId?:  string | null;
+  shiftId?:      string | null;
   lines: { invoiceId: string; amountPaid: number }[];
 }
 
@@ -156,10 +160,10 @@ export async function getNextReceiptNumber(): Promise<number> {
 }
 
 // ─── createCustomerReceipt ────────────────────────────────────────────────────
-// atomic: رأس + سطور التوزيع في transaction واحدة
+// atomic: رأس + سطور التوزيع + قيد GL في transaction واحدة
 export async function createCustomerReceipt(
   input: CreateReceiptInput
-): Promise<{ receiptId: string; receiptNumber: number }> {
+): Promise<{ receiptId: string; receiptNumber: number; journalEntryId: string | null }> {
   if (!input.lines.length) throw new Error("لا توجد فواتير مُحددة للتحصيل");
   if (input.totalAmount <= 0)  throw new Error("مبلغ التحصيل يجب أن يكون أكبر من الصفر");
 
@@ -168,6 +172,21 @@ export async function createCustomerReceipt(
     throw new Error(
       `مجموع التوزيع (${sumLines.toFixed(2)}) لا يطابق إجمالي التحصيل (${input.totalAmount.toFixed(2)})`
     );
+  }
+
+  // ── جلب حساب الذمم من ربط الحسابات (مدين/دائن) ──────────────────────────
+  let arAccountId:  string | null = null;
+  let glDebitId:    string | null = null;
+  let glCreditId:   string | null = null;
+  if (input.glAccountId) {
+    const mappings = await db.select().from(accountMappings)
+      .where(sql`transaction_type = 'credit_customer_receipt'`);
+    const arMapping = mappings.find((m) => m.lineType === "receivable");
+    if (arMapping) {
+      arAccountId = arMapping.debitAccountId || arMapping.creditAccountId || null;
+      glDebitId   = input.glAccountId;
+      glCreditId  = arAccountId;
+    }
   }
 
   const result = await db.transaction(async (tx) => {
@@ -187,6 +206,8 @@ export async function createCustomerReceipt(
         reference:     input.reference ?? null,
         notes:         input.notes ?? null,
         createdBy:     input.createdBy ?? null,
+        glAccountId:   input.glAccountId ?? null,
+        shiftId:       input.shiftId ?? null,
       })
       .returning({ id: customerReceipts.id, receiptNumber: customerReceipts.receiptNumber });
 
@@ -198,10 +219,72 @@ export async function createCustomerReceipt(
       }))
     );
 
-    return receipt;
+    // ── قيد GL: مدين الخزنة / دائن الذمم المدينة ──────────────────────────
+    let journalEntryId: string | null = null;
+    if (glDebitId && glCreditId) {
+      try {
+        const periodRes = await tx.execute(sql`
+          SELECT id FROM fiscal_periods
+          WHERE status = 'open'
+            AND start_date <= ${input.receiptDate}::date
+            AND end_date   >= ${input.receiptDate}::date
+          LIMIT 1
+        `);
+        const periodId = (periodRes as any).rows[0]?.id ?? null;
+
+        const entryNumRes = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
+        const entryNumber = Number((entryNumRes as any).rows[0]?.n ?? 1);
+        const amount      = input.totalAmount.toFixed(2);
+
+        const [entry] = await tx.insert(journalEntries).values({
+          entryNumber,
+          entryDate:        input.receiptDate,
+          reference:        `CRPMT-${receiptNumber}`,
+          description:      `تحصيل آجل — إيصال #${receiptNumber}`,
+          status:           "draft",
+          periodId:         periodId ?? null,
+          sourceType:       "credit_customer_receipt",
+          sourceDocumentId: receipt.id,
+          totalDebit:       amount,
+          totalCredit:      amount,
+        }).returning({ id: journalEntries.id });
+
+        await tx.insert(journalLines).values([
+          {
+            journalEntryId: entry.id,
+            lineNumber:     1,
+            accountId:      glDebitId,
+            debit:          amount,
+            credit:         "0.00",
+            description:    `تحصيل آجل #${receiptNumber} - خزنة`,
+          },
+          {
+            journalEntryId: entry.id,
+            lineNumber:     2,
+            accountId:      glCreditId,
+            debit:          "0.00",
+            credit:         amount,
+            description:    `تحصيل آجل #${receiptNumber} - ذمم`,
+          },
+        ]);
+
+        journalEntryId = entry.id;
+
+        // ربط القيد بالإيصال
+        await tx.execute(sql`
+          UPDATE customer_receipts SET journal_entry_id = ${entry.id} WHERE id = ${receipt.id}
+        `);
+
+        logger.info({ receiptId: receipt.id, entryNumber }, "[CRPMT] GL journal created");
+      } catch (e: any) {
+        logger.warn({ err: e.message }, "[CRPMT] GL journal failed — continuing without it");
+      }
+    }
+
+    return { ...receipt, journalEntryId };
   });
 
-  return { receiptId: result.id, receiptNumber: result.receiptNumber };
+  return { receiptId: result.id, receiptNumber: result.receiptNumber, journalEntryId: result.journalEntryId };
 }
 
 // ─── getCustomerReceiptReport ──────────────────────────────────────────────────

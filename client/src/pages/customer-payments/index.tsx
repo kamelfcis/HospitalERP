@@ -60,6 +60,15 @@ type SortKey  = "invoiceNumber" | "invoiceDate" | "netTotal" | "totalPaid" | "re
 type SortDir  = "asc" | "desc";
 type ActiveTab = "payment" | "report";
 
+interface OpenShift {
+  id:           string;
+  shift_number: number;
+  started_at:   string;
+  cashier_name: string;
+  pharmacy_name: string;
+  gl_account_id: string | null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const today = () => new Date().toISOString().split("T")[0];
@@ -150,6 +159,7 @@ export default function CustomerPayments() {
   const [reference,      setReference]      = useState("");
   const [notes,          setNotes]          = useState("");
   const [totalAmount,    setTotalAmount]    = useState("");
+  const [selectedShiftId, setSelectedShiftId] = useState<string>("");
 
   // ── حالة الجدول ──────────────────────────────────────────────────────────
   const [filterStatus,   setFilterStatus]   = useState<"unpaid" | "paid" | "all">("unpaid");
@@ -199,6 +209,14 @@ export default function CustomerPayments() {
       return r.json();
     },
     enabled: !!customerId && activeTab === "report",
+  });
+
+  const { data: openShiftsData } = useQuery<{ shifts: OpenShift[] }>({
+    queryKey: ["/api/customer-payments/open-shifts"],
+    queryFn:  async () => {
+      const r = await fetch("/api/customer-payments/open-shifts", { credentials: "include" });
+      return r.json();
+    },
   });
 
   // ── ترتيب الفواتير ────────────────────────────────────────────────────────
@@ -263,6 +281,8 @@ export default function CustomerPayments() {
         .map(([invoiceId, v]) => ({ invoiceId, amountPaid: parseFloat(v) || 0 }))
         .filter((l) => l.amountPaid > 0);
 
+      const shift = openShiftsData?.shifts.find((s) => s.id === selectedShiftId);
+
       return apiRequestJson<{ receiptId: string; receiptNumber: number }>(
         "POST", "/api/customer-payments",
         {
@@ -270,8 +290,10 @@ export default function CustomerPayments() {
           receiptDate,
           totalAmount: parseFloat(totalAmount),
           paymentMethod,
-          reference:   reference.trim() || null,
-          notes:       notes.trim() || null,
+          reference:    reference.trim() || null,
+          notes:        notes.trim() || null,
+          glAccountId:  shift?.gl_account_id ?? null,
+          shiftId:      selectedShiftId || null,
           lines,
         }
       );
@@ -393,6 +415,24 @@ export default function CustomerPayments() {
                 </SelectContent>
               </Select>
             </div>
+            {/* اختيار الوردية (الخزنة) */}
+            <div className="flex items-center gap-1">
+              <Label className="text-xs">الخزنة / الوردية:</Label>
+              <Select value={selectedShiftId} onValueChange={setSelectedShiftId}>
+                <SelectTrigger className="h-7 w-[180px] text-xs" data-testid="select-shift">
+                  <SelectValue placeholder="بدون ربط بوردية" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">بدون ربط بوردية</SelectItem>
+                  {(openShiftsData?.shifts ?? []).map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.pharmacy_name ? `${s.pharmacy_name} — ` : ""}وردية #{s.shift_number} ({s.cashier_name})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex items-center gap-1">
               <Label className="text-xs">المرجع:</Label>
               <Input

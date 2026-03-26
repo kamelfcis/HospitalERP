@@ -1025,6 +1025,8 @@ const methods = {
     netCollected: string;
     hoursOpen: number;
     isStale: boolean;
+    creditCollected: string;
+    creditCount: number;
   }> {
     const [collectResult] = await db.select({
       total: sql<string>`COALESCE(SUM(amount), 0)`,
@@ -1046,6 +1048,13 @@ const methods = {
     `);
     const deferredRow = (deferredRes as any).rows[0];
 
+    const creditRes = await db.execute(sql`
+      SELECT COALESCE(SUM(total_amount), 0)::text AS total, COUNT(*)::int AS count
+      FROM customer_receipts
+      WHERE shift_id = ${shiftId}
+    `);
+    const creditRow = (creditRes as any).rows[0];
+
     const durationRes = await db.execute(sql`
       SELECT opening_cash, status,
              EXTRACT(EPOCH FROM (NOW() - opened_at)) / 3600 AS hours_open
@@ -1053,15 +1062,22 @@ const methods = {
     `);
     const shiftRow = (durationRes as any).rows[0];
 
-    const totalCollected = collectResult?.total || "0";
-    const totalRefunded  = refundResult?.total  || "0";
-    const totalDeferred  = deferredRow?.total   || "0";
-    const deferredCount  = parseInt(deferredRow?.count || "0", 10);
-    const openingCash    = shiftRow?.opening_cash || "0";
-    const hoursOpen      = parseFloat(shiftRow?.hours_open || "0");
-    const isStale        = hoursOpen > MAX_SHIFT_HOURS || shiftRow?.status === "stale";
-    const netCash        = (parseFloat(openingCash) + parseFloat(totalCollected) - parseFloat(totalRefunded)).toFixed(2);
-    const netCollected   = (parseFloat(totalCollected) - parseFloat(totalRefunded)).toFixed(2);
+    const totalCollected   = collectResult?.total || "0";
+    const totalRefunded    = refundResult?.total  || "0";
+    const totalDeferred    = deferredRow?.total   || "0";
+    const deferredCount    = parseInt(deferredRow?.count || "0", 10);
+    const creditCollected  = creditRow?.total     || "0";
+    const creditCount      = parseInt(creditRow?.count || "0", 10);
+    const openingCash      = shiftRow?.opening_cash || "0";
+    const hoursOpen        = parseFloat(shiftRow?.hours_open || "0");
+    const isStale          = hoursOpen > MAX_SHIFT_HOURS || shiftRow?.status === "stale";
+    const netCash          = (
+      parseFloat(openingCash) +
+      parseFloat(totalCollected) +
+      parseFloat(creditCollected) -
+      parseFloat(totalRefunded)
+    ).toFixed(2);
+    const netCollected     = (parseFloat(totalCollected) - parseFloat(totalRefunded)).toFixed(2);
 
     return {
       openingCash,
@@ -1071,6 +1087,8 @@ const methods = {
       totalRefunded,
       refundCount:   refundResult?.count  || 0,
       deferredCount,
+      creditCollected,
+      creditCount,
       netCash,
       netCollected,
       hoursOpen,
