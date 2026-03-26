@@ -108,7 +108,6 @@ export function InvoiceLineTable({
     const colAttr = target.dataset.gridCol as GridCol | undefined;
     if (!rowAttr || !colAttr) return;
 
-    const isSelect = target.tagName === "SELECT";
     const row    = parseInt(rowAttr, 10);
     const colIdx = GRID_COLS.indexOf(colAttr);
     if (colIdx < 0) return;
@@ -122,13 +121,14 @@ export function InvoiceLineTable({
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       nextRow = row - 1;
-    } else if (e.key === "ArrowLeft" && !isSelect) {
-      // RTL: السهم الأيسر = تقدّم = العمود التالي (index أعلى)
+    } else if (e.key === "ArrowLeft") {
+      // RTL: يسار = تقدّم = العمود التالي (index أعلى)
+      // نمنع الـ default حتى لا تتغير قيمة SELECT بالسهم
       e.preventDefault();
       nextCol = colIdx + 1;
       if (nextCol >= GRID_COLS.length) { nextRow = row + 1; nextCol = 0; }
-    } else if (e.key === "ArrowRight" && !isSelect) {
-      // RTL: السهم الأيمن = تراجع = العمود السابق (index أقل)
+    } else if (e.key === "ArrowRight") {
+      // RTL: يمين = تراجع = العمود السابق (index أقل)
       e.preventDefault();
       nextCol = colIdx - 1;
       if (nextCol < 0) { nextRow = row - 1; nextCol = GRID_COLS.length - 1; }
