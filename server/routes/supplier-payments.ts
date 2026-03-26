@@ -24,6 +24,8 @@ const createPaymentSchema = z.object({
   reference:     z.string().max(100).optional().nullable(),
   notes:         z.string().optional().nullable(),
   paymentMethod: z.enum(["bank", "cash", "check", "transfer"]).default("bank"),
+  glAccountId:   z.string().optional().nullable(),
+  shiftId:       z.string().optional().nullable(),
   lines: z.array(z.object({
     invoiceId:  z.string().uuid(),
     amountPaid: z.number().positive(),
@@ -83,24 +85,27 @@ export function registerSupplierPaymentRoutes(app: Express) {
       const user = (req as any).user;
       const result = await createSupplierPayment({
         ...body,
-        createdBy: user?.id ? String(user.id) : null,
+        createdBy:   user?.id ? String(user.id) : null,
+        glAccountId: body.glAccountId ?? null,
+        shiftId:     body.shiftId ?? null,
       });
 
-      // ── توليد قيد المحاسبة (fire-and-forget) ──────────────────────────────
-      // Dr: ذمم موردين (ap_settlement.debitAccountId)
-      // Cr: بنك / خزنة (ap_settlement.creditAccountId)
-      storage.generateJournalEntry({
-        sourceType:       "supplier_payment",
-        sourceDocumentId: result.paymentId,
-        reference:        body.reference ?? `SPM-${String(result.paymentNumber).padStart(4, "0")}`,
-        description:      `سداد موردين رقم #${String(result.paymentNumber).padStart(4, "0")}`,
-        entryDate:        body.paymentDate,
-        lines: [
-          { lineType: "ap_settlement", amount: String(body.totalAmount) },
-        ],
-      }).catch((err: any) => {
-        console.warn(`[SUPPLIER_PAYMENT] journal generation failed for ${result.paymentId}:`, err?.message ?? err);
-      });
+      // ── قيد المحاسبة القديم (fire-and-forget) — يُشغَّل فقط بدون خزنة ──
+      // عند توفّر الخزنة، يُنشأ القيد داخل createSupplierPayment مباشرةً
+      if (!body.glAccountId) {
+        storage.generateJournalEntry({
+          sourceType:       "supplier_payment",
+          sourceDocumentId: result.paymentId,
+          reference:        body.reference ?? `SPM-${String(result.paymentNumber).padStart(4, "0")}`,
+          description:      `سداد موردين رقم #${String(result.paymentNumber).padStart(4, "0")}`,
+          entryDate:        body.paymentDate,
+          lines: [
+            { lineType: "ap_settlement", amount: String(body.totalAmount) },
+          ],
+        }).catch((err: any) => {
+          console.warn(`[SUPPLIER_PAYMENT] journal generation failed for ${result.paymentId}:`, err?.message ?? err);
+        });
+      }
 
       res.status(201).json(result);
     } catch (err: any) {

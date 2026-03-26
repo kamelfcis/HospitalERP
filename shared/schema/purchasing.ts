@@ -213,19 +213,23 @@ export type PurchaseInvoiceWithDetails = PurchaseInvoiceHeader & {
 // ─── Supplier Payments ──────────────────────────────────────────────────────
 // رأس السداد: كل عملية دفع للمورد (قد تشمل عدة فواتير)
 export const supplierPayments = pgTable("supplier_payments", {
-  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  paymentNumber: integer("payment_number").notNull().default(0),
-  supplierId:    varchar("supplier_id").notNull().references(() => suppliers.id),
-  paymentDate:   date("payment_date").notNull(),
-  totalAmount:   decimal("total_amount", { precision: 18, scale: 2 }).notNull(),
-  reference:     varchar("reference", { length: 100 }),
-  notes:         text("notes"),
-  paymentMethod: varchar("payment_method", { length: 30 }).notNull().default("bank"),
-  createdBy:     varchar("created_by"),
-  createdAt:     timestamp("created_at").notNull().defaultNow(),
+  id:             varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  paymentNumber:  integer("payment_number").notNull().default(0),
+  supplierId:     varchar("supplier_id").notNull().references(() => suppliers.id),
+  paymentDate:    date("payment_date").notNull(),
+  totalAmount:    decimal("total_amount", { precision: 18, scale: 2 }).notNull(),
+  reference:      varchar("reference", { length: 100 }),
+  notes:          text("notes"),
+  paymentMethod:  varchar("payment_method", { length: 30 }).notNull().default("bank"),
+  createdBy:      varchar("created_by"),
+  createdAt:      timestamp("created_at").notNull().defaultNow(),
+  glAccountId:    varchar("gl_account_id"),
+  shiftId:        varchar("shift_id"),
+  journalEntryId: varchar("journal_entry_id"),
 }, (t) => ({
   supplierIdx: index("idx_sp_supplier").on(t.supplierId),
   dateIdx:     index("idx_sp_date").on(t.paymentDate),
+  shiftIdx:    index("idx_sp_shift").on(t.shiftId),
 }));
 
 // سطور السداد: توزيع المبلغ على الفواتير

@@ -29,7 +29,9 @@ import {
   CreditCustomerCombobox,
   type CreditCustomer,
 } from "@/components/shared/CreditCustomerCombobox";
-import type { CustomerCreditInvoiceRow } from "@shared/schema/invoicing";
+import { useTreasurySelector }                     from "@/hooks/use-treasury-selector";
+import { TreasurySelector }                        from "@/components/shared/TreasurySelector";
+import type { CustomerCreditInvoiceRow }           from "@shared/schema/invoicing";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,15 +61,6 @@ interface ReportResult {
 type SortKey  = "invoiceNumber" | "invoiceDate" | "netTotal" | "totalPaid" | "remaining";
 type SortDir  = "asc" | "desc";
 type ActiveTab = "payment" | "report";
-
-interface OpenShift {
-  id:           string;
-  shift_number: number;
-  started_at:   string;
-  cashier_name: string;
-  pharmacy_name: string;
-  gl_account_id: string | null;
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -153,13 +146,15 @@ export default function CustomerPayments() {
   const [customerId,   setCustomerId]   = useState("");
   const [customerName, setCustomerName] = useState("");
 
+  // ── hook الخزنة / الوردية ─────────────────────────────────────────────────
+  const treasury = useTreasurySelector();
+
   // ── بيانات الإيصال ────────────────────────────────────────────────────────
   const [receiptDate,    setReceiptDate]    = useState(today());
   const [paymentMethod,  setPaymentMethod]  = useState("cash");
   const [reference,      setReference]      = useState("");
   const [notes,          setNotes]          = useState("");
   const [totalAmount,    setTotalAmount]    = useState("");
-  const [selectedShiftId, setSelectedShiftId] = useState<string>("none");
 
   // ── حالة الجدول ──────────────────────────────────────────────────────────
   const [filterStatus,   setFilterStatus]   = useState<"unpaid" | "paid" | "all">("unpaid");
@@ -211,13 +206,6 @@ export default function CustomerPayments() {
     enabled: !!customerId && activeTab === "report",
   });
 
-  const { data: openShiftsData } = useQuery<{ shifts: OpenShift[] }>({
-    queryKey: ["/api/customer-payments/open-shifts"],
-    queryFn:  async () => {
-      const r = await fetch("/api/customer-payments/open-shifts", { credentials: "include" });
-      return r.json();
-    },
-  });
 
   // ── ترتيب الفواتير ────────────────────────────────────────────────────────
   const invoices = useMemo(() => {
@@ -281,10 +269,7 @@ export default function CustomerPayments() {
         .map(([invoiceId, v]) => ({ invoiceId, amountPaid: parseFloat(v) || 0 }))
         .filter((l) => l.amountPaid > 0);
 
-      const effectiveShiftId = selectedShiftId === "none" ? null : selectedShiftId;
-      const shift = effectiveShiftId
-        ? openShiftsData?.shifts.find((s) => s.id === effectiveShiftId)
-        : null;
+      const effectiveShiftId = treasury.selectedShiftId === "none" ? null : treasury.selectedShiftId;
 
       return apiRequestJson<{ receiptId: string; receiptNumber: number }>(
         "POST", "/api/customer-payments",
@@ -295,7 +280,7 @@ export default function CustomerPayments() {
           paymentMethod,
           reference:    reference.trim() || null,
           notes:        notes.trim() || null,
-          glAccountId:  shift?.gl_account_id ?? null,
+          glAccountId:  treasury.selectedGlAccountId,
           shiftId:      effectiveShiftId,
           lines,
         }
@@ -419,22 +404,7 @@ export default function CustomerPayments() {
               </Select>
             </div>
             {/* اختيار الوردية (الخزنة) */}
-            <div className="flex items-center gap-1">
-              <Label className="text-xs">الخزنة / الوردية:</Label>
-              <Select value={selectedShiftId} onValueChange={setSelectedShiftId}>
-                <SelectTrigger className="h-7 w-[180px] text-xs" data-testid="select-shift">
-                  <SelectValue placeholder="بدون ربط بوردية" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">بدون ربط بوردية</SelectItem>
-                  {(openShiftsData?.shifts ?? []).map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.pharmacy_name ? `${s.pharmacy_name} — ` : ""}وردية #{s.shift_number} ({s.cashier_name})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <TreasurySelector {...treasury} />
 
             <div className="flex items-center gap-1">
               <Label className="text-xs">المرجع:</Label>

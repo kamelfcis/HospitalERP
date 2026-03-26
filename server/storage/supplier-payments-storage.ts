@@ -13,8 +13,10 @@
 import { sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { supplierPayments, supplierPaymentLines } from "@shared/schema/purchasing";
+import { journalEntries, journalLines } from "@shared/schema/finance";
 import type { SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
 import { normalizeClaimNumber } from "./purchasing-invoices-core-storage";
+import { logger } from "../lib/logger";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -37,6 +39,8 @@ export interface CreatePaymentInput {
   notes?:        string | null;
   paymentMethod: string;
   createdBy?:    string | null;
+  glAccountId?:  string | null;
+  shiftId?:      string | null;
   lines: { invoiceId: string; amountPaid: number }[];
 }
 
@@ -183,10 +187,10 @@ export async function getNextPaymentNumber(): Promise<number> {
 }
 
 // ─── createSupplierPayment ────────────────────────────────────────────────────
-// atomic: يُدرج رأس السداد + سطور التوزيع في transaction واحدة
+// atomic: رأس السداد + سطور التوزيع + قيد GL في transaction واحدة
 export async function createSupplierPayment(
   input: CreatePaymentInput
-): Promise<{ paymentId: string; paymentNumber: number }> {
+): Promise<{ paymentId: string; paymentNumber: number; journalEntryId: string | null }> {
   if (!input.lines.length) throw new Error("لا توجد فواتير مُحددة للسداد");
   if (input.totalAmount <= 0) throw new Error("مبلغ السداد يجب أن يكون أكبر من الصفر");
 
@@ -197,8 +201,33 @@ export async function createSupplierPayment(
     );
   }
 
+  // ── تحديد حساب ذمم المورد (AP) ───────────────────────────────────────────
+  // 1) حساب المورد الخاص (glAccountId) إن وُجد
+  // 2) حساب ربط المشتريات (payables_drugs / payables_consumables)
+  let apAccountId: string | null = null;
+  if (input.glAccountId) {
+    const supplierRes = await pool.query<{ gl_account_id: string | null; supplier_type: string }>(
+      `SELECT gl_account_id, supplier_type FROM suppliers WHERE id = $1 LIMIT 1`,
+      [input.supplierId]
+    );
+    const sup = supplierRes.rows[0];
+    if (sup?.gl_account_id) {
+      apAccountId = sup.gl_account_id;
+    } else {
+      const supplierType    = sup?.supplier_type || "drugs";
+      const payablesLineType = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
+      const mappingRes = await pool.query<{ debit_account_id: string | null; credit_account_id: string | null }>(
+        `SELECT debit_account_id, credit_account_id FROM account_mappings
+         WHERE transaction_type = 'purchase_invoice' AND line_type = $1 AND is_active = true
+         LIMIT 1`,
+        [payablesLineType]
+      );
+      const m = mappingRes.rows[0];
+      apAccountId = m?.credit_account_id || m?.debit_account_id || null;
+    }
+  }
+
   const result = await db.transaction(async (tx) => {
-    // احجز الرقم التسلسلي داخل الـ transaction لتجنب التعارض
     const numRes = await tx.execute(
       sql`SELECT COALESCE(MAX(payment_number), 0) + 1 AS next_num FROM supplier_payments`
     );
@@ -215,6 +244,8 @@ export async function createSupplierPayment(
         notes:         input.notes ?? null,
         paymentMethod: input.paymentMethod,
         createdBy:     input.createdBy ?? null,
+        glAccountId:   input.glAccountId ?? null,
+        shiftId:       input.shiftId ?? null,
       })
       .returning({ id: supplierPayments.id, paymentNumber: supplierPayments.paymentNumber });
 
@@ -226,10 +257,73 @@ export async function createSupplierPayment(
       }))
     );
 
-    return payment;
+    // ── قيد GL: مدين ذمم المورد / دائن الخزنة ─────────────────────────────
+    // Dr: AP account (حساب المورد / ذمم الموردين)
+    // Cr: Treasury  (حساب الخزنة المختارة)
+    let journalEntryId: string | null = null;
+    if (apAccountId && input.glAccountId) {
+      try {
+        const periodRes = await tx.execute(sql`
+          SELECT id FROM fiscal_periods
+          WHERE status = 'open'
+            AND start_date <= ${input.paymentDate}::date
+            AND end_date   >= ${input.paymentDate}::date
+          LIMIT 1
+        `);
+        const periodId = (periodRes as any).rows[0]?.id ?? null;
+
+        const entryNumRes = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
+        const entryNumber = Number((entryNumRes as any).rows[0]?.n ?? 1);
+        const amount      = input.totalAmount.toFixed(2);
+
+        const [entry] = await tx.insert(journalEntries).values({
+          entryNumber,
+          entryDate:        input.paymentDate,
+          reference:        `SUPPMT-${paymentNumber}`,
+          description:      `سداد مورد — سند #${paymentNumber}`,
+          status:           "draft",
+          periodId:         periodId ?? null,
+          sourceType:       "supplier_payment",
+          sourceDocumentId: payment.id,
+          totalDebit:       amount,
+          totalCredit:      amount,
+        }).returning({ id: journalEntries.id });
+
+        await tx.insert(journalLines).values([
+          {
+            journalEntryId: entry.id,
+            lineNumber:     1,
+            accountId:      apAccountId,
+            debit:          amount,
+            credit:         "0.00",
+            description:    `سداد مورد #${paymentNumber} - ذمم موردين`,
+          },
+          {
+            journalEntryId: entry.id,
+            lineNumber:     2,
+            accountId:      input.glAccountId,
+            debit:          "0.00",
+            credit:         amount,
+            description:    `سداد مورد #${paymentNumber} - خزنة`,
+          },
+        ]);
+
+        journalEntryId = entry.id;
+
+        await tx.execute(sql`
+          UPDATE supplier_payments SET journal_entry_id = ${entry.id} WHERE id = ${payment.id}
+        `);
+
+        logger.info({ paymentId: payment.id, entryNumber }, "[SUPPMT] GL journal created");
+      } catch (e: any) {
+        logger.warn({ err: e.message }, "[SUPPMT] GL journal failed — continuing without it");
+      }
+    }
+
+    return { ...payment, journalEntryId };
   });
 
-  return { paymentId: result.id, paymentNumber: result.paymentNumber };
+  return { paymentId: result.id, paymentNumber: result.paymentNumber, journalEntryId: result.journalEntryId };
 }
 
 // ─── getSupplierPaymentReport ─────────────────────────────────────────────────

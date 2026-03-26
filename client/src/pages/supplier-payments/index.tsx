@@ -29,6 +29,8 @@ import {
   ChevronsUpDown, Check, Banknote, AlertTriangle, FileText, Loader2, Save,
   RefreshCw, CircleDollarSign, Hash, ChevronUp, ChevronDown,
 } from "lucide-react";
+import { useTreasurySelector }              from "@/hooks/use-treasury-selector";
+import { TreasurySelector }                 from "@/components/shared/TreasurySelector";
 import type { Supplier, SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -249,6 +251,8 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
   });
 
   // Payment state
+  const treasury = useTreasurySelector();
+
   const [inputs, setInputs]           = useState<Record<string, string>>({});
   const [paymentDate, setPaymentDate] = useState(today());
   const [payMethod,   setPayMethod]   = useState("bank");
@@ -380,6 +384,7 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
         .filter((inv) => (parseFloat(inputs[inv.invoiceId] ?? "0") || 0) > 0)
         .map((inv) => ({ invoiceId: inv.invoiceId, amountPaid: parseFloat(inputs[inv.invoiceId]) }));
       if (!lines.length) throw new Error("لم تُدخل أي مبالغ للسداد");
+      const effectiveShiftId = treasury.selectedShiftId === "none" ? null : treasury.selectedShiftId;
       return apiRequestJson<{ paymentId: string; paymentNumber: number }>(
         "POST", "/api/supplier-payments", {
           supplierId,
@@ -388,6 +393,8 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
           reference:     reference || null,
           notes:         notes || null,
           paymentMethod: payMethod,
+          glAccountId:   treasury.selectedGlAccountId,
+          shiftId:       effectiveShiftId,
           lines,
         }
       );
@@ -476,6 +483,9 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
             data-testid="input-notes"
           />
         </div>
+
+        {/* Treasury / shift selector */}
+        <TreasurySelector {...treasury} label="الخزنة:" />
 
         {/* Claim filter */}
         <div className="flex items-center gap-1">
