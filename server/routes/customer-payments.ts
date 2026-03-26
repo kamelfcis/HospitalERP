@@ -49,17 +49,17 @@ export function registerCustomerPaymentRoutes(app: Express) {
   app.get("/api/customer-payments/open-shifts", requireAuth, async (_req, res) => {
     try {
       const result = await pool.query<{
-        id: string; shift_number: number; started_at: string;
+        id: string; opened_at: string;
         cashier_name: string; pharmacy_name: string; gl_account_id: string | null;
       }>(`
-        SELECT cs.id, cs.shift_number, cs.started_at,
+        SELECT cs.id, cs.opened_at,
                cs.cashier_name,
                COALESCE(p.name_ar, '') AS pharmacy_name,
                cs.gl_account_id
         FROM cashier_shifts cs
         LEFT JOIN pharmacies p ON p.id = cs.pharmacy_id
         WHERE cs.status = 'open'
-        ORDER BY cs.started_at DESC
+        ORDER BY cs.opened_at DESC
         LIMIT 50
       `);
       res.json({ shifts: result.rows });
