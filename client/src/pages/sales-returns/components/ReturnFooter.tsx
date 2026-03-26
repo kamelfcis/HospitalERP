@@ -2,7 +2,7 @@
 //  ReturnFooter — الجزء السفلي: ملاحظات + الإجماليات + زر التسجيل
 //  دمجنا ReturnTotals وزر الإرسال في مكوّن واحد متماسك
 // ============================================================
-import { Undo2, Loader2 } from "lucide-react";
+import { Undo2, Loader2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -18,6 +18,8 @@ interface Props {
   setDiscountPercent: (v: string) => void;
   discountValue: string;
   setDiscountValue: (v: string) => void;
+  /** هل الخصم تم تعبئته تلقائياً من الفاتورة الأصلية؟ */
+  discountAutoApplied?: boolean;
   // الملاحظات
   notes: string;
   setNotes: (v: string) => void;
@@ -33,6 +35,7 @@ export function ReturnFooter({
   discountType, setDiscountType,
   discountPercent, setDiscountPercent,
   discountValue, setDiscountValue,
+  discountAutoApplied,
   notes, setNotes,
   onSubmit, isSubmitting, canSubmit,
 }: Props) {
@@ -66,6 +69,7 @@ export function ReturnFooter({
           setDiscountValue={setDiscountValue}
           computedDiscount={computedDiscount}
           netTotal={netTotal}
+          discountAutoApplied={discountAutoApplied}
         />
       </div>
 
@@ -100,6 +104,7 @@ interface TotalsCardProps {
   setDiscountPercent: (v: string) => void;
   discountValue: string;
   setDiscountValue: (v: string) => void;
+  discountAutoApplied?: boolean;
 }
 
 function TotalsCard({
@@ -107,6 +112,7 @@ function TotalsCard({
   discountType, setDiscountType,
   discountPercent, setDiscountPercent,
   discountValue, setDiscountValue,
+  discountAutoApplied,
 }: TotalsCardProps) {
   return (
     <div className="w-72 space-y-2 border rounded-lg p-3 bg-muted/30">
@@ -116,6 +122,14 @@ function TotalsCard({
         <span className="text-muted-foreground">إجمالي المرتجع</span>
         <span className="font-mono font-bold">{subtotal.toFixed(2)}</span>
       </div>
+
+      {/* تنبيه: الخصم مُطبَّق تلقائياً */}
+      {discountAutoApplied && computedDiscount > 0 && (
+        <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 rounded px-2 py-1">
+          <Info className="h-3 w-3 flex-shrink-0" />
+          <span>خصم الفاتورة الأصلية مُطبَّق تلقائياً — يمكنك تعديله</span>
+        </div>
+      )}
 
       {/* خصم: نوع + قيمة */}
       <div className="flex items-center gap-2">

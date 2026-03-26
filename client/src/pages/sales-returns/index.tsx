@@ -104,6 +104,7 @@ export default function SalesReturnsPage() {
             setDiscountPercent={form.setDiscountPercent}
             discountValue={form.discountValue}
             setDiscountValue={form.setDiscountValue}
+            discountAutoApplied={form.discountAutoApplied}
             notes={form.notes}
             setNotes={form.setNotes}
             onSubmit={form.submitReturn}

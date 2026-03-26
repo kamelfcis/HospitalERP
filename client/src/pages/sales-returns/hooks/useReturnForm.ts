@@ -2,7 +2,7 @@
 //  hook إدارة نموذج المرتجع
 //  يحتوي على كل state الخاصة بعملية الإرجاع
 // ============================================================
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +20,8 @@ export function useReturnForm() {
   const [discountPercent, setDiscountPercent] = useState("0");
   const [discountValue, setDiscountValue] = useState("0");
   const [notes, setNotes] = useState("");
+  // هل الخصم تم تعبئته تلقائياً من الفاتورة الأصلية؟
+  const [discountAutoApplied, setDiscountAutoApplied] = useState(false);
 
   // ── جلب بيانات الفاتورة (بدون cache لضمان بيانات حديثة) ──
   const { data: invoiceData, isLoading: invoiceLoading } = useQuery<ReturnInvoiceData>({
@@ -41,6 +43,9 @@ export function useReturnForm() {
   const clearInvoice = useCallback(() => {
     setSelectedInvoiceId(null);
     setReturnLines([]);
+    setDiscountPercent("0");
+    setDiscountValue("0");
+    setDiscountAutoApplied(false);
   }, []);
 
   // بناء سطور الإرجاع عند تحميل بيانات الفاتورة
@@ -57,6 +62,28 @@ export function useReturnForm() {
       );
     }
   }, [invoiceData?.lines]);
+
+  // ── تطبيق خصم الفاتورة الأصلية تلقائياً ─────────────────
+  // عندما تُحمَّل بيانات الفاتورة، نحسب نسبة الخصم الفعلية
+  // ونعبّئها في حقل الخصم حتى يأخذ كل صنف مرتجع نصيبه التلقائي
+  useEffect(() => {
+    if (!invoiceData) return;
+    const origSubtotal = parseFloat(invoiceData.subtotal) || 0;
+    const origDiscountValue = parseFloat(invoiceData.discountValue) || 0;
+    if (origSubtotal <= 0 || origDiscountValue <= 0) {
+      // لا يوجد خصم في الفاتورة الأصلية
+      setDiscountType("percent");
+      setDiscountPercent("0");
+      setDiscountValue("0");
+      setDiscountAutoApplied(false);
+      return;
+    }
+    // نسبة الخصم الفعلية = قيمة الخصم ÷ الإجمالي قبل الخصم × 100
+    const effectiveRate = (origDiscountValue / origSubtotal) * 100;
+    setDiscountType("percent");
+    setDiscountPercent(effectiveRate % 1 === 0 ? String(effectiveRate) : effectiveRate.toFixed(4).replace(/\.?0+$/, ""));
+    setDiscountAutoApplied(true);
+  }, [invoiceData?.id]);
 
   // ── تحديث الكمية المرتجعة لسطر ───────────────────────────
   const updateReturnQty = useCallback((lineId: string, qty: string) => {
@@ -154,6 +181,7 @@ export function useReturnForm() {
     discountType, setDiscountType,
     discountPercent, setDiscountPercent,
     discountValue, setDiscountValue,
+    discountAutoApplied,
     notes, setNotes,
     // totals
     subtotal, computedDiscount, netTotal,
