@@ -171,12 +171,18 @@ const methods = {
         GROUP BY claimed_by_shift_id
       ),
       delivery_agg AS (
-        SELECT shift_id,
-               COALESCE(SUM(total_amount), 0) AS delivery_total,
-               COUNT(*)::int                  AS delivery_count
-        FROM delivery_receipts
-        WHERE shift_id IS NOT NULL
-        GROUP BY shift_id
+        SELECT
+          COALESCE(
+            dr.shift_id,
+            (SELECT cs.id FROM cashier_shifts cs
+             WHERE cs.gl_account_id = dr.gl_account_id
+               AND dr.gl_account_id IS NOT NULL
+             ORDER BY cs.opened_at DESC LIMIT 1)
+          ) AS shift_id,
+          COALESCE(SUM(dr.total_amount::numeric), 0) AS delivery_total,
+          COUNT(*)::int                              AS delivery_count
+        FROM delivery_receipts dr
+        GROUP BY 1
       )
       SELECT
         s.id                                                        AS "shiftId",

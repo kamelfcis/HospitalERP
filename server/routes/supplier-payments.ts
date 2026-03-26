@@ -82,10 +82,10 @@ export function registerSupplierPaymentRoutes(app: Express) {
   app.post("/api/supplier-payments", requireAuth, async (req, res) => {
     try {
       const body = createPaymentSchema.parse(req.body);
-      const user = (req as any).user;
+      const userId = req.session.userId ?? null;
       const result = await createSupplierPayment({
         ...body,
-        createdBy:   user?.id ? String(user.id) : null,
+        createdBy:   userId,
         glAccountId: body.glAccountId ?? null,
         shiftId:     body.shiftId ?? null,
       });

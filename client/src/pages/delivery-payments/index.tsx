@@ -271,6 +271,7 @@ export default function DeliveryPayments() {
     parseFloat(totalAmount) > 0 &&
     distributedTotal > 0 &&
     Math.abs(distributedTotal - parseFloat(totalAmount)) < 0.02 &&
+    !!treasury.selectedGlAccountId &&
     !saveMutation.isPending;
 
   rowIds.current = invoices.map((inv) => inv.invoiceId);

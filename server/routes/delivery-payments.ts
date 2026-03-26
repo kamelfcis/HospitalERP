@@ -48,7 +48,7 @@ export function registerDeliveryPaymentRoutes(app: Express) {
         return res.status(400).json({ message: "بيانات غير مكتملة" });
       }
 
-      const userId = (req as any).user?.id ?? null;
+      const userId = req.session.userId ?? null;
 
       const result = await createDeliveryReceipt({
         receiptDate,
