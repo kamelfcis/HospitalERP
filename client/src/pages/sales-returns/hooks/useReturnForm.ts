@@ -100,6 +100,28 @@ export function useReturnForm() {
     );
   }, []);
 
+  // ── إرجاع الفاتورة بالكامل (يعبّئ كل الأصناف بالكمية القصوى) ─
+  const returnAllLines = useCallback(() => {
+    setReturnLines((prev) =>
+      prev.map((line) => {
+        const maxMinor = availableMinor(line);
+        if (maxMinor <= 0) return line; // لا يوجد متاح للإرجاع
+        // الكمية المتاحة بوحدة البيع الأصلية (تقريب للأسفل)
+        const perUnit = toMinorQty(1, line.unitLevel, line);
+        const qtyInOrigUnit = perUnit > 0 ? Math.floor(maxMinor / perUnit) : 0;
+        const clampedMinor = qtyInOrigUnit * (perUnit > 0 ? perUnit : 1);
+        const lineTotal = calcReturnLineTotal(clampedMinor, line);
+        return {
+          ...line,
+          returnQty: String(qtyInOrigUnit),
+          returnUnitLevel: line.unitLevel,
+          returnQtyMinor: clampedMinor,
+          returnLineTotal: lineTotal,
+        };
+      })
+    );
+  }, []);
+
   // ── تغيير وحدة الإرجاع (يصفّر الكمية) ────────────────────
   const updateReturnUnit = useCallback((lineId: string, unit: string) => {
     setReturnLines((prev) =>
@@ -171,12 +193,20 @@ export function useReturnForm() {
     },
   });
 
+  // ── تصفير جميع الكميات ────────────────────────────────────
+  const clearAllQty = useCallback(() => {
+    setReturnLines((prev) =>
+      prev.map((line) => ({ ...line, returnQty: "0", returnQtyMinor: 0, returnLineTotal: 0 }))
+    );
+  }, []);
+
   return {
     // navigation
     selectedInvoiceId, invoiceData, invoiceLoading,
     selectInvoice, clearInvoice,
     // lines
     returnLines, updateReturnQty, updateReturnUnit,
+    returnAllLines, clearAllQty,
     // discount & notes
     discountType, setDiscountType,
     discountPercent, setDiscountPercent,

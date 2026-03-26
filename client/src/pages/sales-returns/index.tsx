@@ -92,6 +92,8 @@ export default function SalesReturnsPage() {
             lines={form.returnLines}
             onChangeQty={form.updateReturnQty}
             onChangeUnit={form.updateReturnUnit}
+            onReturnAll={form.returnAllLines}
+            onClearAll={form.clearAllQty}
           />
 
           <ReturnFooter

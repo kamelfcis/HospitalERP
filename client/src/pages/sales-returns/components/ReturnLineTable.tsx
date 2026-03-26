@@ -2,6 +2,8 @@
 //  ReturnLineTable — جدول أصناف المرتجع
 //  لكل سطر: الكمية المتاحة + وحدة الإرجاع + الكمية المرتجعة + السعر + الإجمالي
 // ============================================================
+import { RotateCcw, Eraser } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatQty } from "@/lib/formatters";
 import type { ReturnLine } from "../types";
@@ -19,6 +21,10 @@ interface Props {
   lines: ReturnLine[];
   onChangeQty:  (lineId: string, qty: string)  => void;
   onChangeUnit: (lineId: string, unit: string) => void;
+  /** تعبئة كل الأصناف بالكمية القصوى المتاحة */
+  onReturnAll: () => void;
+  /** تصفير جميع الكميات */
+  onClearAll:  () => void;
 }
 
 // ── الهيدر: ثابت (لا يتكرر التعريف في كل صف) ──────────────
@@ -38,33 +44,67 @@ const COLUMNS = [
 ] as const;
 
 // ============================================================
-export function ReturnLineTable({ lines, onChangeQty, onChangeUnit }: Props) {
+export function ReturnLineTable({ lines, onChangeQty, onChangeUnit, onReturnAll, onClearAll }: Props) {
   if (!lines.length) return null;
 
+  const hasAnyAvailable = lines.some((l) => availableMinor(l) > 0);
+  const hasAnySelected  = lines.some((l) => l.returnQtyMinor > 0);
+
   return (
-    <div className="border rounded-lg overflow-x-auto" data-testid="section-return-lines">
-      <table className="w-full text-[13px]" dir="rtl">
-        <thead>
-          <tr className="peachtree-grid-header">
-            {COLUMNS.map((col) => (
-              <th key={col.label} className={`py-1.5 px-2 font-bold ${col.className}`}>
-                {col.label}
-              </th>
+    <div className="space-y-2">
+      {/* ── شريط الأزرار السريعة ── */}
+      <div className="flex items-center gap-2" dir="rtl">
+        <Button
+          variant="default"
+          size="sm"
+          onClick={onReturnAll}
+          disabled={!hasAnyAvailable}
+          className="gap-1.5"
+          data-testid="button-return-all"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          إرجاع الفاتورة بالكامل
+        </Button>
+
+        {hasAnySelected && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClearAll}
+            className="gap-1.5 text-muted-foreground"
+            data-testid="button-clear-all"
+          >
+            <Eraser className="h-3.5 w-3.5" />
+            مسح الكميات
+          </Button>
+        )}
+      </div>
+
+      {/* ── جدول الأصناف ── */}
+      <div className="border rounded-lg overflow-x-auto" data-testid="section-return-lines">
+        <table className="w-full text-[13px]" dir="rtl">
+          <thead>
+            <tr className="peachtree-grid-header">
+              {COLUMNS.map((col) => (
+                <th key={col.label} className={`py-1.5 px-2 font-bold ${col.className}`}>
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line, idx) => (
+              <ReturnLineRow
+                key={line.id}
+                line={line}
+                idx={idx}
+                onChangeQty={onChangeQty}
+                onChangeUnit={onChangeUnit}
+              />
             ))}
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line, idx) => (
-            <ReturnLineRow
-              key={line.id}
-              line={line}
-              idx={idx}
-              onChangeQty={onChangeQty}
-              onChangeUnit={onChangeUnit}
-            />
-          ))}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
