@@ -54,43 +54,44 @@ export async function getCustomerBalance(
   customerId: string
 ): Promise<CustomerBalanceResult | null> {
   const res = await pool.query(`
-    SELECT
-      c.id                                                   AS customer_id,
-      c.name,
-      c.phone,
-      COALESCE(inv.total_invoiced, 0)::numeric               AS total_invoiced,
-      COALESCE(ret.total_returns,  0)::numeric               AS total_returns,
-      COALESCE(pay.total_paid,    0)::numeric                AS total_paid,
-      (
-        COALESCE(inv.total_invoiced, 0)::numeric
-        - COALESCE(ret.total_returns, 0)::numeric
-        - COALESCE(pay.total_paid,   0)::numeric
-      )                                                      AS current_balance
-    FROM pharmacy_credit_customers c
-    LEFT JOIN (
-      SELECT customer_id, SUM(net_total::numeric) AS total_invoiced
-      FROM   sales_invoice_headers
+    WITH cust AS (
+      SELECT id, name, phone FROM pharmacy_credit_customers WHERE id = $1
+    ),
+    inv AS (
+      SELECT SUM(net_total::numeric) AS total_invoiced
+      FROM   sales_invoice_headers, cust
       WHERE  customer_type = 'credit'
         AND  is_return     = false
         AND  status        IN ('finalized', 'collected')
-      GROUP  BY customer_id
-    ) inv ON inv.customer_id = c.id
-    LEFT JOIN (
-      SELECT customer_id, SUM(net_total::numeric) AS total_returns
-      FROM   sales_invoice_headers
+        AND  (customer_id = $1 OR (customer_id IS NULL AND customer_name = cust.name))
+    ),
+    ret AS (
+      SELECT SUM(net_total::numeric) AS total_returns
+      FROM   sales_invoice_headers, cust
       WHERE  customer_type = 'credit'
         AND  is_return     = true
         AND  status        IN ('finalized', 'collected')
-        AND  customer_id   IS NOT NULL
-      GROUP  BY customer_id
-    ) ret ON ret.customer_id = c.id
-    LEFT JOIN (
-      SELECT cr.customer_id, SUM(crl.amount_paid::numeric) AS total_paid
+        AND  (customer_id = $1 OR (customer_id IS NULL AND customer_name = cust.name))
+    ),
+    pay AS (
+      SELECT COALESCE(SUM(crl.amount_paid::numeric), 0) AS total_paid
       FROM   customer_receipt_lines crl
       JOIN   customer_receipts cr ON cr.id = crl.receipt_id
-      GROUP  BY cr.customer_id
-    ) pay ON pay.customer_id = c.id
-    WHERE c.id = $1
+      WHERE  cr.customer_id = $1
+    )
+    SELECT
+      cust.id                                                AS customer_id,
+      cust.name,
+      cust.phone,
+      COALESCE(inv.total_invoiced, 0)                        AS total_invoiced,
+      COALESCE(ret.total_returns,  0)                        AS total_returns,
+      COALESCE(pay.total_paid,     0)                        AS total_paid,
+      (
+        COALESCE(inv.total_invoiced, 0)
+        - COALESCE(ret.total_returns, 0)
+        - COALESCE(pay.total_paid,   0)
+      )                                                      AS current_balance
+    FROM cust, inv, ret, pay
   `, [customerId]);
 
   const rows = res.rows;
@@ -131,9 +132,18 @@ export async function getCustomerCreditInvoices(
       (sih.net_total::numeric - COALESCE(SUM(crl.amount_paid::numeric), 0)) AS remaining
     FROM   sales_invoice_headers sih
     LEFT JOIN customer_receipt_lines crl ON crl.invoice_id = sih.id
-    WHERE  sih.customer_id   = ${customerId}
-      AND  sih.customer_type = 'credit'
-      AND  sih.status        = 'finalized'
+    WHERE  sih.customer_type = 'credit'
+      AND  sih.is_return     = false
+      AND  sih.status        IN ('finalized', 'collected')
+      AND  (
+        sih.customer_id = ${customerId}
+        OR (
+          sih.customer_id IS NULL
+          AND sih.customer_name = (
+            SELECT name FROM pharmacy_credit_customers WHERE id = ${customerId} LIMIT 1
+          )
+        )
+      )
     GROUP  BY sih.id, sih.invoice_number, sih.invoice_date,
               sih.customer_name, sih.net_total
     ${havingClause}
