@@ -70,8 +70,8 @@ export default function ItemFormFields({
   const profitMargin = () => {
     const purchase = parseFloat(formData.purchasePriceLast || "0");
     const sale = parseFloat(formData.salePriceCurrent || "0");
-    if (purchase <= 0) return 0;
-    return ((sale - purchase) / purchase * 100).toFixed(1);
+    if (sale <= 0) return 0;
+    return ((sale - purchase) / sale * 100).toFixed(1);
   };
 
   const conversionExample = () => {
