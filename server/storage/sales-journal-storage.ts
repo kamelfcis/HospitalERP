@@ -448,12 +448,16 @@ const methods = {
 
     const entryNumber = await this.getNextEntryNumber();
 
+    // فواتير التوصيل المنزلي: القيد يُرسَل فوراً (posted) لأن الذمم تثبت عند الإنشاء
+    // أما فواتير الكاشير العادية: تبدأ مسودة وتُرسَل عند تحصيل الكاشير
+    const initialStatus = invoice.customerType === "delivery" ? "posted" : "draft";
+
     const [entry] = await tx.insert(journalEntries).values({
       entryNumber,
       entryDate: invoice.invoiceDate,
       reference: `SI-${invoice.invoiceNumber}`,
       description: `قيد فاتورة مبيعات رقم ${invoice.invoiceNumber}`,
-      status: "draft",
+      status: initialStatus,
       periodId: period?.id || null,
       sourceType: "sales_invoice",
       sourceDocumentId: invoiceId,
