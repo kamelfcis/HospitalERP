@@ -207,6 +207,28 @@ const methods = {
     return await db.transaction(async (tx) => {
       const nextNum = await this.getNextSalesInvoiceNumber();
 
+      // فحص الكميات الكسرية على مدخل المستخدم الأصلي — قبل توسيع FEFO
+      // السبب: بعد FEFO تتحول الوحدات لـ"minor" وقد تنتج كسوراً داخلية طبيعية
+      // (مثال: 1 شريط من علبة 2 شريط → 0.5 وحدة داخلياً) وهذا ليس خطأ من المستخدم.
+      // الفحص الصحيح: هل أدخل المستخدم كمية كسرية في الوحدة التي اختارها؟
+      {
+        const epsilon = 0.0001;
+        for (const rawLine of lines) {
+          const rawQty = parseFloat(rawLine.qty || "0") || 0;
+          if (Math.abs(rawQty - Math.round(rawQty)) > epsilon) {
+            const [rawItem] = await tx
+              .select({ nameAr: items.nameAr, allowFractionalSale: items.allowFractionalSale })
+              .from(items)
+              .where(eq(items.id, rawLine.itemId!));
+            if (rawItem?.allowFractionalSale === false) {
+              const err: any = new Error(`الصنف "${rawItem.nameAr}" لا يسمح بالبيع بكميات كسرية`);
+              err.httpStatus = 400;
+              throw err;
+            }
+          }
+        }
+      }
+
       const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId!, lines);
 
       let subtotal = 0;
@@ -264,16 +286,6 @@ const methods = {
               const conv = parseFloat(item.majorToMinor || "1") || 1;
               qtyInMinor = qty * conv;
             }
-          }
-        }
-
-        // فحص الكميات الكسرية للأصناف غير القابلة للتجزئة
-        if (item && item.allowFractionalSale === false) {
-          const epsilon = 0.0001;
-          if (Math.abs(qtyInMinor - Math.round(qtyInMinor)) > epsilon) {
-            const err: any = new Error(`الصنف "${item.nameAr}" لا يسمح بالبيع بكميات كسرية`);
-            err.httpStatus = 400;
-            throw err;
           }
         }
 
@@ -345,6 +357,25 @@ const methods = {
       if (invoice.status !== "draft") throw new Error("لا يمكن تعديل فاتورة نهائية");
 
       await tx.delete(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
+
+      // فحص الكميات الكسرية على مدخل المستخدم الأصلي — قبل توسيع FEFO
+      {
+        const epsilon = 0.0001;
+        for (const rawLine of lines) {
+          const rawQty = parseFloat(rawLine.qty || "0") || 0;
+          if (Math.abs(rawQty - Math.round(rawQty)) > epsilon) {
+            const [rawItem] = await tx
+              .select({ nameAr: items.nameAr, allowFractionalSale: items.allowFractionalSale })
+              .from(items)
+              .where(eq(items.id, rawLine.itemId!));
+            if (rawItem?.allowFractionalSale === false) {
+              const err: any = new Error(`الصنف "${rawItem.nameAr}" لا يسمح بالبيع بكميات كسرية`);
+              err.httpStatus = 400;
+              throw err;
+            }
+          }
+        }
+      }
 
       const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId ?? invoice.warehouseId, lines);
 
