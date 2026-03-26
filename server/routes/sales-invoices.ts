@@ -4,7 +4,7 @@ import { storage } from "../storage";
 import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { db, pool } from "../db";
 import { logger } from "../lib/logger";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, desc } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import {
   requireAuth,
@@ -13,7 +13,7 @@ import {
   addFormattedNumbers,
   broadcastToUnit,
 } from "./_shared";
-import { salesInvoiceHeaders, warehouses } from "@shared/schema";
+import { salesInvoiceHeaders, warehouses, cashierShifts } from "@shared/schema";
 import { runPharmacyDemoSeed } from "../seeds/pharmacy-demo";
 import { assertUserWarehouseAllowed } from "../lib/warehouse-guard";
 
@@ -275,6 +275,27 @@ export function registerSalesInvoicesRoutes(app: Express) {
       const invoice = await storage.finalizeSalesInvoice(req.params.id as string);
       await storage.createAuditLog({ tableName: "sales_invoice_headers", recordId: req.params.id as string, action: "finalize", oldValues: JSON.stringify({ status: "draft" }), newValues: JSON.stringify({ status: "finalized" }) });
       scheduleInventorySnapshotRefresh("sales_finalized");
+
+      // ── ربط فاتورة الآجل تلقائياً بالوردية الحالية ────────────────────────
+      if (invoice.customerType === "credit" && invoice.pharmacyId) {
+        try {
+          const [openShift] = await db.select({ id: cashierShifts.id })
+            .from(cashierShifts)
+            .where(and(
+              eq(cashierShifts.pharmacyId, invoice.pharmacyId),
+              eq(cashierShifts.status, "open"),
+            ))
+            .orderBy(desc(cashierShifts.openedAt))
+            .limit(1);
+          if (openShift) {
+            await db.update(salesInvoiceHeaders)
+              .set({ claimedByShiftId: openShift.id })
+              .where(eq(salesInvoiceHeaders.id, invoice.id));
+          }
+        } catch (e: any) {
+          logger.warn({ err: e.message }, "[CREDIT_SHIFT_CLAIM] failed to auto-claim credit invoice to shift");
+        }
+      }
       if (invoice.clinicOrderId) {
         try {
           const orderIds = invoice.clinicOrderId.split(",").filter(Boolean);

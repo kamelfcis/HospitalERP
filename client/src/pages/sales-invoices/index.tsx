@@ -116,6 +116,7 @@ export default function SalesInvoices() {
     invoiceDate:     form.invoiceDate,
     customerType:    form.customerType,
     customerName:    form.customerName,
+    customerId:      form.customerId,
     contractCompany: form.contractCompany,
     discountPct:     form.discountPct,
     discountValue:   form.discountValue,

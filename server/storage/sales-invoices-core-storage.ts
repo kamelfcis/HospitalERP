@@ -318,6 +318,7 @@ const methods = {
         pharmacyId,
         customerType: header.customerType || "cash",
         customerName: header.customerName || null,
+        customerId: (header.customerType === "credit" && header.customerId) ? header.customerId : null,
         contractCompany: header.contractCompany || null,
         status: "draft",
         subtotal: roundMoney(subtotal),
@@ -476,12 +477,16 @@ const methods = {
         if (wh?.pharmacyId) pharmacyId = wh.pharmacyId;
       }
 
+      const effectiveCustomerType = header.customerType || invoice.customerType;
       await tx.update(salesInvoiceHeaders).set({
         invoiceDate: header.invoiceDate || invoice.invoiceDate,
         warehouseId: effectiveWarehouseId,
         pharmacyId,
-        customerType: header.customerType || invoice.customerType,
+        customerType: effectiveCustomerType,
         customerName: header.customerName !== undefined ? header.customerName : invoice.customerName,
+        customerId: effectiveCustomerType === "credit"
+          ? (header.customerId !== undefined ? (header.customerId || null) : invoice.customerId)
+          : null,
         contractCompany: header.contractCompany !== undefined ? header.contractCompany : invoice.contractCompany,
         subtotal: roundMoney(subtotal),
         discountType,

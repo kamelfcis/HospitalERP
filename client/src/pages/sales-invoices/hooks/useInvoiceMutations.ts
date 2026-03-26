@@ -11,6 +11,7 @@ interface MutationParams {
   invoiceDate: string;
   customerType: string;
   customerName: string;
+  customerId: string;
   contractCompany: string;
   discountPct: number;
   discountValue: number;
@@ -33,6 +34,7 @@ export function useInvoiceMutations(p: MutationParams) {
     invoiceDate: p.invoiceDate,
     customerType: p.customerType,
     customerName: p.customerName || null,
+    customerId: p.customerType === "credit" ? (p.customerId || null) : null,
     contractCompany: p.customerType === "contract" ? p.contractCompany : null,
     discountPercent: p.discountPct,
     discountValue: p.discountValue,
