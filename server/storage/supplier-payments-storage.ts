@@ -281,7 +281,7 @@ export async function createSupplierPayment(
       try {
         const periodRes = await tx.execute(sql`
           SELECT id FROM fiscal_periods
-          WHERE status = 'open'
+          WHERE is_closed = false
             AND start_date <= ${input.paymentDate}::date
             AND end_date   >= ${input.paymentDate}::date
           LIMIT 1

@@ -17,6 +17,7 @@ import { customerReceipts, customerReceiptLines, pharmacyCreditCustomers } from 
 import { journalEntries, journalLines, accountMappings } from "@shared/schema/finance";
 import type { CustomerCreditInvoiceRow } from "@shared/schema/invoicing";
 import { logger } from "../lib/logger";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,6 +164,7 @@ export async function getCustomerCreditInvoices(
 }
 
 // ─── getNextReceiptNumber ──────────────────────────────────────────────────────
+// قراءة القيمة التالية بدون استهلاكها (lastval غير آمن بين sessions — نستخدم MAX كعرض فقط)
 export async function getNextReceiptNumber(): Promise<number> {
   const res = await db.execute(
     sql`SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next_num FROM customer_receipts`
@@ -245,7 +247,7 @@ export async function createCustomerReceipt(
 
   const result = await db.transaction(async (tx) => {
     const numRes = await tx.execute(
-      sql`SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next_num FROM customer_receipts`
+      sql`SELECT nextval('customer_receipt_number_seq') AS next_num`
     );
     const receiptNumber = Number((numRes as any).rows[0]?.next_num ?? 1);
 
@@ -279,7 +281,7 @@ export async function createCustomerReceipt(
       try {
         const periodRes = await tx.execute(sql`
           SELECT id FROM fiscal_periods
-          WHERE status = 'open'
+          WHERE is_closed = false
             AND start_date <= ${input.receiptDate}::date
             AND end_date   >= ${input.receiptDate}::date
           LIMIT 1
@@ -331,7 +333,15 @@ export async function createCustomerReceipt(
 
         logger.info({ receiptId: receipt.id, entryNumber }, "[CRPMT] GL journal created");
       } catch (e: any) {
-        logger.warn({ err: e.message }, "[CRPMT] GL journal failed — continuing without it");
+        logger.error({ err: e.message, receiptId: receipt.id }, "[CRPMT] GL journal failed");
+        // سجِّل الحادثة لتظهر في مراقب الأحداث المحاسبية
+        void logAcctEvent({
+          sourceType:    "credit_customer_receipt",
+          sourceId:      receipt.id,
+          eventType:     "crpmt_journal_failed",
+          status:        "needs_retry",
+          errorMessage:  `فشل قيد تحصيل الآجل: ${e.message}`,
+        }).catch(() => {});
       }
     }
 

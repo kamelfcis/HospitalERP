@@ -15,6 +15,7 @@ import { db, pool } from "../db";
 import { deliveryReceipts, deliveryReceiptLines } from "@shared/schema/invoicing";
 import { journalEntries, journalLines, accountMappings } from "@shared/schema/finance";
 import { logger } from "../lib/logger";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -180,7 +181,7 @@ export async function createDeliveryReceipt(
 
   const result = await db.transaction(async (tx) => {
     const numRes = await tx.execute(
-      sql`SELECT COALESCE(MAX(receipt_number), 0) + 1 AS next_num FROM delivery_receipts`
+      sql`SELECT nextval('delivery_receipt_number_seq') AS next_num`
     );
     const receiptNumber = Number((numRes as any).rows[0]?.next_num ?? 1);
 
@@ -231,7 +232,7 @@ export async function createDeliveryReceipt(
       try {
         const periodRes = await tx.execute(sql`
           SELECT id FROM fiscal_periods
-          WHERE status = 'open'
+          WHERE is_closed = false
             AND start_date <= ${input.receiptDate}::date
             AND end_date   >= ${input.receiptDate}::date
           LIMIT 1
@@ -248,7 +249,7 @@ export async function createDeliveryReceipt(
           description: `تحصيل توصيل منزلي - إيصال ${receiptNumber}`,
           reference:   `DLVMT-${receiptNumber}`,
           status:      "posted" as const,
-          fiscalPeriodId: periodId,
+          periodId: periodId,
           createdBy:   input.createdBy ?? null,
         }).returning({ id: journalEntries.id });
 
@@ -276,7 +277,15 @@ export async function createDeliveryReceipt(
 
         journalEntryId = entry.id;
       } catch (err) {
-        logger.warn("[DELIVERY_RECEIPT_GL] Failed to create journal entry", { err });
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error({ err: msg, receiptId: receipt.id }, "[DLVMT] GL journal failed");
+        void logAcctEvent({
+          sourceType:   "delivery_receipt",
+          sourceId:     receipt.id,
+          eventType:    "dlvmt_journal_failed",
+          status:       "needs_retry",
+          errorMessage: `فشل قيد تحصيل التوصيل: ${msg}`,
+        }).catch(() => {});
       }
     }
 
