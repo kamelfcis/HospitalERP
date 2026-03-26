@@ -43,6 +43,7 @@ export default function CashierHandoverPage() {
   const totals = data?.totals ?? {
     totalCashSales: 0,
     totalCreditSales: 0,
+    totalDeliveryCollected: 0,
     totalSalesInvoiceCount: 0,
     totalReturns: 0,
     totalReturnInvoiceCount: 0,

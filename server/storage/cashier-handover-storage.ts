@@ -53,6 +53,7 @@ export interface HandoverShiftRow {
   variance: number;
   cashSalesTotal: number;
   creditSalesTotal: number;
+  deliveryCollectedTotal: number;
   salesInvoiceCount: number;
   returnsTotal: number;
   returnInvoiceCount: number;
@@ -64,6 +65,7 @@ export interface HandoverShiftRow {
 export interface HandoverTotals {
   totalCashSales: number;
   totalCreditSales: number;
+  totalDeliveryCollected: number;
   totalSalesInvoiceCount: number;
   totalReturns: number;
   totalReturnInvoiceCount: number;
@@ -167,6 +169,14 @@ const methods = {
           AND status IN ('finalized', 'collected')
           AND claimed_by_shift_id IS NOT NULL
         GROUP BY claimed_by_shift_id
+      ),
+      delivery_agg AS (
+        SELECT shift_id,
+               COALESCE(SUM(total_amount), 0) AS delivery_total,
+               COUNT(*)::int                  AS delivery_count
+        FROM delivery_receipts
+        WHERE shift_id IS NOT NULL
+        GROUP BY shift_id
       )
       SELECT
         s.id                                                        AS "shiftId",
@@ -185,16 +195,18 @@ const methods = {
         COALESCE(s.variance, 0)::float                             AS "variance",
         COALESCE(r.cash_total, 0)::float                           AS "cashSalesTotal",
         COALESCE(c.credit_total, 0)::float                         AS "creditSalesTotal",
+        COALESCE(d.delivery_total, 0)::float                       AS "deliveryCollectedTotal",
         (COALESCE(r.sales_count, 0) + COALESCE(c.credit_count, 0))::int AS "salesInvoiceCount",
         COALESCE(ref.refund_total, 0)::float                       AS "returnsTotal",
         COALESCE(ref.refund_count, 0)::int                         AS "returnInvoiceCount",
-        (COALESCE(r.cash_total, 0) + COALESCE(c.credit_total, 0) - COALESCE(ref.refund_total, 0))::float AS "netTotal",
+        (COALESCE(r.cash_total, 0) + COALESCE(c.credit_total, 0) + COALESCE(d.delivery_total, 0) - COALESCE(ref.refund_total, 0))::float AS "netTotal",
         COALESCE(s.closing_cash, 0)::float                         AS "transferredToTreasury"
       FROM cashier_shifts s
       LEFT JOIN pharmacies p ON p.id = s.pharmacy_id
       LEFT JOIN receipts_agg r   ON r.shift_id   = s.id
       LEFT JOIN refunds_agg ref  ON ref.shift_id  = s.id
       LEFT JOIN credit_agg c     ON c.shift_id    = s.id
+      LEFT JOIN delivery_agg d   ON d.shift_id    = s.id
       ${whereClause}
     `;
 
@@ -270,6 +282,7 @@ const methods = {
     const totals: HandoverTotals = {
       totalCashSales:             rows.reduce((s, r) => s + r.cashSalesTotal, 0),
       totalCreditSales:           rows.reduce((s, r) => s + r.creditSalesTotal, 0),
+      totalDeliveryCollected:     rows.reduce((s, r) => s + r.deliveryCollectedTotal, 0),
       totalSalesInvoiceCount:     rows.reduce((s, r) => s + r.salesInvoiceCount, 0),
       totalReturns:               rows.reduce((s, r) => s + r.returnsTotal, 0),
       totalReturnInvoiceCount:    rows.reduce((s, r) => s + r.returnInvoiceCount, 0),

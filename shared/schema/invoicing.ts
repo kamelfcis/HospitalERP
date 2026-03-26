@@ -219,6 +219,40 @@ export type InsertCustomerReceipt = z.infer<typeof insertCustomerReceiptSchema>;
 export type CustomerReceipt = typeof customerReceipts.$inferSelect;
 export type CustomerReceiptLine = typeof customerReceiptLines.$inferSelect;
 
+// ─── جداول تحصيل فواتير التوصيل المنزلي ──────────────────────────────────────
+export const deliveryReceipts = pgTable("delivery_receipts", {
+  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receiptNumber: integer("receipt_number").notNull().default(0),
+  receiptDate:   date("receipt_date").notNull(),
+  totalAmount:   decimal("total_amount", { precision: 18, scale: 2 }).notNull(),
+  paymentMethod: varchar("payment_method", { length: 30 }).notNull().default("cash"),
+  reference:     varchar("reference", { length: 100 }),
+  notes:         text("notes"),
+  createdBy:     varchar("created_by"),
+  glAccountId:   varchar("gl_account_id").references(() => accounts.id),
+  shiftId:       varchar("shift_id"),
+  journalEntryId: varchar("journal_entry_id"),
+  createdAt:     timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  dateIdx:  index("idx_dr_date").on(t.receiptDate),
+  shiftIdx: index("idx_dr_shift").on(t.shiftId),
+}));
+
+export const deliveryReceiptLines = pgTable("delivery_receipt_lines", {
+  id:         varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receiptId:  varchar("receipt_id").notNull().references(() => deliveryReceipts.id, { onDelete: "cascade" }),
+  invoiceId:  varchar("invoice_id").notNull().references(() => salesInvoiceHeaders.id),
+  amountPaid: decimal("amount_paid", { precision: 18, scale: 2 }).notNull(),
+}, (t) => ({
+  receiptIdx: index("idx_drl_receipt").on(t.receiptId),
+  invoiceIdx: index("idx_drl_invoice").on(t.invoiceId),
+}));
+
+export const insertDeliveryReceiptSchema = createInsertSchema(deliveryReceipts).omit({ id: true, createdAt: true });
+export type InsertDeliveryReceipt = z.infer<typeof insertDeliveryReceiptSchema>;
+export type DeliveryReceipt = typeof deliveryReceipts.$inferSelect;
+export type DeliveryReceiptLine = typeof deliveryReceiptLines.$inferSelect;
+
 export type CustomerCreditInvoiceRow = {
   invoiceId:     string;
   invoiceNumber: number;
@@ -446,9 +480,10 @@ export const salesInvoiceStatusLabels: Record<string, string> = {
 };
 
 export const customerTypeLabels: Record<string, string> = {
-  cash: "نقدي",
-  credit: "آجل",
+  cash:     "نقدي",
+  credit:   "آجل",
   contract: "تعاقد",
+  delivery: "توصيل منزلي",
 };
 
 export const patientInvoiceStatusLabels: Record<string, string> = {

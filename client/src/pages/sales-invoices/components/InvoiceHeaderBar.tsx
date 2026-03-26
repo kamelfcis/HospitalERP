@@ -140,6 +140,7 @@ export function InvoiceHeaderBar({
             >
               <option value="cash">نقدي</option>
               <option value="credit">آجل</option>
+              <option value="delivery">توصيل منزلي</option>
               <option value="contract">تعاقد</option>
             </select>
           ) : (

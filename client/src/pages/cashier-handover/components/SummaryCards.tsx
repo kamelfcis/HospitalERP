@@ -1,9 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Banknote, CreditCard, Undo2, TrendingUp, Vault } from "lucide-react";
+import { Banknote, CreditCard, Undo2, TrendingUp, Vault, Truck } from "lucide-react";
 
 interface HandoverTotals {
   totalCashSales: number;
   totalCreditSales: number;
+  totalDeliveryCollected?: number;
   totalSalesInvoiceCount: number;
   totalReturns: number;
   totalReturnInvoiceCount: number;
@@ -22,7 +23,7 @@ function fmt(n: number) {
 
 export function SummaryCards({ totals }: SummaryCardsProps) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-4" dir="rtl">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4" dir="rtl">
       <Card>
         <CardHeader className="pb-1 pt-3 px-4">
           <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">
@@ -51,6 +52,22 @@ export function SummaryCards({ totals }: SummaryCardsProps) {
           </p>
         </CardContent>
       </Card>
+
+      {(totals.totalDeliveryCollected ?? 0) > 0 && (
+        <Card>
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">
+              <Truck className="h-3.5 w-3.5" />
+              تحصيل التوصيل
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pb-3 px-4">
+            <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400" data-testid="card-delivery-collected">
+              {fmt(totals.totalDeliveryCollected ?? 0)}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-1 pt-3 px-4">

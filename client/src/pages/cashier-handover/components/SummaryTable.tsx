@@ -24,6 +24,7 @@ interface HandoverShiftRow {
   status: string;
   cashSalesTotal: number;
   creditSalesTotal: number;
+  deliveryCollectedTotal: number;
   salesInvoiceCount: number;
   returnsTotal: number;
   returnInvoiceCount: number;
@@ -65,7 +66,7 @@ function LoadingRows() {
     <>
       {[1, 2, 3, 4, 5].map(i => (
         <TableRow key={i}>
-          {Array.from({ length: 13 }).map((_, j) => (
+          {Array.from({ length: 14 }).map((_, j) => (
             <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
           ))}
         </TableRow>
@@ -77,7 +78,7 @@ function LoadingRows() {
 function CreditInvoicesSubRow({ items }: { items: CreditInvoiceItem[] }) {
   return (
     <TableRow className="bg-blue-50/60 dark:bg-blue-950/20">
-      <TableCell colSpan={13} className="py-2 px-6">
+      <TableCell colSpan={14} className="py-2 px-6">
         <div className="text-xs font-semibold text-blue-800 dark:text-blue-300 mb-1.5">
           تفاصيل فواتير الآجل ({items.length})
         </div>
@@ -126,6 +127,7 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
               <TableHead className="text-right whitespace-nowrap">الكاشير</TableHead>
               <TableHead className="text-right whitespace-nowrap">البيع النقدي</TableHead>
               <TableHead className="text-right whitespace-nowrap">الآجل/تعاقد</TableHead>
+              <TableHead className="text-right whitespace-nowrap">تحصيل التوصيل</TableHead>
               <TableHead className="text-center whitespace-nowrap">فواتير</TableHead>
               <TableHead className="text-right whitespace-nowrap">المرتجع</TableHead>
               <TableHead className="text-center whitespace-nowrap">مرتجعات</TableHead>
@@ -139,7 +141,7 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
               <LoadingRows />
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={14} className="text-center py-12 text-muted-foreground">
                   لا توجد ورديات تطابق معايير البحث
                 </TableCell>
               </TableRow>
@@ -184,6 +186,9 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
                               : <ChevronLeft className="h-3 w-3 opacity-60" />
                           )}
                         </span>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400" data-testid={`text-delivery-${row.shiftId}`}>
+                        {row.deliveryCollectedTotal > 0 ? fmtMoney(row.deliveryCollectedTotal) : "—"}
                       </TableCell>
                       <TableCell className="text-center tabular-nums" data-testid={`text-inv-count-${row.shiftId}`}>
                         {row.salesInvoiceCount}

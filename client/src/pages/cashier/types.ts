@@ -56,6 +56,8 @@ export interface ShiftTotals {
   creditCount: number;
   supplierPaid?: string;
   supplierPaidCount?: number;
+  deliveryCollected?: string;
+  deliveryCollectedCount?: number;
 }
 
 // ── حساب GL المرتبط بالمستخدم (خزنة الكاشير) ─────────────

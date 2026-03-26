@@ -92,6 +92,17 @@ export function ShiftTotalsWidget({ totals }: Props) {
             />
           )}
 
+          {/* تحصيل التوصيل */}
+          {parseFloat(totals.deliveryCollected ?? "0") > 0 && (
+            <Row
+              label="تحصيل التوصيل"
+              value={totals.deliveryCollected ?? "0"}
+              count={totals.deliveryCollectedCount ?? 0}
+              testId="text-delivery-collected"
+              valueClass="text-emerald-600 dark:text-emerald-400"
+            />
+          )}
+
           {/* منصرف موردين */}
           {parseFloat(totals.supplierPaid ?? "0") > 0 && (
             <Row

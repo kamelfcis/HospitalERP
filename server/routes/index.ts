@@ -40,6 +40,7 @@ import { registerCashierHandoverRoutes }    from "./cashier-handover";
 import { registerSupplierPaymentRoutes }   from "./supplier-payments";
 import { registerCustomerPaymentRoutes }  from "./customer-payments";
 import { registerPurchaseReturnRoutes }   from "./purchase-returns";
+import { registerDeliveryPaymentRoutes }  from "./delivery-payments";
 
 export { broadcastToPharmacy, broadcastBedBoardUpdate } from "./_shared";
 
@@ -65,6 +66,7 @@ export async function registerRoutes(
   registerSupplierPaymentRoutes(app);
   registerCustomerPaymentRoutes(app);
   registerPurchaseReturnRoutes(app);
+  registerDeliveryPaymentRoutes(app);
 
   return httpServer;
 }
