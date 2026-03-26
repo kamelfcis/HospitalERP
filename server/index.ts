@@ -272,19 +272,19 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
   // Logs WARN only — never crashes startup.
   try {
     const mismatch1 = await pool.query<{ id: string; invoice_number: number; issue: string }>(`
-      SELECT id, invoice_number, 'collected_no_receipt' AS issue
-      FROM sales_invoice_headers
-      WHERE status = 'collected'
-        AND is_return = false
-        AND NOT EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = id)
+      SELECT sih.id, sih.invoice_number, 'collected_no_receipt' AS issue
+      FROM sales_invoice_headers sih
+      WHERE sih.status = 'collected'
+        AND sih.is_return = false
+        AND NOT EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = sih.id)
       LIMIT 20
     `);
     const mismatch2 = await pool.query<{ id: string; invoice_number: number; issue: string }>(`
-      SELECT id, invoice_number, 'return_collected_no_refund' AS issue
-      FROM sales_invoice_headers
-      WHERE status = 'collected'
-        AND is_return = true
-        AND NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = id)
+      SELECT sih.id, sih.invoice_number, 'return_collected_no_refund' AS issue
+      FROM sales_invoice_headers sih
+      WHERE sih.status = 'collected'
+        AND sih.is_return = true
+        AND NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id)
       LIMIT 20
     `);
     const all = [...mismatch1.rows, ...mismatch2.rows];

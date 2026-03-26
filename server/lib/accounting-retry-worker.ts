@@ -145,14 +145,33 @@ async function retrySalesReturn(sourceId: string): Promise<{ ok: boolean; journa
 
   // Check for a completed journal (idempotent: might have been created above or earlier)
   const raw = await db.execute(sql`
-    SELECT id FROM journal_entries
+    SELECT id, status FROM journal_entries
     WHERE source_type = 'sales_return' AND source_document_id = ${sourceId}
     LIMIT 1
   `);
   const existing = (raw as any).rows[0];
-  if (existing) return { ok: true, journalEntryId: existing.id };
+  if (!existing) throw new Error("لم يُنشأ قيد مردود المبيعات — راجع ربط حسابات فواتير المبيعات");
 
-  throw new Error("لم يُنشأ قيد مردود المبيعات — راجع ربط حسابات فواتير المبيعات");
+  // Phase 2 — if the cashier has already refunded this return invoice (status = collected)
+  // but the journal is still in draft, complete Phase 2 now.
+  if (existing.status === "draft") {
+    const invRaw = await db.execute(sql`
+      SELECT sih.status, crr.shift_id, cs.gl_account_id
+      FROM sales_invoice_headers sih
+      LEFT JOIN cashier_refund_receipts crr ON crr.invoice_id = sih.id
+      LEFT JOIN cashier_shifts cs ON cs.id = crr.shift_id
+      WHERE sih.id = ${sourceId}
+      LIMIT 1
+    `);
+    const invRow = (invRaw as any).rows[0];
+    if (invRow?.status === "collected" && invRow?.gl_account_id) {
+      logger.info({ sourceId, glAccountId: invRow.gl_account_id },
+        "[SALES_RETURN] invoice already collected — triggering Phase-2 from retry worker");
+      await storage.completeSalesReturnWithCash([sourceId], invRow.gl_account_id);
+    }
+  }
+
+  return { ok: true, journalEntryId: existing.id };
 }
 
 async function retryWarehouseTransfer(sourceId: string): Promise<{ ok: boolean; message?: string }> {

@@ -945,6 +945,7 @@ const methods = {
     }
 
     const netTotal    = parseFloat(header.netTotal || "0");
+    const discountVal = parseFloat(header.discountValue?.toString() || "0");
     const totalCogs   = cogsDrugs + cogsSupplies;
 
     // ── جلب ربط حسابات مردود المبيعات ────────────────────────────────────
@@ -989,6 +990,12 @@ const methods = {
     const cogsSuppliesDebitId =
       retMM.get("cogs_supplies")?.creditAccountId ||
       (useFallback ? siMM.get("cogs_supplies")?.debitAccountId : null) ||
+      null;
+
+    // حساب الخصم — دائن في المرتجع (عكس مدين الخصم في البيع الأصلي)
+    const discountAllowedCreditId =
+      retMM.get("discount_allowed")?.debitAccountId ||
+      (useFallback ? siMM.get("discount_allowed")?.debitAccountId : null) ||
       null;
 
     if (!receivablesCreditId) {
@@ -1040,6 +1047,12 @@ const methods = {
     if (netTotal > 0.001) {
       jLines.push({ journalEntryId: "", lineNumber: ln++, accountId: receivablesCreditId,
         debit: "0", credit: netTotal.toFixed(2), description: "مدينون — في انتظار صرف المرتجع" });
+    }
+
+    // دائن: عكس خصم مسموح به (يوازن الفرق بين الإيراد والصافي)
+    if (discountAllowedCreditId && discountVal > 0.001) {
+      jLines.push({ journalEntryId: "", lineNumber: ln++, accountId: discountAllowedCreditId,
+        debit: "0", credit: discountVal.toFixed(2), description: "عكس خصم مسموح به — مردود مبيعات" });
     }
 
     // دائن: تكلفة أدوية (عكس)
