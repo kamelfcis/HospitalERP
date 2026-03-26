@@ -54,6 +54,8 @@ export interface ShiftTotals {
   isStale: boolean;
   creditCollected: string;
   creditCount: number;
+  supplierPaid?: string;
+  supplierPaidCount?: number;
 }
 
 // ── حساب GL المرتبط بالمستخدم (خزنة الكاشير) ─────────────

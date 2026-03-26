@@ -92,6 +92,18 @@ export function ShiftTotalsWidget({ totals }: Props) {
             />
           )}
 
+          {/* منصرف موردين */}
+          {parseFloat(totals.supplierPaid ?? "0") > 0 && (
+            <Row
+              label="منصرف موردين"
+              value={totals.supplierPaid ?? "0"}
+              count={totals.supplierPaidCount ?? 0}
+              testId="text-supplier-paid"
+              valueClass="text-orange-600 dark:text-orange-400"
+              prefix="−"
+            />
+          )}
+
           {/* المرتجعات */}
           <Row
             label="المرتجعات"

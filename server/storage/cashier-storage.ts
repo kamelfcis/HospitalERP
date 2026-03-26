@@ -1027,6 +1027,8 @@ const methods = {
     isStale: boolean;
     creditCollected: string;
     creditCount: number;
+    supplierPaid: string;
+    supplierPaidCount: number;
   }> {
     const [collectResult] = await db.select({
       total: sql<string>`COALESCE(SUM(amount), 0)`,
@@ -1055,6 +1057,13 @@ const methods = {
     `);
     const creditRow = (creditRes as any).rows[0];
 
+    const supplierPaidRes = await db.execute(sql`
+      SELECT COALESCE(SUM(total_amount), 0)::text AS total, COUNT(*)::int AS count
+      FROM supplier_payments
+      WHERE shift_id = ${shiftId}
+    `);
+    const supplierPaidRow = (supplierPaidRes as any).rows[0];
+
     const durationRes = await db.execute(sql`
       SELECT opening_cash, status,
              EXTRACT(EPOCH FROM (NOW() - opened_at)) / 3600 AS hours_open
@@ -1068,6 +1077,8 @@ const methods = {
     const deferredCount    = parseInt(deferredRow?.count || "0", 10);
     const creditCollected  = creditRow?.total     || "0";
     const creditCount      = parseInt(creditRow?.count || "0", 10);
+    const supplierPaid     = supplierPaidRow?.total || "0";
+    const supplierPaidCount = parseInt(supplierPaidRow?.count || "0", 10);
     const openingCash      = shiftRow?.opening_cash || "0";
     const hoursOpen        = parseFloat(shiftRow?.hours_open || "0");
     const isStale          = hoursOpen > MAX_SHIFT_HOURS || shiftRow?.status === "stale";
@@ -1075,7 +1086,8 @@ const methods = {
       parseFloat(openingCash) +
       parseFloat(totalCollected) +
       parseFloat(creditCollected) -
-      parseFloat(totalRefunded)
+      parseFloat(totalRefunded) -
+      parseFloat(supplierPaid)
     ).toFixed(2);
     const netCollected     = (parseFloat(totalCollected) - parseFloat(totalRefunded)).toFixed(2);
 
@@ -1089,6 +1101,8 @@ const methods = {
       deferredCount,
       creditCollected,
       creditCount,
+      supplierPaid,
+      supplierPaidCount,
       netCash,
       netCollected,
       hoursOpen,

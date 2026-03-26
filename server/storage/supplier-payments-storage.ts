@@ -186,6 +186,18 @@ export async function getNextPaymentNumber(): Promise<number> {
   return Number((res as any).rows[0]?.next_num ?? 1);
 }
 
+// ─── resolveShiftFromGlAccount ────────────────────────────────────────────────
+// يبحث عن الوردية المفتوحة المرتبطة بحساب الخزنة المُختار، ويعيد shiftId أو null
+async function resolveShiftFromGlAccount(glAccountId: string): Promise<string | null> {
+  const res = await db.execute(sql`
+    SELECT id FROM cashier_shifts
+    WHERE gl_account_id = ${glAccountId} AND status = 'open'
+    ORDER BY opened_at DESC
+    LIMIT 1
+  `);
+  return (res as any).rows[0]?.id ?? null;
+}
+
 // ─── createSupplierPayment ────────────────────────────────────────────────────
 // atomic: رأس السداد + سطور التوزيع + قيد GL في transaction واحدة
 export async function createSupplierPayment(
@@ -200,6 +212,10 @@ export async function createSupplierPayment(
       `مجموع التوزيع (${sumLines.toFixed(2)}) لا يطابق إجمالي السداد (${input.totalAmount.toFixed(2)})`
     );
   }
+
+  // ── حل وردية الكاشير تلقائياً إذا لم تُرسَل من الـ frontend ───────────────
+  const resolvedShiftId: string | null =
+    input.shiftId ?? (input.glAccountId ? await resolveShiftFromGlAccount(input.glAccountId) : null);
 
   // ── تحديد حساب ذمم المورد (AP) ───────────────────────────────────────────
   // 1) حساب المورد الخاص (glAccountId) إن وُجد
@@ -245,7 +261,7 @@ export async function createSupplierPayment(
         paymentMethod: input.paymentMethod,
         createdBy:     input.createdBy ?? null,
         glAccountId:   input.glAccountId ?? null,
-        shiftId:       input.shiftId ?? null,
+        shiftId:       resolvedShiftId,
       })
       .returning({ id: supplierPayments.id, paymentNumber: supplierPayments.paymentNumber });
 
