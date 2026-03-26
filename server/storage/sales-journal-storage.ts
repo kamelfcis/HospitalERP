@@ -948,22 +948,55 @@ const methods = {
     const totalCogs   = cogsDrugs + cogsSupplies;
 
     // ── جلب ربط حسابات مردود المبيعات ────────────────────────────────────
-    const mappings = await this.getMappingsForTransaction("sales_return", header.warehouseId, header.pharmacyId);
-    const mm = new Map(mappings.map(m => [m.lineType, m]));
+    // الأولوية: sales_return → fallback: sales_invoice (بعكس الأدوار)
+    const retMappings = await this.getMappingsForTransaction("sales_return", header.warehouseId, header.pharmacyId);
+    const retMM = new Map(retMappings.map(m => [m.lineType, m]));
 
-    const receivablesCreditId  = mm.get("receivables")?.creditAccountId || null;
-    const revDrugsCreditId     = mm.get("revenue_drugs")?.debitAccountId || null;   // مدين جانب
-    const revSuppliesDebitId   = mm.get("revenue_consumables")?.debitAccountId || null;
-    const revGeneralDebitId    = mm.get("revenue_general")?.debitAccountId || null;
-    const cogsDrugsDebitId     = mm.get("cogs_drugs")?.creditAccountId || null;   // دائن جانب
-    const cogsSuppliesDebitId  = mm.get("cogs_supplies")?.creditAccountId || null;
+    // إن لم يُعرَّف sales_return، نسقط على sales_invoice (مع عكس الأدوار)
+    const siMappings = retMappings.length === 0
+      ? await this.getMappingsForTransaction("sales_invoice", header.warehouseId, header.pharmacyId)
+      : [];
+    const siMM = new Map(siMappings.map(m => [m.lineType, m]));
+    const useFallback = retMappings.length === 0;
+
+    // حساب المدينين (دائن في المرتجع = مدين في البيع)
+    const receivablesCreditId =
+      retMM.get("receivables")?.creditAccountId ||
+      (useFallback ? siMM.get("receivables")?.debitAccountId : null) ||
+      null;
+
+    // إيراد الأدوية (مدين في المرتجع = دائن في البيع)
+    const revDrugsCreditId =
+      retMM.get("revenue_drugs")?.debitAccountId ||
+      (useFallback ? siMM.get("revenue_drugs")?.creditAccountId : null) ||
+      null;
+
+    // إيراد المستلزمات والعام
+    const revSuppliesDebitId =
+      retMM.get("revenue_consumables")?.debitAccountId ||
+      (useFallback ? siMM.get("revenue_consumables")?.creditAccountId : null) ||
+      null;
+    const revGeneralDebitId =
+      retMM.get("revenue_general")?.debitAccountId ||
+      (useFallback ? siMM.get("revenue_general")?.creditAccountId : null) ||
+      null;
+
+    // COGS (دائن في المرتجع = مدين في البيع)
+    const cogsDrugsDebitId =
+      retMM.get("cogs_drugs")?.creditAccountId ||
+      (useFallback ? siMM.get("cogs_drugs")?.debitAccountId : null) ||
+      null;
+    const cogsSuppliesDebitId =
+      retMM.get("cogs_supplies")?.creditAccountId ||
+      (useFallback ? siMM.get("cogs_supplies")?.debitAccountId : null) ||
+      null;
 
     if (!receivablesCreditId) {
       await logAcctEvent({
         sourceType: "sales_return", sourceId: returnId,
         eventType: "sales_return_journal_blocked",
         status: "blocked",
-        errorMessage: "حساب المدينون (receivables) غير مُعرَّف في ربط حسابات مردود المبيعات — يرجى الضبط من /account-mappings",
+        errorMessage: "حساب المدينون (receivables) غير مُعرَّف في ربط حسابات فواتير المبيعات — يرجى الضبط من /account-mappings",
       });
       return;
     }

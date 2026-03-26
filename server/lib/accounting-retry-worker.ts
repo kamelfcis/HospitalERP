@@ -139,6 +139,22 @@ async function retryPurchaseReceiving(sourceId: string): Promise<{ ok: boolean; 
   throw new Error("لم يُنشأ قيد — راجع ربط الحسابات للمخزون والموردين");
 }
 
+async function retrySalesReturn(sourceId: string): Promise<{ ok: boolean; journalEntryId?: string }> {
+  // Phase 1 — generate the GL reversal journal if it doesn't already exist
+  await storage.generateSalesReturnJournal(sourceId);
+
+  // Check for a completed journal (idempotent: might have been created above or earlier)
+  const raw = await db.execute(sql`
+    SELECT id FROM journal_entries
+    WHERE source_type = 'sales_return' AND source_document_id = ${sourceId}
+    LIMIT 1
+  `);
+  const existing = (raw as any).rows[0];
+  if (existing) return { ok: true, journalEntryId: existing.id };
+
+  throw new Error("لم يُنشأ قيد مردود المبيعات — راجع ربط حسابات فواتير المبيعات");
+}
+
 async function retryWarehouseTransfer(sourceId: string): Promise<{ ok: boolean; message?: string }> {
   // The warehouse transfer journal is created inside postTransfer's DB transaction.
   // Re-running it would re-post inventory movements — unsafe.
@@ -291,6 +307,8 @@ export async function runAccountingRetryTick(): Promise<{
         result = await retryPurchaseReceiving(source_id);
       } else if (source_type === "warehouse_transfer") {
         result = await retryWarehouseTransfer(source_id);
+      } else if (source_type === "sales_return") {
+        result = await retrySalesReturn(source_id);
       } else {
         // Unknown source type — skip
         skipped++;
