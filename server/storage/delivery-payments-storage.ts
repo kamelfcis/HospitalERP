@@ -162,16 +162,17 @@ export async function createDeliveryReceipt(
     }
   }
 
-  // ── جلب حساب الذمم من ربط الحسابات ──────────────────────────────────────
+  // ── جلب حساب الذمم: نستخدم ربط sales_invoice / receivables ──────────────
+  // (فواتير التوصيل هي نوع من فواتير المبيعات، والحساب الدائن هو حساب المدينين)
   let arAccountId: string | null = null;
   let glDebitId:   string | null = null;
   let glCreditId:  string | null = null;
   if (effectiveGlAccountId) {
     const mappings = await db.select().from(accountMappings)
-      .where(sql`transaction_type = 'credit_customer_receipt'`);
-    const arMapping = mappings.find((m) => m.lineType === "receivable");
+      .where(sql`transaction_type = 'sales_invoice'`);
+    const arMapping = mappings.find((m) => m.lineType === "receivables");
     if (arMapping) {
-      arAccountId = arMapping.debitAccountId || arMapping.creditAccountId || null;
+      arAccountId = arMapping.debitAccountId || null;
       glDebitId   = effectiveGlAccountId;
       glCreditId  = arAccountId;
     }
