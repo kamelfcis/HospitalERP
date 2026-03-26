@@ -1,42 +1,45 @@
 /*
  * useTreasurySelector — hook مشترك لاختيار الخزنة
  * ─────────────────────────────────────────────────
- * منطق موحّد لكلٍ من تحصيل الآجل وسداد الموردين:
- *   • غير أدمن + وردية مفتوحة → اختيار تلقائي (للقراءة فقط)
- *   • أدمن → قائمة منسدلة بجميع الورديات المفتوحة
- *   • غير أدمن بدون وردية → فارغ/معطّل
+ * المنطق الموحّد لكلٍ من تحصيل الآجل وسداد الموردين:
+ *
+ * أدمن/مالك:
+ *   → يجلب جميع الخزن النشطة من /api/customer-payments/active-treasuries
+ *   → قائمة منسدلة كاملة، يختار منها
+ *
+ * موظف عادي:
+ *   → يجلب خزنته المخصصة من /api/treasuries/mine
+ *   → إن وُجدت → يختارها تلقائياً (شارة للقراءة فقط)
+ *   → إن لم تُوجد → "لا توجد خزنة مخصصة"
  */
 
 import { useState, useEffect } from "react";
 import { useQuery }            from "@tanstack/react-query";
 import { useAuth }             from "@/hooks/use-auth";
 
-// هيكل وردية من endpoint الكل (للأدمن)
-export interface OpenShift {
+// خزنة من قائمة الخزن النشطة (للأدمن)
+export interface ActiveTreasury {
   id:            string;
-  opened_at:     string;
-  cashier_name:  string;
-  pharmacy_name: string;
-  gl_account_id: string | null;
+  name:          string;
+  gl_account_id: string;
 }
 
-// هيكل وردية المستخدم الحالي (من my-open-shift — يُعيد CashierShift بـ camelCase)
-export interface MyShift {
-  id:           string;
-  openedAt:     string;
-  cashierName:  string;
-  glAccountId:  string | null;
-  pharmacyId:   string | null;
-  unitType:     string;
+// خزنة المستخدم الشخصية من user_treasuries
+export interface MyTreasury {
+  id:             string;
+  name:           string;
+  glAccountId:    string;
+  glAccountCode:  string;
+  glAccountName:  string;
 }
 
 export interface TreasurySelectorState {
-  selectedShiftId:      string;
-  setSelectedShiftId:   (id: string) => void;
+  selectedTreasuryId:   string;
+  setSelectedTreasuryId:(id: string) => void;
   selectedGlAccountId:  string | null;
   isAdmin:              boolean;
-  myShift:              MyShift | null;
-  allShifts:            OpenShift[];
+  myTreasury:           MyTreasury | null;
+  allTreasuries:        ActiveTreasury[];
   isLoading:            boolean;
 }
 
@@ -44,63 +47,62 @@ export function useTreasurySelector(): TreasurySelectorState {
   const { user } = useAuth();
   const isAdmin  = user?.role === "admin" || user?.role === "owner";
 
-  const [selectedShiftId, setSelectedShiftId] = useState<string>("none");
+  const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>("none");
 
-  // وردية المستخدم الحالي (غير الأدمن فقط)
-  const { data: myShiftRaw, isLoading: myShiftLoading } = useQuery<MyShift | null>({
-    queryKey: ["/api/cashier/my-open-shift"],
+  // خزنة المستخدم المخصصة (للموظف غير الأدمن)
+  const { data: myTreasuryRaw, isLoading: myLoading } = useQuery<MyTreasury | null>({
+    queryKey: ["/api/treasuries/mine"],
     queryFn: async () => {
-      const r = await fetch("/api/cashier/my-open-shift", { credentials: "include" });
-      if (r.status === 404) return null;
+      const r = await fetch("/api/treasuries/mine", { credentials: "include" });
       if (!r.ok) return null;
-      const data = await r.json();
-      return data ?? null;
+      const d = await r.json();
+      return d ?? null;
     },
     enabled: !isAdmin,
     retry: false,
-    staleTime: 30_000,
+    staleTime: 60_000,
   });
 
-  // جميع الورديات المفتوحة (للأدمن فقط)
-  const { data: openShiftsData, isLoading: shiftsLoading } = useQuery<{ shifts: OpenShift[] }>({
-    queryKey: ["/api/customer-payments/open-shifts"],
+  // جميع الخزن النشطة (للأدمن)
+  const { data: allTreasuriesData, isLoading: allLoading } = useQuery<{ treasuries: ActiveTreasury[] }>({
+    queryKey: ["/api/customer-payments/active-treasuries"],
     queryFn: async () => {
-      const r = await fetch("/api/customer-payments/open-shifts", { credentials: "include" });
-      if (!r.ok) return { shifts: [] };
+      const r = await fetch("/api/customer-payments/active-treasuries", { credentials: "include" });
+      if (!r.ok) return { treasuries: [] };
       return r.json();
     },
     enabled: isAdmin,
-    staleTime: 30_000,
+    staleTime: 60_000,
   });
 
-  const myShift   = myShiftRaw ?? null;
-  const allShifts = openShiftsData?.shifts ?? [];
+  const myTreasury   = myTreasuryRaw ?? null;
+  const allTreasuries = allTreasuriesData?.treasuries ?? [];
 
-  // اختيار تلقائي للمستخدم غير الأدمن عند توفّر وردية
+  // اختيار تلقائي للموظف عند توفّر خزنة مخصصة
   useEffect(() => {
-    if (!isAdmin && myShift?.id) {
-      setSelectedShiftId(myShift.id);
+    if (!isAdmin && myTreasury?.id) {
+      setSelectedTreasuryId(myTreasury.id);
     }
-  }, [isAdmin, myShift?.id]);
+  }, [isAdmin, myTreasury?.id]);
 
   // حساب GL الخزنة المختارة
   let selectedGlAccountId: string | null = null;
-  if (selectedShiftId !== "none") {
+  if (selectedTreasuryId !== "none") {
     if (isAdmin) {
-      const found = allShifts.find((s) => s.id === selectedShiftId);
+      const found = allTreasuries.find((t) => t.id === selectedTreasuryId);
       selectedGlAccountId = found?.gl_account_id ?? null;
-    } else if (myShift?.id === selectedShiftId) {
-      selectedGlAccountId = myShift.glAccountId ?? null;
+    } else if (myTreasury?.id === selectedTreasuryId) {
+      selectedGlAccountId = myTreasury.glAccountId ?? null;
     }
   }
 
   return {
-    selectedShiftId,
-    setSelectedShiftId,
+    selectedTreasuryId,
+    setSelectedTreasuryId,
     selectedGlAccountId,
     isAdmin,
-    myShift,
-    allShifts,
-    isLoading: isAdmin ? shiftsLoading : myShiftLoading,
+    myTreasury,
+    allTreasuries,
+    isLoading: isAdmin ? allLoading : myLoading,
   };
 }

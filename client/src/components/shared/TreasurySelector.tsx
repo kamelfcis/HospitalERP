@@ -1,9 +1,9 @@
 /*
- * TreasurySelector — مكوّن مشترك لاختيار الخزنة / الوردية
- * ──────────────────────────────────────────────────────────
- * • غير أدمن + وردية مفتوحة → شارة للقراءة فقط (خزنته الشخصية)
- * • أدمن → قائمة منسدلة بجميع الورديات المفتوحة
- * • غير أدمن بدون وردية → نص "لا توجد وردية مفتوحة"
+ * TreasurySelector — مكوّن مشترك لاختيار الخزنة
+ * ─────────────────────────────────────────────────
+ * • أدمن/مالك → قائمة منسدلة بجميع الخزن النشطة
+ * • موظف + خزنة مخصصة → شارة للقراءة فقط
+ * • موظف بدون خزنة → نص "لا توجد خزنة مخصصة"
  */
 
 import { Badge }  from "@/components/ui/badge";
@@ -18,25 +18,16 @@ interface Props extends TreasurySelectorState {
   label?: string;
 }
 
-function formatOpenedAt(isoStr: string): string {
-  try {
-    return new Date(isoStr).toLocaleDateString("ar-EG", {
-      day: "2-digit", month: "2-digit", year: "numeric",
-    });
-  } catch {
-    return isoStr.slice(0, 10);
-  }
-}
-
 export function TreasurySelector({
-  label = "الخزنة / الوردية:",
-  selectedShiftId,
-  setSelectedShiftId,
+  label = "الخزنة:",
+  selectedTreasuryId,
+  setSelectedTreasuryId,
   isAdmin,
-  myShift,
-  allShifts,
+  myTreasury,
+  allTreasuries,
   isLoading,
 }: Props) {
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-1">
@@ -46,21 +37,20 @@ export function TreasurySelector({
     );
   }
 
-  // أدمن → قائمة منسدلة كاملة بجميع الورديات المفتوحة
+  // أدمن / مالك → قائمة منسدلة كاملة
   if (isAdmin) {
     return (
       <div className="flex items-center gap-1">
         <Label className="text-xs">{label}</Label>
-        <Select value={selectedShiftId} onValueChange={setSelectedShiftId}>
-          <SelectTrigger className="h-7 w-[210px] text-xs" data-testid="select-shift">
-            <SelectValue placeholder="بدون ربط بوردية" />
+        <Select value={selectedTreasuryId} onValueChange={setSelectedTreasuryId}>
+          <SelectTrigger className="h-7 w-[180px] text-xs" data-testid="select-treasury">
+            <SelectValue placeholder="بدون ربط بخزنة" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="none">بدون ربط بوردية</SelectItem>
-            {allShifts.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.pharmacy_name ? `${s.pharmacy_name} — ` : ""}
-                {s.cashier_name} ({formatOpenedAt(s.opened_at)})
+            <SelectItem value="none">بدون ربط بخزنة</SelectItem>
+            {allTreasuries.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -69,26 +59,23 @@ export function TreasurySelector({
     );
   }
 
-  // غير أدمن مع وردية مفتوحة → شارة للقراءة فقط
-  if (myShift?.id) {
-    const shiftLabel = myShift.cashierName
-      ? `${myShift.cashierName} — ${formatOpenedAt(myShift.openedAt)}`
-      : formatOpenedAt(myShift.openedAt);
+  // موظف مع خزنة مخصصة → شارة للقراءة فقط
+  if (myTreasury?.id) {
     return (
       <div className="flex items-center gap-1">
         <Label className="text-xs">{label}</Label>
         <Badge variant="secondary" className="text-xs px-2 py-0.5">
-          {shiftLabel}
+          {myTreasury.name}
         </Badge>
       </div>
     );
   }
 
-  // غير أدمن بدون وردية مفتوحة
+  // موظف بدون خزنة مخصصة
   return (
     <div className="flex items-center gap-1">
       <Label className="text-xs">{label}</Label>
-      <span className="text-xs text-muted-foreground">لا توجد وردية مفتوحة</span>
+      <span className="text-xs text-muted-foreground">لا توجد خزنة مخصصة</span>
     </div>
   );
 }

@@ -44,8 +44,26 @@ function parseStatus(
 
 export function registerCustomerPaymentRoutes(app: Express) {
 
-  // ── GET /api/customer-payments/open-shifts ────────────────────────────────
-  // يُعيد الوردات المفتوحة للاختيار كخزنة عند التحصيل
+  // ── GET /api/customer-payments/active-treasuries ─────────────────────────
+  // يُعيد جميع الخزن النشطة (للأدمن) أو خزنة المستخدم (للموظف)
+  app.get("/api/customer-payments/active-treasuries", requireAuth, async (req, res) => {
+    try {
+      const result = await pool.query<{
+        id: string; name: string; gl_account_id: string;
+      }>(`
+        SELECT id, name, gl_account_id
+        FROM treasuries
+        WHERE is_active = true
+        ORDER BY name ASC
+      `);
+      res.json({ treasuries: result.rows });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── GET /api/customer-payments/open-shifts (محفوظ للتوافق) ───────────────
+  // يُعيد الوردات المفتوحة — مُستبدَل بـ active-treasuries لكنه محفوظ
   app.get("/api/customer-payments/open-shifts", requireAuth, async (_req, res) => {
     try {
       const result = await pool.query<{

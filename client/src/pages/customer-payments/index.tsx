@@ -269,8 +269,6 @@ export default function CustomerPayments() {
         .map(([invoiceId, v]) => ({ invoiceId, amountPaid: parseFloat(v) || 0 }))
         .filter((l) => l.amountPaid > 0);
 
-      const effectiveShiftId = treasury.selectedShiftId === "none" ? null : treasury.selectedShiftId;
-
       return apiRequestJson<{ receiptId: string; receiptNumber: number }>(
         "POST", "/api/customer-payments",
         {
@@ -281,7 +279,7 @@ export default function CustomerPayments() {
           reference:    reference.trim() || null,
           notes:        notes.trim() || null,
           glAccountId:  treasury.selectedGlAccountId,
-          shiftId:      effectiveShiftId,
+          shiftId:      null,
           lines,
         }
       );

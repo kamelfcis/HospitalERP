@@ -384,7 +384,6 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
         .filter((inv) => (parseFloat(inputs[inv.invoiceId] ?? "0") || 0) > 0)
         .map((inv) => ({ invoiceId: inv.invoiceId, amountPaid: parseFloat(inputs[inv.invoiceId]) }));
       if (!lines.length) throw new Error("لم تُدخل أي مبالغ للسداد");
-      const effectiveShiftId = treasury.selectedShiftId === "none" ? null : treasury.selectedShiftId;
       return apiRequestJson<{ paymentId: string; paymentNumber: number }>(
         "POST", "/api/supplier-payments", {
           supplierId,
@@ -394,7 +393,7 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
           notes:         notes || null,
           paymentMethod: payMethod,
           glAccountId:   treasury.selectedGlAccountId,
-          shiftId:       effectiveShiftId,
+          shiftId:       null,
           lines,
         }
       );
