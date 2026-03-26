@@ -224,6 +224,17 @@ export default function ItemFormFields({
               />
               <Label htmlFor="isActive" className="text-[10px]">نشط</Label>
             </div>
+            <div className="flex items-center gap-1">
+              <Checkbox
+                id="allowFractionalSale"
+                checked={formData.allowFractionalSale ?? true}
+                onCheckedChange={(c) => setFormData({ ...formData, allowFractionalSale: !!c })}
+                disabled={!isEditing}
+                className="h-3 w-3"
+                data-testid="checkbox-allow-fractional"
+              />
+              <Label htmlFor="allowFractionalSale" className="text-[10px] text-blue-600 font-medium" title="السماح للكاشير ببيع كميات كسرية مثل 0.5 أو 0.33">يسمح بكسور</Label>
+            </div>
           </div>
           <div className="col-span-2">
             <Label className="text-[10px] text-muted-foreground">ملاحظات</Label>
