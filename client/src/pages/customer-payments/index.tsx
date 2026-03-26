@@ -159,7 +159,7 @@ export default function CustomerPayments() {
   const [reference,      setReference]      = useState("");
   const [notes,          setNotes]          = useState("");
   const [totalAmount,    setTotalAmount]    = useState("");
-  const [selectedShiftId, setSelectedShiftId] = useState<string>("");
+  const [selectedShiftId, setSelectedShiftId] = useState<string>("none");
 
   // ── حالة الجدول ──────────────────────────────────────────────────────────
   const [filterStatus,   setFilterStatus]   = useState<"unpaid" | "paid" | "all">("unpaid");
@@ -281,7 +281,10 @@ export default function CustomerPayments() {
         .map(([invoiceId, v]) => ({ invoiceId, amountPaid: parseFloat(v) || 0 }))
         .filter((l) => l.amountPaid > 0);
 
-      const shift = openShiftsData?.shifts.find((s) => s.id === selectedShiftId);
+      const effectiveShiftId = selectedShiftId === "none" ? null : selectedShiftId;
+      const shift = effectiveShiftId
+        ? openShiftsData?.shifts.find((s) => s.id === effectiveShiftId)
+        : null;
 
       return apiRequestJson<{ receiptId: string; receiptNumber: number }>(
         "POST", "/api/customer-payments",
@@ -293,7 +296,7 @@ export default function CustomerPayments() {
           reference:    reference.trim() || null,
           notes:        notes.trim() || null,
           glAccountId:  shift?.gl_account_id ?? null,
-          shiftId:      selectedShiftId || null,
+          shiftId:      effectiveShiftId,
           lines,
         }
       );
@@ -423,7 +426,7 @@ export default function CustomerPayments() {
                   <SelectValue placeholder="بدون ربط بوردية" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">بدون ربط بوردية</SelectItem>
+                  <SelectItem value="none">بدون ربط بوردية</SelectItem>
                   {(openShiftsData?.shifts ?? []).map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.pharmacy_name ? `${s.pharmacy_name} — ` : ""}وردية #{s.shift_number} ({s.cashier_name})
