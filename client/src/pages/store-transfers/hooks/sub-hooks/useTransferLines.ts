@@ -190,6 +190,100 @@ export function useTransferLines({
     [sourceWarehouseId, transferDate, toast, setFormLines, barcodeInputRef]
   );
 
+  const triggerFefoForItem = useCallback(
+    async (
+      item: TransferLineLocal["item"],
+      unitLevel: string,
+      qtyInMinor: number,
+      allBatches: ExpiryOption[],
+    ): Promise<boolean> => {
+      if (!item) return false;
+      const loadingPlaceholderIndex = formLinesRef.current.length;
+      setFefoLoadingIndex(loadingPlaceholderIndex);
+      try {
+        const params = new URLSearchParams({
+          itemId: item.id,
+          warehouseId: sourceWarehouseId,
+          requiredQtyInMinor: String(qtyInMinor),
+          asOfDate: transferDate,
+        });
+        const res = await fetch(`/api/transfer/fefo-preview?${params}`);
+        const preview = await res.json();
+
+        if (!preview.fulfilled) {
+          toast({
+            title: "الكمية غير متاحة",
+            description: `العجز: ${formatAvailability(String(parseFloat(preview.shortfall)), unitLevel, item)}`,
+            variant: "destructive",
+          });
+          return false;
+        }
+
+        const qtyFactor =
+          unitLevel === "major"
+            ? parseFloat(String(item.majorToMinor || "0")) || 1
+            : unitLevel === "medium"
+              ? getEffectiveMediumToMinor(item)
+              : 1;
+
+        const toDisplay = (minor: number): number => {
+          const d = minor / qtyFactor;
+          const r = Math.round(d * 10000) / 10000;
+          return Math.abs(r - Math.round(r)) < 0.005 ? Math.round(r) : r;
+        };
+
+        const newLines: TransferLineLocal[] = preview.allocations
+          .filter((a: TransferFefoAllocation) => parseFloat(a.allocatedQty) > 0)
+          .map((alloc: TransferFefoAllocation) => ({
+            id: crypto.randomUUID(),
+            itemId: item.id,
+            item,
+            unitLevel,
+            qtyEntered: toDisplay(parseFloat(alloc.allocatedQty)),
+            qtyInMinor: parseFloat(alloc.allocatedQty),
+            selectedExpiryDate: alloc.expiryDate || null,
+            selectedExpiryMonth: alloc.expiryMonth || null,
+            selectedExpiryYear: alloc.expiryYear || null,
+            availableQtyMinor: item.availableQtyMinor || "0",
+            notes: "",
+            fefoLocked: true,
+            lotSalePrice: alloc.lotSalePrice,
+          }));
+
+        setFormLines((prev) => [...prev, ...newLines]);
+
+        const expiryOpts: ExpiryOption[] =
+          allBatches.length > 0
+            ? allBatches
+            : preview.allocations.map((a: TransferFefoAllocation) => ({
+                expiryDate: a.expiryDate,
+                expiryMonth: a.expiryMonth,
+                expiryYear: a.expiryYear,
+                qtyAvailableMinor: a.qtyAvailableMinor,
+                lotSalePrice: a.lotSalePrice,
+              }));
+        const update: Record<string, ExpiryOption[]> = {};
+        newLines.forEach((nl) => { update[nl.id] = expiryOpts; });
+        setLineExpiryOptions((prev) => ({ ...prev, ...update }));
+
+        if (newLines.length > 1) {
+          toast({ title: `تم التوزيع على ${newLines.length} دفعات (FEFO)` });
+        }
+        return true;
+      } catch (err: unknown) {
+        toast({
+          title: "خطأ في توزيع الصلاحية",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        setFefoLoadingIndex(null);
+      }
+    },
+    [sourceWarehouseId, transferDate, toast, setFormLines, setLineExpiryOptions]
+  );
+
   const fetchExpiryOptions = useCallback(
     async (itemId: string): Promise<ExpiryOption[]> => {
       const cacheKey = `${itemId}_${sourceWarehouseId}`;
@@ -360,6 +454,7 @@ export function useTransferLines({
   return {
     handleDeleteLine,
     handleQtyConfirm,
+    triggerFefoForItem,
     fetchExpiryOptions,
     loadExpiryOptionsForLine,
     handleExpiryChange,

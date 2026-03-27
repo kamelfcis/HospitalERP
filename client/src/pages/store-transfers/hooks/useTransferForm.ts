@@ -44,6 +44,7 @@ export function useTransferForm() {
   const {
     handleDeleteLine,
     handleQtyConfirm,
+    triggerFefoForItem,
     loadExpiryOptionsForLine,
     handleExpiryChange,
     handleUnitChange,
@@ -196,7 +197,7 @@ export function useTransferForm() {
   );
 
   const handleItemSelected = useCallback(
-    ({ item, batch, allBatches }: ItemSelectedPayload) => {
+    async ({ item, batch, allBatches }: ItemSelectedPayload) => {
       // لو اختار دفعة محددة: استخدم كمية الدفعة لتحديد الوحدة (لا الإجمالي)
       const itemForUnit = batch?.qtyAvailableMinor
         ? { ...item, availableQtyMinor: batch.qtyAvailableMinor }
@@ -205,6 +206,18 @@ export function useTransferForm() {
       const qtyEntered = 1;
       const qtyInMinor = calculateQtyInMinor(qtyEntered, unitLevel, item);
 
+      // صنف بصلاحية + لم يُختر دفعة محددة + مخزن مصدر محدد
+      // → شغّل FEFO فوراً بكمية 1 بدلاً من انتظار تأكيد الكمية
+      if (item.hasExpiry && !batch && sourceWarehouseId) {
+        const ok = await triggerFefoForItem(item, unitLevel, qtyInMinor, allBatches);
+        if (ok) {
+          setTimeout(() => barcodeInputRef.current?.focus(), 50);
+          return;
+        }
+        // إذا فشل FEFO (مثلاً رصيد صفر) → أضف السطر يدوياً ليظهر للمستخدم
+      }
+
+      // المسار الاعتيادي: صنف بلا صلاحية، أو دفعة مختارة مسبقاً، أو FEFO فشل
       const newLineId = crypto.randomUUID();
       const newLine: TransferLineLocal = {
         id: newLineId,
@@ -225,13 +238,11 @@ export function useTransferForm() {
       setFormLines((prev) => [...prev, newLine]);
       setTimeout(() => barcodeInputRef.current?.focus(), 50);
 
-      // استخدام الدُفعات المجلوبة مسبقاً من ItemFastSearch (بدون API call إضافي)
-      // تُطلَب فقط عند اختيار صنف له صلاحية وكانت الدُفعات محملة بالفعل
       if (item.hasExpiry && allBatches.length > 0) {
         setLineExpiryOptions((prev) => ({ ...prev, [newLineId]: allBatches }));
       }
     },
-    [setLineExpiryOptions]
+    [triggerFefoForItem, sourceWarehouseId, barcodeInputRef, setFormLines, setLineExpiryOptions]
   );
 
   const executeMutation = async () => {
