@@ -23,6 +23,7 @@ import { useCashierShift }    from "./hooks/useCashierShift";
 import { usePendingInvoices } from "./hooks/usePendingInvoices";
 import { useInvoiceTab }      from "./hooks/useInvoiceTab";
 import { useCashierActions }  from "./hooks/useCashierActions";
+import { useReceiptPrint }    from "@/hooks/use-receipt-print";
 
 import { UnitSelector }                 from "./components/UnitSelector";
 import { ShiftOpenForm }                from "./components/ShiftOpenForm";
@@ -82,6 +83,9 @@ export default function CashierCollection() {
   // ── مسح الاختيار في كلا التابين معاً ─────────────────────
   const clearAllSelections = () => { salesTab.clearSelection(); returnsTab.clearSelection(); };
 
+  // ── طباعة الإيصالات ───────────────────────────────────────
+  const { printInvoiceReceipts } = useReceiptPrint();
+
   // ── mutations التحصيل والصرف + اختصارات لوحة المفاتيح ───
   const { collectMutation, refundMutation } = useCashierActions({
     shiftId, shiftUnitType, shiftUnitId,
@@ -90,6 +94,7 @@ export default function CashierCollection() {
     cashierName:     user?.fullName || "",
     hasActiveShift,  activeTab,
     clearSelection:  clearAllSelections,
+    onPrintReceipts: printInvoiceReceipts,
   });
 
   // ── handlers اختيار الوحدة ────────────────────────────────

@@ -41,6 +41,7 @@ import { registerSupplierPaymentRoutes }   from "./supplier-payments";
 import { registerCustomerPaymentRoutes }  from "./customer-payments";
 import { registerPurchaseReturnRoutes }   from "./purchase-returns";
 import { registerDeliveryPaymentRoutes }  from "./delivery-payments";
+import { registerReceiptSettingsRoutes }  from "./receipt-settings";
 
 export { broadcastToPharmacy, broadcastBedBoardUpdate } from "./_shared";
 
@@ -67,6 +68,7 @@ export async function registerRoutes(
   registerCustomerPaymentRoutes(app);
   registerPurchaseReturnRoutes(app);
   registerDeliveryPaymentRoutes(app);
+  registerReceiptSettingsRoutes(app);
 
   return httpServer;
 }

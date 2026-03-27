@@ -53,6 +53,7 @@ import {
   KeyRound,
   AlertCircle,
   CreditCard,
+  Printer,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -128,6 +129,7 @@ const reportNavItems: NavItem[] = [
 
 const systemNavItems: NavItem[] = [
   { title: "إعدادات النظام",    href: "/system-settings",   icon: Settings,  permission: "settings.account_mappings" },
+  { title: "إعدادات الإيصالات", href: "/receipt-settings",  icon: Printer,   permission: "settings.account_mappings" },
   { title: "ربط الحسابات",     href: "/account-mappings",  icon: Settings,  permission: "settings.account_mappings" },
   { title: "الخزن",            href: "/treasuries",        icon: Banknote,  permission: "settings.account_mappings" },
   { title: "سجل التدقيق",      href: "/audit-log",         icon: History,   permission: "audit_log.view" },

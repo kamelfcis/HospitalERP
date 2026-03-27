@@ -13,11 +13,12 @@ interface UseCashierActionsParams {
   hasActiveShift: boolean;
   activeTab: string;
   clearSelection: () => void;
+  onPrintReceipts?: (invoiceIds: string[]) => void;
 }
 
 export function useCashierActions({
   shiftId, shiftUnitType, shiftUnitId, salesSelected, returnsSelected,
-  cashierName, hasActiveShift, activeTab, clearSelection,
+  cashierName, hasActiveShift, activeTab, clearSelection, onPrintReceipts,
 }: UseCashierActionsParams) {
   const { toast } = useToast();
 
@@ -36,9 +37,13 @@ export function useCashierActions({
     },
     onSuccess: (data) => {
       toast({ title: "تم التحصيل بنجاح", description: `عدد الفواتير: ${data.count}` });
+      const collectedIds = Array.from(salesSelected);
       clearSelection();
       invalidateSales();
       invalidateTotals();
+      if (onPrintReceipts && collectedIds.length > 0) {
+        onPrintReceipts(collectedIds);
+      }
     },
     onError: (error: Error) => {
       toast({ title: "خطأ في التحصيل", description: error.message, variant: "destructive" });

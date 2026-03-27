@@ -73,6 +73,7 @@ const ApprovalsPage            = lazy(() => import("@/pages/approvals/index"));
 const ContractsAnalyticsPage   = lazy(() => import("@/pages/contracts-analytics/index"));
 const CashierHandoverPage      = lazy(() => import("@/pages/cashier-handover/index"));
 const ItemMovementReport       = lazy(() => import("@/pages/item-movement-report/index"));
+const ReceiptSettings          = lazy(() => import("@/pages/receipt-settings/index"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -171,6 +172,7 @@ function Router() {
           <Route path="/doctor-orders">{() => <G p="doctor_orders.view"><DoctorOrders /></G>}</Route>
           <Route path="/dept-services/:deptCode">{() => <DeptServicesPage />}</Route>
           <Route path="/perf-diagnostics">{() => <G p="settings.account_mappings"><PerfDiagnostics /></G>}</Route>
+          <Route path="/receipt-settings">{() => <G p="settings.account_mappings"><ReceiptSettings /></G>}</Route>
           <Route component={NotFound} />
         </Switch>
       </Suspense>

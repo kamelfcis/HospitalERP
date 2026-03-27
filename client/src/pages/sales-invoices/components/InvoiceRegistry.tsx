@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Loader2, Plus, ShoppingCart, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Plus, ShoppingCart, Trash2, ChevronLeft, ChevronRight, Printer } from "lucide-react";
 import { formatNumber, formatDateShort } from "@/lib/formatters";
 import { salesInvoiceStatusLabels, customerTypeLabels } from "@shared/schema";
 import type { SalesInvoiceWithDetails, Warehouse } from "@shared/schema";
@@ -55,6 +55,7 @@ interface Props {
   onCancelDelete: () => void;
   onSeedDemo: () => void;
   onQuickTest: () => void;
+  onReprintReceipt?: (id: string) => void;
 }
 
 function statusBadge(status: string) {
@@ -75,6 +76,7 @@ export function InvoiceRegistry({
   canCreate = true,
   onSetPage, onSetFilterDateFrom, onSetFilterDateTo, onSetFilterStatus, onSetFilterCustomerType, onSetFilterPharmacistId, onSetFilterWarehouseId, onSetFilterSearch,
   onNewInvoice, onOpenInvoice, onDeleteClick, onConfirmDelete, onCancelDelete, onSeedDemo, onQuickTest,
+  onReprintReceipt,
 }: Props) {
   const warehouseName = (id: string) => warehouses?.find((w) => w.id === id)?.nameAr || "";
 
@@ -289,6 +291,17 @@ export function InvoiceRegistry({
                             ) : (
                               <Trash2 className="h-3 w-3 text-destructive" />
                             )}
+                          </Button>
+                        )}
+                        {inv.status === "collected" && onReprintReceipt && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="إعادة طباعة الإيصال"
+                            onClick={() => onReprintReceipt(inv.id)}
+                            data-testid={`button-reprint-${inv.id}`}
+                          >
+                            <Printer className="h-3 w-3 text-muted-foreground" />
                           </Button>
                         )}
                       </div>

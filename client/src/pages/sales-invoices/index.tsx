@@ -33,11 +33,13 @@ import { useRoleRouter }       from "./hooks/useRoleRouter";
 
 import { SalesInvoiceEditor } from "./SalesInvoiceEditor";
 import { InvoiceRegistry }    from "./components/InvoiceRegistry";
+import { useReceiptPrint }    from "@/hooks/use-receipt-print";
 
 import { useState } from "react";
 
 export default function SalesInvoices() {
   const { toast }           = useToast();
+  const { reprintInvoice }  = useReceiptPrint();
   const [, navigate]        = useLocation();
   const searchString        = useSearch();
   const params              = new URLSearchParams(searchString);
@@ -391,6 +393,7 @@ export default function SalesInvoices() {
       onCancelDelete={() => setConfirmDeleteId(null)}
       onSeedDemo={handleSeedDemo}
       onQuickTest={handleQuickTest}
+      onReprintReceipt={(id) => reprintInvoice(id)}
     />
   );
 }
