@@ -21,12 +21,16 @@ export interface BatchOption {
   expiryYear: number | null;
   qtyAvailableMinor: string;
   lotSalePrice?: string;
+  /** true عندما تحتوي نفس دفعة الصلاحية على دُفعات بأسعار مختلفة */
+  hasPriceConflict?: boolean;
 }
 
 export interface ItemSelectedPayload {
   item: FastSearchItem;
   batch: BatchOption | null;
   availableQtyMinor: string;
+  /** جميع دُفعات الصلاحية المتاحة — مجلوبة مسبقاً من ItemFastSearch بدون API call إضافي */
+  allBatches: BatchOption[];
 }
 
 export interface ItemFastSearchProps {

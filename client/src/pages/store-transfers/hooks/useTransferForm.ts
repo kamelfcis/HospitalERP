@@ -44,7 +44,6 @@ export function useTransferForm() {
   const {
     handleDeleteLine,
     handleQtyConfirm,
-    fetchExpiryOptions,
     loadExpiryOptionsForLine,
     handleExpiryChange,
     handleUnitChange,
@@ -197,7 +196,7 @@ export function useTransferForm() {
   );
 
   const handleItemSelected = useCallback(
-    ({ item, batch }: ItemSelectedPayload) => {
+    ({ item, batch, allBatches }: ItemSelectedPayload) => {
       // لو اختار دفعة محددة: استخدم كمية الدفعة لتحديد الوحدة (لا الإجمالي)
       const itemForUnit = batch?.qtyAvailableMinor
         ? { ...item, availableQtyMinor: batch.qtyAvailableMinor }
@@ -226,16 +225,13 @@ export function useTransferForm() {
       setFormLines((prev) => [...prev, newLine]);
       setTimeout(() => barcodeInputRef.current?.focus(), 50);
 
-      // جلب خيارات الصلاحية في الخلفية فوراً (للإنذار الفوري + ملء القائمة مسبقاً)
-      if (item.hasExpiry && sourceWarehouseId) {
-        fetchExpiryOptions(item.id).then((opts) => {
-          if (opts.length > 0) {
-            setLineExpiryOptions((prev) => ({ ...prev, [newLineId]: opts }));
-          }
-        }).catch(() => {});
+      // استخدام الدُفعات المجلوبة مسبقاً من ItemFastSearch (بدون API call إضافي)
+      // تُطلَب فقط عند اختيار صنف له صلاحية وكانت الدُفعات محملة بالفعل
+      if (item.hasExpiry && allBatches.length > 0) {
+        setLineExpiryOptions((prev) => ({ ...prev, [newLineId]: allBatches }));
       }
     },
-    [fetchExpiryOptions, setLineExpiryOptions, sourceWarehouseId]
+    [setLineExpiryOptions]
   );
 
   const executeMutation = async () => {

@@ -107,6 +107,7 @@ export function ItemFastSearch({
       item,
       batch:             item.hasExpiry ? resolvedBatch : null,
       availableQtyMinor: item.availableQtyMinor,
+      allBatches:        item.hasExpiry ? batches : [],
     });
     resetBatches();
     setTimeout(() => searchRef.current?.focus(), 30);
