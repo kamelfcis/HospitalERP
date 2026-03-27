@@ -2,41 +2,51 @@ import {
   useState, useRef, useCallback, useEffect, useLayoutEffect,
 } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Search, PackageX, Package, ChevronLeft, AlertCircle } from "lucide-react";
+import { Loader2, Search, PackageX, Package, ChevronLeft, AlertCircle, SlidersHorizontal } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { formatAvailability } from "@/lib/invoice-lines";
 import type {
   ItemFastSearchProps, FastSearchItem, BatchOption, SearchMode, FastSearchResponse,
 } from "./types";
 
-const DEBOUNCE_MS = 200;
-const PAGE_SIZE   = 40;
+// ── ثوابت ───────────────────────────────────────────────────────────────────
+const DEBOUNCE_MS      = 180;
+const PRELOAD_DELAY_MS = 120;   // تحميل الدُفعات مسبقاً بعد توقف التمييز
+const PAGE_SIZE        = 40;
 
-function parsePriceFilter(q: string): { nameQ: string; minPrice?: number; maxPrice?: number } {
-  const rangeMatch = q.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
-  if (rangeMatch) {
-    return {
-      nameQ:    q.slice(0, rangeMatch.index!).trim(),
-      minPrice: parseFloat(rangeMatch[1]),
-      maxPrice: parseFloat(rangeMatch[2]),
-    };
+// ── مكوّن شارة المخزون ──────────────────────────────────────────────────────
+function StockBadge({ item, hide }: { item: FastSearchItem; hide: boolean }) {
+  const qty   = parseFloat(item.availableQtyMinor ?? "0");
+  const label = formatAvailability(item.availableQtyMinor, "major", item);
+  if (hide) {
+    return (
+      <span className="inline-flex items-center gap-1 text-muted-foreground text-[12px]">
+        <Package className="h-3.5 w-3.5" />{label}
+      </span>
+    );
   }
-  const singleMatch = q.match(/(\d+(?:\.\d+)?)\s*$/);
-  if (singleMatch && !/^\d+$/.test(q.trim())) {
-    return {
-      nameQ:    q.slice(0, singleMatch.index!).trim(),
-      minPrice: parseFloat(singleMatch[1]),
-      maxPrice: parseFloat(singleMatch[1]),
-    };
+  if (qty > 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold text-[12px]">
+        <Package className="h-3.5 w-3.5" />{label}
+      </span>
+    );
   }
-  return { nameQ: q };
+  return (
+    <span className="inline-flex items-center gap-1 text-rose-400 text-[12px]">
+      <PackageX className="h-3.5 w-3.5" />نفد
+    </span>
+  );
 }
 
+// ── الكمبوننت الرئيسي ──────────────────────────────────────────────────────
 export function ItemFastSearch({
   open, onClose, warehouseId, invoiceDate, onItemSelected,
   excludeServices, drugsOnly, title = "بحث سريع عن صنف",
   hideStockWarning = false,
 }: ItemFastSearchProps) {
+
+  // ── حالة البحث ─────────────────────────────────────────────────────────
   const [mode,        setMode]        = useState<SearchMode>("AR");
   const [query,       setQuery]       = useState("");
   const [items,       setItems]       = useState<FastSearchItem[]>([]);
@@ -45,41 +55,58 @@ export function ItemFastSearch({
   const [loading,     setLoading]     = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
 
-  // ── حالة الدُفعات ────────────────────────────────────────────────────────
-  const [batches,      setBatches]      = useState<BatchOption[]>([]);
-  const [batchLoading, setBatchLoading] = useState(false);
-  const [selectedBatch,setSelectedBatch]= useState<BatchOption | null>(null);
-  const [batchItemId,  setBatchItemId]  = useState<string | null>(null);
-  const [batchMode,    setBatchMode]    = useState(false);
+  // ── فلاتر إضافية ────────────────────────────────────────────────────────
+  const [inStockOnly, setInStockOnly] = useState(false);
+  const [minPrice,    setMinPrice]    = useState("");
+  const [maxPrice,    setMaxPrice]    = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
+  // ── حالة الدُفعات ─────────────────────────────────────────────────────
+  const [batches,       setBatches]       = useState<BatchOption[]>([]);
+  const [batchLoading,  setBatchLoading]  = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<BatchOption | null>(null);
+  const [batchItemId,   setBatchItemId]   = useState<string | null>(null);
+  const [batchMode,     setBatchMode]     = useState(false);
+
+  // ── refs ────────────────────────────────────────────────────────────────
   const searchRef      = useRef<HTMLInputElement>(null);
   const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preloadRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowRefs        = useRef<(HTMLTableRowElement | null)[]>([]);
   const abortRef       = useRef<AbortController | null>(null);
   const batchAbortRef  = useRef<AbortController | null>(null);
-  // لمنع تعارض الكيبورد مع الماوس: نتجاهل onMouseEnter لـ 400ms بعد آخر ضغط سهم
   const lastKeyboardAt = useRef<number>(0);
 
-  // ── إعادة ضبط الدُفعات ──────────────────────────────────────────────────
+  // ── إعادة ضبط الدُفعات ────────────────────────────────────────────────
   const resetBatches = useCallback(() => {
+    if (batchAbortRef.current) { batchAbortRef.current.abort(); batchAbortRef.current = null; }
     setBatches([]);
     setSelectedBatch(null);
     setBatchItemId(null);
     setBatchMode(false);
+    setBatchLoading(false);
   }, []);
 
-  // ── تحميل الدُفعات عند الطلب الصريح فقط ────────────────────────────────
-  const loadBatches = useCallback(async (item: FastSearchItem): Promise<boolean> => {
-    if (!item.hasExpiry || !warehouseId) return false;
-    if (batchItemId === item.id && batches.length > 0) {
-      setBatchMode(true);
-      return true;
+  // ── تحميل الدُفعات (مع أو بدون فتح اللوحة) ─────────────────────────
+  const loadBatches = useCallback(async (
+    item: FastSearchItem,
+    openPanel = true,
+  ): Promise<BatchOption[]> => {
+    if (!item.hasExpiry || !warehouseId) return [];
+
+    // إذا كانت محملة بالفعل لنفس الصنف → فقط افتح اللوحة
+    if (batchItemId === item.id && batches.length > 0 && !batchLoading) {
+      if (openPanel) setBatchMode(true);
+      return batches;
     }
+
     if (batchAbortRef.current) batchAbortRef.current.abort();
     batchAbortRef.current = new AbortController();
+
     setBatchLoading(true);
     setBatchItemId(item.id);
-    setBatchMode(true);
+    if (openPanel) setBatchMode(true);
+
     try {
       const date = invoiceDate || new Date().toISOString().split("T")[0];
       const r = await fetch(
@@ -90,22 +117,39 @@ export function ItemFastSearch({
         const data: BatchOption[] = await r.json();
         setBatches(data);
         setSelectedBatch(data[0] ?? null);
-        return true;
+        return data;
       }
     } catch (e: any) {
-      if (e.name === "AbortError") return false;
+      if (e.name === "AbortError") return [];
     } finally {
       setBatchLoading(false);
     }
-    return false;
-  }, [warehouseId, invoiceDate, batchItemId, batches.length]);
+    return [];
+  }, [warehouseId, invoiceDate, batchItemId, batches, batchLoading]);
 
-  // ── إضافة صنف للفاتورة ──────────────────────────────────────────────────
+  // ── تحميل مسبق صامت عند التمييز ─────────────────────────────────────
+  // يحذف race-condition: بحلول وقت الضغط على Enter تكون الدُفعات جاهزة
+  useEffect(() => {
+    if (preloadRef.current) clearTimeout(preloadRef.current);
+    const item = items[highlighted];
+    if (!item?.hasExpiry || !warehouseId || batchMode) return;
+    if (batchItemId === item.id) return;   // جاري التحميل أو محمّل بالفعل
+
+    preloadRef.current = setTimeout(() => {
+      loadBatches(item, false);           // صامت: لا يفتح اللوحة
+    }, PRELOAD_DELAY_MS);
+
+    return () => {
+      if (preloadRef.current) clearTimeout(preloadRef.current);
+    };
+  }, [highlighted, items, warehouseId, batchMode, batchItemId, loadBatches]);
+
+  // ── إضافة الصنف ──────────────────────────────────────────────────────
   const selectItem = useCallback((item: FastSearchItem, batch?: BatchOption | null) => {
-    const resolvedBatch = batch !== undefined ? batch : (selectedBatch ?? batches[0] ?? null);
+    const resolved = batch !== undefined ? batch : (selectedBatch ?? batches[0] ?? null);
     onItemSelected({
       item,
-      batch:             item.hasExpiry ? resolvedBatch : null,
+      batch:             item.hasExpiry ? resolved : null,
       availableQtyMinor: item.availableQtyMinor,
       allBatches:        item.hasExpiry ? batches : [],
     });
@@ -113,7 +157,7 @@ export function ItemFastSearch({
     setTimeout(() => searchRef.current?.focus(), 30);
   }, [onItemSelected, selectedBatch, batches, resetBatches]);
 
-  // ── البحث ───────────────────────────────────────────────────────────────
+  // ── البحث ─────────────────────────────────────────────────────────────
   const doSearch = useCallback(async (q: string, pg: number, md: SearchMode) => {
     if (!q.trim()) { setItems([]); setTotal(0); resetBatches(); return; }
     if (abortRef.current) abortRef.current.abort();
@@ -121,16 +165,17 @@ export function ItemFastSearch({
     setLoading(true);
     resetBatches();
     try {
-      const { nameQ, minPrice, maxPrice } = parsePriceFilter(q);
-      const effectiveQ = nameQ || q;
+      const minP = minPrice.trim() ? parseFloat(minPrice) : undefined;
+      const maxP = maxPrice.trim() ? parseFloat(maxPrice) : undefined;
+
       const params = new URLSearchParams({
-        warehouseId, mode: md, q: effectiveQ,
+        warehouseId, mode: md, q: q.trim(),
         page: String(pg), pageSize: String(PAGE_SIZE),
-        includeZeroStock: "true",
-        ...(excludeServices ? { excludeServices: "true" } : {}),
-        ...(drugsOnly ? { drugsOnly: "true" } : {}),
-        ...(minPrice !== undefined ? { minPrice: String(minPrice) } : {}),
-        ...(maxPrice !== undefined ? { maxPrice: String(maxPrice) } : {}),
+        includeZeroStock: inStockOnly ? "false" : "true",
+        ...(excludeServices    ? { excludeServices: "true" }   : {}),
+        ...(drugsOnly          ? { drugsOnly:        "true" }   : {}),
+        ...(minP !== undefined ? { minPrice: String(minP) }    : {}),
+        ...(maxP !== undefined ? { maxPrice: String(maxP) }    : {}),
       });
       const r = await fetch(`/api/items/search?${params}`, { signal: abortRef.current.signal });
       if (r.ok) {
@@ -145,25 +190,35 @@ export function ItemFastSearch({
     } finally {
       setLoading(false);
     }
-  }, [warehouseId, excludeServices, drugsOnly, resetBatches]);
+  }, [warehouseId, excludeServices, drugsOnly, resetBatches, inStockOnly, minPrice, maxPrice]);
 
-  const onQueryChange = useCallback((val: string) => {
-    setQuery(val);
-    setPage(1);
+  const triggerSearch = useCallback((val: string, pg = 1, md = mode) => {
+    setPage(pg);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(val, 1, mode), DEBOUNCE_MS);
+    debounceRef.current = setTimeout(() => doSearch(val, pg, md), DEBOUNCE_MS);
   }, [doSearch, mode]);
 
-  const onModeChange = useCallback((md: SearchMode) => {
+  const onQueryChange = (val: string) => {
+    setQuery(val);
+    triggerSearch(val);
+  };
+
+  const onModeChange = (md: SearchMode) => {
     setMode(md);
     setPage(1);
     if (query.trim()) doSearch(query, 1, md);
-    // ركّز على حقل البحث بعد تغيير الوضع
     setTimeout(() => searchRef.current?.focus(), 0);
-  }, [query, doSearch]);
+  };
 
-  // ── لوحة المفاتيح ────────────────────────────────────────────────────────
-  // ملاحظة: يجب ألا تكون async — تسبب race condition مع React state
+  // إعادة بحث عند تغيير الفلاتر
+  useEffect(() => {
+    if (query.trim()) {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => doSearch(query, 1, mode), DEBOUNCE_MS);
+    }
+  }, [inStockOnly, minPrice, maxPrice]);  // eslint-disable-line
+
+  // ── لوحة المفاتيح ─────────────────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -187,22 +242,33 @@ export function ItemFastSearch({
       e.preventDefault();
       const item = items[highlighted];
       if (!item) return;
+
       if (!item.hasExpiry || hideStockWarning) {
+        // صنف بلا صلاحية: أضفه مباشرةً
         selectItem(item, null);
       } else if (batchMode) {
+        // اللوحة مفتوحة: انتظر اكتمال التحميل قبل الإضافة
+        if (batchLoading) return;
         selectItem(item);
       } else {
-        loadBatches(item);
+        // صنف بصلاحية: افتح لوحة الدُفعات (غالباً تكون محملة مسبقاً)
+        setBatchMode(true);
+        if (batchItemId !== item.id || batches.length === 0) {
+          loadBatches(item, true);
+        }
       }
     } else if (e.key === "Escape") {
       if (batchMode) resetBatches();
       else onClose();
     }
-  }, [items, highlighted, batchMode, selectItem, loadBatches, resetBatches, onClose]);
+  }, [items, highlighted, batchMode, batchLoading, batchItemId, batches, selectItem, loadBatches, resetBatches, onClose, hideStockWarning]);
 
+  // ── إعادة الضبط عند الإغلاق ──────────────────────────────────────────
   useEffect(() => {
     if (!open) {
-      setQuery(""); setItems([]); setTotal(0); setHighlighted(-1); resetBatches();
+      setQuery(""); setItems([]); setTotal(0); setHighlighted(-1);
+      setPage(1);
+      resetBatches();
     }
   }, [open, resetBatches]);
 
@@ -213,37 +279,15 @@ export function ItemFastSearch({
     }
   }, [open]);
 
-  const totalPages  = Math.ceil(total / PAGE_SIZE);
-  const currentItem = highlighted >= 0 ? items[highlighted] : null;
+  // ── قيم مشتقة ─────────────────────────────────────────────────────────
+  const totalPages    = Math.ceil(total / PAGE_SIZE);
+  const currentItem   = highlighted >= 0 ? items[highlighted] : null;
   const showBatchPanel = batchMode && currentItem?.hasExpiry;
 
-  // ── شارة المخزون — تستخدم formatAvailability المشتركة (علبة + قرص بدل كسور) ──
-  const StockBadge = ({ item }: { item: FastSearchItem }) => {
-    const qtyMinor = parseFloat(item.availableQtyMinor ?? "0");
-    const label = formatAvailability(item.availableQtyMinor, "major", item);
-    if (hideStockWarning) {
-      return (
-        <span className="inline-flex items-center gap-1 text-muted-foreground text-[12px]">
-          <Package className="h-3.5 w-3.5" />
-          {label}
-        </span>
-      );
-    }
-    if (qtyMinor > 0) {
-      return (
-        <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold text-[12px]">
-          <Package className="h-3.5 w-3.5" />
-          {label}
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1 text-rose-400 text-[12px]">
-        <PackageX className="h-3.5 w-3.5" />
-        نفد
-      </span>
-    );
-  };
+  const batchesReadyForCurrentItem =
+    currentItem != null &&
+    batchItemId === currentItem.id &&
+    !batchLoading;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -265,69 +309,129 @@ export function ItemFastSearch({
           </DialogTitle>
         </DialogHeader>
 
-        {/* ── شريط البحث ── */}
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b bg-background">
-          <select
-            value={mode}
-            onChange={(e) => onModeChange(e.target.value as SearchMode)}
-            className="peachtree-select text-[12px] h-8 w-28 shrink-0"
-            data-testid="select-fast-search-mode"
-          >
-            <option value="AR">اسم عربي</option>
-            <option value="EN">اسم إنجليزي</option>
-            <option value="CODE">كود</option>
-            <option value="BARCODE">باركود</option>
-          </select>
-          <div className="relative flex-1">
-            <input
-              ref={searchRef}
-              type="text"
-              value={query}
-              onChange={(e) => onQueryChange(e.target.value)}
-              onKeyDown={handleKeyDown}
-              dir={mode === "EN" ? "ltr" : "rtl"}
-              lang={mode === "EN" ? "en" : "ar"}
-              inputMode={mode === "EN" ? "text" : "text"}
-              placeholder={
-                mode === "AR"      ? 'ابحث بالاسم العربي، مثال: باراسيتامول 20' :
-                mode === "EN"      ? 'Search by English name, e.g. paracetamol 20' :
-                mode === "CODE"    ? 'ابحث بكود الصنف' :
-                                     'ابحث بالباركود'
-              }
-              className={`peachtree-input w-full h-8 text-[13px] pl-8 ${mode === "EN" ? "font-mono tracking-wide" : ""}`}
-              autoComplete="off"
-              data-testid="input-fast-search-query"
-            />
-            {loading && (
-              <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
-            )}
-          </div>
-          {/* مؤشر لغة البحث */}
-          {mode === "EN" && (
-            <span
-              className="shrink-0 text-[10px] font-bold tracking-widest border rounded px-1.5 py-0.5 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700 select-none"
-              title="وضع الكتابة الإنجليزية نشط"
+        {/* ── شريط البحث الرئيسي ── */}
+        <div className="border-b bg-background">
+          <div className="flex items-center gap-2 px-4 py-2.5">
+            <select
+              value={mode}
+              onChange={(e) => onModeChange(e.target.value as SearchMode)}
+              className="peachtree-select text-[12px] h-8 w-28 shrink-0"
+              data-testid="select-fast-search-mode"
             >
-              EN
-            </span>
-          )}
-          {/* مؤشر الحالة */}
-          <div className="text-[11px] text-muted-foreground whitespace-nowrap hidden sm:block">
-            {!batchMode ? (
-              <span>
-                ↑↓ تنقل · <kbd className="border rounded px-1 font-mono">↵</kbd>{" "}
-                {currentItem?.hasExpiry ? "دُفعات" : "إضافة"} · ESC خروج
-              </span>
-            ) : (
-              <span className="text-primary font-semibold">
-                <kbd className="border rounded px-1 font-mono">↵</kbd> إضافة · ESC رجوع
+              <option value="AR">اسم عربي</option>
+              <option value="EN">اسم إنجليزي</option>
+              <option value="CODE">كود</option>
+              <option value="BARCODE">باركود</option>
+            </select>
+
+            <div className="relative flex-1">
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                dir={mode === "EN" ? "ltr" : "rtl"}
+                placeholder={
+                  mode === "AR"      ? "ابحث بالاسم العربي..." :
+                  mode === "EN"      ? "Search by English name..." :
+                  mode === "CODE"    ? "ابحث بكود الصنف..." :
+                                       "ابحث بالباركود..."
+                }
+                className={`peachtree-input w-full h-8 text-[13px] pl-8 ${mode === "EN" ? "font-mono tracking-wide" : ""}`}
+                autoComplete="off"
+                data-testid="input-fast-search-query"
+              />
+              {loading && (
+                <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+              )}
+            </div>
+
+            {mode === "EN" && (
+              <span className="shrink-0 text-[10px] font-bold border rounded px-1.5 py-0.5 bg-blue-50 dark:bg-blue-950 text-blue-600 border-blue-300">
+                EN
               </span>
             )}
+
+            {/* زر الفلاتر */}
+            <button
+              type="button"
+              onClick={() => setShowFilters(f => !f)}
+              className={`shrink-0 h-8 px-2 rounded border text-[12px] flex items-center gap-1 transition-colors ${showFilters ? "bg-primary/10 border-primary/40 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+              title="فلاتر متقدمة"
+              data-testid="button-fast-search-filters"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+            </button>
+
+            {/* تلميح لوحة المفاتيح */}
+            <div className="text-[11px] text-muted-foreground whitespace-nowrap hidden md:block">
+              {!batchMode ? (
+                <span>↑↓ · ↵ {currentItem?.hasExpiry ? "دُفعات" : "إضافة"} · ESC</span>
+              ) : (
+                <span className="text-primary font-semibold">
+                  {batchLoading ? "⏳ جاري..." : "↵ إضافة · ESC رجوع"}
+                </span>
+              )}
+            </div>
           </div>
+
+          {/* ── شريط الفلاتر (قابل للإخفاء) ── */}
+          {showFilters && (
+            <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 px-4 pb-2.5 pt-0">
+              {/* فلتر السعر */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">سعر البيع:</span>
+                <input
+                  type="number"
+                  value={minPrice}
+                  onChange={(e) => setMinPrice(e.target.value)}
+                  placeholder="من"
+                  className="peachtree-input h-7 w-20 text-[12px] text-center"
+                  data-testid="input-fast-search-min-price"
+                />
+                <span className="text-[11px] text-muted-foreground">—</span>
+                <input
+                  type="number"
+                  value={maxPrice}
+                  onChange={(e) => setMaxPrice(e.target.value)}
+                  placeholder="إلى"
+                  className="peachtree-input h-7 w-20 text-[12px] text-center"
+                  data-testid="input-fast-search-max-price"
+                />
+              </div>
+
+              {/* فلتر المخزون */}
+              {!hideStockWarning && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={inStockOnly}
+                    onChange={(e) => setInStockOnly(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-primary"
+                    data-testid="checkbox-fast-search-in-stock-only"
+                  />
+                  <span className="text-[12px] text-foreground">الأصناف المتاحة فقط</span>
+                </label>
+              )}
+
+              {/* زر إعادة الضبط */}
+              {(minPrice || maxPrice || inStockOnly) && (
+                <button
+                  type="button"
+                  onClick={() => { setMinPrice(""); setMaxPrice(""); setInStockOnly(false); }}
+                  className="text-[11px] text-rose-500 hover:underline"
+                  data-testid="button-fast-search-reset-filters"
+                >
+                  مسح الفلاتر
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── جسم النافذة ── */}
-        <div className="flex" style={{ height: "54vh", minHeight: 280 }}>
+        <div className="flex" style={{ height: "52vh", minHeight: 260 }}>
 
           {/* جدول النتائج */}
           <div className="flex-1 overflow-auto">
@@ -347,8 +451,11 @@ export function ItemFastSearch({
               </thead>
               <tbody>
                 {items.map((item, idx) => {
-                  const isHl      = idx === highlighted;
-                  const hasStock  = parseFloat(item.availableQtyMinor ?? "0") > 0;
+                  const isHl     = idx === highlighted;
+                  const hasStock = parseFloat(item.availableQtyMinor ?? "0") > 0;
+                  const isPreloading =
+                    isHl && item.hasExpiry && batchLoading && batchItemId === item.id;
+
                   return (
                     <tr
                       key={item.id}
@@ -360,21 +467,24 @@ export function ItemFastSearch({
                       ].join(" ")}
                       onClick={() => {
                         setHighlighted(idx);
-                        resetBatches();
-                        if (!item.hasExpiry || hideStockWarning) selectItem(item, null);
-                        else loadBatches(item);
+                        if (!item.hasExpiry || hideStockWarning) {
+                          selectItem(item, null);
+                        } else {
+                          setBatchMode(true);
+                          if (batchItemId !== item.id || batches.length === 0) {
+                            loadBatches(item, true);
+                          }
+                        }
                       }}
                       onMouseEnter={() => {
-                        // لا تتدخل لو لوحة الدُفعات مفتوحة أو الكيبورد استُخدم منذ أقل من 400ms
                         if (batchMode) return;
                         if (Date.now() - lastKeyboardAt.current < 400) return;
                         if (!isHl) setHighlighted(idx);
                       }}
                       data-testid={`row-fast-search-${item.id}`}
                     >
-                      <td className="font-mono text-[11px] text-muted-foreground">
-                        {item.itemCode}
-                      </td>
+                      <td className="font-mono text-[11px] text-muted-foreground">{item.itemCode}</td>
+
                       <td>
                         <div className="flex items-center gap-1.5">
                           <span className={`font-semibold text-[13px] ${!hasStock && !hideStockWarning ? "text-muted-foreground" : "text-foreground"}`}>
@@ -382,22 +492,27 @@ export function ItemFastSearch({
                           </span>
                           {item.hasExpiry && (
                             <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 font-medium bg-amber-50 border border-amber-200 rounded px-1 py-0 leading-4">
-                              <AlertCircle className="h-2.5 w-2.5" /> صلاحية
+                              <AlertCircle className="h-2.5 w-2.5" />صلاحية
                             </span>
+                          )}
+                          {isPreloading && (
+                            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                           )}
                         </div>
                       </td>
-                      <td className="text-muted-foreground text-[11px]">
-                        {item.nameEn || "—"}
-                      </td>
+
+                      <td className="text-muted-foreground text-[11px]">{item.nameEn || "—"}</td>
+
                       <td className="text-center text-muted-foreground text-[12px]">
                         {item.majorUnitName || item.minorUnitName || "—"}
                       </td>
+
                       <td className="text-center peachtree-amount text-[13px]">
                         {formatNumber(item.salePriceCurrent)}
                       </td>
+
                       <td className="text-center">
-                        <StockBadge item={item} />
+                        <StockBadge item={item} hide={hideStockWarning} />
                       </td>
                     </tr>
                   );
@@ -413,7 +528,7 @@ export function ItemFastSearch({
                 {!loading && !query.trim() && (
                   <tr>
                     <td colSpan={6} className="text-center text-muted-foreground py-12 text-[14px]">
-                      ابدأ الكتابة للبحث عن الصنف...
+                      ابدأ الكتابة للبحث...
                     </td>
                   </tr>
                 )}
@@ -423,7 +538,7 @@ export function ItemFastSearch({
 
           {/* ── لوحة الدُفعات ── */}
           {showBatchPanel && (
-            <div className="w-60 border-r flex flex-col bg-amber-50/80 dark:bg-amber-900/20 shrink-0">
+            <div className="w-64 border-r flex flex-col bg-amber-50/80 dark:bg-amber-900/20 shrink-0">
               <div className="px-3 py-2.5 border-b text-[12px] font-semibold text-amber-800 dark:text-amber-300 flex items-center justify-between">
                 <span>اختر الدُفعة · ↵ للإضافة</span>
                 {batchLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -431,8 +546,7 @@ export function ItemFastSearch({
 
               {batchLoading ? (
                 <div className="flex items-center justify-center flex-1 gap-2 text-[13px] text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  جاري التحميل...
+                  <Loader2 className="h-4 w-4 animate-spin" />جاري التحميل...
                 </div>
               ) : batches.length === 0 ? (
                 <div className="flex items-center justify-center flex-1 text-[13px] text-muted-foreground">
@@ -441,17 +555,17 @@ export function ItemFastSearch({
               ) : (
                 <div className="overflow-auto flex-1">
                   {batches.map((b, i) => {
-                    const isSel = selectedBatch?.expiryDate === b.expiryDate;
-                    const qtyMinor = parseFloat(b.qtyAvailableMinor);
-                    const expiryLabel = `${String(b.expiryMonth).padStart(2, "0")}/${b.expiryYear}`;
-                    const qtyLabel = currentItem
+                    const isSel     = selectedBatch?.expiryDate === b.expiryDate;
+                    const qtyMinor  = parseFloat(b.qtyAvailableMinor);
+                    const expLabel  = `${String(b.expiryMonth).padStart(2, "0")}/${b.expiryYear}`;
+                    const qtyLabel  = currentItem
                       ? formatAvailability(b.qtyAvailableMinor, "major", currentItem)
                       : String(qtyMinor);
                     return (
                       <div
                         key={i}
                         className={[
-                          "flex items-center justify-between px-3 py-3 cursor-pointer border-b text-[13px] transition-colors",
+                          "flex items-center justify-between px-3 py-2.5 cursor-pointer border-b text-[13px] transition-colors",
                           isSel
                             ? "bg-amber-200/80 font-semibold text-amber-900"
                             : "hover:bg-amber-100/70 text-foreground",
@@ -462,8 +576,18 @@ export function ItemFastSearch({
                         }}
                         data-testid={`batch-option-${i}`}
                       >
-                        <span className="font-mono font-semibold">{expiryLabel}</span>
-                        <span className={qtyMinor > 0 ? "text-emerald-700 font-bold" : "text-slate-400"}>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-mono font-semibold">{expLabel}</span>
+                          {b.lotSalePrice && b.lotSalePrice !== "0" && (
+                            <span className="text-[11px] text-blue-600 font-medium">
+                              {formatNumber(b.lotSalePrice)} جنيه
+                            </span>
+                          )}
+                          {b.hasPriceConflict && (
+                            <span className="text-[10px] text-rose-500 font-bold">⚠ سعرين</span>
+                          )}
+                        </div>
+                        <span className={qtyMinor > 0 ? "text-emerald-700 font-bold text-[12px]" : "text-slate-400 text-[12px]"}>
                           {qtyLabel}
                         </span>
                       </div>
@@ -476,13 +600,13 @@ export function ItemFastSearch({
                 className="px-3 py-2 border-t text-[11px] text-muted-foreground cursor-pointer hover:bg-muted/40 flex items-center gap-1"
                 onClick={resetBatches}
               >
-                <ChevronLeft className="h-3 w-3" /> ESC رجوع للقائمة
+                <ChevronLeft className="h-3 w-3" />ESC رجوع للقائمة
               </div>
             </div>
           )}
         </div>
 
-        {/* ── Pagination ── */}
+        {/* ── Pagination + أزرار الإجراء ── */}
         <div className="flex items-center justify-between px-4 py-2 border-t bg-muted/30 text-[12px]">
           <div className="flex items-center gap-1">
             <button
@@ -499,28 +623,40 @@ export function ItemFastSearch({
               data-testid="button-fast-search-next"
             >التالي ›</button>
           </div>
+
           <div className="flex items-center gap-2">
             {currentItem && !showBatchPanel && (
               <button
                 className="peachtree-btn-sm bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
                 onClick={() => {
-                  if (!currentItem.hasExpiry) selectItem(currentItem, null);
-                  else loadBatches(currentItem);
+                  if (!currentItem.hasExpiry || hideStockWarning) {
+                    selectItem(currentItem, null);
+                  } else {
+                    setBatchMode(true);
+                    if (batchItemId !== currentItem.id || batches.length === 0) {
+                      loadBatches(currentItem, true);
+                    }
+                  }
                 }}
                 data-testid="button-fast-search-add"
               >
-                {currentItem.hasExpiry ? "دُفعات ↵" : "إضافة ↵"}
+                {currentItem.hasExpiry
+                  ? (batchesReadyForCurrentItem ? `دُفعات (${batches.length}) ↵` : "دُفعات ↵")
+                  : "إضافة ↵"}
               </button>
             )}
-            {showBatchPanel && selectedBatch && currentItem && (
+
+            {showBatchPanel && currentItem && (
               <button
-                className="peachtree-btn-sm bg-emerald-600 text-white hover:bg-emerald-700 font-semibold"
-                onClick={() => selectItem(currentItem)}
+                className="peachtree-btn-sm bg-emerald-600 text-white hover:bg-emerald-700 font-semibold disabled:opacity-50"
+                onClick={() => !batchLoading && selectItem(currentItem)}
+                disabled={batchLoading}
                 data-testid="button-fast-search-confirm-batch"
               >
-                إضافة الدفعة ↵
+                {batchLoading ? "⏳ جاري التحميل..." : "إضافة الدفعة ↵"}
               </button>
             )}
+
             <button
               className="peachtree-btn-sm"
               onClick={() => batchMode ? resetBatches() : onClose()}
