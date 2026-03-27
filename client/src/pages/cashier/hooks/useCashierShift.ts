@@ -166,19 +166,22 @@ export function useCashierShift() {
       const totals = lastShiftTotalsRef.current;
       const settings = receiptSettings ?? { header: "", footer: "", logoText: "", autoPrint: false, showPreview: false };
       if (totals) {
+        // الحقول تأتي بصيغة snake_case من raw SQL RETURNING *
+        const raw = closedShift as any;
         printShiftHandover({
-          cashierName:       closedShift.cashierName  || "",
-          unitName:          lastUnitNameRef.current   || "",
-          openedAt:          closedShift.openedAt      || "",
-          closedAt:          closedShift.closedAt      || new Date().toISOString(),
+          receiptNumber:     raw.handover_receipt_number ?? raw.handoverReceiptNumber ?? null,
+          cashierName:       raw.cashier_name   || raw.cashierName   || "",
+          unitName:          lastUnitNameRef.current || "",
+          openedAt:          raw.opened_at      || raw.openedAt      || "",
+          closedAt:          raw.closed_at      || raw.closedAt      || new Date().toISOString(),
           openingCash:       parseFloat(totals.openingCash       || "0"),
           cashSales:         parseFloat(totals.totalCollected    || "0"),
           creditSales:       parseFloat(totals.creditCollected   || "0"),
           deliveryCollected: parseFloat(totals.deliveryCollected ?? "0"),
           returns:           parseFloat(totals.totalRefunded     || "0"),
           netShift:          parseFloat(totals.netCash           || "0"),
-          closingCash:       parseFloat(closedShift.closingCash  || "0"),
-          variance:          parseFloat(closedShift.variance     || "0"),
+          closingCash:       parseFloat(raw.closing_cash || raw.closingCash || "0"),
+          variance:          parseFloat(raw.variance     || "0"),
         }, settings);
       }
 

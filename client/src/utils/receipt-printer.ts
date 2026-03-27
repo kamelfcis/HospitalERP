@@ -178,6 +178,7 @@ function triggerIframePrint(iframe: HTMLIFrameElement): void {
 //  إيصال تسليم الدرج — Shift Handover Receipt
 // ══════════════════════════════════════════════════════════════════
 export interface ShiftHandoverData {
+  receiptNumber: number | null;
   cashierName: string;
   unitName: string;
   openedAt: string;
@@ -247,7 +248,12 @@ function buildShiftHandoverHtml(data: ShiftHandoverData, settings: ReceiptSettin
   <div class="center bold big">${settings.header}</div>
   <div class="solid"></div>
 
-  <div class="center bold" style="font-size:13px;margin-bottom:3px;">إيصال تسليم درج</div>
+  <div class="center bold" style="font-size:13px;margin-bottom:1px;">إيصال تسليم درج</div>
+  ${data.receiptNumber != null
+    ? `<div style="text-align:center;font-size:22px;font-weight:900;letter-spacing:2px;border:2px solid #000;padding:3px 0;margin:3px 0;">
+        # ${String(data.receiptNumber).padStart(6, "0")}
+      </div>`
+    : ""}
 
   <div class="info-row"><span class="bold">الكاشير:</span><span>${data.cashierName}</span></div>
   <div class="info-row"><span class="bold">الوحدة:</span><span>${data.unitName}</span></div>

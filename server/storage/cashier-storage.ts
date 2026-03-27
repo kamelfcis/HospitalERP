@@ -446,7 +446,8 @@ const methods = {
           expected_cash = ${expectedCashVal},
           variance     = ${varianceVal},
           closed_at    = NOW(),
-          closed_by    = ${closedByUserId}
+          closed_by    = ${closedByUserId},
+          handover_receipt_number = nextval('handover_receipt_num_seq')
         WHERE id = ${shiftId}
           AND status IN ('open', 'stale')
         RETURNING *

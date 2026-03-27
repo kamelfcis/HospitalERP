@@ -59,6 +59,7 @@ export interface HandoverShiftRow {
   returnInvoiceCount: number;
   netTotal: number;
   transferredToTreasury: number;
+  handoverReceiptNumber: number | null;
   creditInvoices: CreditInvoiceItem[];
 }
 
@@ -206,7 +207,8 @@ const methods = {
         COALESCE(ref.refund_total, 0)::float                       AS "returnsTotal",
         COALESCE(ref.refund_count, 0)::int                         AS "returnInvoiceCount",
         (COALESCE(r.cash_total, 0) + COALESCE(c.credit_total, 0) + COALESCE(d.delivery_total, 0) - COALESCE(ref.refund_total, 0))::float AS "netTotal",
-        COALESCE(s.closing_cash, 0)::float                         AS "transferredToTreasury"
+        COALESCE(s.closing_cash, 0)::float                         AS "transferredToTreasury",
+        s.handover_receipt_number                                   AS "handoverReceiptNumber"
       FROM cashier_shifts s
       LEFT JOIN pharmacies p ON p.id = s.pharmacy_id
       LEFT JOIN receipts_agg r   ON r.shift_id   = s.id

@@ -34,6 +34,7 @@ interface HandoverShiftRow {
   netTotal: number;
   transferredToTreasury: number;
   variance: number;
+  handoverReceiptNumber?: number | null;
   creditInvoices?: CreditInvoiceItem[];
 }
 
@@ -118,6 +119,7 @@ const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggl
   const handlePrint = useCallback(() => {
     const settings = receiptSettings ?? { header: "", footer: "", logoText: "", autoPrint: false, showPreview: false };
     printShiftHandover({
+      receiptNumber:     row.handoverReceiptNumber ?? null,
       cashierName:       row.cashierName,
       unitName:          row.pharmacyName || "",
       openedAt:          row.openedAt,
@@ -136,8 +138,17 @@ const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggl
   return (
     <Fragment>
       <TableRow className="hover:bg-muted/30" data-testid={`row-shift-${row.shiftId}`}>
-        <TableCell className="font-mono text-xs text-muted-foreground" data-testid={`text-shift-id-${row.shiftId}`}>
-          {shiftShortId(row.shiftId)}
+        <TableCell className="font-mono text-xs" data-testid={`text-shift-id-${row.shiftId}`}>
+          {row.handoverReceiptNumber != null ? (
+            <div>
+              <span className="font-bold text-sm text-foreground">
+                # {String(row.handoverReceiptNumber).padStart(6, "0")}
+              </span>
+              <div className="text-muted-foreground">{shiftShortId(row.shiftId)}</div>
+            </div>
+          ) : (
+            <span className="text-muted-foreground">{shiftShortId(row.shiftId)}</span>
+          )}
         </TableCell>
         <TableCell className="whitespace-nowrap" data-testid={`text-date-${row.shiftId}`}>
           {row.shiftDate ?? "—"}

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex, pgSequence } from "drizzle-orm/pg-core";
+
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { admissionStatusEnum, cashierShiftStatusEnum } from "./enums";
@@ -8,6 +9,9 @@ import { accounts } from "./finance";
 import { departments, pharmacies, warehouses, inventoryLots } from "./inventory";
 import { salesInvoiceHeaders, services, patientInvoiceHeaders } from "./invoicing";
 import { companies } from "./companies";
+
+// ── تسلسل ترقيم إيصالات تسليم الدرج — يضمن ترقيماً قوياً للمحاسبة ──────────
+export const handoverReceiptNumSeq = pgSequence("handover_receipt_num_seq", { startWith: 1, increment: 1 });
 
 // ─── المرضى ────────────────────────────────────────────────────────────────
 
@@ -100,6 +104,7 @@ export const cashierShifts = pgTable("cashier_shifts", {
   closedBy: varchar("closed_by"),
   staleAt: timestamp("stale_at"),
   staleReason: text("stale_reason"),
+  handoverReceiptNumber: integer("handover_receipt_number"),
 }, (table) => ({
   cashierIdx: index("idx_cashier_shifts_cashier").on(table.cashierId),
   statusIdx: index("idx_cashier_shifts_status").on(table.status),

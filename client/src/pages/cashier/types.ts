@@ -37,6 +37,7 @@ export interface CashierShift {
   closedBy: string | null;
   staleAt: string | null;
   staleReason: string | null;
+  handoverReceiptNumber: number | null;
 }
 
 // ── إجماليات الوردية (جلسة مالية كاملة) ──────────────────
