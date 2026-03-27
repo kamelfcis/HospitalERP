@@ -113,13 +113,19 @@ export const transfersInventoryMethods = {
       .groupBy(inventoryLots.expiryMonth, inventoryLots.expiryYear)
       .orderBy(asc(inventoryLots.expiryYear), asc(inventoryLots.expiryMonth));
 
-    return results.filter(r => r.expiryMonth !== null && r.expiryYear !== null).map(r => ({
-      expiryDate: `${r.expiryYear}-${String(r.expiryMonth).padStart(2, '0')}-01`,
-      expiryMonth: r.expiryMonth,
-      expiryYear: r.expiryYear,
-      qtyAvailableMinor: r.qtyAvailableMinor,
-      lotSalePrice: r.minSalePrice || undefined,
-    }));
+    return results.filter(r => r.expiryMonth !== null && r.expiryYear !== null).map(r => {
+      const minP = parseFloat(r.minSalePrice || "0");
+      const maxP = parseFloat(r.maxSalePrice || "0");
+      const hasPriceConflict = minP > 0 && maxP > 0 && Math.abs(maxP - minP) > 0.001;
+      return {
+        expiryDate: `${r.expiryYear}-${String(r.expiryMonth).padStart(2, '0')}-01`,
+        expiryMonth: r.expiryMonth,
+        expiryYear: r.expiryYear,
+        qtyAvailableMinor: r.qtyAvailableMinor,
+        lotSalePrice: r.minSalePrice || undefined,
+        hasPriceConflict,
+      };
+    });
   },
 
   async getItemAvailabilitySummary(this: DatabaseStorage, itemId: string, asOfDate: string, excludeExpired: boolean): Promise<{warehouseId: string; warehouseNameAr: string; qtyMinor: string; majorUnitName: string | null; majorToMinor: string | null}[]> {

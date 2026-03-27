@@ -21,5 +21,6 @@ export interface SalesLineLocal {
     qtyAvailableMinor: string;
     lotId?: string;
     lotSalePrice?: string;
+    hasPriceConflict?: boolean;
   }[];
 }

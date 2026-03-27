@@ -44,15 +44,19 @@ export function TransferLineTable({
 }: Props) {
   const multiPriceItems = new Set<string>();
   formLines.forEach((ln) => {
+    // كشف 1: نفس الصنف في سطور متعددة بأسعار مختلفة (بعد FEFO)
     const same = formLines.filter((l) => l.itemId === ln.itemId);
     if (same.length > 1) {
       const prices = new Set(same.map((l) => l.lotSalePrice || "0").filter((p) => p !== "0"));
       if (prices.size > 1) multiPriceItems.add(ln.itemId);
     }
     const opts = lineExpiryOptions[ln.id];
-    if (opts && opts.length > 1) {
+    if (opts && opts.length >= 1) {
+      // كشف 2: أسعار مختلفة عبر تواريخ صلاحية مختلفة
       const optPrices = new Set(opts.map((o) => o.lotSalePrice || "0").filter((p) => p !== "0"));
       if (optPrices.size > 1) multiPriceItems.add(ln.itemId);
+      // كشف 3: نفس تاريخ الصلاحية لكن دُفعات بأسعار مختلفة (hasPriceConflict)
+      if (opts.some((o) => o.hasPriceConflict)) multiPriceItems.add(ln.itemId);
     }
   });
 
@@ -234,11 +238,12 @@ export function TransferLineTable({
                   <td className="py-0.5 px-2 text-center whitespace-nowrap" data-testid={`cell-warning-${idx}`}>
                     {hasMultiPrice && (
                       <span
-                        title="تنبيه: هذا الصنف له دفعتين أو أكثر بأسعار بيع مختلفة — راجع تسعير المخزن الوجهة"
-                        className="text-orange-500 inline-flex items-center justify-center"
+                        title="تنبيه: هذا الصنف له دُفعات بأسعار بيع مختلفة — راجع تسعير المخزن الوجهة"
+                        className="inline-flex items-center justify-center gap-0.5 bg-yellow-400 text-yellow-900 rounded px-1 py-0.5"
                         data-testid={`icon-multi-price-${idx}`}
                       >
                         <AlertTriangle className="h-3.5 w-3.5" />
+                        <span className="text-[10px] font-bold leading-none">سعرين</span>
                       </span>
                     )}
                   </td>

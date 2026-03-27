@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, memo } from "react";
 import { Button } from "@/components/ui/button";
-import { X, BarChart3, Lock } from "lucide-react";
+import { X, BarChart3, Lock, AlertTriangle } from "lucide-react";
 import { formatNumber, formatQty } from "@/lib/formatters";
 import {
   formatAvailability, getUnitOptions,
@@ -101,6 +101,35 @@ export function InvoiceLineTable({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // ── كشف الأصناف ذات الأسعار المتعددة ───────────────────────────────────────
+  const multiPriceItems = new Set<string>();
+  lines.forEach((ln) => {
+    // كشف 1: نفس الصنف في سطور متعددة بأسعار مختلفة (بعد FEFO)
+    const same = lines.filter((l) => l.itemId === ln.itemId);
+    if (same.length > 1) {
+      const prices = new Set(same.map((l) => String(Math.round(l.salePrice * 100))));
+      if (prices.size > 1) multiPriceItems.add(ln.itemId);
+    }
+    // كشف 2: خيارات الصلاحية تحتوي على أسعار مختلفة (نفس التاريخ أو مختلف)
+    const opts = ln.expiryOptions;
+    if (opts && opts.length >= 1) {
+      const byExpiry = new Map<string, Set<string>>();
+      opts.forEach((o) => {
+        const key = `${o.expiryMonth}/${o.expiryYear}`;
+        if (!byExpiry.has(key)) byExpiry.set(key, new Set());
+        if (o.lotSalePrice && o.lotSalePrice !== "0") byExpiry.get(key)!.add(o.lotSalePrice);
+      });
+      for (const pr of byExpiry.values()) {
+        if (pr.size > 1) { multiPriceItems.add(ln.itemId); break; }
+      }
+      // كشف 3: hasPriceConflict من الباكند (تاريخ واحد لكن دُفعتان بسعرين)
+      if (opts.some((o) => o.hasPriceConflict)) multiPriceItems.add(ln.itemId);
+      // كشف 4: أسعار مختلفة عبر تواريخ صلاحية مختلفة
+      const allPrices = new Set(opts.map((o) => o.lotSalePrice || "0").filter((p) => p !== "0"));
+      if (allPrices.size > 1) multiPriceItems.add(ln.itemId);
+    }
+  });
+
   // ── التنقل بالأسهم ──────────────────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -184,7 +213,8 @@ export function InvoiceLineTable({
         </thead>
         <tbody>
           {lines.map((ln, i) => {
-            const needsExpiry = ln.item?.hasExpiry && !ln.expiryMonth;
+            const needsExpiry  = ln.item?.hasExpiry && !ln.expiryMonth;
+            const hasMultiPrice = multiPriceItems.has(ln.itemId);
             return (
               <tr
                 key={ln.tempId}
@@ -222,6 +252,16 @@ export function InvoiceLineTable({
                       {ln.priceSource === "lot" && (
                         <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded leading-none dark:bg-green-900/30 dark:text-green-300">
                           سعر دُفعة
+                        </span>
+                      )}
+                      {hasMultiPrice && (
+                        <span
+                          title="تنبيه: هذا الصنف له دُفعات بأسعار بيع مختلفة — راجع السعر قبل الحفظ"
+                          className="inline-flex items-center gap-0.5 bg-yellow-400 text-yellow-900 rounded px-1 py-0.5 leading-none"
+                          data-testid={`badge-multi-price-${i}`}
+                        >
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          <span className="text-[9px] font-bold">سعرين</span>
                         </span>
                       )}
                     </div>

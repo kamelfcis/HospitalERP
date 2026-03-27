@@ -22,6 +22,7 @@ export interface ExpiryOption {
   expiryYear: number | null;
   qtyAvailableMinor: string;
   lotSalePrice?: string;
+  hasPriceConflict?: boolean;
 }
 
 export function getEffectiveMediumToMinor(item: ItemLike | null | undefined): number {
