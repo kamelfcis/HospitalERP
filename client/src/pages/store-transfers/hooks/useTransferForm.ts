@@ -206,8 +206,9 @@ export function useTransferForm() {
       const qtyEntered = 1;
       const qtyInMinor = calculateQtyInMinor(qtyEntered, unitLevel, item);
 
+      const newLineId = crypto.randomUUID();
       const newLine: TransferLineLocal = {
-        id: crypto.randomUUID(),
+        id: newLineId,
         itemId: item.id,
         item,
         unitLevel,
@@ -224,8 +225,17 @@ export function useTransferForm() {
 
       setFormLines((prev) => [...prev, newLine]);
       setTimeout(() => barcodeInputRef.current?.focus(), 50);
+
+      // جلب خيارات الصلاحية في الخلفية فوراً (للإنذار الفوري + ملء القائمة مسبقاً)
+      if (item.hasExpiry && sourceWarehouseId) {
+        fetchExpiryOptions(item.id).then((opts) => {
+          if (opts.length > 0) {
+            setLineExpiryOptions((prev) => ({ ...prev, [newLineId]: opts }));
+          }
+        }).catch(() => {});
+      }
     },
-    []
+    [fetchExpiryOptions, setLineExpiryOptions, sourceWarehouseId]
   );
 
   const executeMutation = async () => {
