@@ -28,6 +28,8 @@ import {
   getDashboard,
   getWarehouseStock,
   resolveShortage,
+  markOrderedFromSupplier,
+  undoOrderedFromSupplier,
   type DashboardMode,
   type DisplayUnit,
 } from "../storage/shortage-storage";
@@ -110,10 +112,18 @@ export function registerShortageRoutes(app: Express): void {
           return res.status(400).json({ error: "displayUnit غير صالح" });
         }
 
+        // ── فلاتر المتابعة ──────────────────────────────────────────────
+        const excludeOrdered  = q.excludeOrdered  !== "false"; // default true
+        const showOrderedOnly = q.showOrderedOnly === "true";
+        const orderedFromDate = q.orderedFromDate || null;
+        const orderedToDate   = q.orderedToDate   || null;
+
         const { rows, total } = await getDashboard({
           mode, displayUnit, fromDate, toDate,
           categories, status: status as any, search, warehouseId,
-          showResolved, page, limit, sortBy, sortDir,
+          showResolved, excludeOrdered, showOrderedOnly,
+          orderedFromDate, orderedToDate,
+          page, limit, sortBy, sortDir,
         });
 
         return res.json({ rows, total, page, limit });
@@ -155,6 +165,55 @@ export function registerShortageRoutes(app: Express): void {
         return res.json({ success: true });
       } catch (err) {
         console.error("[shortage/resolve]", err);
+        return res.status(500).json({ error: "خطأ داخلي" });
+      }
+    }
+  );
+
+  // ── POST /api/shortage/followup/order ─────────────────────────────────────
+  //
+  // يُسجّل "تم طلبه من الشركة" لصنف محدد.
+  // يُعيد id السجل الجديد للـ Undo (حذف خلال 5 ثوان).
+  //
+  app.post(
+    "/api/shortage/followup/order",
+    requireAuth,
+    checkPermission(PERMISSIONS.SHORTAGE_MANAGE),
+    async (req, res) => {
+      try {
+        const { itemId, notes } = req.body as {
+          itemId: string;
+          notes?:  string;
+        };
+        if (!itemId || typeof itemId !== "string") {
+          return res.status(400).json({ error: "itemId مطلوب" });
+        }
+        const userId = (req.session as any).userId as string;
+        const record = await markOrderedFromSupplier(itemId, userId, notes ?? null);
+        return res.json({ success: true, followup: record });
+      } catch (err) {
+        console.error("[shortage/followup/order]", err);
+        return res.status(500).json({ error: "خطأ داخلي" });
+      }
+    }
+  );
+
+  // ── DELETE /api/shortage/followup/:followupId ─────────────────────────────
+  //
+  // Undo — يحذف سجل follow-up بالـ id (يُستدعى خلال 5 ثوان فقط من الـ frontend).
+  // SHORTAGE_MANAGE مطلوب.
+  //
+  app.delete(
+    "/api/shortage/followup/:followupId",
+    requireAuth,
+    checkPermission(PERMISSIONS.SHORTAGE_MANAGE),
+    async (req, res) => {
+      try {
+        const { followupId } = req.params;
+        const deleted = await undoOrderedFromSupplier(followupId);
+        return res.json({ success: deleted });
+      } catch (err) {
+        console.error("[shortage/followup/undo]", err);
         return res.status(500).json({ error: "خطأ داخلي" });
       }
     }

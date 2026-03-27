@@ -49,15 +49,21 @@ export interface RecordShortageParams {
 }
 
 export interface DashboardParams {
-  mode:          DashboardMode;
-  displayUnit:   DisplayUnit;
-  fromDate:      string;       // YYYY-MM-DD
-  toDate:        string;       // YYYY-MM-DD
-  categories?:   string[] | null;   // item_category: ['drug','supply','service']
-  status?:       StatusFilter;
-  search?:       string | null;
-  warehouseId?:  string | null;
-  showResolved?: boolean;
+  mode:              DashboardMode;
+  displayUnit:       DisplayUnit;
+  fromDate:          string;       // YYYY-MM-DD — فترة تحليل المبيعات
+  toDate:            string;       // YYYY-MM-DD
+  categories?:       string[] | null;   // item_category: ['drug','supply','service']
+  status?:           StatusFilter;
+  search?:           string | null;
+  warehouseId?:      string | null;
+  showResolved?:     boolean;
+  // ── فلاتر المتابعة ────────────────────────────────────────────────────────
+  excludeOrdered?:   boolean;      // استبعاد ما لديه follow-up نشط (افتراضي: true)
+  showOrderedOnly?:  boolean;      // إظهار المطلوب فقط
+  orderedFromDate?:  string | null; // YYYY-MM-DD — فلتر action_at
+  orderedToDate?:    string | null; // YYYY-MM-DD
+  // ─────────────────────────────────────────────────────────────────────────
   page:          number;
   limit:         number;
   sortBy:        string;
@@ -91,6 +97,20 @@ export interface DashboardRow {
   daysOfCoverage:          number | null;
   statusFlag:              string;
   totalCount:              number;
+  // ── Follow-up fields ─────────────────────────────────────────────────────
+  followupId:              string | null;   // آخر follow-up لهذا الصنف
+  followupActionType:      string | null;   // ordered_from_supplier | ...
+  followupDueDate:         string | null;   // ISO — متى تنتهي مدة الاستبعاد
+  followupActionAt:        string | null;   // متى تم الإجراء
+}
+
+// ── FollowupRecord — returned from markOrderedFromSupplier ────────────────────
+export interface FollowupRecord {
+  id:              string;
+  itemId:          string;
+  actionType:      string;
+  actionAt:        string;
+  followUpDueDate: string;
 }
 
 export interface WarehouseStockRow {
@@ -205,6 +225,10 @@ export async function getDashboard(params: DashboardParams): Promise<{
     mode, displayUnit, fromDate, toDate,
     categories, status, search, warehouseId,
     showResolved = false,
+    excludeOrdered  = true,
+    showOrderedOnly = false,
+    orderedFromDate = null,
+    orderedToDate   = null,
     page, limit,
     sortBy, sortDir,
   } = params;
@@ -244,6 +268,50 @@ export async function getDashboard(params: DashboardParams): Promise<{
   if (search) {
     const s = `%${search.trim()}%`;
     whereClauses.push(`(i.name_ar ILIKE ${push(s)} OR i.item_code ILIKE ${push(s)})`);
+  }
+
+  // ── فلاتر المتابعة (shortage_followups) ─────────────────────────────────
+  //
+  // excludeOrdered (true افتراضياً): يستبعد الأصناف التي لها أمر شراء نشط
+  //   (ordered_from_supplier + follow_up_due_date > NOW())
+  // showOrderedOnly: يعكس السلوك — يُظهر فقط المطلوب بأمر نشط
+  // orderedFromDate/To: يُظهر فقط ما وُسِّم خلال الفترة المحددة (action_at)
+  //
+  if (showOrderedOnly) {
+    // إظهار فقط ما لديه follow-up نشط
+    whereClauses.push(`
+      EXISTS (
+        SELECT 1 FROM shortage_followups sf_chk
+        WHERE sf_chk.item_id     = i.id
+          AND sf_chk.action_type = 'ordered_from_supplier'
+          AND sf_chk.follow_up_due_date > NOW()
+      )
+    `);
+  } else if (excludeOrdered) {
+    // استبعاد ما لديه follow-up نشط
+    whereClauses.push(`
+      NOT EXISTS (
+        SELECT 1 FROM shortage_followups sf_chk
+        WHERE sf_chk.item_id     = i.id
+          AND sf_chk.action_type = 'ordered_from_supplier'
+          AND sf_chk.follow_up_due_date > NOW()
+      )
+    `);
+  }
+
+  // فلتر تاريخ الإجراء (action_at) — مستقل عن excludeOrdered
+  if (orderedFromDate || orderedToDate) {
+    let datePart = "";
+    if (orderedFromDate) datePart += ` AND sf_chk2.action_at >= ${push(orderedFromDate)}::date`;
+    if (orderedToDate)   datePart += ` AND sf_chk2.action_at <  (${push(orderedToDate)}::date + INTERVAL '1 day')`;
+    whereClauses.push(`
+      EXISTS (
+        SELECT 1 FROM shortage_followups sf_chk2
+        WHERE sf_chk2.item_id     = i.id
+          AND sf_chk2.action_type = 'ordered_from_supplier'
+          ${datePart}
+      )
+    `);
   }
 
   // الفلاتر الخاصة بكل وضع (shortage_driven / full_analysis)
@@ -317,6 +385,14 @@ export async function getDashboard(params: DashboardParams): Promise<{
       -- آخر تاريخ snapshot متاح
       latest_snap AS (
         SELECT MAX(snapshot_date) AS d FROM rpt_inventory_snapshot
+      ),
+      -- آخر follow-up لكل صنف (ordered_from_supplier)
+      -- يُستخدم لعرض badge + معلومات المتابعة في كل صف
+      latest_followup AS (
+        SELECT DISTINCT ON (item_id)
+          id, item_id, action_type, action_at, follow_up_due_date
+        FROM shortage_followups
+        ORDER BY item_id, action_at DESC
       ),
       -- رصيد كل صنف مُجمَّع من كل المخازن
       inv AS (
@@ -444,12 +520,19 @@ export async function getDashboard(params: DashboardParams): Promise<{
               THEN 'low_stock'
 
             ELSE 'normal'
-          END                                                 AS status_flag
+          END                                                 AS status_flag,
+
+          -- ─── Follow-up الأخير (badge + indicator) ────────────────────
+          lf.id                   AS followup_id,
+          lf.action_type          AS followup_action_type,
+          lf.follow_up_due_date   AS followup_due_date,
+          lf.action_at            AS followup_action_at
 
         FROM ${modeFrom}
         ${modeJoin}
-        LEFT JOIN inv   ON inv.item_id   = i.id
-        LEFT JOIN sales s ON s.item_id  = i.id
+        LEFT JOIN inv          ON inv.item_id  = i.id
+        LEFT JOIN sales s      ON s.item_id    = i.id
+        LEFT JOIN latest_followup lf ON lf.item_id = i.id
         ${whereSQL}
       )
     SELECT
@@ -491,6 +574,11 @@ export async function getDashboard(params: DashboardParams): Promise<{
     daysOfCoverage:        r.days_of_coverage != null ? parseFloat(r.days_of_coverage) : null,
     statusFlag:            r.status_flag,
     totalCount:            parseInt(r.total_count) || 0,
+    // Follow-up
+    followupId:            r.followup_id ?? null,
+    followupActionType:    r.followup_action_type ?? null,
+    followupDueDate:       r.followup_due_date ? new Date(r.followup_due_date).toISOString() : null,
+    followupActionAt:      r.followup_action_at ? new Date(r.followup_action_at).toISOString() : null,
   }));
 
   const total = rows[0]?.totalCount ?? 0;
@@ -533,6 +621,70 @@ export async function getWarehouseStock(
     qtyDisplay:    parseFloat(r.qty_display) || 0,
     displayUnit:   r.display_unit,
   }));
+}
+
+// ─── Follow-up — ثابت أيام المتابعة ──────────────────────────────────────────
+//
+// قابل للتعديل مستقبلاً من الإعدادات. الآن 2 يوم افتراضياً.
+//
+const DEFAULT_SUPPLIER_FOLLOWUP_DAYS = 2;
+
+// ─── markOrderedFromSupplier ──────────────────────────────────────────────────
+//
+// يُدرج سجلاً في shortage_followups بنوع ordered_from_supplier.
+// follow_up_due_date = الآن + DEFAULT_SUPPLIER_FOLLOWUP_DAYS يوم.
+// يُعيد السجل المُدرج ليتمكن الـ frontend من تنفيذ Undo خلال الـ timeout.
+//
+export async function markOrderedFromSupplier(
+  itemId:   string,
+  actionBy: string,
+  notes?:   string | null
+): Promise<FollowupRecord> {
+  const result = await pool.query<{
+    id: string;
+    item_id: string;
+    action_type: string;
+    action_at: Date;
+    follow_up_due_date: Date;
+  }>(
+    `INSERT INTO shortage_followups
+       (item_id, action_type, action_at, action_by, follow_up_due_date, notes)
+     VALUES (
+       $1,
+       'ordered_from_supplier',
+       NOW(),
+       $2,
+       NOW() + INTERVAL '${DEFAULT_SUPPLIER_FOLLOWUP_DAYS} days',
+       $3
+     )
+     RETURNING id, item_id, action_type, action_at, follow_up_due_date`,
+    [itemId, actionBy, notes ?? null]
+  );
+  const r = result.rows[0];
+  return {
+    id:              r.id,
+    itemId:          r.item_id,
+    actionType:      r.action_type,
+    actionAt:        r.action_at.toISOString(),
+    followUpDueDate: r.follow_up_due_date.toISOString(),
+  };
+}
+
+// ─── undoOrderedFromSupplier ──────────────────────────────────────────────────
+//
+// حذف سجل follow-up محدد بالـ id (للـ Undo خلال 5 ثوان).
+// لا يحذف إلا إذا كان action_type = ordered_from_supplier (guard ضد الخطأ).
+//
+export async function undoOrderedFromSupplier(
+  followupId: string
+): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM shortage_followups
+     WHERE id          = $1
+       AND action_type = 'ordered_from_supplier'`,
+    [followupId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 // ─── resolveShortage ─────────────────────────────────────────────────────────

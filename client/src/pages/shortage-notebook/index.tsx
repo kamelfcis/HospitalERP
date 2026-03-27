@@ -70,6 +70,8 @@ import {
   ArrowLeftRight,
   Flame,
   Loader2,
+  Phone,
+  Undo2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -101,6 +103,11 @@ interface DashboardRow {
   daysOfCoverage:      number | null;
   statusFlag:          string;
   totalCount:          number;
+  // Follow-up
+  followupId:          string | null;
+  followupActionType:  string | null;
+  followupDueDate:     string | null;
+  followupActionAt:    string | null;
 }
 
 interface DashboardResponse {
@@ -291,6 +298,12 @@ export default function ShortageNotebook() {
     setPage(1);
   }, []);
 
+  // ── فلاتر المتابعة (shortage_followups) ──────────────────────────────────
+  const [excludeOrdered,   setExcludeOrdered]   = useState(true);   // افتراضي: مفعّل
+  const [showOrderedOnly,  setShowOrderedOnly]   = useState(false);
+  const [orderedFromDate,  setOrderedFromDate]   = useState("");
+  const [orderedToDate,    setOrderedToDate]     = useState("");
+
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // ── Build query key ───────────────────────────────────────────────────────
@@ -300,10 +313,14 @@ export default function ShortageNotebook() {
 
   const qParams = new URLSearchParams({
     mode, displayUnit, fromDate, toDate,
-    categories: categoriesParam,
-    status: status || "",
-    search: search.trim(),
-    showResolved: String(showResolved),
+    categories:     categoriesParam,
+    status:         status || "",
+    search:         search.trim(),
+    showResolved:   String(showResolved),
+    excludeOrdered: String(excludeOrdered),
+    showOrderedOnly:String(showOrderedOnly),
+    orderedFromDate: orderedFromDate || "",
+    orderedToDate:   orderedToDate   || "",
     page:    String(page),
     limit:   "50",
     sortBy,
@@ -336,6 +353,58 @@ export default function ShortageNotebook() {
         typeof query.queryKey[0] === "string" &&
         (query.queryKey[0] as string).startsWith("/api/shortage/dashboard"),
     });
+  });
+
+  // ── Mark Ordered From Supplier — مع Undo 5 ثوان ───────────────────────────
+  const invalidateDashboard = useCallback(() => {
+    qc.invalidateQueries({
+      predicate: (query) =>
+        typeof query.queryKey[0] === "string" &&
+        (query.queryKey[0] as string).startsWith("/api/shortage/dashboard"),
+    });
+  }, [qc]);
+
+  const markOrdered = useMutation({
+    mutationFn: (itemId: string) =>
+      apiRequest("POST", "/api/shortage/followup/order", { itemId })
+        .then((r) => r.json()),
+    onSuccess: (data: { success: boolean; followup: { id: string } }, itemId: string) => {
+      if (!data.success) return;
+      const followupId = data.followup.id;
+
+      // Undo ref — سيُستخدم إذا ضغط المستخدم "تراجع" خلال 5 ثوان
+      let undone = false;
+
+      const handleUndo = async () => {
+        undone = true;
+        await apiRequest("DELETE", `/api/shortage/followup/${followupId}`, undefined);
+        invalidateDashboard();
+        toast({ description: "تم التراجع بنجاح" });
+      };
+
+      toast({
+        description: "تم تسجيل طلب الصنف من الشركة — سيُستبعد حتى موعد المتابعة",
+        action: (
+          <button
+            onClick={handleUndo}
+            className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            data-testid="btn-undo-order"
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            تراجع
+          </button>
+        ) as any,
+        duration: 5000,
+      });
+
+      // بعد 5 ثوان: إذا لم يُلغَ → نُحدّث الجدول
+      setTimeout(() => {
+        if (!undone) invalidateDashboard();
+      }, 5200);
+    },
+    onError: () => {
+      toast({ variant: "destructive", description: "حدث خطأ أثناء تسجيل الطلب" });
+    },
   });
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -495,6 +564,86 @@ export default function ShortageNotebook() {
         )}
       </div>
 
+      {/* ── قسم متابعة الطلبات من الشركة ─────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm">
+        <div className="flex items-center gap-1.5 text-amber-700 shrink-0">
+          <Phone className="h-3.5 w-3.5" />
+          <span className="font-medium text-xs">متابعة الطلب من الشركة:</span>
+        </div>
+
+        {/* استبعاد المطلوب */}
+        <div className="flex items-center gap-1.5">
+          <Checkbox
+            id="excl-ordered"
+            checked={excludeOrdered && !showOrderedOnly}
+            onCheckedChange={(v) => {
+              setExcludeOrdered(Boolean(v));
+              if (v) setShowOrderedOnly(false);
+              setPage(1);
+            }}
+            data-testid="checkbox-exclude-ordered"
+            className="h-3.5 w-3.5"
+          />
+          <Label htmlFor="excl-ordered" className="text-xs cursor-pointer text-gray-700 select-none">
+            ☑ استبعاد ما تم طلبه من الشركة
+          </Label>
+        </div>
+
+        {/* إظهار المطلوب فقط */}
+        <div className="flex items-center gap-1.5">
+          <Checkbox
+            id="show-ordered-only"
+            checked={showOrderedOnly}
+            onCheckedChange={(v) => {
+              setShowOrderedOnly(Boolean(v));
+              if (v) setExcludeOrdered(false);
+              setPage(1);
+            }}
+            data-testid="checkbox-show-ordered-only"
+            className="h-3.5 w-3.5"
+          />
+          <Label htmlFor="show-ordered-only" className="text-xs cursor-pointer text-gray-700 select-none">
+            إظهار المطلوب فقط
+          </Label>
+        </div>
+
+        <div className="border-r border-amber-300 h-5 mx-1" />
+
+        {/* تاريخ action_at من */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-500 shrink-0">طُلب من</span>
+          <Input
+            type="date"
+            value={orderedFromDate}
+            onChange={(e) => { setOrderedFromDate(e.target.value); setPage(1); }}
+            className="h-7 text-xs w-32"
+            data-testid="input-ordered-from-date"
+          />
+        </div>
+
+        {/* تاريخ action_at إلى */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-500 shrink-0">إلى</span>
+          <Input
+            type="date"
+            value={orderedToDate}
+            onChange={(e) => { setOrderedToDate(e.target.value); setPage(1); }}
+            className="h-7 text-xs w-32"
+            data-testid="input-ordered-to-date"
+          />
+        </div>
+
+        {(orderedFromDate || orderedToDate) && (
+          <button
+            onClick={() => { setOrderedFromDate(""); setOrderedToDate(""); setPage(1); }}
+            className="text-xs text-amber-600 hover:underline shrink-0"
+            data-testid="btn-clear-ordered-dates"
+          >
+            مسح التواريخ
+          </button>
+        )}
+      </div>
+
       {/* ── Summary stats bar ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-4 text-sm text-gray-600">
         <span>
@@ -561,6 +710,8 @@ export default function ShortageNotebook() {
                     displayUnit={displayUnit}
                     onResolve={() => resolve.mutate(row.itemId)}
                     resolving={resolve.isPending}
+                    onMarkOrdered={() => markOrdered.mutate(row.itemId)}
+                    markingOrdered={markOrdered.isPending}
                     mode={mode}
                   />
                 ))
@@ -613,35 +764,69 @@ export default function ShortageNotebook() {
 
 import { memo } from "react";
 
+// ── isActiveOrder — الصنف مطلوب من الشركة وموعد المتابعة لم يحن بعد ─────────
+function isActiveOrder(row: DashboardRow): boolean {
+  return (
+    row.followupActionType === "ordered_from_supplier" &&
+    row.followupDueDate != null &&
+    new Date(row.followupDueDate) > new Date()
+  );
+}
+
 const ShortageRow = memo(function ShortageRow({
   row,
   displayUnit,
   onResolve,
   resolving,
+  onMarkOrdered,
+  markingOrdered,
   mode,
 }: {
-  row:         DashboardRow;
-  displayUnit: DisplayUnit;
-  onResolve:   () => void;
-  resolving:   boolean;
-  mode:        DashboardMode;
+  row:             DashboardRow;
+  displayUnit:     DisplayUnit;
+  onResolve:       () => void;
+  resolving:       boolean;
+  onMarkOrdered:   () => void;
+  markingOrdered:  boolean;
+  mode:            DashboardMode;
 }) {
-  const unitLabel = row.displayUnitName ?? "";
+  const unitLabel  = row.displayUnitName ?? "";
+  const ordered    = isActiveOrder(row);
 
   return (
     <TableRow
-      className={`text-sm hover:bg-gray-50 ${row.isResolved ? "opacity-50" : ""}`}
+      className={`text-sm hover:bg-gray-50 ${row.isResolved ? "opacity-50" : ""} ${ordered ? "bg-amber-50/40" : ""}`}
       data-testid={`row-shortage-${row.itemId}`}
     >
       {/* كود */}
       <TableCell className="font-mono text-xs text-gray-500">{row.itemCode}</TableCell>
 
-      {/* اسم الصنف */}
-      <TableCell className="font-medium max-w-48">
-        <div className="truncate" title={row.itemName}>{row.itemName}</div>
-        {row.category && (
-          <div className="text-xs text-gray-400">{row.category}</div>
-        )}
+      {/* اسم الصنف + badge مطلوب */}
+      <TableCell className="font-medium max-w-52">
+        <div className="flex items-start gap-1.5">
+          <div className="flex-1 min-w-0">
+            <div className="truncate" title={row.itemName}>{row.itemName}</div>
+            {row.category && (
+              <div className="text-xs text-gray-400">{row.category}</div>
+            )}
+          </div>
+          {ordered && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-0.5 shrink-0 mt-0.5 bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-1.5 py-0.5 text-xs font-medium leading-none cursor-default">
+                  <Phone className="h-2.5 w-2.5" />
+                  مطلوب
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                طُلب من الشركة —{" "}
+                {row.followupDueDate
+                  ? `متابعة في ${new Date(row.followupDueDate).toLocaleDateString("ar-EG")}`
+                  : ""}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </TableCell>
 
       {/* الرصيد — lazy popover */}
@@ -715,31 +900,67 @@ const ShortageRow = memo(function ShortageRow({
         <StatusBadge flag={row.statusFlag} />
       </TableCell>
 
-      {/* إجراء */}
+      {/* إجراء — سماعة التليفون + تحديد محلول */}
       <TableCell className="text-center">
-        {mode === "shortage_driven" && !row.isResolved ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onResolve}
-                disabled={resolving}
-                data-testid={`btn-resolve-${row.itemId}`}
-                className="h-7 w-7 p-0 text-green-600 hover:bg-green-50"
-              >
-                {resolving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>تحديد كمحلول</TooltipContent>
-          </Tooltip>
-        ) : row.isResolved ? (
-          <span className="text-xs text-gray-400">محلول</span>
-        ) : null}
+        <div className="flex items-center justify-center gap-1">
+
+          {/* ── أيقونة التليفون — تسجيل "تم طلبه من الشركة" ── */}
+          {row.category !== "service" && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onMarkOrdered}
+                  disabled={markingOrdered || ordered}
+                  data-testid={`btn-order-${row.itemId}`}
+                  className={`h-7 w-7 p-0 ${
+                    ordered
+                      ? "text-amber-400 cursor-default"
+                      : "text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                  }`}
+                >
+                  {markingOrdered ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Phone className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {ordered
+                  ? `مطلوب من الشركة — متابعة في ${new Date(row.followupDueDate!).toLocaleDateString("ar-EG")}`
+                  : "تم طلبه من الشركة"}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {/* ── تحديد كمحلول (shortage_driven فقط) ── */}
+          {mode === "shortage_driven" && !row.isResolved ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onResolve}
+                  disabled={resolving}
+                  data-testid={`btn-resolve-${row.itemId}`}
+                  className="h-7 w-7 p-0 text-green-600 hover:bg-green-50"
+                >
+                  {resolving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>تحديد كمحلول</TooltipContent>
+            </Tooltip>
+          ) : row.isResolved ? (
+            <span className="text-xs text-gray-400">محلول</span>
+          ) : null}
+
+        </div>
       </TableCell>
     </TableRow>
   );

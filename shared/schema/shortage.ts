@@ -17,7 +17,7 @@
 
 import {
   pgTable, varchar, text, integer, boolean,
-  timestamp, index, uniqueIndex,
+  timestamp, index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -60,6 +60,36 @@ export const shortageAgg = pgTable("shortage_agg", {
   idxResolved:     index("idx_shortage_agg_resolved").on(t.isResolved, t.lastRequestedAt),
 }));
 
+// ── Shortage Followups — متابعة الاتصال بالشركة ───────────────────────────────
+//
+//  جدول بسيط لتسجيل الإجراءات التشغيلية على كل صنف ناقص.
+//  الإجراء الرئيسي الآن: ordered_from_supplier (تم طلبه من الشركة).
+//  مستقبلاً يمكن التوسع إلى: received | dismissed | recheck
+//
+//  الاستبعاد يعمل على آخر سجل لكل item_id:
+//    إذا كان action_type = 'ordered_from_supplier' و follow_up_due_date > NOW()
+//    → يُستبعد الصنف من العرض الافتراضي حتى يحين موعد المتابعة.
+//
+export const shortageFollowups = pgTable("shortage_followups", {
+  id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId:          varchar("item_id").notNull(),
+  actionType:      varchar("action_type", { length: 50 }).notNull(),
+  // القيم: 'ordered_from_supplier' | 'received' | 'dismissed' | 'recheck'
+  actionAt:        timestamp("action_at").notNull().defaultNow(),
+  actionBy:        varchar("action_by").notNull(),            // FK → users.id
+  followUpDueDate: timestamp("follow_up_due_date").notNull(), // متى يُراجَع مجدداً
+  notes:           text("notes"),
+  createdAt:       timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  // الأكثر استخداماً: البحث عن آخر follow-up لصنف محدد
+  idxItemAt:    index("idx_sfollowups_item_at").on(t.itemId, t.actionAt),
+  // لفلتر الاستبعاد (excludeOrdered): يبحث عن follow_up_due_date > NOW()
+  idxDueDate:   index("idx_sfollowups_due_date").on(t.followUpDueDate),
+  // لتقارير المتابعة: filter by type + date
+  idxTypeAt:    index("idx_sfollowups_type_at").on(t.actionType, t.actionAt),
+}));
+
 // ── Types ─────────────────────────────────────────────────────────────────────
-export type ShortageEvent = typeof shortageEvents.$inferSelect;
-export type ShortageAgg   = typeof shortageAgg.$inferSelect;
+export type ShortageEvent    = typeof shortageEvents.$inferSelect;
+export type ShortageAgg      = typeof shortageAgg.$inferSelect;
+export type ShortageFollowup = typeof shortageFollowups.$inferSelect;
