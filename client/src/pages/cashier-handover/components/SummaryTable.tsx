@@ -199,7 +199,12 @@ const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggl
           {row.returnInvoiceCount}
         </TableCell>
         <TableCell className="text-right tabular-nums font-semibold" data-testid={`text-net-${row.shiftId}`}>
-          {fmtMoney(row.netTotal)}
+          {fmtMoney(row.openingCash + row.netTotal)}
+          {row.openingCash > 0 && (
+            <span className="block text-xs text-muted-foreground">
+              مبيعات {fmtMoney(row.netTotal)} + افتتاح {fmtMoney(row.openingCash)}
+            </span>
+          )}
         </TableCell>
         <TableCell className="text-right tabular-nums text-violet-700 dark:text-violet-400" data-testid={`text-treasury-${row.shiftId}`}>
           {fmtMoney(row.transferredToTreasury)}
@@ -264,7 +269,7 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
               <TableHead className="text-center whitespace-nowrap">فواتير</TableHead>
               <TableHead className="text-right whitespace-nowrap">المرتجع</TableHead>
               <TableHead className="text-center whitespace-nowrap">مرتجعات</TableHead>
-              <TableHead className="text-right whitespace-nowrap font-semibold">الصافي</TableHead>
+              <TableHead className="text-right whitespace-nowrap font-semibold">المتوقع تسليمه</TableHead>
               <TableHead className="text-right whitespace-nowrap">محوّل للخزنة</TableHead>
               <TableHead className="text-center whitespace-nowrap">الحالة</TableHead>
               <TableHead className="text-center w-10">طباعة</TableHead>
