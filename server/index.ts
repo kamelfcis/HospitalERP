@@ -430,6 +430,34 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON users (permission_group_id)
       WHERE is_active = true
     `);
+    // sales_invoice_headers: compound for cashier handover credit_agg subquery
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_sales_inv_handover_credit
+      ON sales_invoice_headers (claimed_by_shift_id, customer_type, status)
+      WHERE is_return = false AND claimed_by_shift_id IS NOT NULL
+    `);
+    // store_transfers: status filter (missing — list page filters by status)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_store_transfers_status
+      ON store_transfers (status, transfer_date DESC)
+    `);
+    // purchase_return_headers: warehouse + date (list page filters by warehouse)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pr_warehouse_date
+      ON purchase_return_headers (warehouse_id, created_at DESC)
+    `);
+    // receiving_headers: compound status+date (list filtered by status then date)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_receiving_status_date
+      ON receiving_headers (status, receive_date DESC)
+      WHERE status != 'cancelled'
+    `);
+    // sales_invoice_lines: compound for quantity-sold check in returns
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_sales_lines_inv_lot
+      ON sales_invoice_lines (invoice_id, lot_id)
+      WHERE lot_id IS NOT NULL
+    `);
     log("[STARTUP] Performance indexes ensured");
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");

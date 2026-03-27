@@ -117,13 +117,13 @@ export function registerCashierRoutes(app: Express) {
     });
   });
 
-  // ── Drawer Passwords ────────────────────────────────────────
-  app.get("/api/drawer-passwords", async (_req, res) => {
+  // ── Drawer Passwords — تتطلب صلاحية ربط الحسابات ──────────
+  app.get("/api/drawer-passwords", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (_req, res) => {
     try { res.json(await storage.getDrawersWithPasswordStatus()); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/drawer-passwords/set", async (req, res) => {
+  app.post("/api/drawer-passwords/set", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { glAccountId, password } = req.body;
       if (!glAccountId) return res.status(400).json({ message: "يجب تحديد حساب الخزنة" });
@@ -144,7 +144,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.delete("/api/drawer-passwords/:glAccountId", async (req, res) => {
+  app.delete("/api/drawer-passwords/:glAccountId", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const removed = await storage.removeDrawerPassword(req.params.glAccountId as string);
       if (!removed) return res.status(404).json({ message: "لا توجد كلمة سر لهذه الخزنة" });

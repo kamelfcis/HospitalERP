@@ -254,8 +254,8 @@ export function registerJournalEntriesRoutes(app: Express) {
     }
   });
 
-  // Templates
-  app.get("/api/templates", async (req, res) => {
+  // Templates — تتطلب صلاحية عرض القيود
+  app.get("/api/templates", requireAuth, checkPermission(PERMISSIONS.JOURNAL_VIEW), async (req, res) => {
     try {
       const templates = await storage.getTemplates();
       res.json(templates);
@@ -265,7 +265,7 @@ export function registerJournalEntriesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/templates/:id", async (req, res) => {
+  app.get("/api/templates/:id", requireAuth, checkPermission(PERMISSIONS.JOURNAL_VIEW), async (req, res) => {
     try {
       const template = await storage.getTemplateWithLines(req.params.id as string);
       if (!template) {
@@ -278,7 +278,7 @@ export function registerJournalEntriesRoutes(app: Express) {
     }
   });
 
-  app.post("/api/templates", async (req, res) => {
+  app.post("/api/templates", requireAuth, checkPermission(PERMISSIONS.JOURNAL_CREATE), async (req, res) => {
     try {
       const { lines, ...templateData } = req.body;
       const validated = insertJournalTemplateSchema.parse(templateData);
@@ -307,7 +307,7 @@ export function registerJournalEntriesRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/templates/:id", async (req, res) => {
+  app.patch("/api/templates/:id", requireAuth, checkPermission(PERMISSIONS.JOURNAL_EDIT), async (req, res) => {
     try {
       const { lines, ...templateData } = req.body;
       const validated = insertJournalTemplateSchema.partial().parse(templateData);
@@ -342,7 +342,7 @@ export function registerJournalEntriesRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/templates/:id", async (req, res) => {
+  app.delete("/api/templates/:id", requireAuth, checkPermission(PERMISSIONS.JOURNAL_EDIT), async (req, res) => {
     try {
       await storage.deleteTemplate(req.params.id as string);
       res.status(204).send();
