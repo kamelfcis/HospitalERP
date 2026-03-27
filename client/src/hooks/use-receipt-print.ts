@@ -36,7 +36,7 @@ export function useReceiptPrint() {
         const data = await fetchReceiptData(invoiceIds[i]);
         printReceipt(data, settings);
         if (i < invoiceIds.length - 1) {
-          await new Promise((r) => setTimeout(r, 900));
+          await new Promise((r) => setTimeout(r, 1200));
         }
       } catch (err) {
         console.error("Receipt print failed for", invoiceIds[i], err);
@@ -54,10 +54,9 @@ export function useReceiptPrint() {
         footer: "شكرًا لزيارتكم",
         logoText: "",
         autoPrint: true,
-        showPreview: true,
+        showPreview: false,
       };
     }
-    settings = { ...settings, showPreview: true };
     const data = await fetchReceiptData(invoiceId);
     printReceipt(data, settings);
   };

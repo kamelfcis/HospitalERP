@@ -64,13 +64,10 @@ function buildReceiptHtml(data: ReceiptData, settings: ReceiptSettings): string 
     ? `<div class="divider"></div><div class="footer">${settings.footer}</div>`
     : "";
 
-  const autoClose = settings.showPreview ? "" : `window.addEventListener("afterprint", function(){ window.close(); });`;
-
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128&display=swap" rel="stylesheet">
 <title>${docNumber}</title>
@@ -88,7 +85,6 @@ function buildReceiptHtml(data: ReceiptData, settings: ReceiptSettings): string 
   .center   { text-align: center; }
   .bold     { font-weight: 700; }
   .big      { font-size: 15px; }
-  .xl       { font-size: 19px; }
   .lbl      { text-align: right; }
   .val      { text-align: left; font-weight: 700; white-space: nowrap; }
   .tc       { text-align: center; white-space: nowrap; }
@@ -111,21 +107,8 @@ function buildReceiptHtml(data: ReceiptData, settings: ReceiptSettings): string 
     html, body { width: 80mm; }
   }
 </style>
-<script>
-  window.onload = function() {
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(function() {
-        window.print();
-        ${autoClose}
-      });
-    } else {
-      setTimeout(function() { window.print(); ${autoClose} }, 600);
-    }
-  };
-</script>
 </head>
 <body>
-
   ${settings.logoText ? `<div class="logo-text">${settings.logoText}</div>` : ""}
   <div class="center bold big">${settings.header}</div>
   ${data.warehouseName ? `<div class="center" style="font-size:10.5px;">${data.warehouseName}</div>` : ""}
@@ -145,9 +128,7 @@ function buildReceiptHtml(data: ReceiptData, settings: ReceiptSettings): string 
         <td class="bold tl" style="font-size:11px;">إجمالي</td>
       </tr>
     </thead>
-    <tbody>
-      ${linesHtml}
-    </tbody>
+    <tbody>${linesHtml}</tbody>
   </table>
 
   <div class="divider"></div>
@@ -168,31 +149,52 @@ function buildReceiptHtml(data: ReceiptData, settings: ReceiptSettings): string 
   </div>
 
   ${footerHtml}
-
   <div style="height:12mm;"></div>
 </body>
 </html>`;
 }
 
+function triggerIframePrint(iframe: HTMLIFrameElement): void {
+  const iframeWin = iframe.contentWindow;
+  const iframeDoc = iframe.contentDocument;
+  if (!iframeWin || !iframeDoc) return;
+
+  const doPrint = () => {
+    iframeWin.focus();
+    iframeWin.print();
+    setTimeout(() => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    }, 5000);
+  };
+
+  if (iframeDoc.fonts && iframeDoc.fonts.ready) {
+    iframeDoc.fonts.ready.then(doPrint).catch(() => setTimeout(doPrint, 800));
+  } else {
+    setTimeout(doPrint, 800);
+  }
+}
+
 export function printReceipt(data: ReceiptData, settings: ReceiptSettings): void {
   const html = buildReceiptHtml(data, settings);
-  const width  = 350;
-  const height = 700;
-  const left   = Math.max(0, (window.screen.width  - width)  / 2);
-  const top    = Math.max(0, (window.screen.height - height) / 2);
 
-  const popup = window.open(
-    "",
-    `receipt_${data.invoiceNumber}`,
-    `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
-  );
+  const existing = document.getElementById("receipt-print-frame");
+  if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
 
-  if (!popup) {
-    console.warn("Popup blocked — cannot print receipt");
-    return;
-  }
+  const iframe = document.createElement("iframe");
+  iframe.id = "receipt-print-frame";
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText =
+    "position:fixed;top:-9999px;left:-9999px;width:100mm;height:300mm;" +
+    "border:0;opacity:0;pointer-events:none;z-index:-1;";
 
-  popup.document.open();
-  popup.document.write(html);
-  popup.document.close();
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) return;
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  iframe.onload = () => triggerIframePrint(iframe);
 }
