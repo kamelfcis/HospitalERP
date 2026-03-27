@@ -73,40 +73,44 @@ async function runFefo(opts: FefoOptions): Promise<FefoResult> {
     unitLevel, totalRequiredMinor, baseSalePrice, isDeptPrice, priceSource, availableQtyMinor,
   } = opts;
 
-  // 1. اطلب توزيع FEFO للكمية المطلوبة
-  const fefoParams = new URLSearchParams({
-    itemId, warehouseId,
-    requiredQtyInMinor: String(totalRequiredMinor),
-    asOfDate: invoiceDate,
-  });
-  const res = await fetch(`/api/transfer/fefo-preview?${fefoParams}`);
-  if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
-  const preview = await res.json();
-
-  if (!preview.fulfilled) {
-    return { ok: false, shortfall: preview.shortfall };
-  }
-
-  // 2. اجلب كل الدُفعات المتاحة (لقائمة الصلاحية الاختيارية)
+  // طلب واحد فقط بكمية كبيرة → جميع الدُفعات مرتبة FEFO
   const allParams = new URLSearchParams({
     itemId, warehouseId,
     requiredQtyInMinor: "999999",
     asOfDate: invoiceDate,
   });
   const allRes = await fetch(`/api/transfer/fefo-preview?${allParams}`);
-  const allPreview = allRes.ok ? await allRes.json() : { allocations: [] };
-  const expiryOptions = allPreview.allocations
-    .filter((a: FefoExpiryOption) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty || "0") > 0)
-    .map((a: FefoExpiryOption) => ({
-      expiryMonth:      a.expiryMonth as number,
-      expiryYear:       a.expiryYear  as number,
+  if (!allRes.ok) throw new Error("فشل حساب توزيع الصلاحية");
+  const allPreview = await allRes.json();
+
+  // قائمة الصلاحية الاختيارية
+  const expiryOptions = (allPreview.allocations as FefoExpiryOption[])
+    .filter(a => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty || "0") > 0)
+    .map(a => ({
+      expiryMonth:       a.expiryMonth as number,
+      expiryYear:        a.expiryYear  as number,
       qtyAvailableMinor: a.availableQty as string,
-      lotId:            a.lotId        as string,
-      lotSalePrice:     a.lotSalePrice || "0",
+      lotId:             a.lotId        as string,
+      lotSalePrice:      a.lotSalePrice || "0",
     }));
 
-  // 3. بنِ سطور الفاتورة من توزيع FEFO
-  const lines: SalesLineLocal[] = preview.allocations
+  // حساب توزيع FEFO للكمية المطلوبة من جانب العميل
+  let remaining = totalRequiredMinor;
+  const fefoAllocations: FefoAllocation[] = [];
+  for (const lot of allPreview.allocations as FefoAllocation[]) {
+    if (remaining <= 0) break;
+    const avail = parseFloat(lot.allocatedQty || "0");
+    if (avail <= 0) continue;
+    const take = Math.min(avail, remaining);
+    remaining -= take;
+    fefoAllocations.push({ ...lot, allocatedQty: String(take) });
+  }
+  if (remaining > 0.001) {
+    return { ok: false, shortfall: String(remaining) };
+  }
+
+  // بنِ سطور الفاتورة من توزيع FEFO
+  const lines: SalesLineLocal[] = fefoAllocations
     .filter((a: FefoAllocation) => parseFloat(a.allocatedQty) > 0)
     .map((alloc: FefoAllocation) => {
       const allocMinor  = parseFloat(alloc.allocatedQty);

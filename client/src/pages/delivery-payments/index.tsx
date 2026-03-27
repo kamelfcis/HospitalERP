@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useMemo, useCallback, useRef, KeyboardEvent } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, memo, KeyboardEvent } from "react";
 import { useQuery, useMutation }               from "@tanstack/react-query";
 import { useToast }                            from "@/hooks/use-toast";
 import { apiRequestJson, queryClient }         from "@/lib/queryClient";
@@ -126,6 +126,77 @@ function SummaryStrip({ data }: { data: InvoicesResult }) {
   );
 }
 
+// ─── DeliveryRow (memoized) ────────────────────────────────────────────────────
+
+interface DeliveryRowProps {
+  inv:            DeliveryInvoiceRow;
+  idx:            number;
+  isSelected:     boolean;
+  amount:         string;
+  onToggle:       (invoiceId: string, checked: boolean | string) => void;
+  onAmountChange: (invoiceId: string, value: string) => void;
+  onKeyDown:      (e: KeyboardEvent<HTMLInputElement>, idx: number) => void;
+  onInputRef:     (invoiceId: string, el: HTMLInputElement | null) => void;
+}
+
+const DeliveryRow = memo(function DeliveryRow({
+  inv, idx, isSelected, amount, onToggle, onAmountChange, onKeyDown, onInputRef,
+}: DeliveryRowProps) {
+  const rem  = parseFloat(inv.remaining);
+  const paid = parseFloat(inv.totalPaid);
+  return (
+    <TableRow
+      className={isSelected ? "bg-emerald-50 dark:bg-emerald-950/20" : undefined}
+      data-testid={`row-delivery-invoice-${inv.invoiceId}`}
+    >
+      <TableCell className="px-2">
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={(v) => onToggle(inv.invoiceId, v)}
+          data-testid={`checkbox-inv-${inv.invoiceId}`}
+        />
+      </TableCell>
+      <TableCell className="px-2 font-mono">
+        <span className="flex items-center gap-1">
+          <Hash className="h-3 w-3 text-muted-foreground" />
+          {inv.invoiceNumber}
+        </span>
+      </TableCell>
+      <TableCell className="px-2">{formatDateShort(inv.invoiceDate)}</TableCell>
+      <TableCell className="px-2 text-muted-foreground">
+        {inv.customerName ?? "—"}
+      </TableCell>
+      <TableCell className="px-2 text-right font-medium">
+        {formatCurrency(inv.netTotal)}
+      </TableCell>
+      <TableCell className="px-2 text-right text-green-700">
+        {paid > 0 ? formatCurrency(inv.totalPaid) : "—"}
+      </TableCell>
+      <TableCell className="px-2 text-right">
+        {rem > 0
+          ? <span className="text-red-600 font-semibold">{formatCurrency(inv.remaining)}</span>
+          : <Badge variant="outline" className="text-[9px] text-green-700">مكتمل</Badge>
+        }
+      </TableCell>
+      <TableCell className="px-2 w-[110px]">
+        <Input
+          ref={(el) => onInputRef(inv.invoiceId, el)}
+          type="number"
+          min={0}
+          step={0.01}
+          value={amount}
+          onChange={(e) => onAmountChange(inv.invoiceId, e.target.value)}
+          onKeyDown={(e) => onKeyDown(e, idx)}
+          onFocus={(e) => e.target.select()}
+          placeholder="0.00"
+          className="h-7 text-xs text-left ltr w-full"
+          data-testid={`input-amount-${inv.invoiceId}`}
+        />
+      </TableCell>
+    </TableRow>
+  );
+});
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function DeliveryPayments() {
@@ -177,6 +248,16 @@ export default function DeliveryPayments() {
     enabled: activeTab === "report",
   });
 
+  // ── SSE — تحديث تلقائي عند وصول تحصيل جديد ──────────────────────────────
+  useEffect(() => {
+    const es = new EventSource("/api/delivery-payments/sse", { withCredentials: true });
+    es.onmessage = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery-payments/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery-payments/report"] });
+    };
+    return () => es.close();
+  }, []);
+
   // ── ترتيب الفواتير ────────────────────────────────────────────────────────
   const invoices = useMemo(() => {
     const raw = invoicesData?.rows ?? [];
@@ -218,7 +299,7 @@ export default function DeliveryPayments() {
     else { setSortKey(k); setSortDir("asc"); }
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>, idx: number) => {
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>, idx: number) => {
     if (e.key === "ArrowDown" || e.key === "Enter") {
       e.preventDefault();
       const next = rowIds.current[idx + 1];
@@ -228,7 +309,23 @@ export default function DeliveryPayments() {
       const prev = rowIds.current[idx - 1];
       if (prev) amountRefs.current[prev]?.focus();
     }
-  };
+  }, []);
+
+  const onToggleInv = useCallback((invoiceId: string, checked: boolean | string) => {
+    setSelected(s => {
+      const n = new Set(s);
+      checked ? n.add(invoiceId) : n.delete(invoiceId);
+      return n;
+    });
+  }, []);
+
+  const onAmountChange = useCallback((invoiceId: string, value: string) => {
+    setAmounts(prev => ({ ...prev, [invoiceId]: value }));
+  }, []);
+
+  const onInputRef = useCallback((invoiceId: string, el: HTMLInputElement | null) => {
+    amountRefs.current[invoiceId] = el;
+  }, []);
 
   // ── مجموع التوزيع ─────────────────────────────────────────────────────────
   const distributedTotal = useMemo(
@@ -440,70 +537,19 @@ export default function DeliveryPayments() {
                     </TableCell>
                   </TableRow>
                 )}
-                {invoices.map((inv, idx) => {
-                  const rem      = parseFloat(inv.remaining);
-                  const paid     = parseFloat(inv.totalPaid);
-                  const isSel    = selected.has(inv.invoiceId);
-                  const amtVal   = amounts[inv.invoiceId] ?? "";
-                  return (
-                    <TableRow
-                      key={inv.invoiceId}
-                      className={isSel ? "bg-emerald-50 dark:bg-emerald-950/20" : undefined}
-                      data-testid={`row-delivery-invoice-${inv.invoiceId}`}
-                    >
-                      <TableCell className="px-2">
-                        <Checkbox
-                          checked={isSel}
-                          onCheckedChange={(v) => {
-                            setSelected((s) => {
-                              const n = new Set(s);
-                              v ? n.add(inv.invoiceId) : n.delete(inv.invoiceId);
-                              return n;
-                            });
-                          }}
-                          data-testid={`checkbox-inv-${inv.invoiceId}`}
-                        />
-                      </TableCell>
-                      <TableCell className="px-2 font-mono">
-                        <span className="flex items-center gap-1">
-                          <Hash className="h-3 w-3 text-muted-foreground" />
-                          {inv.invoiceNumber}
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-2">{formatDateShort(inv.invoiceDate)}</TableCell>
-                      <TableCell className="px-2 text-muted-foreground">
-                        {inv.customerName ?? "—"}
-                      </TableCell>
-                      <TableCell className="px-2 text-right font-medium">
-                        {formatCurrency(inv.netTotal)}
-                      </TableCell>
-                      <TableCell className="px-2 text-right text-green-700">
-                        {paid > 0 ? formatCurrency(inv.totalPaid) : "—"}
-                      </TableCell>
-                      <TableCell className="px-2 text-right">
-                        {rem > 0
-                          ? <span className="text-red-600 font-semibold">{formatCurrency(inv.remaining)}</span>
-                          : <Badge variant="outline" className="text-[9px] text-green-700">مكتمل</Badge>
-                        }
-                      </TableCell>
-                      <TableCell className="px-2 w-[110px]">
-                        <Input
-                          ref={(el) => { amountRefs.current[inv.invoiceId] = el; }}
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={amtVal}
-                          onChange={(e) => setAmounts((prev) => ({ ...prev, [inv.invoiceId]: e.target.value }))}
-                          onKeyDown={(e) => handleKeyDown(e, idx)}
-                          onFocus={(e) => e.target.select()}
-                          placeholder="0.00"
-                          className="h-7 text-xs text-left ltr w-[100px]"
-                          data-testid={`input-amount-${inv.invoiceId}`}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {invoices.map((inv, idx) => (
+                  <DeliveryRow
+                    key={inv.invoiceId}
+                    inv={inv}
+                    idx={idx}
+                    isSelected={selected.has(inv.invoiceId)}
+                    amount={amounts[inv.invoiceId] ?? ""}
+                    onToggle={onToggleInv}
+                    onAmountChange={onAmountChange}
+                    onKeyDown={handleKeyDown}
+                    onInputRef={onInputRef}
+                  />
+                ))}
               </TableBody>
               {invoices.length > 0 && (
                 <TableFooter>

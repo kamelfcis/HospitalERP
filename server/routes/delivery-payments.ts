@@ -13,6 +13,10 @@ import {
   createDeliveryReceipt,
   getDeliveryReceiptReport,
 } from "../storage/delivery-payments-storage";
+import {
+  deliveryPaymentClients,
+  broadcastDeliveryPaymentUpdate,
+} from "./_sse";
 
 const asyncHandler =
   (fn: (req: any, res: any, next: any) => Promise<any>) =>
@@ -66,9 +70,20 @@ export function registerDeliveryPaymentRoutes(app: Express) {
         })),
       });
 
+      broadcastDeliveryPaymentUpdate();
       res.json(result);
     })
   );
+
+  // ── GET /api/delivery-payments/sse — تحديثات لحظية ──────────────────────
+  app.get("/api/delivery-payments/sse", requireAuth, (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+    deliveryPaymentClients.add(res);
+    req.on("close", () => deliveryPaymentClients.delete(res));
+  });
 
   // ── GET /api/delivery-payments/report ────────────────────────────────────
   app.get(

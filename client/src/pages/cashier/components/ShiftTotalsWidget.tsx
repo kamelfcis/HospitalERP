@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Wallet, GripVertical } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { useAuth } from "@/hooks/use-auth";
@@ -8,7 +8,7 @@ interface Props {
   totals: ShiftTotals;
 }
 
-export function ShiftTotalsWidget({ totals }: Props) {
+export const ShiftTotalsWidget = memo(function ShiftTotalsWidget({ totals }: Props) {
   const { hasPermission } = useAuth();
   const canViewCredit = hasPermission("credit_payment.view");
 
@@ -157,7 +157,7 @@ export function ShiftTotalsWidget({ totals }: Props) {
       </div>
     </div>
   );
-}
+});
 
 function Row({
   label,

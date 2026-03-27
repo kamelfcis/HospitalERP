@@ -2,6 +2,7 @@
 //  ReturnLineTable — جدول أصناف المرتجع
 //  لكل سطر: الكمية المتاحة + وحدة الإرجاع + الكمية المرتجعة + السعر + الإجمالي
 // ============================================================
+import { memo } from "react";
 import { RotateCcw, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -119,7 +120,7 @@ interface RowProps {
   onChangeUnit: (lineId: string, unit: string) => void;
 }
 
-function ReturnLineRow({ line, idx, onChangeQty, onChangeUnit }: RowProps) {
+const ReturnLineRow = memo(function ReturnLineRow({ line, idx, onChangeQty, onChangeUnit }: RowProps) {
   const canReturn     = availableMinor(line) > 0;
   const maxInUnit     = availableInUnit(line, line.returnUnitLevel);
   const availOrigUnit = availableInUnit(line, line.unitLevel);
@@ -209,4 +210,4 @@ function ReturnLineRow({ line, idx, onChangeQty, onChangeUnit }: RowProps) {
       </td>
     </tr>
   );
-}
+});

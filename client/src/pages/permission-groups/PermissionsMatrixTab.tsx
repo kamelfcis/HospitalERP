@@ -9,7 +9,7 @@
  * فتغيير في أحدهما ينعكس فوراً على الآخر.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast }   from "@/hooks/use-toast";
@@ -28,7 +28,7 @@ import { Loader2, Save, LayoutGrid, List, Monitor, CheckSquare } from "lucide-re
 //  ScreenMatrixView — الجدول الرئيسي
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ScreenMatrixView({
+const ScreenMatrixView = memo(function ScreenMatrixView({
   category,
   selected,
   canEdit,
@@ -128,13 +128,13 @@ function ScreenMatrixView({
       </div>
     </div>
   );
-}
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ModuleCheckboxView — العرض التفصيلي بـ checkboxes (متقدم)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ModuleCheckboxView({
+const ModuleCheckboxView = memo(function ModuleCheckboxView({
   selected,
   canEdit,
   onToggle,
@@ -204,7 +204,7 @@ function ModuleCheckboxView({
       })}
     </div>
   );
-}
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PermissionsMatrixTab — المكوّن الرئيسي
@@ -240,7 +240,7 @@ export function PermissionsMatrixTab({
 
   // ── مساعدات التعديل ────────────────────────────────────────────────────────
 
-  function toggle(key: string) {
+  const toggle = useCallback((key: string) => {
     if (!canEdit) return;
     setSelected(prev => {
       const next = new Set(prev);
@@ -249,9 +249,9 @@ export function PermissionsMatrixTab({
       return next;
     });
     setDirty(true);
-  }
+  }, [canEdit]);
 
-  function toggleModule(keys: string[]) {
+  const toggleModule = useCallback((keys: string[]) => {
     if (!canEdit) return;
     setSelected(prev => {
       const next    = new Set(prev);
@@ -261,7 +261,7 @@ export function PermissionsMatrixTab({
       return next;
     });
     setDirty(true);
-  }
+  }, [canEdit]);
 
   // ── حفظ ────────────────────────────────────────────────────────────────────
 

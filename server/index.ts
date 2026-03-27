@@ -367,6 +367,44 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier_collection hardening error");
   }
 
+  // ── 5h-bis. Performance indexes (FEFO, journals, permissions) ────────────
+  try {
+    // inventory_lots: remove exact duplicate index (identical to idx_lots_item_warehouse_expiry)
+    try { await db.execute(sql`DROP INDEX IF EXISTS idx_lots_item_warehouse_expiry_month`); } catch { /* ignore lock errors */ }
+    // inventory_lots: FEFO covering index — item+warehouse prefix, FEFO sort columns, active lots only
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_lots_fefo
+      ON inventory_lots (item_id, warehouse_id, expiry_year NULLS FIRST, expiry_month NULLS FIRST, received_date)
+      WHERE is_active = true
+    `);
+    // journal_entries: source_type + date for list filter queries
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_je_source_type_date
+      ON journal_entries (source_type, entry_date DESC)
+    `);
+    // journal_entries: GIN trigram for ILIKE search on description field
+    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_je_description_trgm
+      ON journal_entries USING gin (description gin_trgm_ops)
+    `);
+    // purchase_invoice_headers: supplier + date (non-cancelled invoices only)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pi_supplier_date
+      ON purchase_invoice_headers (supplier_id, invoice_date DESC)
+      WHERE status != 'cancelled'
+    `);
+    // users: permission_group_id lookup (active users only)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_users_group_id
+      ON users (permission_group_id)
+      WHERE is_active = true
+    `);
+    log("[STARTUP] Performance indexes ensured");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");
+  }
+
   // ── 5h-post. Seed default system settings for cashier GL ─────────────────
   try {
     await db.execute(sql`

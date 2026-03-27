@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect, memo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -111,15 +111,19 @@ export default function JournalEntries() {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const debounceTimer = useState<ReturnType<typeof setTimeout> | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearchQuery(value);
-    if (debounceTimer[0]) clearTimeout(debounceTimer[0]);
-    debounceTimer[0] = setTimeout(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
       setDebouncedSearch(value);
       setPage(1);
     }, 400);
+  }, []);
+
+  useEffect(() => {
+    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); };
   }, []);
 
   const queryParams = new URLSearchParams();
@@ -206,13 +210,13 @@ export default function JournalEntries() {
   const draftEntries = entries.filter(e => e.status === "draft");
   const selectedDraftIds = Array.from(selectedIds).filter(id => draftEntries.some(e => e.id === id));
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  };
+  }, []);
 
   const toggleSelectAll = () => {
     if (selectedDraftIds.length === draftEntries.length && draftEntries.length > 0) {

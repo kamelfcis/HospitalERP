@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { memo, useCallback, useState, Fragment } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -102,17 +102,97 @@ function CreditInvoicesSubRow({ items }: { items: CreditInvoiceItem[] }) {
   );
 }
 
+interface ShiftSummaryRowProps {
+  row: HandoverShiftRow;
+  isExpanded: boolean;
+  onToggle: (shiftId: string) => void;
+}
+
+const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggle }: ShiftSummaryRowProps) {
+  const hasCreditInvoices = (row.creditInvoices?.length ?? 0) > 0;
+  return (
+    <Fragment>
+      <TableRow className="hover:bg-muted/30" data-testid={`row-shift-${row.shiftId}`}>
+        <TableCell className="font-mono text-xs text-muted-foreground" data-testid={`text-shift-id-${row.shiftId}`}>
+          {shiftShortId(row.shiftId)}
+        </TableCell>
+        <TableCell className="whitespace-nowrap" data-testid={`text-date-${row.shiftId}`}>
+          {row.shiftDate ?? "—"}
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-sm" data-testid={`text-open-${row.shiftId}`}>
+          {fmtTime(row.openedAt)}
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-sm" data-testid={`text-close-${row.shiftId}`}>
+          {fmtTime(row.closedAt)}
+        </TableCell>
+        <TableCell className="whitespace-nowrap font-medium" data-testid={`text-cashier-${row.shiftId}`}>
+          {row.cashierName}
+          {row.pharmacyName && (
+            <span className="block text-xs text-muted-foreground">{row.pharmacyName}</span>
+          )}
+        </TableCell>
+        <TableCell className="text-right tabular-nums text-green-700 dark:text-green-400" data-testid={`text-cash-${row.shiftId}`}>
+          {fmtMoney(row.cashSalesTotal)}
+        </TableCell>
+        <TableCell
+          className={`text-right tabular-nums text-blue-700 dark:text-blue-400 ${hasCreditInvoices ? "cursor-pointer select-none" : ""}`}
+          data-testid={`text-credit-${row.shiftId}`}
+          onClick={hasCreditInvoices ? () => onToggle(row.shiftId) : undefined}
+        >
+          <span className="flex items-center justify-end gap-1">
+            {fmtMoney(row.creditSalesTotal)}
+            {hasCreditInvoices && (
+              isExpanded
+                ? <ChevronDown className="h-3 w-3 opacity-60" />
+                : <ChevronLeft className="h-3 w-3 opacity-60" />
+            )}
+          </span>
+        </TableCell>
+        <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400" data-testid={`text-delivery-${row.shiftId}`}>
+          {row.deliveryCollectedTotal > 0 ? fmtMoney(row.deliveryCollectedTotal) : "—"}
+        </TableCell>
+        <TableCell className="text-center tabular-nums" data-testid={`text-inv-count-${row.shiftId}`}>
+          {row.salesInvoiceCount}
+        </TableCell>
+        <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400" data-testid={`text-returns-${row.shiftId}`}>
+          {fmtMoney(row.returnsTotal)}
+        </TableCell>
+        <TableCell className="text-center tabular-nums" data-testid={`text-ret-count-${row.shiftId}`}>
+          {row.returnInvoiceCount}
+        </TableCell>
+        <TableCell className="text-right tabular-nums font-semibold" data-testid={`text-net-${row.shiftId}`}>
+          {fmtMoney(row.netTotal)}
+        </TableCell>
+        <TableCell className="text-right tabular-nums text-violet-700 dark:text-violet-400" data-testid={`text-treasury-${row.shiftId}`}>
+          {fmtMoney(row.transferredToTreasury)}
+          {row.variance !== 0 && (
+            <span className={`block text-xs ${row.variance > 0 ? "text-orange-500" : "text-red-500"}`}>
+              فرق: {fmtMoney(Math.abs(row.variance))}
+            </span>
+          )}
+        </TableCell>
+        <TableCell className="text-center" data-testid={`text-status-${row.shiftId}`}>
+          <StatusBadge status={row.status} />
+        </TableCell>
+      </TableRow>
+      {hasCreditInvoices && isExpanded && (
+        <CreditInvoicesSubRow items={row.creditInvoices!} />
+      )}
+    </Fragment>
+  );
+});
+
 export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
   const [expandedShifts, setExpandedShifts] = useState<Set<string>>(new Set());
 
-  const toggleShift = (shiftId: string) => {
+  const toggleShift = useCallback((shiftId: string) => {
     setExpandedShifts(prev => {
       const next = new Set(prev);
       if (next.has(shiftId)) next.delete(shiftId);
       else next.add(shiftId);
       return next;
     });
-  };
+  }, []);
 
   return (
     <div className="rounded-lg border overflow-hidden" dir="rtl">
@@ -146,80 +226,14 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map(row => {
-                const hasCreditInvoices = (row.creditInvoices?.length ?? 0) > 0;
-                const isExpanded = expandedShifts.has(row.shiftId);
-                return (
-                  <Fragment key={row.shiftId}>
-                    <TableRow className="hover:bg-muted/30" data-testid={`row-shift-${row.shiftId}`}>
-                      <TableCell className="font-mono text-xs text-muted-foreground" data-testid={`text-shift-id-${row.shiftId}`}>
-                        {shiftShortId(row.shiftId)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap" data-testid={`text-date-${row.shiftId}`}>
-                        {row.shiftDate ?? "—"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm" data-testid={`text-open-${row.shiftId}`}>
-                        {fmtTime(row.openedAt)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm" data-testid={`text-close-${row.shiftId}`}>
-                        {fmtTime(row.closedAt)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-medium" data-testid={`text-cashier-${row.shiftId}`}>
-                        {row.cashierName}
-                        {row.pharmacyName && (
-                          <span className="block text-xs text-muted-foreground">{row.pharmacyName}</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-green-700 dark:text-green-400" data-testid={`text-cash-${row.shiftId}`}>
-                        {fmtMoney(row.cashSalesTotal)}
-                      </TableCell>
-                      <TableCell
-                        className={`text-right tabular-nums text-blue-700 dark:text-blue-400 ${hasCreditInvoices ? "cursor-pointer select-none" : ""}`}
-                        data-testid={`text-credit-${row.shiftId}`}
-                        onClick={hasCreditInvoices ? () => toggleShift(row.shiftId) : undefined}
-                      >
-                        <span className="flex items-center justify-end gap-1">
-                          {fmtMoney(row.creditSalesTotal)}
-                          {hasCreditInvoices && (
-                            isExpanded
-                              ? <ChevronDown className="h-3 w-3 opacity-60" />
-                              : <ChevronLeft className="h-3 w-3 opacity-60" />
-                          )}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400" data-testid={`text-delivery-${row.shiftId}`}>
-                        {row.deliveryCollectedTotal > 0 ? fmtMoney(row.deliveryCollectedTotal) : "—"}
-                      </TableCell>
-                      <TableCell className="text-center tabular-nums" data-testid={`text-inv-count-${row.shiftId}`}>
-                        {row.salesInvoiceCount}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400" data-testid={`text-returns-${row.shiftId}`}>
-                        {fmtMoney(row.returnsTotal)}
-                      </TableCell>
-                      <TableCell className="text-center tabular-nums" data-testid={`text-ret-count-${row.shiftId}`}>
-                        {row.returnInvoiceCount}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums font-semibold" data-testid={`text-net-${row.shiftId}`}>
-                        {fmtMoney(row.netTotal)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-violet-700 dark:text-violet-400" data-testid={`text-treasury-${row.shiftId}`}>
-                        {fmtMoney(row.transferredToTreasury)}
-                        {row.variance !== 0 && (
-                          <span className={`block text-xs ${row.variance > 0 ? "text-orange-500" : "text-red-500"}`}>
-                            فرق: {fmtMoney(Math.abs(row.variance))}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center" data-testid={`text-status-${row.shiftId}`}>
-                        <StatusBadge status={row.status} />
-                      </TableCell>
-                    </TableRow>
-                    {hasCreditInvoices && isExpanded && (
-                      <CreditInvoicesSubRow items={row.creditInvoices!} />
-                    )}
-                  </Fragment>
-                );
-              })
+              rows.map(row => (
+                <ShiftSummaryRow
+                  key={row.shiftId}
+                  row={row}
+                  isExpanded={expandedShifts.has(row.shiftId)}
+                  onToggle={toggleShift}
+                />
+              ))
             )}
           </TableBody>
         </Table>

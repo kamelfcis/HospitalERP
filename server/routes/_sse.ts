@@ -92,3 +92,13 @@ export function broadcastClinicOrdersUpdate() {
     try { res.write(payload); } catch { clinicOrdersClients.delete(res); }
   });
 }
+
+// ── تحصيل التوصيل ────────────────────────────────────────────
+export const deliveryPaymentClients = new Set<Response>();
+
+export function broadcastDeliveryPaymentUpdate() {
+  const payload = `event: delivery_payment_updated\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`;
+  deliveryPaymentClients.forEach((res) => {
+    try { res.write(payload); (res as any).flush?.(); } catch { deliveryPaymentClients.delete(res); }
+  });
+}

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LogOut, Building2, FlaskConical, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ interface ShiftStatusBarProps {
   isClosing?: boolean;
 }
 
-export function ShiftStatusBar({ activeShift, unitName, unitType, onCloseShift, isClosing }: ShiftStatusBarProps) {
+export const ShiftStatusBar = memo(function ShiftStatusBar({ activeShift, unitName, unitType, onCloseShift, isClosing }: ShiftStatusBarProps) {
   return (
     <div className="flex flex-row-reverse items-center justify-between gap-3 flex-wrap">
       <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
@@ -44,4 +45,4 @@ export function ShiftStatusBar({ activeShift, unitName, unitType, onCloseShift, 
       </Button>
     </div>
   );
-}
+});
