@@ -174,6 +174,143 @@ function triggerIframePrint(iframe: HTMLIFrameElement): void {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  إيصال تسليم الدرج — Shift Handover Receipt
+// ══════════════════════════════════════════════════════════════════
+export interface ShiftHandoverData {
+  cashierName: string;
+  unitName: string;
+  openedAt: string;
+  closedAt: string | null;
+  openingCash: number;
+  cashSales: number;
+  creditSales: number;
+  deliveryCollected: number;
+  returns: number;
+  netShift: number;
+  closingCash: number;
+  variance: number;
+}
+
+function fmtTime(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("ar-EG", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function buildShiftHandoverHtml(data: ShiftHandoverData, settings: ReceiptSettings): string {
+  const varianceLabel = data.variance > 0 ? "زيادة" : data.variance < 0 ? "عجز" : "—";
+  const varianceColor = data.variance > 0 ? "#22863a" : data.variance < 0 ? "#c0392b" : "#000";
+
+  function row(label: string, value: string, bold = false, color = "#000") {
+    return `<tr>
+      <td class="lbl">${label}</td>
+      <td class="val" style="color:${color};${bold ? "font-size:14px;" : ""}">${value}</td>
+    </tr>`;
+  }
+
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>إيصال تسليم درج</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12.5px;
+    width: 80mm;
+    color: #000;
+    background: #fff;
+    direction: rtl;
+  }
+  body { padding: 4mm 3mm 8mm; }
+  .center   { text-align: center; }
+  .bold     { font-weight: 700; }
+  .big      { font-size: 15px; }
+  .lbl      { text-align: right; padding: 2px 2px; }
+  .val      { text-align: left; font-weight: 700; white-space: nowrap; padding: 2px 2px; }
+  .divider  { border-top: 1px dashed #000; margin: 4px 0; }
+  .solid    { border-top: 2px solid #000; margin: 5px 0; }
+  table     { width: 100%; border-collapse: collapse; }
+  .info-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; }
+  .section-title { font-size: 10px; text-align: center; background: #000; color: #fff; padding: 2px 0; margin: 3px 0; }
+  .footer   { font-size: 10.5px; text-align: center; white-space: pre-line; }
+  @page { size: 80mm auto; margin: 0; }
+  @media print { html, body { width: 80mm; } }
+</style>
+</head>
+<body>
+  ${settings.logoText ? `<div style="font-size:10px;text-align:center;margin-bottom:2px;">${settings.logoText}</div>` : ""}
+  <div class="center bold big">${settings.header}</div>
+  <div class="solid"></div>
+
+  <div class="center bold" style="font-size:13px;margin-bottom:3px;">إيصال تسليم درج</div>
+
+  <div class="info-row"><span class="bold">الكاشير:</span><span>${data.cashierName}</span></div>
+  <div class="info-row"><span class="bold">الوحدة:</span><span>${data.unitName}</span></div>
+  <div class="info-row"><span class="bold">فتح:</span><span style="font-size:10px;">${fmtTime(data.openedAt)}</span></div>
+  <div class="info-row"><span class="bold">إغلاق:</span><span style="font-size:10px;">${fmtTime(data.closedAt)}</span></div>
+
+  <div class="divider"></div>
+  <div class="section-title">تفاصيل الوردية</div>
+
+  <table>
+    ${row("رصيد الافتتاح:", fmt(data.openingCash))}
+    ${row("تحصيل نقدي:", fmt(data.cashSales))}
+    ${data.creditSales > 0 ? row("آجل / تعاقد:", fmt(data.creditSales)) : ""}
+    ${data.deliveryCollected > 0 ? row("توصيل منزلي:", fmt(data.deliveryCollected)) : ""}
+    ${data.returns > 0 ? row("مرتجعات:", `(${fmt(data.returns)})`) : ""}
+  </table>
+
+  <div class="divider"></div>
+
+  <table>
+    ${row("صافي الوردية:", fmt(data.netShift), true)}
+  </table>
+
+  <div class="solid"></div>
+
+  <table>
+    ${row("المحوَّل (الفعلي):", fmt(data.closingCash), true)}
+    ${row(`الفرق (${varianceLabel}):`, fmt(Math.abs(data.variance)), false, varianceColor)}
+  </table>
+
+  <div class="solid"></div>
+
+  ${settings.footer ? `<div class="footer">${settings.footer}</div>` : ""}
+  <div style="height:12mm;"></div>
+</body>
+</html>`;
+}
+
+export function printShiftHandover(data: ShiftHandoverData, settings: ReceiptSettings): void {
+  const html = buildShiftHandoverHtml(data, settings);
+
+  const existing = document.getElementById("handover-print-frame");
+  if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+  const iframe = document.createElement("iframe");
+  iframe.id = "handover-print-frame";
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText =
+    "position:fixed;top:-9999px;left:-9999px;width:100mm;height:300mm;" +
+    "border:0;opacity:0;pointer-events:none;z-index:-1;";
+
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) return;
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  iframe.onload = () => triggerIframePrint(iframe);
+}
+
 export function printReceipt(data: ReceiptData, settings: ReceiptSettings): void {
   const html = buildReceiptHtml(data, settings);
 

@@ -1,8 +1,11 @@
 import { memo, useCallback, useState, Fragment } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronDown, ChevronLeft } from "lucide-react";
+import { ChevronDown, ChevronLeft, Printer } from "lucide-react";
+import { printShiftHandover, type ReceiptSettings } from "@/utils/receipt-printer";
 
 interface CreditInvoiceItem {
   invoiceId: string;
@@ -66,7 +69,7 @@ function LoadingRows() {
     <>
       {[1, 2, 3, 4, 5].map(i => (
         <TableRow key={i}>
-          {Array.from({ length: 14 }).map((_, j) => (
+          {Array.from({ length: 15 }).map((_, j) => (
             <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
           ))}
         </TableRow>
@@ -78,7 +81,7 @@ function LoadingRows() {
 function CreditInvoicesSubRow({ items }: { items: CreditInvoiceItem[] }) {
   return (
     <TableRow className="bg-blue-50/60 dark:bg-blue-950/20">
-      <TableCell colSpan={14} className="py-2 px-6">
+      <TableCell colSpan={15} className="py-2 px-6">
         <div className="text-xs font-semibold text-blue-800 dark:text-blue-300 mb-1.5">
           تفاصيل فواتير الآجل ({items.length})
         </div>
@@ -106,10 +109,30 @@ interface ShiftSummaryRowProps {
   row: HandoverShiftRow;
   isExpanded: boolean;
   onToggle: (shiftId: string) => void;
+  receiptSettings: ReceiptSettings | undefined;
 }
 
-const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggle }: ShiftSummaryRowProps) {
+const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggle, receiptSettings }: ShiftSummaryRowProps) {
   const hasCreditInvoices = (row.creditInvoices?.length ?? 0) > 0;
+
+  const handlePrint = useCallback(() => {
+    const settings = receiptSettings ?? { header: "", footer: "", logoText: "", autoPrint: false, showPreview: false };
+    printShiftHandover({
+      cashierName:       row.cashierName,
+      unitName:          row.pharmacyName || "",
+      openedAt:          row.openedAt,
+      closedAt:          row.closedAt,
+      openingCash:       0,
+      cashSales:         row.cashSalesTotal,
+      creditSales:       row.creditSalesTotal,
+      deliveryCollected: row.deliveryCollectedTotal,
+      returns:           row.returnsTotal,
+      netShift:          row.netTotal,
+      closingCash:       row.transferredToTreasury,
+      variance:          row.variance,
+    }, settings);
+  }, [row, receiptSettings]);
+
   return (
     <Fragment>
       <TableRow className="hover:bg-muted/30" data-testid={`row-shift-${row.shiftId}`}>
@@ -174,6 +197,18 @@ const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggl
         <TableCell className="text-center" data-testid={`text-status-${row.shiftId}`}>
           <StatusBadge status={row.status} />
         </TableCell>
+        <TableCell className="text-center">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            onClick={handlePrint}
+            title="طباعة إيصال التسليم"
+            data-testid={`button-print-handover-${row.shiftId}`}
+          >
+            <Printer className="h-3.5 w-3.5" />
+          </Button>
+        </TableCell>
       </TableRow>
       {hasCreditInvoices && isExpanded && (
         <CreditInvoicesSubRow items={row.creditInvoices!} />
@@ -184,6 +219,9 @@ const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggl
 
 export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
   const [expandedShifts, setExpandedShifts] = useState<Set<string>>(new Set());
+  const { data: receiptSettings } = useQuery<ReceiptSettings>({
+    queryKey: ["/api/receipt-settings"],
+  });
 
   const toggleShift = useCallback((shiftId: string) => {
     setExpandedShifts(prev => {
@@ -214,6 +252,7 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
               <TableHead className="text-right whitespace-nowrap font-semibold">الصافي</TableHead>
               <TableHead className="text-right whitespace-nowrap">محوّل للخزنة</TableHead>
               <TableHead className="text-center whitespace-nowrap">الحالة</TableHead>
+              <TableHead className="text-center w-10">طباعة</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -232,6 +271,7 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
                   row={row}
                   isExpanded={expandedShifts.has(row.shiftId)}
                   onToggle={toggleShift}
+                  receiptSettings={receiptSettings}
                 />
               ))
             )}

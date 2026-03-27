@@ -8,10 +8,11 @@
 //  4. حساب: النقدية المتوقعة + الفرق
 //  5. resolveUnitName — ترجمة ID إلى اسم الوحدة
 // ============================================================
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { printShiftHandover, type ReceiptSettings } from "@/utils/receipt-printer";
 import type {
   UnitType, CashierShift, ShiftTotals, UserGlAccount, ShiftCloseValidation,
 } from "../types";
@@ -34,6 +35,15 @@ export function useCashierShift() {
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [validation,           setValidation]            = useState<ShiftCloseValidation | null>(null);
   const [isValidating,         setIsValidating]          = useState(false);
+
+  // ── Ref لحفظ آخر إجماليات معروفة قبل الإغلاق ────────────
+  const lastShiftTotalsRef = useRef<ShiftTotals | null>(null);
+  const lastUnitNameRef    = useRef<string>("");
+
+  // ── جلب إعدادات إيصال الطباعة ────────────────────────────
+  const { data: receiptSettings } = useQuery<ReceiptSettings>({
+    queryKey: ["/api/receipt-settings"],
+  });
 
   // ── جلب قائمة الوحدات المتاحة ────────────────────────────
   const { data: unitsData } = useQuery<{ pharmacies: any[]; departments: any[] }>({
@@ -77,7 +87,9 @@ export function useCashierShift() {
     queryFn: async () => {
       const res = await fetch(`/api/cashier/shift/${shiftId}/totals`, { credentials: "include" });
       if (!res.ok) throw new Error("فشل جلب إجماليات الوردية");
-      return res.json();
+      const data = await res.json();
+      lastShiftTotalsRef.current = data;
+      return data;
     },
     enabled: !!shiftId && (hasActiveShift || isStale),
     refetchInterval: 20_000,
@@ -142,11 +154,34 @@ export function useCashierShift() {
   // ── mutation: إغلاق الوردية ──────────────────────────────
   const closeShiftMutation = useMutation({
     mutationFn: async () => {
+      // احفظ الإجماليات واسم الوحدة قبل الإغلاق (ستُلغى بعد invalidate)
+      lastUnitNameRef.current = activeUnitName;
       const res = await apiRequest("POST", `/api/cashier/shift/${shiftId}/close`, { closingCash });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (closedShift) => {
       toast({ title: "تم إغلاق الوردية بنجاح" });
+
+      // طباعة إيصال تسليم الدرج تلقائياً
+      const totals = lastShiftTotalsRef.current;
+      const settings = receiptSettings ?? { header: "", footer: "", logoText: "", autoPrint: false, showPreview: false };
+      if (totals) {
+        printShiftHandover({
+          cashierName:       closedShift.cashierName  || "",
+          unitName:          lastUnitNameRef.current   || "",
+          openedAt:          closedShift.openedAt      || "",
+          closedAt:          closedShift.closedAt      || new Date().toISOString(),
+          openingCash:       parseFloat(totals.openingCash       || "0"),
+          cashSales:         parseFloat(totals.totalCollected    || "0"),
+          creditSales:       parseFloat(totals.creditCollected   || "0"),
+          deliveryCollected: parseFloat(totals.deliveryCollected ?? "0"),
+          returns:           parseFloat(totals.totalRefunded     || "0"),
+          netShift:          parseFloat(totals.netCash           || "0"),
+          closingCash:       parseFloat(closedShift.closingCash  || "0"),
+          variance:          parseFloat(closedShift.variance     || "0"),
+        }, settings);
+      }
+
       setCloseDialogOpen(false);
       setUnitConfirmed(false);
       setSelectedUnitType(null);
