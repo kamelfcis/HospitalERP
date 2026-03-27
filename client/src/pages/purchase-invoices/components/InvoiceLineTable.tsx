@@ -11,8 +11,13 @@
  * التنقل بالأسهم (spreadsheet-style):
  *   ← يسار  = عمود تالٍ (RTL)    → يمين = عمود سابق (RTL)
  *   ↑ فوق   = سطر أعلى            ↓ تحت  = سطر أدنى
+ *
+ * Memoization:
+ *   - InvoiceLineRow مغلّف بـ React.memo
+ *   - الـ callbacks تأخذ (idx, val) وتُمرَّر مباشرة بدون inline wrapper
+ *   → تغيير سطر واحد لا يعيد رسم باقي السطور
  */
-import { useRef, useCallback } from "react";
+import { memo, useRef, useCallback } from "react";
 import { AlertTriangle } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { getUnitName, getLineCoreErrors, getLineDiscountErrors } from "../types";
@@ -111,10 +116,10 @@ export function InvoiceLineTable({
             isDraft={isDraft}
             registerNav={registerNav}
             onNavKey={handleNavKey}
-            onPurchasePriceChange={(val) => onPurchasePriceChange(i, val)}
-            onDiscountPctChange={(val)   => onDiscountPctChange(i, val)}
-            onDiscountValueChange={(val) => onDiscountValueChange(i, val)}
-            onVatRateChange={(val)       => onVatRateChange(i, val)}
+            onPurchasePriceChange={onPurchasePriceChange}
+            onDiscountPctChange={onDiscountPctChange}
+            onDiscountValueChange={onDiscountValueChange}
+            onVatRateChange={onVatRateChange}
           />
         ))}
         {lines.length === 0 && (
@@ -127,7 +132,7 @@ export function InvoiceLineTable({
   );
 }
 
-// ── سطر واحد ──────────────────────────────────────────────────────────────
+// ── سطر واحد (مُحسَّن بـ React.memo) ────────────────────────────────────────
 interface RowProps {
   line:      InvoiceLineLocal;
   idx:       number;
@@ -135,13 +140,13 @@ interface RowProps {
   isDraft:   boolean;
   registerNav: (row: number, col: number, el: HTMLInputElement | null) => void;
   onNavKey:    (e: React.KeyboardEvent, row: number, col: number, totalRows: number) => void;
-  onPurchasePriceChange: (val: string) => void;
-  onDiscountPctChange:   (val: string) => void;
-  onDiscountValueChange: (val: string) => void;
-  onVatRateChange:       (val: string) => void;
+  onPurchasePriceChange: (i: number, val: string) => void;
+  onDiscountPctChange:   (i: number, val: string) => void;
+  onDiscountValueChange: (i: number, val: string) => void;
+  onVatRateChange:       (i: number, val: string) => void;
 }
 
-function InvoiceLineRow({
+const InvoiceLineRow = memo(function InvoiceLineRow({
   line: ln, idx: i, totalRows, isDraft,
   registerNav, onNavKey,
   onPurchasePriceChange, onDiscountPctChange,
@@ -188,7 +193,7 @@ function InvoiceLineRow({
             ref={(el) => registerNav(i, NAV_DISCOUNT_PCT, el)}
             type="number" step="0.01" min="0" max="99.99"
             value={ln.lineDiscountPct}
-            onChange={(e) => onDiscountPctChange(e.target.value)}
+            onChange={(e) => onDiscountPctChange(i, e.target.value)}
             onKeyDown={(e) => onNavKey(e, i, NAV_DISCOUNT_PCT, totalRows)}
             onFocus={(e) => e.target.select()}
             className={`peachtree-input w-[60px] text-center ${ln.lineDiscountPct >= 100 ? "border-red-400" : ""}`}
@@ -206,7 +211,7 @@ function InvoiceLineRow({
             ref={(el) => registerNav(i, NAV_DISCOUNT_VALUE, el)}
             type="number" step="0.01" min="0"
             value={ln.lineDiscountValue}
-            onChange={(e) => onDiscountValueChange(e.target.value)}
+            onChange={(e) => onDiscountValueChange(i, e.target.value)}
             onKeyDown={(e) => onNavKey(e, i, NAV_DISCOUNT_VALUE, totalRows)}
             onFocus={(e) => e.target.select()}
             className={`peachtree-input w-[80px] text-center ${ln.sellingPrice > 0 && ln.lineDiscountValue > ln.sellingPrice ? "border-red-400" : ""}`}
@@ -225,7 +230,7 @@ function InvoiceLineRow({
               ref={(el) => registerNav(i, NAV_PURCHASE_PRICE, el)}
               type="number" step="0.01" min="0"
               value={ln.purchasePrice}
-              onChange={(e) => onPurchasePriceChange(e.target.value)}
+              onChange={(e) => onPurchasePriceChange(i, e.target.value)}
               onKeyDown={(e) => onNavKey(e, i, NAV_PURCHASE_PRICE, totalRows)}
               onFocus={(e) => e.target.select()}
               className={`peachtree-input w-[80px] text-center ${priceWarning ? "border-orange-400" : ""} ${ln.purchasePrice < 0 ? "border-red-400" : ""}`}
@@ -245,7 +250,7 @@ function InvoiceLineRow({
             ref={(el) => registerNav(i, NAV_VAT_RATE, el)}
             type="number" step="0.01" min="0"
             value={ln.vatRate}
-            onChange={(e) => onVatRateChange(e.target.value)}
+            onChange={(e) => onVatRateChange(i, e.target.value)}
             onKeyDown={(e) => onNavKey(e, i, NAV_VAT_RATE, totalRows)}
             onFocus={(e) => e.target.select()}
             className="peachtree-input w-[55px] text-center"
@@ -273,4 +278,4 @@ function InvoiceLineRow({
       </td>
     </tr>
   );
-}
+});
