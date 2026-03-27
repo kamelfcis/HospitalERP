@@ -352,6 +352,36 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] sequence sync error");
   }
 
+  // ── 5g2. Handover receipt sequence sync (creates sequence + backfills nulls) ─
+  try {
+    await db.execute(sql`
+      CREATE SEQUENCE IF NOT EXISTS handover_receipt_num_seq START WITH 1 INCREMENT BY 1
+    `);
+    await db.execute(sql`
+      ALTER TABLE cashier_shifts ADD COLUMN IF NOT EXISTS handover_receipt_number INTEGER
+    `);
+    // بكفيل الورديات المغلقة بدون أرقام ترتيباً حسب تاريخ الإغلاق
+    await db.execute(sql`
+      WITH ranked AS (
+        SELECT id, ROW_NUMBER() OVER (ORDER BY COALESCE(closed_at, opened_at) ASC) AS rn
+        FROM cashier_shifts WHERE handover_receipt_number IS NULL
+      )
+      UPDATE cashier_shifts cs
+      SET handover_receipt_number = ranked.rn
+      FROM ranked WHERE cs.id = ranked.id
+    `);
+    await db.execute(sql`
+      SELECT setval(
+        'handover_receipt_num_seq',
+        COALESCE((SELECT MAX(handover_receipt_number) FROM cashier_shifts), 0) + 1,
+        false
+      )
+    `);
+    log("[STARTUP] handover_receipt_num_seq synced");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] handover receipt seq error");
+  }
+
   // ── 5h-pre. DB-level hardening for cashier_collection journals ───────────
   try {
     // Add 'failed' enum value if not already present (idempotent — safe every boot)
