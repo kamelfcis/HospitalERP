@@ -75,11 +75,14 @@ export function ItemFastSearch({
   const rowRefs        = useRef<(HTMLTableRowElement | null)[]>([]);
   const abortRef       = useRef<AbortController | null>(null);
   const batchAbortRef  = useRef<AbortController | null>(null);
-  const lastKeyboardAt = useRef<number>(0);
+  const lastKeyboardAt   = useRef<number>(0);
+  // حارس: هل المستخدم ضغط Enter أثناء تحميل الدُفعات؟ ننفذها فور الانتهاء
+  const pendingSelectRef = useRef<boolean>(false);
 
   // ── إعادة ضبط الدُفعات ────────────────────────────────────────────────
   const resetBatches = useCallback(() => {
     if (batchAbortRef.current) { batchAbortRef.current.abort(); batchAbortRef.current = null; }
+    pendingSelectRef.current = false;
     setBatches([]);
     setSelectedBatch(null);
     setBatchItemId(null);
@@ -156,6 +159,20 @@ export function ItemFastSearch({
     resetBatches();
     setTimeout(() => searchRef.current?.focus(), 30);
   }, [onItemSelected, selectedBatch, batches, resetBatches]);
+
+  // ── تنفيذ الاختيار المؤجل فور انتهاء التحميل ────────────────────────
+  // السيناريو: المستخدم يضغط Enter مرتين بسرعة — الأولى تفتح اللوحة والثانية
+  // تأتي أثناء التحميل → نحفظ النية في pendingSelectRef → ننفذها هنا تلقائياً
+  useEffect(() => {
+    if (batchLoading) return;                          // لا تزال تحمّل
+    if (!batchMode) return;                            // اللوحة مغلقة
+    if (!pendingSelectRef.current) return;             // لا يوجد طلب مؤجل
+    if (batches.length === 0) return;                  // لا دُفعات — خطأ في التحميل
+    const item = items[highlighted];
+    if (!item) return;
+    pendingSelectRef.current = false;
+    selectItem(item);
+  }, [batchLoading, batchMode, batches, highlighted, items, selectItem]);
 
   // ── البحث ─────────────────────────────────────────────────────────────
   const doSearch = useCallback(async (q: string, pg: number, md: SearchMode) => {
@@ -247,9 +264,12 @@ export function ItemFastSearch({
         // صنف بلا صلاحية: أضفه مباشرةً
         selectItem(item, null);
       } else if (batchMode) {
-        // اللوحة مفتوحة: انتظر اكتمال التحميل قبل الإضافة
-        if (batchLoading) return;
-        selectItem(item);
+        if (batchLoading) {
+          // المستخدم أسرع من التحميل → احجز النية، ستُنفَّذ تلقائياً فور الانتهاء
+          pendingSelectRef.current = true;
+        } else {
+          selectItem(item);
+        }
       } else {
         // صنف بصلاحية: افتح لوحة الدُفعات (غالباً تكون محملة مسبقاً)
         setBatchMode(true);
