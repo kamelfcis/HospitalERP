@@ -74,6 +74,7 @@ import {
   Loader2,
   Phone,
   Undo2,
+  PackageCheck,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -418,6 +419,20 @@ export default function ShortageNotebook() {
     },
   });
 
+  // ── Mutation: تم التوريد ─────────────────────────────────────────────────
+  const markReceivedMut = useMutation({
+    mutationFn: (itemId: string) =>
+      apiRequest("POST", "/api/shortage/followup/received", { itemId })
+        .then((r) => r.json()),
+    onSuccess: (_data, _itemId) => {
+      toast({ description: "تم تسجيل توريد الصنف ✔" });
+      invalidateDashboard();
+    },
+    onError: () => {
+      toast({ variant: "destructive", description: "حدث خطأ أثناء تسجيل التوريد" });
+    },
+  });
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-4 space-y-4" dir="rtl">
@@ -723,6 +738,8 @@ export default function ShortageNotebook() {
                     resolving={resolve.isPending}
                     onMarkOrdered={() => markOrdered.mutate(row.itemId)}
                     markingOrdered={markOrdered.isPending}
+                    onMarkReceived={() => markReceivedMut.mutate(row.itemId)}
+                    markingReceived={markReceivedMut.isPending}
                     canManage={canManage}
                     mode={mode}
                   />
@@ -792,17 +809,21 @@ const ShortageRow = memo(function ShortageRow({
   resolving,
   onMarkOrdered,
   markingOrdered,
+  onMarkReceived,
+  markingReceived,
   canManage,
   mode,
 }: {
-  row:             DashboardRow;
-  displayUnit:     DisplayUnit;
-  onResolve:       () => void;
-  resolving:       boolean;
-  onMarkOrdered:   () => void;
-  markingOrdered:  boolean;
-  canManage:       boolean;
-  mode:            DashboardMode;
+  row:              DashboardRow;
+  displayUnit:      DisplayUnit;
+  onResolve:        () => void;
+  resolving:        boolean;
+  onMarkOrdered:    () => void;
+  markingOrdered:   boolean;
+  onMarkReceived:   () => void;
+  markingReceived:  boolean;
+  canManage:        boolean;
+  mode:             DashboardMode;
 }) {
   const unitLabel  = row.displayUnitName ?? "";
   const ordered    = isActiveOrder(row);
@@ -963,6 +984,29 @@ const ShortageRow = memo(function ShortageRow({
                   "تم طلبه من الشركة"
                 )}
               </TooltipContent>
+            </Tooltip>
+          )}
+
+          {/* ── تم التوريد — مرئي فقط لمن يملك صلاحية shortage.manage ── */}
+          {canManage && row.category !== "service" && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onMarkReceived}
+                  disabled={markingReceived}
+                  data-testid={`btn-received-${row.itemId}`}
+                  className="h-7 w-7 p-0 text-green-600 hover:bg-green-50 hover:text-green-700"
+                >
+                  {markingReceived ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <PackageCheck className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>تم التوريد</TooltipContent>
             </Tooltip>
           )}
 

@@ -30,6 +30,7 @@ import {
   resolveShortage,
   markOrderedFromSupplier,
   undoOrderedFromSupplier,
+  markReceived,
   type DashboardMode,
   type DisplayUnit,
 } from "../storage/shortage-storage";
@@ -198,6 +199,31 @@ export function registerShortageRoutes(app: Express): void {
         return res.json({ success: true, followup: result });
       } catch (err) {
         console.error("[shortage/followup/order]", err);
+        return res.status(500).json({ error: "خطأ داخلي" });
+      }
+    }
+  );
+
+  // ── POST /api/shortage/followup/received ─────────────────────────────────
+  //
+  // يُسجّل "تم التوريد" لصنف محدد.
+  // يُغلق أي ordered_from_supplier نشط + يضع is_resolved=true.
+  //
+  app.post(
+    "/api/shortage/followup/received",
+    requireAuth,
+    checkPermission(PERMISSIONS.SHORTAGE_MANAGE),
+    async (req, res) => {
+      try {
+        const { itemId } = req.body as { itemId: string };
+        if (!itemId || typeof itemId !== "string") {
+          return res.status(400).json({ error: "itemId مطلوب" });
+        }
+        const userId = (req.session as any).userId as string;
+        const followup = await markReceived(itemId, userId);
+        return res.json({ success: true, followup });
+      } catch (err) {
+        console.error("[shortage/followup/received]", err);
         return res.status(500).json({ error: "خطأ داخلي" });
       }
     }

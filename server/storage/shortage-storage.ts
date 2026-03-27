@@ -701,6 +701,57 @@ export async function markOrderedFromSupplier(
   };
 }
 
+// ─── markReceived ─────────────────────────────────────────────────────────────
+//
+// يُسجّل "تم التوريد" لصنف محدد:
+//   1. يُدرج سجل received في shortage_followups
+//   2. يُغلق أي ordered_from_supplier نشط (يضع follow_up_due_date = NOW())
+//   3. يضع is_resolved = true في shortage_agg لإخفاء الصنف من القائمة
+//
+export async function markReceived(
+  itemId:   string,
+  actionBy: string
+): Promise<FollowupRecord> {
+  // ── خطوة 1: إدراج سجل received ───────────────────────────────────────────
+  const result = await pool.query<{
+    id: string; item_id: string; action_type: string;
+    action_at: Date; follow_up_due_date: Date;
+  }>(
+    `INSERT INTO shortage_followups
+       (item_id, action_type, action_at, action_by, follow_up_due_date, notes)
+     VALUES ($1, 'received', NOW(), $2, NOW(), NULL)
+     RETURNING id, item_id, action_type, action_at, follow_up_due_date`,
+    [itemId, actionBy]
+  );
+
+  // ── خطوة 2: إغلاق أي ordered_from_supplier نشط ────────────────────────
+  await pool.query(
+    `UPDATE shortage_followups
+     SET follow_up_due_date = NOW()
+     WHERE item_id     = $1
+       AND action_type = 'ordered_from_supplier'
+       AND follow_up_due_date > NOW()`,
+    [itemId]
+  );
+
+  // ── خطوة 3: حل النقص في shortage_agg → يختفي من shortage_driven mode ──
+  await pool.query(
+    `UPDATE shortage_agg
+     SET is_resolved = true, resolved_at = NOW(), resolved_by = $2, refreshed_at = NOW()
+     WHERE item_id = $1`,
+    [itemId, actionBy]
+  );
+
+  const r = result.rows[0];
+  return {
+    id:              r.id,
+    itemId:          r.item_id,
+    actionType:      r.action_type,
+    actionAt:        r.action_at.toISOString(),
+    followUpDueDate: r.follow_up_due_date.toISOString(),
+  };
+}
+
 // ─── undoOrderedFromSupplier ──────────────────────────────────────────────────
 //
 // حذف سجل follow-up محدد بالـ id (للـ Undo خلال 5 ثوان).
