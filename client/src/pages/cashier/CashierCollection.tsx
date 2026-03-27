@@ -123,7 +123,7 @@ export default function CashierCollection() {
           {shiftLoading ? (
             <Skeleton className="h-10 w-full" />
 
-          ) : hasActiveShift && activeShift ? (
+          ) : (hasActiveShift || isStale) && activeShift ? (
             <ShiftStatusBar
               activeShift={activeShift}
               unitName={activeUnitName}
@@ -173,7 +173,7 @@ export default function CashierCollection() {
           <div className="text-sm leading-relaxed">
             <p className="font-semibold">وردية منتهية الصلاحية</p>
             <p className="text-xs mt-0.5">
-              تجاوزت هذه الوردية {24} ساعة منذ الفتح. يرجى إغلاقها من قِبَل المشرف لاستئناف العمل.
+              تجاوزت هذه الوردية {24} ساعة منذ الفتح. يرجى إغلاقها لاستئناف العمل — اضغط "إغلاق الوردية" أدناه.
             </p>
           </div>
         </div>

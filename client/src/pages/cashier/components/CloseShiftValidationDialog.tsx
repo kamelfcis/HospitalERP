@@ -55,11 +55,11 @@ export function CloseShiftValidationDialog({ open, onOpenChange, validation, isV
 
           {!isValidating && isStaleShift && (
             <>
-              <AlertBox variant="error" title="وردية منتهية الصلاحية">
-                تجاوزت هذه الوردية {hoursOpen.toFixed(1)} ساعة — الحد المسموح {24} ساعة.
+              <AlertBox variant="warning" title="وردية متوقفة — تحذير">
+                تجاوزت هذه الوردية {hoursOpen.toFixed(1)} ساعة (الحد: {24} ساعة). سيتم تسجيل هذا الإغلاق في سجل التدقيق.
               </AlertBox>
               <p className="text-xs text-muted-foreground text-right">
-                يجب على المشرف أو مدير النظام إغلاق هذه الوردية يدوياً من لوحة الإدارة.
+                يمكن المتابعة لإغلاق الوردية وإنشاء القيد المحاسبي — تأكد من إدخال المبلغ النقدي الفعلي.
               </p>
             </>
           )}
@@ -108,9 +108,13 @@ export function CloseShiftValidationDialog({ open, onOpenChange, validation, isV
         </div>
 
         <DialogFooter className="flex flex-row-reverse gap-2">
-          {!isValidating && !isBlocked && !isStaleShift && (
-            <Button onClick={onProceed} data-testid="button-proceed-close-shift">
-              متابعة الإغلاق
+          {!isValidating && !isBlocked && (
+            <Button
+              onClick={onProceed}
+              variant={isStaleShift ? "destructive" : "default"}
+              data-testid="button-proceed-close-shift"
+            >
+              {isStaleShift ? "إغلاق الوردية المتوقفة" : "متابعة الإغلاق"}
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-validation-dialog">

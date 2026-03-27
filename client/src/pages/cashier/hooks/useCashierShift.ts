@@ -79,7 +79,7 @@ export function useCashierShift() {
       if (!res.ok) throw new Error("فشل جلب إجماليات الوردية");
       return res.json();
     },
-    enabled: !!shiftId && hasActiveShift,
+    enabled: !!shiftId && (hasActiveShift || isStale),
     refetchInterval: 20_000,
     staleTime: 5_000,
   });

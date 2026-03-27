@@ -183,9 +183,14 @@ const methods = {
         AND EXTRACT(EPOCH FROM (NOW() - opened_at)) / 3600 > ${MAX_SHIFT_HOURS}
     `);
 
+    // نُرجع الوردية إذا كانت open أو stale — الكاشير يرى وردياته المتوقفة ويمكنه إغلاقها
     const [shift] = await db.select()
       .from(cashierShifts)
-      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.status, "open")))
+      .where(and(
+        eq(cashierShifts.cashierId, cashierId),
+        sql`${cashierShifts.status} IN ('open', 'stale')`,
+      ))
+      .orderBy(asc(cashierShifts.openedAt))
       .limit(1);
     return shift || null;
   },
@@ -271,8 +276,9 @@ const methods = {
     const hoursOpen = parseFloat((durationResult as any).rows[0]?.hours_open || "0");
     const isStale = hoursOpen > MAX_SHIFT_HOURS || shift.status === "stale";
 
+    // الورديات المتوقفة يُسمح بإغلاقها مع تحذير (لا حجب)
     if (isStale) {
-      return { canClose: false, pendingCount: 0, hasOtherOpenShift: false, otherShift: null, reasonCode: "STALE", isStale: true, hoursOpen };
+      return { canClose: true, pendingCount: 0, hasOtherOpenShift: false, otherShift: null, reasonCode: "STALE", isStale: true, hoursOpen };
     }
     if (shift.status !== "open") {
       return { canClose: false, pendingCount: 0, hasOtherOpenShift: false, otherShift: null, reasonCode: "NOT_OPEN", isStale, hoursOpen };
@@ -321,22 +327,12 @@ const methods = {
 
       if (row.status === "closed") throw new Error("الوردية مغلقة بالفعل");
       const isStaleNow = row.status === "stale" || hoursOpen > MAX_SHIFT_HOURS;
-      if (isStaleNow && !isSupervisorOverride) {
-        // تسجيل stale إذا لم تُسجَّل بعد
-        await tx.execute(sql`
-          UPDATE cashier_shifts
-          SET status='stale', stale_at=NOW(),
-              stale_reason='تجاوز الحد الزمني عند محاولة الإغلاق'
-          WHERE id=${shiftId} AND status='open'
-        `);
-        throw new Error(`الوردية منتهية الصلاحية — مضى عليها ${hoursOpen.toFixed(1)} ساعة (الحد: ${MAX_SHIFT_HOURS})`);
-      }
-      if (isStaleNow && isSupervisorOverride) {
-        // تسجيل تدخل المشرف لإغلاق وردية عتيقة
+      if (isStaleNow) {
+        // تسجيل إغلاق الوردية المتوقفة في سجل التدقيق دائماً
         await tx.execute(sql`
           INSERT INTO cashier_audit_log (shift_id, action, entity_type, entity_id, details, performed_by)
-          VALUES (${shiftId}, 'supervisor_override_close', 'shift', ${shiftId},
-                  ${"إغلاق قسري بواسطة مشرف للوردية العتيقة التي مضى عليها " + hoursOpen.toFixed(1) + " ساعة"},
+          VALUES (${shiftId}, 'stale_shift_close', 'shift', ${shiftId},
+                  ${"إغلاق وردية متوقفة — مضى عليها " + hoursOpen.toFixed(1) + " ساعة"},
                   ${closedByName})
         `);
       }
@@ -441,7 +437,7 @@ const methods = {
       ).toFixed(2);
       const varianceVal = (parseFloat(closingCash) - parseFloat(expectedCashVal)).toFixed(2);
 
-      // ── 5. إغلاق ذري — WHERE status='open' يمنع سباق التزامن ──
+      // ── 5. إغلاق ذري — WHERE status IN ('open','stale') يمنع سباق التزامن ──
       const closeResult = await tx.execute(sql`
         UPDATE cashier_shifts
         SET
@@ -452,7 +448,7 @@ const methods = {
           closed_at    = NOW(),
           closed_by    = ${closedByUserId}
         WHERE id = ${shiftId}
-          AND status = 'open'
+          AND status IN ('open', 'stale')
         RETURNING *
       `);
       const updated = (closeResult as any).rows[0];
