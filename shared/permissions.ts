@@ -150,6 +150,9 @@ export const PERMISSIONS = {
   APPROVALS_VIEW:          "approvals.view",          // عرض طلبات الموافقة المسبقة
   APPROVALS_MANAGE:        "approvals.manage",        // قبول / رفض طلبات الموافقة
   APPROVALS_OVERRIDE:      "approvals.override",      // تجاوز القيود (بعد اعتماد الفاتورة)
+
+  SHORTAGE_VIEW:    "shortage.view",    // عرض لوحة كشكول النواقص وتحليل الأصناف
+  SHORTAGE_MANAGE:  "shortage.manage",  // حل النواقص وتصدير التقارير
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -667,6 +670,13 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.APPROVALS_VIEW,     label: "عرض طلبات الموافقة" },
       { key: PERMISSIONS.APPROVALS_MANAGE,   label: "قبول / رفض" },
       { key: PERMISSIONS.APPROVALS_OVERRIDE, label: "تجاوز القيود" },
+    ],
+  },
+  {
+    label: "كشكول النواقص",
+    permissions: [
+      { key: PERMISSIONS.SHORTAGE_VIEW,   label: "عرض لوحة التحليل والنواقص" },
+      { key: PERMISSIONS.SHORTAGE_MANAGE, label: "حل النواقص وتصدير التقارير" },
     ],
   },
 ];

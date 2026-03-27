@@ -54,6 +54,7 @@ import {
   AlertCircle,
   CreditCard,
   Printer,
+  NotebookPen,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -93,6 +94,7 @@ const mainNavItems: NavItem[] = [
   { title: "تحويل مخزني",            href: "/store-transfers",    icon: ArrowLeftRight,    permission: "transfers.view" },
   { title: "إعداد إذن تحويل",         href: "/transfer-preparation", icon: FileSpreadsheet,  permission: "transfers.view" },
   { title: "جرد الأصناف",            href: "/stock-count",        icon: ClipboardList,     permission: "stock_count.view" },
+  { title: "كشكول النواقص",          href: "/shortage-notebook",  icon: NotebookPen,       permission: "shortage.view" },
   { title: "فواتير البيع",            href: "/sales-invoices",     icon: ShoppingCart,      permission: "sales.view" },
   { title: "مردودات المبيعات",        href: "/sales-returns",      icon: Undo2,             permission: "sales.create" },
   { title: "فاتورة مريض",            href: "/patient-invoices",   icon: UserRound,         permission: "patient_invoices.view" },

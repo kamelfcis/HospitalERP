@@ -458,6 +458,17 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON sales_invoice_lines (invoice_id, lot_id)
       WHERE lot_id IS NOT NULL
     `);
+    // shortage_events: duplicate guard (item + user + timestamp)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_shortage_events_item_user_at
+      ON shortage_events (item_id, requested_by, requested_at DESC)
+    `);
+    // shortage_agg: list sorted by request_count desc (dashboard default)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_shortage_agg_count_last
+      ON shortage_agg (request_count DESC, last_requested_at DESC)
+      WHERE is_resolved = false
+    `);
     log("[STARTUP] Performance indexes ensured");
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");

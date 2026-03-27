@@ -42,6 +42,7 @@ import { registerCustomerPaymentRoutes }  from "./customer-payments";
 import { registerPurchaseReturnRoutes }   from "./purchase-returns";
 import { registerDeliveryPaymentRoutes }  from "./delivery-payments";
 import { registerReceiptSettingsRoutes }  from "./receipt-settings";
+import { registerShortageRoutes }        from "./shortage";
 
 export { broadcastToPharmacy, broadcastBedBoardUpdate } from "./_shared";
 
@@ -69,6 +70,7 @@ export async function registerRoutes(
   registerPurchaseReturnRoutes(app);
   registerDeliveryPaymentRoutes(app);
   registerReceiptSettingsRoutes(app);
+  registerShortageRoutes(app);
 
   return httpServer;
 }

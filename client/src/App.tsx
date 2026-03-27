@@ -61,6 +61,7 @@ const PerfDiagnostics = lazy(() => import("@/pages/PerfDiagnostics"));
 const DuplicatePatients = lazy(() => import("@/pages/duplicate-patients"));
 const StockCount = lazy(() => import("@/pages/stock-count/index"));
 const StockCountDetail = lazy(() => import("@/pages/stock-count/session-detail"));
+const ShortageNotebook = lazy(() => import("@/pages/shortage-notebook/index"));
 const SuppliersPage = lazy(() => import("@/pages/suppliers/index"));
 const SupplierPaymentsPage  = lazy(() => import("@/pages/supplier-payments/index"));
 const CustomerPaymentsPage  = lazy(() => import("@/pages/customer-payments/index"));
@@ -129,6 +130,7 @@ function Router() {
           <Route path="/transfer-preparation">{() => <G p="transfers.view"><TransferPreparation /></G>}</Route>
           <Route path="/stock-count">{() => <G p="stock_count.view"><StockCount /></G>}</Route>
           <Route path="/stock-count/:id">{() => <G p="stock_count.view"><StockCountDetail /></G>}</Route>
+          <Route path="/shortage-notebook">{() => <G p="shortage.view"><ShortageNotebook /></G>}</Route>
           <Route path="/suppliers">{() => <G p="receiving.view"><SuppliersPage /></G>}</Route>
           <Route path="/supplier-receiving">{() => <G p="receiving.view"><SupplierReceiving /></G>}</Route>
           <Route path="/purchase-invoices">{() => <G p="purchase_invoices.view"><PurchaseInvoice /></G>}</Route>

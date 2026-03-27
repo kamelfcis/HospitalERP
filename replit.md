@@ -1,7 +1,7 @@
 # Hospital General Ledger System
 
 ## Overview
-This project is an Arabic RTL web application for hospital general ledger (GL) accounting, designed for the Middle East healthcare sector. It provides comprehensive financial management, including accounts, cost centers, and journal entries, generating IFRS-compliant financial reports in EGP. Key capabilities extend to inventory and sales processing, patient and service invoicing, multi-pharmacy support, and advanced security and reporting. The overarching vision is to establish this solution as the leading accounting software for healthcare providers in the region.
+This project is an Arabic RTL web application for hospital general ledger (GL) accounting, tailored for the Middle East healthcare sector. It provides comprehensive financial management, including accounts, cost centers, and journal entries, generating IFRS-compliant financial reports in EGP. Key capabilities extend to inventory and sales processing, patient and service invoicing, multi-pharmacy support, and advanced security and reporting. The overarching vision is to establish this solution as the leading accounting software for healthcare providers in the region.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -15,107 +15,43 @@ The user interface features a professional design, a collapsible sidebar, A4 pri
 ### Technical Implementations
 The system utilizes a RESTful JSON API. Drizzle ORM manages PostgreSQL interactions, and Zod with `drizzle-zod` handles validation. Concurrency and idempotency are managed using `FOR UPDATE` row locks and optimistic concurrency. Financial accuracy is maintained through server-side recomputation with `HALF_UP` rounding. Critical system settings are cached. Centralized error handling provides Arabic messages and specific HTTP status codes. Inventory management includes expired batch blocking and FEFO. An audit trail covers critical operations, and automated backup/restore is supported. OPD billing implements IFRS revenue deferral. A centralized lookup architecture ensures consistent data fetching.
 
-### Performance Optimizations
-- **React.memo on table rows**: `ReturnLineRow` (purchase-returns) and `LineRow` (stock-count) are memoized. Uses `filteredLinesRef` pattern so `onEnterAtRow` callback stays stable. Stable props: `localCount` (string from Map), `isFocused` (bool), `shouldActivate` (bool); callbacks stable via `useCallback`.
-- **Vendor chunking** (`vite.config.ts`): `manualChunks` splits `vendor-react`, `vendor-query`, `vendor-radix`, `vendor-icons`, `vendor-router` for better browser caching on repeat visits.
-- **xlsx**: Server-side only; no client import needed.
-
-### Grid Navigation + Scanner Pattern (MANDATORY for all data-entry screens)
-This pattern was perfected in `client/src/pages/sales-invoices/` and **must be reused** in any screen with a table of editable quantity/numeric cells and a barcode scanner. Reference implementation:
-- `InvoiceLineTable.tsx` — grid container + `QtyCell`
-- `useInvoiceLines.ts` — `handleQtyConfirm` with early exit
-- `useBarcodeScanner.ts` — global scanner listener
-
-#### Three-rule architecture:
-
-**Rule 1 — Uncontrolled QtyCell (zero re-renders on navigation)**
-```tsx
-const inputRef = useRef<HTMLInputElement>(null);
-
-// Sync from external state only when NOT focused
-useEffect(() => {
-  const el = inputRef.current;
-  if (el && document.activeElement !== el) {
-    el.value = String(line.qty);
-    pendingQtyRef.current.delete(line.tempId);
-  }
-}, [line.qty, line.unitLevel, line.tempId]);
-
-<input
-  ref={inputRef}
-  defaultValue={String(line.qty)}   // NOT value= (uncontrolled)
-  onChange={(e) => pendingQtyRef.current.set(line.tempId, e.target.value)}
-  onFocus={(e) => { pendingQtyRef.current.delete(line.tempId); e.target.select(); }}
-  onBlur={() => onQtyConfirm(line.tempId)}
-  data-grid-row={rowIndex}
-  data-grid-col="qty"
-/>
-```
-*Key: NO useState, NO setLocalVal, NO React state update on focus → zero re-renders during navigation.*
-
-**Rule 2 — Early exit in qty confirmation (zero network on arrow navigation)**
-```tsx
-const handleQtyConfirm = useCallback(async (tempId: string) => {
-  const pendingVal = pendingQtyRef.current.get(tempId);
-  if (pendingVal === undefined) return;  // ← user just navigated, didn't type → exit immediately
-  // ... rest of FEFO / updateLine logic
-}, [...]);
-```
-*Key: `pendingQtyRef` only has a value when the user TYPED something. Arrow navigation leaves it empty → instant return.*
-
-**Rule 3 — Global scanner listener (scanner works from any focused element)**
-```tsx
-// In useBarcodeScanner.ts: attach to document, not to barcode input
-document.addEventListener("keydown", handleKeyDown);
-// Filter: e.key.length !== 1 → skip arrow/ctrl/etc. keys
-// Filter: e.key !== "Enter" → handled separately for scan end
-```
-*Key: scanner reads from ANY focused element (qty cell, body, anywhere). Never force-focus the barcode input on every navigation.*
-
-**Arrow navigation in container:**
-```tsx
-// data-grid-row / data-grid-col attributes on each cell
-// Container div onKeyDown:
-if (e.key === "ArrowDown") { e.preventDefault(); nextRow = row + 1; }
-if (e.key === "ArrowUp")   { e.preventDefault(); nextRow = row - 1; }
-// seek(nextRow, nextCol) → querySelector → el.focus()
-```
-Enter/Tab in QtyCell → focus barcode input (scanner handoff).
+Performance optimizations include `React.memo` on table rows and vendor chunking. A mandatory grid navigation and scanner pattern, refined in sales invoices, ensures efficient data entry across all relevant screens, featuring uncontrolled quantity cells for zero re-renders, early exit in quantity confirmation to avoid unnecessary network calls, and a global scanner listener for flexible input.
 
 ### Feature Specifications
--   **Financial Management**: Includes Chart of Accounts, Cost Centers, Journal Entries, Fiscal Period controls, IFRS-compliant reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger), and automatic journal entry generation.
--   **Inventory & Sales**: Manages supplier receiving, sales invoicing (barcode, FEFO), sales returns, patient invoicing (services, drugs, consumables), patient admissions, and master data.
--   **Services & Price Lists**: CRUD for department-scoped services and price lists with inline editing and bulk adjustments.
--   **Multi-Pharmacy Support**: Provides isolation for invoicing and cashier operations across multiple pharmacies.
--   **Cashier & Security**: Features real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC), Dynamic Account Resolution, and a complete cashier shift lifecycle with business date management and concurrent collection protection.
--   **Outpatient Clinic Module**: Covers clinic booking, doctor consultations, orders, integration with sales/service orders, doctor-specific pricing, clinic-scoped drug favorites. Includes structured consultation fields (SOAP), doctor templates, quick follow-up helpers, patient history optimization, contract FK stamping and validation, and read-only operational dashboards.
--   **Reporting & Audit**: Ensures balanced financial reports, RBAC enforcement, comprehensive audit trails, and strict validation.
--   **Department Services Orders**: Unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
--   **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine (patient accommodation with `hours_24`/`hotel_noon` billing), Bed Board with real-time updates, and a Surgery Types System.
--   **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation and lot adjustments.
--   **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions. Individual user permissions (overrides + doctor link + clinic assignments) are accessible from the same page via `?userId=` query param — no separate dialog; the permissions icon in Users Management navigates there directly.
--   **Contracts Module**: Supports master data for insurance/contract companies, contracts, and member cards. Includes a 5-pass rule evaluator for contract coverage, a claims GL accounting system, and an approval workflow.
--   **Account Mappings Module**: Dedicated UI and transactional backend route for bulk updates.
--   **Items Excel Import/Export**: Bulk management of items via xlsx. Export (template or full data), Import with upsert, auto-creates form types, handles barcodes via `item_barcodes`, deduplicates by `item_code`.
--   **Customer Credit Payments Module**: Manages customer credit, including `customerId` handling for credit-type customers, restoration of `customerId` on invoice load, and integration into cashier handover summaries. Has dedicated permissions `CREDIT_PAYMENT_VIEW` (`credit_payment.view`) and `CREDIT_PAYMENT_MANAGE` (`credit_payment.manage`) — sidebar link uses `credit_payment.view`, backend routes are permission-guarded, and `ShiftTotalsWidget` hides the credit row for users without this permission. Cashier role does NOT receive these permissions.
--   **Supplier Payments Module**: Manages supplier payments with dedicated database schemas (`supplier_payments` + `supplier_payment_lines`), backend storage for balances and invoices, routes for payment creation and reporting, and a comprehensive frontend for payment processing. GL journal integration: Dr supplier AP account / Cr treasury (shift.glAccountId). Schema extended with `gl_account_id`, `shift_id`, `journal_entry_id`. Shared `useTreasurySelector` hook + `TreasurySelector` component used in both سداد موردين and تحصيل الآجل: non-admins auto-select their own shift (read-only badge); admins see full dropdown of all open shifts.
--   **Sales Return Accounting**: Implements a two-stage journal entry system for sales returns, integrating with inventory movements and cashier refunds, with visual journal preview in account mapping. Phase 1 (`generateSalesReturnJournal`) creates draft journal: Dr Revenue (subtotal) + Dr Inventory / Cr Receivables (netTotal) + Cr Discount Allowed (discountValue, if any) + Cr COGS. Phase 2 (`completeSalesReturnWithCash`) swaps the Receivables credit line to the cashier's GL account and posts the journal. The accounting retry worker triggers Phase 2 automatically when it creates a Phase 1 journal for an invoice that was already `collected` by the cashier before the retry ran.
--   **Purchase Returns Module (مرتجع مشتريات)**: Full module for returning purchased items to suppliers. Features: invoice-linked returns (`purchase_return_headers` + `purchase_return_lines`), free lot selection from the invoice's warehouse, atomic lot decrement with `inventory_lot_movements (tx_type='out', reference_type='purchase_return')`, GL journal reversal (Dr AP / Cr Inventory + Cr VAT Input) reusing `purchase_invoice` account mappings, and live `totalReturns` in the Supplier Payments balance strip. UI: two-tab page (create + history), supplier combobox, invoice selector, line editor with lot selector, confirmation dialog, print view. Route: `/purchase-returns`.
--   **Delivery Payment Collection (تحصيل فواتير التوصيل المنزلي)**: Full module for collecting delivery invoices (customer_type='delivery'). Features: `delivery_receipts` + `delivery_receipt_lines` tables, atomic receipt creation with GL journal (Dr treasury / Cr receivables), auto-resolve shiftId from GL account, shift totals integration (`deliveryCollected` + `deliveryCollectedCount`), cashier handover report column, ShiftTotalsWidget row, permissions (`DELIVERY_PAYMENT_VIEW`/`DELIVERY_PAYMENT_MANAGE`). UI: invoice list with auto-distribution, treasury selector (same as credit/supplier), receipt report tab. Route: `/delivery-payments`. GL ref: `DLVMT-{n}`. Sales invoice editor has 'توصيل منزلي' as a customer type option.
--   **Thermal Receipt Printing (طباعة إيصالات حرارية)**: Full 80mm thermal receipt system for the cashier module. Auto-prints after invoice collection; receipt includes pharmacy header, warehouse name, cashier name, date/time, itemized lines with quantities and prices, totals, discount row, and Code128 barcode (via Libre Barcode 128 Google Font). Settings stored in `system_settings` with keys `receipt_header`, `receipt_footer`, `receipt_logo_text`, `receipt_auto_print`, `receipt_show_preview`. Settings page at `/receipt-settings` (requires `settings.account_mappings` permission). Reprint button on collected invoices in the Sales Invoice Registry. Architecture: `server/routes/receipt-settings.ts` (GET/PUT /api/receipt-settings + GET /api/cashier/receipt-data/:invoiceId), `client/src/utils/receipt-printer.ts` (HTML generator, window.print()), `client/src/hooks/use-receipt-print.ts`, `client/src/pages/receipt-settings/index.tsx`. Integration: `useCashierActions` calls `onPrintReceipts` callback after successful collection.
--   **Item Movement Report (تقرير حركة صنف)**: Detailed per-item inventory movement report. Features: item combobox search (debounced, `/api/items`), warehouse filter, date range, movement-type checkboxes (receiving/sales/patient_invoice/transfer/stock_count/purchase_return), unit-level toggle (major/medium/minor). Table shows: date+time, movement type badge (including separate "مرتجع مبيعات" badge for `is_return=true` sales invoices), system document number, supplier name + invoice number for receiving, supplier name for purchase_return, transfer destination/source warehouse, quantity (signed), running balance (SQL window function), purchase price, sale price, user name, bonus indicator. Summary bar with totals per movement type and grand in/out. Excel export (server-side xlsx) and print (A4 landscape). Bonus items flagged when `unit_cost = 0`. Routes: `GET /api/reports/item-movement-detail`, `GET /api/reports/item-movement-detail/export`. Storage: `server/storage/item-movement-report-storage.ts`.
+- **Financial Management**: Chart of Accounts, Cost Centers, Journal Entries, Fiscal Period controls, IFRS-compliant reports (Trial Balance, Income Statement, Balance Sheet, Cost Center Reports, Account Ledger), and automatic journal entry generation.
+- **Inventory & Sales**: Supplier receiving, sales invoicing (barcode, FEFO), sales returns, patient invoicing (services, drugs, consumables), patient admissions, and master data.
+- **Services & Price Lists**: CRUD for department-scoped services and price lists with inline editing and bulk adjustments.
+- **Multi-Pharmacy Support**: Isolation for invoicing and cashier operations across multiple pharmacies.
+- **Cashier & Security**: Real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC), Dynamic Account Resolution, and a complete cashier shift lifecycle with business date management and concurrent collection protection.
+- **Outpatient Clinic Module**: Clinic booking, doctor consultations, orders, integration with sales/service orders, doctor-specific pricing, clinic-scoped drug favorites, structured consultation fields (SOAP), doctor templates, and patient history optimization.
+- **Reporting & Audit**: Balanced financial reports, RBAC enforcement, comprehensive audit trails, and strict validation.
+- **Department Services Orders**: Unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
+- **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine (patient accommodation billing), Bed Board with real-time updates, and a Surgery Types System.
+- **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation and lot adjustments.
+- **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions with individual user overrides.
+- **Contracts Module**: Master data for insurance/contract companies, contracts, and member cards, including a 5-pass rule evaluator for contract coverage, claims GL accounting, and an approval workflow.
+- **Account Mappings Module**: Dedicated UI and transactional backend for bulk updates.
+- **Items Excel Import/Export**: Bulk management of items via xlsx with upsert functionality and barcode handling.
+- **Customer Credit Payments Module**: Manages customer credit, integrating with cashier handover summaries and dedicated permissions.
+- **Supplier Payments Module**: Manages supplier payments with dedicated database schemas, backend storage for balances, payment processing routes, and GL journal integration.
+- **Sales Return Accounting**: Two-stage journal entry system for sales returns, integrating with inventory movements and cashier refunds.
+- **Purchase Returns Module**: Full module for returning purchased items to suppliers, including invoice-linked returns, atomic lot decrement, GL journal reversal, and live `totalReturns` display.
+- **Delivery Payment Collection**: Full module for collecting delivery invoices, featuring atomic receipt creation with GL journal, shift totals integration, and cashier handover report columns.
+- **Thermal Receipt Printing**: Full 80mm thermal receipt system for the cashier module, with auto-printing after collection, customizable settings, and a reprint function.
+- **Shortage Notebook**: Procurement decision dashboard for pharmacy managers, logging shortage events and providing aggregated statistics with two analysis modes and server-side filtering.
+- **Item Movement Report**: Detailed per-item inventory movement report with search, filters, unit-level toggle, signed quantities, running balance, and Excel export/print functionality.
 
 ## External Dependencies
 
 ### Database
--   PostgreSQL
+- PostgreSQL
 
 ### Key NPM Packages
--   `drizzle-orm`
--   `drizzle-kit`
--   `express`
--   `@tanstack/react-query`
--   `zod`
--   `xlsx`
--   `shadcn/ui`
--   `connect-pg-simple`
+- `drizzle-orm`
+- `drizzle-kit`
+- `express`
+- `@tanstack/react-query`
+- `zod`
+- `xlsx`
+- `shadcn/ui`
+- `connect-pg-simple`
