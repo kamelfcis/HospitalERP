@@ -5,7 +5,7 @@
  */
 
 import type { Express } from "express";
-import { requireAuth }   from "./_shared";
+import { requireAuth, checkPermission } from "./_shared";
 import { z }             from "zod";
 import { pool }          from "../db";
 import {
@@ -46,7 +46,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
 
   // ── GET /api/customer-payments/active-treasuries ─────────────────────────
   // يُعيد جميع الخزن النشطة (للأدمن) أو خزنة المستخدم (للموظف)
-  app.get("/api/customer-payments/active-treasuries", requireAuth, async (req, res) => {
+  app.get("/api/customer-payments/active-treasuries", requireAuth, checkPermission("credit_payment.view"), async (req, res) => {
     try {
       const result = await pool.query<{
         id: string; name: string; gl_account_id: string;
@@ -64,7 +64,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
 
   // ── GET /api/customer-payments/open-shifts (محفوظ للتوافق) ───────────────
   // يُعيد الوردات المفتوحة — مُستبدَل بـ active-treasuries لكنه محفوظ
-  app.get("/api/customer-payments/open-shifts", requireAuth, async (_req, res) => {
+  app.get("/api/customer-payments/open-shifts", requireAuth, checkPermission("credit_payment.view"), async (_req, res) => {
     try {
       const result = await pool.query<{
         id: string; opened_at: string;
@@ -87,7 +87,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
   });
 
   // ── GET /api/credit-customers ─────────────────────────────────────────────
-  app.get("/api/credit-customers", requireAuth, async (req, res) => {
+  app.get("/api/credit-customers", requireAuth, checkPermission("credit_payment.view"), async (req, res) => {
     try {
       const search     = String(req.query.search ?? "");
       const pharmacyId = req.query.pharmacyId ? String(req.query.pharmacyId) : null;
@@ -99,7 +99,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
   });
 
   // ── POST /api/credit-customers (quick-add) ────────────────────────────────
-  app.post("/api/credit-customers", requireAuth, async (req, res) => {
+  app.post("/api/credit-customers", requireAuth, checkPermission("credit_payment.manage"), async (req, res) => {
     try {
       const { name, phone, notes, pharmacyId } = req.body;
       if (!name?.trim()) return res.status(400).json({ message: "الاسم مطلوب" });
@@ -113,7 +113,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
   });
 
   // ── GET /api/customer-payments/next-number ────────────────────────────────
-  app.get("/api/customer-payments/next-number", requireAuth, async (_req, res) => {
+  app.get("/api/customer-payments/next-number", requireAuth, checkPermission("credit_payment.view"), async (_req, res) => {
     try {
       const nextNumber = await getNextReceiptNumber();
       res.json({ nextNumber });
@@ -123,7 +123,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
   });
 
   // ── GET /api/customer-payments/balance/:customerId ────────────────────────
-  app.get("/api/customer-payments/balance/:customerId", requireAuth, async (req, res) => {
+  app.get("/api/customer-payments/balance/:customerId", requireAuth, checkPermission("credit_payment.view"), async (req, res) => {
     try {
       const balance = await getCustomerBalance(req.params.customerId);
       if (!balance) return res.status(404).json({ message: "العميل غير موجود" });
@@ -134,7 +134,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
   });
 
   // ── GET /api/customer-payments/invoices/:customerId ───────────────────────
-  app.get("/api/customer-payments/invoices/:customerId", requireAuth, async (req, res) => {
+  app.get("/api/customer-payments/invoices/:customerId", requireAuth, checkPermission("credit_payment.view"), async (req, res) => {
     try {
       const status   = parseStatus(req.query.status, "unpaid");
       const invoices = await getCustomerCreditInvoices(req.params.customerId, status);
@@ -145,7 +145,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
   });
 
   // ── POST /api/customer-payments ───────────────────────────────────────────
-  app.post("/api/customer-payments", requireAuth, async (req, res) => {
+  app.post("/api/customer-payments", requireAuth, checkPermission("credit_payment.manage"), async (req, res) => {
     try {
       const parsed = createReceiptSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
@@ -165,7 +165,7 @@ export function registerCustomerPaymentRoutes(app: Express) {
   });
 
   // ── GET /api/customer-payments/report/:customerId ─────────────────────────
-  app.get("/api/customer-payments/report/:customerId", requireAuth, async (req, res) => {
+  app.get("/api/customer-payments/report/:customerId", requireAuth, checkPermission("credit_payment.view"), async (req, res) => {
     try {
       const status = parseStatus(req.query.status, "all");
       const report = await getCustomerReceiptReport(req.params.customerId, status);

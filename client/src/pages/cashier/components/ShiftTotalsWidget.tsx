@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Wallet, GripVertical } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
+import { useAuth } from "@/hooks/use-auth";
 import type { ShiftTotals } from "../types";
 
 interface Props {
@@ -8,6 +9,9 @@ interface Props {
 }
 
 export function ShiftTotalsWidget({ totals }: Props) {
+  const { hasPermission } = useAuth();
+  const canViewCredit = hasPermission("credit_payment.view");
+
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const dragging  = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, px: 0, py: 0 });
@@ -81,18 +85,20 @@ export function ShiftTotalsWidget({ totals }: Props) {
             valueClass="text-amber-600 dark:text-amber-400"
           />
 
-          {/* تحصيل الآجل — يظهر دائماً */}
-          <Row
-            label="تحصيل الآجل"
-            value={totals.creditCollected ?? "0"}
-            count={totals.creditCount ?? 0}
-            testId="text-credit-collected"
-            valueClass={
-              parseFloat(totals.creditCollected ?? "0") > 0
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-muted-foreground"
-            }
-          />
+          {/* تحصيل الآجل — يظهر فقط لمن لديه صلاحية credit_payment.view */}
+          {canViewCredit && (
+            <Row
+              label="تحصيل الآجل"
+              value={totals.creditCollected ?? "0"}
+              count={totals.creditCount ?? 0}
+              testId="text-credit-collected"
+              valueClass={
+                parseFloat(totals.creditCollected ?? "0") > 0
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-muted-foreground"
+              }
+            />
+          )}
 
           {/* تحصيل التوصيل — يظهر دائماً */}
           <Row
