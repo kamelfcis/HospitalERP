@@ -199,7 +199,9 @@ const methods = {
         COALESCE(s.opening_cash, 0)::float                         AS "openingCash",
         COALESCE(s.closing_cash, 0)::float                         AS "closingCash",
         COALESCE(s.expected_cash, 0)::float                        AS "expectedCash",
-        COALESCE(s.variance, 0)::float                             AS "variance",
+        (COALESCE(s.closing_cash, 0)
+          - (COALESCE(r.cash_total, 0) + COALESCE(c.credit_total, 0) + COALESCE(d.delivery_total, 0) - COALESCE(ref.refund_total, 0))
+        )::float                                                    AS "variance",
         COALESCE(r.cash_total, 0)::float                           AS "cashSalesTotal",
         COALESCE(c.credit_total, 0)::float                         AS "creditSalesTotal",
         COALESCE(d.delivery_total, 0)::float                       AS "deliveryCollectedTotal",

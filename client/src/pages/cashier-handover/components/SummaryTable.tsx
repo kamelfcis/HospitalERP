@@ -62,6 +62,10 @@ function StatusBadge({ status }: { status: string }) {
     return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">مفتوحة</Badge>;
   if (status === "closed")
     return <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300">مغلقة</Badge>;
+  if (status === "stale")
+    return <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">متوقفة</Badge>;
+  if (status === "closing")
+    return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">في الإغلاق</Badge>;
   return <Badge variant="outline">{status}</Badge>;
 }
 
@@ -271,7 +275,7 @@ export function SummaryTable({ rows, isLoading }: SummaryTableProps) {
               <LoadingRows />
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={14} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={15} className="text-center py-12 text-muted-foreground">
                   لا توجد ورديات تطابق معايير البحث
                 </TableCell>
               </TableRow>
