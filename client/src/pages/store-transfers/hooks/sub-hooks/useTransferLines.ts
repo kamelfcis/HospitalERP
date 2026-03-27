@@ -252,16 +252,26 @@ export function useTransferLines({
 
         setFormLines((prev) => [...prev, ...newLines]);
 
-        const expiryOpts: ExpiryOption[] =
-          allBatches.length > 0
-            ? allBatches
-            : preview.allocations.map((a: TransferFefoAllocation) => ({
-                expiryDate: a.expiryDate,
-                expiryMonth: a.expiryMonth,
-                expiryYear: a.expiryYear,
-                qtyAvailableMinor: a.qtyAvailableMinor,
-                lotSalePrice: a.lotSalePrice,
-              }));
+        // allBatches مجلوبة مسبقاً من ItemFastSearch (الطريق السريع)
+        // لو فارغة (المستخدم كان سريعاً قبل اكتمال التحميل) → نجلب القائمة الكاملة
+        // هذا ضروري لكشف تعارض الأسعار بدقة
+        let expiryOpts: ExpiryOption[] = allBatches.length > 0 ? allBatches : [];
+        if (expiryOpts.length === 0) {
+          try {
+            const ep = new URLSearchParams({ warehouseId: sourceWarehouseId, asOfDate: transferDate });
+            const er = await fetch(`/api/items/${item.id}/expiry-options?${ep}`);
+            if (er.ok) expiryOpts = await er.json();
+          } catch {
+            // fallback: على الأقل استخدم تخصيصات FEFO (سعر واحد فقط)
+            expiryOpts = preview.allocations.map((a: TransferFefoAllocation) => ({
+              expiryDate: a.expiryDate,
+              expiryMonth: a.expiryMonth,
+              expiryYear: a.expiryYear,
+              qtyAvailableMinor: a.qtyAvailableMinor,
+              lotSalePrice: a.lotSalePrice,
+            }));
+          }
+        }
         const update: Record<string, ExpiryOption[]> = {};
         newLines.forEach((nl) => { update[nl.id] = expiryOpts; });
         setLineExpiryOptions((prev) => ({ ...prev, ...update }));
