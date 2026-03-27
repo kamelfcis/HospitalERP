@@ -100,21 +100,41 @@ export function useShortageRequest(options: UseShortageRequestOptions) {
   }, [getSelectedItem, mutation, toast]);
 
   // ── Global Alt+S listener ─────────────────────────────────────────────────
+  //
+  // Scope rules:
+  //   ✅ يعمل من: body، أزرار، خلايا qty (type=number/tel)، checkbox، radio
+  //   ❌ لا يعمل من: text/search/email/password inputs (المستخدم يكتب نصاً)
+  //   ❌ لا يعمل من: textarea (المستخدم يكتب ملاحظات)
+  //   ❌ لا يُضيف الصنف لو مفيش selected item (معالَج في triggerShortage نفسها)
+  //
   useEffect(() => {
     if (!enableGlobalShortcut) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === "s" || e.key === "S" || e.key === "س")) {
-        // لا نمنع الـ default هنا — نتركها تعمل فقط إذا لم يكن في مدخل نصي يستخدم Alt+S
-        const target = e.target as HTMLElement;
-        const tagName = target.tagName.toLowerCase();
-        if (tagName === "input" || tagName === "textarea" || tagName === "select") {
-          // نسمح بـ Alt+S من المدخلات أيضاً (الصيدلاني عادةً في خلية qty)
-          // لكن نمنع السلوك الافتراضي لعدم إدراج حرف
-        }
-        e.preventDefault();
-        triggerShortage();
+      if (!e.altKey) return;
+      if (e.key !== "s" && e.key !== "S" && e.key !== "س") return;
+
+      const target = e.target as HTMLElement;
+      const tag    = target.tagName.toLowerCase();
+
+      // ── منع داخل textarea دائماً ──────────────────────────────────────────
+      if (tag === "textarea") return;
+
+      // ── داخل input: السماح فقط لوحدات الكمية (number/tel) ────────────────
+      if (tag === "input") {
+        const inputType = (target as HTMLInputElement).type.toLowerCase();
+        // أنواع "الكتابة النصية" → نتجاهل Alt+S ونترك الحرف يُكتب طبيعياً
+        const TEXT_TYPES = ["text", "search", "email", "password", "url"];
+        if (TEXT_TYPES.includes(inputType)) return;
+        // type=number أو type=tel أو غيرها → نسمح (خلية qty عادةً)
       }
+
+      // ── منع داخل contenteditable ──────────────────────────────────────────
+      if (target.isContentEditable) return;
+
+      // ── تنفيذ الطلب ──────────────────────────────────────────────────────
+      e.preventDefault();
+      triggerShortage();
     };
 
     document.addEventListener("keydown", handleKeyDown);

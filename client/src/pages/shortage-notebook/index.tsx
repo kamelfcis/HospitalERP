@@ -28,6 +28,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -275,11 +277,30 @@ export default function ShortageNotebook() {
   const [sortBy,       setSortBy]       = useState("request_count");
   const [sortDir,      setSortDir]      = useState<SortDir>("desc");
 
+  // التصنيف — checkbox: drug=أدوية، supply=مستهلكات، service=خدمات
+  // مجموعة فارغة = كل التصنيفات (بدون فلتر)
+  const [selCategories, setSelCategories] = useState<Set<string>>(new Set());
+
+  const toggleCategory = useCallback((cat: string) => {
+    setSelCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+    setPage(1);
+  }, []);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // ── Build query key ───────────────────────────────────────────────────────
+  const categoriesParam = selCategories.size > 0
+    ? Array.from(selCategories).join(",")
+    : "";
+
   const qParams = new URLSearchParams({
     mode, displayUnit, fromDate, toDate,
+    categories: categoriesParam,
     status: status || "",
     search: search.trim(),
     showResolved: String(showResolved),
@@ -417,6 +438,47 @@ export default function ShortageNotebook() {
             className="h-8 text-sm pr-8"
             data-testid="input-search"
           />
+        </div>
+
+        {/* ── Category filter — checkboxes للتصنيف ─────────────────── */}
+        <div className="flex items-center gap-3 border-r border-gray-200 pr-3 mr-1">
+          <span className="text-xs text-gray-500 shrink-0">التصنيف:</span>
+
+          <div className="flex items-center gap-1.5">
+            <Checkbox
+              id="cat-drug"
+              checked={selCategories.has("drug")}
+              onCheckedChange={() => toggleCategory("drug")}
+              data-testid="checkbox-cat-drug"
+              className="h-3.5 w-3.5"
+            />
+            <Label htmlFor="cat-drug" className="text-xs cursor-pointer text-gray-700 select-none">
+              أدوية
+            </Label>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Checkbox
+              id="cat-supply"
+              checked={selCategories.has("supply")}
+              onCheckedChange={() => toggleCategory("supply")}
+              data-testid="checkbox-cat-supply"
+              className="h-3.5 w-3.5"
+            />
+            <Label htmlFor="cat-supply" className="text-xs cursor-pointer text-gray-700 select-none">
+              مستهلكات
+            </Label>
+          </div>
+
+          {selCategories.size > 0 && (
+            <button
+              onClick={() => { setSelCategories(new Set()); setPage(1); }}
+              className="text-xs text-blue-500 hover:underline"
+              data-testid="btn-clear-categories"
+            >
+              مسح
+            </button>
+          )}
         </div>
 
         {/* Show resolved toggle */}

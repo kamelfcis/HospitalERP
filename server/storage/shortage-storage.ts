@@ -53,7 +53,7 @@ export interface DashboardParams {
   displayUnit:   DisplayUnit;
   fromDate:      string;       // YYYY-MM-DD
   toDate:        string;       // YYYY-MM-DD
-  category?:     string | null;
+  categories?:   string[] | null;   // item_category: ['drug','supply','service']
   status?:       StatusFilter;
   search?:       string | null;
   warehouseId?:  string | null;
@@ -203,7 +203,7 @@ export async function getDashboard(params: DashboardParams): Promise<{
 }> {
   const {
     mode, displayUnit, fromDate, toDate,
-    category, status, search, warehouseId,
+    categories, status, search, warehouseId,
     showResolved = false,
     page, limit,
     sortBy, sortDir,
@@ -236,13 +236,17 @@ export async function getDashboard(params: DashboardParams): Promise<{
 
   const whereClauses: string[] = [];
 
-  if (category)   whereClauses.push(`i.category::text = ${push(category)}`);
+  // فلتر التصنيف — يدعم array (drug / supply / service) أو فارغ = الكل
+  if (categories && categories.length > 0) {
+    whereClauses.push(`i.category::text = ANY(${push(categories)}::text[])`);
+  }
+  // البحث — ILIKE مع trigram index (pg_trgm) للأداء على 20k+ صنف
   if (search) {
     const s = `%${search.trim()}%`;
     whereClauses.push(`(i.name_ar ILIKE ${push(s)} OR i.item_code ILIKE ${push(s)})`);
   }
 
-  // الفلاتر الخاصة بالـ Mode 1 (shortage_driven)
+  // الفلاتر الخاصة بكل وضع (shortage_driven / full_analysis)
   let modeJoin   = "";
   let modeFrom   = "";
   let modeSelect = "";
@@ -260,12 +264,16 @@ export async function getDashboard(params: DashboardParams): Promise<{
     `;
     // فلتر الحل
     whereClauses.push(`sa.is_resolved = ${push(showResolved)}`);
-    // فلتر المخزن — نصنع وهناك رصيد في هذا المخزن تحديداً
+    // فلتر المخزن — طلبات الصنف جاءت من هذا المخزن تحديداً
     if (warehouseId) {
       whereClauses.push(`sa.requesting_warehouse_ids::jsonb ? ${push(warehouseId)}`);
     }
   } else {
-    // Mode 2: Full Analysis — يبدأ من items
+    // ─── Mode 2: Full Analysis — يبدأ من items مباشرةً ────────────────────
+    //
+    // ✅ يُعيد كل الأصناف النشطة بغض النظر عن وجودها في shortage_agg.
+    // shortage_agg مُضمَّنة بـ LEFT JOIN — صفوف بدون طلبات نقص تظهر بـ 0.
+    //
     modeFrom   = "items i";
     modeJoin   = "LEFT JOIN shortage_agg sa ON sa.item_id = i.id";
     modeSelect = `
@@ -278,8 +286,17 @@ export async function getDashboard(params: DashboardParams): Promise<{
     `;
     whereClauses.push(`i.is_active = true`);
     if (warehouseId) {
-      // في الـ full analysis، فلتر المخزن يعني: فقط الأصناف التي لها بيانات في هذا المخزن
-      whereClauses.push(`inv.warehouse_id_filter = ${push(warehouseId)}`);
+      // ✅ FIX: بدلاً من inv.warehouse_id_filter (عمود غير موجود)،
+      // نستخدم EXISTS على rpt_inventory_snapshot مباشرةً.
+      // يُظهر الأصناف التي لها سجل في هذا المخزن (أي كمية).
+      whereClauses.push(`
+        EXISTS (
+          SELECT 1 FROM rpt_inventory_snapshot rpt_wh
+          WHERE rpt_wh.item_id       = i.id
+            AND rpt_wh.warehouse_id  = ${push(warehouseId)}
+            AND rpt_wh.snapshot_date = (SELECT MAX(snapshot_date) FROM rpt_inventory_snapshot)
+        )
+      `);
     }
   }
 

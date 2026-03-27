@@ -89,7 +89,11 @@ export function registerShortageRoutes(app: Express): void {
         const displayUnit = (q.displayUnit ?? "major") as DisplayUnit;
         const fromDate    = q.fromDate || defaultFromDate();
         const toDate      = q.toDate   || todayStr();
-        const category    = q.category  || null;
+        // categories: comma-separated من الـ frontend (e.g. "drug,supply")
+        const categoriesRaw = q.categories || "";
+        const categories = categoriesRaw
+          ? categoriesRaw.split(",").map((c) => c.trim()).filter(Boolean)
+          : null;
         const status      = (q.status   || null) as string | null;
         const search      = q.search    || null;
         const warehouseId = q.warehouseId || null;
@@ -108,7 +112,7 @@ export function registerShortageRoutes(app: Express): void {
 
         const { rows, total } = await getDashboard({
           mode, displayUnit, fromDate, toDate,
-          category, status: status as any, search, warehouseId,
+          categories, status: status as any, search, warehouseId,
           showResolved, page, limit, sortBy, sortDir,
         });
 

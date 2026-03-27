@@ -458,6 +458,16 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON sales_invoice_lines (invoice_id, lot_id)
       WHERE lot_id IS NOT NULL
     `);
+    // items: trigram index للبحث السريع ILIKE على name_ar و item_code (18k+ صنف)
+    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_items_name_ar_trgm
+      ON items USING GIN (name_ar gin_trgm_ops)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_items_code_trgm
+      ON items USING GIN (item_code gin_trgm_ops)
+    `);
     // shortage_events: duplicate guard (item + user + timestamp)
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_shortage_events_item_user_at
