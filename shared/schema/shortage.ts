@@ -81,12 +81,16 @@ export const shortageFollowups = pgTable("shortage_followups", {
   notes:           text("notes"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
-  // الأكثر استخداماً: البحث عن آخر follow-up لصنف محدد
+  // آخر follow-up لصنف محدد — يُستخدم في latest_followup CTE (DISTINCT ON)
   idxItemAt:    index("idx_sfollowups_item_at").on(t.itemId, t.actionAt),
-  // لفلتر الاستبعاد (excludeOrdered): يبحث عن follow_up_due_date > NOW()
+  // فلتر follow_up_due_date > NOW() — يُستخدم في استبعاد المطلوب
   idxDueDate:   index("idx_sfollowups_due_date").on(t.followUpDueDate),
-  // لتقارير المتابعة: filter by type + date
+  // تقارير المتابعة: filter by type + date
   idxTypeAt:    index("idx_sfollowups_type_at").on(t.actionType, t.actionAt),
+  // الأهم للـ backend duplicate guard + EXISTS queries:
+  //   WHERE item_id = X AND action_type = Y AND follow_up_due_date > NOW()
+  // يُغطّي أيضاً DISTINCT ON (item_id) ORDER BY item_id, action_at DESC
+  idxItemTypeAt: index("idx_sfollowups_item_type_at").on(t.itemId, t.actionType, t.actionAt),
 }));
 
 // ── Types ─────────────────────────────────────────────────────────────────────

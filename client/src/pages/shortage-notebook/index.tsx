@@ -25,6 +25,8 @@ import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { PERMISSIONS } from "@shared/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -271,6 +273,10 @@ function fmtDateAr(iso: string | null) {
 export default function ShortageNotebook() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { hasPermission } = useAuth();
+
+  // الصلاحية المطلوبة لأيقونة السماعة (تسجيل/تتبع المطلوب من الشركة)
+  const canManage = hasPermission(PERMISSIONS.SHORTAGE_MANAGE);
 
   // ── Filters ───────────────────────────────────────────────────────────────
   const [mode,         setMode]         = useState<DashboardMode>("shortage_driven");
@@ -368,7 +374,12 @@ export default function ShortageNotebook() {
     mutationFn: (itemId: string) =>
       apiRequest("POST", "/api/shortage/followup/order", { itemId })
         .then((r) => r.json()),
-    onSuccess: (data: { success: boolean; followup: { id: string } }, itemId: string) => {
+    onSuccess: (data: { success: boolean; alreadyActive?: boolean; followup: { id: string } }) => {
+      // Backend guard: الصنف مطلوب بالفعل — أُعلم المستخدم فقط
+      if (!data.success && data.alreadyActive) {
+        toast({ description: "هذا الصنف مطلوب من الشركة بالفعل ولم ينتهِ موعد المتابعة" });
+        return;
+      }
       if (!data.success) return;
       const followupId = data.followup.id;
 
@@ -712,6 +723,7 @@ export default function ShortageNotebook() {
                     resolving={resolve.isPending}
                     onMarkOrdered={() => markOrdered.mutate(row.itemId)}
                     markingOrdered={markOrdered.isPending}
+                    canManage={canManage}
                     mode={mode}
                   />
                 ))
@@ -780,6 +792,7 @@ const ShortageRow = memo(function ShortageRow({
   resolving,
   onMarkOrdered,
   markingOrdered,
+  canManage,
   mode,
 }: {
   row:             DashboardRow;
@@ -788,6 +801,7 @@ const ShortageRow = memo(function ShortageRow({
   resolving:       boolean;
   onMarkOrdered:   () => void;
   markingOrdered:  boolean;
+  canManage:       boolean;
   mode:            DashboardMode;
 }) {
   const unitLabel  = row.displayUnitName ?? "";
@@ -818,11 +832,18 @@ const ShortageRow = memo(function ShortageRow({
                   مطلوب
                 </span>
               </TooltipTrigger>
-              <TooltipContent>
-                طُلب من الشركة —{" "}
-                {row.followupDueDate
-                  ? `متابعة في ${new Date(row.followupDueDate).toLocaleDateString("ar-EG")}`
-                  : ""}
+              <TooltipContent className="text-right max-w-52">
+                <div className="font-medium">مطلوب من الشركة</div>
+                {row.followupActionAt && (
+                  <div className="text-xs opacity-80 mt-0.5">
+                    تم الطلب: {new Date(row.followupActionAt).toLocaleDateString("ar-EG")}
+                  </div>
+                )}
+                {row.followupDueDate && (
+                  <div className="text-xs opacity-80">
+                    المتابعة: {new Date(row.followupDueDate).toLocaleDateString("ar-EG")}
+                  </div>
+                )}
               </TooltipContent>
             </Tooltip>
           )}
@@ -904,8 +925,8 @@ const ShortageRow = memo(function ShortageRow({
       <TableCell className="text-center">
         <div className="flex items-center justify-center gap-1">
 
-          {/* ── أيقونة التليفون — تسجيل "تم طلبه من الشركة" ── */}
-          {row.category !== "service" && (
+          {/* ── أيقونة التليفون — مرئية فقط لمن يملك صلاحية shortage.manage ── */}
+          {canManage && row.category !== "service" && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -927,10 +948,20 @@ const ShortageRow = memo(function ShortageRow({
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                {ordered
-                  ? `مطلوب من الشركة — متابعة في ${new Date(row.followupDueDate!).toLocaleDateString("ar-EG")}`
-                  : "تم طلبه من الشركة"}
+              <TooltipContent className="text-right max-w-52">
+                {ordered && row.followupActionAt && row.followupDueDate ? (
+                  <>
+                    <div className="font-medium">مطلوب من الشركة</div>
+                    <div className="text-xs opacity-80 mt-0.5">
+                      تم الطلب: {new Date(row.followupActionAt).toLocaleDateString("ar-EG")}
+                    </div>
+                    <div className="text-xs opacity-80">
+                      المتابعة: {new Date(row.followupDueDate).toLocaleDateString("ar-EG")}
+                    </div>
+                  </>
+                ) : (
+                  "تم طلبه من الشركة"
+                )}
               </TooltipContent>
             </Tooltip>
           )}

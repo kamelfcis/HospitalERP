@@ -189,8 +189,13 @@ export function registerShortageRoutes(app: Express): void {
           return res.status(400).json({ error: "itemId مطلوب" });
         }
         const userId = (req.session as any).userId as string;
-        const record = await markOrderedFromSupplier(itemId, userId, notes ?? null);
-        return res.json({ success: true, followup: record });
+        const result = await markOrderedFromSupplier(itemId, userId, notes ?? null);
+
+        // Backend duplicate guard — يُعيد السجل الحالي بدلاً من خطأ
+        if ("alreadyActive" in result) {
+          return res.json({ success: false, alreadyActive: true, followup: result.followup });
+        }
+        return res.json({ success: true, followup: result });
       } catch (err) {
         console.error("[shortage/followup/order]", err);
         return res.status(500).json({ error: "خطأ داخلي" });
