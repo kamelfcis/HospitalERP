@@ -279,6 +279,11 @@ export default function ShortageNotebook() {
   // الصلاحية المطلوبة لأيقونة السماعة (تسجيل/تتبع المطلوب من الشركة)
   const canManage = hasPermission(PERMISSIONS.SHORTAGE_MANAGE);
 
+  // ── Optimistic ordered state ─────────────────────────────────────────────
+  // فور الضغط على السماعة: يُضاف itemId هنا لإظهار badge "مطلوب" فوراً
+  // بدون انتظار الـ 5 ثوان. يُنظَّف تلقائياً عند تحديث الـ query.
+  const [localOrderedIds, setLocalOrderedIds] = useState<Set<string>>(new Set());
+
   // ── Filters ───────────────────────────────────────────────────────────────
   const [mode,         setMode]         = useState<DashboardMode>("shortage_driven");
   const [displayUnit,  setDisplayUnit]  = useState<DisplayUnit>("major");
@@ -375,13 +380,17 @@ export default function ShortageNotebook() {
     mutationFn: (itemId: string) =>
       apiRequest("POST", "/api/shortage/followup/order", { itemId })
         .then((r) => r.json()),
-    onSuccess: (data: { success: boolean; alreadyActive?: boolean; followup: { id: string } }) => {
+    onSuccess: (data: { success: boolean; alreadyActive?: boolean; followup: { id: string } }, itemId: string) => {
       // Backend guard: الصنف مطلوب بالفعل — أُعلم المستخدم فقط
       if (!data.success && data.alreadyActive) {
         toast({ description: "هذا الصنف مطلوب من الشركة بالفعل ولم ينتهِ موعد المتابعة" });
         return;
       }
       if (!data.success) return;
+
+      // ✅ Optimistic feedback: badge "مطلوب" يظهر فوراً بدون انتظار الـ query
+      setLocalOrderedIds(prev => new Set([...prev, itemId]));
+
       const followupId = data.followup.id;
 
       // Undo ref — سيُستخدم إذا ضغط المستخدم "تراجع" خلال 5 ثوان
@@ -389,6 +398,12 @@ export default function ShortageNotebook() {
 
       const handleUndo = async () => {
         undone = true;
+        // إزالة الـ optimistic state فوراً → يختفي الـ badge
+        setLocalOrderedIds(prev => {
+          const next = new Set(prev);
+          next.delete(itemId);
+          return next;
+        });
         await apiRequest("DELETE", `/api/shortage/followup/${followupId}`, undefined);
         invalidateDashboard();
         toast({ description: "تم التراجع بنجاح" });
@@ -740,6 +755,7 @@ export default function ShortageNotebook() {
                     markingOrdered={markOrdered.isPending}
                     onMarkReceived={() => markReceivedMut.mutate(row.itemId)}
                     markingReceived={markReceivedMut.isPending}
+                    localOrdered={localOrderedIds.has(row.itemId)}
                     canManage={canManage}
                     mode={mode}
                   />
@@ -811,6 +827,7 @@ const ShortageRow = memo(function ShortageRow({
   markingOrdered,
   onMarkReceived,
   markingReceived,
+  localOrdered,
   canManage,
   mode,
 }: {
@@ -822,11 +839,13 @@ const ShortageRow = memo(function ShortageRow({
   markingOrdered:   boolean;
   onMarkReceived:   () => void;
   markingReceived:  boolean;
+  localOrdered:     boolean;   // optimistic — يُظهر badge فوراً قبل refresh الـ query
   canManage:        boolean;
   mode:             DashboardMode;
 }) {
   const unitLabel  = row.displayUnitName ?? "";
-  const ordered    = isActiveOrder(row);
+  // ordered = من الـ server (follow_up_due_date > NOW()) أو optimistic محلي
+  const ordered    = isActiveOrder(row) || localOrdered;
 
   return (
     <TableRow
