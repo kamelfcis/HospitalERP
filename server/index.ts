@@ -496,6 +496,18 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier settings seed error");
   }
 
+  // ── 5h-post2. Seed pharmacy_mode default ─────────────────────────────────
+  try {
+    await db.execute(sql`
+      INSERT INTO system_settings (key, value)
+      VALUES ('pharmacy_mode', 'false')
+      ON CONFLICT (key) DO NOTHING
+    `);
+    log("[STARTUP] pharmacy_mode setting ensured");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] pharmacy_mode seed error");
+  }
+
   // ── 5h. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {

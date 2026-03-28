@@ -62,7 +62,7 @@ export function registerSystemRoutes(app: Express) {
       const { key } = req.params;
       const { value } = req.body;
       if (typeof value !== "string") return res.status(400).json({ message: "قيمة غير صالحة" });
-      const ALLOWED_KEYS = ["stay_billing_mode"];
+      const ALLOWED_KEYS = ["stay_billing_mode", "pharmacy_mode"];
       if (!ALLOWED_KEYS.includes(key as string)) return res.status(400).json({ message: "مفتاح إعداد غير مسموح" });
       await setSetting(key as string, value);
       res.json({ key, value });

@@ -11,6 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bgImage, setBgImage] = useState<string | null>(null);
+  const [pharmacyMode, setPharmacyMode] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
 
@@ -18,6 +19,13 @@ export default function Login() {
     fetch("/api/public/login-background")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d?.image) setBgImage(d.image); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.pharmacy_mode === "true") setPharmacyMode(true); })
       .catch(() => {});
   }, []);
 
@@ -113,7 +121,7 @@ export default function Login() {
               fontFamily: "Arial, sans-serif",
             }}
           >
-            Hospital Accounting System
+            {pharmacyMode ? "Pharmacy Accounting System" : "Hospital Accounting System"}
           </div>
 
           <div
@@ -131,10 +139,10 @@ export default function Login() {
           style={{ fontSize: "1rem", textShadow: "0 1px 6px rgba(0,0,0,0.3)" }}
           data-testid="text-login-title"
         >
-          نظام الحسابات العامة
+          {pharmacyMode ? "نظام الصيدلية" : "نظام الحسابات العامة"}
         </h1>
         <p className="text-center mb-7" style={{ fontSize: "12px", color: "rgba(180,215,255,0.65)" }}>
-          المستشفى · الدفتر العام
+          {pharmacyMode ? "الصيدلية · نقطة البيع" : "المستشفى · الدفتر العام"}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">

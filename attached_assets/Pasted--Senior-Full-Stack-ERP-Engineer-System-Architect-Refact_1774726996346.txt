@@ -1,0 +1,303 @@
+أنت الآن Senior Full-Stack ERP Engineer + System Architect + Refactoring Specialist.
+ممنوع تنفيذ عشوائي أو ترقيع سريع.
+مطلوب تنفيذ ميزة Pharmacy Mode داخل نفس السيستم الحالي باحترافية عالية، مع الحفاظ الكامل على الاستقرار، وعدم كسر أي Module موجود، وعدم تغيير أي Business Logic قائم إلا إذا كان ذلك ضروريًا ومبررًا بوضوح.
+
+========================================
+الهدف الوظيفي
+========================================
+
+نريد أن يعمل النظام بوضعين:
+
+1) Hospital Mode
+- كل Modules المستشفى ظاهرة كما هي الآن
+
+2) Pharmacy Mode
+- يظهر فقط ما يخص الصيدلية
+- يتم إخفاء Modules المستشفى الطبية/الإدارية غير المطلوبة للصيدلية
+- يظل Owner / Super Admin قادرًا على رؤية كل شيء
+- المستخدم العادي الخاص بالصيدلية يرى الصيدلية فقط
+- لا يكون الإخفاء شكليًا فقط، بل يجب أن يكون هناك منع حقيقي للوصول إلى الصفحات غير المسموحة
+
+مهم جدًا:
+هذا ليس فصل نظام جديد.
+هذا "Single System, Multi View + Role-aware access + Safe route protection".
+
+========================================
+المطلوب تنفيذه — لكن على مرحلتين
+========================================
+
+المرحلة الأولى: التحليل والخطة فقط
+ممنوع كتابة أي كود في هذه المرحلة.
+ابدأ أولًا بتحليل الكود الحالي ثم قدّم خطة تنفيذ تفصيلية.
+لا تنفذ أي تعديل قبل أن أعتمد الخطة صراحة.
+
+المرحلة الثانية: التنفيذ
+بعد موافقتي على الخطة، ابدأ التنفيذ الفعلي بدقة عالية، مع مراعاة الرفاكتور والتنظيم والاختبارات وعدم التكرار.
+
+========================================
+ما أريده منك في المرحلة الأولى (إجباري)
+========================================
+
+أولًا: افحص المشروع كله وحدد بدقة:
+
+1) أين يتم تعريف الـ sidebar / navigation
+2) أين يتم تعريف routes / route guards / layout
+3) أين توجد صفحة إعدادات النظام
+4) كيف يتم جلب system settings حاليًا
+5) هل يوجد caching أو hooks جاهزة للإعدادات
+6) كيف يتم تعريف المستخدم الحالي وصلاحياته
+7) هل يوجد role system أو permission system قائم
+8) ما الصفحات التي تعتبر Hospital-only
+9) ما الصفحات التي يجب أن تبقى في Pharmacy Mode
+10) هل توجد مخاطر لو اعتمدنا فقط على إخفاء الـ sidebar
+11) ما أفضل نقطة مركزية لوضع منطق pharmacy mode بدل تكراره في عدة أماكن
+12) ما الـ endpoints أو الـ routes التي تحتاج route protection إضافي
+13) هل توجد مكونات كبيرة تحتاج refactor قبل إضافة الميزة
+14) هل يوجد تكرار حالي في تعريف menu items أو route metadata أو guards
+15) هل يمكن بناء solution مركزي clean وقابل للتوسع مستقبلًا
+
+========================================
+النتيجة المطلوبة من المرحلة الأولى
+========================================
+
+أريد تقريرًا منظمًا جدًا بعنوان:
+
+PHARMACY MODE IMPLEMENTATION PLAN
+
+ويحتوي بالترتيب على:
+
+A) Current architecture assessment
+- وصف مختصر ودقيق للهيكل الحالي المتعلق بالـ layout, routes, settings, auth, roles, sidebar
+- تحديد المشاكل التصميمية الحالية إن وجدت
+
+B) Risks in current design
+- لماذا لا يكفي إخفاء الـ sidebar فقط
+- ما مخاطر direct URL access
+- ما مخاطر التكرار أو hardcoding
+- ما مخاطر تنفيذ سريع بدون refactor
+
+C) Proposed architecture
+- ما هو التصميم المقترح لإضافة pharmacy mode بشكل مركزي ونظيف
+- أين سيتم وضع:
+  - pharmacy mode setting
+  - menu visibility metadata
+  - route access rules
+  - owner override
+  - hospital-only / pharmacy-visible rules
+- هل الأفضل استخدام central config / route metadata / permission-aware layout
+- كيف سيتم الحفاظ على النظافة وقابلية التوسع
+
+D) Precise implementation steps
+قسّمها إلى خطوات صغيرة جدًا، مثل:
+1. DB / settings
+2. backend exposure
+3. frontend hook
+4. central sidebar config refactor
+5. route guard refactor
+6. branding adaptation
+7. tests
+8. regression checks
+
+E) Files to modify
+أريد قائمة دقيقة جدًا:
+- file path
+- لماذا سيتعدل
+- نوع التعديل
+- هل هو refactor أم feature أم protection
+
+F) Refactor opportunities (إجباري)
+أريدك أن تقترح refactor حقيقي وليس تجميلي فقط:
+- لو الـ sidebar مبعثر، اجمعه في config مركزي
+- لو الـ route rules متناثرة، أنشئ metadata موحد
+- لو الـ permission checks متكررة، اعمل helper / guard مركزي
+- لو الـ settings reading مكرر، اعمل hook موحد
+- لو في مكونات ضخمة، اقترح تقسيمها
+- لو في فرص لعمل compound clean design وضّحها
+
+G) Security / access control
+أريد توضيحًا صريحًا:
+- كيف سنمنع الوصول المباشر لصفحات hospital-only
+- كيف سيتعامل الـ Owner مع النظام
+- كيف سيتعامل pharmacy users
+- هل هناك حاجة لحماية على مستوى backend أيضًا أم frontend فقط
+- ما الذي سيتم حمايته فعليًا وما الذي سيظل تجميليًا فقط
+
+H) Acceptance criteria
+ضع checklist واضحة جدًا للنجاح:
+- عند تفعيل pharmacy mode ماذا يحدث
+- عند تعطيله ماذا يحدث
+- ماذا يرى الـ owner
+- ماذا يرى pharmacy user
+- ماذا يحدث عند فتح direct URL
+- ما الذي لا يجب أن يتأثر
+
+I) Test plan
+أريد خطة اختبار يدوية واضحة جدًا:
+- test cases
+- expected result
+- regression checks
+- edge cases
+
+J) Out of scope
+اكتب بوضوح ما لن يتم تغييره الآن حتى لا يحدث creep
+
+مهم:
+لا تبدأ التنفيذ.
+في نهاية تقرير المرحلة الأولى، توقف تمامًا، وانتظر موافقتي.
+
+========================================
+قواعد التنفيذ في المرحلة الثانية (بعد موافقتي فقط)
+========================================
+
+بعد أن أوافق على الخطة، نفّذ مع الالتزام الحرفي بما يلي:
+
+1) ممنوع الحلول الترقيعية
+لا أريد ifs مبعثرة في كل الملف.
+لا أريد نسخ ولصق.
+لا أريد hardcoded scattered conditions.
+لا أريد شغل "يشتغل وخلاص".
+
+2) Refactor أولًا حيث يلزم
+إذا كان الـ sidebar أو الـ routes أو الـ settings access مبعثرًا:
+- نظّفه أولًا
+- اجعل logic visibility مركزيًا
+- اجعل naming واضحًا
+- افصل الbusiness rules عن العرض
+- قلل التشابك
+- اجعل التوسعة المستقبلية سهلة
+
+3) Componentization / centralization
+طبّق الميزة عبر:
+- central config للـ navigation
+- central metadata للـ routes إن أمكن
+- reusable hook لقراءة pharmacy mode
+- reusable helper لتحديد هل المستخدم bypass بسبب owner
+- reusable access function بدل الشروط المكررة
+
+4) Owner override
+الـ Owner / Super Admin يجب أن يستطيع رؤية كل شيء حتى في Pharmacy Mode
+لكن users العاديون في وضع الصيدلية يجب أن تُخفى عنهم صفحات المستشفى وتُمنع عليهم الروابط المباشرة
+
+5) Route protection
+الحماية لا تكون بالـ sidebar فقط
+يجب أن تُغلق الصفحات hospital-only على المستخدم غير المسموح
+عند direct URL:
+- redirect مناسب أو forbidden screen واضحة
+- اختر الأنسب حسب بنية المشروع ووضح السبب
+
+6) Branding
+عند تفعيل pharmacy mode:
+- login title / app branding / sidebar title يمكن أن يتغير إلى pharmacy wording
+- لكن branding لا يُستخدم أبدًا كبديل عن الحماية
+
+7) Backward compatibility
+ممنوع كسر:
+- existing APIs
+- existing workflows
+- accounting
+- cashier
+- inventory
+- role system الحالي
+- system settings الحالي
+
+8) Clean output
+بعد التنفيذ أعطني تقريرًا نهائيًا منظمًا جدًا يحتوي على:
+
+A) What was implemented
+B) Why this design was chosen
+C) Files modified
+D) Refactors completed
+E) Route protection behavior
+F) Owner behavior
+G) Pharmacy user behavior
+H) Remaining risks / limitations
+I) Manual test steps
+J) Rollback notes إن لزم
+
+========================================
+تعليمات جودة صارمة
+========================================
+
+- استخدم naming واضح وصريح
+- ممنوع magic conditions مبعثرة
+- ممنوع duplicating page visibility rules في أكثر من مكان بدون داعٍ
+- أي rule لازم يكون له source of truth واحد قدر الإمكان
+- لو AppLayout ضخم، اقترح تقسيمه
+- لو navigation config غير مركزي، اجعله مركزيًا
+- لو setting access غير موحد، وحّده
+- لو route guarding غير موجود، أضفه بشكل clean
+- لو يوجد permission helper حالي، استفد منه بدل اختراع فوضى جديدة
+- أي refactor تعمله يجب أن يكون آمن ومحدود الأثر ومبرر بوضوح
+
+========================================
+تعليمات التقرير النهائي بعد التنفيذ
+========================================
+
+بعد التنفيذ لا تكتفِ بقول "تم".
+أريدك أن تعطيني بالترتيب:
+
+1) Summary
+2) Exact files changed
+3) Before / after architecture notes
+4) How pharmacy mode now works internally
+5) How owner access is handled
+6) How non-owner pharmacy access is restricted
+7) What direct URL protection now does
+8) What was refactored and why
+9) What should I test manually step by step
+10) Any future improvement suggestions — but without تنفيذها الآن
+
+========================================
+قائمة الصفحات المبدئية
+========================================
+
+في وضع الصيدلية يجب الإبقاء فقط على ما يخدم الصيدلية، مثل:
+- لوحة التحكم
+- الأصناف
+- فواتير البيع
+- مردودات البيع
+- الكاشير والوردية
+- استلام من مورد
+- الموردين
+- سداد الموردين
+- مرتجعات المشتريات
+- كشكول النواقص
+- التحويل المخزني
+- الجرد
+- التحصيل الآجل
+- التقارير المالية
+- المحاسبة
+- الإعدادات المسموح بها
+- المستخدمين إذا كانت ضمن نطاق الإدارة للصيدلية
+
+وفي المقابل الصفحات hospital-only غالبًا تشمل:
+- فاتورة مريض
+- لوحة الأسرة
+- إدارة الغرف
+- العمليات
+- الأطباء
+- المرضى والمكررين
+- حجز العيادات
+- أوامر الطبيب
+- المعمل
+- الأشعة
+- العقود
+- مطالبات التأمين
+- الخدمات والأسعار الطبية
+- أي modules سريرية أو إدارية خاصة بالمستشفى
+
+لكن:
+لا تعتمد على هذه القائمة فقط.
+افحص المشروع فعليًا واستخرج القائمة الدقيقة من الكود.
+
+========================================
+المطلوب الآن
+========================================
+
+ابدأ بالمرحلة الأولى فقط:
+- افحص المشروع
+- حلل البنية الحالية
+- استخرج الملفات المعنية
+- قدّم خطة تنفيذ احترافية مفصلة
+- اقترح refactor حقيقي
+- لا تنفذ أي كود قبل موافقتي

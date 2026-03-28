@@ -32,7 +32,6 @@ import {
   UserRound,
   Banknote,
   Users,
-  Lock,
   Scale,
   TrendingUp,
   BarChart3,
@@ -61,6 +60,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import { usePharmacyMode } from "@/hooks/use-pharmacy-mode";
 import { ROLE_LABELS } from "@shared/permissions";
 import { AppHeader } from "./AppHeader";
 import { ChatPopup } from "@/components/chat/ChatPopup";
@@ -74,50 +74,51 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   permission?: string;
+  hospitalOnly?: true;
 }
 
 const mainNavItems: NavItem[] = [
-  { title: "لوحة التحكم",            href: "/",                   icon: LayoutDashboard,  permission: "dashboard.view" },
-  { title: "دليل الحسابات",           href: "/chart-of-accounts",  icon: BookOpen,          permission: "accounts.view" },
-  { title: "القيود اليومية",           href: "/journal-entries",    icon: FileText,          permission: "journal.view" },
-  { title: "مراكز التكلفة",           href: "/cost-centers",       icon: Building2,         permission: "cost_centers.view" },
-  { title: "الفترات المحاسبية",        href: "/fiscal-periods",     icon: Calendar,          permission: "fiscal_periods.view" },
-  { title: "نماذج القيود",            href: "/templates",          icon: ClipboardList,     permission: "templates.view" },
-  { title: "الأصناف",                href: "/items",              icon: Package,           permission: "items.view" },
-  { title: "إدارة الموردين",           href: "/suppliers",          icon: Building2,         permission: "receiving.view" },
-  { title: "استلام من مورد",          href: "/supplier-receiving", icon: Truck,             permission: "receiving.view" },
-  { title: "فواتير الشراء",           href: "/purchase-invoices",  icon: Receipt,           permission: "purchase_invoices.view" },
-  { title: "سداد الموردين",           href: "/supplier-payments",  icon: Banknote,          permission: "receiving.view" },
-  { title: "مرتجعات المشتريات",       href: "/purchase-returns",   icon: Undo2,             permission: "receiving.view" },
-  { title: "تحصيل الآجل",            href: "/customer-payments",  icon: CreditCard,        permission: "credit_payment.view" },
-  { title: "تحصيل التوصيل",          href: "/delivery-payments",  icon: Truck,             permission: "delivery_payment.view" },
-  { title: "تحويل مخزني",            href: "/store-transfers",    icon: ArrowLeftRight,    permission: "transfers.view" },
-  { title: "إعداد إذن تحويل",         href: "/transfer-preparation", icon: FileSpreadsheet,  permission: "transfers.view" },
-  { title: "جرد الأصناف",            href: "/stock-count",        icon: ClipboardList,     permission: "stock_count.view" },
-  { title: "كشكول النواقص",          href: "/shortage-notebook",  icon: NotebookPen,       permission: "shortage.view" },
-  { title: "فواتير البيع",            href: "/sales-invoices",     icon: ShoppingCart,      permission: "sales.view" },
-  { title: "مردودات المبيعات",        href: "/sales-returns",      icon: Undo2,             permission: "sales.create" },
-  { title: "فاتورة مريض",            href: "/patient-invoices",   icon: UserRound,         permission: "patient_invoices.view" },
-  { title: "لوحة الأسرّة",            href: "/bed-board",          icon: BedDouble,         permission: "patient_invoices.view" },
-  { title: "إدارة الأدوار والغرف",    href: "/room-management",    icon: DoorOpen,          permission: "patient_invoices.view" },
-  { title: "أنواع العمليات الجراحية", href: "/surgery-types",      icon: Scissors,          permission: "patient_invoices.view" },
-  { title: "تسوية مستحقات الأطباء",   href: "/doctor-settlements", icon: Banknote,          permission: "patient_invoices.view" },
-  { title: "شاشة تحصيل الكاشير",     href: "/cashier-collection", icon: Banknote,          permission: "cashier.view" },
-  { title: "تقرير تسليم الدرج",       href: "/cashier-handover",   icon: ClipboardList,     permission: "cashier.handover_view" },
-  { title: "الخدمات والأسعار",        href: "/services-pricing",   icon: Stethoscope,       permission: "services.view" },
-  { title: "المخازن",                href: "/warehouses",         icon: Warehouse,          permission: "warehouses.view" },
-  { title: "الأقسام",               href: "/departments",        icon: Building2,          permission: "departments.view" },
-  { title: "سجل المرضى",            href: "/patients",           icon: Users,              permission: "patients.view" },
-  { title: "استعلام المرضى",         href: "/patient-inquiry",    icon: ScanSearch,         permission: "patients.view" },
-  { title: "مراجعة المرضى المكررين", href: "/duplicate-patients", icon: GitMerge,           permission: "patients.merge" },
-  { title: "سجل الأطباء",           href: "/doctors",            icon: Stethoscope,        permission: "doctors.view" },
+  { title: "لوحة التحكم",            href: "/",                      icon: LayoutDashboard,  permission: "dashboard.view" },
+  { title: "دليل الحسابات",           href: "/chart-of-accounts",     icon: BookOpen,          permission: "accounts.view" },
+  { title: "القيود اليومية",           href: "/journal-entries",       icon: FileText,          permission: "journal.view" },
+  { title: "مراكز التكلفة",           href: "/cost-centers",          icon: Building2,         permission: "cost_centers.view" },
+  { title: "الفترات المحاسبية",        href: "/fiscal-periods",        icon: Calendar,          permission: "fiscal_periods.view" },
+  { title: "نماذج القيود",            href: "/templates",             icon: ClipboardList,     permission: "templates.view" },
+  { title: "الأصناف",                href: "/items",                 icon: Package,           permission: "items.view" },
+  { title: "إدارة الموردين",           href: "/suppliers",             icon: Building2,         permission: "receiving.view" },
+  { title: "استلام من مورد",          href: "/supplier-receiving",    icon: Truck,             permission: "receiving.view" },
+  { title: "فواتير الشراء",           href: "/purchase-invoices",     icon: Receipt,           permission: "purchase_invoices.view" },
+  { title: "سداد الموردين",           href: "/supplier-payments",     icon: Banknote,          permission: "receiving.view" },
+  { title: "مرتجعات المشتريات",       href: "/purchase-returns",      icon: Undo2,             permission: "receiving.view" },
+  { title: "تحصيل الآجل",            href: "/customer-payments",     icon: CreditCard,        permission: "credit_payment.view" },
+  { title: "تحصيل التوصيل",          href: "/delivery-payments",     icon: Truck,             permission: "delivery_payment.view" },
+  { title: "تحويل مخزني",            href: "/store-transfers",       icon: ArrowLeftRight,    permission: "transfers.view" },
+  { title: "إعداد إذن تحويل",         href: "/transfer-preparation",  icon: FileSpreadsheet,  permission: "transfers.view" },
+  { title: "جرد الأصناف",            href: "/stock-count",           icon: ClipboardList,     permission: "stock_count.view" },
+  { title: "كشكول النواقص",          href: "/shortage-notebook",     icon: NotebookPen,       permission: "shortage.view" },
+  { title: "فواتير البيع",            href: "/sales-invoices",        icon: ShoppingCart,      permission: "sales.view" },
+  { title: "مردودات المبيعات",        href: "/sales-returns",         icon: Undo2,             permission: "sales.create" },
+  { title: "فاتورة مريض",            href: "/patient-invoices",      icon: UserRound,         permission: "patient_invoices.view",  hospitalOnly: true },
+  { title: "لوحة الأسرّة",            href: "/bed-board",             icon: BedDouble,         permission: "patient_invoices.view",  hospitalOnly: true },
+  { title: "إدارة الأدوار والغرف",    href: "/room-management",       icon: DoorOpen,          permission: "patient_invoices.view",  hospitalOnly: true },
+  { title: "أنواع العمليات الجراحية", href: "/surgery-types",         icon: Scissors,          permission: "patient_invoices.view",  hospitalOnly: true },
+  { title: "تسوية مستحقات الأطباء",   href: "/doctor-settlements",    icon: Banknote,          permission: "patient_invoices.view",  hospitalOnly: true },
+  { title: "شاشة تحصيل الكاشير",     href: "/cashier-collection",    icon: Banknote,          permission: "cashier.view" },
+  { title: "تقرير تسليم الدرج",       href: "/cashier-handover",      icon: ClipboardList,     permission: "cashier.handover_view" },
+  { title: "الخدمات والأسعار",        href: "/services-pricing",      icon: Stethoscope,       permission: "services.view",          hospitalOnly: true },
+  { title: "المخازن",                href: "/warehouses",            icon: Warehouse,          permission: "warehouses.view" },
+  { title: "الأقسام",               href: "/departments",           icon: Building2,          permission: "departments.view" },
+  { title: "سجل المرضى",            href: "/patients",              icon: Users,              permission: "patients.view",          hospitalOnly: true },
+  { title: "استعلام المرضى",         href: "/patient-inquiry",       icon: ScanSearch,         permission: "patients.view",          hospitalOnly: true },
+  { title: "مراجعة المرضى المكررين", href: "/duplicate-patients",    icon: GitMerge,           permission: "patients.merge",         hospitalOnly: true },
+  { title: "سجل الأطباء",           href: "/doctors",               icon: Stethoscope,        permission: "doctors.view",           hospitalOnly: true },
 ];
 
 const clinicNavItems: NavItem[] = [
-  { title: "حجز العيادات",        href: "/clinic-booking",       icon: Calendar,      permission: "clinic.view_own" },
-  { title: "أوامر الطبيب",       href: "/doctor-orders",        icon: ClipboardList, permission: "doctor_orders.view" },
-  { title: "خدمات المعمل",       href: "/dept-services/LAB",    icon: FileText,      permission: "dept_services.create" },
-  { title: "خدمات الأشعة",       href: "/dept-services/RAD",    icon: FileText,      permission: "dept_services.create" },
+  { title: "حجز العيادات",        href: "/clinic-booking",       icon: Calendar,      permission: "clinic.view_own",        hospitalOnly: true },
+  { title: "أوامر الطبيب",       href: "/doctor-orders",        icon: ClipboardList, permission: "doctor_orders.view",     hospitalOnly: true },
+  { title: "خدمات المعمل",       href: "/dept-services/LAB",    icon: FileText,      permission: "dept_services.create",   hospitalOnly: true },
+  { title: "خدمات الأشعة",       href: "/dept-services/RAD",    icon: FileText,      permission: "dept_services.create",   hospitalOnly: true },
 ];
 
 const reportNavItems: NavItem[] = [
@@ -130,21 +131,30 @@ const reportNavItems: NavItem[] = [
 ];
 
 const systemNavItems: NavItem[] = [
-  { title: "إعدادات النظام",    href: "/system-settings",   icon: Settings,  permission: "settings.account_mappings" },
-  { title: "إعدادات الإيصالات", href: "/receipt-settings",  icon: Printer,   permission: "settings.account_mappings" },
-  { title: "ربط الحسابات",     href: "/account-mappings",  icon: Settings,  permission: "settings.account_mappings" },
-  { title: "الخزن",            href: "/treasuries",        icon: Banknote,  permission: "settings.account_mappings" },
-  { title: "سجل التدقيق",      href: "/audit-log",         icon: History,   permission: "audit_log.view" },
-  { title: "إدارة المستخدمين", href: "/users",              icon: Shield,    permission: "users.view" },
-  { title: "مجموعات الصلاحيات", href: "/permission-groups", icon: KeyRound,  permission: "permission_groups.view" },
-  { title: "العقود والشركات",  href: "/contracts",         icon: Building2, permission: "contracts.view" },
-  { title: "مطالبات التأمين",  href: "/contract-claims",       icon: Building2,     permission: "contracts.claims.view" },
-  { title: "طلبات الموافقة",  href: "/approvals",             icon: ClipboardList, permission: "approvals.view" },
-  { title: "تحليلات العقود",  href: "/contracts-analytics",   icon: BarChart3,     permission: "contracts.claims.view" },
-  { title: "شريط الإعلانات",   href: "/announcements",     icon: Megaphone, permission: "settings.account_mappings" },
-  { title: "أحداث المحاسبة",  href: "/accounting-events", icon: AlertCircle, permission: "journal.post" },
-  { title: "تشخيص الأداء",    href: "/perf-diagnostics",  icon: Gauge,     permission: "settings.account_mappings" },
+  { title: "إعدادات النظام",    href: "/system-settings",       icon: Settings,      permission: "settings.account_mappings" },
+  { title: "إعدادات الإيصالات", href: "/receipt-settings",      icon: Printer,       permission: "settings.account_mappings" },
+  { title: "ربط الحسابات",     href: "/account-mappings",      icon: Settings,      permission: "settings.account_mappings" },
+  { title: "الخزن",            href: "/treasuries",            icon: Banknote,      permission: "settings.account_mappings" },
+  { title: "سجل التدقيق",      href: "/audit-log",             icon: History,       permission: "audit_log.view" },
+  { title: "إدارة المستخدمين", href: "/users",                  icon: Shield,        permission: "users.view" },
+  { title: "مجموعات الصلاحيات", href: "/permission-groups",    icon: KeyRound,      permission: "permission_groups.view" },
+  { title: "العقود والشركات",  href: "/contracts",             icon: Building2,     permission: "contracts.view",          hospitalOnly: true },
+  { title: "مطالبات التأمين",  href: "/contract-claims",       icon: Building2,     permission: "contracts.claims.view",   hospitalOnly: true },
+  { title: "طلبات الموافقة",  href: "/approvals",              icon: ClipboardList, permission: "approvals.view",          hospitalOnly: true },
+  { title: "تحليلات العقود",  href: "/contracts-analytics",   icon: BarChart3,     permission: "contracts.claims.view",   hospitalOnly: true },
+  { title: "شريط الإعلانات",   href: "/announcements",         icon: Megaphone,     permission: "settings.account_mappings" },
+  { title: "أحداث المحاسبة",  href: "/accounting-events",     icon: AlertCircle,   permission: "journal.post" },
+  { title: "تشخيص الأداء",    href: "/perf-diagnostics",      icon: Gauge,         permission: "settings.account_mappings" },
 ];
+
+function shouldShowNavItem(
+  item: NavItem,
+  pharmacyMode: boolean,
+  isOwner: boolean
+): boolean {
+  if (pharmacyMode && !isOwner && item.hospitalOnly) return false;
+  return true;
+}
 
 function SidebarToggleButton() {
   const { state, toggleSidebar } = useSidebar();
@@ -174,12 +184,24 @@ function SidebarToggleButton() {
   );
 }
 
-function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
+function NavGroup({
+  label,
+  items,
+  pharmacyMode,
+  isOwner,
+}: {
+  label: string;
+  items: NavItem[];
+  pharmacyMode: boolean;
+  isOwner: boolean;
+}) {
   const [location] = useLocation();
   const { hasPermission } = useAuth();
 
   const visibleItems = items.filter(
-    (item) => !item.permission || hasPermission(item.permission)
+    (item) =>
+      (!item.permission || hasPermission(item.permission)) &&
+      shouldShowNavItem(item, pharmacyMode, isOwner)
   );
 
   if (visibleItems.length === 0) return null;
@@ -215,6 +237,10 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { user, logout } = useAuth();
+  const { pharmacyMode, isOwner } = usePharmacyMode();
+
+  const appTitle = pharmacyMode ? "AMS نظام الصيدلية" : "AMS نظام المستشفى";
+  const appSubtitle = pharmacyMode ? "نظام الصيدلية والمخازن" : "نظام المحاسبة والمخازن";
 
   const style = {
     "--sidebar-width": "16rem",
@@ -231,18 +257,18 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <BookOpen className="h-5 w-5 text-white" />
               </div>
               <div className="group-data-[collapsible=icon]:hidden text-right">
-                <h2 className="font-bold text-white text-[15px]">AMS نظام المستشفى</h2>
-                <p className="text-xs text-white/70">نظام المحاسبة والمخازن</p>
+                <h2 className="font-bold text-white text-[15px]">{appTitle}</h2>
+                <p className="text-xs text-white/70">{appSubtitle}</p>
               </div>
             </div>
           </SidebarHeader>
 
           <SidebarContent>
             <ScrollArea className="flex-1">
-              <NavGroup label="القائمة الرئيسية" items={mainNavItems} />
-              <NavGroup label="العيادات الخارجية" items={clinicNavItems} />
-              <NavGroup label="التقارير المالية" items={reportNavItems} />
-              <NavGroup label="النظام" items={systemNavItems} />
+              <NavGroup label="القائمة الرئيسية" items={mainNavItems} pharmacyMode={pharmacyMode} isOwner={isOwner} />
+              <NavGroup label="العيادات الخارجية" items={clinicNavItems} pharmacyMode={pharmacyMode} isOwner={isOwner} />
+              <NavGroup label="التقارير المالية" items={reportNavItems} pharmacyMode={pharmacyMode} isOwner={isOwner} />
+              <NavGroup label="النظام" items={systemNavItems} pharmacyMode={pharmacyMode} isOwner={isOwner} />
             </ScrollArea>
           </SidebarContent>
 

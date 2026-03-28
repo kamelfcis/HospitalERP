@@ -39,6 +39,7 @@ Performance optimizations include `React.memo` on table rows and vendor chunking
 - **Delivery Payment Collection**: Full module for collecting delivery invoices, featuring atomic receipt creation with GL journal, shift totals integration, and cashier handover report columns.
 - **Thermal Receipt Printing**: Full 80mm thermal receipt system for the cashier module, with auto-printing after collection, customizable settings, and a reprint function.
 - **Shortage Notebook**: Procurement decision dashboard for pharmacy managers, logging shortage events and providing aggregated statistics with two analysis modes and server-side filtering.
+- **Pharmacy Mode**: Single-system dual-view toggle (`pharmacy_mode` in system_settings). When active, hides all hospital-specific modules (patients, doctors, clinics, contracts, etc.) from non-owner users via sidebar filtering + route-level 403 guard. Owner always sees everything. Central config in `client/src/lib/pharmacy-config.ts`; central hook `usePharmacyMode()`; single `RequireHospitalAccess` component in App.tsx for all route protection.
 - **Item Movement Report**: Detailed per-item inventory movement report with search, filters, unit-level toggle, signed quantities, running balance, and Excel export/print functionality.
 
 ## External Dependencies

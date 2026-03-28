@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { usePharmacyMode } from "@/hooks/use-pharmacy-mode";
+import { isHospitalOnlyRoute } from "@/lib/pharmacy-config";
 import DateChangeGuard from "@/components/DateChangeGuard";
 import Login from "@/pages/Login";
 import { Loader2, ShieldAlert } from "lucide-react";
@@ -103,9 +105,27 @@ function G({ p, children }: { p: string; children: React.ReactNode }) {
   return <RequirePermission permission={p}>{children}</RequirePermission>;
 }
 
+function RequireHospitalAccess({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const { pharmacyMode, isOwner } = usePharmacyMode();
+
+  if (pharmacyMode && !isOwner && isHospitalOnlyRoute(location)) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center" dir="rtl" data-testid="pharmacy-access-denied">
+        <ShieldAlert className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-lg font-semibold mb-1">غير مسموح في وضع الصيدلية</h2>
+        <p className="text-muted-foreground text-sm">هذه الصفحة متاحة فقط في وضع المستشفى</p>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 function Router() {
   return (
     <AppLayout>
+      <RequireHospitalAccess>
       <Suspense fallback={<PageLoader />}>
         <Switch>
           <Route path="/">{() => <G p="dashboard.view"><Dashboard /></G>}</Route>
@@ -178,6 +198,7 @@ function Router() {
           <Route component={NotFound} />
         </Switch>
       </Suspense>
+      </RequireHospitalAccess>
     </AppLayout>
   );
 }
