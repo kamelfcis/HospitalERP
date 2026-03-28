@@ -1,5 +1,6 @@
 import { db, type DrizzleTransaction } from "../db";
 import { eq, and, gte, lte, asc, sql } from "drizzle-orm";
+import { convertPriceToMinor } from "../inventory-helpers";
 import {
   items,
   inventoryLots,
@@ -20,15 +21,6 @@ import {
 } from "@shared/schema";
 import { roundMoney } from "../finance-helpers";
 
-function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
-  if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
-    return enteredPrice / parseFloat(item.majorToMinor);
-  }
-  if (unitLevel === 'medium' && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
-    return enteredPrice / parseFloat(item.mediumToMinor);
-  }
-  return enteredPrice;
-}
 
 /**
  * Builds and inserts the purchase invoice journal entry inside an existing transaction.
@@ -434,7 +426,7 @@ const journalMethods = {
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
 
-        const costPerMinor = convertPriceToMinorUnit(parseFloat(line.purchasePrice as string), line.unitLevel || 'minor', item);
+        const costPerMinor = convertPriceToMinor(parseFloat(line.purchasePrice as string), line.unitLevel || 'minor', item);
         const costPerMinorStr = costPerMinor.toFixed(4);
 
         const lotConditions = [

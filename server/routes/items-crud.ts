@@ -13,6 +13,7 @@ import {
   insertItemFormTypeSchema,
   insertItemUomSchema,
 } from "@shared/schema";
+import { validateItemUnits, computeMajorToMinor } from "../inventory-helpers";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -459,27 +460,15 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
       const isServiceItem = parsed.category === "service";
 
       if (!isServiceItem) {
-        if (!parsed.majorUnitName?.trim()) errors.push("الوحدة الكبرى مطلوبة");
-
-        const hasMedium = !!parsed.mediumUnitName?.trim();
-        const hasMinor = !!parsed.minorUnitName?.trim();
-
-        if (hasMinor && !hasMedium) {
-          errors.push("يجب اختيار الوحدة المتوسطة قبل الصغرى");
-        }
-
-        if (hasMedium) {
-          const majorToMedium = parseFloat(parsed.majorToMedium as string || "0");
-          if (majorToMedium <= 0) errors.push("معامل التحويل كبرى ← متوسطة يجب أن يكون أكبر من صفر");
-        }
-        if (hasMinor) {
-          const majorToMinor = parseFloat(parsed.majorToMinor as string || "0");
-          if (majorToMinor <= 0) errors.push("معامل التحويل كبرى ← صغرى يجب أن يكون أكبر من صفر");
-          if (hasMedium) {
-            const mediumToMinor = parseFloat(parsed.mediumToMinor as string || "0");
-            if (mediumToMinor <= 0) errors.push("معامل التحويل متوسطة ← صغرى يجب أن يكون أكبر من صفر");
-          }
-        }
+        const unitErrors = validateItemUnits({
+          majorUnitName:  parsed.majorUnitName,
+          mediumUnitName: parsed.mediumUnitName,
+          minorUnitName:  parsed.minorUnitName,
+          majorToMedium:  parsed.majorToMedium,
+          majorToMinor:   parsed.majorToMinor,
+          mediumToMinor:  parsed.mediumToMinor,
+        });
+        errors.push(...unitErrors);
       }
 
       if (errors.length > 0) {
@@ -516,6 +505,17 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
         parsed.majorToMinor = null;
         parsed.mediumToMinor = null;
       }
+      // حساب majorToMinor تلقائياً في حالة الثلاث وحدات
+      const computedMajorToMinor = computeMajorToMinor({
+        majorUnitName:  parsed.majorUnitName,
+        mediumUnitName: parsed.mediumUnitName,
+        minorUnitName:  parsed.minorUnitName,
+        majorToMedium:  parsed.majorToMedium,
+        majorToMinor:   parsed.majorToMinor,
+        mediumToMinor:  parsed.mediumToMinor,
+      });
+      if (computedMajorToMinor !== null) parsed.majorToMinor = computedMajorToMinor;
+
       const item = await storage.createItem(parsed);
       res.status(201).json(item);
     } catch (error: unknown) {
@@ -533,8 +533,11 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
       const currentItem = await storage.getItem(itemId);
       if (!currentItem) return res.status(404).json({ message: "الصنف غير موجود" });
 
-      // ── حماية معاملات التحويل: منع التعديل إذا وُجدت حركات تاريخية ─────
-      const conversionFields = ["majorToMinor", "majorToMedium", "mediumToMinor"] as const;
+      // ── حماية معاملات التحويل وأسماء الوحدات: منع التعديل إذا وُجدت حركات تاريخية ──
+      const conversionFields = [
+        "majorToMinor", "majorToMedium", "mediumToMinor",
+        "majorUnitName", "mediumUnitName", "minorUnitName",
+      ] as const;
       const conversionChanged = conversionFields.some((f) => {
         if (!(f in parsed)) return false;
         const requested = parsed[f] != null ? String(parsed[f]).trim() : null;
@@ -575,39 +578,30 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
             userId: (req as any).session?.userId,
           });
           return res.status(409).json({
-            message: `لا يمكن تعديل معاملات التحويل — يوجد ${lotCount} دفعة، ${purchaseCount} حركة شراء، ${salesCount} حركة بيع على هذا الصنف`,
+            message: `لا يمكن تعديل معاملات التحويل أو أسماء الوحدات — يوجد ${lotCount} دفعة، ${purchaseCount} حركة شراء، ${salesCount} حركة بيع على هذا الصنف`,
           });
         }
       }
 
-      // ── Validation صارم: المعاملات مقابل الوحدات المعرّفة ────────────────
+      // ── Validation صارم عبر validateItemUnits المركزية ──────────────────
       // نجمع الوحدات الفعلية (من الطلب إن وُجدت، وإلا من الصنف الحالي)
-      const effectiveMediumName = parsed.mediumUnitName !== undefined
-        ? parsed.mediumUnitName : currentItem.mediumUnitName;
-      const effectiveMinorName  = parsed.minorUnitName  !== undefined
-        ? parsed.minorUnitName  : currentItem.minorUnitName;
-      const effectiveMajorToMedium = parsed.majorToMedium !== undefined
-        ? parsed.majorToMedium : currentItem.majorToMedium;
-      const effectiveMajorToMinor  = parsed.majorToMinor  !== undefined
-        ? parsed.majorToMinor  : currentItem.majorToMinor;
-      const effectiveMediumToMinor = parsed.mediumToMinor !== undefined
-        ? parsed.mediumToMinor : currentItem.mediumToMinor;
+      const effectiveMajorName  = parsed.majorUnitName  !== undefined ? parsed.majorUnitName  : currentItem.majorUnitName;
+      const effectiveMediumName = parsed.mediumUnitName !== undefined ? parsed.mediumUnitName : currentItem.mediumUnitName;
+      const effectiveMinorName  = parsed.minorUnitName  !== undefined ? parsed.minorUnitName  : currentItem.minorUnitName;
+      const effectiveMajorToMedium = parsed.majorToMedium !== undefined ? parsed.majorToMedium : currentItem.majorToMedium;
+      const effectiveMajorToMinor  = parsed.majorToMinor  !== undefined ? parsed.majorToMinor  : currentItem.majorToMinor;
+      const effectiveMediumToMinor = parsed.mediumToMinor !== undefined ? parsed.mediumToMinor : currentItem.mediumToMinor;
 
       const isService = (parsed.category ?? currentItem.category) === "service";
       if (!isService) {
-        const convErrors: string[] = [];
-        if (effectiveMediumName?.trim()) {
-          const v = parseFloat(String(effectiveMajorToMedium ?? "0"));
-          if (!(v > 0)) convErrors.push(`الوحدة المتوسطة "${effectiveMediumName}" محددة — يجب إدخال معامل التحويل (كبرى ← متوسطة) بقيمة أكبر من صفر`);
-        }
-        if (effectiveMinorName?.trim()) {
-          const v = parseFloat(String(effectiveMajorToMinor ?? "0"));
-          if (!(v > 0)) convErrors.push(`الوحدة الصغرى "${effectiveMinorName}" محددة — يجب إدخال معامل التحويل (كبرى ← صغرى) بقيمة أكبر من صفر`);
-          if (effectiveMediumName?.trim()) {
-            const v2 = parseFloat(String(effectiveMediumToMinor ?? "0"));
-            if (!(v2 > 0)) convErrors.push(`الوحدتان المتوسطة والصغرى محددتان — يجب إدخال معامل التحويل (متوسطة ← صغرى) بقيمة أكبر من صفر`);
-          }
-        }
+        const convErrors = validateItemUnits({
+          majorUnitName:  effectiveMajorName,
+          mediumUnitName: effectiveMediumName,
+          minorUnitName:  effectiveMinorName,
+          majorToMedium:  effectiveMajorToMedium,
+          majorToMinor:   effectiveMajorToMinor,
+          mediumToMinor:  effectiveMediumToMinor,
+        });
         if (convErrors.length > 0) return res.status(400).json({ message: convErrors.join("، ") });
       }
 
@@ -632,6 +626,17 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
         parsed.majorToMinor = null;
         parsed.mediumToMinor = null;
       }
+
+      // حساب majorToMinor تلقائياً في حالة الثلاث وحدات
+      const putComputedMajorToMinor = computeMajorToMinor({
+        majorUnitName:  effectiveMajorName,
+        mediumUnitName: effectiveMediumName,
+        minorUnitName:  effectiveMinorName,
+        majorToMedium:  effectiveMajorToMedium,
+        majorToMinor:   effectiveMajorToMinor,
+        mediumToMinor:  effectiveMediumToMinor,
+      });
+      if (putComputedMajorToMinor !== null) parsed.majorToMinor = putComputedMajorToMinor;
 
       const item = await storage.updateItem(itemId, parsed);
       if (!item) return res.status(404).json({ message: "الصنف غير موجود" });

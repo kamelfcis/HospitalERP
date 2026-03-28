@@ -13,6 +13,7 @@
 import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
 import type { DatabaseStorage, DeptServiceOrderInput, DeptServiceBatchInput } from "./index";
+import { convertQtyToMinor } from "../inventory-helpers";
 
 const methods = {
   async getDoctorFavoriteDrugs(this: DatabaseStorage, doctorId: string, clinicId?: string | null): Promise<Array<Record<string, unknown>>> {
@@ -469,14 +470,11 @@ const methods = {
 
           for (const cons of consumRes.rows as Array<Record<string, unknown>>) {
             const consumeQty = parseFloat(cons.consume_qty as string) * svc.quantity;
-            let qtyInMinor: number;
-            if (cons.unit_level === 'major') {
-              qtyInMinor = consumeQty * parseFloat(cons.major_to_minor as string || '1');
-            } else if (cons.unit_level === 'medium') {
-              qtyInMinor = consumeQty * parseFloat(cons.medium_to_minor as string || '1');
-            } else {
-              qtyInMinor = consumeQty;
-            }
+            const qtyInMinor = convertQtyToMinor(consumeQty, (cons.unit_level as string) || 'minor', {
+              nameAr: cons.name_ar as string,
+              majorToMinor: cons.major_to_minor as string | null,
+              mediumToMinor: cons.medium_to_minor as string | null,
+            });
 
             const lotsRes = await client.query(`
               SELECT id, qty_in_minor, purchase_price, expiry_date, expiry_month, expiry_year

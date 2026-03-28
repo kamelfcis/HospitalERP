@@ -16,6 +16,11 @@ import { eq, desc, and, gte, lte, gt, sql, or, ilike, asc, isNull, isNotNull } f
 import { logAcctEvent } from "../lib/accounting-event-logger";
 import { logger } from "../lib/logger";
 import {
+  convertPriceToMinor as convertPriceToMinorUnit,
+  convertQtyToMinor,
+  QTY_MINOR_TOLERANCE,
+} from "../inventory-helpers";
+import {
   items,
   inventoryLots,
   inventoryLotMovements,
@@ -59,16 +64,6 @@ function toSupplierDbPayload(data: Record<string, unknown>): Record<string, unkn
   if (typeof out.defaultPaymentTerms === "number") out.defaultPaymentTerms = out.defaultPaymentTerms;
   else if (out.defaultPaymentTerms === undefined) delete out.defaultPaymentTerms;
   return out;
-}
-
-function convertPriceToMinorUnit(enteredPrice: number, unitLevel: string, item: { majorToMinor?: string | null; mediumToMinor?: string | null }): number {
-  if (unitLevel === 'major' && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
-    return enteredPrice / parseFloat(item.majorToMinor);
-  }
-  if (unitLevel === 'medium' && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
-    return enteredPrice / parseFloat(item.mediumToMinor);
-  }
-  return enteredPrice;
 }
 
 const methods = {
@@ -386,11 +381,25 @@ const methods = {
       if (activeLines.length === 0) throw new Error('لا توجد أصناف للترحيل');
       
       for (const line of activeLines) {
-        const qtyMinor = parseFloat(line.qtyInMinor) + parseFloat(line.bonusQtyInMinor || "0");
-        if (qtyMinor <= 0) continue;
-        
         const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
         if (!item) continue;
+
+        // ── T04: إعادة التحقق من الكميات على الخادم ──────────────────────────
+        const serverQty = convertQtyToMinor(parseFloat(line.qtyEntered), line.unitLevel || 'minor', item);
+        const storedQty = parseFloat(line.qtyInMinor);
+        if (Math.abs(serverQty - storedQty) > QTY_MINOR_TOLERANCE) {
+          throw new Error(`الصنف "${item.nameAr}" — الكمية المحسوبة على الخادم (${serverQty.toFixed(4)}) تختلف عن الكمية المخزّنة (${storedQty.toFixed(4)}) بفارق يتجاوز التسامح (${QTY_MINOR_TOLERANCE}). يرجى مراجعة إذن الاستلام.`);
+        }
+
+        const serverBonus = convertQtyToMinor(parseFloat(line.bonusQty || "0"), line.unitLevel || 'minor', item);
+        const storedBonus = parseFloat(line.bonusQtyInMinor || "0");
+        if (Math.abs(serverBonus - storedBonus) > QTY_MINOR_TOLERANCE) {
+          throw new Error(`الصنف "${item.nameAr}" — كمية المجانية المحسوبة على الخادم (${serverBonus.toFixed(4)}) تختلف عن المخزّنة (${storedBonus.toFixed(4)}) بفارق يتجاوز التسامح (${QTY_MINOR_TOLERANCE}).`);
+        }
+
+        // استخدام القيم المحسوبة على الخادم بدلاً من المخزّنة (تصحيح صامت ضمن التسامح)
+        const qtyMinor = serverQty + serverBonus;
+        if (qtyMinor <= 0) continue;
         
         if (item.hasExpiry && (!line.expiryMonth || !line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية (شهر/سنة)`);
         if (!item.hasExpiry && (line.expiryMonth || line.expiryYear)) throw new Error(`الصنف "${item.nameAr}" لا يدعم تواريخ صلاحية`);

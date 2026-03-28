@@ -417,19 +417,19 @@ export default function ItemFormFields({
             )}
             {hasMediumUnit && hasMinorUnit && (
               <div>
-                <Label className={`text-[10px] ${validationErrors.majorToMinor ? "text-destructive" : "text-muted-foreground"}`}>كبرى ← صغرى *</Label>
-                <Input
-                  type="number"
-                  step="0.0001"
-                  value={formData.majorToMinor || ""}
-                  onChange={(e) => setFormData({ ...formData, majorToMinor: e.target.value || null })}
-                  disabled={!isEditing || conversionLocked}
-                  placeholder="30"
-                  className={`h-6 text-[11px] px-1 font-mono text-left ${validationErrors.majorToMinor ? "border-destructive" : ""}`}
+                <Label className="text-[10px] text-muted-foreground">كبرى ← صغرى (تلقائي)</Label>
+                <div
+                  className="h-6 text-[11px] px-1 font-mono text-left border rounded flex items-center bg-muted/40 text-muted-foreground"
                   dir="ltr"
-                  data-testid="input-major-to-minor"
-                />
-                {validationErrors.majorToMinor && <span className="text-[9px] text-destructive">{validationErrors.majorToMinor}</span>}
+                  data-testid="text-major-to-minor-auto"
+                  title="يُحسب تلقائياً = (كبرى→متوسطة) × (متوسطة→صغرى)"
+                >
+                  {(() => {
+                    const m2med = parseFloat(String(formData.majorToMedium ?? "0"));
+                    const med2min = parseFloat(String(formData.mediumToMinor ?? "0"));
+                    return (m2med > 0 && med2min > 0) ? (m2med * med2min).toFixed(4).replace(/\.?0+$/, '') : "—";
+                  })()}
+                </div>
               </div>
             )}
             {!hasMediumUnit && hasMinorUnit && (

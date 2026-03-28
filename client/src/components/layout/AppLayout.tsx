@@ -145,6 +145,7 @@ const systemNavItems: NavItem[] = [
   { title: "شريط الإعلانات",   href: "/announcements",         icon: Megaphone,     permission: "settings.account_mappings" },
   { title: "أحداث المحاسبة",  href: "/accounting-events",     icon: AlertCircle,   permission: "journal.post" },
   { title: "تشخيص الأداء",    href: "/perf-diagnostics",      icon: Gauge,         permission: "settings.account_mappings" },
+  { title: "سلامة الوحدات",   href: "/unit-integrity",        icon: ScanSearch,    permission: "items.edit" },
 ];
 
 function shouldShowNavItem(

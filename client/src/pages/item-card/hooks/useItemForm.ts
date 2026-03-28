@@ -161,10 +161,12 @@ export function useItemForm({
       if (!formData.majorUnitName?.trim()) errors.majorUnitName = "مطلوب";
       const hasMed = !!formData.mediumUnitName?.trim();
       const hasMin = !!formData.minorUnitName?.trim();
-      if (hasMin && !hasMed) errors.mediumUnitName = "يجب اختيار المتوسطة قبل الصغرى";
+      // مسموح: كبرى+صغرى بدون متوسطة — لا يوجد خطأ هنا
       if (hasMed && parseFloat(formData.majorToMedium as string || "0") <= 0) errors.majorToMedium = "يجب > 0";
       if (hasMin) {
-        if (parseFloat(formData.majorToMinor as string || "0") <= 0) errors.majorToMinor = "يجب > 0";
+        // كبرى+صغرى فقط: majorToMinor إلزامي
+        if (!hasMed && parseFloat(formData.majorToMinor as string || "0") <= 0) errors.majorToMinor = "يجب > 0";
+        // ثلاث وحدات: majorToMinor يُحسب تلقائياً؛ mediumToMinor إلزامي فقط
         if (hasMed && parseFloat(formData.mediumToMinor as string || "0") <= 0) errors.mediumToMinor = "يجب > 0";
       }
       const units = [formData.majorUnitName, formData.mediumUnitName, formData.minorUnitName].filter(Boolean);

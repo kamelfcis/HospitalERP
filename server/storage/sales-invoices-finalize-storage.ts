@@ -2,6 +2,7 @@ import { db } from "../db";
 import type { DrizzleTransaction } from "../db";
 import { eq, desc, and, sql, or, asc, gte, lte, ilike, inArray } from "drizzle-orm";
 import { logAcctEvent } from "../lib/accounting-event-logger";
+import { convertQtyToMinor, QTY_MINOR_TOLERANCE } from "../inventory-helpers";
 import {
   items,
   warehouses,
@@ -258,10 +259,17 @@ const methods = {
           }
         }
 
+        // ── T04: إعادة التحقق من الكميات على الخادم ──────────────────────────
+        const serverQtyMinor = convertQtyToMinor(parseFloat(line.qty), line.unitLevel || 'minor', item);
+        const storedQtyMinor = parseFloat(line.qtyInMinor);
+        if (Math.abs(serverQtyMinor - storedQtyMinor) > QTY_MINOR_TOLERANCE) {
+          throw new Error(`الصنف "${item.nameAr}" — الكمية المحسوبة على الخادم (${serverQtyMinor.toFixed(4)}) تختلف عن المخزّنة (${storedQtyMinor.toFixed(4)}) بفارق يتجاوز التسامح (${QTY_MINOR_TOLERANCE}). يرجى إعادة إنشاء الفاتورة.`);
+        }
+
         stockLines.push({
           lineIdx: li,
           itemId: line.itemId,
-          qtyMinor: parseFloat(line.qtyInMinor),
+          qtyMinor: serverQtyMinor,
           hasExpiry: !!item.hasExpiry,
           expiryMonth: line.expiryMonth,
           expiryYear: line.expiryYear,

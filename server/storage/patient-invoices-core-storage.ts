@@ -10,6 +10,7 @@
 
 import { db } from "../db";
 import { eq, desc, and, sql, asc, gte, lte, ilike } from "drizzle-orm";
+import { convertQtyToMinor } from "../inventory-helpers";
 import {
   services,
   departments,
@@ -291,19 +292,11 @@ const methods = {
 
             const qty = parseFloat(line.quantity);
             const unitLevel = line.unitLevel || "minor";
-            let qtyMinor = qty;
-            if (unitLevel === "major") {
-              let majorToMinor = parseFloat(String(item.major_to_minor)) || 0;
-              if (majorToMinor <= 0) {
-                const majorToMedium = parseFloat(String(item.major_to_medium)) || 1;
-                const mediumToMinor = parseFloat(String(item.medium_to_minor)) || 1;
-                majorToMinor = majorToMedium * mediumToMinor;
-              }
-              qtyMinor = qty * (majorToMinor || 1);
-            } else if (unitLevel === "medium") {
-              const mediumToMinor = parseFloat(String(item.medium_to_minor)) || 1;
-              qtyMinor = qty * mediumToMinor;
-            }
+            const qtyMinor = convertQtyToMinor(qty, unitLevel, {
+              nameAr: String(item.name_ar ?? ''),
+              majorToMinor: item.major_to_minor != null ? String(item.major_to_minor) : null,
+              mediumToMinor: item.medium_to_minor != null ? String(item.medium_to_minor) : null,
+            });
 
             stockLines.push({
               lineIdx: li,
