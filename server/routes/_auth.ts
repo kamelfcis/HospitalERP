@@ -20,6 +20,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { getSetting } from "../settings-cache";
+import { logger } from "../lib/logger";
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
@@ -42,6 +43,13 @@ export function checkHospitalAccess(req: Request, res: Response, next: NextFunct
   const isOwner = role === "owner";
 
   if (pharmacyMode && !isOwner) {
+    logger.warn({
+      event: "HOSPITAL_ACCESS_BLOCKED",
+      userId: (req.session as { userId?: string }).userId ?? "unknown",
+      role,
+      path: req.path,
+      method: req.method,
+    }, "[PHARMACY_MODE] Blocked hospital endpoint access");
     return res.status(403).json({ message: "Forbidden in pharmacy mode" });
   }
   next();
