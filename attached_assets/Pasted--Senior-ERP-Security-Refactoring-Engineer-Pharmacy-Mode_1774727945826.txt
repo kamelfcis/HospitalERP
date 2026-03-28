@@ -1,0 +1,235 @@
+أنت الآن Senior ERP Security & Refactoring Engineer.
+
+⚠️ مهم جدًا:
+الميزة Pharmacy Mode تم تنفيذها بالفعل.
+مهمتك الآن ليست البناء من الصفر، بل:
+👉 مراجعة + تقفيل + Hardening نهائي
+👉 سد أي ثغرة (UI / Routes / API / Edge cases)
+👉 الوصول إلى Production-grade 100%
+
+ممنوع إضافة Features جديدة.
+مسموح فقط:
+- تحسين
+- حماية
+- Refactor محدود وآمن
+- توحيد المنطق
+
+========================================
+🎯 الهدف
+========================================
+
+التأكد أن Pharmacy Mode:
+
+✔ لا يسمح بأي وصول لصفحات المستشفى لغير الـ Owner
+✔ لا يسمح بأي وصول لبيانات المستشفى عبر API
+✔ لا يحتوي على duplication أو logic مبعثر
+✔ يعمل بشكل متماسك في كل السيناريوهات
+✔ قابل للصيانة بواسطة مبرمج ضعيف
+
+========================================
+🚫 ممنوعات
+========================================
+
+❌ لا تغيّر business logic
+❌ لا تغيّر APIs الحالية بشكل يكسر النظام
+❌ لا تضيف نظام صلاحيات جديد
+❌ لا تعيد كتابة النظام
+❌ لا تعمل حلول مؤقتة
+
+========================================
+🔴 المرحلة 1 — AUDIT إجباري
+========================================
+
+ابدأ بفحص شامل وقدم تقرير بعنوان:
+
+PHARMACY MODE HARDENING AUDIT
+
+ويشمل:
+
+1) Route Coverage Check
+- هل كل routes الموجودة في المشروع مغطاة؟
+- هل HOSPITAL_ONLY_ROUTES تشمل:
+  - list pages
+  - details pages
+  - create/edit routes
+  - nested routes
+- هل isHospitalOnlyRoute يغطي patterns وليس exact match فقط؟
+
+2) API Exposure Check (أهم نقطة)
+- هل يوجد endpoints ترجع بيانات مستشفى بدون حماية؟
+مثل:
+  /api/patient-invoices
+  /api/doctors
+  /api/contracts
+  /api/rooms
+  /api/clinics
+
+- هل يمكن استدعاؤها مباشرة في Pharmacy Mode؟
+
+3) UI Leak Check
+- هل يوجد:
+  - dashboard cards
+  - quick actions
+  - internal links
+  - buttons
+تؤدي لصفحات hospital-only رغم إخفاء الـ sidebar؟
+
+4) Settings Security
+- من يستطيع تغيير pharmacy_mode؟
+- هل endpoint محمي؟
+- هل user عادي يستطيع تغييره عبر API؟
+
+5) Login Branding Check
+- هل يعمل بدون session؟
+- هل يوجد fallback لو فشل تحميل settings؟
+
+6) Owner Override Validation
+- هل owner يتجاوز كل الحماية فعلاً؟
+- هل يوجد أي حالة يتم منعه فيها بالخطأ؟
+
+========================================
+⛔ لا تنفذ أي تعديل بعد هذا التقرير
+انتظر الموافقة
+========================================
+
+========================================
+🟢 المرحلة 2 — HARDENING (بعد الموافقة)
+========================================
+
+بعد الموافقة، نفّذ الآتي فقط:
+
+========================================
+1) BACKEND PROTECTION (إجباري)
+========================================
+
+⚠️ أهم نقطة في المشروع كله
+
+- أي endpoint hospital-only يجب أن:
+  إذا pharmacyMode = true AND user NOT owner
+  → يرجع 403
+
+- لا تعتمد على frontend فقط
+
+- أنشئ helper مركزي مثل:
+  assertHospitalAccess(req)
+
+واستخدمه في endpoints الحساسة
+
+========================================
+2) ROUTE MATCHING IMPROVEMENT
+========================================
+
+- حسّن isHospitalOnlyRoute ليشمل:
+  - dynamic routes
+  - nested paths
+  - param routes
+
+مثال:
+  /patients
+  /patients/123
+  /patients/123/edit
+
+========================================
+3) CENTRALIZATION CHECK
+========================================
+
+تأكد أن:
+
+- لا يوجد تعريف hospital-only خارج:
+  pharmacy-config.ts
+
+- sidebar + route guard + أي logic
+  يقرأ من نفس المصدر فقط
+
+========================================
+4) UI LEAK FIXES
+========================================
+
+- إزالة أو تعطيل أي:
+  - زر
+  - رابط
+  - shortcut
+
+يوصل لصفحة hospital-only
+
+حتى لو كانت مخفية من sidebar
+
+========================================
+5) SETTINGS HARDENING
+========================================
+
+- تأكد أن:
+  فقط owner/admin يغير pharmacy_mode
+
+- أي محاولة من user عادي:
+  → 403
+
+========================================
+6) SAFE FALLBACKS
+========================================
+
+- لو فشل تحميل settings:
+  → fallback آمن (hospital mode أو default واضح)
+
+- لا تترك UI في حالة غير معروفة
+
+========================================
+📊 بعد التنفيذ — تقرير نهائي إجباري
+========================================
+
+لا تقل "تم".
+
+أعطني تقرير بعنوان:
+
+PHARMACY MODE HARDENING REPORT
+
+ويحتوي:
+
+1) Issues found
+2) Issues fixed
+3) API endpoints secured
+4) Routes coverage status
+5) Remaining risks (إن وجدت)
+6) Files modified
+7) What was NOT changed (مهم)
+8) Manual test checklist
+
+========================================
+🧪 TEST MATRIX (إجباري)
+========================================
+
+اختبر:
+
+1) pharmacy mode OFF
+→ كل النظام يعمل طبيعي
+
+2) pharmacy mode ON + user عادي
+→ لا يرى صفحات المستشفى
+→ direct URL → 403
+→ API → 403
+
+3) pharmacy mode ON + owner
+→ يرى كل شيء
+
+4) user عادي يحاول تغيير setting
+→ 403
+
+5) لا يوجد أي:
+- UI leak
+- API leak
+- broken navigation
+
+========================================
+🎯 الهدف النهائي
+========================================
+
+نظام:
+- آمن
+- نظيف
+- بدون ثغرات
+- قابل للبيع مباشرة
+- لا يعتمد على ذكاء المبرمج القادم
+
+========================================
+ابدأ بالـ AUDIT فقط الآن
+========================================
