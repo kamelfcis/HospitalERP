@@ -294,6 +294,7 @@ const methods = {
             const unitLevel = line.unitLevel || "minor";
             const qtyMinor = convertQtyToMinor(qty, unitLevel, {
               nameAr: String(item.name_ar ?? ''),
+              majorToMedium: item.major_to_medium != null ? String(item.major_to_medium) : null,
               majorToMinor: item.major_to_minor != null ? String(item.major_to_minor) : null,
               mediumToMinor: item.medium_to_minor != null ? String(item.medium_to_minor) : null,
             });

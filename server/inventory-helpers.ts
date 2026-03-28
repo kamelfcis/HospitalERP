@@ -117,22 +117,33 @@ export function computeMajorToMinor(item: ItemUnitsInput): string | null {
  *
  * السلوك:
  *  - unitLevel='minor'  → qty كما هو (الكمية بالصغرى)
- *  - unitLevel='medium' → qty × mediumToMinor (throw إذا ratio غير محدد)
+ *  - unitLevel='medium' → qty × effectiveMediumToMinor
+ *      أولاً: mediumToMinor إذا محدد (أصناف 3 وحدات)
+ *      ثانياً: (majorToMinor||1) / majorToMedium  (legacy: كبرى+متوسطة بدون صغرى)
+ *      throw فقط إذا majorToMedium = null أو صفر أيضاً
  *  - unitLevel='major'  → qty × majorToMinor إذا محدد؛ وإلا qty (legacy: كبرى = وحدة التخزين)
  */
 export function convertQtyToMinor(
   qty: number,
   unitLevel: string,
-  item: { nameAr?: string | null; majorToMinor?: string | null; mediumToMinor?: string | null }
+  item: { nameAr?: string | null; majorToMinor?: string | null; majorToMedium?: string | null; mediumToMinor?: string | null }
 ): number {
   if (unitLevel === 'minor') return qty;
 
   if (unitLevel === 'medium') {
-    const ratio = parseFloat(String(item.mediumToMinor ?? ""));
-    if (!(ratio > 0)) {
-      throw new Error(`الصنف "${item.nameAr || ''}" — معامل التحويل (متوسطة → صغرى) غير محدد أو صفر. لا يمكن إجراء العملية.`);
+    // أولاً: mediumToMinor مباشرة (أصناف كبرى+متوسطة+صغرى)
+    const medRatio = parseFloat(String(item.mediumToMinor ?? ""));
+    if (medRatio > 0) return qty * medRatio;
+
+    // ثانياً: legacy (كبرى+متوسطة، بدون صغرى) — التخزين بالكبرى
+    // effectiveMediumToMinor = (majorToMinor||1) / majorToMedium
+    const maj2med = parseFloat(String(item.majorToMedium ?? ""));
+    if (maj2med > 0) {
+      const maj2min = parseFloat(String(item.majorToMinor ?? "")) || 1;
+      return qty * (maj2min / maj2med);
     }
-    return qty * ratio;
+
+    throw new Error(`الصنف "${item.nameAr || ''}" — معامل التحويل (متوسطة → صغرى) غير محدد أو صفر. لا يمكن إجراء العملية.`);
   }
 
   if (unitLevel === 'major') {
@@ -149,22 +160,31 @@ export function convertQtyToMinor(
  * يحوّل سعر الوحدة المُدخَلة إلى سعر وحدة التخزين (per minor/stored unit).
  *
  * - unitLevel='minor'  → السعر كما هو
- * - unitLevel='medium' → سعر÷mediumToMinor (throw إذا ratio غير محدد)
+ * - unitLevel='medium' → سعر ÷ effectiveMediumToMinor
+ *      أولاً: mediumToMinor إذا محدد
+ *      ثانياً: (majorToMinor||1) / majorToMedium  (legacy)
+ *      throw فقط إذا لا يمكن حساب effectiveMediumToMinor
  * - unitLevel='major'  → سعر÷majorToMinor إذا محدد؛ وإلا السعر كما هو
  */
 export function convertPriceToMinor(
   price: number,
   unitLevel: string,
-  item: { nameAr?: string | null; majorToMinor?: string | null; mediumToMinor?: string | null }
+  item: { nameAr?: string | null; majorToMinor?: string | null; majorToMedium?: string | null; mediumToMinor?: string | null }
 ): number {
   if (unitLevel === 'minor') return price;
 
   if (unitLevel === 'medium') {
-    const ratio = parseFloat(String(item.mediumToMinor ?? ""));
-    if (!(ratio > 0)) {
-      throw new Error(`الصنف "${item.nameAr || ''}" — معامل التحويل (متوسطة → صغرى) غير محدد أو صفر. لا يمكن إجراء العملية.`);
+    const medRatio = parseFloat(String(item.mediumToMinor ?? ""));
+    if (medRatio > 0) return price / medRatio;
+
+    // Legacy fallback: (majorToMinor||1) / majorToMedium
+    const maj2med = parseFloat(String(item.majorToMedium ?? ""));
+    if (maj2med > 0) {
+      const maj2min = parseFloat(String(item.majorToMinor ?? "")) || 1;
+      return price / (maj2min / maj2med);
     }
-    return price / ratio;
+
+    throw new Error(`الصنف "${item.nameAr || ''}" — معامل التحويل (متوسطة → صغرى) غير محدد أو صفر. لا يمكن إجراء العملية.`);
   }
 
   if (unitLevel === 'major') {

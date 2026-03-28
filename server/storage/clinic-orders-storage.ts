@@ -462,7 +462,7 @@ const methods = {
         for (const svc of data.services) {
           const consumRes = await client.query(`
             SELECT sc.item_id, sc.quantity AS consume_qty, sc.unit_level,
-                   i.major_to_minor, i.medium_to_minor, i.name_ar
+                   i.major_to_medium, i.major_to_minor, i.medium_to_minor, i.name_ar
             FROM service_consumables sc
             JOIN items i ON i.id = sc.item_id
             WHERE sc.service_id = $1
@@ -472,6 +472,7 @@ const methods = {
             const consumeQty = parseFloat(cons.consume_qty as string) * svc.quantity;
             const qtyInMinor = convertQtyToMinor(consumeQty, (cons.unit_level as string) || 'minor', {
               nameAr: cons.name_ar as string,
+              majorToMedium: cons.major_to_medium as string | null,
               majorToMinor: cons.major_to_minor as string | null,
               mediumToMinor: cons.medium_to_minor as string | null,
             });
