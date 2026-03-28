@@ -18,6 +18,8 @@
  *   POST /api/admissions/:id/segments/:id/close — إغلاق قطاع إقامة
  *   POST /api/admissions/:id/transfer          — تحويل قطاع الإقامة
  *   POST /api/stay/accrue                      — احتساب رسوم الإقامة
+ *
+ *  الحماية: requireAuth + checkHospitalAccess على كل endpoint
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -25,11 +27,11 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { bedBoardClients, broadcastBedBoardUpdate } from "./_shared";
+import { bedBoardClients, broadcastBedBoardUpdate, requireAuth, checkHospitalAccess } from "./_shared";
 
 export function registerBedBoardRoutes(app: Express) {
   // ── SSE stream ──────────────────────────────────────────────
-  app.get("/api/bed-board/events", (req, res) => {
+  app.get("/api/bed-board/events", requireAuth, checkHospitalAccess, (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -49,7 +51,7 @@ export function registerBedBoardRoutes(app: Express) {
     });
   });
 
-  app.get("/api/bed-board", async (_req, res) => {
+  app.get("/api/bed-board", requireAuth, checkHospitalAccess, async (_req, res) => {
     try {
       res.json(await storage.getBedBoard());
     } catch (e: unknown) {
@@ -57,7 +59,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.get("/api/beds/available", async (_req, res) => {
+  app.get("/api/beds/available", requireAuth, checkHospitalAccess, async (_req, res) => {
     try {
       res.json(await storage.getAvailableBeds());
     } catch (e: unknown) {
@@ -65,7 +67,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/beds/:id/admit", async (req, res) => {
+  app.post("/api/beds/:id/admit", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { patientName, patientPhone, patientId, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
@@ -90,7 +92,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/beds/:id/transfer", async (req, res) => {
+  app.post("/api/beds/:id/transfer", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { targetBedId, newServiceId, newInvoiceId } = req.body;
       if (!targetBedId) return res.status(400).json({ message: "targetBedId مطلوب" });
@@ -108,7 +110,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/beds/:id/discharge", async (req, res) => {
+  app.post("/api/beds/:id/discharge", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { force } = req.body || {};
       const bedId = req.params.id as string;
@@ -149,7 +151,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/beds/:id/status", async (req, res) => {
+  app.post("/api/beds/:id/status", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { status } = req.body;
       if (!["EMPTY", "NEEDS_CLEANING", "MAINTENANCE"].includes(status)) {
@@ -165,7 +167,7 @@ export function registerBedBoardRoutes(app: Express) {
   });
 
   // ── Stay Engine ──────────────────────────────────────────────
-  app.get("/api/admissions/:id/segments", async (req, res) => {
+  app.get("/api/admissions/:id/segments", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       res.json(await storage.getStaySegments(req.params.id as string));
     } catch (e: unknown) {
@@ -173,7 +175,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions/:id/segments", async (req, res) => {
+  app.post("/api/admissions/:id/segments", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { serviceId, invoiceId, notes } = req.body;
       if (!invoiceId) return res.status(400).json({ message: "invoiceId مطلوب" });
@@ -190,7 +192,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions/:id/segments/:segmentId/close", async (req, res) => {
+  app.post("/api/admissions/:id/segments/:segmentId/close", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       res.json(await storage.closeStaySegment(req.params.segmentId as string));
     } catch (e: unknown) {
@@ -199,7 +201,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions/:id/transfer", async (req, res) => {
+  app.post("/api/admissions/:id/transfer", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { oldSegmentId, newServiceId, newInvoiceId, notes } = req.body;
       if (!oldSegmentId) return res.status(400).json({ message: "oldSegmentId مطلوب" });
@@ -218,7 +220,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/stay/accrue", async (req, res) => {
+  app.post("/api/stay/accrue", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       res.json(await storage.accrueStayLines());
     } catch (e: unknown) {

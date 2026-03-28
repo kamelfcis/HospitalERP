@@ -1,0 +1,198 @@
+أنت الآن Senior ERP Security Engineer + Refactoring Specialist.
+
+⚠️ مهم جدًا:
+الميزة Pharmacy Mode تم تنفيذها بالفعل.
+مهمتك الآن هي:
+👉 Hardening نهائي + إغلاق الثغرات + تثبيت النظام Production-ready 100%
+
+❌ لا تضيف features جديدة
+❌ لا تغيّر business logic
+❌ لا تكسر أي API
+✅ فقط حماية + تنظيم + Refactor محدود وآمن
+
+========================================
+🎯 الهدف
+========
+
+منع أي وصول لبيانات أو endpoints المستشفى عندما:
+pharmacy_mode = true AND user NOT owner
+
+حتى لو المستخدم:
+
+* authenticated
+* أو حاول الوصول عبر API مباشرة
+
+========================================
+🔴 المطلوب — Backend Hardening (إجباري)
+=======================================
+
+========================================
+
+1. إنشاء Middleware مركزي
+   ========================================
+
+أنشئ middleware جديد في:
+server/routes/_auth.ts
+
+باسم:
+checkHospitalAccess
+
+المنطق:
+
+* اقرأ pharmacy_mode من settings-cache (getSetting)
+* حوّل القيمة إلى boolean بشكل صحيح
+* احصل على role من session
+
+إذا:
+pharmacy_mode = true AND user.role !== "owner"
+→ return 403
+
+وإلا:
+→ next()
+
+⚠️ ملاحظات:
+
+* لا تستخدم DB call — استخدم cache فقط
+* تأكد أن req.session.role موثوق وموجود بعد login
+* لا تعتمد على قيم ممكن تكون undefined بدون fallback
+
+========================================
+2) Response موحد
+================
+
+كل رفض يجب أن يرجع:
+
+HTTP 403
+JSON ثابت مثل:
+{ "message": "Forbidden in pharmacy mode" }
+
+⚠️ لا تستخدم رسائل مختلفة أو عشوائية
+
+========================================
+3) تطبيق الحماية على الملفات التالية
+====================================
+
+A) hospital-bedboard.ts
+كل endpoints (12):
+→ requireAuth + checkHospitalAccess
+
+⚠️ يشمل:
+GET /api/bed-board/events (SSE)
+لا تنسَ SSE
+
+---
+
+B) hospital-rooms.ts
+كل endpoints (11):
+→ requireAuth + checkHospitalAccess
+
+---
+
+C) admissions.ts
+
+1. الـ 4 GET endpoints غير المحمية:
+   → requireAuth + checkHospitalAccess
+
+2. باقي endpoints (14):
+   → requireAuth + checkHospitalAccess + checkPermission(...)
+
+⚠️ الترتيب إجباري:
+requireAuth → checkHospitalAccess → checkPermission
+
+========================================
+4) ممنوع هذا الخطأ
+==================
+
+❌ لا تعتمد على frontend فقط
+❌ لا تكتفي بـ requireAuth
+❌ لا تترك endpoint واحد بدون حماية
+❌ لا تكرر نفس المنطق داخل كل route
+❌ لا تعمل inline checks — استخدم middleware فقط
+
+========================================
+5) Owner Override
+=================
+
+* owner يرى كل شيء دائمًا
+* لا يتم منعه في أي endpoint
+* تحقق أن الشرط يعمل فعليًا
+
+========================================
+6) SSE Handling
+===============
+
+* تأكد أن SSE endpoint يمر عبر middleware
+* اختبر أنه يرجع 403 عند المنع
+* لا يفتح stream بدون صلاحية
+
+========================================
+7) Validation قبل التنفيذ
+=========================
+
+تأكد:
+
+* req.session.role موجود دائمًا
+* pharmacy_mode يتم قراءته بشكل صحيح
+* fallback واضح إذا القيمة غير موجودة
+
+========================================
+📊 بعد التنفيذ — تقرير إجباري
+=============================
+
+أعطني تقرير بعنوان:
+
+PHARMACY MODE BACKEND HARDENING REPORT
+
+ويحتوي:
+
+1. قائمة endpoints التي تم تأمينها (بالاسم والمسار)
+2. مثال قبل/بعد من كل ملف:
+
+   * hospital-bedboard.ts
+   * hospital-rooms.ts
+   * admissions.ts
+3. كيف يعمل checkHospitalAccess داخليًا
+4. كيف يتم قراءة pharmacy_mode
+5. كيف يعمل owner override
+6. تأكيد أن SSE أصبح محميًا
+7. أي مخاطر متبقية (إن وجدت)
+8. ما لم يتم تغييره (مهم)
+
+========================================
+🧪 TEST MATRIX (إجباري)
+=======================
+
+اختبر:
+
+1. pharmacy_mode = true + user عادي
+   → كل endpoints hospital ترجع 403
+
+* /api/bed-board
+* /api/bed-board/events
+* /api/rooms
+* /api/admissions
+
+2. pharmacy_mode = true + owner
+   → كل endpoints تعمل طبيعي
+
+3. pharmacy_mode = false
+   → كل النظام يعمل طبيعي بدون أي كسر
+
+4. SSE endpoint:
+   → لا يعمل لغير المصرح له
+   → يعمل للـ owner
+
+========================================
+🎯 الهدف النهائي
+================
+
+نظام:
+
+* لا يحتوي أي API leak
+* لا يعتمد على UI في الحماية
+* آمن ضد direct API calls
+* قابل للبيع كـ standalone pharmacy بدون تسريب بيانات مستشفى
+
+========================================
+ابدأ التنفيذ الآن وفق هذه القواعد فقط
+=====================================

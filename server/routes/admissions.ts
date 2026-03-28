@@ -5,21 +5,20 @@ import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-sche
 import { logger } from "../lib/logger";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
-import { requireAuth, checkPermission } from "./_shared";
+import { requireAuth, checkPermission, checkHospitalAccess } from "./_shared";
 import { insertAdmissionSchema } from "@shared/schema";
 
 export function registerAdmissionsRoutes(app: Express) {
   // ==================== Surgery Types API ====================
 
-  // Layer 2: requireAuth — surgery type lookup used in admissions/OR forms
-  app.get("/api/surgery-types", requireAuth, async (req, res) => {
+  app.get("/api/surgery-types", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const search = req.query.search as string | undefined;
       res.json(await storage.getSurgeryTypes(search));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/surgery-types", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.post("/api/surgery-types", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const { nameAr, category, isActive } = req.body;
       if (!nameAr?.trim()) return res.status(400).json({ message: "اسم العملية مطلوب" });
@@ -30,7 +29,7 @@ export function registerAdmissionsRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.put("/api/surgery-types/:id", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.put("/api/surgery-types/:id", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const { nameAr, category, isActive } = req.body;
       if (category && !["major","medium","minor","skilled","simple"].includes(category))
@@ -46,7 +45,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/surgery-types/:id", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.delete("/api/surgery-types/:id", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       await storage.deleteSurgeryType(req.params.id as string);
       res.json({ success: true });
@@ -55,13 +54,12 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  // Layer 2: requireAuth — pricing data for surgical categories
-  app.get("/api/surgery-category-prices", requireAuth, async (req, res) => {
+  app.get("/api/surgery-category-prices", requireAuth, checkHospitalAccess, async (req, res) => {
     try { res.json(await storage.getSurgeryCategoryPrices()); }
     catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.put("/api/surgery-category-prices/:category", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.put("/api/surgery-category-prices/:category", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const { price } = req.body;
       if (price === undefined || isNaN(parseFloat(price)))
@@ -71,7 +69,7 @@ export function registerAdmissionsRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.put("/api/patient-invoices/:id/surgery-type", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.put("/api/patient-invoices/:id/surgery-type", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const { surgeryTypeId } = req.body;
       await storage.updateInvoiceSurgeryType(req.params.id as string, surgeryTypeId || null);
@@ -85,7 +83,7 @@ export function registerAdmissionsRoutes(app: Express) {
 
   // ==================== Admissions API ====================
 
-  app.get("/api/admissions", async (req, res) => {
+  app.get("/api/admissions", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const filters: Record<string, unknown> = {};
       if (req.query.status as string)   filters.status   = req.query.status as string;
@@ -105,7 +103,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admissions/:id", async (req, res) => {
+  app.get("/api/admissions/:id", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const a = await storage.getAdmission(req.params.id as string);
       if (!a) return res.status(404).json({ message: "الإقامة غير موجودة" });
@@ -116,7 +114,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
+  app.post("/api/admissions", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
     try {
       const parsed = insertAdmissionSchema.parse(req.body);
       const a = await storage.createAdmission(parsed);
@@ -127,7 +125,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admissions/:id", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.patch("/api/admissions/:id", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const parsed = insertAdmissionSchema.partial().parse(req.body);
       const a = await storage.updateAdmission(req.params.id as string, parsed);
@@ -138,7 +136,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions/:id/discharge", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.post("/api/admissions/:id/discharge", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const a = await storage.dischargeAdmission(req.params.id as string);
       res.json(a);
@@ -148,7 +146,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admissions/:id/invoices", async (req, res) => {
+  app.get("/api/admissions/:id/invoices", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const invoices = await storage.getAdmissionInvoices(req.params.id as string);
       res.json(invoices);
@@ -158,7 +156,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admissions/:id/consolidate", requireAuth, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.post("/api/admissions/:id/consolidate", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
       const consolidated = await storage.consolidateAdmissionInvoices(req.params.id as string);
       res.json(consolidated);
@@ -168,7 +166,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admissions/:id/report", async (req, res) => {
+  app.get("/api/admissions/:id/report", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const admission = await storage.getAdmission(req.params.id as string);
       if (!admission) return res.status(404).json({ message: "الإقامة غير موجودة" });
@@ -193,6 +191,8 @@ export function registerAdmissionsRoutes(app: Express) {
   });
 
   // ─── Sales Returns ──────────────────────────────────────────────────────────
+  // ملاحظة: Sales Returns ليست hospital-only — تعمل في الصيدلية أيضاً
+  // لذلك لا يُطبق عليها checkHospitalAccess
 
   app.get("/api/sales-returns/search", requireAuth, checkPermission(PERMISSIONS.SALES_CREATE), async (req, res) => {
     try {
@@ -203,7 +203,6 @@ export function registerAdmissionsRoutes(app: Express) {
         return res.status(400).json({ message: "يجب إدخال رقم فاتورة أو باركود إيصال أو صنف للبحث" });
       }
 
-      // تقييد المخزن: المستخدمون غير المديرين يرون مخازنهم المخصصة فقط
       const fullAccessRoles = ["admin", "accountant", "manager"];
       let allowedWarehouseIds: string[] | undefined;
       let effectiveWarehouseId = warehouseId;
@@ -212,7 +211,6 @@ export function registerAdmissionsRoutes(app: Express) {
         const assigned = await storage.getUserWarehouses(userId);
         if (assigned.length > 0) {
           allowedWarehouseIds = assigned.map((w) => w.id);
-          // إذا اختار المستخدم مخزناً غير مصرح له به نتجاهله
           if (warehouseId && !allowedWarehouseIds.includes(warehouseId)) {
             effectiveWarehouseId = undefined;
           }

@@ -8,6 +8,8 @@
  *   GET/POST/PUT/DELETE /api/floors   — أدوار المستشفى
  *   GET/POST/PUT/DELETE /api/rooms    — الغرف
  *   POST/DELETE         /api/beds     — الأسرة
+ *
+ *  الحماية: requireAuth + checkHospitalAccess على كل endpoint
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -15,10 +17,11 @@ import type { Express } from "express";
 import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import { floors, rooms, beds } from "@shared/schema";
+import { requireAuth, checkHospitalAccess } from "./_shared";
 
 export function registerRoomsRoutes(app: Express) {
   // ── Rooms ────────────────────────────────────────────────────
-  app.get("/api/rooms", async (_req, res) => {
+  app.get("/api/rooms", requireAuth, checkHospitalAccess, async (_req, res) => {
     try {
       const result = await db.execute(sql`
         SELECT r.id, r.name_ar, r.room_number, r.service_id, r.floor_id,
@@ -41,7 +44,7 @@ export function registerRoomsRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.patch("/api/rooms/:id", async (req, res) => {
+  app.patch("/api/rooms/:id", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { serviceId } = req.body;
       await db.execute(sql`UPDATE rooms SET service_id = ${serviceId || null} WHERE id = ${req.params.id}`);
@@ -49,7 +52,7 @@ export function registerRoomsRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/rooms", async (req, res) => {
+  app.post("/api/rooms", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { floorId, nameAr, roomNumber, serviceId } = req.body;
       if (!floorId || !nameAr) return res.status(400).json({ message: "الدور واسم الغرفة مطلوبان" });
@@ -58,7 +61,7 @@ export function registerRoomsRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.put("/api/rooms/:id", async (req, res) => {
+  app.put("/api/rooms/:id", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { nameAr, roomNumber, serviceId } = req.body;
       if (!nameAr) return res.status(400).json({ message: "اسم الغرفة مطلوب" });
@@ -70,7 +73,7 @@ export function registerRoomsRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.delete("/api/rooms/:id", async (req, res) => {
+  app.delete("/api/rooms/:id", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const occupied = await db.execute(sql`SELECT b.id FROM beds b WHERE b.room_id = ${req.params.id} AND b.status = 'OCCUPIED' LIMIT 1`);
       if (occupied.rows.length > 0) return res.status(400).json({ message: "لا يمكن حذف الغرفة: يوجد أسرّة مشغولة" });
@@ -80,7 +83,7 @@ export function registerRoomsRoutes(app: Express) {
   });
 
   // ── Floors ───────────────────────────────────────────────────
-  app.get("/api/floors", async (_req, res) => {
+  app.get("/api/floors", requireAuth, checkHospitalAccess, async (_req, res) => {
     try {
       const result = await db.execute(sql`
         SELECT f.id, f.name_ar, f.sort_order,
@@ -98,7 +101,7 @@ export function registerRoomsRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/floors", async (req, res) => {
+  app.post("/api/floors", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { nameAr, sortOrder } = req.body;
       if (!nameAr) return res.status(400).json({ message: "اسم الدور مطلوب" });
@@ -107,7 +110,7 @@ export function registerRoomsRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.put("/api/floors/:id", async (req, res) => {
+  app.put("/api/floors/:id", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { nameAr, sortOrder } = req.body;
       if (!nameAr) return res.status(400).json({ message: "اسم الدور مطلوب" });
@@ -117,7 +120,7 @@ export function registerRoomsRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.delete("/api/floors/:id", async (req, res) => {
+  app.delete("/api/floors/:id", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const occupied = await db.execute(sql`
         SELECT b.id FROM beds b JOIN rooms r ON r.id = b.room_id
@@ -130,7 +133,7 @@ export function registerRoomsRoutes(app: Express) {
   });
 
   // ── Beds ─────────────────────────────────────────────────────
-  app.post("/api/beds", async (req, res) => {
+  app.post("/api/beds", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const { roomId, bedNumber } = req.body;
       if (!roomId || !bedNumber) return res.status(400).json({ message: "الغرفة ورقم السرير مطلوبان" });
@@ -139,7 +142,7 @@ export function registerRoomsRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.delete("/api/beds/:id", async (req, res) => {
+  app.delete("/api/beds/:id", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
       const bedRes = await db.execute(sql`SELECT status FROM beds WHERE id = ${req.params.id}`);
       if (bedRes.rows.length === 0) return res.status(404).json({ message: "السرير غير موجود" });
