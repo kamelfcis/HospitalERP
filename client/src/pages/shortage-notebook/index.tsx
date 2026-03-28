@@ -849,7 +849,7 @@ const ShortageRow = memo(function ShortageRow({
 
   return (
     <TableRow
-      className={`text-sm hover:bg-gray-50 ${row.isResolved ? "opacity-50" : ""} ${ordered ? "bg-amber-50/40" : ""}`}
+      className={`text-sm ${row.isResolved ? "opacity-50" : ""} ${ordered ? "bg-green-50 hover:bg-green-50" : "hover:bg-gray-50"}`}
       data-testid={`row-shortage-${row.itemId}`}
     >
       {/* كود */}
@@ -975,16 +975,16 @@ const ShortageRow = memo(function ShortageRow({
                   onClick={onMarkOrdered}
                   disabled={markingOrdered || ordered}
                   data-testid={`btn-order-${row.itemId}`}
-                  className={`h-7 w-7 p-0 ${
+                  className={`h-7 w-7 p-0 transition-colors ${
                     ordered
-                      ? "text-amber-400 cursor-default"
-                      : "text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                      ? "text-green-600 bg-green-100 hover:bg-green-100 cursor-default rounded"
+                      : "text-gray-400 hover:text-amber-600 hover:bg-amber-50"
                   }`}
                 >
                   {markingOrdered ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Phone className="h-4 w-4" />
+                    <Phone className={`h-4 w-4 ${ordered ? "fill-green-200" : ""}`} />
                   )}
                 </Button>
               </TooltipTrigger>
