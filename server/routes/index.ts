@@ -31,6 +31,7 @@ import { registerSystemRoutes } from "./system";
 import { registerClinicRoutes } from "./clinic";
 import { registerClinicIntakeRoutes } from "./clinic-intake";
 import { registerReportsRoutes } from "./reports";
+import { registerOpeningStockRoutes } from "./opening-stock";
 import { registerStockCountRoutes } from "./stock-count";
 import { registerPermissionGroupRoutes } from "./permission-groups";
 import { registerAccountingEventRoutes } from "./accounting-events";
@@ -60,6 +61,7 @@ export async function registerRoutes(
   registerClinicRoutes(app);
   registerClinicIntakeRoutes(app);
   registerReportsRoutes(app);
+  registerOpeningStockRoutes(app);
   registerStockCountRoutes(app);
   registerPermissionGroupRoutes(app);
   registerAccountingEventRoutes(app);

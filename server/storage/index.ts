@@ -753,6 +753,17 @@ export interface IStorage {
   refreshInventorySnapshot(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
   refreshItemMovementsSummary(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
 
+  // Opening Stock (الرصيد الافتتاحي)
+  getOpeningStockHeaders(): Promise<import("./opening-stock-storage").OpeningStockHeaderWithWarehouse[]>;
+  getOpeningStockHeader(id: string): Promise<(import("@shared/schema").OpeningStockHeader & { lines: import("./opening-stock-storage").OpeningStockLineWithItem[]; warehouseNameAr?: string }) | null>;
+  createOpeningStockHeader(data: { warehouseId: string; postDate: string; notes?: string; createdBy: string }): Promise<import("@shared/schema").OpeningStockHeader>;
+  updateOpeningStockHeader(id: string, data: { postDate?: string; notes?: string }): Promise<import("@shared/schema").OpeningStockHeader>;
+  deleteOpeningStockHeader(id: string): Promise<void>;
+  deleteOpeningStockLine(headerId: string, lineId: string): Promise<void>;
+  upsertOpeningStockLine(headerId: string, lineData: { lineId?: string; itemId: string; unitLevel: string; qtyInUnit: number; purchasePrice: number; salePrice: number; batchNo?: string | null; expiryMonth?: number | null; expiryYear?: number | null; lineNotes?: string | null }): Promise<import("@shared/schema").OpeningStockLine>;
+  importOpeningStockLines(headerId: string, rows: Array<{ itemCode: string; unitLevel: string; qtyInUnit: number; purchasePrice: number; salePrice: number; batchNo?: string | null; expiryMonth?: number | null; expiryYear?: number | null; lineNotes?: string | null }>): Promise<{ imported: number; errors: string[] }>;
+  postOpeningStock(id: string, postedBy: string): Promise<{ header: import("@shared/schema").OpeningStockHeader; totalCost: number }>;
+
   // Stock Count (جرد الأصناف)
   createStockCountSession(data: { warehouseId: string; countDate: string; notes?: string; createdBy: string }): Promise<import("@shared/schema").StockCountSession>;
   getStockCountSessions(opts: { warehouseId?: string; status?: string; page?: number; pageSize?: number }): Promise<{ sessions: any[]; total: number }>;
@@ -859,6 +870,7 @@ import { bedboardStaysMethods, bedboardBedsMethods } from "./bedboard-stay-stora
 import treasuriesMethods from "./treasuries-storage";
 import { clinicMasterMethods, clinicOrdersMethods } from "./clinic-storage";
 import rptRefreshMethods from "./rpt-refresh-storage";
+import openingStockStorage from "./opening-stock-storage";
 import stockCountMethods from "./stock-count-storage";
 import permissionGroupsMethods from "./permission-groups-storage";
 import companiesMethods from "./contracts-companies-storage";
@@ -902,6 +914,7 @@ Object.assign(
   clinicIntakeMethods,
   clinicDashboardMethods,
   rptRefreshMethods,
+  openingStockStorage,
   stockCountMethods,
   companiesMethods,
   contractsCoreMethods,

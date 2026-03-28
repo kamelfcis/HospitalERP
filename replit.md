@@ -27,6 +27,7 @@ Performance optimizations include `React.memo` on table rows and vendor chunking
 - **Reporting & Audit**: Balanced financial reports, RBAC enforcement, comprehensive audit trails, and strict validation.
 - **Department Services Orders**: Unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
 - **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine (patient accommodation billing), Bed Board with real-time updates, and a Surgery Types System.
+- **Opening Stock (الرصيد الافتتاحي)**: Draft→posted document with per-line lot entry (barcode, unit level, qty, price, batch, expiry). Excel import/export via `/api/opening-stock/:id/import|export`. On post: creates `inventory_lots` rows (FEFO-safe) + fires GL journal (`inventory` debit / `opening_equity` credit) via `setImmediate`. One posted header per warehouse enforced. Permission: `opening_stock.manage`. Routes: `/opening-stock`, `/opening-stock/new`, `/opening-stock/:id`. Sidebar icon: `PackagePlus`.
 - **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation and lot adjustments.
 - **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions with individual user overrides.
 - **Contracts Module**: Master data for insurance/contract companies, contracts, and member cards, including a 5-pass rule evaluator for contract coverage, claims GL accounting, and an approval workflow.

@@ -61,6 +61,8 @@ const DoctorOrders = lazy(() => import("@/pages/doctor-orders"));
 const DeptServicesPage = lazy(() => import("@/pages/dept-services"));
 const PerfDiagnostics = lazy(() => import("@/pages/PerfDiagnostics"));
 const DuplicatePatients = lazy(() => import("@/pages/duplicate-patients"));
+const OpeningStockList = lazy(() => import("@/pages/opening-stock/index"));
+const OpeningStockForm = lazy(() => import("@/pages/opening-stock/form"));
 const StockCount = lazy(() => import("@/pages/stock-count/index"));
 const StockCountDetail = lazy(() => import("@/pages/stock-count/session-detail"));
 const ShortageNotebook = lazy(() => import("@/pages/shortage-notebook/index"));
@@ -149,6 +151,9 @@ function Router() {
           <Route path="/items/:id">{(params) => <G p="items.view"><ItemCard /></G>}</Route>
           <Route path="/store-transfers">{() => <G p="transfers.view"><StoreTransfers /></G>}</Route>
           <Route path="/transfer-preparation">{() => <G p="transfers.view"><TransferPreparation /></G>}</Route>
+          <Route path="/opening-stock">{() => <G p="opening_stock.manage"><OpeningStockList /></G>}</Route>
+          <Route path="/opening-stock/new">{() => <G p="opening_stock.manage"><OpeningStockForm /></G>}</Route>
+          <Route path="/opening-stock/:id">{() => <G p="opening_stock.manage"><OpeningStockForm /></G>}</Route>
           <Route path="/stock-count">{() => <G p="stock_count.view"><StockCount /></G>}</Route>
           <Route path="/stock-count/:id">{() => <G p="stock_count.view"><StockCountDetail /></G>}</Route>
           <Route path="/shortage-notebook">{() => <G p="shortage.view"><ShortageNotebook /></G>}</Route>

@@ -54,6 +54,7 @@ import {
   CreditCard,
   Printer,
   NotebookPen,
+  PackagePlus,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -94,6 +95,7 @@ const mainNavItems: NavItem[] = [
   { title: "تحصيل التوصيل",          href: "/delivery-payments",     icon: Truck,             permission: "delivery_payment.view" },
   { title: "تحويل مخزني",            href: "/store-transfers",       icon: ArrowLeftRight,    permission: "transfers.view" },
   { title: "إعداد إذن تحويل",         href: "/transfer-preparation",  icon: FileSpreadsheet,  permission: "transfers.view" },
+  { title: "الرصيد الافتتاحي",       href: "/opening-stock",         icon: PackagePlus,       permission: "opening_stock.manage" },
   { title: "جرد الأصناف",            href: "/stock-count",           icon: ClipboardList,     permission: "stock_count.view" },
   { title: "كشكول النواقص",          href: "/shortage-notebook",     icon: NotebookPen,       permission: "shortage.view" },
   { title: "فواتير البيع",            href: "/sales-invoices",        icon: ShoppingCart,      permission: "sales.view" },
