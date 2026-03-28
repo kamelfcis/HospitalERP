@@ -1,0 +1,296 @@
+أنت الآن Senior ERP Inventory Engineer + Refactoring Specialist + Import/Export Workflow Architect.
+
+مطلوب تنفيذ شاشة جديدة باسم:
+
+Opening Stock / الرصيد الافتتاحي للمخزن
+
+⚠️ مهم جداً:
+هذه ليست شاشة حركة يومية.
+هذه شاشة تأسيس للمخزن عند بداية التشغيل الفعلي فقط.
+يجب تنفيذها بشكل نظيف جداً، مع refactor حقيقي، وبدون duplication، وبالاعتماد على ما هو موجود بالفعل في شاشة الأصناف وشاشات المخزون.
+
+========================================
+الهدف الوظيفي النهائي
+========================================
+
+أريد شاشة لإدخال الرصيد الافتتاحي لمخزن محدد، بحيث أستطيع:
+
+1) اختيار المخزن
+2) إدخال الأصناف
+3) إدخال الكمية
+4) اختيار الوحدة من الوحدات المعرفة للصنف
+5) إدخال سعر الشراء الافتتاحي
+6) إدخال سعر البيع الافتتاحي
+7) إدخال batch / expiry عند الحاجة
+8) استيراد السطور من Excel
+9) تصدير Template Excel
+10) مراجعة السطور في Draft
+11) Post نهائي إلى المخزون
+12) بعد Post تصبح الوثيقة read-only بالكامل
+
+========================================
+Design Intent النهائي (إجباري)
+========================================
+
+اعتمدوا هذا التصميم بدون اجتهادات مخالفة:
+
+1) Opening Stock = مرة واحدة فقط لكل مخزن
+2) الشاشة خاصة ببداية التشغيل فقط
+3) ليست بديلاً عن:
+- الاستلام
+- الجرد
+- التسويات
+4) بعد Post:
+- لا تعديل
+- لا حذف
+- لا إعادة ترحيل
+5) أي فروقات بعد التشغيل الفعلي تُعالج من خلال الجرد أو التسوية وليس Opening Stock
+6) الشاشة ضمن شاشات الصيدلية
+7) تظهر في Pharmacy Mode
+8) ليست hospital-only
+
+========================================
+مبدأ التنفيذ الأهم
+========================================
+
+❌ ممنوع copy/paste من شاشة الأصناف
+❌ ممنوع تكرار منطق Excel
+❌ ممنوع تكرار منطق الوحدات
+❌ ممنوع تكرار منطق إنشاء lots/movements
+✅ المطلوب Refactor حقيقي + reuse
+
+========================================
+إعادة الاستخدام المطلوبة (إجباري)
+========================================
+
+1) Excel import/export
+يوجد منطق مشابه في شاشة الأصناف.
+المطلوب:
+- استخراج shared helpers/server utilities إذا لزم
+- إعادة استخدام نفس آلية:
+  - template generation
+  - file parsing
+  - validation flow
+  - error reporting
+- لا أريد implementation منفصل جديد بالكامل
+
+2) Unit conversion
+استخدم فقط:
+- convertQtyToMinor
+- convertPriceToMinor
+- validateUnitConversion
+كمصدر حقيقة وحيد
+ممنوع أي inline conversion logic
+ممنوع أي fallback
+
+3) Inventory posting
+استفد من منطق:
+- postReceiving
+أو أي storage/posting pattern قائم لإنشاء:
+- inventory_lots
+- inventory_lot_movements
+
+لكن:
+- بدون نسخ الكود كما هو
+- إذا لزم، استخرج helper/service مشتركة
+
+4) Item / Unit selection
+إذا كان هناك line editor أو item picker أو unit options موجودة:
+- أعد استخدامه
+- أو استخرج shared component
+- لا تبنِ selector جديد من الصفر لو الموجود قابل لإعادة الاستخدام
+
+========================================
+المطلوب تنفيذه
+========================================
+
+1) Backend
+- إنشاء opening_stock_headers
+- إنشاء opening_stock_lines
+- API كامل:
+  - create draft
+  - get draft
+  - update draft
+  - import excel
+  - export template
+  - post document
+  - read-only fetch after post
+
+2) Frontend
+- صفحة قائمة / شاشة رئيسية Opening Stock
+- شاشة إدخال / تعديل Draft
+- grid lines
+- اختيار مخزن
+- import excel
+- export template
+- post action
+- read-only mode بعد post
+
+3) Navigation / Pharmacy placement
+- route واضح: /opening-stock
+- مدخل واضح في sidebar الصيدلية
+- يظهر في Pharmacy Mode
+- بصلاحية مناسبة:
+  opening_stock.manage
+  (أو طبق ما تم الاتفاق عليه إن لم يكن موجوداً)
+
+========================================
+قواعد التحقق (إجباري)
+========================================
+
+Header:
+- warehouseId إلزامي
+- warehouse يجب أن يكون active
+- لا يسمح بترحيل أكثر من Opening Stock لنفس المخزن
+- draft فقط هو الذي يمكن ترحيله
+- على الأقل سطر واحد
+
+Lines:
+- itemId إلزامي
+- unitLevel من الوحدات المعرفة للصنف فقط
+- qty > 0
+- qtyInMinor يتم حسابها server-side فقط
+- purchasePrice >= 0
+- salePrice >= 0
+- إذا الصنف expiry/batch tracked → الحقول إلزامية
+- إذا الصنف لا يحتاج batch/expiry → لا تفرضها
+- منع duplicate lines غير المنطقي
+- يفضل دمج السطور المتكررة قبل post إذا كانت:
+  same item + same batch + same expiry
+
+========================================
+منطق الترحيل (Posting)
+========================================
+
+لكل سطر:
+1) التحقق من تعريف الصنف والوحدة
+2) convertQtyToMinor على السيرفر
+3) convertPriceToMinor على السيرفر
+4) إنشاء أو تحديث lot مناسب
+5) إنشاء inventory_lot_movements
+6) تمييز الحركة بوضوح كـ opening stock
+7) تحديث آخر أسعار مناسبة إذا كان ذلك ضمن التصميم المعتمد
+
+⚠️ مهم:
+lot matching يجب أن يعتمد على:
+- itemId
+- warehouseId
+- batchNo
+- expiryMonth
+- expiryYear
+
+ممنوع تجاهل batchNo في المطابقة
+
+========================================
+GL / القيود المحاسبية
+========================================
+
+هذه وثيقة افتتاحية حقيقية وليست حركة عادية.
+لذلك:
+
+- إذا كانت account mappings مكتملة:
+  يتم إنشاء قيد افتتاحي متوازن
+- إذا لم تكن مكتملة:
+  أعط warning واضح ولا تكسر بقية الترحيل إذا كان هذا هو السلوك المعتمد حالياً
+
+لكن:
+- هيئ الكود من الآن بشكل منظم لدعم opening stock GL posting
+- لا تكتب شغل عشوائي أو hardcoded account logic
+
+========================================
+Refactor المطلوب (إجباري)
+========================================
+
+أريد تنفيذ نظيف، يشمل:
+
+1) shared excel helpers
+إذا كان منطق Excel في items-crud.ts مبعثرًا:
+- استخرجه إلى shared helper/service واضح
+- واجعل شاشة الأصناف وشاشة الرصيد الافتتاحي تستخدمانه معاً
+
+2) shared posting helpers
+إذا كان منطق إنشاء lots/movements في receiving صالحًا لإعادة الاستخدام:
+- استخرج helper أو service مشتركة
+- لا تكرر نفس المنطق في opening-stock-storage
+
+3) shared line editor pieces
+إذا كانت هناك مكونات grid أو row editor قابلة لإعادة الاستخدام:
+- أعد استخدامها
+- أو استخرج abstraction مناسب
+- بدون over-engineering
+
+4) naming واضح
+استخدم أسماء واضحة مثل:
+- opening-stock-storage.ts
+- opening-stock.ts
+- excel-helpers.ts
+- OpeningStockPage
+- OpeningStockForm
+- OpeningStockLinesGrid
+
+========================================
+قيود صارمة
+========================================
+
+- ممنوع نسخ منطق شاشة الأصناف copy/paste
+- ممنوع نسخ منطق receiving ثم تعديله سريعاً
+- ممنوع إضافة conversion logic جديد
+- ممنوع أي fallback silent
+- ممنوع post مرتين
+- ممنوع تعديل الوثيقة بعد post
+- ممنوع ربط الشاشة عشوائياً خارج شاشات الصيدلية
+
+========================================
+Acceptance Criteria (إجباري)
+========================================
+
+يجب أن تنجح هذه الحالات:
+
+1) إنشاء Draft لمخزن محدد
+2) إضافة أصناف متعددة
+3) إدخال major only
+4) إدخال major + medium
+5) إدخال major + minor
+6) إدخال صنف expiry-tracked مع expiry صحيح
+7) رفض صنف expiry-tracked بدون expiry
+8) import excel صالح
+9) export template صالح
+10) post ينشئ lots + movements بشكل صحيح
+11) post يمنع إعادة الترحيل
+12) الوثيقة تصبح read-only بعد post
+13) الشاشة تظهر في Pharmacy Mode
+14) الشاشة لا تكسر أي flow حالي (receiving / sales / stock count)
+
+========================================
+التقرير المطلوب بعد التنفيذ
+========================================
+
+بعد التنفيذ لا تقل فقط "تم".
+
+أريد تقريراً منظماً بعنوان:
+
+OPENING STOCK IMPLEMENTATION REPORT
+
+ويحتوي على:
+
+1) What was implemented
+2) What was refactored
+3) What was reused from existing items/import logic
+4) What shared modules were extracted
+5) Files changed
+6) DB changes
+7) Posting logic summary
+8) Validation summary
+9) Pharmacy mode placement
+10) Manual test steps
+11) Remaining limitations إن وجدت
+
+========================================
+ابدأ التنفيذ الآن
+========================================
+
+لكن:
+- إذا احتجت Refactor قبل الإضافة، نفّذه
+- وإذا وجدت duplication، أزله
+- وإذا وجدت abstraction مناسب، استخدمه
+- والأولوية دائماً للنظافة والاستقرار وقابلية الصيانة

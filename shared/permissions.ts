@@ -153,6 +153,9 @@ export const PERMISSIONS = {
 
   SHORTAGE_VIEW:    "shortage.view",    // عرض لوحة كشكول النواقص وتحليل الأصناف
   SHORTAGE_MANAGE:  "shortage.manage",  // حل النواقص وتصدير التقارير
+
+  // ── الرصيد الافتتاحي للمخزن ──────────────────────────────────────────────
+  OPENING_STOCK_MANAGE: "opening_stock.manage", // إنشاء ومراجعة وترحيل الرصيد الافتتاحي
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -233,6 +236,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.INVOICE_APPROVE_ZERO_PRICE,
     PERMISSIONS.CONTRACTS_VIEW,
     PERMISSIONS.CONTRACTS_MANAGE,
+    PERMISSIONS.OPENING_STOCK_MANAGE,
   ],
 
   admin: Object.values(PERMISSIONS),
@@ -289,6 +293,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.STOCK_COUNT_VIEW,
     PERMISSIONS.STOCK_COUNT_CREATE,
     PERMISSIONS.STOCK_COUNT_POST,
+    PERMISSIONS.OPENING_STOCK_MANAGE,
   ],
 
   data_entry: [
@@ -343,6 +348,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.STOCK_COUNT_VIEW,
     PERMISSIONS.STOCK_COUNT_CREATE,
     PERMISSIONS.STOCK_COUNT_POST,
+    PERMISSIONS.OPENING_STOCK_MANAGE,
   ],
 
   cashier: [
@@ -677,6 +683,12 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
     permissions: [
       { key: PERMISSIONS.SHORTAGE_VIEW,   label: "عرض لوحة التحليل والنواقص" },
       { key: PERMISSIONS.SHORTAGE_MANAGE, label: "حل النواقص وتصدير التقارير" },
+    ],
+  },
+  {
+    label: "الرصيد الافتتاحي",
+    permissions: [
+      { key: PERMISSIONS.OPENING_STOCK_MANAGE, label: "إنشاء وترحيل الرصيد الافتتاحي" },
     ],
   },
 ];

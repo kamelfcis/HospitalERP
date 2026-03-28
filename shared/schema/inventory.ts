@@ -457,6 +457,56 @@ export const stockCountStatusLabels: Record<string, string> = {
   cancelled: "مُلغى",
 };
 
+// ── جداول الرصيد الافتتاحي للمخزن (Opening Stock) ────────────────────────────
+
+export const openingStockHeaders = pgTable("opening_stock_headers", {
+  id:          varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id),
+  postDate:    date("post_date").notNull(),
+  status:      text("status").notNull().default("draft"),
+  notes:       text("notes"),
+  createdBy:   varchar("created_by").references(() => users.id),
+  createdAt:   timestamp("created_at").notNull().defaultNow(),
+  postedBy:    varchar("posted_by").references(() => users.id),
+  postedAt:    timestamp("posted_at"),
+  journalEntryId: varchar("journal_entry_id").references(() => journalEntries.id),
+}, (t) => ({
+  warehouseIdx:  index("idx_opening_stock_headers_wh").on(t.warehouseId),
+  statusIdx:     index("idx_opening_stock_headers_status").on(t.status),
+}));
+
+export const openingStockLines = pgTable("opening_stock_lines", {
+  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  headerId:      varchar("header_id").notNull().references(() => openingStockHeaders.id, { onDelete: "cascade" }),
+  itemId:        varchar("item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  unitLevel:     unitLevelEnum("unit_level").notNull().default("major"),
+  qtyInUnit:     decimal("qty_in_unit",  { precision: 18, scale: 4 }).notNull(),
+  qtyInMinor:    decimal("qty_in_minor", { precision: 18, scale: 4 }).notNull().default("0"),
+  purchasePrice: decimal("purchase_price", { precision: 18, scale: 4 }).notNull().default("0"),
+  salePrice:     decimal("sale_price",     { precision: 18, scale: 2 }).notNull().default("0"),
+  batchNo:       text("batch_no"),
+  expiryMonth:   integer("expiry_month"),
+  expiryYear:    integer("expiry_year"),
+  lineNotes:     text("line_notes"),
+  createdAt:     timestamp("created_at").notNull().defaultNow(),
+  updatedAt:     timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  headerIdx: index("idx_opening_stock_lines_header").on(t.headerId),
+  itemIdx:   index("idx_opening_stock_lines_item").on(t.itemId),
+}));
+
+export const insertOpeningStockHeaderSchema = createInsertSchema(openingStockHeaders).omit({
+  id: true, createdAt: true, postedAt: true,
+});
+export const insertOpeningStockLineSchema = createInsertSchema(openingStockLines).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+
+export type OpeningStockHeader    = typeof openingStockHeaders.$inferSelect;
+export type InsertOpeningStockHeader = z.infer<typeof insertOpeningStockHeaderSchema>;
+export type OpeningStockLine      = typeof openingStockLines.$inferSelect;
+export type InsertOpeningStockLine = z.infer<typeof insertOpeningStockLineSchema>;
+
 // Labels
 export const itemCategoryLabels: Record<string, string> = {
   drug: "دواء",
