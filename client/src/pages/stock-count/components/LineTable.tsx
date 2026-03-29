@@ -31,10 +31,10 @@ import {
 } from "@/components/ui/tooltip";
 import {
   X, Search, Loader2, TrendingUp, Minus, ZapIcon, AlertTriangle, Edit2,
+  ChevronUp, ChevronDown, ChevronsUpDown,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { formatDate } from "@/lib/formatters";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Types
@@ -559,6 +559,102 @@ interface LineRowProps {
   onEnterAtRow:   (idx: number) => void;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  ExpiryEditCell — تعديل تاريخ الصلاحية inline بصيغة MM/YY
+// ─────────────────────────────────────────────────────────────────────────────
+function formatExpiryShort(date: string | null): string {
+  if (!date) return "—";
+  const parts = date.slice(0, 7).split("-"); // ["YYYY","MM"]
+  if (parts.length < 2) return "—";
+  return `${parts[1]}/${parts[0].slice(2)}`; // "MM/YY"
+}
+
+function ExpiryEditCell({
+  line, sessionId, isDraft,
+}: {
+  line:      SessionLine;
+  sessionId: string;
+  isDraft:   boolean;
+}) {
+  const [editing, setEditing]   = useState(false);
+  const [val,     setVal]       = useState(() => line.expiryDate?.slice(0, 7) ?? "");
+  const { toast }               = useToast();
+  const queryClient             = useQueryClient();
+  const inputRef                = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) setVal(line.expiryDate?.slice(0, 7) ?? "");
+  }, [line.expiryDate, editing]);
+
+  useEffect(() => {
+    if (editing) setTimeout(() => inputRef.current?.focus(), 10);
+  }, [editing]);
+
+  const saveMutation = useMutation({
+    mutationFn: (newExpiry: string | null) =>
+      apiRequest("POST", `/api/stock-count/sessions/${sessionId}/lines`, [{
+        itemId:          line.itemId,
+        lotId:           line.lotId,
+        expiryDate:      newExpiry,
+        systemQtyMinor:  line.systemQtyMinor,
+        countedQtyMinor: line.countedQtyMinor,
+        unitCost:        line.unitCost,
+      }]),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-count/sessions", sessionId] });
+      setEditing(false);
+    },
+    onError: (err: any) => {
+      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const confirm = () => {
+    const newExpiry = val ? `${val}-01` : null; // "YYYY-MM" → "YYYY-MM-01"
+    saveMutation.mutate(newExpiry);
+  };
+
+  const display = formatExpiryShort(line.expiryDate);
+
+  if (!isDraft) {
+    return <span className="font-mono text-xs">{display}</span>;
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center justify-center gap-1">
+        <input
+          ref={inputRef}
+          type="month"
+          className="h-6 w-28 text-xs border rounded px-1 font-mono bg-background"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          onBlur={confirm}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); confirm(); }
+            if (e.key === "Escape") { setEditing(false); }
+          }}
+          data-testid={`expiry-input-${line.id}`}
+        />
+        {saveMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className="font-mono text-xs hover:text-primary hover:underline focus:outline-none flex items-center gap-0.5 group mx-auto"
+      onClick={e => { e.stopPropagation(); setEditing(true); }}
+      data-testid={`expiry-cell-${line.id}`}
+    >
+      {display}
+      <Edit2 className="h-2.5 w-2.5 opacity-0 group-hover:opacity-40 transition-opacity" />
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const LineRow = memo(function LineRow({
   line, idx, sessionId, isDraft, localCount, isFocused, shouldActivate,
   rowRefs, onLocalChange, onDeleteLine, onSetFocused, onActivated, onEnterAtRow,
@@ -602,7 +698,7 @@ const LineRow = memo(function LineRow({
         </div>
       </TableCell>
       <TableCell className="text-center text-xs">
-        {line.expiryDate ? formatDate(line.expiryDate) : "—"}
+        <ExpiryEditCell line={line} sessionId={sessionId} isDraft={isDraft} />
       </TableCell>
       <TableCell className="text-center font-mono text-sm text-muted-foreground">
         {formatQtyDisplay(line.systemQtyMinor, line)}
@@ -667,6 +763,21 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
   const [showVariance,  setShowVariance]  = useState(false);
   const [showUncounted, setShowUncounted] = useState(false);
 
+  type SortKey = "name" | "code" | "expiry";
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = useCallback((key: SortKey) => {
+    setSortKey(prev => {
+      if (prev === key) {
+        setSortDir(d => d === "asc" ? "desc" : "asc");
+        return key;
+      }
+      setSortDir("asc");
+      return key;
+    });
+  }, []);
+
   // local counts: instant feedback before server round-trip
   const [localCounts, setLocalCounts] = useState<Map<string, string>>(new Map());
   const onLocalChange = useCallback((lineId: string, newMinor: string) => {
@@ -711,7 +822,7 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
     onError: (err: any) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
   });
 
-  // ── Filters ───────────────────────────────────────────────────────────────
+  // ── Filters + Sort ────────────────────────────────────────────────────────
   const filteredLines = useMemo(() => {
     let result = lines;
     if (searchTerm) {
@@ -733,8 +844,21 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
         return Math.abs(counted - parseFloat(l.systemQtyMinor)) < 0.0001;
       });
     }
+    if (sortKey) {
+      result = [...result].sort((a, b) => {
+        let cmp = 0;
+        if (sortKey === "name")   cmp = a.itemNameAr.localeCompare(b.itemNameAr, "ar");
+        if (sortKey === "code")   cmp = a.itemCode.localeCompare(b.itemCode);
+        if (sortKey === "expiry") {
+          const da = a.expiryDate ?? "9999-99-99";
+          const db_ = b.expiryDate ?? "9999-99-99";
+          cmp = da < db_ ? -1 : da > db_ ? 1 : 0;
+        }
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
     return result;
-  }, [lines, searchTerm, showVariance, showUncounted, localCounts]);
+  }, [lines, searchTerm, showVariance, showUncounted, localCounts, sortKey, sortDir]);
 
   // ── Stable ref so onEnterAtRow never closes over a stale filteredLines ────
   const filteredLinesRef = useRef(filteredLines);
@@ -901,9 +1025,42 @@ export function LineTable({ lines, sessionId, isDraft, focusLineId, onFocused, o
           <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
             <TableRow>
               <TableHead className="w-8 text-center text-xs">#</TableHead>
-              <TableHead className="text-xs">الكود</TableHead>
-              <TableHead className="text-xs">الصنف</TableHead>
-              <TableHead className="text-center text-xs">انتهاء</TableHead>
+              {/* ── رأس الكود قابل للترتيب ── */}
+              <TableHead
+                className="text-xs cursor-pointer select-none hover:text-primary"
+                onClick={() => handleSort("code")}
+              >
+                <div className="flex items-center gap-0.5">
+                  الكود
+                  {sortKey === "code"
+                    ? sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                    : <ChevronsUpDown className="h-3 w-3 opacity-30" />}
+                </div>
+              </TableHead>
+              {/* ── رأس الصنف قابل للترتيب ── */}
+              <TableHead
+                className="text-xs cursor-pointer select-none hover:text-primary"
+                onClick={() => handleSort("name")}
+              >
+                <div className="flex items-center gap-0.5">
+                  الصنف
+                  {sortKey === "name"
+                    ? sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                    : <ChevronsUpDown className="h-3 w-3 opacity-30" />}
+                </div>
+              </TableHead>
+              {/* ── رأس الانتهاء قابل للترتيب ── */}
+              <TableHead
+                className="text-center text-xs cursor-pointer select-none hover:text-primary"
+                onClick={() => handleSort("expiry")}
+              >
+                <div className="flex items-center justify-center gap-0.5">
+                  انتهاء
+                  {sortKey === "expiry"
+                    ? sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                    : <ChevronsUpDown className="h-3 w-3 opacity-30" />}
+                </div>
+              </TableHead>
               <TableHead className="text-center text-xs">دفتري</TableHead>
               <TableHead className="text-center text-xs font-semibold">معدود ✎</TableHead>
               <TableHead className="text-center text-xs">الفرق</TableHead>
