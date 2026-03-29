@@ -1,0 +1,99 @@
+أنت الآن تعمل كـ Senior Performance Engineer داخل نظام ERP طبي (Hospital + Pharmacy System).
+
+المطلوب: تحليل شامل لأداء النظام مع التركيز الكامل على سيستم الصيدلية فقط كأولوية قصوى، وإخراج خطة تحسين أداء احترافية بدون تنفيذ أي تعديل فعلي.
+
+⚠️ قواعد صارمة:
+- ممنوع تنفيذ أي كود
+- ممنوع تعديل أي ملف
+- المطلوب خطة فقط
+- ممنوع تكرار أي تحسينات تم تنفيذها سابقاً
+- يجب مراجعة الكود الحالي أولاً ومعرفة ما تم عمله بالفعل (indexes, caching, refactors, memo, etc.)
+- أي اقتراح مكرر = خطأ
+- أي اقتراح فيه مخاطرة بكسر النظام = مرفوض
+- كل تحسين يجب أن يكون incremental وليس disruptive
+
+🎯 الهدف:
+- تسريع فتح الشاشات
+- تسريع التفاعل داخل الشاشات
+- تقليل استهلاك الموارد (CPU / Memory)
+- الحفاظ على استقرار النظام 100%
+
+📍 نطاق التحليل (Pharmacy فقط):
+ركز فقط على الشاشات التالية:
+- شاشة البيع (Sales / POS Pharmacy)
+- شاشة صرف المرضى (Patient Invoice Pharmacy Lines)
+- شاشة الاستلام من المورد (Supplier Receiving)
+- شاشة حركة الصنف (Item Movement / Reports)
+- شاشة المخزون / الرصيد
+- شاشة البحث عن الأصناف (Item search / combobox)
+
+🧠 المطلوب تحليله بدقة:
+
+1) Frontend Performance
+- re-renders غير ضرورية
+- components كبيرة تحتاج تقسيم
+- مشاكل React Query (over-fetching / invalidation)
+- dropdowns الثقيلة (items search)
+- pagination vs full load
+- virtualization (هل مطبق أم لا)
+- debounce/throttle للبحث
+
+2) Backend Performance
+- endpoints بطيئة
+- N+1 queries
+- heavy joins
+- missing select fields (SELECT *)
+- pagination غير موجودة
+- duplicate queries
+
+3) Database Performance (SQL Server / Postgres حسب المشروع)
+- هل الفهارس الحالية كافية أم لا (بدون تكرار الموجود)
+- queries المستخدمة في:
+  - sales
+  - stock
+  - movement
+- هل فيه scans بدلاً من index seek
+- تحليل أخطر 5 queries فقط
+
+4) Data Flow Issues
+- هل نفس البيانات تتحسب أكثر من مرة
+- هل فيه logic مكرر بين backend و frontend
+- هل فيه تحويلات وحدات بتتكرر
+
+5) Network & Payload
+- حجم الـ responses
+- هل بيرجع بيانات أكثر من اللازم
+- هل فيه over-fetching
+
+🚫 مهم جداً:
+قبل اقتراح أي تحسين:
+- تأكد أنه لم يتم تنفيذه مسبقاً
+- لو موجود بالفعل → اذكر أنه موجود ولا تقترحه
+- لو تم جزئياً → اقترح تحسين تكميلي فقط
+
+📊 شكل الخطة المطلوبة:
+
+قسم الخطة إلى 4 مستويات:
+
+1) Quick Wins (بدون أي مخاطرة – تأثير سريع)
+2) Medium Improvements (تحتاج تعديل بسيط)
+3) Advanced Optimization (احترافية – بحذر)
+4) Monitoring & Metrics (متابعة الأداء)
+
+لكل نقطة اكتب:
+- المشكلة
+- السبب
+- التأثير الحالي
+- الحل المقترح
+- درجة الأمان (Safe / Medium Risk / Needs Review)
+
+🎯 Output مهم:
+- قائمة بأخطر 5 نقاط بطء في سيستم الصيدلية فقط
+- لا تخرج خارج نطاق الصيدلية
+- لا تقترح refactor عام للنظام كله
+- لا تقترح إعادة بناء
+
+🔥 أهم هدف:
+تحسين الأداء بدون كسر أي شيء + بدون تكرار أي شغل سابق + البناء على الموجود
+
+ابدأ الآن بالتحليل فقط ثم اعرض الخطة.
