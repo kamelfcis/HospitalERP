@@ -58,3 +58,35 @@ Performance optimizations include `React.memo` on table rows and vendor chunking
 - `xlsx`
 - `shadcn/ui`
 - `connect-pg-simple`
+
+## Critical Bug Fixes Log (2026-03-29)
+
+### Bug 1 — تحصيل التوصيل لا يُحفظ رغم ظهور 200 OK
+**السبب الجذري:** كان القيد المحاسبي GL journal داخل نفس transaction الإيصال الرئيسي. عمود `lineNumber` في جدول `journal_lines` هو `NOT NULL integer`، ولم يكن يُرسَل في السطرين → قاعدة البيانات ترفض الـ INSERT وتُلغي التراكيشن بالكامل → الإيصال لا يُحفظ، وحالة الفاتورة لا تتغير، لكن السيرفر يُرجع 200 OK لأن الخطأ كان مُلتقَطاً في catch خارجي صامت.
+**الإصلاح (`server/routes/delivery-payments.ts`):**
+1. فصل القيد المحاسبي إلى `setImmediate` منفصل بعد commit الـ transaction الرئيسية (نفس نمط postReceiving).
+2. إضافة `lineNumber: 1` و `lineNumber: 2` صراحةً في سطري القيد.
+**ملاحظة تقنية:** أي وقت تُضاف سطور لـ `journal_lines` يجب تضمين `lineNumber` صراحةً — لا default له في قاعدة البيانات.
+
+### Bug 2 — النقدية المتوقعة في إغلاق الوردية خاطئة
+**السبب الجذري:** دالة `closeShift` في `server/storage/cashier-storage.ts` كانت تحسب `expectedCashVal` من:
+```
+openingCash + cashierReceipts - cashierRefunds
+```
+لكن كانت تُهمل:
+- `creditCollected` (سداد العملاء الآجلين) من جدول `customer_receipts`
+- `deliveryCollected` (تحصيل التوصيل) من جدول `delivery_receipts`
+- `supplierPaid` (مدفوعات الموردين) من جدول `supplier_payments`
+مما جعل الرقم المتوقع أقل من الحقيقي ويُظهر عجزاً وهمياً.
+**الإصلاح:** إضافة 3 queries داخل نفس الـ transaction لجلب هذه القيم وتضمينها في الحساب — يطابق الآن `getShiftTotals` تماماً.
+
+### Bug 3 — تحذيرات كاذبة عند إقلاع السيرفر (collected_no_receipt)
+**السبب الجذري:** فحص سلامة البيانات عند الإقلاع (`server/index.ts`) يبحث عن فواتير بحالة `collected` ليس لها سجل في `cashier_receipts`. فواتير التوصيل تُحصَّل عبر `delivery_receipt_lines` وليس `cashier_receipts`، لذا كانت دائماً تُعطي إيجابية كاذبة.
+**الإصلاح:** إضافة `AND sih.customer_type != 'delivery'` في استعلام الفحص.
+
+### Critical Patterns (لا تُنسَ)
+- **journal_lines**: عمود `lineNumber` NOT NULL — يجب تضمينه دائماً (1, 2, 3...) عند insert.
+- **GL Journal in delivery payments**: يجب أن يكون في `setImmediate` منفصل بعد commit، لا داخل الـ transaction الرئيسية.
+- **closeShift expectedCashVal**: يجب أن يشمل كل مصادر النقدية: cashReceipts + creditCollected + deliveryCollected - refunds - supplierPaid.
+- **Delivery invoices**: مُستثناة من فحص `collected_no_receipt` لأنها تستخدم `delivery_receipt_lines`.
+- **user_treasuries**: يجب ربط كل كاشير بخزينة عبر صفحة إعدادات الخزائن قبل تشغيل تحصيل التوصيل.
