@@ -72,9 +72,10 @@ export function usePendingInvoices({
     const invalidateTotals  = () => queryClient.invalidateQueries({ queryKey: totalsKey });
 
     // أحداث SSE المدعومة
-    es.addEventListener("invoice_finalized", () => { invalidateSales(); invalidateReturns(); });
-    es.addEventListener("invoice_collected", () => { invalidateSales();  invalidateTotals(); });
-    es.addEventListener("invoice_refunded",  () => { invalidateReturns(); invalidateTotals(); });
+    es.addEventListener("invoice_finalized",  () => { invalidateSales(); invalidateReturns(); });
+    es.addEventListener("invoice_collected",  () => { invalidateSales();  invalidateTotals(); });
+    es.addEventListener("invoice_refunded",   () => { invalidateReturns(); invalidateTotals(); });
+    es.addEventListener("delivery_collected", () => { invalidateTotals(); });
 
     // عند انقطاع الاتصال: لا نُغلق EventSource — نتركه يُعيد الاتصال تلقائياً
     // فقط نُعيد جلب البيانات مرة لضمان تزامن الحالة

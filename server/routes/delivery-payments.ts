@@ -17,6 +17,7 @@ import {
   deliveryPaymentClients,
   broadcastDeliveryPaymentUpdate,
 } from "./_sse";
+import { broadcastToUnit } from "./_shared";
 
 const asyncHandler =
   (fn: (req: any, res: any, next: any) => Promise<any>) =>
@@ -71,6 +72,12 @@ export function registerDeliveryPaymentRoutes(app: Express) {
       });
 
       broadcastDeliveryPaymentUpdate();
+      if (result.shiftUnitKey) {
+        broadcastToUnit(result.shiftUnitKey, "delivery_collected", {
+          receiptId:     result.receiptId,
+          receiptNumber: result.receiptNumber,
+        });
+      }
       res.json(result);
     })
   );

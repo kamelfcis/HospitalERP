@@ -163,6 +163,21 @@ export async function createDeliveryReceipt(
     }
   }
 
+  // ── جلب مفتاح وحدة الكاشير (للبث عبر SSE بعد التحصيل) ──────────────────
+  let shiftUnitKey: string | null = null;
+  if (resolvedShiftId) {
+    const shiftRes = await db.execute(sql`
+      SELECT unit_type, pharmacy_id, department_id FROM cashier_shifts
+      WHERE id = ${resolvedShiftId}
+    `);
+    const shiftRow = (shiftRes as any).rows[0];
+    if (shiftRow) {
+      shiftUnitKey = shiftRow.unit_type === "pharmacy"
+        ? (shiftRow.pharmacy_id ?? null)
+        : (shiftRow.department_id ?? null);
+    }
+  }
+
   // ── جلب حساب الذمم: نستخدم ربط sales_invoice / receivables ──────────────
   // (فواتير التوصيل هي نوع من فواتير المبيعات، والحساب الدائن هو حساب المدينين)
   let arAccountId: string | null = null;
@@ -292,7 +307,7 @@ export async function createDeliveryReceipt(
     return { receiptId: receipt.id, receiptNumber, journalEntryId };
   });
 
-  return result;
+  return { ...result, shiftUnitKey };
 }
 
 // ─── getDeliveryReceiptReport ─────────────────────────────────────────────────
