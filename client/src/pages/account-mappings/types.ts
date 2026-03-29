@@ -286,7 +286,7 @@ export const ACCOUNT_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
   doctor_payable:       { debit: ["liability"],            credit: ["asset"]             },
   receivable_clear:     { debit: ["asset"],                credit: ["asset"]             },
 
-  stock_gain:           {                                  credit: ["revenue", "equity"] },
+  stock_gain:           {                                  credit: ["revenue", "equity", "expense"] },
   stock_loss:           { debit: ["expense", "equity"]                                  },
 
   returns:              { debit: ["revenue"],              credit: ["asset"]             },
