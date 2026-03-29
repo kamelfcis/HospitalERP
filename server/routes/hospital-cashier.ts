@@ -494,14 +494,14 @@ export function registerCashierRoutes(app: Express) {
 
   app.get("/api/treasuries/mine", requireAuth, async (req, res) => {
     try {
-      const user = (req as unknown as { user: { id: string } }).user;
+      const userId = (req.session as { userId?: string }).userId!;
 
       // 1) تحقق من user_treasuries أولاً
-      const assigned = await storage.getUserTreasury(user.id);
+      const assigned = await storage.getUserTreasury(userId);
       if (assigned) return res.json(assigned);
 
       // 2) Fallback: إذا لم تُعيَّن خزنة ثابتة، استخدم خزنة الوردية النشطة للكاشير
-      const shift = await storage.getMyOpenShift(user.id) as
+      const shift = await storage.getMyOpenShift(userId) as
         { glAccountId?: string | null; id?: string; openedAt?: string } | null;
       if (shift?.glAccountId) {
         // ابحث عن الخزنة التي تحمل نفس الـ GL account
