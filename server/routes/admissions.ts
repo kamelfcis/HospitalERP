@@ -5,7 +5,7 @@ import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-sche
 import { logger } from "../lib/logger";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
-import { requireAuth, checkPermission, checkHospitalAccess } from "./_shared";
+import { requireAuth, checkPermission, checkHospitalAccess, broadcastToUnit } from "./_shared";
 import { insertAdmissionSchema } from "@shared/schema";
 
 export function registerAdmissionsRoutes(app: Express) {
@@ -262,6 +262,27 @@ export function registerAdmissionsRoutes(app: Express) {
         userId: req.session.userId,
       }).catch(err => logger.warn({ err: err.message }, "[Audit] sales return"));
       scheduleInventorySnapshotRefresh("sales_return");
+
+      // ── SSE broadcast — إعلام شاشة الكاشير فوراً ─────────────────────
+      // نُعلم الكاشير بـ invoice_finalized حتى يُحدّث تابة مردودات المبيعات
+      // نفس النمط المستخدم عند إنشاء فواتير البيع في sales-invoices route
+      setImmediate(async () => {
+        try {
+          let unitId = (result as Record<string, unknown>).pharmacyId as string | null | undefined;
+          if (!unitId) {
+            // حالة المستشفى: المخزن مرتبط بقسم وليس بصيدلية
+            const wh = await storage.getWarehouse(warehouseId);
+            unitId = wh?.departmentId ?? null;
+          }
+          if (unitId) {
+            broadcastToUnit(unitId, "invoice_finalized", { returnId: result.id, ts: Date.now() });
+            logger.debug({ unitId, returnId: result.id }, "[SALES_RETURN] SSE invoice_finalized broadcast sent");
+          }
+        } catch (err) {
+          logger.warn({ err }, "[SALES_RETURN] SSE broadcast failed (non-fatal)");
+        }
+      });
+
       res.json(result);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

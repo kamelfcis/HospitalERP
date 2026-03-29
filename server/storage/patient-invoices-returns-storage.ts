@@ -338,7 +338,13 @@ const methods = {
         }
       }
 
-      return { id: returnId, invoiceNumber: returnNumber, netTotal: netTotal.toFixed(2) };
+      return {
+        id:            returnId,
+        invoiceNumber: returnNumber,
+        netTotal:      netTotal.toFixed(2),
+        pharmacyId:    orig.pharmacy_id as string | null,
+        warehouseId:   data.warehouseId,
+      };
     });
 
     // ── قيد المرحلة الأولى خارج الـ transaction (غير حاسم للعملية) ──────
