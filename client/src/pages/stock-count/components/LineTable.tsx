@@ -19,7 +19,7 @@
  *  • Ctrl+F        → التركيز على حقل البحث السريع
  *  • Enter داخل حقل الكمية → حفظ والانتقال للصف التالي
  */
-import { useState, useRef, useEffect, useCallback, useMemo, memo, type MutableRefObject } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo, type MutableRefObject, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,11 +97,80 @@ function calcMinorFromUom(
   med: number, mediumToMinor: number,
   min: number
 ): number {
-  return Math.round(
+  const raw =
     (isNaN(maj) ? 0 : maj) * majorToMinor +
     (isNaN(med) ? 0 : med) * mediumToMinor +
-    (isNaN(min) ? 0 : min)
-  );
+    (isNaN(min) ? 0 : min);
+  // تقريب إلى 4 أرقام عشرية لتجنب أخطاء الفاصلة العائمة
+  // (يحافظ على كميات كبرى+متوسطة الكسرية كـ 8.5 علبة)
+  return Math.round(raw * 10000) / 10000;
+}
+
+/**
+ * يحسب نسب التحويل الفعلية لعرض الكميات بشكل صحيح لكل تكوين وحدات:
+ *  • كبرى+صغرى أو الثلاثة   : يستخدم قيم قاعدة البيانات مباشرة
+ *  • كبرى+متوسطة فقط        : qty_in_minor = qty بالكبرى
+ *                             → effectiveMajorToMinor = 1
+ *                             → effectiveMediumToMinor = 1/majorToMedium
+ *  • كبرى فقط أو وحدة مفردة : effectiveMajorToMinor = 0
+ */
+function computeEffectiveRatios(line: SessionLine): {
+  effectiveMajorToMinor: number;
+  effectiveMediumToMinor: number;
+  hasTrueMinor: boolean;
+} {
+  const rawMajorToMinor  = parseFloat(line.majorToMinor  ?? "0");
+  const rawMediumToMinor = parseFloat(line.mediumToMinor ?? "0");
+  const rawMajorToMedium = parseFloat(line.majorToMedium ?? "0");
+
+  if (rawMajorToMinor > 0) {
+    return {
+      effectiveMajorToMinor:  rawMajorToMinor,
+      effectiveMediumToMinor: rawMediumToMinor,
+      hasTrueMinor: true,
+    };
+  }
+  if (rawMajorToMedium > 0) {
+    return {
+      effectiveMajorToMinor:  1,
+      effectiveMediumToMinor: 1 / rawMajorToMedium,
+      hasTrueMinor: false,
+    };
+  }
+  return { effectiveMajorToMinor: 0, effectiveMediumToMinor: 0, hasTrueMinor: false };
+}
+
+/**
+ * يعرض الكمية بشكل مقروء (علبة / شريط / حبة) بدلاً من عرض الوحدة الصغرى الخام.
+ * يستخدم في عمود "دفتري" وفي حالة disabled لعمود "معدود".
+ */
+function formatQtyDisplay(qty: string | number, line: SessionLine): ReactNode {
+  const { effectiveMajorToMinor, effectiveMediumToMinor, hasTrueMinor } = computeEffectiveRatios(line);
+  const hasMajor  = !!line.majorUnitName  && effectiveMajorToMinor  > 0;
+  const hasMedium = !!line.mediumUnitName && effectiveMediumToMinor > 0;
+
+  const total = parseFloat(String(qty));
+
+  if (!hasMajor) {
+    const unit = line.majorUnitName || line.minorUnitName || "";
+    return (
+      <span>
+        {fmtQty(total)}
+        {unit && <span className="text-xs text-muted-foreground mr-0.5">{unit}</span>}
+      </span>
+    );
+  }
+
+  const d = decomposeMinor(total, effectiveMajorToMinor, effectiveMediumToMinor);
+  const parts: string[] = [];
+  if (d.maj > 0) parts.push(`${fmtQty(d.maj)} ${line.majorUnitName}`);
+  if (hasMedium && d.med > 0) parts.push(`${fmtQty(d.med)} ${line.mediumUnitName}`);
+  if (hasTrueMinor && !!line.minorUnitName && (d.min > 0 || parts.length === 0)) {
+    parts.push(`${fmtQty(d.min)} ${line.minorUnitName}`);
+  }
+  if (parts.length === 0) parts.push(`0 ${line.majorUnitName}`);
+
+  return <span>{parts.join(" + ")}</span>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -297,10 +366,13 @@ function MultiUomCell({
   const displayParts: string[] = [];
   if (hasMajor  && decomposed.maj > 0) displayParts.push(`${decomposed.maj} ${line.majorUnitName}`);
   if (hasMedium && decomposed.med > 0) displayParts.push(`${decomposed.med} ${line.mediumUnitName}`);
-  const minPart = hasMajor ? decomposed.min : Math.round(currentMinor);
-  if (minPart > 0 || displayParts.length === 0) {
-    displayParts.push(`${minPart} ${line.minorUnitName ?? ""}`);
+  if (hasMinor) {
+    const minPart = hasMajor ? decomposed.min : Math.round(currentMinor);
+    if (minPart > 0 || displayParts.length === 0) {
+      displayParts.push(`${minPart} ${line.minorUnitName ?? ""}`);
+    }
   }
+  if (displayParts.length === 0) displayParts.push(`0 ${line.majorUnitName}`);
 
   if (!editing) {
     return (
@@ -369,7 +441,7 @@ function MultiUomCell({
       )}
       {isPending && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
       <p className="text-xs text-muted-foreground font-mono">
-        = {fmtQty(calcTotal())} {line.minorUnitName ?? ""}
+        = {fmtQty(calcTotal())} {hasMinor ? (line.minorUnitName ?? "") : (line.majorUnitName ?? "")}
       </p>
     </div>
   );
@@ -394,12 +466,12 @@ function SmartQtyCell({
   const { toast }   = useToast();
   const queryClient = useQueryClient();
 
-  const majorToMinor  = parseFloat(line.majorToMinor  ?? "0");
-  const mediumToMinor = parseFloat(line.mediumToMinor ?? "0");
-  const hasMajor      = !!line.majorUnitName && majorToMinor > 0;
-  const hasMedium     = !!line.mediumUnitName && mediumToMinor > 0;
-  const hasMinor      = !!line.minorUnitName;
-  const isMultiUom    = hasMajor;
+  const { effectiveMajorToMinor, effectiveMediumToMinor, hasTrueMinor } = computeEffectiveRatios(line);
+  const hasMajor   = !!line.majorUnitName  && effectiveMajorToMinor  > 0;
+  const hasMedium  = !!line.mediumUnitName && effectiveMediumToMinor > 0;
+  // حقل الصغرى يظهر فقط عندما توجد وحدة صغرى حقيقية في قاعدة البيانات
+  const hasMinor   = !!line.minorUnitName  && hasTrueMinor;
+  const isMultiUom = hasMajor;
 
   const saveMutation = useMutation({
     mutationFn: (countedQtyMinor: string) =>
@@ -422,10 +494,7 @@ function SmartQtyCell({
   if (disabled) {
     return (
       <span className="font-mono text-sm">
-        {fmtQty(line.countedQtyMinor)}
-        {line.minorUnitName && (
-          <span className="text-xs text-muted-foreground mr-0.5">{line.minorUnitName}</span>
-        )}
+        {formatQtyDisplay(line.countedQtyMinor, line)}
       </span>
     );
   }
@@ -447,8 +516,8 @@ function SmartQtyCell({
   return (
     <MultiUomCell
       line={line}
-      majorToMinor={majorToMinor}
-      mediumToMinor={mediumToMinor}
+      majorToMinor={effectiveMajorToMinor}
+      mediumToMinor={effectiveMediumToMinor}
       hasMajor={hasMajor}
       hasMedium={hasMedium}
       hasMinor={hasMinor}
@@ -536,10 +605,7 @@ const LineRow = memo(function LineRow({
         {line.expiryDate ? formatDate(line.expiryDate) : "—"}
       </TableCell>
       <TableCell className="text-center font-mono text-sm text-muted-foreground">
-        {fmtQty(line.systemQtyMinor)}
-        {line.minorUnitName && (
-          <span className="text-xs text-muted-foreground mr-0.5">{line.minorUnitName}</span>
-        )}
+        {formatQtyDisplay(line.systemQtyMinor, line)}
       </TableCell>
       <TableCell className="text-center">
         <SmartQtyCell
