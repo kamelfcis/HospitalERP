@@ -76,14 +76,16 @@ export const ShiftTotalsWidget = memo(function ShiftTotalsWidget({ totals }: Pro
             testId="text-total-collected"
           />
 
-          {/* الآجل */}
-          <Row
-            label="الآجل"
-            value={totals.totalDeferred}
-            count={totals.deferredCount}
-            testId="text-total-deferred"
-            valueClass="text-amber-600 dark:text-amber-400"
-          />
+          {/* الآجل — يظهر فقط إذا كانت هناك فواتير آجل مربوطة بالوردية */}
+          {parseFloat(totals.totalDeferred ?? "0") > 0 && (
+            <Row
+              label="الآجل"
+              value={totals.totalDeferred}
+              count={totals.deferredCount}
+              testId="text-total-deferred"
+              valueClass="text-amber-600 dark:text-amber-400"
+            />
+          )}
 
           {/* تحصيل الآجل — يظهر فقط لمن لديه صلاحية credit_payment.view */}
           {canViewCredit && (
