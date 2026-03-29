@@ -303,6 +303,108 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier mismatch check skipped");
   }
 
+  // ── 5b-4. Patient Invoice GL integrity check ──────────────────────────────
+  // Detects finalized patient invoices whose GL journal generation failed or
+  // was never attempted. Root cause is almost always missing Account Mappings
+  // (especially the receivables account). Logs WARN — never crashes startup.
+  try {
+    const { rows: glFailRows } = await pool.query<{
+      count: string; sample: string;
+    }>(`
+      SELECT
+        COUNT(*)::text                                                        AS count,
+        STRING_AGG(invoice_number::text, ', ' ORDER BY finalized_at DESC)    AS sample
+      FROM (
+        SELECT invoice_number, finalized_at
+        FROM patient_invoice_headers
+        WHERE status       = 'finalized'
+          AND journal_status IN ('failed', 'needs_retry')
+        ORDER BY finalized_at DESC
+        LIMIT 10
+      ) t
+    `);
+    const glFailCount = parseInt(glFailRows[0]?.count || "0");
+
+    const { rows: glNoneRows } = await pool.query<{ count: string }>(`
+      SELECT COUNT(*)::text AS count
+      FROM patient_invoice_headers
+      WHERE status        = 'finalized'
+        AND (journal_status IS NULL OR journal_status = 'none')
+    `);
+    const glNoneCount = parseInt(glNoneRows[0]?.count || "0");
+
+    if (glFailCount > 0) {
+      logger.warn(
+        {
+          event:          "PATIENT_GL_FAILED",
+          count:          glFailCount,
+          sampleInvoices: glFailRows[0]?.sample,
+          actionRequired: "Open Account Mappings page → ensure 'receivables' account is configured → retry from Accounting Events",
+        },
+        `[PATIENT_INTEGRITY] ${glFailCount} patient invoice(s) failed GL journal generation — action required: configure receivables account in Account Mappings page and retry`,
+      );
+    } else {
+      logger.info("[STARTUP] patient GL integrity check: no failed journals");
+    }
+
+    if (glNoneCount > 0) {
+      logger.info(
+        { count: glNoneCount },
+        `[PATIENT_INTEGRITY] ${glNoneCount} finalized patient invoice(s) with journal_status='none' (pre-GL or awaiting mapping) — if journals are expected, verify Account Mappings (receivables) are configured`,
+      );
+    }
+  } catch (err: unknown) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] patient GL check skipped");
+  }
+
+  // ── 5b-5. Stay Engine visibility check ───────────────────────────────────
+  // Non-blocking startup snapshot: active segments + last accrual timestamp.
+  // If last accrual is stale (>2h) while segments are active, the engine is
+  // likely failing silently — check runtime logs for STAY_ENGINE errors.
+  try {
+    const { rows: segRows } = await pool.query<{
+      active_count: string; oldest_started: string | null;
+    }>(`
+      SELECT COUNT(*)::text AS active_count,
+             MIN(started_at)::text AS oldest_started
+      FROM stay_segments WHERE status = 'ACTIVE'
+    `);
+    const activeSegs = parseInt(segRows[0]?.active_count || "0");
+
+    const { rows: lineRows } = await pool.query<{ last_accrual_at: string | null }>(`
+      SELECT MAX(created_at)::text AS last_accrual_at
+      FROM patient_invoice_lines
+      WHERE source_type = 'STAY_ENGINE'
+    `);
+    const lastAccrualAt = lineRows[0]?.last_accrual_at ?? null;
+    const hoursSince = lastAccrualAt
+      ? Math.floor((Date.now() - new Date(lastAccrualAt).getTime()) / 3_600_000)
+      : null;
+
+    if (activeSegs === 0) {
+      logger.info("[STARTUP] stay engine: no active segments");
+    } else if (hoursSince !== null && hoursSince > 2) {
+      logger.warn(
+        {
+          event:               "STAY_ENGINE_STALE",
+          activeSegments:      activeSegs,
+          oldestStartedAt:     segRows[0]?.oldest_started,
+          lastAccrualAt,
+          hoursSinceLastLine:  hoursSince,
+          hint:                "Check runtime logs for [STAY_ENGINE] accrual failed — likely a missing DB constraint on patient_invoice_lines",
+        },
+        `[STAY_ENGINE] ${activeSegs} active segment(s) but last accrual was ${hoursSince}h ago — engine may be silently failing. Check logs for constraint errors.`,
+      );
+    } else {
+      logger.info(
+        { activeSegments: activeSegs, lastAccrualAt },
+        `[STARTUP] stay engine: ${activeSegs} active segment(s), last accrual OK`,
+      );
+    }
+  } catch (err: unknown) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] stay engine visibility check skipped");
+  }
+
   // ── 5c. System settings ───────────────────────────────────────────────────
   try {
     await loadSettings();

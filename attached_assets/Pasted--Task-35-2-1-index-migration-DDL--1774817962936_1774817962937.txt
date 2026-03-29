@@ -1,0 +1,57 @@
+نفّذ Task #35 رقم 2 فقط، ولا تنفّذ رقم 1، ولا تضف أي index أو migration أو DDL على قاعدة البيانات.
+
+النطاق المطلوب فقط:
+1) إضافة startup data-integrity check يحذّر إذا كانت هناك patient invoices حالتها finalized ولا يوجد لها journal/accounting entry.
+2) توثيق/تحسين رسالة التحذير بحيث تكون واضحة جدًا وتقول إن السبب الأغلب هو عدم اكتمال Account Mappings وخاصة receivables mapping.
+3) التأكد برمجيًا من مراقبة استمرار تراكم stay lines بعد الإصلاح الموجود بالفعل، لكن بدون أي تعديل schema وبدون إنشاء index جديد.
+
+المطلوب بالتحديد:
+
+A) Startup Warning for finalized invoices without journals
+- أضف فحصًا عند إقلاع السيرفر في نفس نمط startup checks الموجودة في server/index.ts.
+- الفحص يبحث عن finalized patient invoices التي لا يوجد لها journal header / accounting entry مرتبط.
+- لا توقف السيرفر، ولا throw error، فقط log warning واضح ومنظّم.
+- المطلوب warning نظيف وعملي، مثل:
+  [STARTUP_WARN] Found X finalized patient invoices without accounting journals. Check Account Mappings (especially receivables).
+- لو أمكن، أظهر عدد الفواتير + عينة صغيرة من IDs/InvoiceCodes (مثلاً أول 10 فقط) بدون إغراق اللوج.
+- لا تستخدم console.log؛ استخدم نفس logger الرسمي في المشروع.
+
+B) Message Quality
+- الرسالة يجب أن تكون actionable:
+  - توضّح أن الفواتير finalized لكنها بلا قيد
+  - توضّح أن المستخدم يجب أن يراجع صفحة Account Mappings
+  - تذكر receivables mapping بشكل صريح
+- لا تضع WARN عام وغامض. أريد رسالة تشغيلية مفهومة للإدارة والدعم.
+
+C) Stay Engine sanity monitoring (بدون schema changes)
+- أضف check خفيف/آمن عند startup أو ضمن startup diagnostics يوضح هل توجد stay segments نشطة وما إذا كانت هناك stay-generated invoice lines حديثة أو آخر وقت تراكم معروف.
+- الهدف ليس إصلاح الـ engine هنا، بل توفير visibility فقط.
+- لو لا يوجد ما يكفي للحكم، سجّل info/warn واضح يقول إن التحقق الكامل يتطلب مراقبة runtime وليس startup فقط.
+- لا تغيّر منطق الـ accrual نفسه.
+- لا تضف job جديد.
+- لا تعدل bedboard-stays-storage.ts إلا إذا كان هناك log/visibility بسيط جدًا وضروري فقط.
+
+قيود صارمة:
+- ممنوع تنفيذ Task #35 رقم 1
+- ممنوع CREATE INDEX
+- ممنوع migration
+- ممنوع تعديل schema
+- ممنوع أي إصلاحات جانبية خارج النطاق
+- ممنوع أي refactor واسع
+- المطلوب minimal safe patch فقط
+
+الملفات المستهدفة أساسًا:
+- server/index.ts
+- وإذا لزم فقط: server/storage/bedboard-stays-storage.ts لزيادة visibility بشكل محدود جدًا
+
+Done looks like:
+- السيرفر يقلع بدون crash
+- يظهر warning واضح فقط إذا وُجدت finalized invoices بلا journals
+- الرسالة تذكر Account Mappings / receivables بوضوح
+- يوجد startup visibility بسيط يخص stay engine / stay lines
+- لا يوجد أي تعديل database schema
+- سلّم تقرير نهائي فيه:
+  1) ما الذي تم تغييره
+  2) نصوص الـ warnings الجديدة
+  3) SQL أو query logic المستخدمة في الفحص
+  4) لماذا لم يتم لمس Task #35 رقم 1
