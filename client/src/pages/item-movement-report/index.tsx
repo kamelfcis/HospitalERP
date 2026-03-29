@@ -20,10 +20,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, FileSpreadsheet, Printer, Search, Package, X, TrendingUp, TrendingDown, ArrowLeftRight, ClipboardList, RotateCcw, Gift } from "lucide-react";
+import { Loader2, FileSpreadsheet, Printer, Search, Package, X, TrendingUp, TrendingDown, ArrowLeftRight, ClipboardList, RotateCcw, Gift, ChevronRight, ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+const PAGE_SIZE = 50;
+
 // ── Types ──────────────────────────────────────────────────────────────────────
+interface ItemMovementSummary {
+  totalIn: number;
+  totalOut: number;
+  byType: Record<string, number>;
+}
+
+interface ItemMovementResult {
+  rows: ItemMovementRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: ItemMovementSummary;
+}
+
 interface ItemMovementRow {
   id: string;
   txDate: string;
@@ -255,38 +271,28 @@ function ItemCombobox({ value, displayName, onChange }: ItemComboboxProps) {
 }
 
 // ── Summary Bar ───────────────────────────────────────────────────────────────
+// يستقبل الملخص من السيرفر (إجمالي كل الصفحات) + أول صف لمعاملات التحويل
 interface SummaryBarProps {
-  rows: ItemMovementRow[];
+  summary: ItemMovementSummary;
+  firstRow: ItemMovementRow;
   unitLevel: UnitLevel;
+  totalRows: number;
 }
 
-function SummaryBar({ rows, unitLevel }: SummaryBarProps) {
-  if (rows.length === 0) return null;
-
-  const first = rows[0];
-  const mt  = first.majorToMinor;
-  const me  = first.mediumToMinor;
-  const m2m = first.majorToMedium;
-
-  const conv = (m: number) => convertQty(m, unitLevel, mt, me, m2m);
-
-  const totals = rows.reduce<Record<string, number>>((acc, r) => {
-    const t = r.referenceType;
-    acc[t] = (acc[t] ?? 0) + r.qtyChangeMinor;
-    return acc;
-  }, {});
-
-  const netIn  = rows.filter(r => r.txType === "in").reduce((s, r) => s + r.qtyChangeMinor, 0);
-  const netOut = rows.filter(r => r.txType === "out").reduce((s, r) => s + Math.abs(r.qtyChangeMinor), 0);
-  const unitLabel = unitLevel === "major" ? (first.majorUnitName ?? "وحدة كبيرة")
-    : unitLevel === "medium" ? (first.mediumUnitName ?? "وحدة وسط")
-    : (first.minorUnitName ?? "وحدة صغيرة");
+function SummaryBar({ summary, firstRow, unitLevel, totalRows }: SummaryBarProps) {
+  const conv = (m: number) => convertQty(m, unitLevel, firstRow.majorToMinor, firstRow.mediumToMinor, firstRow.majorToMedium);
+  const unitLabel = unitLevel === "major" ? (firstRow.majorUnitName ?? "وحدة كبيرة")
+    : unitLevel === "medium" ? (firstRow.mediumUnitName ?? "وحدة وسط")
+    : (firstRow.minorUnitName ?? "وحدة صغيرة");
 
   return (
     <div className="print:hidden rounded-lg border bg-muted/30 p-3 space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">ملخص الحركات — بالـ {unitLabel}</p>
+      <p className="text-xs font-medium text-muted-foreground">
+        ملخص الحركات — بالـ {unitLabel}
+        <span className="mr-2 text-muted-foreground/70">({totalRows} حركة إجمالاً)</span>
+      </p>
       <div className="flex flex-wrap gap-2">
-        {Object.entries(totals).map(([type, qty]) => {
+        {Object.entries(summary.byType).map(([type, qty]) => {
           const cfg = TX_CONFIG[type] ?? { label: type, color: "bg-gray-100 text-gray-700 border-gray-200", icon: Package };
           const Icon = cfg.icon;
           const converted = conv(qty);
@@ -294,17 +300,17 @@ function SummaryBar({ rows, unitLevel }: SummaryBarProps) {
             <div key={type} className={cn("flex items-center gap-1.5 border rounded-md px-2.5 py-1 text-xs font-medium", cfg.color)}>
               <Icon className="h-3 w-3" />
               <span>{cfg.label}:</span>
-              <span className="font-bold">{fmtQty(converted)}</span>
+              <span className="font-bold">{fmtQty(Math.abs(converted))}</span>
             </div>
           );
         })}
         <div className="flex items-center gap-1.5 border rounded-md px-2.5 py-1 text-xs font-medium bg-slate-100 text-slate-800 border-slate-200">
           <TrendingUp className="h-3 w-3 text-emerald-600" />
-          <span>إجمالي وارد: <strong>{fmtQty(conv(netIn))}</strong></span>
+          <span>إجمالي وارد: <strong>{fmtQty(conv(summary.totalIn))}</strong></span>
         </div>
         <div className="flex items-center gap-1.5 border rounded-md px-2.5 py-1 text-xs font-medium bg-slate-100 text-slate-800 border-slate-200">
           <TrendingDown className="h-3 w-3 text-red-600" />
-          <span>إجمالي صادر: <strong>{fmtQty(conv(netOut))}</strong></span>
+          <span>إجمالي صادر: <strong>{fmtQty(conv(summary.totalOut))}</strong></span>
         </div>
       </div>
     </div>
@@ -346,21 +352,31 @@ export default function ItemMovementReport() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set(ALL_TX_TYPES));
-  const [queryUrl, setQueryUrl] = useState<string | null>(null);
   const [lastParams, setLastParams] = useState<Record<string, string> | null>(null);
+  const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
 
   const { data: warehouses = [] } = useQuery<{ id: string; nameAr: string }[]>({
     queryKey: ["/api/warehouses"],
+    staleTime: 5 * 60_000,
   });
 
-  const { data, isFetching, error } = useQuery<{ rows: ItemMovementRow[] }>({
+  // queryUrl مُشتَق من lastParams + page — لا state منفصل
+  const queryUrl = useMemo(() => {
+    if (!lastParams) return null;
+    const qs = new URLSearchParams({ ...lastParams, page: String(page), pageSize: String(PAGE_SIZE) });
+    return `/api/reports/item-movement-detail?${qs}`;
+  }, [lastParams, page]);
+
+  const { data, isFetching, error } = useQuery<ItemMovementResult>({
     queryKey: [queryUrl],
     enabled: !!queryUrl,
     staleTime: 30_000,
   });
 
   const rows = data?.rows ?? [];
+  const totalRows = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
 
   function buildParams(): Record<string, string> {
     const params: Record<string, string> = { itemId };
@@ -376,8 +392,8 @@ export default function ItemMovementReport() {
   function handleGenerate() {
     if (!itemId) return;
     const params = buildParams();
+    setPage(1);
     setLastParams(params);
-    setQueryUrl(`/api/reports/item-movement-detail?${new URLSearchParams(params)}`);
   }
 
   function handleExport() {
@@ -642,8 +658,13 @@ export default function ItemMovementReport() {
       )}
 
       {/* ── Summary ── */}
-      {rows.length > 0 && !isFetching && (
-        <SummaryBar rows={rows} unitLevel={unitLevel} />
+      {rows.length > 0 && !isFetching && data?.summary && (
+        <SummaryBar
+          summary={data.summary}
+          firstRow={rows[0]}
+          unitLevel={unitLevel}
+          totalRows={totalRows}
+        />
       )}
 
       {/* ── Results ── */}
@@ -665,7 +686,9 @@ export default function ItemMovementReport() {
             <>
               <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30 print:hidden">
                 <span className="text-sm text-muted-foreground">
-                  {rows.length > 0 ? `${rows.length} حركة — بالـ ${unitName}` : "لا توجد حركات"}
+                  {totalRows > 0
+                    ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalRows)} من ${totalRows} حركة — بالـ ${unitName}`
+                    : "لا توجد حركات"}
                 </span>
                 <span className="text-sm font-medium">{rows[0]?.itemName}</span>
               </div>
@@ -739,7 +762,7 @@ export default function ItemMovementReport() {
                           )}
                           data-testid={`row-movement-${row.id}`}
                         >
-                          <TableCell className="text-center text-muted-foreground">{idx + 1}</TableCell>
+                          <TableCell className="text-center text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                           <TableCell className="font-mono">{date}</TableCell>
                           <TableCell className="font-mono text-muted-foreground">{time}</TableCell>
                           <TableCell>
@@ -791,28 +814,57 @@ export default function ItemMovementReport() {
                 </TableBody>
               </Table>
 
-              {/* Footer totals */}
-              {rows.length > 0 && (
-                <div className="border-t px-4 py-3 bg-muted/30">
+              {/* Footer: totals (server-side) + pagination */}
+              {rows.length > 0 && data?.summary && (
+                <div className="border-t px-4 py-3 bg-muted/30 space-y-2 print:hidden">
+                  {/* Totals row — from server summary (covers ALL pages) */}
                   <div className="flex flex-wrap gap-4 text-xs justify-end">
                     {(() => {
                       const first = rows[0];
-                      const mt  = first.majorToMinor;
-                      const me  = first.mediumToMinor;
-                      const m2m = first.majorToMedium;
-                      const conv = (m: number) => convertQty(m, unitLevel, mt, me, m2m);
-                      const totalIn = rows.filter(r => r.txType === "in").reduce((s, r) => s + r.qtyChangeMinor, 0);
-                      const totalOut = rows.filter(r => r.txType === "out").reduce((s, r) => s + Math.abs(r.qtyChangeMinor), 0);
+                      const conv = (m: number) => convertQty(m, unitLevel, first.majorToMinor, first.mediumToMinor, first.majorToMedium);
                       const lastBalance = rows[rows.length - 1].balanceAfterMinor;
                       return (
                         <>
-                          <span className="text-muted-foreground">إجمالي وارد: <strong className="text-emerald-700">{fmtQty(conv(totalIn))} {unitName}</strong></span>
-                          <span className="text-muted-foreground">إجمالي صادر: <strong className="text-red-600">{fmtQty(conv(totalOut))} {unitName}</strong></span>
-                          <span className="text-muted-foreground">الرصيد الختامي: <strong>{fmtQty(conv(lastBalance))} {unitName}</strong></span>
+                          <span className="text-muted-foreground">إجمالي وارد (كل الصفحات): <strong className="text-emerald-700">{fmtQty(conv(data.summary.totalIn))} {unitName}</strong></span>
+                          <span className="text-muted-foreground">إجمالي صادر (كل الصفحات): <strong className="text-red-600">{fmtQty(conv(data.summary.totalOut))} {unitName}</strong></span>
+                          <span className="text-muted-foreground">الرصيد ختام الصفحة: <strong>{fmtQty(conv(lastBalance))} {unitName}</strong></span>
                         </>
                       );
                     })()}
                   </div>
+                  {/* Pagination controls */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-1 border-t border-border/40">
+                      <span className="text-xs text-muted-foreground">
+                        صفحة {page} من {totalPages} — إجمالي {totalRows} حركة
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => setPage(p => Math.max(1, p - 1))}
+                          disabled={page <= 1 || isFetching}
+                          data-testid="button-prev-page"
+                        >
+                          <ChevronRight className="h-3.5 w-3.5" />
+                          <span className="text-xs mr-1">السابق</span>
+                        </Button>
+                        <span className="text-xs px-2 font-mono">{page}/{totalPages}</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                          disabled={page >= totalPages || isFetching}
+                          data-testid="button-next-page"
+                        >
+                          <span className="text-xs ml-1">التالي</span>
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -821,14 +873,14 @@ export default function ItemMovementReport() {
       )}
 
       {/* ── Empty state ── */}
-      {!queryUrl && !isFetching && (
+      {!lastParams && !isFetching && (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground print:hidden">
           <Package className="h-12 w-12 mb-3 opacity-30" />
           <p className="text-sm">اختر صنفاً ثم اضغط «توليد التقرير» لعرض الحركات</p>
         </div>
       )}
 
-      {queryUrl && !isFetching && rows.length === 0 && (
+      {lastParams && !isFetching && rows.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground print:hidden">
           <ClipboardList className="h-12 w-12 mb-3 opacity-30" />
           <p className="text-sm">لا توجد حركات للصنف المحدد في النطاق الزمني والفلاتر المختارة</p>

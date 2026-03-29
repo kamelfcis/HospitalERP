@@ -1,0 +1,216 @@
+أنت الآن تعمل كـ Senior ERP Performance Engineer + Refactoring Lead داخل نظام Hospital/Pharmacy ERP.
+
+المطلوب: تنفيذ خطة تحسين أداء سيستم الصيدلية فقط، بالترتيب، وبأقصى درجات الأمان، مع الالتزام الصارم بعدم كسر أي شيء وعدم تكرار أي تحسينات تم تنفيذها سابقًا.
+
+🎯 النطاق
+العمل على سيستم الصيدلية فقط، وبالأولوية على:
+1) تقرير حركة الصنف
+2) شاشة البيع / فواتير الصيدلية
+3) شاشة الاستلام من المورد
+4) شاشات master data المرتبطة بالصيدلية
+5) البحث عن الأصناف
+6) شاشة/منطق المخزون
+
+📌 ملاحظة معمارية مهمة جدًا:
+النظام يحتوي على جداول *_rpt (reporting / snapshot tables) تم تصميمها لتقليل الحمل على الجداول التشغيلية.
+
+⚠️ قاعدة إلزامية:
+- يجب تفضيل استخدام *_rpt tables في أي:
+  - تقارير
+  - بحث
+  - تجميعات (aggregations)
+- يمنع استخدام transactional tables مباشرة إذا كان نفس البيانات متاحة في *_rpt
+- إذا لم يتم استخدام *_rpt في مكان مناسب → يجب اقتراح التحويل إليها
+- إذا كانت *_rpt مستخدمة بالفعل → لا تكرر ولا تعدل بدون داعٍ
+
+🚫 قواعد صارمة جدًا
+- ممنوع تكرار أي تحسين تم تنفيذه سابقًا
+- ممنوع أي تعديل broad أو disruptive
+- ممنوع كسر Excel export
+- ممنوع كسر API contracts إلا عند الضرورة القصوى مع توثيق
+- كل تعديل يجب أن يكون incremental + safe
+- الحفاظ على نفس business logic
+- لا تعمل أي optimization inline إذا يمكن تحويله إلى helper واضح
+- لا تعمل heavy aggregation على transactional tables إذا يوجد *_rpt بديل
+
+🧠 قبل التنفيذ — إلزامي
+نفّذ Existing Coverage Check:
+
+1) ما الموجود من:
+   - indexes
+   - pagination
+   - memoization
+   - staleTime
+   - snapshot usage
+   - *_rpt usage
+
+2) لكل نقطة في الخطة:
+   - Not implemented
+   - Partially implemented
+   - Already implemented
+
+3) ممنوع تنفيذ أي شيء Already implemented
+
+📌 ترتيب التنفيذ الإلزامي
+
+========================================
+PHASE 1 — Item Movement Report hardening
+========================================
+
+🎯 الهدف:
+تقليل الحمل + تسريع التحميل + منع تحميل كامل البيانات
+
+المطلوب:
+
+1) مراجعة getItemMovementReport:
+   - هل يعتمد على transactional tables مباشرة؟
+   - هل يمكن استخدام *_rpt tables بدلاً منها؟
+
+⚠️ قاعدة:
+- إذا كان هناك rpt_inventory_snapshot أو rpt movement equivalent:
+  - استخدمه بدلاً من inventory_lot_movements + joins الثقيلة
+- إذا لم يكن مناسب:
+  - استمر في transactional ولكن مع pagination
+
+2) إضافة pagination:
+- limit / offset
+- COUNT query منفصل
+- الحفاظ على نفس النتائج
+
+3) Excel export:
+- يظل بدون pagination
+- إن أمكن:
+  - استخدم *_rpt tables في export لتقليل الحمل
+
+4) Frontend:
+- إضافة pagination UI
+- الحفاظ على filters + sorting
+- لا تضف virtualization إلا إذا لزم بعد القياس
+
+🔧 Refactor:
+- فصل query logic
+- منع تكرار SQL
+- توحيد params handling
+- فصل report logic عن API layer
+
+========================================
+PHASE 2 — Database Index Optimization
+========================================
+
+1) فحص وجود:
+(reference_type, reference_id) index على inventory_lot_movements
+
+2) إذا غير موجود:
+CREATE INDEX IF NOT EXISTS idx_lot_movements_ref
+ON inventory_lot_movements (reference_type, reference_id)
+
+⚠️ لا تضف index إذا:
+- نفس الفهرس موجود
+- أو هناك composite index يغطيه
+
+📌 ملاحظة:
+- إذا تم التحويل إلى *_rpt tables في PHASE 1:
+  - أعد تقييم الحاجة لهذا index
+  - لا تضفه إن لم يعد مطلوب
+
+========================================
+PHASE 3 — Query Optimization + *_rpt leverage
+========================================
+
+🎯 الهدف:
+تقليل load + تقليل DB pressure
+
+1) استخدام *_rpt tables في:
+- inventory balance
+- item search (إن لم يكن مستخدم بالكامل)
+- أي aggregation ثقيل
+
+2) مراجعة:
+- هل هناك حسابات SUM/COUNT على inventory_lots؟
+→ استبدلها بـ *_rpt
+
+3) تطبيق staleTime:
+
+- list queries: 20 ثانية
+- master data: 5 دقائق
+
+⚠️ لا تستخدم staleTime:
+- في العمليات الحساسة (transactions)
+
+🔧 Refactor:
+- استخراج query config helpers
+- إزالة duplication في query options
+
+========================================
+PHASE 4 — Frontend Rendering Optimization
+========================================
+
+🎯 الهدف:
+تقليل lag داخل الفاتورة
+
+1) InvoiceLineTable:
+- استخراج InvoiceLineRow component
+- React.memo
+
+2) منع re-render:
+- لا تعيد رسم كل الصفوف عند تغيير سطر واحد
+
+⚠️ الحفاظ على:
+- keyboard navigation
+- focus
+- refs
+
+🔧 Refactor:
+- تقليل props
+- تحسين readability
+
+========================================
+PHASE 5 — Optional Advanced Optimization
+========================================
+
+1) تقييم partial index:
+sales_invoice_headers
+
+2) لا تنفذه إلا إذا:
+- لا يوجد بديل
+- له تأثير واضح بعد القياس
+
+========================================
+PHASE 6 — Monitoring
+========================================
+
+إضافة logging:
+
+- durationMs
+- result size
+- payload size (اختياري)
+
+⚠️ بدون spam logs
+
+========================================
+OUTPUT REQUIREMENTS
+========================================
+
+بعد كل Phase:
+
+1) ما كان موجود
+2) ما تم تغييره
+3) لماذا آمن
+4) ماذا لم يتم تغييره
+5) المخاطر
+6) خطوات التحقق
+7) before/after
+8) هل استخدم *_rpt أم لا ولماذا
+
+========================================
+CRITICAL RULE
+========================================
+
+- استخدم *_rpt tables أولاً دائماً حيثما أمكن
+- لا تحسب من transactional tables إلا عند الضرورة
+- لا تكرر أي تحسين سابق
+- لا تكسر أي شيء
+
+ابدأ الآن بـ:
+1) Existing Coverage Check
+2) ثم PHASE 1 فقط

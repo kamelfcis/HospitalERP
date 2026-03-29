@@ -190,7 +190,7 @@ export function registerReportsRoutes(app: Express) {
 
   // ── GET /api/reports/item-movement-detail ────────────────────────────────────
   //
-  // تقرير حركة صنف التفصيلي — كل حركة فردية مع الرصيد الجاري
+  // تقرير حركة صنف التفصيلي — paginated, with server-side summary.
   //
   // Query params:
   //   itemId      (required) — UUID
@@ -198,8 +198,13 @@ export function registerReportsRoutes(app: Express) {
   //   fromDate    (optional) — YYYY-MM-DD
   //   toDate      (optional) — YYYY-MM-DD
   //   txTypes     (optional) — comma-separated: receiving,sales_invoice,...
+  //   page        (optional) — integer ≥ 1 (default: 1)
+  //   pageSize    (optional) — integer 10-200 (default: 50)
+  //
+  // Response: { rows, total, page, pageSize, summary: { totalIn, totalOut, byType } }
   //
   app.get("/api/reports/item-movement-detail", requireAuth, async (req, res) => {
+    const t0 = Date.now();
     try {
       const {
         itemId,
@@ -207,6 +212,8 @@ export function registerReportsRoutes(app: Express) {
         fromDate,
         toDate,
         txTypes: txTypesRaw,
+        page:     pageRaw,
+        pageSize: pageSizeRaw,
       } = req.query as Record<string, string | undefined>;
 
       if (!itemId) {
@@ -217,15 +224,22 @@ export function registerReportsRoutes(app: Express) {
         ? txTypesRaw.split(",").map((t) => t.trim()).filter(Boolean)
         : undefined;
 
-      const rows = await getItemMovementReport({
+      const result = await getItemMovementReport({
         itemId,
         warehouseId: warehouseId || undefined,
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
+        fromDate:    fromDate    || undefined,
+        toDate:      toDate      || undefined,
         txTypes,
+        page:        pageRaw     ? parseInt(pageRaw,     10) : 1,
+        pageSize:    pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50,
       });
 
-      return res.json({ rows });
+      logger.info(
+        { itemId, page: result.page, pageSize: result.pageSize, total: result.total, durationMs: Date.now() - t0 },
+        "[PERF] item-movement-detail"
+      );
+
+      return res.json(result);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error({ err: msg }, "[reports] item-movement-detail error");
@@ -256,13 +270,17 @@ export function registerReportsRoutes(app: Express) {
         ? txTypesRaw.split(",").map((t) => t.trim()).filter(Boolean)
         : undefined;
 
-      const rows = await getItemMovementReport({
+      // Export fetches ALL rows (no pagination) — pageSize capped at 50k for safety
+      const exportResult = await getItemMovementReport({
         itemId,
         warehouseId: warehouseId || undefined,
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         txTypes,
+        page:     1,
+        pageSize: 50_000,
       });
+      const rows = exportResult.rows;
 
       if (rows.length === 0) {
         return res.status(404).json({ error: "لا توجد بيانات للتصدير" });

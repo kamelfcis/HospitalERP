@@ -57,6 +57,7 @@ export function useRegistry(today: string, enabled: boolean) {
       return res.json();
     },
     enabled,
+    staleTime: 20_000,
   });
 
   // Dedicated pharmacist lookup — does NOT require users.view permission

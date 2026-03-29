@@ -599,6 +599,11 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON shortage_agg (request_count DESC, last_requested_at DESC)
       WHERE is_resolved = false
     `);
+    // item movement report: تسريع lookup بـ reference_type + reference_id
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_lot_movements_ref
+      ON inventory_lot_movements (reference_type, reference_id)
+    `);
     log("[STARTUP] Performance indexes ensured");
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");
