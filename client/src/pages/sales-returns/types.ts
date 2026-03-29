@@ -38,6 +38,8 @@ export interface OriginalLine {
   minorUnitName: string | null;
   /** عدد الوحدات الصغرى في الوحدة الكبرى */
   majorToMinor: string | null;
+  /** عدد الوحدات المتوسطة في الوحدة الكبرى (للأصناف التي ليس لها وحدة صغرى) */
+  majorToMedium: string | null;
   /** عدد الوحدات الصغرى في الوحدة الوسطى */
   mediumToMinor: string | null;
   /** كمية (الوحدة الصغرى) اللي اترجعت مسبقاً على هذا السطر */
@@ -99,7 +101,11 @@ export function getReturnUnitOptions(line: OriginalLine): { value: string; label
 
   if (line.majorUnitName)
     options.push({ value: "major", label: line.majorUnitName });
-  if (line.mediumUnitName && parseFloat(line.mediumToMinor || "0") > 0)
+  // الوحدة المتوسطة تظهر إذا كان mediumToMinor محدد (3 وحدات) أو majorToMedium محدد (كبرى+متوسطة)
+  if (line.mediumUnitName && (
+    parseFloat(line.mediumToMinor || "0") > 0 ||
+    parseFloat(line.majorToMedium || "0") > 0
+  ))
     options.push({ value: "medium", label: line.mediumUnitName });
   if (line.minorUnitName && line.minorUnitName !== line.majorUnitName)
     options.push({ value: "minor", label: line.minorUnitName });
@@ -122,12 +128,38 @@ export function getReturnUnitOptions(line: OriginalLine): { value: string; label
 // ============================================================
 
 /**
- * تحويل كمية من وحدة مُعطاة إلى الوحدة الصغرى.
- * مثال: qty=2 + unitLevel="major" + majorToMinor=30 → 60
+ * تحويل كمية من وحدة مُعطاة إلى وحدة التخزين الداخلية (qty_in_minor).
+ *
+ * يُطابق تماماً منطق convertQtyToMinor في server/inventory-helpers.ts:
+ *  - minor  → qty كما هو
+ *  - medium → أولاً: mediumToMinor (أصناف 3 وحدات)
+ *             ثانياً: (majorToMinor||1) / majorToMedium (legacy: كبرى+متوسطة)
+ *  - major  → qty × majorToMinor إذا محدد؛ وإلا qty (كبرى = وحدة التخزين)
  */
 export function toMinorQty(qty: number, unitLevel: string, line: OriginalLine): number {
-  if (unitLevel === "major") return qty * (parseFloat(line.majorToMinor || "1") || 1);
-  if (unitLevel === "medium") return qty * (parseFloat(line.mediumToMinor || "1") || 1);
+  if (unitLevel === "minor") return qty;
+
+  if (unitLevel === "medium") {
+    // أولاً: mediumToMinor مباشرة (أصناف 3 وحدات)
+    const medRatio = parseFloat(line.mediumToMinor || "");
+    if (medRatio > 0) return qty * medRatio;
+
+    // ثانياً: legacy (كبرى+متوسطة، بدون صغرى) — effectiveMediumToMinor = (majorToMinor||1) / majorToMedium
+    const maj2med = parseFloat(line.majorToMedium || "");
+    if (maj2med > 0) {
+      const maj2min = parseFloat(line.majorToMinor || "") || 1;
+      return qty * (maj2min / maj2med);
+    }
+    // fallback: تعامل كـ 1:1
+    return qty;
+  }
+
+  if (unitLevel === "major") {
+    const ratio = parseFloat(line.majorToMinor || "");
+    if (ratio > 0) return qty * ratio;
+    return qty; // legacy: كبرى = وحدة التخزين
+  }
+
   return qty;
 }
 

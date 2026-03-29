@@ -146,7 +146,8 @@ const methods = {
              l.expiry_month AS "expiryMonth", l.expiry_year AS "expiryYear", l.lot_id AS "lotId",
              i.major_unit_name AS "majorUnitName", i.medium_unit_name AS "mediumUnitName",
              i.minor_unit_name AS "minorUnitName",
-             i.major_to_minor AS "majorToMinor", i.medium_to_minor AS "mediumToMinor",
+             i.major_to_minor AS "majorToMinor", i.major_to_medium AS "majorToMedium",
+             i.medium_to_minor AS "mediumToMinor",
              COALESCE((
                SELECT SUM(ABS(rl.qty_in_minor::numeric))
                FROM sales_invoice_lines rl
