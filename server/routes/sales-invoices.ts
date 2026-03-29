@@ -289,8 +289,8 @@ export function registerSalesInvoicesRoutes(app: Express) {
           logger.warn({ err: e.message }, "[CLINIC_ORDER_LINK] failed to update clinic order status");
         }
       }
-      // بث SSE للكاشير — الآجل مستثنى: لا يظهر عند الكاشير ولا يُبثّ فيه
-      if (invoice.customerType !== "credit") {
+      // بث SSE للكاشير — الآجل والتوصيل مستثنيان: لهما شاشات تحصيل مستقلة
+      if (invoice.customerType !== "credit" && invoice.customerType !== "delivery") {
         const broadcastPayload = {
           id: invoice.id,
           invoiceNumber: invoice.invoiceNumber,

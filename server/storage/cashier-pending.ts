@@ -63,11 +63,12 @@ export const PENDING_RECEIPT_GUARD_SQL = `
 `.trim();
 
 /** Full WHERE predicate: sales invoice pending collection
- *  ⚠ فواتير الآجل (customer_type='credit') مستثناة — تُحصَّل عبر شاشة تحصيل الآجل فقط */
+ *  ⚠ فواتير الآجل (customer_type='credit') مستثناة — تُحصَّل عبر شاشة تحصيل الآجل فقط
+ *  ⚠ فواتير التوصيل (customer_type='delivery') مستثناة — تُحصَّل عبر شاشة تحصيل التوصيل فقط */
 export const PENDING_SALES_SQL = `
   sih.status   = 'finalized'
   AND sih.is_return = false
-  AND sih.customer_type != 'credit'
+  AND sih.customer_type NOT IN ('credit', 'delivery')
   ${PENDING_RECEIPT_GUARD_SQL}
 `.trim();
 
