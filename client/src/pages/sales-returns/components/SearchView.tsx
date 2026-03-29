@@ -71,7 +71,7 @@ export function SearchView(props: Props) {
     onSelectInvoice,
   } = props;
 
-  const { data: warehouses = [] } = useQuery<any[]>({ queryKey: ["/api/warehouses"] });
+  const { data: warehouses = [] } = useQuery<any[]>({ queryKey: ["/api/warehouses"], staleTime: 5 * 60_000 });
 
   // ضبط المخزن تلقائياً إذا كان للمستخدم مخزن واحد فقط
   useEffect(() => {

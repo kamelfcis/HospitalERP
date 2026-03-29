@@ -55,7 +55,7 @@ export default function SalesInvoices() {
   const canCreate = hasPermission(PERMISSIONS.SALES_CREATE);
 
   // ── بيانات عامة ───────────────────────────────────────────────────────────
-  const { data: allWarehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
+  const { data: allWarehouses } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"], staleTime: 5 * 60_000 });
 
   // فلترة المستودعات: عرض المسموح بها فقط (فارغة = كل المستودعات لـ admin/owner)
   const warehouses = useMemo(() => {

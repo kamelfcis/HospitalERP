@@ -34,6 +34,7 @@ export default function PurchaseInvoices() {
   // ── قائمة الموردين (للـ registry) ────────────────────────────────────
   const { data: suppliersData } = useQuery<{ suppliers: Supplier[]; total: number }>({
     queryKey: ["/api/suppliers?page=1&pageSize=500"],
+    staleTime: 5 * 60_000,
   });
   const suppliers = suppliersData?.suppliers || [];
 

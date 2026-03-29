@@ -85,6 +85,7 @@ function CreateSessionDialog({
 
   const { data: warehouses = [], isLoading: wLoading } = useQuery<WarehouseType[]>({
     queryKey: ["/api/warehouses"],
+    staleTime: 5 * 60_000,
   });
 
   const createMutation = useMutation({

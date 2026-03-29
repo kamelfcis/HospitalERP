@@ -24,6 +24,7 @@ export function useTransferLog() {
 
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
+    staleTime: 5 * 60_000,
   });
 
   const buildQueryString = () => {

@@ -66,6 +66,7 @@ export function useRegistry(today: string, enabled: boolean) {
   const { data: pharmacistData } = useQuery<PharmacistOption[]>({
     queryKey: ["/api/sales-invoices/pharmacists"],
     enabled,
+    staleTime: 5 * 60_000,
   });
 
   const invoices = listData?.data || [];

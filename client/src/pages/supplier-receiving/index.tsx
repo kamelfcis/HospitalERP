@@ -159,9 +159,10 @@ export default function SupplierReceiving() {
   });
 
   // ── بيانات مرجعية ────────────────────────────────────────────────────────
-  const { data: warehouses = [] } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
+  const { data: warehouses = [] } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"], staleTime: 5 * 60_000 });
   const { data: suppliersData }   = useQuery<{ suppliers: Supplier[]; total: number }>({
     queryKey: ["/api/suppliers", "all"],
+    staleTime: 5 * 60_000,
     queryFn: async () => {
       const res = await fetch("/api/suppliers?page=1&pageSize=500");
       if (!res.ok) throw new Error("فشل جلب الموردين");
