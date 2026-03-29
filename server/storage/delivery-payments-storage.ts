@@ -194,7 +194,9 @@ export async function createDeliveryReceipt(
     }
   }
 
-  const result = await db.transaction(async (tx) => {
+  // ── Transaction رئيسية: الإيصال + السطور + تحديث حالة الفواتير ──────────
+  // القيد GL في transaction منفصلة لاحقاً لضمان عدم rollback الإيصال
+  const { receiptId, receiptNumber } = await db.transaction(async (tx) => {
     const numRes = await tx.execute(
       sql`SELECT nextval('delivery_receipt_number_seq') AS next_num`
     );
@@ -210,7 +212,7 @@ export async function createDeliveryReceipt(
         reference:     input.reference ?? null,
         notes:         input.notes ?? null,
         createdBy:     input.createdBy ?? null,
-        glAccountId:   input.glAccountId ?? null,
+        glAccountId:   effectiveGlAccountId ?? null,
         shiftId:       resolvedShiftId,
       })
       .returning({ id: deliveryReceipts.id, receiptNumber: deliveryReceipts.receiptNumber });
@@ -241,73 +243,76 @@ export async function createDeliveryReceipt(
       `);
     }
 
-    // ── قيد GL: مدين الخزنة / دائن الذمم ────────────────────────────────
-    let journalEntryId: string | null = null;
-    if (glDebitId && glCreditId) {
-      try {
-        const periodRes = await tx.execute(sql`
-          SELECT id FROM fiscal_periods
-          WHERE is_closed = false
-            AND start_date <= ${input.receiptDate}::date
-            AND end_date   >= ${input.receiptDate}::date
-          LIMIT 1
-        `);
-        const periodId = (periodRes as any).rows[0]?.id ?? null;
-
-        const entryNumRes = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
-        const entryNumber = Number((entryNumRes as any).rows[0]?.n ?? 1);
-        const amount      = input.totalAmount.toFixed(2);
-
-        const [entry] = await tx.insert(journalEntries).values({
-          entryNumber,
-          entryDate:   input.receiptDate,
-          description: `تحصيل توصيل منزلي - إيصال ${receiptNumber}`,
-          reference:   `DLVMT-${receiptNumber}`,
-          status:      "posted" as const,
-          periodId: periodId,
-          createdBy:   input.createdBy ?? null,
-        }).returning({ id: journalEntries.id });
-
-        await tx.insert(journalLines).values([
-          {
-            journalEntryId: entry.id,
-            accountId:      glDebitId,
-            debit:          amount,
-            credit:         "0",
-            description:    `تحصيل توصيل منزلي - إيصال ${receiptNumber}`,
-          },
-          {
-            journalEntryId: entry.id,
-            accountId:      glCreditId,
-            debit:          "0",
-            credit:         amount,
-            description:    `ذمم توصيل منزلي - إيصال ${receiptNumber}`,
-          },
-        ]);
-
-        await tx.execute(sql`
-          UPDATE delivery_receipts SET journal_entry_id = ${entry.id}
-          WHERE id = ${receipt.id}
-        `);
-
-        journalEntryId = entry.id;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.error({ err: msg, receiptId: receipt.id }, "[DLVMT] GL journal failed");
-        void logAcctEvent({
-          sourceType:   "delivery_receipt",
-          sourceId:     receipt.id,
-          eventType:    "dlvmt_journal_failed",
-          status:       "needs_retry",
-          errorMessage: `فشل قيد تحصيل التوصيل: ${msg}`,
-        }).catch(() => {});
-      }
-    }
-
-    return { receiptId: receipt.id, receiptNumber, journalEntryId };
+    return { receiptId: receipt.id, receiptNumber };
   });
 
-  return { ...result, shiftUnitKey };
+  // ── قيد GL: transaction منفصلة بعد commit الإيصال ─────────────────────
+  // فصلها يضمن أن فشل GL لا يُلغي الإيصال أو تحديث حالة الفواتير
+  let journalEntryId: string | null = null;
+  if (glDebitId && glCreditId) {
+    try {
+      const periodRes = await db.execute(sql`
+        SELECT id FROM fiscal_periods
+        WHERE is_closed = false
+          AND start_date <= ${input.receiptDate}::date
+          AND end_date   >= ${input.receiptDate}::date
+        LIMIT 1
+      `);
+      const periodId = (periodRes as any).rows[0]?.id ?? null;
+
+      const entryNumRes = await db.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
+      const entryNumber = Number((entryNumRes as any).rows[0]?.n ?? 1);
+      const amount      = input.totalAmount.toFixed(2);
+
+      const [entry] = await db.insert(journalEntries).values({
+        entryNumber,
+        entryDate:   input.receiptDate,
+        description: `تحصيل توصيل منزلي - إيصال ${receiptNumber}`,
+        reference:   `DLVMT-${receiptNumber}`,
+        status:      "posted" as const,
+        periodId:    periodId,
+        createdBy:   input.createdBy ?? null,
+      }).returning({ id: journalEntries.id });
+
+      await db.insert(journalLines).values([
+        {
+          journalEntryId: entry.id,
+          lineNumber:     1,
+          accountId:      glDebitId,
+          debit:          amount,
+          credit:         "0",
+          description:    `تحصيل توصيل منزلي - إيصال ${receiptNumber}`,
+        },
+        {
+          journalEntryId: entry.id,
+          lineNumber:     2,
+          accountId:      glCreditId,
+          debit:          "0",
+          credit:         amount,
+          description:    `ذمم توصيل منزلي - إيصال ${receiptNumber}`,
+        },
+      ]);
+
+      await db.execute(sql`
+        UPDATE delivery_receipts SET journal_entry_id = ${entry.id}
+        WHERE id = ${receiptId}
+      `);
+
+      journalEntryId = entry.id;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg, receiptId }, "[DLVMT] GL journal failed");
+      void logAcctEvent({
+        sourceType:   "delivery_receipt",
+        sourceId:     receiptId,
+        eventType:    "dlvmt_journal_failed",
+        status:       "needs_retry",
+        errorMessage: `فشل قيد تحصيل التوصيل: ${msg}`,
+      }).catch(() => {});
+    }
+  }
+
+  return { receiptId, receiptNumber, journalEntryId, shiftUnitKey };
 }
 
 // ─── getDeliveryReceiptReport ─────────────────────────────────────────────────
