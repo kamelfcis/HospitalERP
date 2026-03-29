@@ -276,6 +276,7 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       FROM sales_invoice_headers sih
       WHERE sih.status = 'collected'
         AND sih.is_return = false
+        AND sih.customer_type != 'delivery'
         AND NOT EXISTS (SELECT 1 FROM cashier_receipts cr WHERE cr.invoice_id = sih.id)
       LIMIT 20
     `);

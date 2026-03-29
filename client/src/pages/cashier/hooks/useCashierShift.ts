@@ -97,11 +97,10 @@ export function useCashierShift() {
   });
 
   // ── حسابات مالية ─────────────────────────────────────────
+  // النقدية المتوقعة = netCash المحسوب على السيرفر (يشمل التوصيل + الآجل - الموردين - المرتجعات)
   const expectedCash = useMemo(() => {
     if (!shiftTotals) return 0;
-    return parseFloat(shiftTotals.openingCash   || "0")
-         + parseFloat(shiftTotals.totalCollected || "0")
-         - parseFloat(shiftTotals.totalRefunded  || "0");
+    return parseFloat(shiftTotals.netCash || "0");
   }, [shiftTotals]);
 
   const varianceCalc = useMemo(

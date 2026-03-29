@@ -430,10 +430,31 @@ const methods = {
         total: sql<string>`COALESCE(SUM(amount::numeric), 0)`,
       }).from(cashierRefundReceipts).where(eq(cashierRefundReceipts.shiftId, shiftId));
 
+      const creditRes = await tx.execute(sql`
+        SELECT COALESCE(SUM(total_amount), 0)::text AS total
+        FROM customer_receipts WHERE shift_id = ${shiftId}
+      `);
+      const creditCollected = (creditRes as any).rows[0]?.total || "0";
+
+      const deliveryRes = await tx.execute(sql`
+        SELECT COALESCE(SUM(total_amount), 0)::text AS total
+        FROM delivery_receipts WHERE shift_id = ${shiftId}
+      `);
+      const deliveryCollected = (deliveryRes as any).rows[0]?.total || "0";
+
+      const supplierRes = await tx.execute(sql`
+        SELECT COALESCE(SUM(total_amount), 0)::text AS total
+        FROM supplier_payments WHERE shift_id = ${shiftId}
+      `);
+      const supplierPaid = (supplierRes as any).rows[0]?.total || "0";
+
       const expectedCashVal = (
-        parseFloat(shift.openingCash || "0") +
-        parseFloat(collectResult?.total || "0") -
-        parseFloat(refundResult?.total || "0")
+        parseFloat(shift.openingCash  || "0") +
+        parseFloat(collectResult?.total || "0") +
+        parseFloat(creditCollected) +
+        parseFloat(deliveryCollected) -
+        parseFloat(refundResult?.total || "0") -
+        parseFloat(supplierPaid)
       ).toFixed(2);
       const varianceVal = (parseFloat(closingCash) - parseFloat(expectedCashVal)).toFixed(2);
 
