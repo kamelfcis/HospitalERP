@@ -495,7 +495,60 @@ export function registerCashierRoutes(app: Express) {
   app.get("/api/treasuries/mine", requireAuth, async (req, res) => {
     try {
       const user = (req as unknown as { user: { id: string } }).user;
-      res.json(await storage.getUserTreasury(user.id));
+
+      // 1) تحقق من user_treasuries أولاً
+      const assigned = await storage.getUserTreasury(user.id);
+      if (assigned) return res.json(assigned);
+
+      // 2) Fallback: إذا لم تُعيَّن خزنة ثابتة، استخدم خزنة الوردية النشطة للكاشير
+      const shift = await storage.getMyOpenShift(user.id) as
+        { glAccountId?: string | null; id?: string; openedAt?: string } | null;
+      if (shift?.glAccountId) {
+        // ابحث عن الخزنة التي تحمل نفس الـ GL account
+        const rows = await db.execute(sql`
+          SELECT t.id, t.name, t.gl_account_id, t.is_active, t.notes, t.created_at,
+                 a.code AS gl_account_code, a.name AS gl_account_name
+          FROM   treasuries t
+          JOIN   accounts   a ON a.id = t.gl_account_id
+          WHERE  t.gl_account_id = ${shift.glAccountId}
+            AND  t.is_active = true
+          LIMIT 1
+        `);
+        if (rows.rows.length > 0) {
+          const r = rows.rows[0] as Record<string, unknown>;
+          return res.json({
+            id:            r.id,
+            name:          r.name,
+            glAccountId:   r.gl_account_id,
+            isActive:      r.is_active,
+            notes:         r.notes,
+            createdAt:     r.created_at,
+            glAccountCode: r.gl_account_code,
+            glAccountName: r.gl_account_name,
+          });
+        }
+
+        // 3) Fallback أعمق: الـ GL account موجود لكن لا توجد خزنة مرتبطة به —
+        //    نُعيد بيانات الحساب مباشرةً (يكفي لـ selectedGlAccountId)
+        const glRows = await db.execute(sql`
+          SELECT id, code, name FROM accounts WHERE id = ${shift.glAccountId} LIMIT 1
+        `);
+        if (glRows.rows.length > 0) {
+          const g = glRows.rows[0] as Record<string, unknown>;
+          return res.json({
+            id:            `shift-${shift.id}`,
+            name:          String(g.name),
+            glAccountId:   shift.glAccountId,
+            isActive:      true,
+            notes:         null,
+            createdAt:     shift.openedAt,
+            glAccountCode: String(g.code),
+            glAccountName: String(g.name),
+          });
+        }
+      }
+
+      res.json(null);
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
