@@ -29,6 +29,60 @@ import type {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney, parseMoney } from "../finance-helpers";
+import { computeMajorToMinor } from "../inventory-helpers";
+
+// ─── دالة محلية: تحويل بند فاتورة إلى أصغر وحدة متاحة للتوزيع ───────────────
+// يختلف هذا عن convertQtyToMinor — هذه الدالة تحوّل إلى أصغر وحدة محددة للصنف
+// لأغراض التقسيم الدقيق عند توزيع الفاتورة على مرضى متعددين.
+function _convertLineToSmallest(
+  origQty: number,
+  origUnitPrice: number,
+  origLevel: string,
+  item: { majorToMedium?: any; mediumToMinor?: any; majorToMinor?: any; minorUnitName?: string | null; mediumUnitName?: string | null }
+): { distQty: number; distUnitPrice: number; distUnitLevel: string } {
+  if (origLevel === "minor") {
+    return { distQty: origQty, distUnitPrice: origUnitPrice, distUnitLevel: origLevel };
+  }
+
+  const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
+  const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
+
+  // استخدام computeMajorToMinor المركزية لحساب majorToMinor عند الثلاث وحدات
+  const computedMTM = computeMajorToMinor({
+    majorUnitName:  "x", // placeholder — computeMajorToMinor يهتم بوجود medium/minor فقط
+    mediumUnitName: item.mediumUnitName || null,
+    minorUnitName:  item.minorUnitName  || null,
+    majorToMedium:  item.majorToMedium,
+    mediumToMinor:  item.mediumToMinor,
+  });
+  const majorToMinor = computedMTM
+    ? parseFloat(computedMTM)
+    : (parseFloat(String(item.majorToMinor)) || 0);
+
+  let smallestLevel = origLevel;
+  let convFactor = 1;
+
+  if (origLevel === "major") {
+    if (item.minorUnitName && majorToMinor > 1) {
+      smallestLevel = "minor";
+      convFactor = majorToMinor;
+    } else if (item.mediumUnitName && majorToMedium > 1) {
+      smallestLevel = "medium";
+      convFactor = majorToMedium;
+    }
+  } else if (origLevel === "medium") {
+    if (item.minorUnitName && mediumToMinor > 1) {
+      smallestLevel = "minor";
+      convFactor = mediumToMinor;
+    }
+  }
+
+  return {
+    distQty:       +(origQty * convFactor).toFixed(4),
+    distUnitPrice: +(origUnitPrice / convFactor).toFixed(4),
+    distUnitLevel: smallestLevel,
+  };
+}
 
 const methods = {
   async distributePatientInvoice(this: DatabaseStorage, sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]> {
@@ -60,39 +114,14 @@ const methods = {
         const origLevel = line.unitLevel || "minor";
         const item = line.itemId ? itemMap[line.itemId] : null;
 
-        if (!item || origLevel === "minor") {
+        if (!item) {
           return { ...line, distQty: origQty, distUnitPrice: origUnitPrice, distUnitLevel: origLevel };
         }
 
-        const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
-        const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
-        let majorToMinor = parseFloat(String(item.majorToMinor)) || 0;
-        if (majorToMinor <= 0 && majorToMedium > 0 && mediumToMinor > 0) {
-          majorToMinor = majorToMedium * mediumToMinor;
-        }
-
-        let smallestLevel = origLevel;
-        let convFactor = 1;
-
-        if (origLevel === "major") {
-          if (item.minorUnitName && majorToMinor > 1) {
-            smallestLevel = "minor";
-            convFactor = majorToMinor;
-          } else if (item.mediumUnitName && majorToMedium > 1) {
-            smallestLevel = "medium";
-            convFactor = majorToMedium;
-          }
-        } else if (origLevel === "medium") {
-          if (item.minorUnitName && mediumToMinor > 1) {
-            smallestLevel = "minor";
-            convFactor = mediumToMinor;
-          }
-        }
-
-        const distQty = +(origQty * convFactor).toFixed(4);
-        const distUnitPrice = +(origUnitPrice / convFactor).toFixed(4);
-
-        return { ...line, distQty, distUnitPrice, distUnitLevel: smallestLevel };
+        const { distQty, distUnitPrice, distUnitLevel } = _convertLineToSmallest(
+          origQty, origUnitPrice, origLevel, item
+        );
+        return { ...line, distQty, distUnitPrice, distUnitLevel };
       });
 
       await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
@@ -241,39 +270,14 @@ const methods = {
         const origLevel = line.unitLevel || "minor";
         const item = line.itemId ? itemMap[line.itemId] : null;
 
-        if (!item || origLevel === "minor") {
+        if (!item) {
           return { ...line, distQty: origQty, distUnitPrice: origUnitPrice, distUnitLevel: origLevel };
         }
 
-        const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
-        const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
-        let majorToMinor = parseFloat(String(item.majorToMinor)) || 0;
-        if (majorToMinor <= 0 && majorToMedium > 0 && mediumToMinor > 0) {
-          majorToMinor = majorToMedium * mediumToMinor;
-        }
-
-        let smallestLevel = origLevel;
-        let convFactor = 1;
-
-        if (origLevel === "major") {
-          if (item.minorUnitName && majorToMinor > 1) {
-            smallestLevel = "minor";
-            convFactor = majorToMinor;
-          } else if (item.mediumUnitName && majorToMedium > 1) {
-            smallestLevel = "medium";
-            convFactor = majorToMedium;
-          }
-        } else if (origLevel === "medium") {
-          if (item.minorUnitName && mediumToMinor > 1) {
-            smallestLevel = "minor";
-            convFactor = mediumToMinor;
-          }
-        }
-
-        const distQty = +(origQty * convFactor).toFixed(4);
-        const distUnitPrice = +(origUnitPrice / convFactor).toFixed(4);
-
-        return { ...line, distQty, distUnitPrice, distUnitLevel: smallestLevel };
+        const { distQty, distUnitPrice, distUnitLevel } = _convertLineToSmallest(
+          origQty, origUnitPrice, origLevel, item
+        );
+        return { ...line, distQty, distUnitPrice, distUnitLevel };
       });
 
       await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);

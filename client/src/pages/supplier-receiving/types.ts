@@ -2,7 +2,15 @@
  * types.ts — الـ types والـ helpers المشتركة لشاشة استلام الموردين
  */
 
-import { ItemLike, getSmartDefaultUnitLevel } from "@/lib/invoice-lines";
+import {
+  ItemLike,
+  getSmartDefaultUnitLevel,
+  getEffectiveMediumToMinor,
+  calculateQtyInMinor,
+} from "@/lib/invoice-lines";
+
+// إعادة تصدير لتوافق الشيفرة المستوردة من هذا الملف
+export { getEffectiveMediumToMinor, calculateQtyInMinor };
 
 // ── نوع سطر الاستلام المحلي ───────────────────────────────────────────────
 export interface ReceivingLineLocal {
@@ -33,21 +41,6 @@ export interface LineError {
   lineIndex: number;
   field: string;
   messageAr: string;
-}
-
-// ── حسابات الوحدات ────────────────────────────────────────────────────────
-export function getEffectiveMediumToMinor(item: ItemLike | null | undefined): number {
-  const m2m = parseFloat(String(item?.mediumToMinor));
-  if (m2m > 0) return m2m;
-  const maj2min = parseFloat(String(item?.majorToMinor)) || 1;
-  const maj2med = parseFloat(String(item?.majorToMedium)) || 1;
-  return maj2min / maj2med;
-}
-
-export function calculateQtyInMinor(qtyEntered: number, unitLevel: string, item: ItemLike | null | undefined): number {
-  if (unitLevel === "major") return qtyEntered * (parseFloat(String(item?.majorToMinor)) || 1);
-  if (unitLevel === "medium") return qtyEntered * getEffectiveMediumToMinor(item);
-  return qtyEntered;
 }
 
 export function getDefaultUnitLevel(item: ItemLike | null | undefined): string {

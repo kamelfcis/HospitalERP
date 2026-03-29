@@ -21,6 +21,11 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useDebounce } from "../utils/debounce";
 import { isDirectDistributionLine } from "../utils/distributeHelpers";
+import {
+  calculateQtyInSmallest,
+  getSmallestUnitLevel,
+  getUnitName,
+} from "../utils/units";
 import type { LineLocal } from "../types";
 import type { Patient, PatientInvoiceHeader } from "@shared/schema";
 
@@ -54,42 +59,22 @@ interface Props {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Convert a line's quantity to the smallest unit and return {qty, unitLevel, unitName} */
+/**
+ * تحويل كمية البند إلى أصغر وحدة متاحة للتوزيع.
+ * يستخدم calculateQtyInSmallest + getSmallestUnitLevel + getUnitName من utils/units.
+ */
 function convertToSmallest(
   origQty: number,
   origLevel: string,
   item: LineLocal["item"],
 ): { qty: number; level: string; unitName: string } {
-  if (!item || origLevel === "minor") {
-    const unitName = item?.minorUnitName || item?.mediumUnitName || "وحدة";
-    return { qty: origQty, level: "minor", unitName };
+  if (!item) {
+    return { qty: origQty, level: origLevel, unitName: "وحدة" };
   }
-
-  const majorToMedium = parseFloat(String(item.majorToMedium)) || 0;
-  const mediumToMinor = parseFloat(String(item.mediumToMinor)) || 0;
-  let majorToMinor = parseFloat(String(item.majorToMinor)) || 0;
-  if (majorToMinor <= 0 && majorToMedium > 0 && mediumToMinor > 0) {
-    majorToMinor = majorToMedium * mediumToMinor;
-  }
-
-  if (origLevel === "major") {
-    if (item.minorUnitName && majorToMinor > 1) {
-      return { qty: origQty * majorToMinor, level: "minor", unitName: item.minorUnitName };
-    }
-    if (item.mediumUnitName && majorToMedium > 1) {
-      return { qty: origQty * majorToMedium, level: "medium", unitName: item.mediumUnitName };
-    }
-  } else if (origLevel === "medium") {
-    if (item.minorUnitName && mediumToMinor > 1) {
-      return { qty: origQty * mediumToMinor, level: "minor", unitName: item.minorUnitName };
-    }
-  }
-
-  const unitName =
-    origLevel === "major" ? (item.majorUnitName || "وحدة")
-    : origLevel === "medium" ? (item.mediumUnitName || "وحدة")
-    : (item.minorUnitName || "وحدة");
-  return { qty: origQty, level: origLevel, unitName };
+  const level    = getSmallestUnitLevel(item);
+  const qty      = calculateQtyInSmallest(origQty, origLevel, item);
+  const unitName = getUnitName(item, level);
+  return { qty, level, unitName };
 }
 
 /** Compute the per-patient share for a given total qty and patient count */

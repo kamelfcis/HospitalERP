@@ -7,6 +7,7 @@ import {
   insertItemDepartmentPriceSchema,
   insertInventoryLotSchema,
 } from "@shared/schema";
+import { convertPriceToMinor } from "../inventory-helpers";
 
 export function registerItemsMasterRoutes(app: Express, storage: any) {
   // ===== DEPARTMENTS =====
@@ -213,13 +214,12 @@ export function registerItemsMasterRoutes(app: Express, storage: any) {
       const unitLevel = req.body.unitLevel || "minor";
       if (validated.purchasePrice && unitLevel !== "minor") {
         const price = parseFloat(validated.purchasePrice);
-        let divisor = 1;
-        if (unitLevel === "major" && item.majorToMinor && parseFloat(item.majorToMinor) > 0) {
-          divisor = parseFloat(item.majorToMinor);
-        } else if (unitLevel === "medium" && item.mediumToMinor && parseFloat(item.mediumToMinor) > 0) {
-          divisor = parseFloat(item.mediumToMinor);
-        }
-        validated.purchasePrice = (price / divisor).toFixed(4);
+        validated.purchasePrice = convertPriceToMinor(price, unitLevel, {
+          nameAr:         item.nameAr,
+          majorToMinor:   item.majorToMinor,
+          majorToMedium:  item.majorToMedium,
+          mediumToMinor:  item.mediumToMinor,
+        }).toFixed(4);
       }
       const lot = await storage.createLot(validated);
       res.status(201).json(lot);

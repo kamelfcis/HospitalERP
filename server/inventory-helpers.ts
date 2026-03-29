@@ -219,6 +219,48 @@ export function validateUnitConversion(
   }
 }
 
+/**
+ * يحوّل كمية مُخزَّنة بوحدة التخزين (qty_in_minor) إلى وحدة العرض المطلوبة.
+ * عكس convertQtyToMinor — يُستخدَم في تقارير الحركات وصفحة تصدير Excel.
+ *
+ * اتفاقية التخزين:
+ *  - كبرى فقط أو كبرى+متوسطة: qty_in_minor = الكمية بالكبرى → القسمة على 1 (كبرى) أو على majorToMedium (متوسطة)
+ *  - كبرى+صغرى أو الثلاثة:    qty_in_minor = الكمية بالصغرى → القسمة على majorToMinor (كبرى) أو mediumToMinor (متوسطة)
+ */
+export function convertQtyFromMinor(
+  qtyMinor: number,
+  unitLevel: string,
+  item: { nameAr?: string | null; majorToMinor?: string | null; majorToMedium?: string | null; mediumToMinor?: string | null; minorUnitName?: string | null }
+): number {
+  if (unitLevel === 'minor') return qtyMinor;
+
+  const hasMinor    = !!item.minorUnitName?.trim();
+  const maj2min     = parseFloat(String(item.majorToMinor  ?? ""));
+  const maj2med     = parseFloat(String(item.majorToMedium ?? ""));
+  const med2min     = parseFloat(String(item.mediumToMinor ?? ""));
+
+  if (unitLevel === 'major') {
+    if (hasMinor && maj2min > 0) return qtyMinor / maj2min;
+    // Legacy: كبرى فقط أو كبرى+متوسطة — مُخزَّن بالكبرى
+    return qtyMinor;
+  }
+
+  if (unitLevel === 'medium') {
+    if (hasMinor) {
+      // مُخزَّن بالصغرى — نحوّل إلى متوسطة
+      if (med2min > 0) return qtyMinor / med2min;
+      if (maj2med > 0 && maj2min > 0) return qtyMinor / (maj2min / maj2med);
+      throw new Error(`الصنف "${item.nameAr || ''}" — معامل التحويل (متوسطة → صغرى) غير محدد`);
+    } else {
+      // Legacy: مُخزَّن بالكبرى — qty_medium = qty_major * majorToMedium
+      if (maj2med > 0) return qtyMinor * maj2med;
+      return qtyMinor;
+    }
+  }
+
+  return qtyMinor;
+}
+
 // ─── Lot / Expiry helpers ───────────────────────────────────────────────────
 
 export function isLotExpired(expiryMonth: number | null, expiryYear: number | null, asOfDate?: Date): boolean {

@@ -330,6 +330,35 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
         });
       }
 
+      // التحقق من صحة وحدات الأصناف + حساب majorToMinor تلقائياً للأصناف غير الخدمية
+      for (let vi = validRows.length - 1; vi >= 0; vi--) {
+        const r = validRows[vi];
+        if (r.category === "service") continue;
+        const unitErrors = validateItemUnits({
+          majorUnitName:  r.major_unit_name,
+          mediumUnitName: r.medium_unit_name,
+          minorUnitName:  r.minor_unit_name,
+          majorToMedium:  r.major_to_medium,
+          majorToMinor:   r.major_to_minor,
+          mediumToMinor:  r.medium_to_minor,
+        });
+        if (unitErrors.length > 0) {
+          errors.push(`صنف ${r.item_code}: ${unitErrors.join("، ")} — تم التخطي`);
+          validRows.splice(vi, 1);
+          continue;
+        }
+        // حساب majorToMinor تلقائياً في حالة الثلاث وحدات
+        const computed = computeMajorToMinor({
+          majorUnitName:  r.major_unit_name,
+          mediumUnitName: r.medium_unit_name,
+          minorUnitName:  r.minor_unit_name,
+          majorToMedium:  r.major_to_medium,
+          majorToMinor:   r.major_to_minor,
+          mediumToMinor:  r.medium_to_minor,
+        });
+        if (computed !== null) r.major_to_minor = parseFloat(computed);
+      }
+
       // إزالة المكررات — الاحتفاظ بآخر صف لكل item_code
       const deduped = Object.values(
         validRows.reduce((acc: Record<string, any>, row: any) => {

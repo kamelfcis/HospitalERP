@@ -1,12 +1,11 @@
-export interface ItemUnitConfig {
-  majorUnitName?: string | null;
-  mediumUnitName?: string | null;
-  minorUnitName?: string | null;
-  majorToMedium?: number | string | null;
-  majorToMinor?: number | string | null;
-  mediumToMinor?: number | string | null;
-  availableQtyMinor?: string | number | null;
-}
+/**
+ * ItemUnitConfig — نوع مشتق من ItemLike (invoice-lines.ts) ليضمن التوافق.
+ * الدوال هنا تعمل على "أصغر وحدة متاحة" (getSmallestUnitLevel) وليس دائماً
+ * "الوحدة الصغرى الحقيقية" كما في invoice-lines.ts — لذا لا تُدمج التطبيقات
+ * دون اختبار دقيق.
+ */
+import type { ItemLike } from "@/lib/invoice-lines";
+export type ItemUnitConfig = ItemLike;
 
 export function getEffectiveMajorToMinor(item: ItemUnitConfig | null | undefined): number {
   if (!item) return 1;
