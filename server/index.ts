@@ -382,6 +382,23 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] handover receipt seq error");
   }
 
+  // ── 5g3. Delivery receipt number sequence ────────────────────────────────
+  try {
+    await db.execute(sql`
+      CREATE SEQUENCE IF NOT EXISTS delivery_receipt_number_seq START WITH 1 INCREMENT BY 1
+    `);
+    await db.execute(sql`
+      SELECT setval(
+        'delivery_receipt_number_seq',
+        COALESCE((SELECT MAX(receipt_number) FROM delivery_receipts), 0) + 1,
+        false
+      )
+    `);
+    log("[STARTUP] delivery_receipt_number_seq synced");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] delivery receipt seq error");
+  }
+
   // ── 5h-pre. DB-level hardening for cashier_collection journals ───────────
   try {
     // Add 'failed' enum value if not already present (idempotent — safe every boot)
