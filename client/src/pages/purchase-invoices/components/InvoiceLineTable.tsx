@@ -18,7 +18,8 @@
  *   → تغيير سطر واحد لا يعيد رسم باقي السطور
  */
 import { memo, useRef, useCallback } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ExternalLink } from "lucide-react";
+import { Link } from "wouter";
 import { formatNumber } from "@/lib/formatters";
 import { getUnitName, getLineCoreErrors, getLineDiscountErrors } from "../types";
 import type { InvoiceLineLocal } from "../types";
@@ -168,8 +169,21 @@ const InvoiceLineRow = memo(function InvoiceLineRow({
       {/* الصنف */}
       <td className="py-1 px-2 max-w-[160px]" title={ln.item?.nameAr || ""}>
         <div className="leading-tight">
-          <span className="font-bold" style={{ fontSize: "13px" }}>{ln.item?.nameAr || ln.itemId}</span>
-          {priceWarning && <AlertTriangle className="inline h-3 w-3 text-orange-500 mr-1" />}
+          <div className="flex items-center gap-1">
+            <span className="font-bold" style={{ fontSize: "13px" }}>{ln.item?.nameAr || ln.itemId}</span>
+            {priceWarning && <AlertTriangle className="inline h-3 w-3 text-orange-500" />}
+            {ln.itemId && (
+              <Link
+                href={`/items/${ln.itemId}`}
+                className="text-muted-foreground hover:text-primary transition-colors shrink-0"
+                title="فتح كارت الصنف"
+                data-testid={`link-item-card-${ln.itemId}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="h-3 w-3" />
+              </Link>
+            )}
+          </div>
           <div className="text-[10px] text-muted-foreground font-mono">{ln.item?.itemCode || ""}</div>
         </div>
       </td>
