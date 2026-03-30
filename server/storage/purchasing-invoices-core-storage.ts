@@ -35,7 +35,7 @@ const coreMethods = {
     return (result?.max || 0) + 1;
   },
 
-  async getPurchaseInvoices(filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: PurchaseInvoiceWithDetails[]; total: number; sumTotalAfterVat: number; sumNetPayable: number}> {
+  async getPurchaseInvoices(filters: { supplierId?: string; status?: string; dateFrom?: string; dateTo?: string; invoiceNumber?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: PurchaseInvoiceWithDetails[]; total: number; sumTotalAfterVat: number; sumNetPayable: number}> {
     const conditions = [];
     if (filters.supplierId) conditions.push(eq(purchaseInvoiceHeaders.supplierId, filters.supplierId));
     if (filters.status && filters.status !== "all") {
@@ -45,6 +45,7 @@ const coreMethods = {
     }
     if (filters.dateFrom) conditions.push(sql`${purchaseInvoiceHeaders.invoiceDate} >= ${filters.dateFrom}`);
     if (filters.dateTo) conditions.push(sql`${purchaseInvoiceHeaders.invoiceDate} <= ${filters.dateTo}`);
+    if (filters.invoiceNumber?.trim()) conditions.push(sql`${purchaseInvoiceHeaders.invoiceNumber}::text LIKE ${'%' + filters.invoiceNumber.trim() + '%'}`);
 
     const page = filters.page || 1;
     const pageSize = filters.pageSize || 20;

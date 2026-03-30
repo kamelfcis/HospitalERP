@@ -5,7 +5,7 @@
  * عند النقر على فاتورة → navigate إلى ?id=...
  */
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,11 +29,12 @@ export function InvoiceRegistry({ suppliers }: Props) {
   const [, navigate] = useLocation();
 
   const today = new Date().toISOString().split("T")[0];
-  const [filterDateFrom,   setFilterDateFrom]   = useState(today);
-  const [filterDateTo,     setFilterDateTo]     = useState(today);
-  const [filterSupplierId, setFilterSupplierId] = useState("all");
-  const [filterStatus,     setFilterStatus]     = useState("all");
-  const [page,             setPage]             = useState(1);
+  const [filterDateFrom,     setFilterDateFrom]     = useState(today);
+  const [filterDateTo,       setFilterDateTo]       = useState(today);
+  const [filterSupplierId,   setFilterSupplierId]   = useState("all");
+  const [filterStatus,       setFilterStatus]       = useState("all");
+  const [filterInvoiceNumber, setFilterInvoiceNumber] = useState("");
+  const [page,               setPage]               = useState(1);
   const [confirmDeleteId,  setConfirmDeleteId]  = useState<string | null>(null);
 
   // ── قائمة الفواتير ────────────────────────────────────────────────────────
@@ -42,9 +43,11 @@ export function InvoiceRegistry({ suppliers }: Props) {
   if (filterSupplierId !== "all") qsParams.set("supplierId", filterSupplierId);
   if (filterDateFrom) qsParams.set("dateFrom", filterDateFrom);
   if (filterDateTo)   qsParams.set("dateTo",   filterDateTo);
+  if (filterInvoiceNumber.trim()) qsParams.set("invoiceNumber", filterInvoiceNumber.trim());
 
   const { data: listData, isLoading } = useQuery<{ data: PurchaseInvoiceWithDetails[]; total: number; sumTotalAfterVat: number; sumNetPayable: number }>({
     queryKey: [`/api/purchase-invoices?${qsParams}`],
+    placeholderData: keepPreviousData,
   });
 
   const invoices       = listData?.data  || [];
@@ -111,6 +114,17 @@ export function InvoiceRegistry({ suppliers }: Props) {
             <option value="draft">مسودة</option>
             <option value="approved_costed">مُعتمد ومُسعّر</option>
           </select>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs font-medium">رقم الفاتورة:</span>
+          <input
+            type="text"
+            value={filterInvoiceNumber}
+            onChange={(e) => { setFilterInvoiceNumber(e.target.value); setPage(1); }}
+            placeholder="ابحث برقم..."
+            className="peachtree-input w-[110px]"
+            data-testid="input-filter-invoice-number"
+          />
         </div>
       </div>
 

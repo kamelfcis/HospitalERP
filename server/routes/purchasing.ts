@@ -343,12 +343,13 @@ export function registerPurchasingRoutes(app: Express) {
   // Layer 2: PURCHASE_INVOICES.VIEW required — financial document list
   app.get("/api/purchase-invoices", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_VIEW), async (req, res) => {
     try {
-      const { supplierId, status, dateFrom, dateTo, page, pageSize, includeCancelled } = req.query;
+      const { supplierId, status, dateFrom, dateTo, invoiceNumber, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getPurchaseInvoices({
         supplierId: supplierId as string,
         status: status as string,
         dateFrom: dateFrom as string,
         dateTo: dateTo as string,
+        invoiceNumber: invoiceNumber as string,
         page: page ? parseInt(page as string) : 1,
         pageSize: pageSize ? parseInt(pageSize as string) : 20,
         includeCancelled: includeCancelled === 'true',
