@@ -525,24 +525,32 @@ const methods = {
           lines.push({ accountId: glAccountId!,                          debit: "0.00", credit: expStr,   desc: jDesc });
         }
 
-        // ── فحص التوازن ─────────────────────────────────────────────────
-        const drTotal = lines.reduce((s, l) => s + parseFloat(l.debit),  0);
-        const crTotal = lines.reduce((s, l) => s + parseFloat(l.credit), 0);
-        if (Math.abs(drTotal - crTotal) > 0.001) {
-          throw Object.assign(
-            new Error(`قيد غير متوازن: مدين ${drTotal.toFixed(2)} ≠ دائن ${crTotal.toFixed(2)}`),
-            { code: "SHIFT_CLOSE_JOURNAL_IMBALANCED" }
-          );
-        }
-        if (lines.some(l => !l.accountId)) {
-          throw Object.assign(
-            new Error("سطر قيد يحتوي على حساب فارغ — تحقق من الإعدادات"),
-            { code: "SHIFT_CLOSE_NO_CASHIER_ACCOUNT" }
-          );
-        }
-        if (lines.some(l => parseFloat(l.debit) === 0 && parseFloat(l.credit) === 0)) {
-          throw new Error("سطر قيد بقيمة صفرية — تحقق من مبلغ الوردية");
-        }
+        // ── إزالة الأسطر الصفرية (بدون أثر محاسبي) ─────────────────────
+        // يحدث مثلاً عند closingCash=0 في وردية مدين بحتة، أو عندما
+        // يكون المبلغ المستلم 0 في حالة عجز كامل — الجانب الآخر يُسجَّل.
+        const activeLines = lines.filter(
+          l => parseFloat(l.debit) > 0.001 || parseFloat(l.credit) > 0.001
+        );
+
+        // وردية بدون أي نقدية فعلية أو متوقعة — لا قيد مطلوب
+        if (activeLines.length === 0) {
+          logger.info({ event: "SHIFT_CLOSE_JOURNAL_SKIPPED_ZERO", shiftId }, "[SHIFT_CLOSE] لا نقدية → تجاوز القيد");
+        } else {
+          // ── فحص التوازن ───────────────────────────────────────────────
+          if (activeLines.some(l => !l.accountId)) {
+            throw Object.assign(
+              new Error("سطر قيد يحتوي على حساب فارغ — تحقق من الإعدادات"),
+              { code: "SHIFT_CLOSE_NO_CASHIER_ACCOUNT" }
+            );
+          }
+          const drTotal = activeLines.reduce((s, l) => s + parseFloat(l.debit),  0);
+          const crTotal = activeLines.reduce((s, l) => s + parseFloat(l.credit), 0);
+          if (Math.abs(drTotal - crTotal) > 0.001) {
+            throw Object.assign(
+              new Error(`قيد غير متوازن: مدين ${drTotal.toFixed(2)} ≠ دائن ${crTotal.toFixed(2)}`),
+              { code: "SHIFT_CLOSE_JOURNAL_IMBALANCED" }
+            );
+          }
 
         // ── رقم القيد التسلسلي ──────────────────────────────────────────
         const seqRes    = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS next_num`);
@@ -564,30 +572,31 @@ const methods = {
         `);
         const journalId = (jeRes as any).rows[0].id;
 
-        // ── إدراج أسطر القيد ────────────────────────────────────────────
-        for (let i = 0; i < lines.length; i++) {
-          const l = lines[i];
-          await tx.execute(sql`
-            INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
-            VALUES (${journalId}, ${i + 1}, ${l.accountId}, ${l.debit}, ${l.credit}, ${l.desc})
-          `);
-        }
+          // ── إدراج أسطر القيد ──────────────────────────────────────────
+          for (let i = 0; i < activeLines.length; i++) {
+            const l = activeLines[i];
+            await tx.execute(sql`
+              INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
+              VALUES (${journalId}, ${i + 1}, ${l.accountId}, ${l.debit}, ${l.credit}, ${l.desc})
+            `);
+          }
 
-        logger.info({
-          event:              "SHIFT_CLOSE_JOURNAL_CREATED",
-          shiftId,
-          cashierId:          closedByUserId,
-          expectedCash:       expectedNum,
-          actualCash:         closingNum,
-          variance:           varianceNum,
-          cashierGlAccountId: glAccountId,
-          varianceAccountId:  journalContext.varianceAccountId,
-          treasuryAccountId:  journalContext.custodianAccountId,
-          journalEntryId:     journalId,
-          createdBy:          closedByUserId,
-          timestamp:          new Date().toISOString(),
-        }, "[SHIFT_CLOSE] قيد GL أُنشئ بنجاح");
-      }
+          logger.info({
+            event:              "SHIFT_CLOSE_JOURNAL_CREATED",
+            shiftId,
+            cashierId:          closedByUserId,
+            expectedCash:       expectedNum,
+            actualCash:         closingNum,
+            variance:           varianceNum,
+            cashierGlAccountId: glAccountId,
+            varianceAccountId:  journalContext.varianceAccountId,
+            treasuryAccountId:  journalContext.custodianAccountId,
+            journalEntryId:     journalId,
+            createdBy:          closedByUserId,
+            timestamp:          new Date().toISOString(),
+          }, "[SHIFT_CLOSE] قيد GL أُنشئ بنجاح");
+        } // end else (activeLines.length > 0)
+      } // end if (journalContext)
 
       return updated as CashierShift;
     });
@@ -1473,17 +1482,25 @@ const methods = {
         lines.push({ accountId: cashierGlAccountId,   debit: "0.00",               credit: expectedStr,           desc: description });
       }
 
+      // ── فلترة الأسطر الصفرية (وردية مدين بحتة أو عجز/فائض كامل) ─────────
+      const activeLines2 = lines.filter(
+        l => parseFloat(l.debit) > 0.001 || parseFloat(l.credit) > 0.001
+      );
+
+      if (activeLines2.length === 0) {
+        // لا نقدية فعلية أو متوقعة — تجاوز القيد بالكامل
+        logger.info({ shiftId }, "[SHIFT_CLOSE_JOURNAL] لا نقدية → تجاوز القيد");
+        return;
+      }
+
       // ── فحص السلامة المحاسبية ────────────────────────────────────────────
-      const totalDebit  = lines.reduce((s, l) => s + parseFloat(l.debit),  0);
-      const totalCredit = lines.reduce((s, l) => s + parseFloat(l.credit), 0);
+      const totalDebit  = activeLines2.reduce((s, l) => s + parseFloat(l.debit),  0);
+      const totalCredit = activeLines2.reduce((s, l) => s + parseFloat(l.credit), 0);
       if (Math.abs(totalDebit - totalCredit) > 0.001) {
         throw new Error(`قيد غير متوازن: مدين ${totalDebit.toFixed(2)} ≠ دائن ${totalCredit.toFixed(2)}`);
       }
-      if (lines.some(l => !l.accountId)) {
+      if (activeLines2.some(l => !l.accountId)) {
         throw new Error("سطر قيد يحتوي على حساب فارغ — تحقق من الإعدادات");
-      }
-      if (lines.some(l => parseFloat(l.debit) === 0 && parseFloat(l.credit) === 0)) {
-        throw new Error("سطر قيد بقيمة صفرية — تحقق من مبلغ الوردية");
       }
 
       // ── 6. رقم القيد التسلسلي ────────────────────────────────────────────
@@ -1511,8 +1528,8 @@ const methods = {
       ]);
       const journalId = jeRes.rows[0].id;
 
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
+      for (let i = 0; i < activeLines2.length; i++) {
+        const l = activeLines2[i];
         await client.query(
           `INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
            VALUES ($1, $2, $3, $4, $5, $6)`,
