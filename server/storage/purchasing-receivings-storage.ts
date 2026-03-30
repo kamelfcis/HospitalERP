@@ -361,6 +361,10 @@ const methods = {
   },
 
   async postReceiving(this: DatabaseStorage, id: string): Promise<ReceivingHeader> {
+    // ── حسابات GL تُحلَّل داخل الـ transaction وتُمرَّر للـ fire-and-forget خارجه ─
+    let resolvedInventoryGlAccountId: string | null = null;
+    let resolvedApAccountId: string | null = null;
+
     return await db.transaction(async (tx) => {
       // Acquire row lock first (FOR UPDATE not natively supported in Drizzle query builder)
       await tx.execute(sql`SELECT id FROM receiving_headers WHERE id = ${id} FOR UPDATE`);
@@ -375,6 +379,43 @@ const methods = {
       
       const [supplier] = await tx.select().from(suppliers).where(eq(suppliers.id, header.supplierId));
       const supplierName = supplier?.nameAr || supplier?.nameEn || null;
+
+      // ── التحقق المُسبَق من حسابات GL قبل ترحيل المخزون ──────────────────────
+      // يُجبر الـ transaction على الرجوع إذا كانت الحسابات ناقصة،
+      // مما يمنع ترحيل المخزون بدون قيد GL مرتبط.
+
+      // 1) حساب المخزون (Dr) — من GL المخزن
+      const [wh] = await tx.select({ glAccountId: warehouses.glAccountId, nameAr: warehouses.nameAr })
+        .from(warehouses).where(eq(warehouses.id, header.warehouseId));
+      resolvedInventoryGlAccountId = wh?.glAccountId ?? null;
+      if (!resolvedInventoryGlAccountId) {
+        throw new Error(
+          `المخزن "${wh?.nameAr ?? header.warehouseId}" لا يملك حساب GL محاسبي.\n` +
+          `الحل: إدارة المخازن ← تعديل ← حدد "حساب GL" للمخزن ثم أعِد الترحيل.`
+        );
+      }
+
+      // 2) حساب الموردين (Cr) — من GL المورد أو من ربط purchase_invoice
+      resolvedApAccountId = (supplier as any)?.glAccountId ?? null;
+      if (!resolvedApAccountId) {
+        const supplierType  = (supplier as any)?.supplierType || "drugs";
+        const payablesLT    = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
+        const apMappingRes  = await tx.execute(sql`
+          SELECT credit_account_id FROM account_mappings
+          WHERE transaction_type = 'purchase_invoice'
+            AND line_type        = ${payablesLT}
+            AND is_active        = true
+            AND warehouse_id IS NULL
+          LIMIT 1
+        `);
+        resolvedApAccountId = (apMappingRes as any).rows[0]?.credit_account_id ?? null;
+      }
+      if (!resolvedApAccountId) {
+        throw new Error(
+          `لا يوجد حساب ذمم موردين لإنشاء قيد الاستلام.\n` +
+          `الحل: أضف ربط "payables_drugs" لنوع المعاملة purchase_invoice في شاشة إدارة الحسابات.`
+        );
+      }
 
       const lines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, id));
       const activeLines = lines.filter(l => !l.isRejected);
@@ -513,7 +554,7 @@ const methods = {
         await logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "pending" });
 
         this.generateJournalEntry({
-          sourceType: "receiving",
+          sourceType: "purchase_receiving",
           sourceDocumentId: id,
           reference: `RCV-${recvHeader.receivingNumber}`,
           description: `قيد استلام مورد رقم ${recvHeader.receivingNumber}`,
@@ -522,6 +563,10 @@ const methods = {
             { lineType: "inventory", amount: String(totalCost) },
             { lineType: "payables", amount: String(totalCost) },
           ],
+          dynamicAccountOverrides: {
+            inventory: { debitAccountId: resolvedInventoryGlAccountId ?? undefined },
+            payables:  { creditAccountId: resolvedApAccountId ?? undefined },
+          },
         }).then(async (entry) => {
           if (entry) {
             // Journal created — mark posted on both source doc and event log
