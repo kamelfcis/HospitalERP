@@ -174,6 +174,89 @@ async function retrySalesReturn(sourceId: string): Promise<{ ok: boolean; journa
   return { ok: true, journalEntryId: existing.id };
 }
 
+async function retryDeliveryReceipt(sourceId: string): Promise<{ ok: boolean; journalEntryId?: string }> {
+  // ── 1. جلب بيانات الإيصال ──────────────────────────────────────────────────
+  const raw = await db.execute(sql`
+    SELECT id, receipt_number, receipt_date, total_amount, gl_account_id
+    FROM delivery_receipts
+    WHERE id = ${sourceId}
+  `);
+  const receipt = (raw as any).rows[0];
+  if (!receipt) throw new Error("إيصال التوصيل غير موجود");
+
+  // ── 2. idempotency: هل القيد موجود مسبقاً؟ ──────────────────────────────
+  const existingRaw = await db.execute(sql`
+    SELECT id FROM journal_entries
+    WHERE source_type = 'delivery_receipt' AND source_document_id = ${sourceId}
+    LIMIT 1
+  `);
+  const existing = (existingRaw as any).rows[0];
+  if (existing) {
+    // تأكّد من أن delivery_receipts.journal_entry_id محدَّثة
+    await db.execute(sql`
+      UPDATE delivery_receipts SET journal_entry_id = ${existing.id} WHERE id = ${sourceId}
+    `);
+    return { ok: true, journalEntryId: existing.id };
+  }
+
+  // ── 3. حسابات GL ─────────────────────────────────────────────────────────
+  const glDebitId: string | null = receipt.gl_account_id ?? null;
+  if (!glDebitId) throw new Error("إيصال التوصيل لا يحتوي على حساب خزينة — تحقق من إعدادات الكاشير");
+
+  const mappingsRaw = await db.execute(sql`
+    SELECT debit_account_id FROM account_mappings
+    WHERE transaction_type = 'sales_invoice' AND line_type = 'receivables'
+    LIMIT 1
+  `);
+  const glCreditId: string | null = (mappingsRaw as any).rows[0]?.debit_account_id ?? null;
+  if (!glCreditId) throw new Error("لم يُعيَّن حساب المدينون (receivables) في ربط حسابات فواتير المبيعات");
+
+  // ── 4. الفترة المالية ────────────────────────────────────────────────────
+  const periodRaw = await db.execute(sql`
+    SELECT id FROM fiscal_periods
+    WHERE is_closed = false
+      AND start_date <= ${receipt.receipt_date}::date
+      AND end_date   >= ${receipt.receipt_date}::date
+    LIMIT 1
+  `);
+  const periodId: string | null = (periodRaw as any).rows[0]?.id ?? null;
+
+  // ── 5. إنشاء القيد ───────────────────────────────────────────────────────
+  const entryNumRes = await db.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
+  const entryNumber = Number((entryNumRes as any).rows[0]?.n ?? 1);
+  const amount      = parseFloat(receipt.total_amount).toFixed(2);
+  const receiptNum  = receipt.receipt_number;
+
+  const [entry] = await db.execute(sql`
+    INSERT INTO journal_entries
+      (entry_number, entry_date, description, reference, status, period_id,
+       total_debit, total_credit, source_type, source_document_id, source_entry_type, posted_at)
+    VALUES (
+      ${entryNumber}, ${receipt.receipt_date}::date,
+      ${'تحصيل توصيل منزلي - إيصال ' + receiptNum},
+      ${'DLVMT-' + receiptNum},
+      'posted', ${periodId ?? null},
+      ${amount}, ${amount},
+      'delivery_receipt', ${sourceId}, 'delivery_receipt_collection', now()
+    )
+    RETURNING id
+  `).then(r => (r as any).rows);
+  if (!entry) throw new Error("فشل إدراج رأس القيد");
+
+  await db.execute(sql`
+    INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
+    VALUES
+      (${entry.id}, 1, ${glDebitId},  ${amount}, '0.00', ${'تحصيل توصيل منزلي - إيصال ' + receiptNum}),
+      (${entry.id}, 2, ${glCreditId}, '0.00', ${amount}, ${'ذمم توصيل منزلي - إيصال ' + receiptNum})
+  `);
+
+  await db.execute(sql`
+    UPDATE delivery_receipts SET journal_entry_id = ${entry.id} WHERE id = ${sourceId}
+  `);
+
+  return { ok: true, journalEntryId: entry.id };
+}
+
 async function retryWarehouseTransfer(sourceId: string): Promise<{ ok: boolean; message?: string }> {
   // The warehouse transfer journal is created inside postTransfer's DB transaction.
   // Re-running it would re-post inventory movements — unsafe.
@@ -328,6 +411,8 @@ export async function runAccountingRetryTick(): Promise<{
         result = await retryWarehouseTransfer(source_id);
       } else if (source_type === "sales_return") {
         result = await retrySalesReturn(source_id);
+      } else if (source_type === "delivery_receipt") {
+        result = await retryDeliveryReceipt(source_id);
       } else {
         // Unknown source type — skip
         skipped++;
