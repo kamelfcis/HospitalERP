@@ -350,6 +350,191 @@ export async function createSupplierPayment(
   return { paymentId: result.id, paymentNumber: result.paymentNumber, journalEntryId: result.journalEntryId };
 }
 
+// ─── getSupplierAccountStatement ──────────────────────────────────────────────
+// كشف حساب مورد: مدين / دائن / رصيد متحرك
+// المصادر: فواتير الشراء (دائن) + مرتجعات المشتريات (مدين) + سداد (مدين)
+export interface StatementLine {
+  txnDate:     string;
+  sourceType:  string;          // 'purchase_invoice' | 'purchase_return' | 'supplier_payment'
+  sourceLabel: string;          // 'فاتورة شراء' | 'مرتجع مشتريات' | 'سداد'
+  sourceNumber: string;         // رقم المستند
+  sourceRef:    string | null;  // رقم فاتورة المورد أو رقم الشيك
+  description:  string;
+  debit:        number;         // مدين (يقلل الرصيد)
+  credit:       number;         // دائن (يزيد الرصيد)
+  balance:      number;         // الرصيد المتحرك بعد هذا السطر
+}
+
+export interface SupplierStatementResult {
+  supplierId:      string;
+  nameAr:          string;
+  code:            string;
+  fromDate:        string;
+  toDate:          string;
+  openingBalance:  number;
+  lines:           StatementLine[];
+  totalDebit:      number;
+  totalCredit:     number;
+  closingBalance:  number;
+}
+
+export async function getSupplierAccountStatement(
+  supplierId: string,
+  fromDate:   string,
+  toDate:     string
+): Promise<SupplierStatementResult> {
+  // 1) بيانات المورد
+  const supRes = await pool.query<{ name_ar: string; code: string; opening_balance: string | null }>(
+    `SELECT name_ar, code, opening_balance FROM suppliers WHERE id = $1 LIMIT 1`,
+    [supplierId]
+  );
+  if (!supRes.rows.length) throw new Error("المورد غير موجود");
+  const sup = supRes.rows[0];
+
+  // 2) الرصيد الافتتاحي = الرصيد المُدخل في بيانات المورد
+  //    + كل العمليات قبل fromDate
+  const openingRes = await pool.query<{ opening: string }>(
+    `SELECT (
+       COALESCE(s.opening_balance, 0)::numeric
+       + COALESCE(inv_b.total, 0)
+       - COALESCE(ret_b.total, 0)
+       - COALESCE(pay_b.total, 0)
+     ) AS opening
+     FROM suppliers s
+     LEFT JOIN (
+       SELECT supplier_id, SUM(net_payable::numeric) AS total
+       FROM purchase_invoice_headers
+       WHERE supplier_id = $1 AND status = 'approved_costed'
+         AND invoice_date < $2
+       GROUP BY supplier_id
+     ) inv_b ON inv_b.supplier_id = s.id
+     LEFT JOIN (
+       SELECT supplier_id, SUM(grand_total::numeric) AS total
+       FROM purchase_return_headers
+       WHERE supplier_id = $1 AND finalized_at IS NOT NULL
+         AND COALESCE(return_date, finalized_at::date)::date < $2::date
+       GROUP BY supplier_id
+     ) ret_b ON ret_b.supplier_id = s.id
+     LEFT JOIN (
+       SELECT sp.supplier_id, SUM(sp.total_amount::numeric) AS total
+       FROM supplier_payments sp
+       WHERE sp.supplier_id = $1
+         AND sp.payment_date < $2
+       GROUP BY sp.supplier_id
+     ) pay_b ON pay_b.supplier_id = s.id
+     WHERE s.id = $1`,
+    [supplierId, fromDate]
+  );
+  const openingBalance = Number(openingRes.rows[0]?.opening ?? 0);
+
+  // 3) سطور الفترة (UNION بين 3 مصادر)
+  const txnRes = await pool.query<{
+    txn_date:      string;
+    source_type:   string;
+    source_number: string;
+    source_ref:    string | null;
+    description:   string;
+    debit:         string;
+    credit:        string;
+    sort_ts:       string;
+  }>(
+    `(
+       -- فواتير الشراء (دائن — يزيد ما نحن مدينون به)
+       SELECT
+         pih.invoice_date::text          AS txn_date,
+         'purchase_invoice'              AS source_type,
+         pih.invoice_number::text        AS source_number,
+         pih.supplier_invoice_no         AS source_ref,
+         'فاتورة شراء رقم ' || pih.invoice_number || COALESCE(' / ' || pih.supplier_invoice_no, '') AS description,
+         '0'                             AS debit,
+         pih.net_payable::text           AS credit,
+         pih.created_at::text            AS sort_ts
+       FROM purchase_invoice_headers pih
+       WHERE pih.supplier_id = $1
+         AND pih.status = 'approved_costed'
+         AND pih.invoice_date BETWEEN $2::date AND $3::date
+     )
+     UNION ALL
+     (
+       -- مرتجعات المشتريات (مدين — يقلل ما نحن مدينون به)
+       SELECT
+         COALESCE(prh.return_date, prh.finalized_at::date)::text AS txn_date,
+         'purchase_return'               AS source_type,
+         COALESCE(prh.return_number::text, '—') AS source_number,
+         NULL                            AS source_ref,
+         'مرتجع مشتريات رقم ' || COALESCE(prh.return_number::text, '—') AS description,
+         prh.grand_total::text           AS debit,
+         '0'                             AS credit,
+         prh.finalized_at::text          AS sort_ts
+       FROM purchase_return_headers prh
+       WHERE prh.supplier_id = $1
+         AND prh.finalized_at IS NOT NULL
+         AND COALESCE(prh.return_date, prh.finalized_at::date)::date BETWEEN $2::date AND $3::date
+     )
+     UNION ALL
+     (
+       -- مدفوعات الموردين (مدين — يقلل ما نحن مدينون به)
+       SELECT
+         sp.payment_date::text           AS txn_date,
+         'supplier_payment'              AS source_type,
+         LPAD(sp.payment_number::text, 4, '0') AS source_number,
+         COALESCE(sp.reference, sp.notes) AS source_ref,
+         'سداد رقم #' || LPAD(sp.payment_number::text, 4, '0')
+           || CASE WHEN sp.reference IS NOT NULL THEN ' / ' || sp.reference ELSE '' END AS description,
+         sp.total_amount::text           AS debit,
+         '0'                             AS credit,
+         sp.created_at::text             AS sort_ts
+       FROM supplier_payments sp
+       WHERE sp.supplier_id = $1
+         AND sp.payment_date BETWEEN $2::date AND $3::date
+     )
+     ORDER BY txn_date, sort_ts`,
+    [supplierId, fromDate, toDate]
+  );
+
+  // 4) حساب الرصيد المتحرك
+  let runningBalance = openingBalance;
+  const lines: StatementLine[] = txnRes.rows.map((r) => {
+    const dr = Number(r.debit  ?? 0);
+    const cr = Number(r.credit ?? 0);
+    runningBalance = runningBalance + cr - dr;
+
+    const typeMap: Record<string, string> = {
+      purchase_invoice: "فاتورة شراء",
+      purchase_return:  "مرتجع مشتريات",
+      supplier_payment: "سداد",
+    };
+
+    return {
+      txnDate:      r.txn_date,
+      sourceType:   r.source_type,
+      sourceLabel:  typeMap[r.source_type] ?? r.source_type,
+      sourceNumber: r.source_number,
+      sourceRef:    r.source_ref ?? null,
+      description:  r.description,
+      debit:        dr,
+      credit:       cr,
+      balance:      runningBalance,
+    };
+  });
+
+  const totalDebit  = lines.reduce((s, l) => s + l.debit,  0);
+  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+
+  return {
+    supplierId,
+    nameAr:         sup.name_ar,
+    code:           sup.code,
+    fromDate,
+    toDate,
+    openingBalance,
+    lines,
+    totalDebit,
+    totalCredit,
+    closingBalance: openingBalance + totalCredit - totalDebit,
+  };
+}
+
 // ─── getSupplierPaymentReport ─────────────────────────────────────────────────
 // تقرير تفصيلي: كل فاتورة مع سجل مدفوعاتها
 export async function getSupplierPaymentReport(

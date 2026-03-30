@@ -27,7 +27,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ChevronsUpDown, Check, Banknote, AlertTriangle, FileText, Loader2, Save,
-  RefreshCw, CircleDollarSign, Hash, ChevronUp, ChevronDown,
+  RefreshCw, CircleDollarSign, Hash, ChevronUp, ChevronDown, Printer,
 } from "lucide-react";
 import { useTreasurySelector }              from "@/hooks/use-treasury-selector";
 import { TreasurySelector }                 from "@/components/shared/TreasurySelector";
@@ -43,21 +43,32 @@ interface BalanceResult {
   currentBalance: string;
 }
 
-interface ReportRow extends SupplierInvoicePaymentRow {
-  paymentId:   string | null;
-  paymentDate: string | null;
-  paymentRef:  string | null;
+interface StatementLine {
+  txnDate:      string;
+  sourceType:   string;
+  sourceLabel:  string;
+  sourceNumber: string;
+  sourceRef:    string | null;
+  description:  string;
+  debit:        number;
+  credit:       number;
+  balance:      number;
 }
 
-interface ReportResult {
-  rows:            ReportRow[];
-  totalNetPayable: string;
-  totalReturns:    string;
-  totalPaid:       string;
-  totalRemaining:  string;
+interface SupplierStatementResult {
+  supplierId:     string;
+  nameAr:         string;
+  code:           string;
+  fromDate:       string;
+  toDate:         string;
+  openingBalance: number;
+  lines:          StatementLine[];
+  totalDebit:     number;
+  totalCredit:    number;
+  closingBalance: number;
 }
 
-type ActiveTab = "payment" | "report";
+type ActiveTab = "payment" | "statement";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -709,154 +720,258 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
   );
 }
 
-// ─── ReportTab ────────────────────────────────────────────────────────────────
+// ─── StatementTab — كشف حساب مورد ────────────────────────────────────────────
 
-function ReportTab({ supplierId }: { supplierId: string }) {
-  const [statusFilter, setStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
+const thisYear = new Date().getFullYear();
+const firstOfYear = () => `${thisYear}-01-01`;
 
-  const { data, isLoading, refetch } = useQuery<ReportResult>({
-    queryKey: ["/api/supplier-payments/report", supplierId, statusFilter],
+function balanceClass(val: number) {
+  if (val > 0.005)  return "text-red-600 dark:text-red-400";
+  if (val < -0.005) return "text-blue-600 dark:text-blue-400";
+  return "text-green-600 dark:text-green-400";
+}
+
+function StatementTab({ supplierId }: { supplierId: string }) {
+  const [fromDate, setFromDate] = useState(firstOfYear());
+  const [toDate,   setToDate]   = useState(today());
+
+  const { data, isLoading, refetch } = useQuery<SupplierStatementResult>({
+    queryKey: ["/api/supplier-payments/statement", supplierId, fromDate, toDate],
     queryFn:  async () => {
       const r = await fetch(
-        `/api/supplier-payments/report/${supplierId}?status=${statusFilter}`,
+        `/api/supplier-payments/statement/${supplierId}?from=${fromDate}&to=${toDate}`,
         { credentials: "include" }
       );
-      if (!r.ok) throw new Error("فشل تحميل التقرير");
+      if (!r.ok) throw new Error("فشل تحميل كشف الحساب");
       return r.json();
     },
     enabled: !!supplierId,
-    staleTime: 5_000,
+    staleTime: 10_000,
   });
 
-  const rows = data?.rows ?? [];
+  const printDate = new Date().toLocaleDateString("ar-EG", {
+    year: "numeric", month: "long", day: "numeric",
+  });
+
+  const sourceTypeLabel: Record<string, string> = {
+    purchase_invoice: "فاتورة شراء",
+    purchase_return:  "مرتجع مشتريات",
+    supplier_payment: "سداد",
+  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0 gap-2">
-      {/* Filter bar */}
-      <div className="flex items-center gap-2 shrink-0">
-        <Label className="text-xs text-muted-foreground shrink-0">عرض:</Label>
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-          <SelectTrigger className="h-7 w-[170px] text-xs" data-testid="report-filter">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">جميع الفواتير</SelectItem>
-            <SelectItem value="unpaid">الغير مسددة فقط</SelectItem>
-            <SelectItem value="paid">المسددة فقط</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => refetch()}>
+
+      {/* ── Controls bar (hidden when printing) ─────────────────────────── */}
+      <div className="flex items-center gap-2 flex-wrap shrink-0 no-print">
+        <Label className="text-xs text-muted-foreground shrink-0">من:</Label>
+        <Input
+          type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+          className="h-7 w-[130px] text-xs"
+          data-testid="stmt-from"
+        />
+        <Label className="text-xs text-muted-foreground shrink-0">إلى:</Label>
+        <Input
+          type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+          className="h-7 w-[130px] text-xs"
+          data-testid="stmt-to"
+        />
+        <Button variant="outline" size="sm" className="h-7 px-2 text-xs gap-1" onClick={() => refetch()}>
           <RefreshCw className="h-3.5 w-3.5" />
+          تحديث
         </Button>
-        {/* Summary pills */}
+
         {data && (
-          <div className="flex gap-2 text-xs ms-2">
-            <span className="px-2 py-0.5 rounded bg-muted">
-              إجمالي: <strong>{formatCurrency(data.totalNetPayable)}</strong>
+          <>
+            <div className="h-5 w-px bg-border mx-1" />
+            <span className="text-xs text-muted-foreground">
+              رصيد افتتاحي: <strong>{formatCurrency(String(data.openingBalance))}</strong>
             </span>
-            {parseFloat(data.totalReturns) > 0 && (
-              <span className="px-2 py-0.5 rounded bg-red-100 text-red-700">
-                مرتجع: <strong>{formatCurrency(data.totalReturns)}</strong>
-              </span>
-            )}
-            <span className="px-2 py-0.5 rounded bg-green-100 text-green-700">
-              مسدد: <strong>{formatCurrency(data.totalPaid)}</strong>
+            <span className={cx("text-xs font-bold", balanceClass(data.closingBalance))}>
+              الرصيد الختامي: {formatCurrency(String(data.closingBalance))}
+              {data.closingBalance > 0.005 ? " (لصالح المورد)" : data.closingBalance < -0.005 ? " (لصالحنا)" : " (متوازن)"}
             </span>
-            <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-700">
-              متبقي: <strong>{formatCurrency(data.totalRemaining)}</strong>
-            </span>
-          </div>
+            <div className="h-5 w-px bg-border mx-1" />
+            <Button
+              variant="outline" size="sm"
+              className="h-7 px-2 text-xs gap-1 border-primary text-primary hover:bg-primary/10"
+              onClick={() => window.print()}
+              data-testid="button-print-statement"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              طباعة كشف الحساب
+            </Button>
+          </>
         )}
       </div>
 
-      {/* Table */}
+      {/* ── Statement body ───────────────────────────────────────────────── */}
       {isLoading ? (
-        <div className="flex-1 flex items-center justify-center gap-2 text-muted-foreground">
+        <div className="flex-1 flex items-center justify-center gap-2 text-muted-foreground no-print">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span>جارٍ تحميل التقرير...</span>
+          <span>جارٍ تحميل كشف الحساب...</span>
         </div>
-      ) : !rows.length ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-          <FileText className="h-8 w-8 opacity-40" />
-          <p className="text-sm">لا توجد بيانات بهذا الفلتر</p>
-        </div>
-      ) : (
-        <div className="flex-1 min-h-0 border rounded-lg overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-y-auto">
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
+      ) : !data ? null : (
+        <div className="flex-1 min-h-0 overflow-auto" id="stmt-print-area">
+
+          {/* ── Print header (shown only when printing) ─────────────────── */}
+          <div className="hidden print:block mb-4 text-center">
+            <h2 className="text-lg font-bold">كشف حساب مورد</h2>
+            <p className="text-sm font-semibold mt-1">
+              {data.nameAr} &mdash; كود: {data.code}
+            </p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              الفترة من {formatDateShort(data.fromDate)} إلى {formatDateShort(data.toDate)}
+              &nbsp;|&nbsp; تاريخ الطباعة: {printDate}
+            </p>
+            <div className="border-b border-gray-400 my-2" />
+          </div>
+
+          {/* ── Summary strip (visible on screen only) ──────────────────── */}
+          <div className="no-print flex gap-3 text-xs mb-2 flex-wrap">
+            <span className="px-2 py-0.5 rounded bg-muted">
+              عدد السطور: <strong>{data.lines.length}</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+              إجمالي المدين: <strong>{formatCurrency(String(data.totalDebit))}</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+              إجمالي الدائن: <strong>{formatCurrency(String(data.totalCredit))}</strong>
+            </span>
+          </div>
+
+          <Table className="text-xs">
+            <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm print:bg-gray-100">
+              <TableRow>
+                <TableHead className="text-right w-[90px] print:text-[11px]">التاريخ</TableHead>
+                <TableHead className="text-right w-[110px] print:text-[11px]">نوع العملية</TableHead>
+                <TableHead className="text-right w-[80px] print:text-[11px]">رقم المستند</TableHead>
+                <TableHead className="text-right print:text-[11px]">رقم / مرجع</TableHead>
+                <TableHead className="text-right print:text-[11px]">البيان</TableHead>
+                <TableHead className="text-left w-[110px] print:text-[11px] text-red-700">مدين</TableHead>
+                <TableHead className="text-left w-[110px] print:text-[11px] text-green-700">دائن</TableHead>
+                <TableHead className="text-left w-[120px] print:text-[11px]">الرصيد</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* Opening balance row */}
+              <TableRow className="bg-muted/30 font-semibold print:bg-gray-50">
+                <TableCell className="print:text-[11px]">—</TableCell>
+                <TableCell className="print:text-[11px]">رصيد افتتاحي</TableCell>
+                <TableCell />
+                <TableCell />
+                <TableCell className="print:text-[11px]">
+                  رصيد ما قبل {formatDateShort(fromDate)}
+                </TableCell>
+                <TableCell className="text-left font-mono print:text-[11px]">—</TableCell>
+                <TableCell className="text-left font-mono print:text-[11px]">—</TableCell>
+                <TableCell className={cx(
+                  "text-left font-mono font-bold print:text-[11px]",
+                  balanceClass(data.openingBalance)
+                )}>
+                  {formatCurrency(String(data.openingBalance))}
+                </TableCell>
+              </TableRow>
+
+              {/* Transaction lines */}
+              {data.lines.length === 0 ? (
                 <TableRow>
-                  <TableHead className="text-right text-xs w-[80px]">#</TableHead>
-                  <TableHead className="text-right text-xs">رقم فاتورة المورد</TableHead>
-                  <TableHead className="text-right text-xs w-[80px]">رقم المطالبة</TableHead>
-                  <TableHead className="text-right text-xs w-[95px]">التاريخ</TableHead>
-                  <TableHead className="text-left text-xs">صافي الفاتورة</TableHead>
-                  <TableHead className="text-left text-xs text-red-600">مرتجع</TableHead>
-                  <TableHead className="text-left text-xs">المسدد</TableHead>
-                  <TableHead className="text-left text-xs">المتبقي</TableHead>
-                  <TableHead className="text-right text-xs w-[80px]">الحالة</TableHead>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    لا توجد حركات في هذه الفترة
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => {
-                  const remaining = parseFloat(row.remaining);
-                  const isPaid    = remaining <= 0.005;
-                  return (
-                    <TableRow key={row.invoiceId} data-testid={`rpt-row-${row.invoiceId}`}>
-                      <TableCell className="font-mono text-xs">{row.invoiceNumber}</TableCell>
-                      <TableCell className="text-xs">{row.supplierInvoiceNo || "—"}</TableCell>
-                      <TableCell className="text-xs font-mono text-muted-foreground">
-                        {row.receivingNumber ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-xs">{formatDateShort(row.invoiceDate)}</TableCell>
-                      <TableCell className="text-left text-xs font-mono">
-                        {formatCurrency(row.netPayable)}
-                      </TableCell>
-                      <TableCell className="text-left text-xs font-mono text-red-500">
-                        {parseFloat(row.invoiceReturns) > 0 ? formatCurrency(row.invoiceReturns) : "—"}
-                      </TableCell>
-                      <TableCell className="text-left text-xs font-mono text-green-600">
-                        {parseFloat(row.totalPaid) > 0 ? formatCurrency(row.totalPaid) : "—"}
-                      </TableCell>
-                      <TableCell className={cx(
-                        "text-left text-xs font-mono font-semibold",
-                        isPaid ? "text-muted-foreground" : "text-orange-600"
+              ) : (
+                data.lines.map((line, idx) => (
+                  <TableRow
+                    key={idx}
+                    className={cx(
+                      "hover:bg-muted/30",
+                      line.sourceType === "supplier_payment" ? "bg-green-50/50 dark:bg-green-950/20" :
+                      line.sourceType === "purchase_return"  ? "bg-orange-50/50 dark:bg-orange-950/20" : ""
+                    )}
+                    data-testid={`stmt-row-${idx}`}
+                  >
+                    <TableCell className="font-mono print:text-[11px]">
+                      {formatDateShort(line.txnDate)}
+                    </TableCell>
+                    <TableCell className="print:text-[11px]">
+                      <Badge variant="outline" className={cx(
+                        "text-[10px] px-1.5 font-normal print:border-0 print:p-0",
+                        line.sourceType === "purchase_invoice" ? "border-blue-300 text-blue-700 bg-blue-50" :
+                        line.sourceType === "purchase_return"  ? "border-orange-300 text-orange-700 bg-orange-50" :
+                                                                  "border-green-300 text-green-700 bg-green-50"
                       )}>
-                        {isPaid ? "—" : formatCurrency(row.remaining)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={cx(
-                          "text-[10px] px-1.5",
-                          isPaid
-                            ? "bg-green-100 text-green-700 border-green-200 hover:bg-green-100"
-                            : "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-50"
-                        )} variant="outline">
-                          {isPaid ? "مسدد" : "متبقي"}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-              <TableFooter className="sticky bottom-0 bg-muted/80 backdrop-blur-sm">
-                <TableRow className="font-bold">
-                  <TableCell colSpan={4} className="text-right text-xs">الإجمالي</TableCell>
-                  <TableCell className="text-left text-xs font-mono">
-                    {formatCurrency(data?.totalNetPayable)}
-                  </TableCell>
-                  <TableCell className="text-left text-xs font-mono text-red-500">
-                    {formatCurrency(data?.totalReturns)}
-                  </TableCell>
-                  <TableCell className="text-left text-xs font-mono text-green-600">
-                    {formatCurrency(data?.totalPaid)}
-                  </TableCell>
-                  <TableCell className="text-left text-xs font-mono text-orange-600">
-                    {formatCurrency(data?.totalRemaining)}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableFooter>
-            </Table>
+                        {sourceTypeLabel[line.sourceType] ?? line.sourceLabel}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono print:text-[11px]">
+                      {line.sourceNumber}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground print:text-[11px]">
+                      {line.sourceRef ?? "—"}
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate print:text-[11px]" title={line.description}>
+                      {line.description}
+                    </TableCell>
+                    <TableCell className={cx(
+                      "text-left font-mono print:text-[11px]",
+                      line.debit > 0 ? "text-red-600 font-semibold" : "text-muted-foreground"
+                    )}>
+                      {line.debit > 0 ? formatCurrency(String(line.debit)) : "—"}
+                    </TableCell>
+                    <TableCell className={cx(
+                      "text-left font-mono print:text-[11px]",
+                      line.credit > 0 ? "text-green-700 font-semibold" : "text-muted-foreground"
+                    )}>
+                      {line.credit > 0 ? formatCurrency(String(line.credit)) : "—"}
+                    </TableCell>
+                    <TableCell className={cx(
+                      "text-left font-mono font-bold print:text-[11px]",
+                      balanceClass(line.balance)
+                    )}>
+                      {formatCurrency(String(Math.abs(line.balance)))}
+                      {" "}
+                      <span className="text-[10px] font-normal opacity-70">
+                        {line.balance > 0.005 ? "د" : line.balance < -0.005 ? "م" : ""}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+            <TableFooter className="sticky bottom-0 bg-muted/90 backdrop-blur-sm print:bg-gray-100">
+              <TableRow className="font-bold">
+                <TableCell colSpan={5} className="text-right print:text-[11px]">
+                  الإجمالي
+                </TableCell>
+                <TableCell className="text-left font-mono text-red-700 print:text-[11px]">
+                  {formatCurrency(String(data.totalDebit))}
+                </TableCell>
+                <TableCell className="text-left font-mono text-green-700 print:text-[11px]">
+                  {formatCurrency(String(data.totalCredit))}
+                </TableCell>
+                <TableCell className={cx(
+                  "text-left font-mono font-bold print:text-[11px]",
+                  balanceClass(data.closingBalance)
+                )}>
+                  {formatCurrency(String(Math.abs(data.closingBalance)))}
+                  {" "}
+                  <span className="text-[10px] font-normal opacity-70">
+                    {data.closingBalance > 0.005 ? "دائن" : data.closingBalance < -0.005 ? "مدين" : "متوازن"}
+                  </span>
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
+
+          {/* ── Print footer ────────────────────────────────────────────── */}
+          <div className="hidden print:flex mt-8 justify-between text-xs text-gray-600 px-4">
+            <div className="text-center">
+              <div className="border-t border-gray-400 pt-1 w-40">توقيع المدير المالي</div>
+            </div>
+            <div className="text-center">
+              <div className="border-t border-gray-400 pt-1 w-40">توقيع المورد / ختمه</div>
+            </div>
           </div>
         </div>
       )}
@@ -898,16 +1013,16 @@ export default function SupplierPaymentsPage() {
               سداد الفواتير
             </button>
             <button
-              onClick={() => setActiveTab("report")}
+              onClick={() => setActiveTab("statement")}
               className={cx(
                 "px-4 py-1.5 transition-colors font-medium border-r",
-                activeTab === "report"
+                activeTab === "statement"
                   ? "bg-primary text-primary-foreground"
                   : "hover:bg-muted text-muted-foreground"
               )}
-              data-testid="tab-report"
+              data-testid="tab-statement"
             >
-              تقرير المدفوعات
+              كشف الحساب
             </button>
           </div>
         )}
@@ -931,7 +1046,7 @@ export default function SupplierPaymentsPage() {
         ) : activeTab === "payment" ? (
           <PaymentTab supplierId={supplierId} />
         ) : (
-          <ReportTab supplierId={supplierId} />
+          <StatementTab supplierId={supplierId} />
         )}
       </div>
     </div>
