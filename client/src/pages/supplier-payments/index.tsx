@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo, useCallback, useRef, KeyboardEvent } from "react";
-import { useQuery, useMutation }           from "@tanstack/react-query";
+import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
 import { useToast }                         from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import { formatCurrency, formatDateShort }  from "@/lib/formatters";
@@ -247,7 +247,7 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
   const [claimFilter, setClaimFilter] = useState("");
 
   // Invoices
-  const { data: invoices = [], isLoading } = useQuery<SupplierInvoicePaymentRow[]>({
+  const { data: invoices = [], isLoading, isFetching } = useQuery<SupplierInvoicePaymentRow[]>({
     queryKey: ["/api/supplier-payments/invoices", supplierId, claimFilter],
     queryFn:  async () => {
       const qs = claimFilter ? `&claimNumber=${encodeURIComponent(claimFilter)}` : "";
@@ -257,8 +257,9 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
       if (!r.ok) throw new Error("فشل تحميل الفواتير");
       return r.json();
     },
-    enabled: !!supplierId,
-    staleTime: 5_000,
+    enabled:          !!supplierId,
+    staleTime:        5_000,
+    placeholderData:  keepPreviousData,
   });
 
   // Payment state
@@ -429,13 +430,6 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
     </div>
   );
 
-  if (!invoices.length) return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-      <Check className="h-10 w-10 text-green-500" />
-      <p className="text-sm">لا توجد فواتير غير مسددة لهذا المورد</p>
-    </div>
-  );
-
   return (
     <div className="flex-1 flex flex-col min-h-0 gap-2">
 
@@ -584,6 +578,28 @@ function PaymentTab({ supplierId }: { supplierId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {isFetching && sortedInvoices.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-center py-6 text-muted-foreground">
+                    <div className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>جارٍ البحث...</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isFetching && sortedInvoices.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                    <div className="flex flex-col items-center gap-2">
+                      <Check className="h-8 w-8 text-green-500 opacity-70" />
+                      <span className="text-sm">
+                        {claimFilter ? `لا توجد فواتير بهذا الرقم "${claimFilter}"` : "لا توجد فواتير غير مسددة"}
+                      </span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
               {sortedInvoices.map((inv, idx) => {
                 const remaining   = parseFloat(inv.remaining);
                 const inputVal    = inputs[inv.invoiceId] ?? "";
