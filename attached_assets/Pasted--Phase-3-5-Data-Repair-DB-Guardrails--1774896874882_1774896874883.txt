@@ -1,0 +1,163 @@
+أريد منك تنفيذ Phase 3.5: Data Repair + DB Guardrails بدقة شديدة جدًا، وبدون أي تغييرات خارج النطاق.
+
+الهدف:
+1) إصلاح البيانات القديمة المتضررة بأمان
+2) منع تكرار نفس مشاكل المخزون والقيود مستقبلًا على مستوى قاعدة البيانات
+3) عدم تنفيذ أي إصلاح destructive تلقائي بدون فحص وتوثيق
+
+قواعد صارمة:
+- لا تغيّر UI
+- لا تنفذ refactor واسع
+- لا تحذف أي بيانات تلقائيًا إلا إذا كان المسار آمنًا جدًا ومشروحًا
+- أي repair يجب أن يمر بثلاث مراحل:
+  1) detection query
+  2) impact explanation
+  3) repair query منفصلة
+- فرّق بوضوح بين:
+  confirmed corruption
+  repairable safely
+  manual decision required
+
+==================================
+TASK-DR-01: Duplicate lots repair plan
+==================================
+
+بناءً على النتيجة الحالية، هناك 2 duplicate lots مؤكدة.
+
+المطلوب:
+- اعرض تقريرًا تفصيليًا عن الحالتين:
+  - lot ids
+  - item_id / item name
+  - warehouse_id / warehouse name
+  - expiry_month / expiry_year
+  - qty_in_minor لكل lot
+  - عدد inventory_lot_movements المرتبط بكل lot
+  - هل أحد الـ lots qty=0 أم لا
+  - أي lot هو الأحدث وأي lot هو الأنسب للاحتفاظ به
+- لا تنفذ الدمج مباشرة
+- أعطني repair script آمن خطوة بخطوة
+- إذا كان نقل الحركات من lot إلى lot آخر قد يسبب كسر traceability، وضّح ذلك بوضوح
+
+أريد أيضًا:
+- query تحقق بعد الدمج
+- rollback idea إن أمكن
+
+==================================
+TASK-DR-02: Add DB guardrail against future duplicate lots
+==================================
+
+بعد مراجعة حالة الـ duplicate lots الحالية:
+
+- اقترح القيد/الـ unique index الصحيح لمنع تكرار نفس lot مستقبلًا على مستوى DB
+- راعِ التعامل الصحيح مع NULL في expiry_month / expiry_year
+- إذا كان unique index المباشر قد يفشل بسبب البيانات الحالية:
+  - لا تطبقه فورًا
+  - جهز migration conditional:
+    - يفحص أولًا وجود duplicates
+    - إذا لا يوجد duplicates → ينشئ index
+    - إذا يوجد → يسجل warning واضح ولا ينشئه
+- أريد الكود الفعلي المناسب في startup migration أو migration script
+
+المهم:
+أريد DB-level prevention، وليس اعتمادًا فقط على application logic.
+
+==================================
+TASK-DR-03: Posted receivings without journal
+==================================
+
+النتيجة الحالية: 18 receiving posted بلا journal بسبب نقص account mappings.
+
+المطلوب:
+- أعطني query دقيقة تحصر الـ 18 receiving
+- اذكر لكل receiving:
+  - id
+  - date
+  - supplier / warehouse
+  - journal status
+  - هل يوجد accounting_event_log أم لا
+- ميّز بين:
+  1) posted without journal but retryable
+  2) posted with failed/needs_retry trace
+  3) posted with no trace at all
+
+ثم:
+- أعطني خطة repair آمنة:
+  1) فحص/استكمال account mappings المطلوبة
+  2) إعادة إنشاء accounting_event_log إن كان ناقصًا
+  3) تشغيل retry بأمان
+  4) verification query بعد الإصلاح
+
+لا تنفذ أي retry فعلي قبل أن تعرض التقرير.
+
+==================================
+TASK-DR-04: Orphaned delivery_receipt events
+==================================
+
+هناك 4 delivery_receipt orphaned events برسالة "إيصال غير موجود".
+
+المطلوب:
+- اعرض event ids + source ids + created_at + status + error_message
+- افحص هل source_document_id يشير إلى سجل محذوف فعلاً أم mismatch type/casting
+- صنف كل حالة:
+  - harmless orphan
+  - retryable after mapping fix
+  - data inconsistency requiring manual investigation
+
+ثم:
+- أعطني repair recommendation لكل حالة
+- لا تنفذ حذف أو close للأحداث تلقائيًا
+
+==================================
+TASK-DR-05: Legacy posted journals with period_id = null
+==================================
+
+نعلم من المرحلة السابقة أن هناك 62 قيد قديم posted بـ period_id = null.
+
+المطلوب:
+- أعطني query تفصيلية لحصرهم
+- صنّفهم حسب:
+  - source_type
+  - entry_date
+  - هل توجد fiscal period مفتوحة/مناسبة حسب التاريخ
+  - هل يمكن ربطهم تلقائيًا أم يحتاجون قرارًا يدويًا
+- جهز repair UPDATE script آمن يربط فقط الحالات المؤكدة 100%
+- وأعطني query منفصلة للحالات التي لا ينبغي إصلاحها تلقائيًا
+
+لا تنفذ التحديث مباشرة إلا إذا كان المسار آمنًا وواضحًا جدًا.
+
+==================================
+TASK-DR-06: Verification dashboard queries
+==================================
+
+أريد مجموعة queries جاهزة أستخدمها بعد أي repair للتحقق من السلامة:
+
+1) duplicate lots count
+2) posted receivings without journal count
+3) accounting events needs_retry by source_type
+4) posted journals with period_id null count
+5) duplicate journal check by source_type/source_document_id
+6) lots with impossible negative or inconsistent qty
+7) orphaned accounting events
+
+==================================
+OUTPUT REQUIRED
+==================================
+
+أريد التقرير النهائي بهذا الشكل:
+
+1) Confirmed corruptions
+2) Safe auto-repairs possible
+3) Manual repairs required
+4) DB guardrails to add now
+5) Repair scripts (separate, not mixed)
+6) Verification queries
+7) Risks if left unresolved
+8) Recommended execution order:
+   - today
+   - this week
+   - later hardening
+
+مهم جدًا:
+- إذا اكتشفت أن أي repair قد يؤثر على traceability أو audit trail، اذكر ذلك صراحة
+- لا تُخفِ المخاطر
+- إذا كان الأفضل ترك بعض الحالات لقرار يدوي، قل ذلك بوضوح

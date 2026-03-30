@@ -330,22 +330,28 @@ const methods = {
             expiryMatchConditions.push(sql`${inventoryLots.expiryYear} IS NULL`);
           }
 
-          const existingDestLots = await tx.select().from(inventoryLots)
-            .where(and(
-              eq(inventoryLots.itemId, line.itemId),
-              eq(inventoryLots.warehouseId, transfer.destinationWarehouseId),
-              eq(inventoryLots.isActive, true),
-              ...expiryMatchConditions,
-              sql`${inventoryLots.purchasePrice}::numeric = ${alloc.unitCost}::numeric`
-            ));
+          // SELECT ... FOR UPDATE: يُقفل سطر lot الوجهة داخل الـ transaction لمنع lost-update عند تحويلين متوازيين
+          const rawDestLots = await tx.execute(sql`
+            SELECT * FROM inventory_lots
+            WHERE item_id = ${line.itemId}
+              AND warehouse_id = ${transfer.destinationWarehouseId}
+              AND is_active = true
+              AND purchase_price::numeric = ${alloc.unitCost}::numeric
+              AND ${alloc.expiryMonth != null ? sql`expiry_month = ${alloc.expiryMonth}` : sql`expiry_month IS NULL`}
+              AND ${alloc.expiryYear != null ? sql`expiry_year = ${alloc.expiryYear}` : sql`expiry_year IS NULL`}
+              AND ${alloc.expiryDate ? sql`expiry_date = ${alloc.expiryDate}` : sql`expiry_date IS NULL`}
+            FOR UPDATE
+          `);
+          const existingDestLots = (rawDestLots as any).rows ?? [];
 
           let destLotId: string;
 
           if (existingDestLots.length > 0) {
             destLotId = existingDestLots[0].id;
             const allocSalePrice = parseFloat(alloc.lotSalePrice || "0");
-            const existingSalePrice = parseFloat(existingDestLots[0].salePrice || "0");
-            const destSalePrice = allocSalePrice > 0 ? alloc.lotSalePrice : (existingSalePrice > 0 ? existingDestLots[0].salePrice : "0");
+            // raw SQL يُرجع snake_case
+            const existingSalePrice = parseFloat((existingDestLots[0] as any).sale_price || "0");
+            const destSalePrice = allocSalePrice > 0 ? alloc.lotSalePrice : (existingSalePrice > 0 ? (existingDestLots[0] as any).sale_price : "0");
             await tx.execute(sql`
               UPDATE inventory_lots 
               SET qty_in_minor = qty_in_minor::numeric + ${alloc.allocatedQty.toFixed(4)}::numeric,

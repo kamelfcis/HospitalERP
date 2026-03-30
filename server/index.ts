@@ -688,6 +688,37 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] Stay Engine UNIQUE index error");
   }
 
+  // ── TASK-DR-02: Inventory lots true-duplicate guardrail ─────────────────
+  // يفحص وجود lots مكررة بنفس (item+warehouse+expiry+purchasePrice) — وهي corruption حقيقية
+  // ملاحظة: lots مختلفة الـ purchasePrice لنفس (item+warehouse+expiry) مقصودة (تقسيم التكلفة في التحويل)
+  try {
+    const trueDups = await db.execute(sql`
+      SELECT item_id, warehouse_id, expiry_month, expiry_year,
+             CAST(purchase_price AS numeric) AS price, COUNT(*) AS cnt
+      FROM inventory_lots
+      WHERE is_active = true
+      GROUP BY item_id, warehouse_id, expiry_month, expiry_year, CAST(purchase_price AS numeric)
+      HAVING COUNT(*) > 1
+    `);
+    const trueDupRows = (trueDups as any).rows ?? [];
+    if (trueDupRows.length > 0) {
+      logger.warn(
+        { duplicates: trueDupRows.length },
+        `[STARTUP] INVENTORY_LOTS: ${trueDupRows.length} true-duplicate lot group(s) found (same item+warehouse+expiry+cost). ` +
+        `UNIQUE index NOT created. Run data repair before re-enabling.`
+      );
+    } else {
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_lots_item_wh_expiry_cost
+        ON inventory_lots (item_id, warehouse_id, expiry_month, expiry_year, purchase_price)
+        WHERE is_active = true
+      `);
+      log("[STARTUP] uq_lots_item_wh_expiry_cost UNIQUE index ensured (true-duplicate prevention active)");
+    }
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] Inventory lots UNIQUE index error");
+  }
+
   // ── 5h. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
