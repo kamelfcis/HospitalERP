@@ -948,17 +948,27 @@ const methods = {
     const discountVal = parseFloat(header.discountValue?.toString() || "0");
     const totalCogs   = cogsDrugs + cogsSupplies;
 
+    // ── قراءة returns_mode من الإعدادات ──────────────────────────────────────
+    // reverse_original (الافتراضي): عكس القيد الأصلي على نفس حسابات sales_invoice
+    // separate_accounts: استخدام ربط حسابات sales_return المستقلة
+    const modeRes = await db.execute(sql`SELECT value FROM system_settings WHERE key = 'returns_mode' LIMIT 1`);
+    const returnsMode: string = ((modeRes as any).rows?.[0] as any)?.value ?? "reverse_original";
+    const forceReverseOriginal = returnsMode !== "separate_accounts";
+
     // ── جلب ربط حسابات مردود المبيعات ────────────────────────────────────
-    // الأولوية: sales_return → fallback: sales_invoice (بعكس الأدوار)
-    const retMappings = await this.getMappingsForTransaction("sales_return", header.warehouseId, header.pharmacyId);
+    // في reverse_original: نستخدم دائماً sales_invoice مع عكس الأدوار (لا حسابات مردود منفصلة)
+    // في separate_accounts: نحاول sales_return أولاً ثم نسقط على sales_invoice
+    const retMappings = forceReverseOriginal
+      ? []
+      : await this.getMappingsForTransaction("sales_return", header.warehouseId, header.pharmacyId);
     const retMM = new Map(retMappings.map(m => [m.lineType, m]));
 
-    // إن لم يُعرَّف sales_return، نسقط على sales_invoice (مع عكس الأدوار)
-    const siMappings = retMappings.length === 0
+    // sales_invoice mappings: تُستخدم دائماً في reverse_original أو كـ fallback
+    const siMappings = (forceReverseOriginal || retMappings.length === 0)
       ? await this.getMappingsForTransaction("sales_invoice", header.warehouseId, header.pharmacyId)
       : [];
     const siMM = new Map(siMappings.map(m => [m.lineType, m]));
-    const useFallback = retMappings.length === 0;
+    const useFallback = forceReverseOriginal || retMappings.length === 0;
 
     // حساب المدينين (دائن في المرتجع = مدين في البيع)
     const receivablesCreditId =
@@ -1015,7 +1025,7 @@ const methods = {
       inventoryAccountId = wh?.glAccountId || null;
     }
     if (!inventoryAccountId) {
-      const invM = mm.get("inventory");
+      const invM = (useFallback ? siMM : retMM).get("inventory");
       inventoryAccountId = invM?.debitAccountId || null;
     }
 
@@ -1187,10 +1197,21 @@ const methods = {
           continue;
         }
 
-        // جلب حساب المدينون من ربط مردود المبيعات
-        const retMappings = await this.getMappingsForTransaction("sales_return",
-          null, null);
-        const receivablesAccountId = retMappings.find(m => m.lineType === "receivables")?.creditAccountId || null;
+        // جلب حساب المدينون — يعتمد على returns_mode
+        // في reverse_original: المدينون = debitAccountId في sales_invoice
+        // في separate_accounts: المدينون = creditAccountId في sales_return
+        const modeRes2 = await db.execute(sql`SELECT value FROM system_settings WHERE key = 'returns_mode' LIMIT 1`);
+        const returnsMode2: string = ((modeRes2 as any).rows?.[0] as any)?.value ?? "reverse_original";
+        const forceReverse2 = returnsMode2 !== "separate_accounts";
+
+        let receivablesAccountId: string | null = null;
+        if (forceReverse2) {
+          const siM = await this.getMappingsForTransaction("sales_invoice", null, null);
+          receivablesAccountId = siM.find(m => m.lineType === "receivables")?.debitAccountId || null;
+        } else {
+          const retM = await this.getMappingsForTransaction("sales_return", null, null);
+          receivablesAccountId = retM.find(m => m.lineType === "receivables")?.creditAccountId || null;
+        }
 
         const existingLines = await db.select().from(journalLines)
           .where(eq(journalLines.journalEntryId, existingEntry.id));

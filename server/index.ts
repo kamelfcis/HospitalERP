@@ -633,6 +633,20 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] pharmacy_mode seed error");
   }
 
+  // ── 5h-post2b. Seed returns_mode default ─────────────────────────────────
+  // "reverse_original" = عكس القيد الأصلي على نفس الحسابات (IFRS-aligned)
+  // "separate_accounts" = استخدام حسابات مردود منفصلة
+  try {
+    await db.execute(sql`
+      INSERT INTO system_settings (key, value)
+      VALUES ('returns_mode', 'reverse_original')
+      ON CONFLICT (key) DO NOTHING
+    `);
+    log("[STARTUP] returns_mode setting ensured (default: reverse_original)");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] returns_mode seed error");
+  }
+
   // ── 5h-post3. Backfill CASHIER_OPEN_SHIFT → system groups ───────────────
   try {
     await db.execute(sql`
