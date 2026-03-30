@@ -297,7 +297,7 @@ export async function createCustomerReceipt(
           entryDate:        input.receiptDate,
           reference:        `CRPMT-${receiptNumber}`,
           description:      `تحصيل آجل — إيصال #${receiptNumber}`,
-          status:           "draft",
+          status:           "posted",
           periodId:         periodId ?? null,
           sourceType:       "credit_customer_receipt",
           sourceDocumentId: receipt.id,
