@@ -9,6 +9,7 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Settings, Save, Loader2, Plus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useMappingRows } from "./hooks/useMappingRows";
 import { useMappingSave }  from "./hooks/useMappingSave";
 import { MappingFilters }              from "./components/MappingFilters";
@@ -16,10 +17,25 @@ import { MappingStatusBar }            from "./components/MappingStatusBar";
 import { WarehouseTransferNotice }     from "./components/WarehouseTransferNotice";
 import { MappingTable }                from "./components/MappingTable";
 import { SalesReturnJournalPreview }   from "./components/SalesReturnJournalPreview";
+import type { MappingRow } from "./types";
 
 export default function AccountMappings() {
   const data = useMappingRows();
   const save = useMappingSave(data);
+
+  // جلب returns_mode وربط sales_invoice عند عرض تبويب sales_return
+  const isSalesReturnTab = data.selectedTxType === "sales_return";
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ["/api/settings"],
+    enabled: isSalesReturnTab,
+  });
+  const returnsMode = settings?.returns_mode ?? "reverse_original";
+
+  const { data: siMappingsRaw } = useQuery<MappingRow[]>({
+    queryKey: ["/api/account-mappings", "sales_invoice"],
+    queryFn: () => fetch("/api/account-mappings?transactionType=sales_invoice", { credentials: "include" }).then(r => r.json()),
+    enabled: isSalesReturnTab && returnsMode === "reverse_original",
+  });
 
   const showTransferNotice = data.selectedTxType === "warehouse_transfer" && !data.isLoading;
   const showStatusBar      = !data.isLoading && data.selectedTxType !== "warehouse_transfer";
@@ -101,8 +117,12 @@ export default function AccountMappings() {
       </Card>
 
       {/* ── معاينة بنود القيد لمردود المبيعات ── */}
-      {data.selectedTxType === "sales_return" && !data.isLoading && (
-        <SalesReturnJournalPreview rows={data.rows} />
+      {isSalesReturnTab && !data.isLoading && (
+        <SalesReturnJournalPreview
+          rows={data.rows}
+          returnsMode={returnsMode}
+          siRows={siMappingsRaw ?? []}
+        />
       )}
 
     </div>

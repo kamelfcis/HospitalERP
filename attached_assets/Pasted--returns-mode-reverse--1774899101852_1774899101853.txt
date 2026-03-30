@@ -1,0 +1,102 @@
+أريد منك تنفيذ مراجعة نهائية لمنطق مردود المبيعات ومردود المشتريات بعد تفعيل returns_mode = reverse_original، ولكن فقط من ناحية الصيدلية والتقارير والربط المالي.
+
+الهدف:
+التأكد أن النظام لا يكتفي بتسجيل القيد بشكل صحيح، بل أيضًا يعرض التقارير والصافي المالي بشكل صحيح وفق منطق reverse_original.
+
+مهم:
+- لا تغيّر منطق القيود الذي تم تنفيذه
+- لا ترجع إلى حسابات returns المنفصلة
+- لا تهتم بالبيانات القديمة
+- ركّز على العمليات الجديدة فقط
+
+==================================
+TASK-RPT-01: Verify Sales Return Financial Flow
+==================================
+
+راجع دورة مردود المبيعات بالكامل في الصيدلية:
+
+- sales return creation
+- journal creation
+- cashier refund / settlement if applicable
+- stock restore
+- cogs reverse
+- revenue reverse
+
+أريد تقريرًا يوضح:
+1) هل كل خطوة تعمل على نفس الحسابات الأصلية؟
+2) هل يوجد أي مسار ما زال يستخدم sales_return account منفصل؟
+3) هل يوجد أي خطر duplicate entry أو mismatch بين journal و cash و stock؟
+
+==================================
+TASK-RPT-02: Verify Purchase Return Financial Flow
+==================================
+
+راجع purchase return بالكامل:
+
+- inventory decrease
+- AP decrease
+- journal generation
+
+أريد التأكد:
+1) أنه لا يوجد purchase_return account منفصل مستخدم فعليًا
+2) أن القيد دائمًا:
+   Dr AP / Cr Inventory
+3) أن التقارير لا تعتمد على حساب purchase return مستقل
+
+==================================
+TASK-RPT-03: Reports Alignment with reverse_original
+==================================
+
+راجع تقارير الصيدلية التالية:
+
+- pharmacy sales
+- sales returns
+- net sales
+- purchase returns
+- gross profit
+- inventory valuation
+- item movement
+
+حدد:
+1) هل التقرير يعتمد على حسابات returns منفصلة؟
+2) هل التقرير سيظل صحيحًا مع reverse_original؟
+3) هل يحتاج تعديل logic أو query أو labeling؟
+4) ما الذي قد يظهر بشكل مضلل للمستخدم إن لم يُعدّل؟
+
+==================================
+TASK-RPT-04: Gross Profit Integrity
+==================================
+
+أريد مراجعة حساب Gross Profit في الصيدلية فقط بحيث يكون:
+
+Net Revenue = Sales - Sales Returns (ضمنيًا من نفس حساب الإيراد)
+Net COGS = COGS - reversed COGS from returns
+Gross Profit = Net Revenue - Net COGS
+
+حدد:
+- هل هذا مطبق فعليًا؟
+- إن لم يكن مطبقًا، أين الخلل؟
+- ما المطلوب لضبطه؟
+
+==================================
+TASK-RPT-05: Final Pharmacy Reverse-Entry Compatibility Verdict
+==================================
+
+في النهاية أريد حكمًا واضحًا جدًا:
+
+1) هل الصيدلية الآن متوافقة بالكامل مع reverse_original؟
+2) هل بقي أي موضع يعتمد على returns accounts منفصلة؟
+3) هل التقارير أصبحت متوافقة أم لا؟
+4) ما آخر النقاط المتبقية قبل اعتبار منطق المردود مقفولًا نهائيًا؟
+
+==================================
+OUTPUT REQUIRED
+==================================
+
+أريد:
+1) Status of sales return flow
+2) Status of purchase return flow
+3) Reports that are compatible as-is
+4) Reports that need adjustment
+5) Gross profit status
+6) Final verdict: is reverse_original fully safe for pharmacy now?
