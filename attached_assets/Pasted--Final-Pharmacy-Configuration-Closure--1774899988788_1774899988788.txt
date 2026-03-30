@@ -1,0 +1,125 @@
+أريد منك تنفيذ Final Pharmacy Configuration Closure فقط، بدون أي تطوير جديد خارج النطاق.
+
+الهدف:
+إقفال آخر نقاط Configuration تمنع بيع وتشغيل قسم الصيدلية بثقة كاملة.
+
+مهم:
+- لا أريد Features جديدة
+- لا أريد Refactor
+- لا أريد مراجعة أجزاء خارج الصيدلية
+- أريد فقط تنفيذ/مراجعة/توثيق ضبط الإعدادات النهائية المطلوبة للتشغيل
+
+==================================
+TASK-CONF-01: Purchase Receiving Mapping
+==================================
+
+راجع واضبط mapping المطلوب لمسار purchase_receiving بحيث يكون مكتملًا وmandatory:
+
+- Inventory Debit
+- Accounts Payable Credit
+
+أريد:
+1) أين يُضبط هذا mapping فعليًا في النظام
+2) ما القيمة الحالية
+3) ما الناقص
+4) كيف أتحقق بعد الضبط أن أي receiving جديد يولد journal فورًا
+5) ما query أو test الذي يثبت ذلك
+
+==================================
+TASK-CONF-02: Supplier Payment Mapping
+==================================
+
+راجع واضبط mapping المطلوب لمسار supplier_payment بحيث يكون مكتملًا وmandatory:
+
+- Cash / Treasury
+- Accounts Payable
+
+أريد:
+1) أين يُضبط هذا mapping
+2) ما الناقص حاليًا
+3) كيف أتحقق أن أي supplier payment جديد يولد journal فورًا
+4) ما query أو test الذي يثبت ذلك
+
+==================================
+TASK-CONF-03: Revenue Consumables Mapping
+==================================
+
+راجع mapping الخاص بـ:
+sales_invoice.revenue_consumables.creditAccountId
+
+المطلوب:
+1) تحديد سبب كونه null
+2) ضبطه على الحساب الصحيح
+3) التأكد أن بيع أي مستلزم جديد يسجل الإيراد في GL
+4) إعطائي test واضح بعد الضبط
+
+==================================
+TASK-CONF-04: Warehouse GL Accounts
+==================================
+
+راجع كل مخازن الصيدلية فقط.
+
+أريد جدولًا يحتوي:
+- warehouse name
+- warehouse id
+- gl_account_id الحالي
+- هل مضبوط أم لا
+- هل يؤثر على sales / stock count / returns / inventory journal
+
+ثم:
+- وضح لي ما الذي يجب ضبطه لكل مخزن قبل التشغيل
+
+==================================
+TASK-CONF-05: Fiscal Period 2026
+==================================
+
+راجع الفترة المالية الحالية.
+
+أريد:
+1) هل 2026 موجودة؟
+2) هل مفتوحة؟
+3) إن لم تكن مفتوحة، ما المطلوب لفتحها بأمان؟
+4) كيف أتحقق أن journal generation سيستخدمها تلقائيًا؟
+
+==================================
+TASK-CONF-06: Go-Live Operational Setup (Pharmacy Only)
+==================================
+
+أريد checklist تشغيل فعلي لقسم الصيدلية فقط بدون أي عناصر أمن إضافية:
+
+- user setup (صيدلي / كاشير / مدير)
+- roles & permissions
+- cashier shift setup
+- thermal receipt setup
+- numbering (invoice / receipt)
+- opening stock procedure
+- opening balances (inventory / AP / cash)
+- backup readiness
+
+==================================
+TASK-CONF-07: Final Verification
+==================================
+
+بعد مراجعة كل ما سبق، أريد سيناريو اختبار نهائي لقسم الصيدلية فقط:
+
+1) purchase_receiving جديد
+2) supplier_payment جديد
+3) sale لمستلزم
+4) sales return
+5) stock count
+
+ولكل سيناريو:
+- ما المتوقع وظيفيًا
+- ما المتوقع محاسبيًا
+- كيف أتحقق من نجاحه في DB / journal / event log
+
+==================================
+OUTPUT REQUIRED
+==================================
+
+أريد:
+1) ما الذي كان ناقصًا في configuration
+2) ما الذي تم ضبطه
+3) ما الذي يجب أن أضبطه أنا يدويًا داخل الإعدادات
+4) checklist نهائية قبل البيع
+5) هل الصيدلية بعد ذلك تصبح جاهزة 100% للبيع والتشغيل؟
