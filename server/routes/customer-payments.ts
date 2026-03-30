@@ -14,6 +14,7 @@ import {
   getNextReceiptNumber,
   createCustomerReceipt,
   getCustomerReceiptReport,
+  getCustomerAccountStatement,
   searchCreditCustomers,
   createCreditCustomer,
 } from "../storage/customer-payments-storage";
@@ -170,6 +171,22 @@ export function registerCustomerPaymentRoutes(app: Express) {
       const status = parseStatus(req.query.status, "all");
       const report = await getCustomerReceiptReport(req.params.customerId, status);
       res.json(report);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── GET /api/customer-payments/statement/:customerId?from=YYYY-MM-DD&to=YYYY-MM-DD
+  app.get("/api/customer-payments/statement/:customerId", requireAuth, checkPermission("credit_payment.view"), async (req, res) => {
+    try {
+      const customerId  = String(req.params.customerId);
+      const now         = new Date();
+      const firstOfYear = `${now.getFullYear()}-01-01`;
+      const todayStr    = now.toISOString().split("T")[0];
+      const fromDate    = String(req.query.from ?? firstOfYear);
+      const toDate      = String(req.query.to   ?? todayStr);
+      const result = await getCustomerAccountStatement(customerId, fromDate, toDate);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

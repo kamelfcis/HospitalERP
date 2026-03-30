@@ -414,6 +414,166 @@ export async function getCustomerReceiptReport(
   };
 }
 
+// ─── getCustomerAccountStatement ──────────────────────────────────────────────
+// كشف حساب عميل آجل: مدين / دائن / رصيد متحرك
+// المصادر: فواتير مبيعات (مدين) + إيصالات تحصيل (دائن)
+export interface CustomerStatementLine {
+  txnDate:      string;
+  sourceType:   string;   // 'sales_invoice' | 'customer_receipt'
+  sourceLabel:  string;
+  sourceNumber: string;
+  sourceRef:    string | null;
+  description:  string;
+  debit:        number;   // مدين = فاتورة → يزيد ما يستحق على العميل
+  credit:       number;   // دائن = تحصيل → يقلل ما يستحق على العميل
+  balance:      number;
+}
+
+export interface CustomerStatementResult {
+  customerId:     string;
+  name:           string;
+  phone:          string | null;
+  fromDate:       string;
+  toDate:         string;
+  openingBalance: number;
+  lines:          CustomerStatementLine[];
+  totalDebit:     number;
+  totalCredit:    number;
+  closingBalance: number;
+}
+
+export async function getCustomerAccountStatement(
+  customerId: string,
+  fromDate:   string,
+  toDate:     string
+): Promise<CustomerStatementResult> {
+  // 1) بيانات العميل
+  const custRes = await pool.query<{ name: string; phone: string | null }>(
+    `SELECT name, phone FROM pharmacy_credit_customers WHERE id = $1 LIMIT 1`,
+    [customerId]
+  );
+  if (!custRes.rows.length) throw new Error("العميل غير موجود");
+  const cust = custRes.rows[0];
+
+  // 2) الرصيد الافتتاحي = كل العمليات قبل fromDate
+  const openingRes = await pool.query<{ opening: string }>(
+    `SELECT (
+       COALESCE(inv_b.total, 0)
+       - COALESCE(rec_b.total, 0)
+     ) AS opening
+     FROM pharmacy_credit_customers c
+     LEFT JOIN (
+       SELECT customer_id, SUM(net_total::numeric) AS total
+       FROM sales_invoice_headers
+       WHERE customer_id = $1
+         AND is_return = false
+         AND status IN ('finalized', 'collected')
+         AND invoice_date < $2::date
+       GROUP BY customer_id
+     ) inv_b ON inv_b.customer_id = c.id
+     LEFT JOIN (
+       SELECT customer_id, SUM(total_amount::numeric) AS total
+       FROM customer_receipts
+       WHERE customer_id = $1
+         AND receipt_date < $2::date
+       GROUP BY customer_id
+     ) rec_b ON rec_b.customer_id = c.id
+     WHERE c.id = $1`,
+    [customerId, fromDate]
+  );
+  const openingBalance = Number(openingRes.rows[0]?.opening ?? 0);
+
+  // 3) سطور الفترة (UNION بين مصدرين)
+  const txnRes = await pool.query<{
+    txn_date:      string;
+    source_type:   string;
+    source_number: string;
+    source_ref:    string | null;
+    description:   string;
+    debit:         string;
+    credit:        string;
+    sort_ts:       string;
+  }>(
+    `(
+       -- فواتير المبيعات الآجلة (مدين — يزيد ما يستحق على العميل)
+       SELECT
+         sih.invoice_date::text          AS txn_date,
+         'sales_invoice'                 AS source_type,
+         sih.invoice_number::text        AS source_number,
+         NULL                            AS source_ref,
+         'فاتورة بيع رقم ' || sih.invoice_number AS description,
+         sih.net_total::text             AS debit,
+         '0'                             AS credit,
+         sih.created_at::text            AS sort_ts
+       FROM sales_invoice_headers sih
+       WHERE sih.customer_id = $1
+         AND sih.is_return = false
+         AND sih.status IN ('finalized', 'collected')
+         AND sih.invoice_date BETWEEN $2::date AND $3::date
+     )
+     UNION ALL
+     (
+       -- إيصالات التحصيل (دائن — يقلل ما يستحق على العميل)
+       SELECT
+         cr.receipt_date::text           AS txn_date,
+         'customer_receipt'              AS source_type,
+         LPAD(cr.receipt_number::text, 4, '0') AS source_number,
+         COALESCE(cr.reference, cr.notes) AS source_ref,
+         'تحصيل رقم #' || LPAD(cr.receipt_number::text, 4, '0')
+           || CASE WHEN cr.reference IS NOT NULL THEN ' / ' || cr.reference ELSE '' END AS description,
+         '0'                             AS debit,
+         cr.total_amount::text           AS credit,
+         cr.created_at::text             AS sort_ts
+       FROM customer_receipts cr
+       WHERE cr.customer_id = $1
+         AND cr.receipt_date BETWEEN $2::date AND $3::date
+     )
+     ORDER BY txn_date, sort_ts`,
+    [customerId, fromDate, toDate]
+  );
+
+  // 4) حساب الرصيد المتحرك
+  let runningBalance = openingBalance;
+  const lines: CustomerStatementLine[] = txnRes.rows.map((r) => {
+    const dr = Number(r.debit  ?? 0);
+    const cr = Number(r.credit ?? 0);
+    runningBalance = runningBalance + dr - cr;
+
+    const typeMap: Record<string, string> = {
+      sales_invoice:    "فاتورة بيع",
+      customer_receipt: "تحصيل",
+    };
+
+    return {
+      txnDate:      r.txn_date,
+      sourceType:   r.source_type,
+      sourceLabel:  typeMap[r.source_type] ?? r.source_type,
+      sourceNumber: r.source_number,
+      sourceRef:    r.source_ref ?? null,
+      description:  r.description,
+      debit:        dr,
+      credit:       cr,
+      balance:      runningBalance,
+    };
+  });
+
+  const totalDebit  = lines.reduce((s, l) => s + l.debit,  0);
+  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+
+  return {
+    customerId,
+    name:           cust.name,
+    phone:          cust.phone ?? null,
+    fromDate,
+    toDate,
+    openingBalance,
+    lines,
+    totalDebit,
+    totalCredit,
+    closingBalance: openingBalance + totalDebit - totalCredit,
+  };
+}
+
 // ─── searchCreditCustomers ─────────────────────────────────────────────────────
 export async function searchCreditCustomers(
   search: string,
