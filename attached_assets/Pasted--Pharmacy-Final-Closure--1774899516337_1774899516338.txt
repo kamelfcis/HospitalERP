@@ -1,0 +1,124 @@
+أريد منك تنفيذ Pharmacy Final Closure فقط، بدون أي توسع خارج الصيدلية.
+
+الهدف:
+إقفال آخر النقاط المتبقية قبل اعتبار قسم الصيدلية جاهزًا للبيع والتشغيل الحقيقي.
+
+مهم:
+- لا تراجع العيادات
+- لا تراجع patient invoices
+- لا تراجع أي جزء خارج الصيدلية والمشتريات والكاشير الخاص بها
+- اعتبر أن منطق المردود reverse_original أصبح نهائيًا ومقفولًا
+
+==================================
+TASK-PH-FINAL-01: Purchase Account Mapping Readiness
+==================================
+
+راجع فقط مسارات الصيدلية الخاصة بـ:
+- purchase_receiving
+- purchase_invoice
+- supplier_payment
+- purchase_return
+- stock_count
+
+أريد جدولًا نهائيًا يوضح:
+1) الحسابات المطلوبة لكل عملية
+2) هل هي مضبوطة حاليًا أم لا
+3) أي حسابات ناقصة
+4) ما الذي سيمنع ترحيل أي عملية جديدة لو mapping ناقص
+5) هل النظام الآن يرفض العملية الجديدة عند غياب mapping أم لا
+
+==================================
+TASK-PH-FINAL-02: New Transactions Safety
+==================================
+
+أريد التأكد فقط من العمليات الجديدة من الآن فصاعدًا:
+
+- أي receiving جديد بتكلفة
+- أي purchase invoice جديدة
+- أي sale جديدة
+- أي sales return جديدة
+- أي purchase return جديدة
+- أي supplier payment جديد
+- أي stock count جديد
+
+تحقق:
+1) هل كل عملية جديدة تولد GL صحيح؟
+2) هل أي عملية جديدة يمكن أن تمر بدون journal؟
+3) هل أي عملية جديدة يمكن أن تمر بـ fallback أو silent failure؟
+4) إذا كانت هناك نقطة غير مقفولة، اذكرها بوضوح
+
+==================================
+TASK-PH-FINAL-03: Pharmacy Reports Sellability
+==================================
+
+راجع فقط تقارير الصيدلية التالية:
+- stock balance
+- item movement
+- expiry report
+- pharmacy sales
+- purchase analysis
+- purchase returns
+- sales returns
+- cashier shift handover
+- inventory valuation
+- gross profit
+
+حدد:
+1) أي التقارير جاهزة للتسليم لعميل الآن
+2) أي التقارير صحيحة لكنها تحتاج تحسين شكلي فقط
+3) أي التقارير ناقصة وظيفيًا
+4) ما هو الحد الأدنى من التقارير المطلوبة لبيع قسم الصيدلية بثقة
+
+==================================
+TASK-PH-FINAL-04: Final Go-Live Checklist
+==================================
+
+أريد Checklist نهائية جدًا لقسم الصيدلية فقط قبل البيع، مقسمة إلى:
+
+A) Mandatory before selling
+B) Mandatory before go-live
+C) Nice to have later
+
+وتشمل:
+- account mappings
+- numbering
+- stock controls
+- negative stock prevention
+- batch/expiry enforcement
+- cashier controls
+- print readiness
+- backup
+- user roles
+- audit log
+- opening balances
+- item master governance
+
+==================================
+TASK-PH-FINAL-05: Final Verdict
+==================================
+
+أريد حكمًا صريحًا جدًا لقسم الصيدلية فقط:
+
+1) هل قسم الصيدلية جاهز للبيع الآن؟
+2) هل المتبقي مجرد configuration؟
+3) ما آخر 5 أشياء فقط تمنع البيع بثقة كاملة؟
+4) ما تقييم قسم الصيدلية من 10 من حيث:
+   - inventory control
+   - purchasing control
+   - sales control
+   - accounting integration
+   - cashier integration
+   - reporting
+   - production readiness
+   - sellability
+
+==================================
+OUTPUT REQUIRED
+==================================
+
+أريد:
+1) ما هو مقفول نهائيًا
+2) ما هو ناقص فقط
+3) ما الذي يجب تنفيذه هذا الأسبوع
+4) ما الذي يمكن تأجيله
+5) Verdict نهائي: sellable or not yet
