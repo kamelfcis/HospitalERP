@@ -17,6 +17,7 @@ import { journalEntries, journalLines } from "@shared/schema/finance";
 import type { SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
 import { normalizeClaimNumber } from "./purchasing-invoices-core-storage";
 import { logger } from "../lib/logger";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -332,7 +333,14 @@ export async function createSupplierPayment(
 
         logger.info({ paymentId: payment.id, entryNumber }, "[SUPPMT] GL journal created");
       } catch (e: any) {
-        logger.warn({ err: e.message }, "[SUPPMT] GL journal failed — continuing without it");
+        logger.warn({ err: e.message }, "[SUPPMT] GL journal failed — logged for retry");
+        logAcctEvent({
+          sourceType:   "supplier_payment",
+          sourceId:     payment.id,
+          eventType:    "supplier_payment_journal_failed",
+          status:       "needs_retry",
+          errorMessage: `فشل إنشاء قيد سداد المورد: ${e.message}`,
+        }).catch(() => {});
       }
     }
 

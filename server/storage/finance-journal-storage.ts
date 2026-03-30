@@ -413,15 +413,16 @@ const methods = {
         periodId = period?.id;
       }
 
-      // Log a traceable warning when no fiscal period covers the entry date
+      // Guard: لا يُنشأ أي قيد posted بدون period_id صالح
       if (!periodId) {
         logAcctEvent({
           sourceType:   params.sourceType,
           sourceId:     params.sourceDocumentId,
           eventType:    "journal_no_fiscal_period",
           status:       "needs_retry",
-          errorMessage: `لا توجد فترة مالية مفتوحة تغطي تاريخ ${params.entryDate} — القيد سيُنشأ بدون فترة مالية (period_id = null). افتح فترة مالية تشمل هذا التاريخ ثم أعد الترحيل.`,
+          errorMessage: `لا توجد فترة مالية مفتوحة تغطي تاريخ ${params.entryDate} — رُفض إنشاء القيد لمنع period_id=null. افتح فترة مالية تشمل هذا التاريخ ثم أعد الترحيل.`,
         }).catch(() => {});
+        return null;
       }
 
       const totalDebit = journalLineData.reduce((s, l) => s + parseMoney(l.debit), 0);

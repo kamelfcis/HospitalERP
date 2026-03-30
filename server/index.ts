@@ -651,6 +651,43 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier.open_shift backfill error");
   }
 
+  // ── 5h-post4. Stay Engine UNIQUE constraint ───────────────────────────────
+  // Stay Engine uses ON CONFLICT (source_type, source_id) WHERE is_void = false ...
+  // This partial unique index MUST exist or every accrual tick throws:
+  //   "there is no unique or exclusion constraint matching the ON CONFLICT specification"
+  try {
+    // 1) تحقق من وجود duplicates (source_type + source_id) قبل الـ index
+    const dupRes = await db.execute(sql`
+      SELECT source_type, source_id, COUNT(*) AS cnt
+      FROM patient_invoice_lines
+      WHERE is_void = false
+        AND source_type IS NOT NULL
+        AND source_id IS NOT NULL
+      GROUP BY source_type, source_id
+      HAVING COUNT(*) > 1
+    `);
+    const dups = (dupRes as any).rows ?? [];
+
+    if (dups.length > 0) {
+      // REPORT — لا حذف تلقائي
+      logger.error({
+        event:   "STAY_ENGINE_DUPLICATES_FOUND",
+        count:   dups.length,
+        samples: dups.slice(0, 5),
+        hint:    "Duplicates must be resolved manually before the UNIQUE index can be created",
+      }, `[STARTUP] STAY_ENGINE: ${dups.length} duplicate (source_type, source_id) row(s) found — UNIQUE index NOT created. Manual repair required.`);
+    } else {
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_pil_source_type_id
+        ON patient_invoice_lines (source_type, source_id)
+        WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL
+      `);
+      log("[STARTUP] uq_pil_source_type_id UNIQUE index ensured (Stay Engine ON CONFLICT ready)");
+    }
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] Stay Engine UNIQUE index error");
+  }
+
   // ── 5h. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {

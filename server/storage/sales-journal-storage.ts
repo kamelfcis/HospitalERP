@@ -1175,9 +1175,15 @@ const methods = {
           await updateAcctEvent(eventId, "blocked", { errorMessage: "لا يوجد قيد مرحلة 1 للمرتجع — تأكد من إعداد ربط الحسابات" });
           continue;
         }
+
+        // ── Phase-2 idempotency guard ─────────────────────────────────────────
+        // Journal posted = Phase-2 already completed (صرف المرتجع نقداً تم مسبقاً).
+        // هذا يحمي من double-journal في حالة retry أو استدعاء مزدوج.
         if (existingEntry.status === "posted") {
+          logger.info({ invoiceId, entryId: existingEntry.id },
+            "[SALES_RETURN] Phase-2 guard: journal already posted — skipping (idempotent)");
           await updateAcctEvent(eventId, "completed", { journalEntryId: existingEntry.id,
-            errorMessage: "القيد مرحّل مسبقاً (idempotent)" });
+            errorMessage: "القيد مرحّل مسبقاً — تم تجاهل التكرار (idempotent guard)" });
           continue;
         }
 

@@ -257,6 +257,136 @@ async function retryDeliveryReceipt(sourceId: string): Promise<{ ok: boolean; jo
   return { ok: true, journalEntryId: entry.id };
 }
 
+async function retrySupplierPayment(sourceId: string): Promise<{ ok: boolean; journalEntryId?: string }> {
+  // ── 1. جلب بيانات السداد + المورد ────────────────────────────────────────
+  const raw = await db.execute(sql`
+    SELECT sp.id, sp.payment_number, sp.payment_date, sp.total_amount,
+           sp.gl_account_id, sp.journal_entry_id, sp.supplier_id,
+           s.gl_account_id AS supplier_gl_account_id,
+           s.supplier_type
+    FROM supplier_payments sp
+    LEFT JOIN suppliers s ON s.id = sp.supplier_id
+    WHERE sp.id = ${sourceId}
+  `);
+  const pmt = (raw as any).rows[0];
+  if (!pmt) throw new Error("سداد المورد غير موجود");
+
+  // ── 2. idempotency: هل القيد موجود مسبقاً؟ ──────────────────────────────
+  if (pmt.journal_entry_id) return { ok: true, journalEntryId: pmt.journal_entry_id };
+
+  const existingRaw = await db.execute(sql`
+    SELECT id FROM journal_entries
+    WHERE source_type = 'supplier_payment' AND source_document_id = ${sourceId}
+    LIMIT 1
+  `);
+  const existing = (existingRaw as any).rows[0];
+  if (existing) {
+    await db.execute(sql`UPDATE supplier_payments SET journal_entry_id = ${existing.id} WHERE id = ${sourceId}`);
+    return { ok: true, journalEntryId: existing.id };
+  }
+
+  // ── 3. حل حساب ذمم المورد (AP) — نفس منطق createSupplierPayment ──────────
+  const glAccountId: string | null = pmt.gl_account_id ?? null;
+  if (!glAccountId) throw new Error("سداد المورد لا يحتوي على حساب خزينة (gl_account_id)");
+
+  let apAccountId: string | null = pmt.supplier_gl_account_id ?? null;
+  if (!apAccountId) {
+    // Fallback: account_mappings لنوع المورد
+    const supplierType     = pmt.supplier_type || "drugs";
+    const payablesLineType = supplierType === "consumables" ? "payables_consumables" : "payables_drugs";
+    const mapRaw = await db.execute(sql`
+      SELECT debit_account_id, credit_account_id FROM account_mappings
+      WHERE transaction_type = 'purchase_invoice' AND line_type = ${payablesLineType} AND is_active = true
+      LIMIT 1
+    `);
+    const m = (mapRaw as any).rows[0];
+    apAccountId = m?.credit_account_id || m?.debit_account_id || null;
+  }
+  if (!apAccountId) throw new Error("تعذّر تحديد حساب ذمم المورد — عرِّف gl_account_id للمورد أو ربط حسابات المشتريات");
+
+  // ── 4. الفترة المالية ─────────────────────────────────────────────────────
+  const periodRaw = await db.execute(sql`
+    SELECT id FROM fiscal_periods
+    WHERE is_closed = false
+      AND start_date <= ${pmt.payment_date}::date
+      AND end_date   >= ${pmt.payment_date}::date
+    LIMIT 1
+  `);
+  const periodId: string | null = (periodRaw as any).rows[0]?.id ?? null;
+  if (!periodId) throw new Error(`لا توجد فترة مالية مفتوحة لتاريخ السداد (${pmt.payment_date})`);
+
+  // ── 5. إنشاء القيد ───────────────────────────────────────────────────────
+  const entryNumber = await storage.getNextEntryNumber();
+  const amount = parseFloat(pmt.total_amount).toFixed(2);
+  const pmtNum = pmt.payment_number;
+
+  const [entry] = await db.execute(sql`
+    INSERT INTO journal_entries
+      (entry_number, entry_date, period_id, description, reference, status,
+       source_type, source_document_id, total_debit, total_credit, posted_at)
+    VALUES (
+      ${entryNumber}, ${pmt.payment_date}::date, ${periodId},
+      ${'سداد مورد — سند #' + pmtNum}, ${'SUPPMT-' + pmtNum},
+      'posted', 'supplier_payment', ${sourceId},
+      ${amount}, ${amount}, now()
+    )
+    RETURNING id
+  `).then(r => (r as any).rows);
+  if (!entry) throw new Error("فشل إدراج رأس قيد سداد المورد");
+
+  await db.execute(sql`
+    INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description)
+    VALUES
+      (${entry.id}, 1, ${apAccountId}, ${amount}, '0.00', ${'سداد مورد #' + pmtNum + ' - ذمم موردين'}),
+      (${entry.id}, 2, ${glAccountId}, '0.00', ${amount}, ${'سداد مورد #' + pmtNum + ' - خزنة'})
+  `);
+
+  await db.execute(sql`UPDATE supplier_payments SET journal_entry_id = ${entry.id} WHERE id = ${sourceId}`);
+  return { ok: true, journalEntryId: entry.id };
+}
+
+async function retryOpeningStock(sourceId: string): Promise<{ ok: boolean; journalEntryId?: string }> {
+  // ── 1. جلب بيانات الرصيد الافتتاحي ───────────────────────────────────────
+  const raw = await db.execute(sql`
+    SELECT h.id, h.post_date, h.status,
+           COALESCE(SUM(l.purchase_price * l.qty_in_minor), 0) AS total_cost
+    FROM opening_stock_headers h
+    LEFT JOIN opening_stock_lines l ON l.header_id = h.id
+    WHERE h.id = ${sourceId}
+    GROUP BY h.id, h.post_date, h.status
+  `);
+  const hdr = (raw as any).rows[0];
+  if (!hdr) throw new Error("وثيقة الرصيد الافتتاحي غير موجودة");
+  if (hdr.status !== "posted") throw new Error(`الوثيقة في حالة "${hdr.status}" — يجب أن تكون مُرحَّلة`);
+
+  const totalCost = parseFloat(hdr.total_cost || "0");
+  if (totalCost <= 0) throw new Error("إجمالي تكلفة الرصيد الافتتاحي صفر — لا قيد مطلوب");
+
+  // ── 2. idempotency ────────────────────────────────────────────────────────
+  const existingRaw = await db.execute(sql`
+    SELECT id FROM journal_entries
+    WHERE source_type = 'opening_stock' AND source_document_id = ${sourceId}
+    LIMIT 1
+  `);
+  const existing = (existingRaw as any).rows[0];
+  if (existing) return { ok: true, journalEntryId: existing.id };
+
+  // ── 3. إنشاء القيد عبر generateJournalEntry ──────────────────────────────
+  const entry = await storage.generateJournalEntry({
+    sourceType:       "opening_stock",
+    sourceDocumentId: sourceId,
+    reference:        `OS-${sourceId.slice(0, 8).toUpperCase()}`,
+    description:      `رصيد افتتاحي للمخزون — ${hdr.post_date}`,
+    entryDate:        hdr.post_date,
+    lines: [
+      { lineType: "inventory",      amount: totalCost.toFixed(2) },
+      { lineType: "opening_equity", amount: totalCost.toFixed(2) },
+    ],
+  });
+  if (entry) return { ok: true, journalEntryId: entry.id };
+  throw new Error("لم يُنشأ قيد — راجع ربط الحسابات (inventory / opening_equity) أو افتح فترة مالية");
+}
+
 async function retryWarehouseTransfer(sourceId: string): Promise<{ ok: boolean; message?: string }> {
   // The warehouse transfer journal is created inside postTransfer's DB transaction.
   // Re-running it would re-post inventory movements — unsafe.
@@ -413,6 +543,10 @@ export async function runAccountingRetryTick(): Promise<{
         result = await retrySalesReturn(source_id);
       } else if (source_type === "delivery_receipt") {
         result = await retryDeliveryReceipt(source_id);
+      } else if (source_type === "supplier_payment") {
+        result = await retrySupplierPayment(source_id);
+      } else if (source_type === "opening_stock") {
+        result = await retryOpeningStock(source_id);
       } else {
         // Unknown source type — skip
         skipped++;

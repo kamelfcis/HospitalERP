@@ -21,6 +21,7 @@ import multer from "multer";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { logger } from "../lib/logger";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 import { storage } from "../storage";
 import {
   buildXlsxBuffer,
@@ -252,21 +253,35 @@ export function registerOpeningStockRoutes(app: Express) {
 
       // GL journal — fire-and-forget بعد نجاح الترحيل
       if (totalCost > 0) {
+        const headerId = header.id;
+        const postDate  = header.postDate;
         setImmediate(async () => {
           try {
-            await storage.generateJournalEntry({
+            const entry = await storage.generateJournalEntry({
               sourceType:       "opening_stock",
-              sourceDocumentId: header.id,
-              reference:        `OS-${header.id.slice(0, 8).toUpperCase()}`,
-              description:      `رصيد افتتاحي للمخزون — ${header.postDate}`,
-              entryDate:        header.postDate,
+              sourceDocumentId: headerId,
+              reference:        `OS-${headerId.slice(0, 8).toUpperCase()}`,
+              description:      `رصيد افتتاحي للمخزون — ${postDate}`,
+              entryDate:        postDate,
               lines: [
-                { lineType: "inventory",        amount: totalCost.toFixed(2) },
-                { lineType: "opening_equity",   amount: totalCost.toFixed(2) },
+                { lineType: "inventory",      amount: totalCost.toFixed(2) },
+                { lineType: "opening_equity", amount: totalCost.toFixed(2) },
               ],
             });
-          } catch (glErr) {
-            logger.warn({ glErr }, "[OPENING_STOCK] GL journal failed — non-critical");
+            if (!entry) {
+              // generateJournalEntry returned null (e.g. no fiscal period, unmapped accounts)
+              // — accounting_event_log entry already written inside generateJournalEntry
+              logger.warn({ headerId }, "[OPENING_STOCK] GL journal not created — see accounting_event_log");
+            }
+          } catch (glErr: any) {
+            logger.warn({ glErr: glErr?.message }, "[OPENING_STOCK] GL journal failed — logged for retry");
+            logAcctEvent({
+              sourceType:   "opening_stock",
+              sourceId:     headerId,
+              eventType:    "opening_stock_journal_failed",
+              status:       "needs_retry",
+              errorMessage: `فشل إنشاء قيد الرصيد الافتتاحي: ${glErr?.message ?? String(glErr)}`,
+            }).catch(() => {});
           }
         });
       }

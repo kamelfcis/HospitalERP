@@ -1,0 +1,183 @@
+أريد منك تنفيذ Phase 2: Financial Integrity بالكامل، بدقة شديدة، وبدون أي تعديلات خارج النطاق.
+
+الهدف:
+منع فقد القيود، منع القيود اليتيمة، منع duplicate journals، وضمان أن أي فشل محاسبي يتم تسجيله وإعادة محاولته بدل أن يمر بصمت.
+
+قواعد صارمة:
+- لا تنفذ refactor واسع
+- لا تغيّر business flow إلا في حدود حماية السلامة المحاسبية
+- لا تغيّر UI
+- أي فشل GL يجب أن يُسجّل في accounting_event_log بحالة needs_retry
+- ممنوع إنشاء journal posted بدون period صحيح
+- ممنوع السماح بازدواج phase-2 journal لنفس sales return
+
+==================================
+TASK-FIN-01: إصلاح Stay Engine UNIQUE constraint
+==================================
+
+الملف:
+server/index.ts
+
+أضف startup migration آمنة تنشئ الـ unique index التالي فقط إذا لم يكن موجودًا:
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pil_stay_accrual
+ON patient_invoice_lines (invoice_id, stay_segment_id, accrual_date)
+WHERE stay_segment_id IS NOT NULL;
+
+مهم:
+- قبل إنشاء الـ index، افحص إن كان هناك duplicates حالية
+- إذا وُجدت duplicates:
+  1) لا تفشل بصمت
+  2) اطبع تقريرًا واضحًا بعددها
+  3) لا تحذف بيانات تلقائيًا إلا إذا كان هناك منطق واضح وآمن ومُوثق
+- أعطني query فحص duplicates
+- وأعطني query repair منفصلة، لكن لا تنفذ repair destructive تلقائيًا إلا إذا كان آمنًا 100%
+
+==================================
+TASK-FIN-02: منع إنشاء journal بـ period_id = null
+==================================
+
+الملف:
+server/storage/finance-journal-storage.ts
+
+راجع generateJournalEntry.
+
+المطلوب:
+- إذا لم توجد فترة مالية مفتوحة توافق entryDate:
+  - لا تُنشئ journal entry
+  - سجّل accounting_event_log بحالة needs_retry
+  - eventType واضح مثل journal_no_period
+  - errorMessage واضح بالعربية أو الإنجليزية التقنية المفهومة
+  - أعد نتيجة صريحة وآمنة بدل الاستمرار بـ periodId=null
+
+ممنوع:
+- أي posted journal بـ period_id = null
+
+راجع كل callers المتأثرين وتأكد أنهم يتعاملون مع null / no-op safely.
+
+==================================
+TASK-FIN-03: Supplier Payment — failure logging + retry visibility
+==================================
+
+الملف:
+server/storage/supplier-payments-storage.ts
+
+إذا فشل GL عند supplier payment:
+- لا يمر الفشل بصمت
+- سجّل accounting_event_log بحالة needs_retry
+- sourceType = supplier_payment
+- sourceId = paymentId
+- eventType واضح
+- errorMessage يحتوي الرسالة الأصلية
+
+ثم راجع:
+accounting-retry-worker.ts
+
+أضف handler واضح لإعادة محاولة supplier_payment إذا لم يكن موجودًا.
+
+==================================
+TASK-FIN-04: Opening Stock — failure logging
+==================================
+
+الملف:
+server/routes/opening-stock.ts
+
+إذا كان generateJournalEntry أو journal generation يتم داخل setImmediate أو async detached flow:
+- لفه بـ try/catch
+- عند الفشل:
+  - logAcctEvent status=needs_retry
+  - sourceType = opening_stock
+  - sourceId = opening stock header id
+  - eventType واضح
+  - errorMessage واضح
+
+لا أريد opening stock posted بدون trace محاسبي عند فشل GL.
+
+==================================
+TASK-FIN-05: Sales Return Phase-2 — idempotency guard
+==================================
+
+الملف:
+server/storage/sales-journal-storage.ts
+
+راجع completeSalesReturnWithCash.
+
+المطلوب:
+- قبل إنشاء phase-2 journal:
+  - افحص هل يوجد posted journal لنفس:
+    source_type='sales_return'
+    source_document_id = invoiceId
+- إذا موجود:
+  - skip safely
+  - log info واضحة
+  - update accounting_event كـ completed أو skipped-safe حسب النمط الحالي
+- تأكد أنه لا يمكن تكوين duplicate phase-2 journal بسبب retry أو double execution
+
+==================================
+TASK-FIN-06: Audit sweep
+==================================
+
+بعد تنفيذ كل ما سبق:
+- ابحث عن أي مكان إضافي داخل المشروع:
+  - ينشئ journal entry
+  - أو يستدعي generateJournalEntry
+  - أو يولد GL asynchronously
+  بدون needs_retry logging أو بدون period safety
+- لو وجدت أماكن إضافية:
+  - لا تعدّلها الآن
+  - لكن اذكرها في التقرير النهائي تحت:
+    "Additional Financial Integrity Risks"
+
+==================================
+TESTING REQUIRED
+==================================
+
+أريد اختبارات واضحة قبل/بعد لكل Task:
+
+1) Stay Engine
+- إثبات أن خطأ unique constraint اختفى
+- إثبات أن الـ upsert يعمل
+
+2) No open fiscal period
+- جرّب عملية تولد journal مع عدم وجود فترة مفتوحة
+- يجب:
+  - لا journal posted
+  - accounting_event status=needs_retry
+  - period_id=null count لا يزيد
+
+3) Supplier payment GL failure
+- محاكاة failure
+- يجب ظهور accounting_event needs_retry
+- ثم نجاح retry
+
+4) Opening stock GL failure
+- محاكاة failure
+- يجب ظهور accounting_event needs_retry
+
+5) Sales return phase-2 duplicate protection
+- نفّذ/حاكِ نفس الحالة مرتين
+- يجب عدم إنشاء journal posted ثانٍ
+
+6) Safety query
+- أعطني نتيجة هذا الاستعلام بعد الإصلاح:
+SELECT COUNT(*) FROM journal_entries WHERE period_id IS NULL AND status = 'posted';
+
+==================================
+OUTPUT REQUIRED
+==================================
+
+أريد التقرير النهائي بهذا الشكل:
+
+1) ما الذي تم تنفيذه
+2) الملفات المعدلة
+3) الكود قبل/بعد في المواضع الحساسة فقط
+4) نتائج الاختبارات قبل/بعد
+5) هل يوجد أي posted journal بـ period_id=null بعد الإصلاح
+6) هل يوجد أي مواضع إضافية خطرة لم تُعدّل بعد
+7) Data repair queries المطلوبة للبيانات القديمة فقط
+8) تأكيد صريح:
+   - هل financial integrity أصبحت أفضل فعلاً؟
+   - ما الذي ما زال يحتاج Phase لاحقة؟
+
+مهم جدًا:
+إذا وجدت أثناء التنفيذ أي تعارض معماري أو احتمال regression، لا تخفِه، بل اذكره بوضوح.
