@@ -1,0 +1,120 @@
+أريد منك تنفيذ Phase 1: Security Lockdown بشكل كامل ودقيق، بدون أي تغييرات إضافية خارج النطاق.
+
+المطلوب: تأمين كل الـ endpoints المكشوفة ومنع أي وصول بدون مصادقة أو صلاحيات.
+
+🚨 قواعد صارمة:
+- لا تنفذ أي Refactor
+- لا تغيّر أي business logic
+- لا تضيف features
+- التعديل فقط في middleware (requireAuth + checkPermission)
+- أي endpoint حساس يجب أن يكون محمي backend وليس UI فقط
+
+==================================
+TASK 1: حماية endpoint فتح الوردية
+==================================
+
+الملف:
+server/routes/hospital-cashier.ts
+
+ابحث عن:
+app.post("/api/cashier/shift/open", async (req, res) => {
+
+عدّل إلى:
+app.post("/api/cashier/shift/open", requireAuth, async (req, res) => {
+
+ثم أضف داخل الـ handler:
+- تحقق من أن المستخدم لديه صلاحية فتح وردية:
+checkPermission(PERMISSIONS.CASHIER_OPEN_SHIFT)
+
+==================================
+TASK 2: حماية جميع cashier endpoints
+==================================
+
+في نفس الملف:
+server/routes/hospital-cashier.ts
+
+أضف requireAuth لكل endpoints التالية:
+
+GET /api/pharmacies
+GET /api/pharmacies/:id
+GET /api/cashier/units
+GET /api/cashier/staff
+GET /api/cashier/my-open-shift
+GET /api/cashier/my-cashier-gl-account
+GET /api/cashier/shift/active
+GET /api/cashier/my-shifts
+GET /api/cashier/shift/:id/validate-close
+GET /api/cashier/shift/:id/totals
+GET /api/cashier/pending-sales
+GET /api/cashier/pending-returns
+GET /api/cashier/invoice/:id/details
+GET /api/cashier/receipts/:id
+GET /api/cashier/refund-receipts/:id
+
+POST /api/cashier/receipts/:id/print
+POST /api/cashier/refund-receipts/:id/print
+
+🚫 استثناء:
+لا تلمس endpoint:
+GET /api/cashier/sse/:pharmacyId
+(لكن ضع تعليق TODO لتحليل أمانه لاحقًا)
+
+==================================
+TASK 3: حماية patient invoices
+==================================
+
+الملف:
+server/routes/patient-invoices.ts
+
+1) أضف permission جديد:
+PATIENT_INVOICES_VIEW في shared/permissions.ts
+
+2) على endpoints التالية:
+GET /api/patient-invoices
+GET /api/patient-invoices/:id
+
+أضف:
+requireAuth + checkPermission(PERMISSIONS.PATIENT_INVOICES_VIEW)
+
+==================================
+TASK 4: RBAC Seed Update
+==================================
+
+- تأكد أن permission الجديد PATIENT_INVOICES_VIEW
+مضاف للمجموعات المناسبة (Admin / Accountant / Doctor حسب النظام)
+
+- لا تفتح permission لكل المستخدمين
+
+==================================
+TASK 5: Testing (مهم جدًا)
+==================================
+
+بعد التنفيذ، أريدك تعمل الاختبارات التالية:
+
+1) بدون تسجيل دخول:
+- POST /api/cashier/shift/open → يجب 401
+- GET /api/cashier/pending-sales → يجب 401
+- GET /api/cashier/receipts/:id → يجب 401
+
+2) مستخدم بدون صلاحيات:
+- فتح وردية → 403
+- عرض patient invoices → 403
+
+3) مستخدم بصلاحيات صحيحة:
+- كل العمليات تعمل بدون مشاكل
+
+==================================
+OUTPUT المطلوب:
+==================================
+
+1) قائمة بكل endpoints التي تم تأمينها
+2) الكود قبل وبعد لكل تعديل
+3) نتيجة الاختبارات (قبل / بعد)
+4) أي مشاكل ظهرت أثناء التنفيذ
+5) تأكيد أنه لا يوجد أي endpoint حساس بدون requireAuth
+
+🚨 مهم:
+إذا وجدت أي endpoint إضافي حساس بدون حماية أثناء التنفيذ:
+- أوقف التنفيذ
+- أضفه في التقرير
+- لا تتجاهله

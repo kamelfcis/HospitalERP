@@ -59,12 +59,12 @@ async function assertShiftOwnership(
 
 export function registerCashierRoutes(app: Express) {
   // ── Pharmacies ──────────────────────────────────────────────
-  app.get("/api/pharmacies", async (_req, res) => {
+  app.get("/api/pharmacies", requireAuth, async (_req, res) => {
     try { res.json(await storage.getPharmacies()); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/pharmacies/:id", async (req, res) => {
+  app.get("/api/pharmacies/:id", requireAuth, async (req, res) => {
     try {
       const p = await storage.getPharmacy(req.params.id as string);
       if (!p) return res.status(404).json({ message: "الصيدلية غير موجودة" });
@@ -72,13 +72,15 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/pharmacies", async (req, res) => {
+  // TODO: أضف checkPermission(PERMISSIONS.SETTINGS_PHARMACIES_MANAGE) بعد إنشاء الـ permission المناسب
+  app.post("/api/pharmacies", requireAuth, async (req, res) => {
     try { res.json(await storage.createPharmacy(req.body)); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
   // ── SSE: تحديثات الفواتير الفورية ──────────────────────────
   // الاسم :pharmacyId محافظ عليه للتوافق — لكنه يحمل unitId الفعلي (pharmacyId أو departmentId)
+  // TODO (security): يستخدم SSE بروتوكول خاص — يحتاج تحليل منفصل لأفضل آلية للمصادقة (session cookies vs. token)
   app.get("/api/cashier/sse/:pharmacyId", (req, res) => {
     const unitId = req.params.pharmacyId;
 
@@ -153,7 +155,7 @@ export function registerCashierRoutes(app: Express) {
   });
 
   // ── Cashier API ─────────────────────────────────────────────
-  app.get("/api/cashier/units", async (req, res) => {
+  app.get("/api/cashier/units", requireAuth, async (req, res) => {
     try {
       const userId = (req.session as { userId?: string }).userId;
       const [pharms, depts] = await Promise.all([storage.getPharmacies(), storage.getDepartments()]);
@@ -170,14 +172,14 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/staff", async (_req, res) => {
+  app.get("/api/cashier/staff", requireAuth, async (_req, res) => {
     try {
       const rows = await db.execute(sql`SELECT id, username, full_name AS "fullName" FROM users WHERE is_active = true ORDER BY full_name`);
       res.json(rows.rows);
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/my-open-shift", async (req, res) => {
+  app.get("/api/cashier/my-open-shift", requireAuth, async (req, res) => {
     try {
       const cashierId = (req.session as { userId?: string }).userId;
       if (!cashierId) return res.json(null);
@@ -187,7 +189,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/my-cashier-gl-account", async (req, res) => {
+  app.get("/api/cashier/my-cashier-gl-account", requireAuth, async (req, res) => {
     try {
       const userId = (req.session as { userId?: string }).userId;
       if (!userId) return res.json(null);
@@ -195,7 +197,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/cashier/shift/open", async (req, res) => {
+  app.post("/api/cashier/shift/open", requireAuth, checkPermission(PERMISSIONS.CASHIER_OPEN_SHIFT), async (req, res) => {
     try {
       const cashierId = (req.session as { userId?: string }).userId;
       if (!cashierId) return res.status(401).json({ message: "يجب تسجيل الدخول" });
@@ -232,7 +234,7 @@ export function registerCashierRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cashier/shift/active", async (req, res) => {
+  app.get("/api/cashier/shift/active", requireAuth, async (req, res) => {
     try {
       const cashierId = (req.session as { userId?: string }).userId || "cashier-1";
       const unitType = (req.query.unitType as string) || "pharmacy";
@@ -242,14 +244,14 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/my-shifts", async (req, res) => {
+  app.get("/api/cashier/my-shifts", requireAuth, async (req, res) => {
     try {
       const cashierId = (req.session as { userId?: string }).userId || "cashier-1";
       res.json(await storage.getMyOpenShifts(cashierId));
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/shift/:shiftId/validate-close", async (req, res) => {
+  app.get("/api/cashier/shift/:shiftId/validate-close", requireAuth, async (req, res) => {
     try { res.json(await storage.validateShiftClose(req.params.shiftId as string)); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
@@ -323,12 +325,12 @@ export function registerCashierRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cashier/shift/:shiftId/totals", async (req, res) => {
+  app.get("/api/cashier/shift/:shiftId/totals", requireAuth, async (req, res) => {
     try { res.json(await storage.getShiftTotals(req.params.shiftId as string)); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/pending-sales", async (req, res) => {
+  app.get("/api/cashier/pending-sales", requireAuth, async (req, res) => {
     try {
       const unitType = (req.query.unitType as string) || "pharmacy";
       const unitId = req.query.unitId as string;
@@ -337,7 +339,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/pending-returns", async (req, res) => {
+  app.get("/api/cashier/pending-returns", requireAuth, async (req, res) => {
     try {
       const unitType = (req.query.unitType as string) || "pharmacy";
       const unitId = req.query.unitId as string;
@@ -346,7 +348,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/invoice/:id/details", async (req, res) => {
+  app.get("/api/cashier/invoice/:id/details", requireAuth, async (req, res) => {
     try {
       const details = await storage.getSalesInvoiceDetails(req.params.id as string);
       if (!details) return res.status(404).json({ message: "الفاتورة غير موجودة" });
@@ -419,7 +421,7 @@ export function registerCashierRoutes(app: Express) {
     }
   });
 
-  app.post("/api/cashier/receipts/:id/print", async (req, res) => {
+  app.post("/api/cashier/receipts/:id/print", requireAuth, async (req, res) => {
     try {
       const { printedBy, reprintReason } = req.body;
       if (!printedBy) return res.status(400).json({ message: "اسم الطابع مطلوب" });
@@ -432,7 +434,7 @@ export function registerCashierRoutes(app: Express) {
     }
   });
 
-  app.post("/api/cashier/refund-receipts/:id/print", async (req, res) => {
+  app.post("/api/cashier/refund-receipts/:id/print", requireAuth, async (req, res) => {
     try {
       const { printedBy, reprintReason } = req.body;
       if (!printedBy) return res.status(400).json({ message: "اسم الطابع مطلوب" });
@@ -445,7 +447,7 @@ export function registerCashierRoutes(app: Express) {
     }
   });
 
-  app.get("/api/cashier/receipts/:id", async (req, res) => {
+  app.get("/api/cashier/receipts/:id", requireAuth, async (req, res) => {
     try {
       const r = await storage.getCashierReceipt(req.params.id as string);
       if (!r) return res.status(404).json({ message: "الإيصال غير موجود" });
@@ -453,7 +455,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.get("/api/cashier/refund-receipts/:id", async (req, res) => {
+  app.get("/api/cashier/refund-receipts/:id", requireAuth, async (req, res) => {
     try {
       const r = await storage.getCashierRefundReceipt(req.params.id as string);
       if (!r) return res.status(404).json({ message: "إيصال المرتجع غير موجود" });

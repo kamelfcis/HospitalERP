@@ -58,6 +58,7 @@ export const PERMISSIONS = {
   DOCTOR_SETTLEMENTS_CREATE: "doctor_settlements.create",
 
   CASHIER_VIEW: "cashier.view",
+  CASHIER_OPEN_SHIFT: "cashier.open_shift",
   CASHIER_COLLECT: "cashier.collect",
   CASHIER_REFUND: "cashier.refund",
   CASHIER_VIEW_TOTALS: "cashier.view_shift_totals",
@@ -192,6 +193,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.PATIENT_INVOICES_VIEW,
     PERMISSIONS.PATIENT_INVOICES_DISCOUNT,
     PERMISSIONS.CASHIER_VIEW,
+    PERMISSIONS.CASHIER_OPEN_SHIFT,
     PERMISSIONS.CASHIER_VIEW_TOTALS,
     PERMISSIONS.CASHIER_HANDOVER_VIEW,
     PERMISSIONS.DELIVERY_PAYMENT_VIEW,
@@ -354,6 +356,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   cashier: [
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.CASHIER_VIEW,
+    PERMISSIONS.CASHIER_OPEN_SHIFT,
     PERMISSIONS.CASHIER_COLLECT,
     PERMISSIONS.CASHIER_REFUND,
     PERMISSIONS.CASHIER_VIEW_TOTALS,
@@ -527,6 +530,7 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
     label: "الكاشير",
     permissions: [
       { key: PERMISSIONS.CASHIER_VIEW, label: "عرض" },
+      { key: PERMISSIONS.CASHIER_OPEN_SHIFT, label: "فتح وردية" },
       { key: PERMISSIONS.CASHIER_COLLECT, label: "تحصيل" },
       { key: PERMISSIONS.CASHIER_REFUND, label: "مرتجع" },
       { key: PERMISSIONS.CASHIER_VIEW_TOTALS, label: "عرض ملخص الوردية" },

@@ -107,7 +107,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patient-invoices", requireAuth, async (req, res) => {
+  app.get("/api/patient-invoices", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_VIEW), async (req, res) => {
     try {
       const filters = {
         status: req.query.status as string,
@@ -127,7 +127,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
     }
   });
 
-  app.get("/api/patient-invoices/:id", requireAuth, async (req, res) => {
+  app.get("/api/patient-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_VIEW), async (req, res) => {
     try {
       const invoice = await storage.getPatientInvoice(req.params.id as string);
       if (!invoice) return res.status(404).json({ message: "فاتورة المريض غير موجودة" });

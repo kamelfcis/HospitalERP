@@ -633,6 +633,24 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] pharmacy_mode seed error");
   }
 
+  // ── 5h-post3. Backfill CASHIER_OPEN_SHIFT → system groups ───────────────
+  try {
+    await db.execute(sql`
+      INSERT INTO group_permissions (group_id, permission)
+      SELECT pg.id, 'cashier.open_shift'
+      FROM permission_groups pg
+      WHERE pg.is_system = true
+        AND pg.system_key IN ('cashier', 'owner', 'admin')
+        AND NOT EXISTS (
+          SELECT 1 FROM group_permissions gp
+          WHERE gp.group_id = pg.id AND gp.permission = 'cashier.open_shift'
+        )
+    `);
+    log("[STARTUP] cashier.open_shift permission backfilled to system groups");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier.open_shift backfill error");
+  }
+
   // ── 5h. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
