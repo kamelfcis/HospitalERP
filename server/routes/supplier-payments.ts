@@ -15,6 +15,7 @@ import {
   getNextPaymentNumber,
 } from "../storage/supplier-payments-storage";
 import { storage } from "../storage";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 
 
 const createPaymentSchema = z.object({
@@ -103,7 +104,15 @@ export function registerSupplierPaymentRoutes(app: Express) {
             { lineType: "ap_settlement", amount: String(body.totalAmount) },
           ],
         }).catch((err: any) => {
-          console.warn(`[SUPPLIER_PAYMENT] journal generation failed for ${result.paymentId}:`, err?.message ?? err);
+          const msg: string = err?.message ?? String(err);
+          console.warn(`[SUPPLIER_PAYMENT] journal generation failed for ${result.paymentId}:`, msg);
+          logAcctEvent({
+            sourceType: "supplier_payment",
+            sourceId:   result.paymentId,
+            eventType:  "supplier_payment_legacy_journal",
+            status:     "needs_retry",
+            errorMessage: msg,
+          }).catch(() => {});
         });
       }
 

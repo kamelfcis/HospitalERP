@@ -1,0 +1,145 @@
+أريد منك تنفيذ Phase 3: Inventory Integrity + Additional GL Safety Sweep بدقة شديدة، وبدون أي تعديلات خارج النطاق.
+
+الهدف:
+1) منع أي stock race conditions أو lost updates
+2) ضمان أن كل مسارات GL الإضافية إما آمنة بالكامل أو مُوثقة كمخاطر
+3) تقليل احتمالات data corruption في المخزون والقيود
+
+قواعد صارمة:
+- لا تغيّر UI
+- لا تنفذ refactor واسع
+- لا تغيّر business logic إلا إذا كان التغيير ضروريًا لمنع corruption أو silent failure
+- أي GL async أو detached لازم يكون له needs_retry logging
+- أي stock update حساس للتزامن يجب أن يكون protected بشكل واضح
+
+==================================
+TASK-INV-01: postReceiving concurrency protection
+==================================
+
+الملف:
+server/storage/purchasing-receivings-storage.ts
+
+راجع دالة postReceiving بالكامل.
+
+المطلوب:
+- تأكد أن البحث عن lot الموجود ثم تحديث كميته لا يتم بدون row lock
+- إذا كان هناك SELECT ثم UPDATE على inventory_lots لنفس item/warehouse/expiry:
+  - استخدم SELECT ... FOR UPDATE أو آلية مكافئة داخل نفس transaction
+- تأكد أن parallel posting لنفس receiving أو نفس lot لا يسبب:
+  - lost update
+  - duplicate lot
+  - doubled movement
+  - partial inventory state
+
+إذا كانت هناك idempotency guard على receiving header نفسها، اعرضها بوضوح.
+إذا لم تكن كافية، عززها بأقل تعديل ممكن وآمن.
+
+==================================
+TASK-INV-02: Receiving GL failure logging
+==================================
+
+في نفس الملف:
+server/storage/purchasing-receivings-storage.ts
+
+إذا كان journal generation للاستلام يتم بعد commit أو داخل setImmediate / detached async flow:
+- لفه بـ try/catch
+- عند الفشل:
+  - logAcctEvent status=needs_retry
+  - sourceType = purchase_receiving
+  - sourceId = receiving header id
+  - eventType واضح
+  - errorMessage واضح
+- لا أريد receiving posted في المخزون بدون trace محاسبي عند فشل GL
+
+==================================
+TASK-INV-03: Audit additional GL risk points
+==================================
+
+راجع هذه المواضع التي ذكرتها في التقرير السابق:
+- server/routes/supplier-payments.ts:96
+- server/storage/contracts-claims-storage.ts:316
+- server/storage/clinic-master-storage.ts:117
+- server/storage/customer-payments-storage.ts:295
+- server/lib/contract-claim-settlement-service.ts:305
+
+المطلوب:
+- افحص كل موضع وحدد:
+  1) هل يولد GL؟
+  2) هل لديه period safety؟
+  3) هل لديه needs_retry logging؟
+  4) هل التنفيذ داخل transaction أم خارجها؟
+  5) هل الخطر حقيقي أم نظري؟
+- إذا كان الإصلاح صغيرًا وآمنًا جدًا:
+  نفّذه
+- إذا كان الإصلاح يحتاج تغييرات واسعة:
+  لا تنفذه الآن
+  لكن أدرجه بوضوح تحت:
+  "Deferred Financial Hardening"
+
+==================================
+TASK-INV-04: Data integrity checks
+==================================
+
+أريد queries تحقق واضحة بعد التنفيذ لاكتشاف:
+- lots مكررة لنفس item/warehouse/expiry
+- inventory movements مكررة لنفس document
+- receivings posted بدون journal أو accounting_event
+- أي stock state غير منطقي ظهر من البيانات الحالية
+
+==================================
+TASK-INV-05: Existing data safety
+==================================
+
+- لا تُجْرِ أي repair destructive تلقائي
+- إذا اكتشفت بيانات قديمة مشبوهة:
+  أعطني query فحص فقط
+  ثم query repair منفصلة ومشروحة
+- ميّز بوضوح بين:
+  confirmed corruption
+  possible corruption
+  no issue found
+
+==================================
+TESTING REQUIRED
+==================================
+
+أريد اختبارات قبل/بعد واضحة:
+
+1) Parallel receiving post simulation
+- محاكاة طلبين متوازيين لنفس receiving أو نفس lot
+- إثبات أن النتيجة النهائية صحيحة
+- إثبات عدم وجود duplicated inventory movement
+
+2) Receiving GL failure simulation
+- محاكاة failure
+- يجب ظهور accounting_event needs_retry
+
+3) Duplicate lots safety query
+- أعطني نتيجة query تكشف هل هناك lots مكررة حاليًا
+
+4) Posted receivings reconciliation
+- تقرير بعدد receivings posted
+- كم منها له journal
+- كم منها له accounting_event pending/retry
+- كم منها بلا trace
+
+==================================
+OUTPUT REQUIRED
+==================================
+
+أريد التقرير النهائي بهذا الشكل:
+
+1) ما الذي تم تنفيذه
+2) الملفات المعدلة
+3) الكود قبل/بعد في المواضع الحساسة
+4) نتائج الاختبارات قبل/بعد
+5) هل يوجد corruption مؤكد أو محتمل في المخزون
+6) هل receiving أصبح آمنًا من ناحية concurrency
+7) هل توجد مواضع GL إضافية خطرة لم تُعدّل
+8) Data repair queries فقط للبيانات القديمة
+9) حكم نهائي:
+   - هل inventory integrity تحسنت فعلاً؟
+   - ما الذي بقي قبل اعتبار المخزون والـ GL آمنين بدرجة بيع محترمة؟
+
+مهم جدًا:
+إذا اكتشفت أثناء التنفيذ أن أي افتراض سابق كان غير صحيح، صححه بوضوح كما فعلت في Phase 2، ولا تُخفِ ذلك.

@@ -32,6 +32,7 @@ import {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { logger } from "../lib/logger";
+import { logAcctEvent } from "../lib/accounting-event-logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -311,27 +312,51 @@ const claimsStorageMethods = {
     let journalEntryId: string | null = null;
     if (input.bankAccountId && input.companyArAccountId && totalSettled > 0) {
       try {
-        const entryNum = await (this as any).getNextEntryNumber();
-        const [je] = await db.execute(
+        // ── حل الفترة المالية أولاً ──────────────────────────────────────────
+        const periodRes = await db.execute(
+          sql`SELECT id FROM fiscal_periods WHERE is_closed = false AND start_date <= ${input.settlementDate} AND end_date >= ${input.settlementDate} LIMIT 1`
+        );
+        const periodId: string | null = (periodRes as any).rows?.[0]?.id ?? null;
+        if (!periodId) throw new Error("لا توجد فترة مالية مفتوحة لتاريخ التسوية");
+
+        const entryNumRes = await db.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
+        const entryNum: number = (entryNumRes as any).rows?.[0]?.n ?? 0;
+
+        const jeRes = await db.execute(
           sql`INSERT INTO journal_entries
-                (entry_number, entry_date, description, source_type, source_document_id, is_posted, created_by, created_at, updated_at)
+                (entry_number, entry_date, description, status, period_id, source_type, source_document_id, created_by, created_at, updated_at)
               VALUES
                 (${String(entryNum)}, ${input.settlementDate}, ${'تسوية مطالبة دفعة رقم ' + batch[0].batchNumber},
-                 'contract_settlement', ${batchId}, true, 'system', now(), now())
+                 'posted', ${periodId}, 'contract_settlement', ${batchId}, 'system', now(), now())
               RETURNING id`
         );
-        journalEntryId = (je as any).rows?.[0]?.id ?? null;
+        journalEntryId = (jeRes as any).rows?.[0]?.id ?? null;
 
         if (journalEntryId) {
           await db.execute(
-            sql`INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description, created_at)
+            sql`INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description, created_at)
                 VALUES
-                  (${journalEntryId}, ${input.bankAccountId},      ${totalSettled.toFixed(2)}, 0, 'تحصيل من شركة التأمين', now()),
-                  (${journalEntryId}, ${input.companyArAccountId}, 0, ${totalSettled.toFixed(2)}, 'تسوية ذمم شركة تأمين',   now())`
+                  (${journalEntryId}, 1, ${input.bankAccountId},      ${totalSettled.toFixed(2)}, 0, 'تحصيل من شركة التأمين', now()),
+                  (${journalEntryId}, 2, ${input.companyArAccountId}, 0, ${totalSettled.toFixed(2)}, 'تسوية ذمم شركة تأمين',   now())`
           );
+          logAcctEvent({
+            sourceType: "contract_claim_batch",
+            sourceId:   batchId,
+            eventType:  "claim_settlement_journal",
+            status:     "completed",
+            journalEntryId,
+          }).catch(() => {});
         }
       } catch (err: any) {
-        logger.warn({ err: err.message, batchId }, "[Claims] settleClaimBatch — journal generation failed");
+        const msg: string = err?.message ?? String(err);
+        logger.warn({ err: msg, batchId }, "[Claims] settleClaimBatch — journal generation failed");
+        logAcctEvent({
+          sourceType: "contract_claim_batch",
+          sourceId:   batchId,
+          eventType:  "claim_settlement_journal",
+          status:     "needs_retry",
+          errorMessage: msg,
+        }).catch(() => {});
       }
     }
 

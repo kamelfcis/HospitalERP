@@ -407,32 +407,45 @@ const methods = {
         const costPerMinor = convertPriceToMinorUnit(parseFloat(line.purchasePrice), line.unitLevel || 'minor', item);
         const costPerMinorStr = costPerMinor.toFixed(4);
         
-        const lotConditions = [
-          eq(inventoryLots.itemId, line.itemId),
-          eq(inventoryLots.warehouseId, header.warehouseId),
-        ];
+        // SELECT ... FOR UPDATE: يُقفل سطر الـ lot داخل الـ transaction
+        // يمنع lost-update عند استلامين متوازيين يستهدفان نفس الصنف/المستودع/الصلاحية
+        let existingLots: typeof inventoryLots.$inferSelect[] = [];
         if (line.expiryMonth && line.expiryYear) {
-          lotConditions.push(eq(inventoryLots.expiryMonth, line.expiryMonth));
-          lotConditions.push(eq(inventoryLots.expiryYear, line.expiryYear));
+          const rawLots = await tx.execute(
+            sql`SELECT * FROM inventory_lots
+                WHERE item_id = ${line.itemId}
+                  AND warehouse_id = ${header.warehouseId}
+                  AND expiry_month  = ${line.expiryMonth}
+                  AND expiry_year   = ${line.expiryYear}
+                FOR UPDATE`
+          );
+          existingLots = (rawLots as any).rows ?? [];
         } else {
-          lotConditions.push(sql`${inventoryLots.expiryMonth} IS NULL`);
+          const rawLots = await tx.execute(
+            sql`SELECT * FROM inventory_lots
+                WHERE item_id = ${line.itemId}
+                  AND warehouse_id = ${header.warehouseId}
+                  AND expiry_month IS NULL
+                FOR UPDATE`
+          );
+          existingLots = (rawLots as any).rows ?? [];
         }
-        
-        const existingLots = await tx.select().from(inventoryLots).where(and(...lotConditions));
         let lotId: string;
         
         const lotSalePrice = line.salePrice || "0";
         
         if (existingLots.length > 0) {
-          const lot = existingLots[0];
-          const newQty = parseFloat(lot.qtyInMinor) + qtyMinor;
+          // raw SQL rows use snake_case — نقرأ qty_in_minor مباشرة
+          const lot = existingLots[0] as any;
+          const lotIdRaw: string = lot.id;
+          const newQty = parseFloat(lot.qty_in_minor) + qtyMinor;
           await tx.update(inventoryLots).set({ 
             qtyInMinor: newQty.toFixed(4),
             purchasePrice: costPerMinorStr,
             salePrice: lotSalePrice,
             updatedAt: new Date(),
-          }).where(eq(inventoryLots.id, lot.id));
-          lotId = lot.id;
+          }).where(eq(inventoryLots.id, lotIdRaw));
+          lotId = lotIdRaw;
         } else {
           const [newLot] = await tx.insert(inventoryLots).values({
             itemId: line.itemId,
@@ -520,9 +533,9 @@ const methods = {
           }
         }).catch(async (err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
-          logger.error({ err: msg, receivingId: id }, "[RECEIVING] Auto journal failed");
-          await db.update(receivingHeaders).set({ journalStatus: "failed", journalError: msg, updatedAt: new Date() }).where(eq(receivingHeaders.id, id));
-          logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "failed", errorMessage: msg }).catch(() => {});
+          logger.error({ err: msg, receivingId: id }, "[RECEIVING] Auto journal failed — needs_retry");
+          await db.update(receivingHeaders).set({ journalStatus: "needs_retry", journalError: msg, updatedAt: new Date() }).where(eq(receivingHeaders.id, id));
+          logAcctEvent({ sourceType: "purchase_receiving", sourceId: id, eventType: "purchase_receiving_journal", status: "needs_retry", errorMessage: msg }).catch(() => {});
         });
       }
     }

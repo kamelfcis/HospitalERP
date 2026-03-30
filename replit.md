@@ -44,6 +44,104 @@ Performance optimizations include `React.memo` for table rows and vendor chunkin
 - **Item Movement Report**: Detailed per-item inventory movement report with search, filters, unit-level toggle, signed quantities, running balance, and Excel export/print functionality, implemented with server-side pagination.
 - **Unit Conversion Overhaul**: Centralized unit conversion logic with `QTY_MINOR_TOLERANCE=0.0005`, supporting various unit configurations and server-side re-verification. Unit name changes are protected after transactions, and a Data Integrity Report page is available.
 
+## Financial Integrity Hardening
+
+### Phase 2 — GL Safety (2026-03-30)
+
+**TASK-FIN-01: Stay Engine UNIQUE index**
+- startup migration في `server/index.ts` ينشئ `uq_pil_source_type_id` على `patient_invoice_lines(source_type, source_id) WHERE is_void=false AND source_type IS NOT NULL`
+- يفحص duplicates أولاً — لا ينشئ الـ index إذا وُجدت
+- النتيجة: Stay Engine ينجح في upsert بعد 272h صمت (33 سطر في أول tick)
+
+**TASK-FIN-02: منع journal بـ period_id=null**
+- `generateJournalEntry` في `finance-journal-storage.ts` يُعيد `null` بدلاً من إنشاء قيد يتيم
+- 62 قيد قديم بـ `period_id=null` موجود من قبل الإصلاح (انظر Data Repair Queries)
+
+**TASK-FIN-03/04: Supplier Payment + Opening Stock GL logging**
+- catch blocks تُسجّل `logAcctEvent(needs_retry)` بدلاً من console.warn
+- retry handlers جديدة في `accounting-retry-worker.ts`
+
+**TASK-FIN-05: Sales Return Phase-2 Idempotency**
+- guard صريح في `completeSalesReturnWithCash` — `journal.status==='posted'` → skip مع log
+
+### Phase 3 — Inventory Integrity + Additional GL Safety (2026-03-30)
+
+**TASK-INV-01: FOR UPDATE lock على inventory_lots في postReceiving**
+- **الملف:** `server/storage/purchasing-receivings-storage.ts`
+- **المشكلة المُكتشفة:** SELECT على `inventory_lots` بدون `FOR UPDATE` يسمح بـ lost-update عند استلامين متوازيين
+- **الدليل:** 2 حالة duplicate lots موجودة في البيانات (نفس الصنف/المستودع/الصلاحية)
+- **الإصلاح:** استبدال Drizzle ORM SELECT بـ `raw SQL SELECT ... FOR UPDATE` داخل نفس transaction
+- **ملاحظة:** raw SQL rows تعطي snake_case — يُقرأ `lot.qty_in_minor` وليس `lot.qtyInMinor`
+
+**TASK-INV-02: Receiving GL catch → needs_retry**
+- **الملف:** `server/storage/purchasing-receivings-storage.ts`
+- catch block يُسجّل `status: "needs_retry"` (كان `"failed"`) ويضبط `journalStatus` بنفس القيمة
+
+**TASK-INV-03a: Supplier Payment legacy catch → logAcctEvent**
+- **الملف:** `server/routes/supplier-payments.ts`
+- `.catch()` في legacy GL path يُسجّل `logAcctEvent(needs_retry)` الآن
+
+**TASK-INV-03b/c: CRITICAL — إصلاح contracts GL (is_posted يتعطل منذ البداية)**
+- **الملفات:** `contracts-claims-storage.ts`, `contract-claim-settlement-service.ts`
+- **الخلل المُكتشف:** كلا المسارين استخدما `is_posted: true` في INSERT — هذا العمود لا وجود له في `journal_entries`! كل GL للعقود كان يفشل بصمت منذ البداية
+- **الإصلاح:**
+  1. استبدال `is_posted: true` → `status: 'posted'`
+  2. إضافة `period_id` lookup قبل INSERT
+  3. إضافة `logAcctEvent(completed/needs_retry)` في try/catch
+  4. إضافة `line_number` في `journal_lines` INSERT (كان مفقوداً)
+
+**TASK-INV-04/05: نتائج فحص البيانات الحالية**
+
+| الفحص | النتيجة | التصنيف |
+|---|---|---|
+| Duplicate lots (item/warehouse/expiry) | **2 حالة** | Confirmed corruption |
+| Duplicate movements (same doc + lot) | **12 سطر** | من multi-line entry — مقصود |
+| Posted receivings بدون journal trace | **18 من 18** | Pre-fix — no corruption |
+| is_posted GL contracts (كان مكسوراً) | **لا يوجد** كان يفشل بصمت | Confirmed bug - fixed |
+| delivery_receipt failed events | **4** | يحتاج retry يدوي |
+
+### Data Repair Queries (يُنفَّذ يدوياً بعد مراجعة)
+
+```sql
+-- فحص 62 قيد قديم بـ period_id=null (Phase 2)
+SELECT COUNT(*) FROM journal_entries WHERE period_id IS NULL AND status = 'posted';
+
+-- إصلاح القيود القديمة التي بلا period_id
+UPDATE journal_entries je
+SET period_id = (
+  SELECT fp.id FROM fiscal_periods fp
+  WHERE fp.start_date <= je.entry_date AND fp.end_date >= je.entry_date
+  LIMIT 1
+)
+WHERE je.period_id IS NULL AND je.status = 'posted'
+  AND EXISTS (SELECT 1 FROM fiscal_periods fp WHERE fp.start_date <= je.entry_date AND fp.end_date >= je.entry_date);
+
+-- فحص الـ duplicate lots (Phase 3)
+SELECT il.id, i.name_ar, il.expiry_month, il.expiry_year, il.qty_in_minor::numeric AS qty,
+       (SELECT COUNT(*) FROM inventory_lot_movements m WHERE m.lot_id = il.id) AS moves
+FROM inventory_lots il JOIN items i ON i.id = il.item_id
+WHERE (il.item_id, il.warehouse_id, il.expiry_month, il.expiry_year) IN (
+  SELECT item_id, warehouse_id, expiry_month, expiry_year FROM inventory_lots
+  GROUP BY item_id, warehouse_id, expiry_month, expiry_year HAVING COUNT(*) > 1
+) ORDER BY il.item_id, il.qty_in_minor::numeric DESC;
+
+-- إصلاح الـ duplicate lots: دمج القديم (qty=0) في الجديد
+-- خطوة 1: نقل الحركات للـ lot الأحدث (غيّر '16af958b...' و '74d57e77...' للقيم الفعلية)
+-- UPDATE inventory_lot_movements SET lot_id = '<newer_lot_id>' WHERE lot_id = '<older_zero_lot_id>';
+-- خطوة 2: حذف الـ lot القديم (بعد التحقق من عدم وجود حركات)
+-- DELETE FROM inventory_lots WHERE id = '<older_zero_lot_id>' AND qty_in_minor = '0.0000';
+```
+
+### Deferred Financial Hardening (Phase لاحقة)
+- `clinic-master-storage.ts` — OPD GL جاهز ✅ (period check + status='posted') — FROZEN لا تلمس
+- `customer-payments-storage.ts` — GL داخل transaction مع period check وlogAcctEvent ✅ — لا يحتاج
+
+### Critical Notes
+- **accounting_event_log** (وليس `accounting_events`) هو اسم الجدول الفعلي
+- **inventory_lots raw SQL**: يُعطي snake_case — اقرأ `qty_in_minor` و `id` مباشرة
+- **contracts GL was NEVER posting journals** قبل Phase 3 بسبب is_posted غير موجود
+- **18 posted receivings** بـ `journal_status='none'` — كلها سابقة للإصلاح، تحتاج account mappings لإعادة المحاولة
+
 ## External Dependencies
 
 ### Database
