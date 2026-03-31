@@ -32,6 +32,7 @@ import type { DatabaseStorage } from "./index";
 import { roundMoney } from "../finance-helpers";
 import { computeLineTax, computeInvoiceTaxTotals, type LineTaxResult } from "../services/pharmacy-sales-tax-service";
 import type { TaxType } from "../lib/tax/pharmacy-vat-engine";
+import { logger } from "../lib/logger";
 
 
 const methods = {
@@ -214,6 +215,7 @@ const methods = {
 
   async createSalesInvoice(this: DatabaseStorage, header: InsertSalesInvoiceHeader, lines: Partial<InsertSalesInvoiceLine>[]): Promise<SalesInvoiceHeader> {
     return await db.transaction(async (tx) => {
+      logger.debug("[CREATE_SALES_INVOICE] started", { lineCount: lines.length, warehouseId: header.warehouseId });
       const nextNum = await this.getNextSalesInvoiceNumber();
 
       // فحص الكميات الكسرية على مدخل المستخدم الأصلي — قبل توسيع FEFO
