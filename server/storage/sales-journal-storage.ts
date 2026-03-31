@@ -418,12 +418,15 @@ const methods = {
       if (totalTaxAmount > 0.001) {
         const vatOutputMapping = mappingMap.get("vat_output");
         if (vatOutputMapping?.creditAccountId) {
-          // اخصم الضريبة نسبياً من الإيرادات
+          // اخصم الضريبة نسبياً من الإيرادات مع تثبيت المجموع بدقة 2 خانة عشرية
+          // (رياضياً: netRevDrugs + netRevSupplies = totalRevenue - totalTaxAmount)
           const totalRevenue = revenueDrugs + revenueSupplies;
           if (totalRevenue > 0.001) {
+            const netRevTotal = parseFloat((totalRevenue - totalTaxAmount).toFixed(2));
             const taxFraction = totalTaxAmount / totalRevenue;
-            revenueDrugs     = parseFloat((revenueDrugs     * (1 - taxFraction)).toFixed(2));
-            revenueSupplies  = parseFloat((revenueSupplies  * (1 - taxFraction)).toFixed(2));
+            const netRevDrugs = parseFloat((revenueDrugs * (1 - taxFraction)).toFixed(2));
+            revenueDrugs    = netRevDrugs;
+            revenueSupplies = parseFloat((netRevTotal - netRevDrugs).toFixed(2));
           }
           journalLineData.push({
             journalEntryId: "",
@@ -1075,12 +1078,15 @@ const methods = {
       null;
 
     // خصم الضريبة نسبياً من مبالغ الإيراد قبل بناء سطور القيد
+    // مع تثبيت المجموع: netRevDrugs + netRevSupplies = totalRevenueBefore - totalTaxAmount
     if (totalTaxAmount > 0.001 && vatOutputDebitId) {
       const totalRevenueBefore = revenueDrugs + revenueSupplies;
       if (totalRevenueBefore > 0.001) {
+        const netRevTotal = parseFloat((totalRevenueBefore - totalTaxAmount).toFixed(2));
         const taxFraction = totalTaxAmount / totalRevenueBefore;
-        revenueDrugs    = parseFloat((revenueDrugs    * (1 - taxFraction)).toFixed(2));
-        revenueSupplies = parseFloat((revenueSupplies * (1 - taxFraction)).toFixed(2));
+        const netRevDrugs = parseFloat((revenueDrugs * (1 - taxFraction)).toFixed(2));
+        revenueDrugs    = netRevDrugs;
+        revenueSupplies = parseFloat((netRevTotal - netRevDrugs).toFixed(2));
       }
     }
 

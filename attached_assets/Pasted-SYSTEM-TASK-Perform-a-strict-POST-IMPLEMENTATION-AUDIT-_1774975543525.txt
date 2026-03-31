@@ -1,0 +1,223 @@
+SYSTEM TASK: Perform a strict POST-IMPLEMENTATION AUDIT for Pharmacy VAT (Output VAT) that was just implemented. The goal is to validate correctness, accounting integrity, and production readiness BEFORE enabling the feature flag.
+
+CRITICAL OBJECTIVE:
+Do NOT add new features.
+Do NOT refactor broadly.
+ONLY audit, validate, detect issues, and propose FIXES if needed.
+
+================================================================
+SCOPE
+================================================================
+- Pharmacy sales invoices (create/update/finalize)
+- Pharmacy returns
+- VAT engine (pharmacy-vat-engine.ts)
+- Tax service layer
+- Accounting posting (sales journal)
+- Feature flag behavior
+- UI calculations consistency
+
+================================================================
+PHASE 1 — TAX SNAPSHOT VALIDATION (CRITICAL)
+================================================================
+Check that ALL of the following fields are STORED on sales invoice line at creation time:
+
+- taxType
+- taxRate
+- taxAmount
+- netUnitPrice
+- grossUnitPrice
+- lineNetAmount
+- lineGrossAmount
+
+VALIDATE:
+1) These values are NOT re-read from item after creation
+2) Editing item tax settings DOES NOT affect existing invoices
+3) Returns use ORIGINAL invoice line values
+
+OUTPUT:
+- PASS / FAIL
+- exact code references
+
+================================================================
+PHASE 2 — SERVER-SIDE RECOMPUTATION
+================================================================
+Verify that tax is recomputed server-side in:
+
+- createSalesInvoice
+- updateSalesInvoice
+- finalizeSalesInvoice (IMPORTANT)
+
+CHECK:
+- VAT engine is called
+- client values are NOT trusted
+- recomputation overwrites incoming values
+
+OUTPUT:
+- PASS / FAIL
+- missing flows if any
+
+================================================================
+PHASE 3 — ACCOUNTING POSTING VALIDATION
+================================================================
+Inspect buildSalesJournalLines:
+
+FOR TAXABLE SALES:
+Ensure:
+Dr Customer/Cash = Gross
+Cr Revenue = Net
+Cr vat_output = Tax
+
+CHECK:
+1) vat_output mapping is fetched (not hardcoded)
+2) If mapping missing → error is thrown ONLY for taxable
+3) Exempt invoices do NOT fail
+
+CHECK ROUNDING:
+- Net + Tax = Gross EXACTLY
+
+OUTPUT:
+- PASS / FAIL
+- rounding mismatch if exists
+
+================================================================
+PHASE 4 — RETURNS VALIDATION
+================================================================
+Check returns logic:
+
+REQUIREMENTS:
+1) No tax recalculation
+2) Uses original invoice line values
+3) Reverses:
+   - Revenue
+   - vat_output (if existed)
+
+CHECK:
+- code path
+- data source for tax
+
+OUTPUT:
+- PASS / FAIL
+
+================================================================
+PHASE 5 — MIXED INVOICE VALIDATION
+================================================================
+Test invoice containing:
+- taxable items
+- exempt items
+
+VERIFY:
+- tax only on taxable lines
+- totals correct:
+  totalNet + totalTax = totalGross
+- posting correct
+
+OUTPUT:
+- PASS / FAIL
+
+================================================================
+PHASE 6 — PRICE MODE VALIDATION
+================================================================
+Check pricesIncludeTax logic:
+
+VERIFY:
+IF pricesIncludeTax = true:
+  price treated as gross
+
+IF false:
+  price treated as net
+
+CHECK:
+- VAT engine logic
+- UI consistency
+- DB consistency
+
+OUTPUT:
+- PASS / FAIL
+
+================================================================
+PHASE 7 — FEATURE FLAG BEHAVIOR
+================================================================
+Test with:
+
+enablePharmacySalesOutputVat = false
+
+VERIFY:
+- ZERO change in behavior
+- NO VAT lines generated
+- UI hides VAT fields
+
+Test with flag = true
+
+VERIFY:
+- VAT fully active
+
+OUTPUT:
+- PASS / FAIL
+
+================================================================
+PHASE 8 — VALIDATION RULES
+================================================================
+CHECK:
+1) taxable line MUST have taxRate > 0
+2) exempt line MUST have taxAmount = 0
+3) missing vat_output mapping → blocks taxable invoice ONLY
+4) invalid item tax config → handled
+
+OUTPUT:
+- PASS / FAIL
+
+================================================================
+PHASE 9 — ROUNDING CONSISTENCY
+================================================================
+VERIFY:
+- VAT calculated per line
+- totals = sum of rounded lines
+- NO difference between:
+  UI
+  DB
+  Journal
+
+CHECK:
+- roundMoney usage
+
+OUTPUT:
+- PASS / FAIL
+
+================================================================
+PHASE 10 — PERFORMANCE & N+1 CHECK
+================================================================
+VERIFY:
+- NO queries inside loops
+- VAT logic does NOT trigger extra DB calls per line
+- item lookups (if any) are batched
+
+OUTPUT:
+- PASS / FAIL
+
+================================================================
+FINAL OUTPUT REQUIRED
+================================================================
+Return a structured audit report:
+
+1) Overall Status:
+   - READY FOR PRODUCTION / NOT READY
+
+2) Critical Issues (must fix before go-live)
+
+3) Medium Issues (should fix)
+
+4) Low Issues (optional improvements)
+
+5) Verified Safe Areas
+
+6) Exact files/functions needing changes (if any)
+
+7) Confirmation that:
+   - accounting is correct
+   - VAT posting is correct
+   - no regression risk exists
+
+IMPORTANT:
+Be strict.
+If any critical accounting inconsistency exists → mark NOT READY.
+Do not assume correctness — verify from code paths.
