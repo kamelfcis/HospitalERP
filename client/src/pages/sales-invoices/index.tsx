@@ -86,6 +86,53 @@ export default function SalesInvoices() {
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.lineTotal, 0), [lines]);
   const netTotal = useMemo(() => +(subtotal - form.discountValue).toFixed(2), [subtotal, form.discountValue]);
 
+  // ── قواعد التغطية للتقدير المرئي (يُحمَّل فقط عند اختيار عقد) ──────────
+  const isContractDraft = form.customerType === "contract" && !!form.contractId && isDraft;
+  const { data: contractRulesRaw } = useQuery<any[]>({
+    queryKey: ["/api/contracts", form.contractId, "rules"],
+    enabled: isContractDraft,
+    staleTime: 60_000,
+  });
+
+  // تقدير حصتي الشركة والمريض قبل الاعتماد (يُستخدم للعرض فقط)
+  const { estimatedCompanyTotal, estimatedPatientTotal } = useMemo(() => {
+    if (!isContractDraft || !contractRulesRaw) {
+      return { estimatedCompanyTotal: null, estimatedPatientTotal: null };
+    }
+    const rules = contractRulesRaw as any[];
+    const covPct = form.companyCoveragePct / 100;
+    let cSum = 0;
+    let pSum = 0;
+    for (const line of lines) {
+      const lt       = line.lineTotal;
+      const cat      = line.item?.category ?? null;
+      const itemId   = line.itemId;
+      const sorted   = [...rules].filter(r => r.isActive).sort((a, b) => a.priority - b.priority);
+      // Pass 1: الاستثناء
+      const excluded = sorted.some(r =>
+        (r.ruleType === "exclude_item_category" && r.itemCategory && r.itemCategory === cat) ||
+        (r.ruleType === "exclude_item"          && r.itemId      && r.itemId      === itemId)
+      );
+      if (excluded) { pSum += lt; continue; }
+      // Pass 3: التسعير
+      const priceRule = sorted.find(r =>
+        (r.ruleType === "discount_pct" || r.ruleType === "global_discount") &&
+        (!r.itemCategory || r.itemCategory === cat) &&
+        (!r.itemId       || r.itemId       === itemId)
+      );
+      let contractPrice = lt;
+      if (priceRule) {
+        const discPct = parseFloat(priceRule.discountPct ?? "0");
+        contractPrice = lt * (1 - discPct / 100);
+      }
+      const cShare = +(contractPrice * covPct).toFixed(2);
+      const pShare = +(lt - cShare).toFixed(2);
+      cSum += cShare;
+      pSum += pShare;
+    }
+    return { estimatedCompanyTotal: +cSum.toFixed(2), estimatedPatientTotal: +pSum.toFixed(2) };
+  }, [isContractDraft, contractRulesRaw, lines, form.companyCoveragePct]);
+
   // ── تحميل الفاتورة الموجودة ───────────────────────────────────────────────
   useLoadInvoice({
     invoiceDetail, isNew, warehouses,
@@ -345,6 +392,8 @@ export default function SalesInvoices() {
         statsHook={statsHook}
         onBack={() => navigate("/sales-invoices")}
         maxDiscountPct={user?.maxDiscountPct ? parseFloat(user.maxDiscountPct) : null}
+        estimatedCompanyTotal={estimatedCompanyTotal}
+        estimatedPatientTotal={estimatedPatientTotal}
       />
     );
   }

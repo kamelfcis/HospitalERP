@@ -4,11 +4,13 @@ import { eq, desc, and, sql, or, asc, gte, lte, ilike, inArray } from "drizzle-o
 import { logAcctEvent } from "../lib/accounting-event-logger";
 import { convertQtyToMinor, QTY_MINOR_TOLERANCE } from "../inventory-helpers";
 import { generateClaimsForSalesInvoice } from "../lib/contract-claim-generator";
+import { evaluateContractForService } from "../lib/contract-rule-evaluator";
 import {
   items,
   warehouses,
   users,
   contracts,
+  contractCoverageRules,
   salesInvoiceHeaders,
   salesInvoiceLines,
   salesTransactions,
@@ -243,33 +245,82 @@ const methods = {
       // ── حساب حصص التعاقد (من السيرفر — يتجاهل ما أرسله العميل) ──────────
       isContractInvoice = invoice.customerType === "contract" && !!(invoice.contractId);
       if (isContractInvoice) {
-        // تحميل نسبة تغطية الشركة من جدول العقود
+        // 1. تحميل العقد بالحقول اللازمة للمُقيِّم
         const [contractRow] = await tx
-          .select({ companyCoveragePct: contracts.companyCoveragePct })
+          .select({
+            id:                 contracts.id,
+            companyCoveragePct: contracts.companyCoveragePct,
+            isActive:           contracts.isActive,
+            startDate:          contracts.startDate,
+            endDate:            contracts.endDate,
+          })
           .from(contracts)
           .where(eq(contracts.id, invoice.contractId as string));
+        if (!contractRow) throw new Error("العقد المرتبط بالفاتورة غير موجود");
 
-        const companyCoveragePct = contractRow?.companyCoveragePct
-          ? parseFloat(String(contractRow.companyCoveragePct))
-          : 100;
+        // 2. تحميل قواعد التغطية دفعة واحدة (لا N+1)
+        const coverageRules = await tx
+          .select()
+          .from(contractCoverageRules)
+          .where(
+            and(
+              eq(contractCoverageRules.contractId, invoice.contractId as string),
+              eq(contractCoverageRules.isActive, true),
+            )
+          )
+          .orderBy(contractCoverageRules.priority);
 
-        // جلب السطور للحساب
+        // 3. جلب السطور مع itemId للتقييم
         const linesForShares = await tx
-          .select({ id: salesInvoiceLines.id, lineTotal: salesInvoiceLines.lineTotal })
+          .select({ id: salesInvoiceLines.id, lineTotal: salesInvoiceLines.lineTotal, itemId: salesInvoiceLines.itemId })
           .from(salesInvoiceLines)
           .where(eq(salesInvoiceLines.invoiceId, id));
 
+        // 4. تحميل فئات الأصناف دفعة واحدة (لا N+1)
+        const shareLineItemIds = [...new Set(linesForShares.map(l => l.itemId).filter(Boolean) as string[])];
+        const shareItemRows = shareLineItemIds.length > 0
+          ? await tx.select({ id: items.id, category: items.category }).from(items).where(inArray(items.id, shareLineItemIds))
+          : [];
+        const shareItemCategoryMap = new Map(shareItemRows.map(i => [i.id, i.category]));
+
+        const evalDate = String(invoice.invoiceDate ?? new Date().toISOString().split('T')[0]);
         let pSum = 0;
         let cSum = 0;
 
-        // حساب وتحديث كل سطر — N+1 write: مسموح به (business action per-line)
+        // 5. تقييم قواعد التغطية لكل سطر — N+1 write: مسموح به (business action per-line)
         for (const l of linesForShares) {
-          const lineTotal   = parseFloat(String(l.lineTotal || "0"));
-          const cShare      = parseFloat((lineTotal * companyCoveragePct / 100).toFixed(2));
-          const pShare      = parseFloat((lineTotal - cShare).toFixed(2));
+          const lineTotal    = parseFloat(String(l.lineTotal || "0"));
+          const itemCategory = shareItemCategoryMap.get(l.itemId) ?? null;
+
+          const evalResult = evaluateContractForService({
+            contract: {
+              id:                 contractRow.id,
+              companyCoveragePct: String(contractRow.companyCoveragePct ?? "100"),
+              isActive:           contractRow.isActive,
+              startDate:          String(contractRow.startDate),
+              endDate:            String(contractRow.endDate),
+            },
+            rules:           coverageRules as any,
+            serviceId:       null,
+            departmentId:    null,
+            serviceCategory: null,
+            itemId:          l.itemId,
+            itemCategory,
+            listPrice:       String(lineTotal),
+            evaluationDate:  evalDate,
+          });
+
+          const cShare = parseFloat(evalResult.companyShareAmount);
+          const pShare = parseFloat(evalResult.patientShareAmount);
+
           await tx.update(salesInvoiceLines)
-            .set({ companyShareAmount: String(cShare), patientShareAmount: String(pShare) })
+            .set({
+              companyShareAmount: String(cShare),
+              patientShareAmount: String(pShare),
+              coverageStatus:     evalResult.coverageStatus,
+            })
             .where(eq(salesInvoiceLines.id, l.id));
+
           cSum += cShare;
           pSum += pShare;
         }

@@ -10,11 +10,11 @@ interface Props {
   totalTaxAmount?: number;
   onDiscountPctChange: (val: string) => void;
   onDiscountValueChange: (val: string) => void;
-  // ── حقول التعاقد ──────────────────────────────────────────────────────────
   customerType?: string;
   companyCoveragePct?: number;
-  // ── حد الخصم ──────────────────────────────────────────────────────────────
   maxDiscountPct?: number | null;
+  estimatedCompanyTotal?: number | null;
+  estimatedPatientTotal?: number | null;
 }
 
 export function InvoiceTotals({
@@ -23,14 +23,19 @@ export function InvoiceTotals({
   onDiscountPctChange, onDiscountValueChange,
   customerType, companyCoveragePct = 100,
   maxDiscountPct,
+  estimatedCompanyTotal, estimatedPatientTotal,
 }: Props) {
   const hasVat          = totalTaxAmount > 0.001;
   const isContract      = customerType === "contract";
   const discountOverMax = maxDiscountPct != null && discountPct > maxDiscountPct;
 
-  // حساب حصص التعاقد من صافي الفاتورة
-  const companyShare = isContract ? +(netTotal * (companyCoveragePct / 100)).toFixed(2) : 0;
-  const patientShare = isContract ? +(netTotal - companyShare).toFixed(2) : 0;
+  const hasRuleEstimate = estimatedCompanyTotal != null && estimatedPatientTotal != null;
+  const companyShare = isContract
+    ? (hasRuleEstimate ? estimatedCompanyTotal! : +(netTotal * (companyCoveragePct / 100)).toFixed(2))
+    : 0;
+  const patientShare = isContract
+    ? (hasRuleEstimate ? estimatedPatientTotal! : +(netTotal - companyShare).toFixed(2))
+    : 0;
 
   const colCount = (hasVat ? 5 : 4) + (isContract ? 2 : 0);
 
@@ -91,11 +96,13 @@ export function InvoiceTotals({
           <span className="text-sm font-bold text-green-300" data-testid="text-net-total">{formatNumber(netTotal)}</span>
         </div>
 
-        {/* ── أعمدة التعاقد ───────────────────────────────────────────────────── */}
         {isContract && (
           <>
             <div>
-              <span className="font-semibold block opacity-80 text-blue-300">حصة الشركة ({companyCoveragePct}%)</span>
+              <span className="font-semibold block opacity-80 text-blue-300">
+                حصة الشركة
+                {hasRuleEstimate ? " (بعد القواعد)" : ` (${companyCoveragePct}%)`}
+              </span>
               <span className="text-sm font-bold text-blue-200" data-testid="text-company-share">{formatNumber(companyShare)}</span>
             </div>
             <div>
