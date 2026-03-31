@@ -786,7 +786,7 @@ export interface IStorage {
 
   // ── Contracts (العقود) ────────────────────────────────────────────────────
   getContractsByCompany(companyId: string): Promise<import("@shared/schema").Contract[]>;
-  getAllActiveContracts(): Promise<Array<{ id: string; contractName: string; contractCode: string | null; companyCoveragePct: string | null; startDate: string; endDate: string; companyId: string; companyName: string }>>;
+  getAllActiveContracts(): Promise<Array<{ id: string; contractName: string; contractNumber: string | null; companyCoveragePct: string | null; startDate: string; endDate: string; companyId: string; companyName: string }>>;
   getContractById(id: string): Promise<import("@shared/schema").Contract | null>;
   createContract(data: import("@shared/schema").InsertContract): Promise<import("@shared/schema").Contract>;
   updateContract(id: string, data: Partial<import("@shared/schema").InsertContract>): Promise<import("@shared/schema").Contract>;

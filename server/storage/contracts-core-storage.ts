@@ -59,7 +59,7 @@ const contractsCoreMethods = {
   async getAllActiveContracts(this: unknown): Promise<Array<{
     id: string;
     contractName: string;
-    contractCode: string | null;
+    contractNumber: string | null;
     companyCoveragePct: string | null;
     startDate: string;
     endDate: string;
@@ -70,7 +70,7 @@ const contractsCoreMethods = {
       .select({
         id:                 contracts.id,
         contractName:       contracts.contractName,
-        contractCode:       contracts.contractCode,
+        contractNumber:     contracts.contractNumber,
         companyCoveragePct: contracts.companyCoveragePct,
         startDate:          contracts.startDate,
         endDate:            contracts.endDate,

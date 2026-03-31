@@ -12,7 +12,7 @@ import { Building2, ChevronDown, X } from "lucide-react";
 export interface ActiveContract {
   id:                 string;
   contractName:       string;
-  contractCode:       string | null;
+  contractNumber:     string | null;
   companyCoveragePct: string | null;
   startDate:          string;
   endDate:            string;
