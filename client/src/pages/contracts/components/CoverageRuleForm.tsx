@@ -1,10 +1,10 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { insertContractCoverageRuleSchema, coverageRuleTypeLabels } from "@shared/schema";
+import { insertContractCoverageRuleSchema, coverageRuleTypeLabels, itemCategoryLabels } from "@shared/schema";
 import type { ContractCoverageRule } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,14 +21,38 @@ import {
 } from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
 
+// ─── أنواع القواعد مجمّعة حسب domain ─────────────────────────────────────────
+const RULE_GROUPS = [
+  {
+    label: "📋 الخدمات الطبية",
+    types: ["include_service", "exclude_service", "include_dept", "exclude_dept"],
+  },
+  {
+    label: "💊 الصيدلية (الأصناف)",
+    types: ["include_item_category", "exclude_item_category"],
+  },
+  {
+    label: "💰 التسعير والخصومات",
+    types: ["discount_pct", "fixed_price", "global_discount"],
+  },
+  {
+    label: "✅ الموافقات",
+    types: ["approval_required"],
+  },
+];
+
 const ruleFormSchema = insertContractCoverageRuleSchema.extend({
-  ruleName: z.string().min(1, "اسم القاعدة مطلوب"),
-  ruleType: z.string().min(1, "نوع القاعدة مطلوب"),
-  priority: z.coerce.number().int().min(1).default(10),
-  discountPct: z.string().optional().nullable(),
-  fixedPrice:  z.string().optional().nullable(),
+  ruleName:     z.string().min(1, "اسم القاعدة مطلوب"),
+  ruleType:     z.string().min(1, "نوع القاعدة مطلوب"),
+  priority:     z.coerce.number().int().min(1).default(10),
+  discountPct:  z.string().optional().nullable(),
+  fixedPrice:   z.string().optional().nullable(),
+  itemId:       z.string().optional().nullable(),
+  itemCategory: z.string().optional().nullable(),
 });
 type RuleFormValues = z.infer<typeof ruleFormSchema>;
+
+interface Department { id: string; nameAr: string; }
 
 interface Props {
   open: boolean;
@@ -40,15 +64,22 @@ interface Props {
 export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Props) {
   const { toast } = useToast();
 
+  const { data: departments = [] } = useQuery<Department[]>({
+    queryKey: ["/api/departments"],
+    enabled: open,
+  });
+
   const form = useForm<RuleFormValues>({
     resolver: zodResolver(ruleFormSchema),
     defaultValues: {
       contractId,
       ruleName:        editing?.ruleName        ?? "",
-      ruleType:        editing?.ruleType        ?? "include_service",
+      ruleType:        editing?.ruleType        ?? "global_discount",
       serviceId:       editing?.serviceId       ?? "",
       departmentId:    editing?.departmentId    ?? "",
       serviceCategory: editing?.serviceCategory ?? "",
+      itemId:          (editing as any)?.itemId          ?? "",
+      itemCategory:    (editing as any)?.itemCategory    ?? "",
       discountPct:     editing?.discountPct     ?? null,
       fixedPrice:      editing?.fixedPrice      ?? null,
       priority:        editing?.priority        ?? 10,
@@ -59,11 +90,14 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
 
   const ruleType = form.watch("ruleType");
 
-  const showServiceId  = ["include_service", "exclude_service", "discount_pct", "fixed_price", "approval_required"].includes(ruleType);
-  const showDeptId     = ["include_dept", "exclude_dept"].includes(ruleType);
-  const showCategory   = ["discount_pct", "fixed_price", "global_discount", "approval_required"].includes(ruleType);
+  // ── visibility flags ────────────────────────────────────────────────────
+  const isServiceRule  = ["include_service", "exclude_service"].includes(ruleType);
+  const isDeptRule     = ["include_dept", "exclude_dept"].includes(ruleType);
+  const isItemCatRule  = ["include_item_category", "exclude_item_category"].includes(ruleType);
   const showDiscount   = ["discount_pct", "global_discount"].includes(ruleType);
   const showFixedPrice = ruleType === "fixed_price";
+  // قواعد التسعير تقبل scope اختياري (خدمة أو فئة)
+  const showOptionalScope = ["discount_pct", "fixed_price", "approval_required"].includes(ruleType);
 
   const mutation = useMutation({
     mutationFn: (data: RuleFormValues) =>
@@ -92,28 +126,47 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
         <Form {...form}>
           <form onSubmit={form.handleSubmit(d => mutation.mutate(d))} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
+
+              {/* ── اسم القاعدة ─────────────────────────────────────── */}
               <FormField control={form.control} name="ruleName" render={({ field }) => (
                 <FormItem className="col-span-2">
                   <FormLabel>اسم القاعدة *</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="مثال: تشمل الأشعة" data-testid="input-rule-name" />
+                    <Input {...field} placeholder="مثال: خصم 10% على الأدوية" data-testid="input-rule-name" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
 
+              {/* ── نوع القاعدة (مجمّع حسب domain) ─────────────────── */}
               <FormField control={form.control} name="ruleType" render={({ field }) => (
                 <FormItem>
                   <FormLabel>نوع القاعدة *</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
+                  <Select value={field.value} onValueChange={v => {
+                    field.onChange(v);
+                    // مسح الحقول غير ذات الصلة عند تغيير النوع
+                    form.setValue("serviceId", "");
+                    form.setValue("departmentId", "");
+                    form.setValue("itemId", "");
+                    form.setValue("itemCategory", "");
+                  }}>
                     <FormControl>
                       <SelectTrigger data-testid="select-rule-type">
                         <SelectValue placeholder="اختر النوع" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {Object.entries(coverageRuleTypeLabels).map(([v, l]) => (
-                        <SelectItem key={v} value={v}>{l}</SelectItem>
+                      {RULE_GROUPS.map(group => (
+                        <div key={group.label}>
+                          <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                            {group.label}
+                          </div>
+                          {group.types.map(t => (
+                            <SelectItem key={t} value={t}>
+                              {coverageRuleTypeLabels[t] ?? t}
+                            </SelectItem>
+                          ))}
+                        </div>
                       ))}
                     </SelectContent>
                   </Select>
@@ -121,6 +174,7 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
                 </FormItem>
               )} />
 
+              {/* ── الأولوية ─────────────────────────────────────────── */}
               <FormField control={form.control} name="priority" render={({ field }) => (
                 <FormItem>
                   <FormLabel>الأولوية (أصغر = أعلى)</FormLabel>
@@ -132,63 +186,139 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
               )} />
             </div>
 
-            {showServiceId && (
+            {/* ── خدمة محددة (للخدمات) ─────────────────────────────── */}
+            {isServiceRule && (
               <FormField control={form.control} name="serviceId" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>معرّف الخدمة (اختياري — اتركه فارغاً لتطبيق القاعدة على الكل)</FormLabel>
+                  <FormLabel>معرّف الخدمة (اختياري)</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ""} placeholder="service-uuid" data-testid="input-rule-service-id" />
+                    <Input {...field} value={field.value ?? ""} placeholder="service-uuid"
+                      data-testid="input-rule-service-id" />
                   </FormControl>
+                  <p className="text-xs text-muted-foreground">اتركه فارغاً لتطبيق القاعدة على كل الخدمات</p>
                 </FormItem>
               )} />
             )}
 
-            {showDeptId && (
+            {/* ── القسم / الوحدة (dropdown) ────────────────────────── */}
+            {isDeptRule && (
               <FormField control={form.control} name="departmentId" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>معرّف القسم</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ""} placeholder="dept-uuid" data-testid="input-rule-dept-id" />
-                  </FormControl>
+                  <FormLabel>القسم / الوحدة</FormLabel>
+                  <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-rule-dept">
+                        <SelectValue placeholder="اختر القسم" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="">— كل الأقسام —</SelectItem>
+                      {departments.map(d => (
+                        <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
                 </FormItem>
               )} />
             )}
 
-            {showCategory && (
-              <FormField control={form.control} name="serviceCategory" render={({ field }) => (
+            {/* ── فئة الصنف (للصيدلية) ─────────────────────────────── */}
+            {isItemCatRule && (
+              <FormField control={form.control} name="itemCategory" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>فئة الخدمة (اختياري)</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ""} placeholder="مثال: RADIOLOGY" data-testid="input-rule-category" />
-                  </FormControl>
+                  <FormLabel>فئة الصنف *</FormLabel>
+                  <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-rule-item-category">
+                        <SelectValue placeholder="اختر الفئة" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {Object.entries(itemCategoryLabels).map(([v, l]) => (
+                        <SelectItem key={v} value={v}>{l}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
                 </FormItem>
               )} />
             )}
 
+            {/* ── Scope اختياري لقواعد التسعير (فئة صنف أو قسم) ───── */}
+            {showOptionalScope && !isItemCatRule && !isDeptRule && !isServiceRule && (
+              <div className="rounded-md border border-dashed p-3 space-y-2">
+                <p className="text-xs text-muted-foreground font-medium">نطاق تطبيق القاعدة (اختياري)</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={form.control} name="itemCategory" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">فئة صنف (صيدلية)</FormLabel>
+                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="h-8 text-xs" data-testid="select-optional-item-cat">
+                            <SelectValue placeholder="الكل" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">— الكل —</SelectItem>
+                          {Object.entries(itemCategoryLabels).map(([v, l]) => (
+                            <SelectItem key={v} value={v}>{l}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="departmentId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">قسم (خدمات)</FormLabel>
+                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="h-8 text-xs" data-testid="select-optional-dept">
+                            <SelectValue placeholder="الكل" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">— الكل —</SelectItem>
+                          {departments.map(d => (
+                            <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )} />
+                </div>
+              </div>
+            )}
+
+            {/* ── نسبة الخصم ───────────────────────────────────────── */}
             {showDiscount && (
               <FormField control={form.control} name="discountPct" render={({ field }) => (
                 <FormItem>
                   <FormLabel>نسبة الخصم %</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ""} type="number" min={0} max={100} step={0.01} data-testid="input-rule-discount" />
+                    <Input {...field} value={field.value ?? ""} type="number" min={0} max={100} step={0.01}
+                      data-testid="input-rule-discount" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
             )}
 
+            {/* ── السعر الثابت ─────────────────────────────────────── */}
             {showFixedPrice && (
               <FormField control={form.control} name="fixedPrice" render={({ field }) => (
                 <FormItem>
                   <FormLabel>السعر الثابت (جنيه)</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ""} type="number" min={0} step={0.01} data-testid="input-rule-fixed-price" />
+                    <Input {...field} value={field.value ?? ""} type="number" min={0} step={0.01}
+                      data-testid="input-rule-fixed-price" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
             )}
 
+            {/* ── ملاحظات ──────────────────────────────────────────── */}
             <FormField control={form.control} name="notes" render={({ field }) => (
               <FormItem>
                 <FormLabel>ملاحظات</FormLabel>
@@ -198,11 +328,13 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
               </FormItem>
             )} />
 
+            {/* ── نشط / غير نشط ────────────────────────────────────── */}
             <FormField control={form.control} name="isActive" render={({ field }) => (
               <FormItem className="flex flex-row-reverse items-center justify-between rounded-md border p-3">
                 <FormLabel className="cursor-pointer">القاعدة نشطة</FormLabel>
                 <FormControl>
-                  <Switch checked={field.value ?? true} onCheckedChange={field.onChange} data-testid="switch-rule-active" />
+                  <Switch checked={field.value ?? true} onCheckedChange={field.onChange}
+                    data-testid="switch-rule-active" />
                 </FormControl>
               </FormItem>
             )} />

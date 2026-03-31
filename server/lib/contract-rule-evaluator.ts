@@ -46,6 +46,9 @@ export interface EvalContractInput {
   serviceId:       string | null;
   departmentId:    string | null;
   serviceCategory: string | null;
+  // حقول الصيدلية (اختيارية — للقواعد المبنية على الأصناف)
+  itemId?:         string | null;
+  itemCategory?:   string | null;
   listPrice:       string;
   evaluationDate?: string;
 }
@@ -75,18 +78,26 @@ function matchesScope(
   serviceId: string | null,
   departmentId: string | null,
   serviceCategory: string | null,
+  itemId?: string | null,
+  itemCategory?: string | null,
 ): boolean {
-  if (!rule.serviceId && !rule.departmentId && !rule.serviceCategory) return true;
-  if (serviceId      && rule.serviceId      === serviceId)      return true;
-  if (departmentId   && rule.departmentId   === departmentId)   return true;
-  if (serviceCategory && rule.serviceCategory === serviceCategory) return true;
+  const ruleAny = rule as any;
+  const hasAnyScope = rule.serviceId || rule.departmentId || rule.serviceCategory
+                   || ruleAny.itemId || ruleAny.itemCategory;
+  if (!hasAnyScope) return true;
+  if (serviceId      && rule.serviceId      === serviceId)          return true;
+  if (departmentId   && rule.departmentId   === departmentId)       return true;
+  if (serviceCategory && rule.serviceCategory === serviceCategory)  return true;
+  if (itemId         && ruleAny.itemId       === itemId)            return true;
+  if (itemCategory   && ruleAny.itemCategory === itemCategory)      return true;
   return false;
 }
 
 // ─── Core Evaluator ───────────────────────────────────────────────────────
 
 export function evaluateContractForService(input: EvalContractInput): EvaluationResult {
-  const { contract, rules, serviceId, departmentId, serviceCategory, listPrice: rawListPrice } = input;
+  const { contract, rules, serviceId, departmentId, serviceCategory,
+          itemId, itemCategory, listPrice: rawListPrice } = input;
 
   const listPrice        = parseFloat(rawListPrice || "0") || 0;
   const companyCoveragePct = parseFloat(contract.companyCoveragePct || "0") || 0;
@@ -146,6 +157,31 @@ export function evaluateContractForService(input: EvalContractInput): Evaluation
         ].join(" "),
       };
     }
+
+    if (
+      rule.ruleType === "exclude_item_category" &&
+      itemCategory &&
+      (rule as any).itemCategory === itemCategory
+    ) {
+      return {
+        covered:            false,
+        coverageStatus:     "not_covered",
+        listPrice:          r2(listPrice),
+        contractPrice:      r2(listPrice),
+        companyCoveragePct: r2(companyCoveragePct),
+        companyShareAmount: "0.00",
+        patientShareAmount: r2(listPrice),
+        matchedRuleId:      rule.id,
+        matchedRuleName:    rule.ruleName,
+        approvalStatus:     "not_required",
+        explanation: [
+          `الأهلية: فئة الصنف مستثناة بموجب القاعدة "${rule.ruleName}".`,
+          `التسعير: لا ينطبق — غير مشمولة.`,
+          `حصة الشركة: 0.00 ج.م | حصة المريض: ${r2(listPrice)} ج.م (السعر الكامل).`,
+          `الموافقة: غير مطلوبة.`,
+        ].join(" "),
+      };
+    }
   }
 
   // ── Pass 2: Eligibility basis (for explanation) ──────────────────────────
@@ -158,6 +194,14 @@ export function evaluateContractForService(input: EvalContractInput): Evaluation
     }
     if (rule.ruleType === "include_dept" && departmentId && rule.departmentId === departmentId) {
       eligibilityBasis = `القسم مشمول بموجب القاعدة "${rule.ruleName}"`;
+      break;
+    }
+    if (
+      rule.ruleType === "include_item_category" &&
+      itemCategory &&
+      (rule as any).itemCategory === itemCategory
+    ) {
+      eligibilityBasis = `فئة الصنف مشمولة بموجب القاعدة "${rule.ruleName}"`;
       break;
     }
     if (rule.ruleType === "global_discount") {
@@ -173,7 +217,7 @@ export function evaluateContractForService(input: EvalContractInput): Evaluation
 
   for (const rule of activeRules) {
     if (rule.ruleType === "fixed_price" && rule.fixedPrice != null) {
-      if (matchesScope(rule, serviceId, departmentId, serviceCategory)) {
+      if (matchesScope(rule, serviceId, departmentId, serviceCategory, itemId, itemCategory)) {
         pricingRule   = rule;
         contractPrice = parseFloat(rule.fixedPrice) || 0;
         pricingBasis  = `سعر ثابت ${r2(contractPrice)} ج.م من القاعدة "${rule.ruleName}"`;
@@ -181,7 +225,7 @@ export function evaluateContractForService(input: EvalContractInput): Evaluation
       }
     }
     if (rule.ruleType === "discount_pct" && rule.discountPct != null) {
-      if (matchesScope(rule, serviceId, departmentId, serviceCategory)) {
+      if (matchesScope(rule, serviceId, departmentId, serviceCategory, itemId, itemCategory)) {
         pricingRule   = rule;
         const pct     = parseFloat(rule.discountPct) || 0;
         contractPrice = listPrice * (1 - pct / 100);
@@ -228,6 +272,26 @@ export function evaluateContractForService(input: EvalContractInput): Evaluation
         break;
       }
     }
+    // ── فئة الصنف (صيدلية) ────────────────────────────────────────────────
+    if (
+      rule.ruleType === "include_item_category" &&
+      itemCategory &&
+      (rule as any).itemCategory === itemCategory
+    ) {
+      if (rule.fixedPrice != null && !pricingRule) {
+        pricingRule   = rule;
+        contractPrice = parseFloat(rule.fixedPrice) || 0;
+        pricingBasis  = `سعر ثابت ${r2(contractPrice)} ج.م من قاعدة فئة الصنف "${rule.ruleName}"`;
+        break;
+      }
+      if (rule.discountPct != null && !pricingRule) {
+        pricingRule   = rule;
+        const pct     = parseFloat(rule.discountPct) || 0;
+        contractPrice = listPrice * (1 - pct / 100);
+        pricingBasis  = `خصم ${pct}% = ${r2(contractPrice)} ج.م من قاعدة فئة الصنف "${rule.ruleName}"`;
+        break;
+      }
+    }
   }
 
   // ── Pass 4: Approval overlay (independent pass) ──────────────────────────
@@ -237,7 +301,7 @@ export function evaluateContractForService(input: EvalContractInput): Evaluation
 
   for (const rule of activeRules) {
     if (rule.ruleType === "approval_required") {
-      if (matchesScope(rule, serviceId, departmentId, serviceCategory)) {
+      if (matchesScope(rule, serviceId, departmentId, serviceCategory, itemId, itemCategory)) {
         approvalStatus = "pending";
         coverageStatus = "approval_required";
         approvalBasis  = `الموافقة: مطلوبة بموجب القاعدة "${rule.ruleName}" — الحالة: في انتظار الموافقة.`;
@@ -287,6 +351,8 @@ export function batchEvaluate(
     serviceId?:       string | null;
     departmentId?:    string | null;
     serviceCategory?: string | null;
+    itemId?:          string | null;
+    itemCategory?:    string | null;
     unitPrice?:       string | null;
   }>,
   evaluationDate?: string,
@@ -298,6 +364,8 @@ export function batchEvaluate(
       serviceId:       line.serviceId       ?? null,
       departmentId:    line.departmentId     ?? null,
       serviceCategory: line.serviceCategory  ?? null,
+      itemId:          line.itemId           ?? null,
+      itemCategory:    line.itemCategory     ?? null,
       listPrice:       line.unitPrice        ?? "0",
       evaluationDate,
     }),

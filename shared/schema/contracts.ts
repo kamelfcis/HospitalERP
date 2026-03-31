@@ -100,6 +100,8 @@ export const coverageRuleTypeEnum = pgEnum("coverage_rule_type", [
   "exclude_service",
   "include_dept",
   "exclude_dept",
+  "include_item_category",
+  "exclude_item_category",
   "discount_pct",
   "fixed_price",
   "approval_required",
@@ -116,6 +118,9 @@ export const contractCoverageRules = pgTable("contract_coverage_rules", {
   serviceId:       varchar("service_id"),
   departmentId:    varchar("department_id"),
   serviceCategory: text("service_category"),
+  // حقول الصيدلية — للقواعد المبنية على الأصناف وفئاتها
+  itemId:          varchar("item_id"),
+  itemCategory:    text("item_category"),
   discountPct:     decimal("discount_pct", { precision: 5, scale: 2 }),
   fixedPrice:      decimal("fixed_price", { precision: 18, scale: 2 }),
   priority:        integer("priority").notNull().default(10),
@@ -343,14 +348,16 @@ export const relationTypeLabels: Record<string, string> = {
 };
 
 export const coverageRuleTypeLabels: Record<string, string> = {
-  include_service:   "تشمل خدمة",
-  exclude_service:   "تستثني خدمة",
-  include_dept:      "تشمل قسم",
-  exclude_dept:      "تستثني قسم",
-  discount_pct:      "خصم بنسبة",
-  fixed_price:       "سعر ثابت",
-  approval_required: "موافقة مسبقة",
-  global_discount:   "خصم عام",
+  include_service:       "تشمل خدمة",
+  exclude_service:       "تستثني خدمة",
+  include_dept:          "تشمل قسم",
+  exclude_dept:          "تستثني قسم",
+  include_item_category: "تشمل فئة أصناف",
+  exclude_item_category: "تستثني فئة أصناف",
+  discount_pct:          "خصم بنسبة",
+  fixed_price:           "سعر ثابت",
+  approval_required:     "موافقة مسبقة",
+  global_discount:       "خصم عام",
 };
 
 export const claimBatchStatusLabels: Record<string, string> = {
