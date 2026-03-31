@@ -212,7 +212,7 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">— كل الأقسام —</SelectItem>
+                      <SelectItem value="__all__">— كل الأقسام —</SelectItem>
                       {departments.map(d => (
                         <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
                       ))}
@@ -253,14 +253,14 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
                   <FormField control={form.control} name="itemCategory" render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs">فئة صنف (صيدلية)</FormLabel>
-                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                      <Select value={field.value || "__all__"} onValueChange={v => field.onChange(v === "__all__" ? "" : v)}>
                         <FormControl>
                           <SelectTrigger className="h-8 text-xs" data-testid="select-optional-item-cat">
                             <SelectValue placeholder="الكل" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">— الكل —</SelectItem>
+                          <SelectItem value="__all__">— الكل —</SelectItem>
                           {Object.entries(itemCategoryLabels).map(([v, l]) => (
                             <SelectItem key={v} value={v}>{l}</SelectItem>
                           ))}
@@ -271,14 +271,14 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
                   <FormField control={form.control} name="departmentId" render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs">قسم (خدمات)</FormLabel>
-                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                      <Select value={field.value || "__all__"} onValueChange={v => field.onChange(v === "__all__" ? "" : v)}>
                         <FormControl>
                           <SelectTrigger className="h-8 text-xs" data-testid="select-optional-dept">
                             <SelectValue placeholder="الكل" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">— الكل —</SelectItem>
+                          <SelectItem value="__all__">— الكل —</SelectItem>
                           {departments.map(d => (
                             <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
                           ))}
