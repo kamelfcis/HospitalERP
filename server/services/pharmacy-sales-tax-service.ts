@@ -13,6 +13,7 @@
 import { calculatePharmacyVat, type TaxType } from "../lib/tax/pharmacy-vat-engine";
 import { getSetting } from "../settings-cache";
 import { roundMoney } from "../finance-helpers";
+import { logger } from "../lib/logger";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // هل محرك الضريبة مفعّل؟ — يُقرأ من cache
@@ -82,6 +83,15 @@ export function computeLineTax(line: LineForTax): LineTaxResult {
   const taxType = vatEnabled ? (line.taxType ?? "exempt") : "exempt";
   const taxRate = vatEnabled ? (line.taxRate ?? 0) : 0;
   const pricesIncludeTax = line.pricesIncludeTax ?? false;
+
+  // ⚠ تحذير رقابي: صنف taxable بدون معدل ضريبة → يُعامَل كـ exempt بصمت
+  // قد يُشير إلى خطأ في إعداد الصنف — يجب مراجعة حقل defaultTaxRate
+  if (vatEnabled && taxType === "taxable" && taxRate <= 0) {
+    logger.warn(
+      { taxType, taxRate, salePrice: line.salePrice },
+      "[VAT] صنف taxable بدون taxRate > 0 — يُعامَل كـ exempt. راجع إعداد الصنف (defaultTaxRate)"
+    );
+  }
 
   const result = calculatePharmacyVat({
     taxType,

@@ -437,14 +437,11 @@ const methods = {
             description: "ضريبة القيمة المضافة — مخرجات",
           });
         } else {
-          // لا يوجد ربط vat_output — سجّل حدثاً تحذيرياً ولا تكسر القيد
-          await logAcctEvent({
-            sourceType:   "sales_invoice",
-            sourceId:     invoiceId,
-            eventType:    "sales_invoice_vat_skipped",
-            status:       "completed",
-            errorMessage: `[تحذير] الفاتورة تحمل ضريبة (${totalTaxAmount.toFixed(2)} ج.م) لكن لا يوجد ربط حساب vat_output في ربط الحسابات. الضريبة مُدمجة في الإيراد مؤقتاً.`,
-          });
+          // لا يوجد ربط vat_output — توقف القيد حتى يُعرَّف الحساب
+          // يمنع دمج الضريبة في الإيراد بصمت (خطر رقابي ومحاسبي)
+          throw new Error(
+            `الفاتورة تحمل ضريبة قيمة مضافة (${totalTaxAmount.toFixed(2)} ج.م) لكن لم يُعيَّن حساب vat_output في ربط حسابات فواتير المبيعات — يرجى إضافة ربط الحساب من صفحة ربط الحسابات قبل استخدام ميزة الضريبة`
+          );
         }
       }
     }
