@@ -4,18 +4,32 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Contract, ContractCoverageRule } from "@shared/schema";
 
+export type EvalDomain = "service" | "pharmacy";
+
 export interface EvalInput {
-  serviceId: string;
-  departmentId: string;
+  domain:          EvalDomain;
+  // خدمات المستشفى
+  serviceId:       string;
+  departmentId:    string;
   serviceCategory: string;
-  listPrice: string;
+  // الصيدلية
+  itemId:          string;
+  itemCategory:    string;
+  // مشترك
+  listPrice:       string;
 }
 
 export function useCoverageRules(selectedContract: Contract | null) {
   const { toast } = useToast();
 
   const [evalInput, setEvalInput] = useState<EvalInput>({
-    serviceId: "", departmentId: "", serviceCategory: "", listPrice: "",
+    domain:          "service",
+    serviceId:       "",
+    departmentId:    "",
+    serviceCategory: "",
+    itemId:          "",
+    itemCategory:    "",
+    listPrice:       "",
   });
   const [evalResult, setEvalResult] = useState<any>(null);
   const [evalLoading, setEvalLoading] = useState(false);
@@ -46,11 +60,18 @@ export function useCoverageRules(selectedContract: Contract | null) {
     try {
       const body: Record<string, unknown> = {
         contractId: selectedContract.id,
-        listPrice:  parseFloat(evalInput.listPrice) || 0,
+        listPrice:  evalInput.listPrice || "0",
       };
-      if (evalInput.serviceId.trim())       body.serviceId       = evalInput.serviceId.trim();
-      if (evalInput.departmentId.trim())    body.departmentId    = evalInput.departmentId.trim();
-      if (evalInput.serviceCategory.trim()) body.serviceCategory = evalInput.serviceCategory.trim();
+
+      if (evalInput.domain === "service") {
+        if (evalInput.serviceId.trim())       body.serviceId       = evalInput.serviceId.trim();
+        if (evalInput.departmentId.trim())    body.departmentId    = evalInput.departmentId.trim();
+        if (evalInput.serviceCategory.trim()) body.serviceCategory = evalInput.serviceCategory.trim();
+      } else {
+        if (evalInput.itemId.trim())       body.itemId       = evalInput.itemId.trim();
+        if (evalInput.itemCategory.trim()) body.itemCategory = evalInput.itemCategory.trim();
+      }
+
       const res = await apiRequest("POST", "/api/contracts/evaluate", body);
       setEvalResult(await res.json());
     } catch {

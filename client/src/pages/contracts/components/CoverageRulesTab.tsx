@@ -1,25 +1,40 @@
+import { useQuery } from "@tanstack/react-query";
 import { TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Shield, Trash2 } from "lucide-react";
-import { coverageRuleTypeLabels } from "@shared/schema";
+import { coverageRuleTypeLabels, itemCategoryLabels } from "@shared/schema";
 import type { ContractCoverageRule } from "@shared/schema";
 import type { UseMutationResult } from "@tanstack/react-query";
 import { CoverageRuleTestPanel } from "./CoverageRuleTestPanel";
+import { SERVICE_CATEGORY_OPTIONS } from "./CoverageRuleTestPanel";
 import type { EvalInput } from "../hooks/useCoverageRules";
 
+interface Department { id: string; nameAr: string; }
+
 interface Props {
-  rules: ContractCoverageRule[];
-  rulesLoading: boolean;
-  canManage: boolean;
-  onEdit: (r: ContractCoverageRule) => void;
+  rules:             ContractCoverageRule[];
+  rulesLoading:      boolean;
+  canManage:         boolean;
+  onEdit:            (r: ContractCoverageRule) => void;
   deleteRuleMutation: UseMutationResult<any, unknown, string, unknown>;
-  evalInput: EvalInput;
-  setEvalInput: (fn: (prev: EvalInput) => EvalInput) => void;
-  evalResult: any;
-  evalLoading: boolean;
-  onRunEvaluate: () => void;
+  evalInput:         EvalInput;
+  setEvalInput:      (fn: (prev: EvalInput) => EvalInput) => void;
+  evalResult:        any;
+  evalLoading:       boolean;
+  onRunEvaluate:     () => void;
+}
+
+// ─── label helpers ───────────────────────────────────────────────────────────
+function resolveServiceCategory(val: string | null | undefined): string | null {
+  if (!val) return null;
+  return SERVICE_CATEGORY_OPTIONS.find(o => o.value === val)?.label ?? val;
+}
+
+function resolveItemCategory(val: string | null | undefined): string | null {
+  if (!val) return null;
+  return (itemCategoryLabels as Record<string, string>)[val] ?? val;
 }
 
 export function CoverageRulesTab({
@@ -27,6 +42,11 @@ export function CoverageRulesTab({
   onEdit, deleteRuleMutation,
   evalInput, setEvalInput, evalResult, evalLoading, onRunEvaluate,
 }: Props) {
+  const { data: departments = [] } = useQuery<Department[]>({
+    queryKey: ["/api/departments"],
+  });
+  const deptMap = new Map(departments.map(d => [d.id, d.nameAr]));
+
   return (
     <TabsContent value="rules" className="overflow-auto flex-1 m-0 p-0 data-[state=inactive]:hidden flex flex-col">
       <div className="overflow-auto flex-1">
@@ -53,46 +73,51 @@ export function CoverageRulesTab({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {[...rules].sort((a, b) => a.priority - b.priority).map((r, idx) => (
-                <TableRow key={r.id} data-testid={`row-rule-${r.id}`} className="text-xs">
-                  <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                  <TableCell className="font-medium">{r.ruleName}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-[10px]">
-                      {coverageRuleTypeLabels[r.ruleType] ?? r.ruleType}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-[10px] space-x-1 space-x-reverse">
-                    {r.discountPct   && <span>خصم {r.discountPct}%</span>}
-                    {r.fixedPrice    && <span>سعر ثابت {r.fixedPrice} ج.م</span>}
-                    {r.serviceId     && <span className="font-mono">خدمة: {r.serviceId.slice(0, 8)}…</span>}
-                    {r.departmentId  && <span className="font-mono">قسم: {r.departmentId.slice(0, 8)}…</span>}
-                    {r.serviceCategory && <span>فئة: {r.serviceCategory}</span>}
-                    {r.notes         && <span className="italic">{r.notes}</span>}
-                  </TableCell>
-                  <TableCell className="text-center font-mono">{r.priority}</TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant={r.isActive ? "outline" : "destructive"} className="text-[10px]">
-                      {r.isActive ? "نشط" : "موقوف"}
-                    </Badge>
-                  </TableCell>
-                  {canManage && (
+              {[...rules].sort((a, b) => a.priority - b.priority).map((r, idx) => {
+                const rAny = r as any;
+                return (
+                  <TableRow key={r.id} data-testid={`row-rule-${r.id}`} className="text-xs">
+                    <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                    <TableCell className="font-medium">{r.ruleName}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2"
-                          onClick={() => onEdit(r)} data-testid={`button-edit-rule-${r.id}`}>
-                          تعديل
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6"
-                          onClick={() => { if (confirm("حذف القاعدة؟")) deleteRuleMutation.mutate(r.id); }}
-                          data-testid={`button-delete-rule-${r.id}`}>
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </div>
+                      <Badge variant="outline" className="text-[10px]">
+                        {coverageRuleTypeLabels[r.ruleType] ?? r.ruleType}
+                      </Badge>
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
+                    <TableCell className="text-muted-foreground text-[10px] space-x-1 space-x-reverse">
+                      {r.discountPct     && <span>خصم {r.discountPct}%</span>}
+                      {r.fixedPrice      && <span>سعر ثابت {r.fixedPrice} ج.م</span>}
+                      {r.serviceId       && <span className="font-mono">خدمة: {r.serviceId.slice(0, 8)}…</span>}
+                      {r.departmentId    && <span>قسم: {deptMap.get(r.departmentId) ?? r.departmentId.slice(0, 8) + "…"}</span>}
+                      {r.serviceCategory && <span>فئة خدمة: {resolveServiceCategory(r.serviceCategory)}</span>}
+                      {rAny.itemCategory && <span>فئة صنف: {resolveItemCategory(rAny.itemCategory)}</span>}
+                      {rAny.itemId       && <span className="font-mono">صنف: {rAny.itemId.slice(0, 8)}…</span>}
+                      {r.notes           && <span className="italic">{r.notes}</span>}
+                    </TableCell>
+                    <TableCell className="text-center font-mono">{r.priority}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={r.isActive ? "outline" : "destructive"} className="text-[10px]">
+                        {r.isActive ? "نشط" : "موقوف"}
+                      </Badge>
+                    </TableCell>
+                    {canManage && (
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2"
+                            onClick={() => onEdit(r)} data-testid={`button-edit-rule-${r.id}`}>
+                            تعديل
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6"
+                            onClick={() => { if (confirm("حذف القاعدة؟")) deleteRuleMutation.mutate(r.id); }}
+                            data-testid={`button-delete-rule-${r.id}`}>
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}

@@ -20,11 +20,12 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
+import { SERVICE_CATEGORY_OPTIONS } from "./CoverageRuleTestPanel";
 
 // ─── أنواع القواعد مجمّعة حسب domain ─────────────────────────────────────────
 const RULE_GROUPS = [
   {
-    label: "📋 الخدمات الطبية",
+    label: "🏥 الخدمات الطبية",
     types: ["include_service", "exclude_service", "include_dept", "exclude_dept"],
   },
   {
@@ -42,13 +43,14 @@ const RULE_GROUPS = [
 ];
 
 const ruleFormSchema = insertContractCoverageRuleSchema.extend({
-  ruleName:     z.string().min(1, "اسم القاعدة مطلوب"),
-  ruleType:     z.string().min(1, "نوع القاعدة مطلوب"),
-  priority:     z.coerce.number().int().min(1).default(10),
-  discountPct:  z.string().optional().nullable(),
-  fixedPrice:   z.string().optional().nullable(),
-  itemId:       z.string().optional().nullable(),
-  itemCategory: z.string().optional().nullable(),
+  ruleName:        z.string().min(1, "اسم القاعدة مطلوب"),
+  ruleType:        z.string().min(1, "نوع القاعدة مطلوب"),
+  priority:        z.coerce.number().int().min(1).default(10),
+  discountPct:     z.string().optional().nullable(),
+  fixedPrice:      z.string().optional().nullable(),
+  itemId:          z.string().optional().nullable(),
+  itemCategory:    z.string().optional().nullable(),
+  serviceCategory: z.string().optional().nullable(),
 });
 type RuleFormValues = z.infer<typeof ruleFormSchema>;
 
@@ -96,7 +98,6 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
   const isItemCatRule  = ["include_item_category", "exclude_item_category"].includes(ruleType);
   const showDiscount   = ["discount_pct", "global_discount"].includes(ruleType);
   const showFixedPrice = ruleType === "fixed_price";
-  // قواعد التسعير تقبل scope اختياري (خدمة أو فئة)
   const showOptionalScope = ["discount_pct", "fixed_price", "approval_required"].includes(ruleType);
 
   const mutation = useMutation({
@@ -144,9 +145,9 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
                   <FormLabel>نوع القاعدة *</FormLabel>
                   <Select value={field.value} onValueChange={v => {
                     field.onChange(v);
-                    // مسح الحقول غير ذات الصلة عند تغيير النوع
                     form.setValue("serviceId", "");
                     form.setValue("departmentId", "");
+                    form.setValue("serviceCategory", "");
                     form.setValue("itemId", "");
                     form.setValue("itemCategory", "");
                   }}>
@@ -192,10 +193,12 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
                 <FormItem>
                   <FormLabel>معرّف الخدمة (اختياري)</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ""} placeholder="service-uuid"
+                    <Input {...field} value={field.value ?? ""} placeholder="UUID الخدمة — اتركه فارغاً للتطبيق على كل الخدمات"
                       data-testid="input-rule-service-id" />
                   </FormControl>
-                  <p className="text-xs text-muted-foreground">اتركه فارغاً لتطبيق القاعدة على كل الخدمات</p>
+                  <p className="text-xs text-muted-foreground">
+                    اتركه فارغاً لتطبيق القاعدة على جميع الخدمات
+                  </p>
                 </FormItem>
               )} />
             )}
@@ -204,8 +207,8 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
             {isDeptRule && (
               <FormField control={form.control} name="departmentId" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>القسم / الوحدة</FormLabel>
-                  <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                  <FormLabel>القسم / الوحدة *</FormLabel>
+                  <Select value={field.value || "__all__"} onValueChange={v => field.onChange(v === "__all__" ? "" : v)}>
                     <FormControl>
                       <SelectTrigger data-testid="select-rule-dept">
                         <SelectValue placeholder="اختر القسم" />
@@ -213,6 +216,9 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="__all__">— كل الأقسام —</SelectItem>
+                      {departments.length === 0 && (
+                        <SelectItem value="__empty__" disabled>لا توجد أقسام</SelectItem>
+                      )}
                       {departments.map(d => (
                         <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
                       ))}
@@ -228,13 +234,14 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
               <FormField control={form.control} name="itemCategory" render={({ field }) => (
                 <FormItem>
                   <FormLabel>فئة الصنف *</FormLabel>
-                  <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                  <Select value={field.value || "__none__"} onValueChange={v => field.onChange(v === "__none__" ? "" : v)}>
                     <FormControl>
                       <SelectTrigger data-testid="select-rule-item-category">
                         <SelectValue placeholder="اختر الفئة" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
+                      <SelectItem value="__none__">— اختر فئة —</SelectItem>
                       {Object.entries(itemCategoryLabels).map(([v, l]) => (
                         <SelectItem key={v} value={v}>{l}</SelectItem>
                       ))}
@@ -245,33 +252,51 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
               )} />
             )}
 
-            {/* ── Scope اختياري لقواعد التسعير (فئة صنف أو قسم) ───── */}
+            {/* ── نطاق اختياري لقواعد التسعير ──────────────────────── */}
             {showOptionalScope && !isItemCatRule && !isDeptRule && !isServiceRule && (
               <div className="rounded-md border border-dashed p-3 space-y-2">
-                <p className="text-xs text-muted-foreground font-medium">نطاق تطبيق القاعدة (اختياري)</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField control={form.control} name="itemCategory" render={({ field }) => (
+                <p className="text-xs text-muted-foreground font-medium">
+                  نطاق تطبيق القاعدة — اختر واحداً أو اتركها فارغة لتطبيق على الكل
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+
+                  {/* فئة الخدمة */}
+                  <FormField control={form.control} name="serviceCategory" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs">فئة صنف (صيدلية)</FormLabel>
-                      <Select value={field.value || "__all__"} onValueChange={v => field.onChange(v === "__all__" ? "" : v)}>
+                      <FormLabel className="text-xs">فئة خدمة</FormLabel>
+                      <Select value={field.value || "__all__"} onValueChange={v => {
+                        field.onChange(v === "__all__" ? "" : v);
+                        if (v !== "__all__") {
+                          form.setValue("departmentId", "");
+                          form.setValue("itemCategory", "");
+                        }
+                      }}>
                         <FormControl>
-                          <SelectTrigger className="h-8 text-xs" data-testid="select-optional-item-cat">
+                          <SelectTrigger className="h-8 text-xs" data-testid="select-optional-svc-cat">
                             <SelectValue placeholder="الكل" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="__all__">— الكل —</SelectItem>
-                          {Object.entries(itemCategoryLabels).map(([v, l]) => (
-                            <SelectItem key={v} value={v}>{l}</SelectItem>
+                          {SERVICE_CATEGORY_OPTIONS.map(o => (
+                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </FormItem>
                   )} />
+
+                  {/* قسم */}
                   <FormField control={form.control} name="departmentId" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs">قسم (خدمات)</FormLabel>
-                      <Select value={field.value || "__all__"} onValueChange={v => field.onChange(v === "__all__" ? "" : v)}>
+                      <FormLabel className="text-xs">قسم</FormLabel>
+                      <Select value={field.value || "__all__"} onValueChange={v => {
+                        field.onChange(v === "__all__" ? "" : v);
+                        if (v !== "__all__") {
+                          form.setValue("serviceCategory", "");
+                          form.setValue("itemCategory", "");
+                        }
+                      }}>
                         <FormControl>
                           <SelectTrigger className="h-8 text-xs" data-testid="select-optional-dept">
                             <SelectValue placeholder="الكل" />
@@ -281,6 +306,32 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
                           <SelectItem value="__all__">— الكل —</SelectItem>
                           {departments.map(d => (
                             <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )} />
+
+                  {/* فئة صنف (صيدلية) */}
+                  <FormField control={form.control} name="itemCategory" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">فئة صنف (صيدلية)</FormLabel>
+                      <Select value={field.value || "__all__"} onValueChange={v => {
+                        field.onChange(v === "__all__" ? "" : v);
+                        if (v !== "__all__") {
+                          form.setValue("serviceCategory", "");
+                          form.setValue("departmentId", "");
+                        }
+                      }}>
+                        <FormControl>
+                          <SelectTrigger className="h-8 text-xs" data-testid="select-optional-item-cat">
+                            <SelectValue placeholder="الكل" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__all__">— الكل —</SelectItem>
+                          {Object.entries(itemCategoryLabels).map(([v, l]) => (
+                            <SelectItem key={v} value={v}>{l}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

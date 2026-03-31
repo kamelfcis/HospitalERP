@@ -279,6 +279,8 @@ export function registerContractRoutes(app: Express) {
           serviceId:       z.string().nullish(),
           departmentId:    z.string().nullish(),
           serviceCategory: z.string().nullish(),
+          itemId:          z.string().nullish(),
+          itemCategory:    z.string().nullish(),
           listPrice:       z.string().min(1, "listPrice مطلوب"),
           evaluationDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
         });
@@ -304,6 +306,8 @@ export function registerContractRoutes(app: Express) {
           serviceId:       parsed.data.serviceId       ?? null,
           departmentId:    parsed.data.departmentId    ?? null,
           serviceCategory: parsed.data.serviceCategory ?? null,
+          itemId:          parsed.data.itemId          ?? null,
+          itemCategory:    parsed.data.itemCategory    ?? null,
           listPrice:       parsed.data.listPrice,
           evaluationDate:  parsed.data.evaluationDate  ?? undefined,
         });
