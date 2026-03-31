@@ -1,0 +1,244 @@
+راجع تنفيذ مهمة تعاقدات الصيدلية + حد الخصم + claims + cashier review مراجعة Bugs/Edge Cases دقيقة، بدون تنفيذ تغييرات عشوائية، وبدون كسر أي behavior موجود. المطلوب الآن Review صارم + إثبات بالكود + اقتراح إصلاحات فقط عند الحاجة.
+
+========================
+هدف المراجعة
+========================
+
+أريد مراجعة تقنية ومحاسبية كاملة لما تم تنفيذه اليوم في:
+- contract sales flow
+- discount enforcement
+- cashier pending logic
+- claim generation/idempotency
+- journal split for contract invoices
+- contract report
+
+المراجعة يجب أن تركز على bugs المحتملة و edge cases التي قد تسبب:
+- قيد خاطئ
+- ظهور/إخفاء خاطئ في الكاشير
+- duplicate claims
+- rounding mismatch
+- loophole في الخصم
+- mismatch بين UI و backend
+- مشاكل أداء في التقرير
+
+========================
+قواعد المراجعة
+========================
+
+1) لا تفترض أن التنفيذ صحيح لمجرد أن التطبيق يعمل.
+2) راجع الكود الفعلي والـ conditions والسلوك الفعلي.
+3) لا تكتفِ بالوصف؛ اعرض اسم الملف + اسم الدالة + السطور/البلوك المسؤول.
+4) لا تنفذ refactor واسع الآن. المطلوب أولًا اكتشاف bugs والمخاطر.
+5) إذا لم تجد bug في نقطة ما، اذكر صراحة لماذا تعتبرها سليمة.
+6) إذا وجدت risk فقط وليس bug مؤكد، صنفه بوضوح:
+   - BUG مؤكد
+   - Edge Case Risk
+   - Improvement Suggestion
+7) أي نقطة مالية أو محاسبية يجب تفسير أثرها عمليًا.
+8) لا تغيّر المنطق الحالي إلا إذا ثبت وجود bug أو خطر واضح.
+
+========================
+نطاق المراجعة الإلزامي
+========================
+
+راجع هذه النقاط واحدة واحدة:
+
+--------------------------------
+A) Rounding / Share Split Logic
+--------------------------------
+
+افحص منطق:
+- recompute companyShareAmount / patientShareAmount
+- تجميع totals على مستوى السطور والرأس
+- شرط canSplitAR أو ما يعادله
+
+أجب بوضوح:
+1) هل يوجد خطر من استخدام tolerance مثل:
+   Math.abs(sharesSum - netTotal) < 0.02
+2) هل يوجد احتمال mismatch بسبب rounding per-line ثم sum header؟
+3) هل يوجد توزيع فرق rounding على آخر سطر أم لا؟
+4) هل يمكن أن ينشأ journal split رغم فرق غير صحيح؟
+5) هل يمكن ألا ينشأ split رغم أن الفاتورة صحيحة محاسبيًا؟
+
+المطلوب:
+- أثبت بالكود
+- وإذا وجدت bug، اقترح fix صغير وآمن فقط
+
+--------------------------------
+B) Fallback Accounting Mapping
+--------------------------------
+
+افحص سلوك غياب:
+- pharmacy_patient_receivable
+- pharmacy_contract_receivable
+
+أجب:
+1) هل fallback يضمن استمرار الترحيل دون كسر؟
+2) هل يوجد event/log واضح عند fallback؟
+3) هل قد تمر فواتير كثيرة على ذمم عامة دون visibility كافية؟
+4) هل توجد شاشة أو طريقة عملية للمحاسب لاكتشاف هذا بسهولة؟
+5) هل السلوك الحالي مناسب أم يحتاج warning إضافي؟
+
+صنّف النتيجة:
+- سليم
+- Risk رقابي
+- Bug
+
+--------------------------------
+C) Discount Enforcement Loopholes
+--------------------------------
+
+راجع enforcement لحد الخصم في:
+- frontend warning
+- backend finalize validation
+
+أجب:
+1) ما هو تعريف الخصم الفعلي المستخدم؟
+   - header discount فقط؟
+   - line discount؟
+   - price override؟
+   - manual price edits؟
+2) هل يمكن لمستخدم تجاوز الحد عبر price override بدل discount؟
+3) هل backend هو source of truth فعلًا؟
+4) هل 422 تُعاد في كل مسارات finalize أم في route واحد فقط؟
+5) هل توجد أي path بديلة تتجاوز التحقق؟
+
+لو وجدت loophole، اذكره بوضوح مع مثال.
+
+--------------------------------
+D) Cashier Pending Edge Cases
+--------------------------------
+
+راجع شرط ظهور فواتير التعاقد في pending cashier.
+
+أجب:
+1) هل الشرط الحالي:
+   customer_type != 'contract' OR patient_share_total > 0
+   كافٍ؟
+2) هل يمكن rounding صغير جدًا (مثلاً 0.01) أن يجعل الفاتورة تظهر للكاشير بلا معنى؟
+3) هل المقارنة يجب أن تكون > 0 أم threshold أكبر؟
+4) هل يوجد mismatch بين header total والسطور قد يؤثر على الظهور؟
+5) هل الاستعلام نفسه مفهرس جيدًا؟
+
+صنّف:
+- OK
+- Edge Case Risk
+- Bug
+
+--------------------------------
+E) Claim Idempotency / Retry
+--------------------------------
+
+راجع:
+- header-level guard
+- DB unique constraint
+- failed retry behavior
+
+أجب:
+1) هل generated/submitted/accepted/settled تمنع إعادة التوليد؟ أكد بالكود
+2) ماذا يحدث إذا claimStatus = failed؟
+3) هل retry بعد failed ممكن ومقصود؟
+4) هل يوجد احتمال duplicate claim lines رغم الحمايتين؟
+5) هل status lifecycle consistent في كل الأماكن؟
+
+إذا وجدت inconsistency اذكرها بوضوح.
+
+--------------------------------
+F) Finalize Atomicity / Post-Finalize Integrity
+--------------------------------
+
+راجع flow النهائي:
+
+1) هل finalize transaction تشمل:
+   - recompute shares
+   - save line/header totals
+   - generate journal
+   - generate claims
+2) هل يمكن تعديل الفاتورة بعد finalize؟
+3) هل يوجد lock واضح أو guard يمنع post-finalize edits التي تكسر القيد؟
+4) هل invoice object المستخدم في journal هو نفسه authoritative values بعد recompute؟
+5) هل يوجد race condition محتمل؟
+
+--------------------------------
+G) Contract Report Performance / Correctness
+--------------------------------
+
+راجع:
+- query source
+- filters
+- indexes
+
+أجب:
+1) هل التقرير يعتمد على transactional tables أم *_rpt؟
+2) هل هذا مقبول لحجم البيانات الحالي؟
+3) هل الـ partial index المضاف كافٍ للاستعلامات الحالية؟
+4) هل الفلاتر كلها server-side؟
+5) هل يوجد خطر duplicate rows أو wrong totals بسبب joins؟
+6) هل هناك استعلام count + data pagination سليم؟
+
+--------------------------------
+H) Journal Mapping Correctness Against COA
+--------------------------------
+
+راجع أن قيد التعاقد يستخدم categories الصحيحة ويصل للحسابات الصحيحة من الدليل:
+
+- pharmacy_patient_receivable → 12212
+- pharmacy_contract_receivable → 12231
+- pharmacy revenue internal/external → 4141 / 4131
+- cogs internal/external → 5111 / 5121
+- inventory كما هو الحالي
+
+أجب:
+1) هل الاختيار بين 4131 و4141 صحيح حسب نوع الصيدلية؟
+2) هل الاختيار بين 5111 و5121 صحيح؟
+3) هل يوجد أي احتمال أن ينزل contract share على revenue discount account بالخطأ؟
+4) هل قيد الإيراد يتكرر في التحصيل أو لا؟
+5) هل التحصيل من المريض ومن الشركة يقفل الذمة فقط؟
+
+--------------------------------
+I) Legacy / Backward Compatibility
+--------------------------------
+
+أجب:
+1) هل الفواتير القديمة contractCompany النصية ما زالت قابلة للعرض؟
+2) هل النظام يمنعها من claims الجديدة إذا كانت غير مكتملة الربط؟
+3) هل هناك أي route قد يتوقع contractMemberId ويكسر القديم؟
+4) هل التقرير أو الواجهة قد تفشل لو بعض الحقول null في بيانات قديمة؟
+
+========================
+شكل النتيجة المطلوبة
+========================
+
+أريد النتيجة بهذا الشكل بالضبط:
+
+1) Executive Summary
+- هل يوجد Bugs حرجة أم لا؟
+- هل النظام آمن مبدئيًا أم لا؟
+
+2) Findings Table
+لكل نقطة:
+- Category
+- Status: OK / BUG / RISK / IMPROVEMENT
+- File
+- Function / Query
+- Explanation
+- Severity: Low / Medium / High / Critical
+- Fix Recommendation
+
+3) Top 5 Priority Fixes
+رتّب فقط أهم 5 نقاط إن وجدت
+
+4) Safe Fixes Only
+إذا كانت هناك إصلاحات، اقترح إصلاحات صغيرة وآمنة لا تكسر الموجود
+
+5) What Should NOT Be Changed
+اذكر ما الذي يعمل جيدًا ولا يجب العبث به الآن
+
+========================
+مهم جدًا
+========================
+
+- إذا كانت نقطة ما سليمة، قل بوضوح لماذا.
+- لا تكتب كلامًا عامًا.
+- اربط كل نتيجة بكود فعلي.
+- لا تبدأ تنفيذ التعديلات الآن؛ المطلوب Review فقط.
