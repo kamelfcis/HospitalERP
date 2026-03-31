@@ -204,11 +204,12 @@ export function registerContractRoutes(app: Express) {
   /**
    * GET /api/contracts/active — جميع العقود النشطة مع اسم الشركة
    * يُستخدم في dropdown الفاتورة لاختيار عقد بدون بطاقة منتسب
+   * الصلاحية: SALES_CREATE — الصيدلاني يحتاج هذا لإنشاء فواتير تعاقد
    */
   app.get(
     "/api/contracts/active",
     requireAuth,
-    checkPermission(PERMISSIONS.CONTRACTS_VIEW),
+    checkPermission(PERMISSIONS.SALES_CREATE),
     async (_req, res) => {
       try {
         const list = await storage.getAllActiveContracts();
@@ -455,7 +456,7 @@ export function registerContractRoutes(app: Express) {
   app.get(
     "/api/contract-members/lookup",
     requireAuth,
-    checkPermission(PERMISSIONS.CONTRACTS_VIEW),
+    checkPermission(PERMISSIONS.SALES_CREATE),
     async (req, res) => {
       try {
         const schema = z.object({
