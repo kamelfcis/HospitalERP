@@ -542,7 +542,6 @@ export default function ItemMovementReport() {
                 setItemId(id);
                 setItemDisplayName(name);
                 setItemCode(code);
-                setQueryUrl(null);
                 setLastParams(null);
               }}
             />
