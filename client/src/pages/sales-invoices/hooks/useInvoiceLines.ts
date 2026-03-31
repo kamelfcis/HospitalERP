@@ -134,7 +134,8 @@ async function runFefo(opts: FefoOptions): Promise<FefoResult> {
         lotId:            alloc.lotId        || null,
         fefoLocked:       true,
         priceSource:      src,
-        availableQtyMinor,
+        // رصيد الدُفعة المحددة (lot) وليس الإجمالي الكلي
+        availableQtyMinor: expiryOptions.find(o => o.lotId === alloc.lotId)?.qtyAvailableMinor || availableQtyMinor,
         expiryOptions,
       } as SalesLineLocal;
     });

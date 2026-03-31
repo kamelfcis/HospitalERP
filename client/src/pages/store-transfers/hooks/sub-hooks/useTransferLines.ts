@@ -144,7 +144,7 @@ export function useTransferLines({
               selectedExpiryDate: alloc.expiryDate || null,
               selectedExpiryMonth: alloc.expiryMonth || null,
               selectedExpiryYear: alloc.expiryYear || null,
-              availableQtyMinor: line.item?.availableQtyMinor || "0",
+              availableQtyMinor: alloc.qtyAvailableMinor || line.item?.availableQtyMinor || "0",
               notes: line.notes,
               fefoLocked: true,
               lotSalePrice: alloc.lotSalePrice,
@@ -244,7 +244,7 @@ export function useTransferLines({
             selectedExpiryDate: alloc.expiryDate || null,
             selectedExpiryMonth: alloc.expiryMonth || null,
             selectedExpiryYear: alloc.expiryYear || null,
-            availableQtyMinor: item.availableQtyMinor || "0",
+            availableQtyMinor: alloc.qtyAvailableMinor || item.availableQtyMinor || "0",
             notes: "",
             fefoLocked: true,
             lotSalePrice: alloc.lotSalePrice,
@@ -357,6 +357,7 @@ export function useTransferLines({
           selectedExpiryYear: year,
           fefoLocked: true,
           lotSalePrice: opt?.lotSalePrice || undefined,
+          availableQtyMinor: String(availMinor),
         };
         return copy;
       });
@@ -426,7 +427,7 @@ export function useTransferLines({
             selectedExpiryDate: firstAlloc.expiryDate || null,
             selectedExpiryMonth: firstAlloc.expiryMonth || null,
             selectedExpiryYear: firstAlloc.expiryYear || null,
-            availableQtyMinor: line.item?.availableQtyMinor || "0",
+            availableQtyMinor: firstAlloc.qtyAvailableMinor || line.item?.availableQtyMinor || "0",
             notes: line.notes,
             fefoLocked: true,
             lotSalePrice: firstAlloc.lotSalePrice,

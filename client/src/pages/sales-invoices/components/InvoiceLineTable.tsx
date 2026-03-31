@@ -102,9 +102,10 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
           const opt = ln.expiryOptions?.find((o) => o.lotId === e.target.value);
           if (!opt) return;
           const updates: Partial<SalesLineLocal> = {
-            expiryMonth: opt.expiryMonth,
-            expiryYear:  opt.expiryYear,
-            lotId:       opt.lotId || null,
+            expiryMonth:       opt.expiryMonth,
+            expiryYear:        opt.expiryYear,
+            lotId:             opt.lotId || null,
+            availableQtyMinor: opt.qtyAvailableMinor,
           };
           if (opt.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
             const newBase  = parseFloat(opt.lotSalePrice);
@@ -146,9 +147,10 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
             (o) => o.expiryMonth === m && o.expiryYear === y,
           );
           const updates: Partial<SalesLineLocal> = {
-            expiryMonth: m || null,
-            expiryYear:  y || null,
-            lotId:       opt?.lotId || null,
+            expiryMonth:       m || null,
+            expiryYear:        y || null,
+            lotId:             opt?.lotId || null,
+            availableQtyMinor: opt?.qtyAvailableMinor || "0",
           };
           if (opt?.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
             const newBase = parseFloat(opt.lotSalePrice);
