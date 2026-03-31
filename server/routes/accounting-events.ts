@@ -29,11 +29,16 @@ export function registerAccountingEventRoutes(app: Express) {
     checkPermission(PERMISSIONS.JOURNAL_POST),
     async (req, res) => {
       try {
-        const { status, sourceType, limit = "50", offset = "0" } = req.query as Record<string, string>;
+        const { status, sourceType, eventType, limit = "50", offset = "0" } = req.query as Record<string, string>;
 
         const conditions: string[] = [];
         if (status)     conditions.push(`status = '${status.replace(/'/g, "''")}'`);
         if (sourceType) conditions.push(`source_type = '${sourceType.replace(/'/g, "''")}'`);
+        if (eventType === "contract_warnings") {
+          conditions.push(`event_type IN ('contract_ar_split_fallback','contract_ar_no_split')`);
+        } else if (eventType && eventType !== "all") {
+          conditions.push(`event_type = '${eventType.replace(/'/g, "''")}'`);
+        }
 
         const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
         const lim   = Math.min(parseInt(limit)  || 50, 200);

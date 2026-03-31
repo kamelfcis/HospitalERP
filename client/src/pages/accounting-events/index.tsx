@@ -28,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import {
   RefreshCw, AlertCircle, CheckCircle2, Clock, Ban,
-  RotateCcw, PlayCircle, Timer,
+  RotateCcw, PlayCircle, Timer, ShieldAlert,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
@@ -81,6 +81,46 @@ function sourceTypeLabel(t: string) {
     doctor_settlement:         "تسوية طبيب",
   };
   return m[t] ?? t;
+}
+
+// ── Contract warning event types ───────────────────────────────────────────
+
+const CONTRACT_WARNING_TYPES = new Set(["contract_ar_split_fallback", "contract_ar_no_split"]);
+
+function eventTypeLabel(t: string): string {
+  const m: Record<string, string> = {
+    sales_invoice_journal:          "قيد فاتورة مبيعات",
+    sales_invoice_cogs_skipped:     "COGS محذوف",
+    contract_ar_split_fallback:     "ذمم تعاقد — حساب بديل",
+    contract_ar_no_split:           "ذمم تعاقد — بدون تقسيم",
+    patient_invoice_journal:        "قيد فاتورة مريض",
+    cashier_collection_journal:     "قيد تحصيل كاشير",
+    receiving_journal:              "قيد استلام مورد",
+    warehouse_transfer_journal:     "قيد تحويل مخزني",
+    doctor_settlement_journal:      "قيد تسوية طبيب",
+    cashier_refund_journal:         "قيد مرتجع كاشير",
+  };
+  return m[t] ?? t;
+}
+
+function EventTypeBadge({ eventType }: { eventType: string }) {
+  if (CONTRACT_WARNING_TYPES.has(eventType)) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 text-xs font-medium whitespace-nowrap"
+        title={eventType}
+        data-testid={`badge-event-type-${eventType}`}
+      >
+        <ShieldAlert className="h-3 w-3 flex-shrink-0" />
+        {eventTypeLabel(eventType)}
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs text-muted-foreground truncate" title={eventType}>
+      {eventTypeLabel(eventType)}
+    </span>
+  );
 }
 
 // ── Next retry display ──────────────────────────────────────────────────────
@@ -137,6 +177,7 @@ export default function AccountingEventsPage() {
   const { toast } = useToast();
   const [statusFilter, setStatusFilter]         = useState<string>("all");
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");
+  const [eventTypeFilter, setEventTypeFilter]   = useState<string>("all");
   const [page, setPage]                         = useState(0);
   const [autoRefresh, setAutoRefresh]           = useState(false);
   const pageSize = 50;
@@ -145,12 +186,13 @@ export default function AccountingEventsPage() {
     const params = new URLSearchParams();
     if (statusFilter !== "all")     params.set("status",     statusFilter);
     if (sourceTypeFilter !== "all") params.set("sourceType", sourceTypeFilter);
+    if (eventTypeFilter !== "all")  params.set("eventType",  eventTypeFilter);
     params.set("limit",  String(pageSize));
     params.set("offset", String(p * pageSize));
     return params.toString();
   };
 
-  const eventsKey = ["/api/accounting/events", statusFilter, sourceTypeFilter, page];
+  const eventsKey = ["/api/accounting/events", statusFilter, sourceTypeFilter, eventTypeFilter, page];
   const { data, isLoading, refetch } = useQuery<{ events: AcctEvent[]; total: number }>({
     queryKey: eventsKey,
     queryFn: () => fetch(`/api/accounting/events?${buildQS()}`).then((r) => r.json()),
@@ -256,7 +298,24 @@ export default function AccountingEventsPage() {
           <CardTitle className="text-sm text-muted-foreground">فلترة</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex gap-3 flex-wrap items-center">
+            {/* Quick shortcut: contract AR warnings */}
+            <Button
+              variant={eventTypeFilter === "contract_warnings" ? "default" : "outline"}
+              size="sm"
+              className={eventTypeFilter === "contract_warnings"
+                ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-500"
+                : "border-amber-400 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"}
+              onClick={() => {
+                setEventTypeFilter(eventTypeFilter === "contract_warnings" ? "all" : "contract_warnings");
+                setPage(0);
+              }}
+              data-testid="button-filter-contract-warnings"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 ms-1" />
+              تحذيرات التعاقد
+            </Button>
+
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }} data-testid="select-status-filter">
               <SelectTrigger className="w-44" data-testid="trigger-status-filter">
                 <SelectValue placeholder="الحالة" />
@@ -284,6 +343,20 @@ export default function AccountingEventsPage() {
                 <SelectItem value="warehouse_transfer">تحويل مخزني</SelectItem>
                 <SelectItem value="doctor_payable_settlement">تسوية مستحقات طبيب</SelectItem>
                 <SelectItem value="cashier_refund">مرتجع كاشير</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={eventTypeFilter === "contract_warnings" ? "all" : eventTypeFilter}
+              onValueChange={(v) => { setEventTypeFilter(v); setPage(0); }}
+              data-testid="select-event-type-filter">
+              <SelectTrigger className="w-56" data-testid="trigger-event-type-filter">
+                <SelectValue placeholder="نوع الحدث" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل أنواع الأحداث</SelectItem>
+                <SelectItem value="contract_ar_split_fallback">ذمم تعاقد — حساب بديل</SelectItem>
+                <SelectItem value="contract_ar_no_split">ذمم تعاقد — بدون تقسيم</SelectItem>
+                <SelectItem value="sales_invoice_cogs_skipped">COGS محذوف</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -327,7 +400,7 @@ export default function AccountingEventsPage() {
                   <TableRow key={ev.id} data-testid={`row-event-${ev.id}`}>
                     <TableCell className="font-medium">{sourceTypeLabel(ev.source_type)}</TableCell>
                     <TableCell className="font-mono text-xs max-w-[120px] truncate" title={ev.source_id}>{ev.source_id}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate" title={ev.event_type}>{ev.event_type}</TableCell>
+                    <TableCell className="max-w-[170px]"><EventTypeBadge eventType={ev.event_type} /></TableCell>
                     <TableCell><StatusBadge status={ev.status} /></TableCell>
                     <TableCell className="text-center">{ev.attempt_count}</TableCell>
                     <TableCell
