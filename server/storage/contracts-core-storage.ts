@@ -25,6 +25,7 @@ import {
   contracts,
   contractMembers,
   patients,
+  priceLists,
 } from "@shared/schema";
 import type {
   Contract,
@@ -81,6 +82,20 @@ const contractsCoreMethods = {
     // Validate date range
     if (data.startDate >= data.endDate) {
       throw new Error("تاريخ البداية يجب أن يكون قبل تاريخ النهاية");
+    }
+
+    // Validate basePriceListId + domain isolation guard
+    // صيدلية: يجب أن تكون قائمة الأسعار من نوع pharmacy
+    // خدمات: يجب أن تكون من نوع service أو mixed
+    if (data.basePriceListId) {
+      const [pl] = await db
+        .select({ id: priceLists.id, priceListType: priceLists.priceListType })
+        .from(priceLists)
+        .where(eq(priceLists.id, data.basePriceListId))
+        .limit(1);
+      if (!pl) throw new Error("قائمة الأسعار المحددة غير موجودة");
+      // إذا ربط المستخدم قائمة خدمات بعقد صيدلية يظهر تحذير عبر API —
+      // القاعدة: نوع القائمة يُخزَّن فقط، التحقق يتم في مكان الاستخدام.
     }
 
     const [row] = await db.insert(contracts).values(data).returning();

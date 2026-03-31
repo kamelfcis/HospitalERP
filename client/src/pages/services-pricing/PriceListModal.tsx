@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 
 // ─── أنواع ─────────────────────────────────────────────────────────────────────
@@ -11,6 +12,7 @@ export interface PriceListFormState {
   code: string;
   name: string;
   currency: string;
+  priceListType: string;
   validFrom: string;
   validTo: string;
   isActive: boolean;
@@ -18,7 +20,14 @@ export interface PriceListFormState {
 }
 
 export const defaultPriceListForm: PriceListFormState = {
-  code: "", name: "", currency: "EGP", validFrom: "", validTo: "", isActive: true, notes: "",
+  code: "", name: "", currency: "EGP", priceListType: "service",
+  validFrom: "", validTo: "", isActive: true, notes: "",
+};
+
+export const priceListTypeLabels: Record<string, string> = {
+  service:  "خدمات",
+  pharmacy: "صيدلية",
+  mixed:    "مختلط",
 };
 
 interface Props {
@@ -32,10 +41,6 @@ interface Props {
 }
 
 // ─── PriceListModal ────────────────────────────────────────────────────────────
-/**
- * PriceListModal
- * ديالوج إنشاء قائمة أسعار جديدة أو تعديل قائمة قائمة.
- */
 export default function PriceListModal({ open, onClose, form, setForm, onSave, saving, isEdit }: Props) {
   const canSave = !!(form.code && form.name);
 
@@ -58,6 +63,19 @@ export default function PriceListModal({ open, onClose, form, setForm, onSave, s
             <Label>الاسم *</Label>
             <Input data-testid="input-pl-name" value={form.name}
               onChange={e => set("name", e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>نوع القائمة</Label>
+            <Select value={form.priceListType} onValueChange={v => set("priceListType", v)}>
+              <SelectTrigger className="h-9" data-testid="select-pl-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="service">خدمات</SelectItem>
+                <SelectItem value="pharmacy">صيدلية</SelectItem>
+                <SelectItem value="mixed">مختلط</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label>العملة</Label>

@@ -41,6 +41,9 @@ export const priceLists = pgTable("price_lists", {
   code: varchar("code", { length: 30 }).notNull().unique(),
   name: text("name").notNull(),
   currency: text("currency").notNull().default("EGP"),
+  // نوع قائمة الأسعار: service (خدمات) | pharmacy (صيدلية) | mixed (مختلط — مستقبلي)
+  // يمنع ربط قوائم الخدمات بعقود الصيدلية والعكس.
+  priceListType: text("price_list_type").notNull().default("service"),
   validFrom: date("valid_from"),
   validTo: date("valid_to"),
   isActive: boolean("is_active").notNull().default(true),

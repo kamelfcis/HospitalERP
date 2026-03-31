@@ -12,7 +12,7 @@ import { formatNumber } from "@/lib/formatters";
 import type { PriceList, PriceListItemWithService } from "@shared/schema";
 import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
 import { useDebounce } from "./hooks";
-import PriceListModal, { type PriceListFormState, defaultPriceListForm } from "./PriceListModal";
+import PriceListModal, { type PriceListFormState, defaultPriceListForm, priceListTypeLabels } from "./PriceListModal";
 import AddPricesModal from "./AddPricesModal";
 import CopyFromModal from "./CopyFromModal";
 import BulkAdjustModal from "./BulkAdjustModal";
@@ -124,6 +124,7 @@ export default function PriceListsTab() {
     setEditingPl(pl);
     setPlForm({
       code: pl.code, name: pl.name, currency: pl.currency,
+      priceListType: (pl as any).priceListType || "service",
       validFrom: pl.validFrom || "", validTo: pl.validTo || "",
       isActive: pl.isActive, notes: pl.notes || "",
     });
@@ -199,7 +200,7 @@ export default function PriceListsTab() {
                   <tr className="peachtree-grid-header">
                     <th>الكود</th>
                     <th>الاسم</th>
-                    <th>العملة</th>
+                    <th>النوع</th>
                     <th>الحالة</th>
                     <th>إجراءات</th>
                   </tr>
@@ -214,7 +215,22 @@ export default function PriceListsTab() {
                     >
                       <td className="font-mono text-xs">{pl.code}</td>
                       <td className="text-xs font-medium">{pl.name}</td>
-                      <td className="text-xs text-center">{pl.currency}</td>
+                      <td>
+                        {(() => {
+                          const t = (pl as any).priceListType || "service";
+                          const colors: Record<string, string> = {
+                            service:  "bg-blue-50 text-blue-700 border-blue-200",
+                            pharmacy: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                            mixed:    "bg-amber-50 text-amber-700 border-amber-200",
+                          };
+                          return (
+                            <Badge variant="outline"
+                              className={`text-[10px] no-default-active-elevate ${colors[t] ?? colors.service}`}>
+                              {priceListTypeLabels[t] ?? t}
+                            </Badge>
+                          );
+                        })()}
+                      </td>
                       <td>
                         <Badge variant="outline"
                           className={`text-[10px] no-default-active-elevate ${
