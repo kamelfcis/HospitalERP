@@ -242,12 +242,26 @@ const methods = {
 
       const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId!, lines);
 
+      // ── batch-fetch items (N+1 fix) ────────────────────────────────────────
+      const uniqueItemIds = [...new Set(expandedLines.map(l => l.itemId).filter(Boolean) as string[])];
+      const allItemRows = uniqueItemIds.length > 0
+        ? await tx.select().from(items).where(inArray(items.id, uniqueItemIds))
+        : [];
+      const itemMap = new Map(allItemRows.map(i => [i.id, i]));
+
+      // ── batch-fetch lot prices (N+1 fix) ──────────────────────────────────
+      const uniqueLotIds = [...new Set(expandedLines.map(l => l.lotId).filter(Boolean) as string[])];
+      const allLotRows = uniqueLotIds.length > 0
+        ? await tx.select({ id: inventoryLots.id, salePrice: inventoryLots.salePrice }).from(inventoryLots).where(inArray(inventoryLots.id, uniqueLotIds))
+        : [];
+      const lotMap = new Map(allLotRows.map(l => [l.id, l]));
+
       let subtotal = 0;
       const processedLines: { line: Partial<InsertSalesInvoiceLine>; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number; taxResult: LineTaxResult }[] = [];
 
       for (const line of expandedLines) {
         const qty = parseFloat(line.qty || "0") || 0;
-        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId!));
+        const item = itemMap.get(line.itemId!);
 
         // ── تسعير النظام: الباكند يُحدّد السعر دائماً — لا يثق بالعميل ──────
         // الأولوية: سعر الدُفعة (lotId) → سعر الصنف الحالي (salePriceCurrent)
@@ -255,10 +269,7 @@ const methods = {
         if (item) {
           let baseMasterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
           if (line.lotId) {
-            const [lot] = await tx
-              .select({ salePrice: inventoryLots.salePrice })
-              .from(inventoryLots)
-              .where(eq(inventoryLots.id, line.lotId));
+            const lot = lotMap.get(line.lotId);
             const lotPrice = parseFloat(String(lot?.salePrice || "0")) || 0;
             if (lotPrice > 0) baseMasterPrice = lotPrice;
           }
@@ -407,12 +418,26 @@ const methods = {
 
       const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId ?? invoice.warehouseId, lines);
 
+      // ── batch-fetch items (N+1 fix) ────────────────────────────────────────
+      const uniqueItemIdsU = [...new Set(expandedLines.map(l => l.itemId).filter(Boolean) as string[])];
+      const allItemRowsU = uniqueItemIdsU.length > 0
+        ? await tx.select().from(items).where(inArray(items.id, uniqueItemIdsU))
+        : [];
+      const itemMapU = new Map(allItemRowsU.map(i => [i.id, i]));
+
+      // ── batch-fetch lot prices (N+1 fix) ──────────────────────────────────
+      const uniqueLotIdsU = [...new Set(expandedLines.map(l => l.lotId).filter(Boolean) as string[])];
+      const allLotRowsU = uniqueLotIdsU.length > 0
+        ? await tx.select({ id: inventoryLots.id, salePrice: inventoryLots.salePrice }).from(inventoryLots).where(inArray(inventoryLots.id, uniqueLotIdsU))
+        : [];
+      const lotMapU = new Map(allLotRowsU.map(l => [l.id, l]));
+
       let subtotal = 0;
       const processedLines: { line: Partial<InsertSalesInvoiceLine>; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number; taxResult: LineTaxResult }[] = [];
 
       for (const line of expandedLines) {
         const qty = parseFloat(line.qty || "0") || 0;
-        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId!));
+        const item = itemMapU.get(line.itemId!);
 
         // ── تسعير النظام: الباكند يُحدّد السعر دائماً — لا يثق بالعميل ──────
         // الأولوية: سعر الدُفعة (lotId) → سعر الصنف الحالي (salePriceCurrent)
@@ -420,10 +445,7 @@ const methods = {
         if (item) {
           let baseMasterPrice = parseFloat(item.salePriceCurrent || "0") || 0;
           if (line.lotId) {
-            const [lot] = await tx
-              .select({ salePrice: inventoryLots.salePrice })
-              .from(inventoryLots)
-              .where(eq(inventoryLots.id, line.lotId));
+            const lot = lotMapU.get(line.lotId);
             const lotPrice = parseFloat(String(lot?.salePrice || "0")) || 0;
             if (lotPrice > 0) baseMasterPrice = lotPrice;
           }

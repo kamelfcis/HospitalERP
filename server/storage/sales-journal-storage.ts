@@ -1355,7 +1355,7 @@ const methods = {
     invoiceId: string,
   ): Promise<{ ready: boolean; critical: string[]; warnings: string[] }> {
     const [invoice] = await db
-      .select({ invoiceDate: salesInvoiceHeaders.invoiceDate, warehouseId: salesInvoiceHeaders.warehouseId })
+      .select({ invoiceDate: salesInvoiceHeaders.invoiceDate, warehouseId: salesInvoiceHeaders.warehouseId, pharmacyId: salesInvoiceHeaders.pharmacyId })
       .from(salesInvoiceHeaders)
       .where(eq(salesInvoiceHeaders.id, invoiceId));
 
