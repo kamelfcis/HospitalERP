@@ -64,12 +64,18 @@ const coreMethods = {
       .limit(pageSize)
       .offset((page - 1) * pageSize);
 
-    const data: PurchaseInvoiceWithDetails[] = [];
-    for (const h of headers) {
-      const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
-      const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
-      data.push({ ...h, supplier: sup, warehouse: wh });
-    }
+    // batch-fetch suppliers + warehouses بدل N+N queries (N+1 fix for list)
+    const supplierIds = [...new Set(headers.map(h => h.supplierId))];
+    const warehouseIds = [...new Set(headers.map(h => h.warehouseId))];
+    const [allSups, allWhs] = await Promise.all([
+      supplierIds.length > 0 ? db.select().from(suppliers).where(inArray(suppliers.id, supplierIds)) : [],
+      warehouseIds.length > 0 ? db.select().from(warehouses).where(inArray(warehouses.id, warehouseIds)) : [],
+    ]);
+    const supMap  = new Map(allSups.map(s => [s.id, s]));
+    const whMap   = new Map(allWhs.map(w => [w.id, w]));
+    const data: PurchaseInvoiceWithDetails[] = headers.map(h => ({
+      ...h, supplier: supMap.get(h.supplierId), warehouse: whMap.get(h.warehouseId),
+    }));
 
     return {
       data,

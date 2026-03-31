@@ -229,7 +229,13 @@ const methods = {
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
 
-      const itemMap: Record<string, any> = {};
+      // batch-fetch كل الأصناف قبل الـ loop (N+1 fix)
+      const uniqueItemIds = [...new Set(lines.map(l => l.itemId).filter(Boolean) as string[])];
+      const allItemRows = uniqueItemIds.length > 0
+        ? await tx.select().from(items).where(inArray(items.id, uniqueItemIds))
+        : [];
+      const itemMap: Record<string, any> = Object.fromEntries(allItemRows.map(i => [i.id, i]));
+
       const stockLines: Array<{
         lineIdx: number; itemId: string; qtyMinor: number;
         hasExpiry: boolean; expiryMonth?: number | null; expiryYear?: number | null;
@@ -237,13 +243,8 @@ const methods = {
 
       for (let li = 0; li < lines.length; li++) {
         const line = lines[li];
-        let item = itemMap[line.itemId];
-        if (!item) {
-          const [fetched] = await tx.select().from(items).where(eq(items.id, line.itemId!));
-          if (!fetched) throw new Error(`الصنف غير موجود: ${line.itemId}`);
-          item = fetched;
-          itemMap[line.itemId] = item;
-        }
+        const item = itemMap[line.itemId];
+        if (!item) throw new Error(`الصنف غير موجود: ${line.itemId}`);
 
         if (item.category === "service") {
           revenueDrugs += parseFloat(line.lineTotal);

@@ -331,6 +331,18 @@ async function validateAndEnrichLines(
     alreadyReturnedRes.rows.map(r => [r.inv_line_id, parseMoney(r.returned)])
   );
 
+  // batch-lock + batch-fetch كل الـ lots مرة واحدة (N+1 fix)
+  const allLotIds = [...new Set(input.lines.map(l => l.lotId).filter(Boolean))];
+  if (allLotIds.length > 0) {
+    // FOR UPDATE داخل نفس الـ tx (نفس الـ connection) لضمان صحة القفل
+    const lockSql = sql.join(allLotIds.map(id => sql`${id}::uuid`), sql`, `);
+    await tx.execute(sql`SELECT id FROM inventory_lots WHERE id IN (${lockSql}) FOR UPDATE`);
+  }
+  const allLotRows = allLotIds.length > 0
+    ? await tx.select().from(inventoryLots).where(inArray(inventoryLots.id, allLotIds))
+    : [];
+  const lotMap = new Map(allLotRows.map(l => [l.id, l]));
+
   const enriched = [];
 
   for (const line of input.lines) {
@@ -355,9 +367,8 @@ async function validateAndEnrichLines(
       );
     }
 
-    // Lock the lot and validate availability
-    await tx.execute(sql`SELECT id FROM inventory_lots WHERE id = ${line.lotId} FOR UPDATE`);
-    const [lot] = await tx.select().from(inventoryLots).where(eq(inventoryLots.id, line.lotId));
+    // Lot already locked + fetched above (batch)
+    const lot = lotMap.get(line.lotId);
     if (!lot) throw new Error(`اللوت ${line.lotId} غير موجود.`);
     if (lot.warehouseId !== input.warehouseId) {
       throw new Error(`اللوت "${line.lotId}" لا ينتمي للمخزن المحدد.`);
