@@ -225,6 +225,14 @@ export async function generateClaimsForSalesInvoice(invoiceId: string): Promise<
       return;
     }
 
+    // ── Idempotency guard: skip if already successfully generated ───────────
+    const currentStatus = inv.claim_status ?? inv.claimStatus;
+    if (currentStatus === "generated" || currentStatus === "submitted" ||
+        currentStatus === "accepted"  || currentStatus === "settled") {
+      logger.debug({ invoiceId, currentStatus }, "[SalesClaims] already generated — skipping duplicate run");
+      return;
+    }
+
     // ── 2. Fetch eligible lines ────────────────────────────────────────────
     // شروط الأهلية: companyShareAmount > 0 AND coverageStatus NOT excluded/not_covered
     const lines = await db

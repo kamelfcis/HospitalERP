@@ -8,6 +8,7 @@ import {
   items,
   warehouses,
   users,
+  contracts,
   salesInvoiceHeaders,
   salesInvoiceLines,
   salesTransactions,
@@ -234,22 +235,59 @@ const methods = {
         const usedPct = parseFloat(invoice.discountPercent || "0");
         if (maxPct !== null && usedPct > maxPct) {
           const err: any = new Error(`الخصم المُدخل (${usedPct}%) يتجاوز الحد المسموح به لهذا المستخدم (${maxPct}%). يرجى مراجعة المشرف أو تخفيض الخصم.`);
-          err.httpStatus = 403;
+          err.httpStatus = 422;
           throw err;
         }
       }
 
-      // ── فحص التعاقد: حصص المريض + الشركة = صافي الفاتورة ─────────────
+      // ── حساب حصص التعاقد (من السيرفر — يتجاهل ما أرسله العميل) ──────────
       isContractInvoice = invoice.customerType === "contract" && !!(invoice.contractId);
       if (isContractInvoice) {
-        const p = parseFloat(String((invoice as any).patientShareTotal || "0"));
-        const c = parseFloat(String((invoice as any).companyShareTotal || "0"));
-        const net = parseFloat(invoice.netTotal || "0");
-        if (Math.abs((p + c) - net) > 0.05) {
-          const err: any = new Error(`فاتورة التعاقد غير متوازنة: مجموع الحصص (${(p + c).toFixed(2)} ج.م) ≠ صافي الفاتورة (${net.toFixed(2)} ج.م). يرجى مراجعة توزيع الحصص.`);
-          err.httpStatus = 400;
-          throw err;
+        // تحميل نسبة تغطية الشركة من جدول العقود
+        const [contractRow] = await tx
+          .select({ companyCoveragePct: contracts.companyCoveragePct })
+          .from(contracts)
+          .where(eq(contracts.id, invoice.contractId as string));
+
+        const companyCoveragePct = contractRow?.companyCoveragePct
+          ? parseFloat(String(contractRow.companyCoveragePct))
+          : 100;
+
+        // جلب السطور للحساب
+        const linesForShares = await tx
+          .select({ id: salesInvoiceLines.id, lineTotal: salesInvoiceLines.lineTotal })
+          .from(salesInvoiceLines)
+          .where(eq(salesInvoiceLines.invoiceId, id));
+
+        let pSum = 0;
+        let cSum = 0;
+
+        // حساب وتحديث كل سطر — N+1 write: مسموح به (business action per-line)
+        for (const l of linesForShares) {
+          const lineTotal   = parseFloat(String(l.lineTotal || "0"));
+          const cShare      = parseFloat((lineTotal * companyCoveragePct / 100).toFixed(2));
+          const pShare      = parseFloat((lineTotal - cShare).toFixed(2));
+          await tx.update(salesInvoiceLines)
+            .set({ companyShareAmount: String(cShare), patientShareAmount: String(pShare) })
+            .where(eq(salesInvoiceLines.id, l.id));
+          cSum += cShare;
+          pSum += pShare;
         }
+
+        const newPatientShareTotal = parseFloat(pSum.toFixed(2));
+        const newCompanyShareTotal = parseFloat(cSum.toFixed(2));
+
+        // تحديث الإجماليات على الهيدر في الـ transaction
+        await tx.update(salesInvoiceHeaders)
+          .set({
+            patientShareTotal: String(newPatientShareTotal) as any,
+            companyShareTotal:  String(newCompanyShareTotal)  as any,
+          })
+          .where(eq(salesInvoiceHeaders.id, id));
+
+        // تحديث المتغير المحلي لاستخدامه في بناء القيد المحاسبي
+        (invoice as any).patientShareTotal = String(newPatientShareTotal);
+        (invoice as any).companyShareTotal  = String(newCompanyShareTotal);
       }
 
       const lines = await tx.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));

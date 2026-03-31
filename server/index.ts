@@ -621,6 +621,12 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       CREATE INDEX IF NOT EXISTS idx_lot_movements_ref
       ON inventory_lot_movements (reference_type, reference_id)
     `);
+    // contract report: تسريع فواتير التعاقد (customer_type=contract, status=finalized)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_sih_contract_report
+      ON sales_invoice_headers (customer_type, status, invoice_date DESC)
+      WHERE customer_type = 'contract'
+    `);
     log("[STARTUP] Performance indexes ensured");
     // NOTE: purchase_invoice_lines(invoice_id) → idx_pi_lines_invoice (in Drizzle schema)
     // NOTE: purchase_return_lines(purchase_invoice_line_id) → idx_prl_invoice_line (in Drizzle schema)
