@@ -59,7 +59,7 @@ export default function AccountMappings() {
           </Button>
           <Button
             onClick={save.handleSave}
-            disabled={!data.hasChanges || save.isSaving}
+            disabled={save.isSaving}
             data-testid="button-save-mappings"
           >
             {save.isSaving
