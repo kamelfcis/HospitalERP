@@ -1,5 +1,5 @@
 import { db, type DrizzleTransaction } from "../db";
-import { eq, and, gte, lte, asc, sql } from "drizzle-orm";
+import { eq, and, gte, lte, asc, sql, inArray } from "drizzle-orm";
 import { convertPriceToMinor } from "../inventory-helpers";
 import {
   items,
@@ -386,16 +386,29 @@ const journalMethods = {
           eq(inventoryLotMovements.referenceId, originalId),
         ));
 
+      // batch-fetch كل الـ lots قبل الـ loop (N+1 fix)
+      const movLotIds  = [...new Set(originalMovements.map(m => m.lotId).filter(Boolean) as string[])];
+      const movLotRows = movLotIds.length > 0
+        ? await tx.select().from(inventoryLots).where(inArray(inventoryLots.id, movLotIds))
+        : [];
+      // batch-fetch items للـ error messages (N+1 fix)
+      const movItemIds  = [...new Set(movLotRows.map(l => l.itemId))];
+      const movItemRows = movItemIds.length > 0
+        ? await tx.select().from(items).where(inArray(items.id, movItemIds))
+        : [];
+      const movLotMap  = new Map(movLotRows.map(l => [l.id, l]));
+      const movItemMap = new Map(movItemRows.map(i => [i.id, i]));
+
       for (const mov of originalMovements) {
         const qtyToReverse = parseFloat(mov.qtyChangeInMinor as string);
         if (qtyToReverse <= 0) continue;
 
-        const [lot] = await tx.select().from(inventoryLots).where(eq(inventoryLots.id, mov.lotId));
+        const lot = movLotMap.get(mov.lotId);
         if (!lot) continue;
 
         const currentQty = parseFloat(lot.qtyInMinor as string);
         if (currentQty < qtyToReverse) {
-          const [item] = await tx.select().from(items).where(eq(items.id, lot.itemId));
+          const item = movItemMap.get(lot.itemId);
           throw new Error(`لا يمكن التصحيح: الصنف "${item?.nameAr || ''}" سيصبح رصيده سالباً في المستودع (المتاح: ${currentQty.toFixed(2)}, المطلوب عكسه: ${qtyToReverse.toFixed(2)})`);
         }
 
@@ -419,11 +432,18 @@ const journalMethods = {
       const correctionLines = await tx.select().from(receivingLines).where(eq(receivingLines.receivingId, correctionId));
       const activeLines = correctionLines.filter(l => !l.isRejected);
 
+      // batch-fetch items للـ activeLines (N+1 fix)
+      const corrItemIds  = [...new Set(activeLines.map(l => l.itemId))];
+      const corrItemRows = corrItemIds.length > 0
+        ? await tx.select().from(items).where(inArray(items.id, corrItemIds))
+        : [];
+      const corrItemMap = new Map(corrItemRows.map(i => [i.id, i]));
+
       for (const line of activeLines) {
         const qtyMinor = parseFloat(line.qtyInMinor as string) + parseFloat(line.bonusQtyInMinor as string || "0");
         if (qtyMinor <= 0) continue;
 
-        const [item] = await tx.select().from(items).where(eq(items.id, line.itemId));
+        const item = corrItemMap.get(line.itemId);
         if (!item) continue;
 
         const costPerMinor = convertPriceToMinor(parseFloat(line.purchasePrice as string), line.unitLevel || 'minor', item);

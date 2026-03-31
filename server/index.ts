@@ -621,17 +621,9 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       CREATE INDEX IF NOT EXISTS idx_lot_movements_ref
       ON inventory_lot_movements (reference_type, reference_id)
     `);
-    // purchase invoice lines — FK column غير مُفهرس تلقائيًا في Postgres
-    await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_pil_invoice_id
-      ON purchase_invoice_lines (purchase_invoice_id)
-    `);
-    // purchase return lines — batch lookup by purchase_invoice_line_id
-    await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_prl_inv_line_id
-      ON purchase_return_lines (purchase_invoice_line_id)
-    `);
     log("[STARTUP] Performance indexes ensured");
+    // NOTE: purchase_invoice_lines(invoice_id) → idx_pi_lines_invoice (in Drizzle schema)
+    // NOTE: purchase_return_lines(purchase_invoice_line_id) → idx_prl_invoice_line (in Drizzle schema)
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");
   }

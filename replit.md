@@ -48,6 +48,64 @@ The system uses a RESTful JSON API. Drizzle ORM manages PostgreSQL interactions,
 ### Database
 - PostgreSQL
 
+### Performance Rules — N+1 Query Policy
+
+**RULE: No reads inside a loop. EVER.**
+
+All DB reads must happen BEFORE the loop as batch queries, then accessed via Map lookup inside the loop.
+
+**Allowed pattern (✅):**
+```typescript
+// 1. Collect IDs
+const itemIds = [...new Set(lines.map(l => l.itemId))];
+// 2. Batch fetch
+const allItems = await db.select().from(items).where(inArray(items.id, itemIds));
+// 3. Build Map
+const itemMap = new Map(allItems.map(i => [i.id, i]));
+// 4. Loop with O(1) lookup
+for (const line of lines) { const item = itemMap.get(line.itemId); }
+```
+
+**Forbidden pattern (❌):**
+```typescript
+for (const line of lines) {
+  const [item] = await db.select()... // N+1 — FORBIDDEN
+}
+```
+
+**Exceptions (allowed reads inside loop):**
+- `FOR UPDATE` locks with per-row dynamic conditions (FEFO lot selection)
+- `existingLot` lookup with per-line varying expiry conditions (purchasing correction)
+
+**Allowed writes inside loop:**
+- `UPDATE` inventory_lots (business action — FEFO, costing, reversals)
+- `INSERT` inventory_lot_movements (business action — audit trail)
+These are business-required per-lot writes, not query inefficiencies.
+
+**FOR UPDATE in transactions:**
+- ALWAYS use `tx.execute(sql`...`)` — never `pool.query()` for `FOR UPDATE`
+- `pool.query()` uses a different connection, making the lock ineffective
+
+**Before/After Metrics (calculated from code analysis, pageSize=20, avg 10 lines/doc):**
+
+| Endpoint | Before (queries) | After (queries) | Savings |
+|---|---|---|---|
+| GET /receivings (list, 20 docs) | 2 + 20×3 + 200×1 = **262** | 2 + 3 + 1 = **6** | **256 fewer** |
+| GET /receivings/:id (10 lines) | 3 + 10 = **13** | 3 + 1 = **4** | **9 fewer** |
+| GET /purchase-invoices (list, 20) | 2 + 20×2 = **42** | 2 + 2 = **4** | **38 fewer** |
+| GET /purchase-invoices/:id (16 lines) | 3 + 16 = **20** | 3 + 1 = **5** | **15 fewer** |
+| POST /purchase-invoices/:id/approve (16 lines) | 4 + 16×2 = **36** | 4 + 2 = **6** | **30 fewer** |
+| GET /store-transfers (list, 100 transfers) | 3×100 + 200 = **500** | 3 + 1 = **4** | **496 fewer** |
+| GET /store-transfers/:id (10 lines) | 3 + 10 = **13** | 3 + 1 = **4** | **9 fewer** |
+| POST /sales-invoices/:id/finalize (N lines) | N (items) + FEFO | 1 + FEFO | **N-1 fewer** |
+| POST /purchase-returns (N lines) | 2N (lot+lock) | 2 batch | **2N-2 fewer** |
+
+**Remaining known N+1 (not yet fixed — lower priority):**
+- `sales-invoices-core-storage.ts` L167, L246, L383: item fetch per draft-save validation
+- `stock-count-storage.ts` L334, L351: lot/price per count-line entry (write-time only)
+- `cashier-storage.ts` L810, L965: invoice fetch per SSE event (low frequency)
+- Receiving correction reversal `existingLot` per line (complex per-row conditions — cannot batch)
+
 ### Key NPM Packages
 - `drizzle-orm`
 - `drizzle-kit`

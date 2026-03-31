@@ -12,7 +12,7 @@
  */
 
 import { db } from "../db";
-import { eq, desc, and, gte, lte, gt, sql, or, ilike, asc, isNull, isNotNull } from "drizzle-orm";
+import { eq, desc, and, gte, lte, gt, sql, or, ilike, asc, isNull, isNotNull, inArray } from "drizzle-orm";
 import { logAcctEvent } from "../lib/accounting-event-logger";
 import { logger } from "../lib/logger";
 import {
@@ -248,32 +248,54 @@ const methods = {
     const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(receivingHeaders).where(where);
     const headers = await db.select().from(receivingHeaders).where(where).orderBy(desc(receivingHeaders.receiveDate), desc(receivingHeaders.receivingNumber)).limit(pageSize).offset(offset);
     
-    const data: ReceivingHeaderWithDetails[] = [];
-    for (const h of headers) {
-      const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
-      const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
-      const lines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, h.id));
-      const linesWithItems: ReceivingLineWithItem[] = [];
-      for (const line of lines) {
-        const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
-        linesWithItems.push({ ...line, item });
-      }
-      data.push({ ...h, supplier: sup, warehouse: wh, lines: linesWithItems });
+    // batch-fetch كل الـ lookups مرة واحدة (N+1 fix — كان: 3N + M² queries)
+    const headerIds    = headers.map(h => h.id);
+    const supplierIds  = [...new Set(headers.map(h => h.supplierId))];
+    const warehouseIds = [...new Set(headers.map(h => h.warehouseId))];
+
+    const [allSups, allWhs, allLines] = await Promise.all([
+      supplierIds.length  > 0 ? db.select().from(suppliers).where(inArray(suppliers.id, supplierIds))           : [],
+      warehouseIds.length > 0 ? db.select().from(warehouses).where(inArray(warehouses.id, warehouseIds))        : [],
+      headerIds.length    > 0 ? db.select().from(receivingLines).where(inArray(receivingLines.receivingId, headerIds)) : [],
+    ]);
+
+    const itemIds = [...new Set(allLines.map(l => l.itemId))];
+    const allItems = itemIds.length > 0
+      ? await db.select().from(items).where(inArray(items.id, itemIds))
+      : [];
+
+    const supMap   = new Map(allSups.map(s => [s.id, s]));
+    const whMap    = new Map(allWhs.map(w => [w.id, w]));
+    const itemMap  = new Map(allItems.map(i => [i.id, i]));
+    const linesMap = new Map<string, typeof allLines>();
+    for (const line of allLines) {
+      const bucket = linesMap.get(line.receivingId) ?? [];
+      bucket.push(line);
+      linesMap.set(line.receivingId, bucket);
     }
+
+    const data: ReceivingHeaderWithDetails[] = headers.map(h => ({
+      ...h,
+      supplier:  supMap.get(h.supplierId),
+      warehouse: whMap.get(h.warehouseId),
+      lines: (linesMap.get(h.id) ?? []).map(line => ({ ...line, item: itemMap.get(line.itemId) })),
+    }));
     return { data, total: Number(countResult.count) };
   },
 
   async getReceiving(this: DatabaseStorage, id: string): Promise<ReceivingHeaderWithDetails | undefined> {
     const [h] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, id));
     if (!h) return undefined;
-    const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
-    const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
-    const lines = await db.select().from(receivingLines).where(eq(receivingLines.receivingId, h.id));
-    const linesWithItems: ReceivingLineWithItem[] = [];
-    for (const line of lines) {
-      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
-      linesWithItems.push({ ...line, item });
-    }
+    const [[sup], [wh], lines] = await Promise.all([
+      db.select().from(suppliers).where(eq(suppliers.id, h.supplierId)),
+      db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId)),
+      db.select().from(receivingLines).where(eq(receivingLines.receivingId, h.id)),
+    ]);
+    // batch-fetch items (N+1 fix)
+    const itemIds = [...new Set(lines.map(l => l.itemId))];
+    const allItems = itemIds.length > 0 ? await db.select().from(items).where(inArray(items.id, itemIds)) : [];
+    const itemMap  = new Map(allItems.map(i => [i.id, i]));
+    const linesWithItems: ReceivingLineWithItem[] = lines.map(line => ({ ...line, item: itemMap.get(line.itemId) }));
     return { ...h, supplier: sup, warehouse: wh, lines: linesWithItems };
   },
 

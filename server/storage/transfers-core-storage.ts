@@ -10,7 +10,7 @@
  */
 
 import { db } from "../db";
-import { eq, desc, and, gte, lte, sql, or, ilike, asc } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, or, ilike, asc, inArray } from "drizzle-orm";
 import {
   items,
   itemBarcodes,
@@ -42,32 +42,46 @@ const methods = {
       .orderBy(desc(storeTransfers.createdAt))
       .limit(100);
 
-    const result: StoreTransferWithDetails[] = [];
-    for (const t of transfers) {
-      const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
-      const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
-      const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, t.id));
-      const linesWithItems: TransferLineWithItem[] = [];
-      for (const line of lines) {
-        const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
-        linesWithItems.push({ ...line, item });
-      }
-      result.push({ ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems });
+    // batch-fetch كل الـ lookups (N+1 fix — كان: 3N + M² queries لـ 100 تحويل)
+    const transferIds  = transfers.map(t => t.id);
+    const whIds = [...new Set([...transfers.map(t => t.sourceWarehouseId), ...transfers.map(t => t.destinationWarehouseId)])];
+    const [allWhs, allLines] = await Promise.all([
+      whIds.length       > 0 ? db.select().from(warehouses).where(inArray(warehouses.id, whIds))           : [],
+      transferIds.length > 0 ? db.select().from(transferLines).where(inArray(transferLines.transferId, transferIds)) : [],
+    ]);
+    const itemIds = [...new Set(allLines.map(l => l.itemId))];
+    const allItems = itemIds.length > 0 ? await db.select().from(items).where(inArray(items.id, itemIds)) : [];
+
+    const whMap    = new Map(allWhs.map(w => [w.id, w]));
+    const itemMap  = new Map(allItems.map(i => [i.id, i]));
+    const linesMap = new Map<string, typeof allLines>();
+    for (const line of allLines) {
+      const bucket = linesMap.get(line.transferId) ?? [];
+      bucket.push(line);
+      linesMap.set(line.transferId, bucket);
     }
+    const result: StoreTransferWithDetails[] = transfers.map(t => ({
+      ...t,
+      sourceWarehouse:      whMap.get(t.sourceWarehouseId),
+      destinationWarehouse: whMap.get(t.destinationWarehouseId),
+      lines: (linesMap.get(t.id) ?? []).map(line => ({ ...line, item: itemMap.get(line.itemId) })),
+    }));
     return result;
   },
 
   async getTransfer(this: DatabaseStorage, id: string): Promise<StoreTransferWithDetails | undefined> {
     const [t] = await db.select().from(storeTransfers).where(eq(storeTransfers.id, id));
     if (!t) return undefined;
-    const [srcWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId));
-    const [destWh] = await db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId));
-    const lines = await db.select().from(transferLines).where(eq(transferLines.transferId, t.id));
-    const linesWithItems: TransferLineWithItem[] = [];
-    for (const line of lines) {
-      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
-      linesWithItems.push({ ...line, item });
-    }
+    const [[srcWh], [destWh], lines] = await Promise.all([
+      db.select().from(warehouses).where(eq(warehouses.id, t.sourceWarehouseId)),
+      db.select().from(warehouses).where(eq(warehouses.id, t.destinationWarehouseId)),
+      db.select().from(transferLines).where(eq(transferLines.transferId, t.id)),
+    ]);
+    // batch-fetch items (N+1 fix)
+    const itemIds  = [...new Set(lines.map(l => l.itemId))];
+    const allItems = itemIds.length > 0 ? await db.select().from(items).where(inArray(items.id, itemIds)) : [];
+    const itemMap  = new Map(allItems.map(i => [i.id, i]));
+    const linesWithItems: TransferLineWithItem[] = lines.map(line => ({ ...line, item: itemMap.get(line.itemId) }));
     return { ...t, sourceWarehouse: srcWh, destinationWarehouse: destWh, lines: linesWithItems };
   },
 
