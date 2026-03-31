@@ -280,6 +280,24 @@ const methods = {
       const patientARMapping = mappingMap.get("pharmacy_patient_receivable");
       const companyARMapping = mappingMap.get("pharmacy_contract_receivable");
 
+      // ── Audit: warn if contract AR split falls back to default account ─────
+      const missingPatientMapping = !patientARMapping?.debitAccountId && patientShareTotal > 0.001;
+      const missingCompanyMapping = !companyARMapping?.debitAccountId && companyShareTotal > 0.001;
+      if (missingPatientMapping || missingCompanyMapping) {
+        await logAcctEvent({
+          sourceType:   "sales_invoice",
+          sourceId:     invoiceId,
+          eventType:    "contract_ar_split_fallback",
+          status:       "completed",
+          errorMessage: [
+            `[تحذير] فاتورة تعاقد رُحِّلت باستخدام حساب الذمم الافتراضي بدل حسابات التعاقد المخصصة.`,
+            missingPatientMapping ? `• pharmacy_patient_receivable: غير مُعيَّن (حصة مريض ${patientShareTotal.toFixed(2)} ج.م رُحِّلت على الذمم العامة).` : "",
+            missingCompanyMapping ? `• pharmacy_contract_receivable: غير مُعيَّن (حصة شركة ${companyShareTotal.toFixed(2)} ج.م رُحِّلت على الذمم العامة).` : "",
+            `الحل: أضف الحسابين في صفحة ربط الحسابات (Account Mappings) تحت تصنيف الصيدلية.`,
+          ].filter(Boolean).join("\n"),
+        });
+      }
+
       if (patientShareTotal > 0.001) {
         const acct = patientARMapping?.debitAccountId || debitAccountId;
         journalLineData.push({
@@ -296,15 +314,32 @@ const methods = {
           description: `ذمة شركة تأمين — ${(invoice as any).contractCompany || "شركة"}`,
         });
       }
-    } else if (debitAccountId && netTotal > 0) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: lineNum++,
-        accountId: debitAccountId,
-        debit: String(netTotal.toFixed(2)),
-        credit: "0",
-        description: "مدينون - في انتظار التحصيل",
-      });
+    } else {
+      // ── Audit: contract invoice posted to general AR without split ──────────
+      if (isContract && netTotal > 0) {
+        await logAcctEvent({
+          sourceType:   "sales_invoice",
+          sourceId:     invoiceId,
+          eventType:    "contract_ar_no_split",
+          status:       "completed",
+          errorMessage: [
+            `[تحذير] فاتورة تعاقد رُحِّلت على حساب الذمم العام دون تقسيم حصص.`,
+            `• صافي الفاتورة: ${netTotal.toFixed(2)} ج.م`,
+            `• مجموع الحصص المسجّلة: ${sharesSum.toFixed(2)} ج.م (مريض ${patientShareTotal.toFixed(2)} + شركة ${companyShareTotal.toFixed(2)})`,
+            `السبب: الحصص لا تتطابق مع الصافي (فارق > 0.02 ج.م) أو لم تُحسب بعد.`,
+          ].join("\n"),
+        });
+      }
+      if (debitAccountId && netTotal > 0) {
+        journalLineData.push({
+          journalEntryId: "",
+          lineNumber: lineNum++,
+          accountId: debitAccountId,
+          debit: String(netTotal.toFixed(2)),
+          credit: "0",
+          description: "مدينون - في انتظار التحصيل",
+        });
+      }
     }
 
     const discountMapping = mappingMap.get("discount_allowed");
