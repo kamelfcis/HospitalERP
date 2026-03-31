@@ -35,6 +35,7 @@ const PurchaseInvoice = lazy(() => import("@/pages/purchase-invoices"));
 const PurchaseReturns = lazy(() => import("@/pages/purchase-returns"));
 const ServicesPricing = lazy(() => import("@/pages/ServicesPricing"));
 const SalesInvoices = lazy(() => import("@/pages/SalesInvoices"));
+const ContractReport = lazy(() => import("@/pages/sales-invoices/ContractReport"));
 const SalesReturns = lazy(() => import("@/pages/sales-returns"));
 const Warehouses = lazy(() => import("@/pages/Warehouses"));
 const Departments = lazy(() => import("@/pages/Departments"));
@@ -165,6 +166,7 @@ function Router() {
           <Route path="/purchase-returns">{() => <G p="receiving.view"><PurchaseReturns /></G>}</Route>
           <Route path="/customer-payments">{() => <G p="sales.view"><CustomerPaymentsPage /></G>}</Route>
           <Route path="/delivery-payments">{() => <G p="delivery_payment.view"><DeliveryPaymentsPage /></G>}</Route>
+          <Route path="/sales-invoices/contract-report">{() => <G p="sales.view"><ContractReport /></G>}</Route>
           <Route path="/sales-invoices">{() => <G p="sales.view"><SalesInvoices /></G>}</Route>
           <Route path="/sales-returns">{() => <G p="sales.create"><SalesReturns /></G>}</Route>
           <Route path="/services-pricing">{() => <G p="services.view"><ServicesPricing /></G>}</Route>

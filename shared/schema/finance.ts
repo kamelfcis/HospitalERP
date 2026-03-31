@@ -319,6 +319,9 @@ export const mappingLineTypeLabels: Record<string, string> = {
   stock_loss:           "خسائر عجز الجرد",
   // Supplier payment
   ap_settlement:        "تسوية ذمم موردين (دفع)",
+  // Contract pharmacy receivables (Phase 2)
+  pharmacy_patient_receivable:  "ذمم مرضى أفراد - صيدلية",
+  pharmacy_contract_receivable: "ذمم شركات تأمين طبي",
   // Generic
   other:                "أخرى",
 };

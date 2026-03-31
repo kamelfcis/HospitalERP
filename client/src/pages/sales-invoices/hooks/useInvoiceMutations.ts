@@ -13,6 +13,10 @@ interface MutationParams {
   customerName: string;
   customerId: string;
   contractCompany: string;
+  contractId: string;
+  contractMemberId: string;
+  companyId: string;
+  companyCoveragePct: number;
   discountPct: number;
   discountValue: number;
   subtotal: number;
@@ -36,6 +40,13 @@ export function useInvoiceMutations(p: MutationParams) {
     customerName: p.customerName || null,
     customerId: p.customerType === "credit" ? (p.customerId || null) : null,
     contractCompany: p.customerType === "contract" ? p.contractCompany : null,
+    // ── حقول التعاقد (Phase 2) ──────────────────────────────────────────────
+    contractId:       p.customerType === "contract" ? (p.contractId || null) : null,
+    contractMemberId: p.customerType === "contract" ? (p.contractMemberId || null) : null,
+    companyId:        p.customerType === "contract" ? (p.companyId || null) : null,
+    // مجاميع الحصص — تُحسَب من السطور أدناه
+    patientShareTotal: p.customerType === "contract" ? computePatientShareTotal(p.lines, p.companyCoveragePct, p.netTotal) : null,
+    companyShareTotal: p.customerType === "contract" ? computeCompanyShareTotal(p.lines, p.companyCoveragePct, p.netTotal) : null,
     discountPercent: p.discountPct,
     discountValue: p.discountValue,
     subtotal: +p.subtotal.toFixed(2),
@@ -45,17 +56,27 @@ export function useInvoiceMutations(p: MutationParams) {
   });
 
   const buildLines = () =>
-    p.lines.map((ln, i) => ({
-      itemId: ln.itemId,
-      unitLevel: ln.unitLevel,
-      qty: ln.qty,
-      salePrice: ln.salePrice,
-      lineTotal: ln.lineTotal,
-      expiryMonth: ln.expiryMonth,
-      expiryYear: ln.expiryYear,
-      lotId: ln.lotId,
-      lineNo: i + 1,
-    }));
+    p.lines.map((ln, i) => {
+      const companyShareAmount = p.customerType === "contract"
+        ? +(ln.lineTotal * (p.companyCoveragePct / 100)).toFixed(2)
+        : undefined;
+      const patientShareAmount = p.customerType === "contract"
+        ? +(ln.lineTotal - (companyShareAmount ?? 0)).toFixed(2)
+        : undefined;
+
+      return {
+        itemId: ln.itemId,
+        unitLevel: ln.unitLevel,
+        qty: ln.qty,
+        salePrice: ln.salePrice,
+        lineTotal: ln.lineTotal,
+        expiryMonth: ln.expiryMonth,
+        expiryYear: ln.expiryYear,
+        lotId: ln.lotId,
+        lineNo: i + 1,
+        ...(p.customerType === "contract" ? { companyShareAmount, patientShareAmount } : {}),
+      };
+    });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -101,6 +122,11 @@ export function useInvoiceMutations(p: MutationParams) {
         }
       }
 
+      // ── فحص فواتير التعاقد: يجب أن يكون المنتسب محدداً ─────────────────
+      if (p.customerType === "contract" && !p.contractMemberId) {
+        throw new Error("فاتورة التعاقد تتطلب تحديد المنتسب — يرجى البحث ببطاقة المنتسب");
+      }
+
       if (p.isNew) {
         const saveRes = await saveMutation.mutateAsync();
         const id = saveRes?.id || p.editId;
@@ -138,4 +164,15 @@ export function useInvoiceMutations(p: MutationParams) {
   });
 
   return { saveMutation, finalizeMutation, deleteMutation };
+}
+
+// ── Helpers: company/patient share totals ──────────────────────────────────
+function computeCompanyShareTotal(lines: SalesLineLocal[], pct: number, netTotal: number): string {
+  const perLine = lines.reduce((sum, ln) => sum + +(ln.lineTotal * (pct / 100)).toFixed(2), 0);
+  return Math.min(perLine, netTotal).toFixed(2);
+}
+
+function computePatientShareTotal(lines: SalesLineLocal[], pct: number, netTotal: number): string {
+  const companyTotal = parseFloat(computeCompanyShareTotal(lines, pct, netTotal));
+  return Math.max(0, netTotal - companyTotal).toFixed(2);
 }

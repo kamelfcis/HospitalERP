@@ -611,6 +611,8 @@ const methods = {
       eq(salesInvoiceHeaders.isReturn, false),
       sql`NOT EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = ${salesInvoiceHeaders.id})`,
       sql`NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = ${salesInvoiceHeaders.id})`,
+      // فواتير التعاقد التي نصيب المريض=0 تُدفع من شركة التأمين مباشرة — لا تظهر للكاشير
+      sql`(${salesInvoiceHeaders.customerType} != 'contract' OR COALESCE(CAST(${salesInvoiceHeaders.patientShareTotal} AS numeric), 0) > 0)`,
     ];
     const unitCondition = unitType === "department"
       ? eq(warehouses.departmentId, unitId)
@@ -622,6 +624,9 @@ const methods = {
       invoiceDate:         salesInvoiceHeaders.invoiceDate,
       customerType:        salesInvoiceHeaders.customerType,
       customerName:        salesInvoiceHeaders.customerName,
+      contractCompany:     salesInvoiceHeaders.contractCompany,
+      patientShareTotal:   salesInvoiceHeaders.patientShareTotal,
+      companyShareTotal:   salesInvoiceHeaders.companyShareTotal,
       subtotal:            salesInvoiceHeaders.subtotal,
       discountValue:       salesInvoiceHeaders.discountValue,
       netTotal:            salesInvoiceHeaders.netTotal,

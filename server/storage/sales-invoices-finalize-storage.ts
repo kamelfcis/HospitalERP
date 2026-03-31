@@ -3,6 +3,7 @@ import type { DrizzleTransaction } from "../db";
 import { eq, desc, and, sql, or, asc, gte, lte, ilike, inArray } from "drizzle-orm";
 import { logAcctEvent } from "../lib/accounting-event-logger";
 import { convertQtyToMinor, QTY_MINOR_TOLERANCE } from "../inventory-helpers";
+import { generateClaimsForSalesInvoice } from "../lib/contract-claim-generator";
 import {
   items,
   warehouses,
@@ -213,6 +214,7 @@ const methods = {
     let revenueDrugs = 0;
     let revenueSupplies = 0;
     let capturedJournalEntryId: string | null = null;
+    let isContractInvoice = false;
 
     const finalResult = await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM sales_invoice_headers WHERE id = ${id} FOR UPDATE`);
@@ -221,6 +223,34 @@ const methods = {
       if (locked.status !== "draft") throw new Error("الفاتورة ليست مسودة");
       const [invoice] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
       if (!invoice) throw new Error("الفاتورة غير موجودة");
+
+      // ── فحص حد الخصم (maxDiscountPct) ────────────────────────────────────
+      if (invoice.createdBy) {
+        const [creator] = await tx
+          .select({ maxDiscountPct: users.maxDiscountPct })
+          .from(users)
+          .where(eq(users.id, invoice.createdBy));
+        const maxPct = creator?.maxDiscountPct ? parseFloat(String(creator.maxDiscountPct)) : null;
+        const usedPct = parseFloat(invoice.discountPercent || "0");
+        if (maxPct !== null && usedPct > maxPct) {
+          const err: any = new Error(`الخصم المُدخل (${usedPct}%) يتجاوز الحد المسموح به لهذا المستخدم (${maxPct}%). يرجى مراجعة المشرف أو تخفيض الخصم.`);
+          err.httpStatus = 403;
+          throw err;
+        }
+      }
+
+      // ── فحص التعاقد: حصص المريض + الشركة = صافي الفاتورة ─────────────
+      isContractInvoice = invoice.customerType === "contract" && !!(invoice.contractId);
+      if (isContractInvoice) {
+        const p = parseFloat(String((invoice as any).patientShareTotal || "0"));
+        const c = parseFloat(String((invoice as any).companyShareTotal || "0"));
+        const net = parseFloat(invoice.netTotal || "0");
+        if (Math.abs((p + c) - net) > 0.05) {
+          const err: any = new Error(`فاتورة التعاقد غير متوازنة: مجموع الحصص (${(p + c).toFixed(2)} ج.م) ≠ صافي الفاتورة (${net.toFixed(2)} ج.م). يرجى مراجعة توزيع الحصص.`);
+          err.httpStatus = 400;
+          throw err;
+        }
+      }
 
       const lines = await tx.select().from(salesInvoiceLines).where(eq(salesInvoiceLines.invoiceId, id));
       if (lines.length === 0) throw new Error("لا يمكن اعتماد فاتورة بدون أصناف");
@@ -341,6 +371,8 @@ const methods = {
         updatedAt: new Date(),
         journalStatus,
         journalError,
+        // إطلاق مطالبات التعاقد — يُعيَّن هنا، ويُكمَّل خارج الـ transaction
+        claimStatus: isContractInvoice ? ("generating" as any) : undefined,
       }).where(eq(salesInvoiceHeaders.id, id));
 
       const [updated] = await tx.select().from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, id));
@@ -356,6 +388,14 @@ const methods = {
         status:         "completed",
         journalEntryId: capturedJournalEntryId,
       }).catch(() => {});
+    }
+
+    // ── إطلاق توليد المطالبات (fire-and-forget) للفواتير العقدية ──────────
+    if (isContractInvoice) {
+      generateClaimsForSalesInvoice(id).catch(err => {
+        // non-fatal — الفشل لا يؤثر على الفاتورة المُعتمَدة
+        console.warn("[finalizeSalesInvoice] claim generation failed (non-fatal):", err?.message);
+      });
     }
 
     return finalResult;

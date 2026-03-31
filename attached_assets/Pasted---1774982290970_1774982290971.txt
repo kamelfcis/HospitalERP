@@ -1,0 +1,169 @@
+نفّذ تطوير سيكل التعاقدات في صيدلية النظام + حد الخصم + التقارير، مع الالتزام الصارم بدليل الحسابات الحالي (Chart of Accounts) وعدم استخدام أي حسابات خارج الدليل، والالتزام التام بعدم كسر أي behavior موجود.
+
+========================
+GLOBAL RULES
+========================
+
+1) ممنوع hardcode لأي حساب — استخدم فقط الحسابات الموجودة في الدليل.
+2) أي mapping يتم عبر Account Mapping Categories.
+3) أي قيد يجب أن يعتمد على account IDs من الدليل وليس نصوص.
+4) لا يتم الاعتراف بالإيراد إلا مرة واحدة عند البيع.
+5) التحصيل لا ينشئ إيراد.
+6) كل العمليات transactional.
+7) claims idempotent.
+8) backward compatibility للفواتير القديمة.
+
+========================
+ACCOUNT MAPPING (MANDATORY)
+========================
+
+اربط الفئات التالية بحسابات الدليل:
+
+pharmacy_patient_receivable → 12212 (ذمم مرضى أفراد – صيدلية)
+pharmacy_contract_receivable → 12231 (ذمم شركات تأمين طبي)
+pharmacy_revenue_internal → 4141 (إيراد صيدلية داخلي)
+pharmacy_revenue_external → 4131 (إيراد صيدلية خارجي)
+pharmacy_cogs_internal → 5111
+pharmacy_cogs_external → 5121
+pharmacy_cash → 1212 (كاشير الصيدليات)
+main_treasury → 1211 (خزنة رئيسية)
+
+========================
+PHASE 1 — CONTRACT SALES LOGIC
+========================
+
+عند customerType = contract:
+
+STEP 1 — VALIDATION
+- contractId موجود
+- companyId موجود
+- contractMemberId موجود
+- العقد ساري
+- shares محسوبة
+- totals متزنة
+
+STEP 2 — SHARES CALCULATION
+لكل سطر:
+- احسب companyShareAmount
+- احسب patientShareAmount
+
+STEP 3 — JOURNAL ENTRY (CRITICAL)
+
+عند finalize فاتورة صيدلية تعاقد:
+
+IF patientShare > 0:
+    Dr 12212 (ذمم مرضى صيدلية)
+
+IF companyShare > 0:
+    Dr 12231 (ذمم شركات تأمين)
+
+Cr الإيراد:
+    IF صيدلية داخلية:
+        Cr 4141
+    ELSE:
+        Cr 4131
+
+STEP 4 — COGS ENTRY (UNCHANGED)
+Dr تكلفة:
+    5111 أو 5121 حسب نوع الصيدلية
+
+Cr مخزون الصيدلية:
+    (الحساب المستخدم حالياً لا يتغير)
+
+STEP 5 — VALIDATION BEFORE POST
+- patientShare + companyShare = net invoice total
+- لا يوجد سطور بصفر
+- الحسابات موجودة
+
+========================
+CASHIER LOGIC
+========================
+
+IF patientShare = 0:
+    لا تظهر في cashier
+
+IF patientShare > 0:
+    تظهر لتحصيل نصيب المريض فقط
+
+========================
+COLLECTION ENTRIES
+========================
+
+عند تحصيل المريض:
+
+Dr 1212 (كاشير صيدلية)
+Cr 12212 (ذمم مرضى)
+
+عند توريد للخزنة:
+
+Dr 1211 (خزنة رئيسية)
+Cr 1212
+
+========================
+INSURANCE COLLECTION
+========================
+
+عند تحصيل شركة التأمين:
+
+Dr البنك / الخزنة
+Cr 12231 (ذمم شركات)
+
+========================
+CLAIMS GENERATION
+========================
+
+- generate claims من السطور التي companyShare > 0
+- sourceType = sales_invoice
+- منع التكرار (unique)
+
+claimStatus:
+- generated
+- failed
+
+========================
+DISCOUNT CONTROL
+========================
+
+- max_discount_pct على المستخدم
+
+عند finalize:
+IF discount > limit:
+    reject 422
+    "تم تجاوز الحد الأقصى للخصم"
+
+========================
+REPORT (USING *_rpt)
+========================
+
+استخدم فقط:
+- sales_invoice_headers_rpt
+- sales_invoice_lines_rpt
+
+اعرض:
+- company
+- patient share
+- company share
+- claim status
+
+========================
+CRITICAL RULES
+========================
+
+1) لا يتم تسجيل الإيراد مرتين
+2) لا يتم استخدام contractCompany كنص فقط
+3) لا يتم إنشاء claim مكرر
+4) لا يتم تمرير فاتورة بدون mapping حسابات
+5) لا يتم إخفاء فواتير بها patient share
+
+========================
+FINAL OUTPUT
+========================
+
+اطبع:
+- modified files
+- new services
+- mappings
+- journal logic
+- claim logic
+- discount logic
+- indexes

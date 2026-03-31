@@ -74,6 +74,9 @@ interface SalesInvoiceEditorProps {
 
   // تنقل
   onBack:          () => void;
+
+  // حد الخصم للمستخدم الحالي
+  maxDiscountPct?: number | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,7 +119,7 @@ export function SalesInvoiceEditor({
   warehouses, form, lines, subtotal, netTotal, totalTaxAmount = 0,
   barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef, onBarcodeScan,
   linesHook, mutationsHook, itemSearchHook, serviceSearchHook,
-  statsHook, onBack,
+  statsHook, onBack, maxDiscountPct,
 }: SalesInvoiceEditorProps) {
 
   // حالة التحميل
@@ -151,6 +154,22 @@ export function SalesInvoiceEditor({
         setCustomerName={form.setCustomerName}
         contractCompany={form.contractCompany}
         setContractCompany={form.setContractCompany}
+        contractMemberId={form.contractMemberId}
+        onMemberResolved={(resolved) => {
+          form.setContractId(resolved.contractId);
+          form.setContractMemberId(resolved.memberId);
+          form.setCompanyId(resolved.companyId);
+          form.setContractCompany(resolved.companyName);
+          form.setCompanyCoveragePct(resolved.companyCoveragePct);
+          if (resolved.memberName) form.setCustomerName(resolved.memberName);
+        }}
+        onMemberCleared={() => {
+          form.setContractId("");
+          form.setContractMemberId("");
+          form.setCompanyId("");
+          form.setContractCompany("");
+          form.setCompanyCoveragePct(100);
+        }}
         barcodeDisplay={barcodeDisplay}
         setBarcodeDisplay={setBarcodeDisplay}
         barcodeLoading={barcodeLoading}
@@ -190,6 +209,9 @@ export function SalesInvoiceEditor({
         totalTaxAmount={totalTaxAmount}
         onDiscountPctChange={(v) => form.handleDiscountPctChange(v, subtotal)}
         onDiscountValueChange={(v) => form.handleDiscountValueChange(v, subtotal)}
+        customerType={form.customerType}
+        companyCoveragePct={form.companyCoveragePct}
+        maxDiscountPct={maxDiscountPct}
       />
 
       {/* ── نوافذ الحوار ──────────────────────────────────────────────────── */}

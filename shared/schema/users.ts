@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, uniqueIndex, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, uniqueIndex, integer, decimal } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { userRoleEnum } from "./enums";
@@ -47,6 +47,7 @@ export const users = pgTable("users", {
   isActive:                    boolean("is_active").notNull().default(true),
   cashierGlAccountId:       text("cashier_gl_account_id"),
   cashierVarianceAccountId: text("cashier_variance_account_id"),
+  maxDiscountPct:           decimal("max_discount_pct", { precision: 5, scale: 2 }),
   createdAt:                timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -1,38 +1,50 @@
 import { useState, useCallback } from "react";
 
 export interface InvoiceFormState {
-  warehouseId:      string;
-  invoiceDate:      string;
-  customerType:     string;
-  customerId:       string;
-  customerName:     string;
-  contractCompany:  string;
-  discountPct:      number;
-  discountValue:    number;
-  notes:            string;
+  warehouseId:        string;
+  invoiceDate:        string;
+  customerType:       string;
+  customerId:         string;
+  customerName:       string;
+  contractCompany:    string;
+  contractId:         string;
+  contractMemberId:   string;
+  companyId:          string;
+  companyCoveragePct: number;
+  discountPct:        number;
+  discountValue:      number;
+  notes:              string;
 }
 
 export function useInvoiceForm(today: string) {
-  const [warehouseId,      setWarehouseId]      = useState("");
-  const [invoiceDate,      setInvoiceDate]      = useState(today);
-  const [customerType,     setCustomerType]     = useState("cash");
-  const [customerId,       setCustomerId]       = useState("");
-  const [customerName,     setCustomerName]     = useState("");
-  const [contractCompany,  setContractCompany]  = useState("");
-  const [discountPct,      setDiscountPct]      = useState(0);
-  const [discountValue,    setDiscountValue]    = useState(0);
-  const [notes,            setNotes]            = useState("");
+  const [warehouseId,        setWarehouseId]        = useState("");
+  const [invoiceDate,        setInvoiceDate]        = useState(today);
+  const [customerType,       setCustomerType]       = useState("cash");
+  const [customerId,         setCustomerId]         = useState("");
+  const [customerName,       setCustomerName]       = useState("");
+  const [contractCompany,    setContractCompany]    = useState("");
+  const [contractId,         setContractId]         = useState("");
+  const [contractMemberId,   setContractMemberId]   = useState("");
+  const [companyId,          setCompanyId]          = useState("");
+  const [companyCoveragePct, setCompanyCoveragePct] = useState(100);
+  const [discountPct,        setDiscountPct]        = useState(0);
+  const [discountValue,      setDiscountValue]      = useState(0);
+  const [notes,              setNotes]              = useState("");
 
   const resetForm = useCallback((defaults?: Partial<InvoiceFormState>) => {
-    setWarehouseId(defaults?.warehouseId      ?? "");
-    setInvoiceDate(defaults?.invoiceDate      ?? today);
-    setCustomerType(defaults?.customerType    ?? "cash");
-    setCustomerId(defaults?.customerId        ?? "");
-    setCustomerName(defaults?.customerName    ?? "");
+    setWarehouseId(defaults?.warehouseId         ?? "");
+    setInvoiceDate(defaults?.invoiceDate         ?? today);
+    setCustomerType(defaults?.customerType       ?? "cash");
+    setCustomerId(defaults?.customerId           ?? "");
+    setCustomerName(defaults?.customerName       ?? "");
     setContractCompany(defaults?.contractCompany ?? "");
-    setDiscountPct(defaults?.discountPct      ?? 0);
-    setDiscountValue(defaults?.discountValue  ?? 0);
-    setNotes(defaults?.notes                  ?? "");
+    setContractId(defaults?.contractId           ?? "");
+    setContractMemberId(defaults?.contractMemberId ?? "");
+    setCompanyId(defaults?.companyId             ?? "");
+    setCompanyCoveragePct(defaults?.companyCoveragePct ?? 100);
+    setDiscountPct(defaults?.discountPct         ?? 0);
+    setDiscountValue(defaults?.discountValue     ?? 0);
+    setNotes(defaults?.notes                     ?? "");
   }, [today]);
 
   const handleDiscountPctChange = useCallback((val: string, subtotal: number) => {
@@ -48,15 +60,19 @@ export function useInvoiceForm(today: string) {
   }, []);
 
   return {
-    warehouseId,     setWarehouseId,
-    invoiceDate,     setInvoiceDate,
-    customerType,    setCustomerType,
-    customerId,      setCustomerId,
-    customerName,    setCustomerName,
-    contractCompany, setContractCompany,
-    discountPct,     setDiscountPct,
-    discountValue,   setDiscountValue,
-    notes,           setNotes,
+    warehouseId,        setWarehouseId,
+    invoiceDate,        setInvoiceDate,
+    customerType,       setCustomerType,
+    customerId,         setCustomerId,
+    customerName,       setCustomerName,
+    contractCompany,    setContractCompany,
+    contractId,         setContractId,
+    contractMemberId,   setContractMemberId,
+    companyId,          setCompanyId,
+    companyCoveragePct, setCompanyCoveragePct,
+    discountPct,        setDiscountPct,
+    discountValue,      setDiscountValue,
+    notes,              setNotes,
     resetForm,
     handleDiscountPctChange,
     handleDiscountValueChange,

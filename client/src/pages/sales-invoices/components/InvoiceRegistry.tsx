@@ -2,7 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Loader2, Plus, ShoppingCart, Trash2, ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { Loader2, Plus, ShoppingCart, Trash2, ChevronLeft, ChevronRight, Printer, FileBarChart2 } from "lucide-react";
+import { Link } from "wouter";
 import { formatNumber, formatDateShort } from "@/lib/formatters";
 import { salesInvoiceStatusLabels, customerTypeLabels } from "@shared/schema";
 import type { SalesInvoiceWithDetails, Warehouse } from "@shared/schema";
@@ -121,6 +122,12 @@ export function InvoiceRegistry({
           <span className="text-xs text-muted-foreground">({totalInvoices} فاتورة)</span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/sales-invoices/contract-report">
+            <Button size="sm" variant="outline" data-testid="button-contract-report">
+              <FileBarChart2 className="h-3 w-3 ml-1" />
+              تقرير التعاقدات
+            </Button>
+          </Link>
           {canCreate && (
             <>
               <Button size="sm" variant="outline" onClick={onSeedDemo} disabled={seedLoading} data-testid="button-seed-demo">

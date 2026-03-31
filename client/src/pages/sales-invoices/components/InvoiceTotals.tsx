@@ -1,4 +1,5 @@
 import { formatNumber } from "@/lib/formatters";
+import { AlertTriangle } from "lucide-react";
 
 interface Props {
   subtotal: number;
@@ -9,17 +10,39 @@ interface Props {
   totalTaxAmount?: number;
   onDiscountPctChange: (val: string) => void;
   onDiscountValueChange: (val: string) => void;
+  // ── حقول التعاقد ──────────────────────────────────────────────────────────
+  customerType?: string;
+  companyCoveragePct?: number;
+  // ── حد الخصم ──────────────────────────────────────────────────────────────
+  maxDiscountPct?: number | null;
 }
 
 export function InvoiceTotals({
   subtotal, discountPct, discountValue, netTotal, isDraft,
   totalTaxAmount = 0,
   onDiscountPctChange, onDiscountValueChange,
+  customerType, companyCoveragePct = 100,
+  maxDiscountPct,
 }: Props) {
-  const hasVat = totalTaxAmount > 0.001;
+  const hasVat          = totalTaxAmount > 0.001;
+  const isContract      = customerType === "contract";
+  const discountOverMax = maxDiscountPct != null && discountPct > maxDiscountPct;
+
+  // حساب حصص التعاقد من صافي الفاتورة
+  const companyShare = isContract ? +(netTotal * (companyCoveragePct / 100)).toFixed(2) : 0;
+  const patientShare = isContract ? +(netTotal - companyShare).toFixed(2) : 0;
+
+  const colCount = (hasVat ? 5 : 4) + (isContract ? 2 : 0);
+
   return (
     <div className="bg-gradient-to-l from-slate-700 to-slate-800 text-white p-3 m-2 rounded-md sticky bottom-0 z-40">
-      <div className={`grid grid-cols-2 ${hasVat ? "md:grid-cols-5" : "md:grid-cols-4"} gap-3 text-[12px]`}>
+      {discountOverMax && (
+        <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-red-600/80 rounded text-xs font-semibold text-white" data-testid="discount-over-limit-warning">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>تجاوز حد الخصم المسموح: الحد الأقصى {maxDiscountPct}% — الخصم الحالي {discountPct}%</span>
+        </div>
+      )}
+      <div className={`grid grid-cols-2 md:grid-cols-${colCount} gap-3 text-[12px]`}>
         <div>
           <span className="font-semibold block opacity-80">الإجمالي قبل الخصم</span>
           <span className="text-sm font-bold" data-testid="text-subtotal">{formatNumber(subtotal)}</span>
@@ -34,7 +57,7 @@ export function InvoiceTotals({
               max="100"
               value={discountPct}
               onChange={(e) => onDiscountPctChange(e.target.value)}
-              className="peachtree-input w-[70px] text-center text-black"
+              className={`peachtree-input w-[70px] text-center text-black ${discountOverMax ? "border-2 border-red-500" : ""}`}
               data-testid="input-discount-pct"
             />
           ) : (
@@ -67,6 +90,20 @@ export function InvoiceTotals({
           <span className="font-semibold block opacity-80">صافي المستحق</span>
           <span className="text-sm font-bold text-green-300" data-testid="text-net-total">{formatNumber(netTotal)}</span>
         </div>
+
+        {/* ── أعمدة التعاقد ───────────────────────────────────────────────────── */}
+        {isContract && (
+          <>
+            <div>
+              <span className="font-semibold block opacity-80 text-blue-300">حصة الشركة ({companyCoveragePct}%)</span>
+              <span className="text-sm font-bold text-blue-200" data-testid="text-company-share">{formatNumber(companyShare)}</span>
+            </div>
+            <div>
+              <span className="font-semibold block opacity-80 text-amber-300">حصة المريض</span>
+              <span className="text-sm font-bold text-amber-200" data-testid="text-patient-share">{formatNumber(patientShare)}</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

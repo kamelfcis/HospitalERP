@@ -336,6 +336,21 @@ const methods = {
         ? (processedLines[0].line as any)?.pricesIncludeTax ?? false
         : false;
 
+      // ── حصص التعاقد على مستوى السطور ────────────────────────────────────
+      let headerPatientShareTotal: string | null = null;
+      let headerCompanyShareTotal: string | null = null;
+      if (header.customerType === "contract" && header.contractId) {
+        let pSum = 0, cSum = 0;
+        for (const { line } of processedLines) {
+          pSum += parseFloat(String((line as any).patientShareAmount || "0")) || 0;
+          cSum += parseFloat(String((line as any).companyShareAmount || "0")) || 0;
+        }
+        if (pSum + cSum > 0.001) {
+          headerPatientShareTotal = String(pSum.toFixed(2));
+          headerCompanyShareTotal = String(cSum.toFixed(2));
+        }
+      }
+
       const [invoice] = await tx.insert(salesInvoiceHeaders).values({
         invoiceNumber: nextNum,
         invoiceDate: header.invoiceDate,
@@ -345,6 +360,11 @@ const methods = {
         customerName: header.customerName || null,
         customerId: (header.customerType === "credit" && header.customerId) ? header.customerId : null,
         contractCompany: header.contractCompany || null,
+        companyId:        (header.customerType === "contract" ? header.companyId || null : null) as any,
+        contractId:       (header.customerType === "contract" ? header.contractId || null : null) as any,
+        contractMemberId: (header.customerType === "contract" ? (header as any).contractMemberId || null : null) as any,
+        patientShareTotal: headerPatientShareTotal as any,
+        companyShareTotal:  headerCompanyShareTotal as any,
         status: "draft",
         subtotal: roundMoney(subtotal),
         discountType,
@@ -375,6 +395,14 @@ const methods = {
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
           lotId: line.lotId || null,
+          // ── حصص التعاقد per-line ──────────────────────────────────────────
+          companyId:          invoice.customerType === "contract" ? (invoice.companyId || null) : null,
+          contractId:         invoice.customerType === "contract" ? (invoice.contractId || null) : null,
+          contractMemberId:   invoice.customerType === "contract" ? ((invoice as any).contractMemberId || null) : null,
+          companyShareAmount: invoice.customerType === "contract" ? (String((line as any).companyShareAmount || "0") || null) : null,
+          patientShareAmount: invoice.customerType === "contract" ? (String((line as any).patientShareAmount || "0") || null) : null,
+          coverageStatus:     invoice.customerType === "contract" ? ("covered" as any) : null,
+          // ── ضريبة القيمة المضافة per-line ────────────────────────────────
           taxType: taxResult.taxType || null,
           taxRate: taxResult.taxRate > 0 ? String(taxResult.taxRate) : null,
           taxAmount: taxResult.taxAmount,
@@ -504,6 +532,14 @@ const methods = {
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
           lotId: line.lotId || null,
+          // ── حصص التعاقد per-line ──────────────────────────────────────────
+          companyId:          invoice.customerType === "contract" ? (invoice.companyId || null) : null,
+          contractId:         invoice.customerType === "contract" ? (invoice.contractId || null) : null,
+          contractMemberId:   invoice.customerType === "contract" ? ((invoice as any).contractMemberId || null) : null,
+          companyShareAmount: invoice.customerType === "contract" ? (String((line as any).companyShareAmount || "0") || null) : null,
+          patientShareAmount: invoice.customerType === "contract" ? (String((line as any).patientShareAmount || "0") || null) : null,
+          coverageStatus:     invoice.customerType === "contract" ? ("covered" as any) : null,
+          // ── ضريبة القيمة المضافة per-line ────────────────────────────────
           taxType: taxResult.taxType || null,
           taxRate: taxResult.taxRate > 0 ? String(taxResult.taxRate) : null,
           taxAmount: taxResult.taxAmount,
@@ -535,7 +571,22 @@ const methods = {
       // ── إجماليات الضريبة على مستوى الفاتورة ─────────────────────────────
       const invoiceTaxTotals = computeInvoiceTaxTotals(processedLines.map(p => p.taxResult));
 
+      // ── حصص التعاقد على مستوى السطور (update) ───────────────────────────
+      let updatedPatientShareTotal: string | null = null;
+      let updatedCompanyShareTotal: string | null = null;
       const effectiveCustomerType = header.customerType || invoice.customerType;
+      if (effectiveCustomerType === "contract") {
+        let pSum = 0, cSum = 0;
+        for (const { line } of processedLines) {
+          pSum += parseFloat(String((line as any).patientShareAmount || "0")) || 0;
+          cSum += parseFloat(String((line as any).companyShareAmount || "0")) || 0;
+        }
+        if (pSum + cSum > 0.001) {
+          updatedPatientShareTotal = String(pSum.toFixed(2));
+          updatedCompanyShareTotal = String(cSum.toFixed(2));
+        }
+      }
+
       await tx.update(salesInvoiceHeaders).set({
         invoiceDate: header.invoiceDate || invoice.invoiceDate,
         warehouseId: effectiveWarehouseId,
@@ -546,6 +597,17 @@ const methods = {
           ? (header.customerId !== undefined ? (header.customerId || null) : invoice.customerId)
           : null,
         contractCompany: header.contractCompany !== undefined ? header.contractCompany : invoice.contractCompany,
+        companyId:        effectiveCustomerType === "contract"
+          ? ((header as any).companyId !== undefined ? ((header as any).companyId || null) : (invoice.companyId || null))
+          : null,
+        contractId:       effectiveCustomerType === "contract"
+          ? ((header as any).contractId !== undefined ? ((header as any).contractId || null) : (invoice.contractId || null))
+          : null,
+        contractMemberId: effectiveCustomerType === "contract"
+          ? ((header as any).contractMemberId !== undefined ? ((header as any).contractMemberId || null) : ((invoice as any).contractMemberId || null))
+          : null,
+        patientShareTotal: (updatedPatientShareTotal as any),
+        companyShareTotal:  (updatedCompanyShareTotal as any),
         subtotal: roundMoney(subtotal),
         discountType,
         discountPercent: String(discountPercent),

@@ -27,6 +27,8 @@ import { db } from "../db";
 import {
   patientInvoiceHeaders,
   patientInvoiceLines,
+  salesInvoiceHeaders,
+  salesInvoiceLines,
   contractClaimLines,
 } from "@shared/schema";
 import { storage } from "../storage";
@@ -173,6 +175,129 @@ export async function generateClaimsForInvoice(invoiceId: string): Promise<void>
 
   } catch (err: any) {
     logger.warn({ err: err.message, invoiceId }, "[Claims] generateClaimsForInvoice failed (non-fatal)");
+    await setClaimStatus("failed");
+  }
+}
+
+// ─── Sales Invoice Claims ──────────────────────────────────────────────────
+
+/**
+ * generateClaimsForSalesInvoice
+ *
+ * نظير generateClaimsForInvoice لكن لفواتير مبيعات الصيدلية (sales_invoice_headers).
+ * Idempotent — unique index on salesInvoiceLineId prevents duplicates.
+ *
+ * المُستدعي مسؤول عن:
+ *   - ضبط claimStatus = 'generating' قبل الاستدعاء
+ *   - تلقي النتيجة بشكل fire-and-forget (لا يعوق الاعتماد)
+ */
+export async function generateClaimsForSalesInvoice(invoiceId: string): Promise<void> {
+  const setClaimStatus = async (status: "generating" | "generated" | "failed") => {
+    try {
+      await db
+        .update(salesInvoiceHeaders)
+        .set({ claimStatus: status as any, updatedAt: new Date() })
+        .where(eq(salesInvoiceHeaders.id, invoiceId));
+    } catch (e: any) {
+      logger.warn({ err: e.message, invoiceId, status }, "[SalesClaims] claimStatus update failed");
+    }
+  };
+
+  try {
+    // ── 1. Load header ─────────────────────────────────────────────────────
+    const headers = await db
+      .select()
+      .from(salesInvoiceHeaders)
+      .where(eq(salesInvoiceHeaders.id, invoiceId))
+      .limit(1);
+
+    if (!headers[0]) {
+      logger.warn({ invoiceId }, "[SalesClaims] header not found — skipping");
+      return;
+    }
+
+    const inv = headers[0] as any;
+    const companyId  = inv.company_id  ?? inv.companyId;
+    const contractId = inv.contract_id ?? inv.contractId;
+
+    if (!companyId || !contractId) {
+      logger.debug({ invoiceId }, "[SalesClaims] no company/contract on header — not a contract invoice, skipping");
+      return;
+    }
+
+    // ── 2. Fetch eligible lines ────────────────────────────────────────────
+    // شروط الأهلية: companyShareAmount > 0 AND coverageStatus NOT excluded/not_covered
+    const lines = await db
+      .select()
+      .from(salesInvoiceLines)
+      .where(
+        and(
+          eq(salesInvoiceLines.invoiceId, invoiceId),
+          sql`COALESCE(CAST(${salesInvoiceLines.companyShareAmount} AS numeric), 0) > 0`,
+          or(
+            isNull(salesInvoiceLines.coverageStatus),
+            sql`${salesInvoiceLines.coverageStatus} NOT IN ('excluded', 'not_covered')`
+          )
+        )
+      );
+
+    if (lines.length === 0) {
+      logger.debug({ invoiceId }, "[SalesClaims] no eligible lines after filter");
+      await setClaimStatus("generated");
+      return;
+    }
+
+    // ── 3. Get or create draft batch ───────────────────────────────────────
+    const invoiceDate = String(inv.invoice_date ?? inv.invoiceDate ?? new Date().toISOString().split("T")[0]);
+    const batch = await storage.findOrCreateDraftBatch(companyId, contractId, invoiceDate);
+
+    // ── 4. Upsert claim lines (idempotent) ─────────────────────────────────
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    for (const line of lines) {
+      const l = line as any;
+
+      // Code-level idempotency check
+      const existing = await db
+        .select({ id: contractClaimLines.id })
+        .from(contractClaimLines)
+        .where(eq(contractClaimLines.salesInvoiceLineId, l.id))
+        .limit(1);
+
+      if (existing[0]) {
+        skippedCount++;
+        continue;
+      }
+
+      try {
+        await storage.upsertClaimLine({
+          batchId:              batch.id,
+          salesInvoiceLineId:   l.id,
+          invoiceHeaderId:      invoiceId,
+          contractMemberId:     l.contract_member_id ?? l.contractMemberId ?? null,
+          serviceDescription:   l.item_name ?? l.itemName ?? "صنف صيدلي",
+          serviceDate:          invoiceDate,
+          listPrice:            String(l.salePrice ?? l.sale_price ?? "0"),
+          contractPrice:        String(l.salePrice ?? l.sale_price ?? "0"),
+          companyShareAmount:   String(l.companyShareAmount ?? l.company_share_amount ?? "0"),
+          patientShareAmount:   String(l.patientShareAmount ?? l.patient_share_amount ?? "0"),
+        });
+        addedCount++;
+      } catch (insertErr: any) {
+        if (insertErr.code === "23505") {
+          skippedCount++;
+        } else {
+          throw insertErr;
+        }
+      }
+    }
+
+    logger.info({ invoiceId, batchId: batch.id, addedCount, skippedCount }, "[SalesClaims] claim generation complete");
+    await setClaimStatus("generated");
+
+  } catch (err: any) {
+    logger.warn({ err: err.message, invoiceId }, "[SalesClaims] generateClaimsForSalesInvoice failed (non-fatal)");
     await setClaimStatus("failed");
   }
 }

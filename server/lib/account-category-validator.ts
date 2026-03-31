@@ -59,6 +59,10 @@ export const LINE_TYPE_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
   returns:              { debit: ["revenue"],              credit: ["asset"]            },
 
   ap_settlement:        { debit: ["liability"],            credit: ["asset"]             },
+
+  // Contract pharmacy receivables — Phase 2
+  pharmacy_patient_receivable:  { debit: ["asset"], credit: ["asset"] },
+  pharmacy_contract_receivable: { debit: ["asset"], credit: ["asset"] },
 };
 
 /** Arabic labels for account_type enum values */

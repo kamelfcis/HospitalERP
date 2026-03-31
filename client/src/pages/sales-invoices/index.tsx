@@ -114,18 +114,22 @@ export default function SalesInvoices() {
 
   const mutationsHook = useInvoiceMutations({
     editId, isNew,
-    warehouseId:     form.warehouseId,
-    invoiceDate:     form.invoiceDate,
-    customerType:    form.customerType,
-    customerName:    form.customerName,
-    customerId:      form.customerId,
-    contractCompany: form.contractCompany,
-    discountPct:     form.discountPct,
-    discountValue:   form.discountValue,
+    warehouseId:        form.warehouseId,
+    invoiceDate:        form.invoiceDate,
+    customerType:       form.customerType,
+    customerName:       form.customerName,
+    customerId:         form.customerId,
+    contractCompany:    form.contractCompany,
+    contractId:         form.contractId,
+    contractMemberId:   form.contractMemberId,
+    companyId:          form.companyId,
+    companyCoveragePct: form.companyCoveragePct,
+    discountPct:        form.discountPct,
+    discountValue:      form.discountValue,
     subtotal, netTotal,
-    notes:           form.notes,
-    clinicOrderId:   savedClinicOrderIds[0] || null,
-    clinicOrderIds:  savedClinicOrderIds,
+    notes:              form.notes,
+    clinicOrderId:      savedClinicOrderIds[0] || null,
+    clinicOrderIds:     savedClinicOrderIds,
     lines,
     onSaveSuccess:      () => {},
     onFinalizeSuccess:  () => { setSavedClinicOrderIds([]); },
@@ -340,6 +344,7 @@ export default function SalesInvoices() {
         serviceSearchHook={serviceSearchHook}
         statsHook={statsHook}
         onBack={() => navigate("/sales-invoices")}
+        maxDiscountPct={user?.maxDiscountPct ? parseFloat(user.maxDiscountPct) : null}
       />
     );
   }

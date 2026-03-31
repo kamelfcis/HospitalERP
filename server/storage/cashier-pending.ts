@@ -64,11 +64,15 @@ export const PENDING_RECEIPT_GUARD_SQL = `
 
 /** Full WHERE predicate: sales invoice pending collection
  *  ⚠ فواتير الآجل (customer_type='credit') مستثناة — تُحصَّل عبر شاشة تحصيل الآجل فقط
- *  ⚠ فواتير التوصيل (customer_type='delivery') مستثناة — تُحصَّل عبر شاشة تحصيل التوصيل فقط */
+ *  ⚠ فواتير التوصيل (customer_type='delivery') مستثناة — تُحصَّل عبر شاشة تحصيل التوصيل فقط
+ *  ⚠ فواتير التعاقد (customer_type='contract') التي patientShareTotal=0 مستثناة
+ *    لأن الشركة تدفع مباشرة — لا يلزم تحصيل من الكاشير
+ *  ⚠ فواتير التعاقد التي patientShareTotal>0 تظهر لتحصيل نصيب المريض فقط */
 export const PENDING_SALES_SQL = `
   sih.status   = 'finalized'
   AND sih.is_return = false
   AND sih.customer_type NOT IN ('credit', 'delivery')
+  AND (sih.customer_type != 'contract' OR COALESCE(CAST(sih.patient_share_total AS numeric), 0) > 0)
   ${PENDING_RECEIPT_GUARD_SQL}
 `.trim();
 

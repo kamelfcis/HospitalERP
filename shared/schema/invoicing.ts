@@ -116,9 +116,15 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   customerId: varchar("customer_id").references(() => pharmacyCreditCustomers.id),
   customerName: text("customer_name"),
   contractCompany: text("contract_company"),
-  // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
-  companyId:   varchar("company_id").references(() => companies.id),
-  contractId:  varchar("contract_id"),
+  // ── Contract FK fields — Phase 2 (member card + shares) ─────────────────
+  companyId:         varchar("company_id").references(() => companies.id),
+  contractId:        varchar("contract_id"),
+  contractMemberId:  varchar("contract_member_id"),
+  // ── حصص التعاقد على مستوى الفاتورة (مجموع السطور) ──────────────────────
+  patientShareTotal: decimal("patient_share_total", { precision: 18, scale: 2 }),
+  companyShareTotal: decimal("company_share_total", { precision: 18, scale: 2 }),
+  // claimStatus — مسار مطالبات الصيدلية (null = غير عقدية)
+  claimStatus:       text("claim_status"),
   status: salesInvoiceStatusEnum("status").notNull().default("draft"),
   subtotal: decimal("subtotal", { precision: 18, scale: 2 }).notNull().default("0"),
   discountType: text("discount_type").default("percent"),
@@ -155,9 +161,11 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   claimedByShiftIdx: index("idx_sales_inv_claimed_shift").on(table.claimedByShiftId),
   pharmacyStatusIdx: index("idx_sales_inv_pharmacy_status").on(table.pharmacyId, table.status),
   statusJournalIdx: index("idx_sales_inv_status_journal").on(table.status, table.journalStatus),
-  companyIdx:       index("idx_sales_inv_company").on(table.companyId),
-  contractIdx:      index("idx_sales_inv_contract").on(table.contractId),
-  customerIdx:      index("idx_sales_inv_customer").on(table.customerId),
+  companyIdx:          index("idx_sales_inv_company").on(table.companyId),
+  contractIdx:         index("idx_sales_inv_contract").on(table.contractId),
+  customerIdx:         index("idx_sales_inv_customer").on(table.customerId),
+  contractMemberIdx:   index("idx_sales_inv_contract_member").on(table.contractMemberId),
+  claimStatusIdx:      index("idx_sales_inv_claim_status").on(table.claimStatus),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {
@@ -173,9 +181,10 @@ export const salesInvoiceLines = pgTable("sales_invoice_lines", {
   expiryMonth: integer("expiry_month"),
   expiryYear: integer("expiry_year"),
   lotId: varchar("lot_id"),
-  // ── Contract fields (nullable — Phase 1 foundation, populated in Phase 2) ─
+  // ── Contract fields — Phase 2 (populated for contract customer type) ──────
   companyId:          varchar("company_id").references(() => companies.id),
   contractId:         varchar("contract_id"),
+  contractMemberId:   varchar("contract_member_id"),
   companyShareAmount: decimal("company_share_amount", { precision: 18, scale: 2 }),
   patientShareAmount: decimal("patient_share_amount", { precision: 18, scale: 2 }),
   coverageStatus:     text("coverage_status"),

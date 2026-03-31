@@ -269,7 +269,34 @@ const methods = {
     const journalLineData: InsertJournalLine[] = [];
     let lineNum = 1;
 
-    if (debitAccountId && netTotal > 0) {
+    // ── AR Debit: split for contract invoices ──────────────────────────────
+    const isContract = invoice.customerType === "contract";
+    const patientShareTotal = parseFloat((invoice as any).patientShareTotal || "0");
+    const companyShareTotal = parseFloat((invoice as any).companyShareTotal || "0");
+    const sharesSum = patientShareTotal + companyShareTotal;
+    const canSplitAR = isContract && sharesSum > 0.001 && Math.abs(sharesSum - netTotal) < 0.02;
+
+    if (canSplitAR) {
+      const patientARMapping = mappingMap.get("pharmacy_patient_receivable");
+      const companyARMapping = mappingMap.get("pharmacy_contract_receivable");
+
+      if (patientShareTotal > 0.001) {
+        const acct = patientARMapping?.debitAccountId || debitAccountId;
+        journalLineData.push({
+          journalEntryId: "", lineNumber: lineNum++, accountId: acct,
+          debit: String(patientShareTotal.toFixed(2)), credit: "0",
+          description: `ذمة مريض — ${invoice.customerName || "عميل عقد"}`,
+        });
+      }
+      if (companyShareTotal > 0.001) {
+        const acct = companyARMapping?.debitAccountId || debitAccountId;
+        journalLineData.push({
+          journalEntryId: "", lineNumber: lineNum++, accountId: acct,
+          debit: String(companyShareTotal.toFixed(2)), credit: "0",
+          description: `ذمة شركة تأمين — ${(invoice as any).contractCompany || "شركة"}`,
+        });
+      }
+    } else if (debitAccountId && netTotal > 0) {
       journalLineData.push({
         journalEntryId: "",
         lineNumber: lineNum++,

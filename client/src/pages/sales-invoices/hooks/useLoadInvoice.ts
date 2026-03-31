@@ -44,17 +44,22 @@ export function useLoadInvoice({
     if (loadedIdRef.current === invoiceDetail.id) return;
     loadedIdRef.current = invoiceDetail.id;
 
+    const inv = invoiceDetail as any;
     // تعبئة form من البيانات المحمّلة
     form.resetForm({
-      warehouseId:      invoiceDetail.warehouseId,
-      invoiceDate:      invoiceDetail.invoiceDate,
-      customerType:     invoiceDetail.customerType,
-      customerId:       invoiceDetail.customerId     ? String(invoiceDetail.customerId) : "",
-      customerName:     invoiceDetail.customerName   || "",
-      contractCompany:  invoiceDetail.contractCompany || "",
-      discountPct:      parseFloat(String(invoiceDetail.discountPercent)) || 0,
-      discountValue:    parseFloat(String(invoiceDetail.discountValue))   || 0,
-      notes:            invoiceDetail.notes || "",
+      warehouseId:        invoiceDetail.warehouseId,
+      invoiceDate:        invoiceDetail.invoiceDate,
+      customerType:       invoiceDetail.customerType,
+      customerId:         invoiceDetail.customerId     ? String(invoiceDetail.customerId) : "",
+      customerName:       invoiceDetail.customerName   || "",
+      contractCompany:    invoiceDetail.contractCompany || "",
+      contractId:         inv.contractId         || inv.contract_id         || "",
+      contractMemberId:   inv.contractMemberId   || inv.contract_member_id  || "",
+      companyId:          inv.companyId          || inv.company_id          || "",
+      companyCoveragePct: 100, // الغلاف: نُعيد من الشركة عند اللزوم — 100 كافتراضي
+      discountPct:        parseFloat(String(invoiceDetail.discountPercent)) || 0,
+      discountValue:      parseFloat(String(invoiceDetail.discountValue))   || 0,
+      notes:              invoiceDetail.notes || "",
     });
 
     // تحويل سطور الفاتورة
