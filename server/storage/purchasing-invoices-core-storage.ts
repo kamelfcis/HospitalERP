@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, inArray } from "drizzle-orm";
 import {
   items,
   suppliers,
@@ -85,11 +85,15 @@ const coreMethods = {
     const [sup] = await db.select().from(suppliers).where(eq(suppliers.id, h.supplierId));
     const [wh] = await db.select().from(warehouses).where(eq(warehouses.id, h.warehouseId));
     const lines = await db.select().from(purchaseInvoiceLines).where(eq(purchaseInvoiceLines.invoiceId, h.id));
-    const linesWithItems: PurchaseInvoiceLineWithItem[] = [];
-    for (const line of lines) {
-      const [item] = await db.select().from(items).where(eq(items.id, line.itemId));
-      linesWithItems.push({ ...line, item });
-    }
+    // batch-fetch كل الأصناف بـ query واحدة بدل N queries (N+1 fix)
+    const itemIds = [...new Set(lines.map(l => l.itemId))];
+    const allItems = itemIds.length > 0
+      ? await db.select().from(items).where(inArray(items.id, itemIds))
+      : [];
+    const itemMap = new Map(allItems.map(i => [i.id, i]));
+    const linesWithItems: PurchaseInvoiceLineWithItem[] = lines.map(line => ({
+      ...line, item: itemMap.get(line.itemId),
+    }));
     let receiving: ReceivingHeader | undefined = undefined;
     if (h.receivingId) {
       const [r] = await db.select().from(receivingHeaders).where(eq(receivingHeaders.id, h.receivingId));
@@ -249,32 +253,41 @@ const coreMethods = {
           const netPayable          = parseFloat(invoice.netPayable       || "0");
           const headerDiscountTotal = totalAfterVat - netPayable;
 
-          // Step 2b: Recost each invoice line that has a receiving line reference
+          // Step 2b: batch-fetch كل الـ lots وreceivingLines مرة واحدة (N+1 fix)
+          const invLineItemIds = [...new Set(invLines.map(l => l.itemId))];
+          const allLotRows = invLineItemIds.length > 0
+            ? await tx.select({ lot: inventoryLots })
+                .from(inventoryLots)
+                .innerJoin(
+                  inventoryLotMovements,
+                  and(
+                    eq(inventoryLotMovements.lotId, inventoryLots.id),
+                    eq(inventoryLotMovements.referenceType, "receiving"),
+                    eq(inventoryLotMovements.referenceId, receivingId!)
+                  )
+                )
+                .where(inArray(inventoryLots.itemId, invLineItemIds))
+            : [];
+          // يأخذ أول lot لكل صنف (نفس منطق الـ .limit(1) السابق)
+          const lotByItemId = new Map<string, typeof inventoryLots.$inferSelect>();
+          for (const row of allLotRows) {
+            if (!lotByItemId.has(row.lot.itemId)) lotByItemId.set(row.lot.itemId, row.lot);
+          }
+
+          const recvLineIds = invLines.map(l => l.receivingLineId).filter(Boolean) as string[];
+          const allRecvLines = recvLineIds.length > 0
+            ? await tx.select().from(receivingLines).where(inArray(receivingLines.id, recvLineIds))
+            : [];
+          const recvLineMap = new Map(allRecvLines.map(r => [r.id, r]));
+
+          // Recost each invoice line that has a receiving line reference
           for (const line of invLines) {
             if (!line.receivingLineId) continue;
 
-            // Find the lot created from this receiving for this item
-            // (join through inventory_lot_movements to trace the exact receiving origin)
-            const [lotRow] = await tx
-              .select({ lot: inventoryLots })
-              .from(inventoryLots)
-              .innerJoin(
-                inventoryLotMovements,
-                and(
-                  eq(inventoryLotMovements.lotId, inventoryLots.id),
-                  eq(inventoryLotMovements.referenceType, "receiving"),
-                  eq(inventoryLotMovements.referenceId, receivingId)
-                )
-              )
-              .where(eq(inventoryLots.itemId, line.itemId))
-              .limit(1);
-
-            const lot = lotRow?.lot;
+            const lot = lotByItemId.get(line.itemId);
             if (!lot) continue;
 
-            // Load receiving line for total qty (billable + bonus)
-            const [recvLine] = await tx.select().from(receivingLines)
-              .where(eq(receivingLines.id, line.receivingLineId));
+            const recvLine = recvLineMap.get(line.receivingLineId);
             if (!recvLine) continue;
 
             const totalQtyMinor =
