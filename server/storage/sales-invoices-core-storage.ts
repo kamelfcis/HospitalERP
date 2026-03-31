@@ -42,7 +42,7 @@ const methods = {
     return (result?.max || 0) + 1;
   },
 
-  async getSalesInvoices(this: DatabaseStorage, filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: (SalesInvoiceHeader & { warehouse?: { nameAr: string }, pharmacistName: string | null, itemCount: number })[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}> {
+  async getSalesInvoices(this: DatabaseStorage, filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; claimStatus?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: (SalesInvoiceHeader & { warehouse?: { nameAr: string }, pharmacistName: string | null, itemCount: number })[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}> {
     const conditions: Array<any> = [];
     if (filters.status && filters.status !== "all") {
       conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
@@ -54,6 +54,14 @@ const methods = {
     if (filters.customerType && filters.customerType !== "all") conditions.push(eq(salesInvoiceHeaders.customerType, filters.customerType as any));
     if (filters.pharmacistId && filters.pharmacistId !== "all") conditions.push(eq(salesInvoiceHeaders.createdBy, filters.pharmacistId));
     if (filters.warehouseId && filters.warehouseId !== "all") conditions.push(eq(salesInvoiceHeaders.warehouseId, filters.warehouseId));
+    // ── فلتر claimStatus ─────────────────────────────────────────────────────
+    if (filters.claimStatus && filters.claimStatus !== "all") {
+      if (filters.claimStatus === "none") {
+        conditions.push(sql`${salesInvoiceHeaders.claimStatus} IS NULL`);
+      } else {
+        conditions.push(sql`${salesInvoiceHeaders.claimStatus} = ${filters.claimStatus}`);
+      }
+    }
     if (filters.search) {
       const searchTerm = filters.search.replace(/^SI-/i, '').trim();
       conditions.push(or(

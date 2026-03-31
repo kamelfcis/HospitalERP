@@ -274,7 +274,9 @@ const methods = {
     const patientShareTotal = parseFloat((invoice as any).patientShareTotal || "0");
     const companyShareTotal = parseFloat((invoice as any).companyShareTotal || "0");
     const sharesSum = patientShareTotal + companyShareTotal;
-    const canSplitAR = isContract && sharesSum > 0.001 && Math.abs(sharesSum - netTotal) < 0.02;
+    // قارن مع subtotal (قبل الخصم) لأن الحصص محسوبة من lineTotals الإجمالية
+    const grossTotal = parseFloat((invoice as any).subtotal || invoice.netTotal || "0");
+    const canSplitAR = isContract && sharesSum > 0.001 && Math.abs(sharesSum - grossTotal) < 0.02;
 
     if (canSplitAR) {
       const patientARMapping = mappingMap.get("pharmacy_patient_receivable");

@@ -79,21 +79,18 @@ export default function ContractReport() {
       pageSize:     String(PAGE_SIZE),
       includeCancelled: "false",
     });
-    if (search)                       p.set("search", search);
+    if (search)                        p.set("search", search);
+    if (claimStatus !== "all")         p.set("claimStatus", claimStatus);
     return p.toString();
-  }, [dateFrom, dateTo, search, page]);
+  }, [dateFrom, dateTo, search, page, claimStatus]);
 
   const { data, isLoading } = useQuery<InvoicesResponse>({
-    queryKey: ["/api/sales-invoices", "contract-report", dateFrom, dateTo, search, page],
+    queryKey: ["/api/sales-invoices", "contract-report", dateFrom, dateTo, search, page, claimStatus],
     queryFn: () => fetch(`/api/sales-invoices?${params}`, { credentials: "include" }).then(r => r.json()),
   });
 
-  // فلترة claimStatus من جهة العميل (لأن الـ API لا يدعمه حالياً كمعامل)
-  const rows = useMemo(() => {
-    if (!data?.data) return [];
-    if (claimStatus === "all") return data.data;
-    return data.data.filter(r => (r.claimStatus ?? null) === (claimStatus === "none" ? null : claimStatus));
-  }, [data, claimStatus]);
+  // الفلتر يعمل server-side الآن — rows = البيانات كما جاءت من الخادم
+  const rows = useMemo(() => data?.data ?? [], [data]);
 
   const totals = useMemo(() => {
     const companyTotal = rows.reduce((s, r) => s + parseFloat(String(r.companyShareTotal ?? "0")), 0);
@@ -137,7 +134,7 @@ export default function ContractReport() {
         </div>
         <div>
           <Label className="text-xs">حالة المطالبة</Label>
-          <Select value={claimStatus} onValueChange={v => setClaimStatus(v)}>
+          <Select value={claimStatus} onValueChange={v => { setClaimStatus(v); setPage(1); }}>
             <SelectTrigger className="h-8 text-sm w-36" data-testid="select-claim-status">
               <SelectValue />
             </SelectTrigger>

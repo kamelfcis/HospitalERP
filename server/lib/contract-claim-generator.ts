@@ -22,7 +22,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { eq, and, sql, ne, or, isNull } from "drizzle-orm";
+import { eq, and, sql, ne, or, isNull, inArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   patientInvoiceHeaders,
@@ -260,20 +260,24 @@ export async function generateClaimsForSalesInvoice(invoiceId: string): Promise<
     const batch = await storage.findOrCreateDraftBatch(companyId, contractId, invoiceDate);
 
     // ── 4. Upsert claim lines (idempotent) ─────────────────────────────────
+    // Batch fetch ما تم إنشاؤه مسبقًا — N+1 fix (قراءة واحدة قبل الـ loop)
+    const lineIds = lines.map((l: any) => l.id).filter(Boolean) as string[];
+    const existingClaimLines = lineIds.length > 0
+      ? await db
+          .select({ salesInvoiceLineId: contractClaimLines.salesInvoiceLineId })
+          .from(contractClaimLines)
+          .where(inArray(contractClaimLines.salesInvoiceLineId, lineIds))
+      : [];
+    const existingLineIdSet = new Set(existingClaimLines.map(r => r.salesInvoiceLineId));
+
     let addedCount = 0;
     let skippedCount = 0;
 
     for (const line of lines) {
       const l = line as any;
 
-      // Code-level idempotency check
-      const existing = await db
-        .select({ id: contractClaimLines.id })
-        .from(contractClaimLines)
-        .where(eq(contractClaimLines.salesInvoiceLineId, l.id))
-        .limit(1);
-
-      if (existing[0]) {
+      // Code-level idempotency check (O(1) set lookup بدل query per line)
+      if (existingLineIdSet.has(l.id)) {
         skippedCount++;
         continue;
       }

@@ -43,12 +43,13 @@ export function registerSalesInvoicesRoutes(app: Express) {
   
   app.get("/api/sales-invoices", requireAuth, async (req, res) => {
     try {
-      const { status, dateFrom, dateTo, customerType, search, pharmacistId, warehouseId, page, pageSize, includeCancelled } = req.query;
+      const { status, dateFrom, dateTo, customerType, claimStatus, search, pharmacistId, warehouseId, page, pageSize, includeCancelled } = req.query;
       const result = await storage.getSalesInvoices({
         status: status as string,
         dateFrom: dateFrom as string,
         dateTo: dateTo as string,
         customerType: customerType as string,
+        claimStatus: claimStatus as string,
         search: search as string,
         pharmacistId: pharmacistId as string,
         warehouseId: warehouseId as string,

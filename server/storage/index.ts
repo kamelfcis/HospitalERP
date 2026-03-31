@@ -415,7 +415,7 @@ export interface IStorage {
 
   // Sales Invoices
   getNextSalesInvoiceNumber(): Promise<number>;
-  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: Record<string, unknown>[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}>;
+  getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; claimStatus?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: Record<string, unknown>[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}>;
   getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined>;
   createSalesInvoice(header: Record<string, unknown>, lines: Record<string, unknown>[]): Promise<SalesInvoiceHeader>;
   updateSalesInvoice(id: string, header: Record<string, unknown>, lines: Record<string, unknown>[]): Promise<SalesInvoiceHeader>;
