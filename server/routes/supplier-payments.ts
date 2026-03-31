@@ -5,7 +5,8 @@
  */
 
 import type { Express } from "express";
-import { requireAuth }   from "./_shared";
+import { requireAuth, checkPermission } from "./_shared";
+import { PERMISSIONS } from "@shared/permissions";
 import { z }             from "zod";
 import {
   getSupplierBalance,
@@ -45,7 +46,7 @@ function parseStatus(
 
 export function registerSupplierPaymentRoutes(app: Express) {
   // GET /api/supplier-payments/next-number
-  app.get("/api/supplier-payments/next-number", requireAuth, async (_req, res) => {
+  app.get("/api/supplier-payments/next-number", requireAuth, checkPermission(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW), async (_req, res) => {
     try {
       const nextNum = await getNextPaymentNumber();
       res.json({ nextNumber: nextNum });
@@ -55,7 +56,7 @@ export function registerSupplierPaymentRoutes(app: Express) {
   });
 
   // GET /api/supplier-payments/balance/:supplierId
-  app.get("/api/supplier-payments/balance/:supplierId", requireAuth, async (req, res) => {
+  app.get("/api/supplier-payments/balance/:supplierId", requireAuth, checkPermission(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW), async (req, res) => {
     try {
       const supplierId = String(req.params.supplierId);
       const result = await getSupplierBalance(supplierId);
@@ -67,7 +68,7 @@ export function registerSupplierPaymentRoutes(app: Express) {
   });
 
   // GET /api/supplier-payments/invoices/:supplierId?status=unpaid|paid|all&claimNumber=...
-  app.get("/api/supplier-payments/invoices/:supplierId", requireAuth, async (req, res) => {
+  app.get("/api/supplier-payments/invoices/:supplierId", requireAuth, checkPermission(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW), async (req, res) => {
     try {
       const supplierId  = String(req.params.supplierId);
       const status      = parseStatus(req.query.status, "unpaid");
@@ -81,7 +82,7 @@ export function registerSupplierPaymentRoutes(app: Express) {
   });
 
   // POST /api/supplier-payments
-  app.post("/api/supplier-payments", requireAuth, async (req, res) => {
+  app.post("/api/supplier-payments", requireAuth, checkPermission(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW), async (req, res) => {
     try {
       const body = createPaymentSchema.parse(req.body);
       const userId = req.session.userId ?? null;
@@ -127,7 +128,7 @@ export function registerSupplierPaymentRoutes(app: Express) {
   });
 
   // GET /api/supplier-payments/report/:supplierId?status=unpaid|paid|all
-  app.get("/api/supplier-payments/report/:supplierId", requireAuth, async (req, res) => {
+  app.get("/api/supplier-payments/report/:supplierId", requireAuth, checkPermission(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW), async (req, res) => {
     try {
       const supplierId = String(req.params.supplierId);
       const status = parseStatus(req.query.status, "all");
@@ -139,7 +140,7 @@ export function registerSupplierPaymentRoutes(app: Express) {
   });
 
   // GET /api/supplier-payments/statement/:supplierId?from=YYYY-MM-DD&to=YYYY-MM-DD
-  app.get("/api/supplier-payments/statement/:supplierId", requireAuth, async (req, res) => {
+  app.get("/api/supplier-payments/statement/:supplierId", requireAuth, checkPermission(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW), async (req, res) => {
     try {
       const supplierId = String(req.params.supplierId);
       const now        = new Date();

@@ -38,6 +38,8 @@ export const PERMISSIONS = {
   PURCHASE_INVOICES_EDIT: "purchase_invoices.edit",
   PURCHASE_INVOICES_APPROVE: "purchase_invoices.approve",
 
+  SUPPLIER_PAYMENTS_VIEW: "supplier_payments.view",
+
   TRANSFERS_VIEW: "transfers.view",
   TRANSFERS_CREATE: "transfers.create",
   TRANSFERS_EXECUTE: "transfers.execute",
@@ -187,6 +189,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.ITEMS_VIEW,
     PERMISSIONS.RECEIVING_VIEW,
     PERMISSIONS.PURCHASE_INVOICES_VIEW,
+    PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
     PERMISSIONS.TRANSFERS_VIEW,
     PERMISSIONS.SALES_VIEW,
     PERMISSIONS.SALES_REGISTRY_VIEW,
@@ -288,6 +291,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.PURCHASE_INVOICES_CREATE,
     PERMISSIONS.PURCHASE_INVOICES_EDIT,
     PERMISSIONS.PURCHASE_INVOICES_APPROVE,
+    PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
     PERMISSIONS.WAREHOUSES_VIEW,
     PERMISSIONS.TRANSFERS_VIEW,
     PERMISSIONS.TRANSFERS_CREATE,
@@ -489,6 +493,12 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.PURCHASE_INVOICES_CREATE, label: "إنشاء" },
       { key: PERMISSIONS.PURCHASE_INVOICES_EDIT, label: "تعديل" },
       { key: PERMISSIONS.PURCHASE_INVOICES_APPROVE, label: "اعتماد" },
+    ],
+  },
+  {
+    label: "سداد الموردين",
+    permissions: [
+      { key: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW, label: "عرض وتسجيل" },
     ],
   },
   {

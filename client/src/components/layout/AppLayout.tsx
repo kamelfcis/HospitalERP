@@ -89,7 +89,7 @@ const mainNavItems: NavItem[] = [
   { title: "إدارة الموردين",           href: "/suppliers",             icon: Building2,         permission: "receiving.view" },
   { title: "استلام من مورد",          href: "/supplier-receiving",    icon: Truck,             permission: "receiving.view" },
   { title: "فواتير الشراء",           href: "/purchase-invoices",     icon: Receipt,           permission: "purchase_invoices.view" },
-  { title: "سداد الموردين",           href: "/supplier-payments",     icon: Banknote,          permission: "receiving.view" },
+  { title: "سداد الموردين",           href: "/supplier-payments",     icon: Banknote,          permission: "supplier_payments.view" },
   { title: "مرتجعات المشتريات",       href: "/purchase-returns",      icon: Undo2,             permission: "receiving.view" },
   { title: "تحصيل الآجل",            href: "/customer-payments",     icon: CreditCard,        permission: "credit_payment.view" },
   { title: "تحصيل التوصيل",          href: "/delivery-payments",     icon: Truck,             permission: "delivery_payment.view" },

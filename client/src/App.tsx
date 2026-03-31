@@ -161,7 +161,7 @@ function Router() {
           <Route path="/suppliers">{() => <G p="receiving.view"><SuppliersPage /></G>}</Route>
           <Route path="/supplier-receiving">{() => <G p="receiving.view"><SupplierReceiving /></G>}</Route>
           <Route path="/purchase-invoices">{() => <G p="purchase_invoices.view"><PurchaseInvoice /></G>}</Route>
-          <Route path="/supplier-payments">{() => <G p="receiving.view"><SupplierPaymentsPage /></G>}</Route>
+          <Route path="/supplier-payments">{() => <G p="supplier_payments.view"><SupplierPaymentsPage /></G>}</Route>
           <Route path="/purchase-returns">{() => <G p="receiving.view"><PurchaseReturns /></G>}</Route>
           <Route path="/customer-payments">{() => <G p="sales.view"><CustomerPaymentsPage /></G>}</Route>
           <Route path="/delivery-payments">{() => <G p="delivery_payment.view"><DeliveryPaymentsPage /></G>}</Route>
