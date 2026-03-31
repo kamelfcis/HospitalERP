@@ -30,6 +30,8 @@ import type {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney } from "../finance-helpers";
+import { computeLineTax, computeInvoiceTaxTotals, type LineTaxResult } from "../services/pharmacy-sales-tax-service";
+import type { TaxType } from "../lib/tax/pharmacy-vat-engine";
 
 
 const methods = {
@@ -239,7 +241,7 @@ const methods = {
       const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId!, lines);
 
       let subtotal = 0;
-      const processedLines: { line: Partial<InsertSalesInvoiceLine>; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number }[] = [];
+      const processedLines: { line: Partial<InsertSalesInvoiceLine>; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number; taxResult: LineTaxResult }[] = [];
 
       for (const line of expandedLines) {
         const qty = parseFloat(line.qty || "0") || 0;
@@ -284,9 +286,18 @@ const methods = {
 
         const qtyInMinor = item ? convertQtyToMinor(qty, line.unitLevel || "major", item) : qty;
 
-        const lineTotal = qty * salePrice;
+        // ── حساب الضريبة per-line (snapshot من الصنف) ──────────────────────
+        const taxResult = computeLineTax({
+          qty,
+          salePrice,
+          taxType: (item?.taxType as TaxType) ?? null,
+          taxRate: parseFloat(item?.defaultTaxRate ?? "0") || 0,
+          pricesIncludeTax: item?.pharmacyPricesIncludeTax ?? false,
+        });
+
+        const lineTotal = parseFloat(taxResult.lineTotal);
         subtotal += lineTotal;
-        processedLines.push({ line, qty, salePrice, qtyInMinor, lineTotal });
+        processedLines.push({ line, qty, salePrice, qtyInMinor, lineTotal, taxResult });
       }
 
       const discountPercent = parseFloat(header.discountPercent || "0") || 0;
@@ -306,6 +317,12 @@ const methods = {
         if (wh?.pharmacyId) pharmacyId = wh.pharmacyId;
       }
 
+      // ── إجماليات الضريبة على مستوى الفاتورة ─────────────────────────────
+      const invoiceTaxTotals = computeInvoiceTaxTotals(processedLines.map(p => p.taxResult));
+      const pricesIncludeTaxForHeader = processedLines.length > 0
+        ? (processedLines[0].line as any)?.pricesIncludeTax ?? false
+        : false;
+
       const [invoice] = await tx.insert(salesInvoiceHeaders).values({
         invoiceNumber: nextNum,
         invoiceDate: header.invoiceDate,
@@ -324,12 +341,17 @@ const methods = {
         notes: header.notes || null,
         createdBy: header.createdBy || null,
         clinicOrderId: header.clinicOrderId || null,
+        pricesIncludeTax: pricesIncludeTaxForHeader || null,
+        totalTaxAmount: invoiceTaxTotals.totalTaxAmount,
+        totalNetAmount: invoiceTaxTotals.totalNetAmount,
+        totalGrossAmount: invoiceTaxTotals.totalGrossAmount,
       }).returning();
 
       for (let i = 0; i < processedLines.length; i++) {
-        const { line, qty, salePrice, qtyInMinor, lineTotal } = processedLines[i];
+        const { line, qty, salePrice, qtyInMinor, lineTotal, taxResult } = processedLines[i];
 
-        await tx.insert(salesInvoiceLines).values({ invoiceId: invoice.id,
+        await tx.insert(salesInvoiceLines).values({
+          invoiceId: invoice.id,
           lineNo: i + 1,
           itemId: line.itemId,
           unitLevel: line.unitLevel || "major",
@@ -339,7 +361,15 @@ const methods = {
           lineTotal: roundMoney(lineTotal),
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
-          lotId: line.lotId || null, } as unknown as import("@shared/schema").InsertSalesInvoiceLine);
+          lotId: line.lotId || null,
+          taxType: taxResult.taxType || null,
+          taxRate: taxResult.taxRate > 0 ? String(taxResult.taxRate) : null,
+          taxAmount: taxResult.taxAmount,
+          netUnitPrice: taxResult.netUnitPrice,
+          grossUnitPrice: taxResult.grossUnitPrice,
+          lineNetAmount: taxResult.lineNetAmount,
+          lineGrossAmount: taxResult.lineGrossAmount,
+        } as unknown as import("@shared/schema").InsertSalesInvoiceLine);
       }
 
       return invoice;
@@ -376,7 +406,7 @@ const methods = {
       const expandedLines = await this.expandLinesFEFO(tx, header.warehouseId ?? invoice.warehouseId, lines);
 
       let subtotal = 0;
-      const processedLines: { line: Partial<InsertSalesInvoiceLine>; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number }[] = [];
+      const processedLines: { line: Partial<InsertSalesInvoiceLine>; qty: number; salePrice: number; qtyInMinor: number; lineTotal: number; taxResult: LineTaxResult }[] = [];
 
       for (const line of expandedLines) {
         const qty = parseFloat(line.qty || "0") || 0;
@@ -421,15 +451,25 @@ const methods = {
 
         const qtyInMinor = item ? convertQtyToMinor(qty, line.unitLevel || "major", item) : qty;
 
-        const lineTotal = qty * salePrice;
+        // ── حساب الضريبة per-line (snapshot من الصنف) ──────────────────────
+        const taxResult = computeLineTax({
+          qty,
+          salePrice,
+          taxType: (item?.taxType as TaxType) ?? null,
+          taxRate: parseFloat(item?.defaultTaxRate ?? "0") || 0,
+          pricesIncludeTax: item?.pharmacyPricesIncludeTax ?? false,
+        });
+
+        const lineTotal = parseFloat(taxResult.lineTotal);
         subtotal += lineTotal;
-        processedLines.push({ line, qty, salePrice, qtyInMinor, lineTotal });
+        processedLines.push({ line, qty, salePrice, qtyInMinor, lineTotal, taxResult });
       }
 
       for (let i = 0; i < processedLines.length; i++) {
-        const { line, qty, salePrice, qtyInMinor, lineTotal } = processedLines[i];
+        const { line, qty, salePrice, qtyInMinor, lineTotal, taxResult } = processedLines[i];
 
-        await tx.insert(salesInvoiceLines).values({ invoiceId: id,
+        await tx.insert(salesInvoiceLines).values({
+          invoiceId: id,
           lineNo: i + 1,
           itemId: line.itemId,
           unitLevel: line.unitLevel || "major",
@@ -439,7 +479,15 @@ const methods = {
           lineTotal: roundMoney(lineTotal),
           expiryMonth: line.expiryMonth || null,
           expiryYear: line.expiryYear || null,
-          lotId: line.lotId || null, } as unknown as import("@shared/schema").InsertSalesInvoiceLine);
+          lotId: line.lotId || null,
+          taxType: taxResult.taxType || null,
+          taxRate: taxResult.taxRate > 0 ? String(taxResult.taxRate) : null,
+          taxAmount: taxResult.taxAmount,
+          netUnitPrice: taxResult.netUnitPrice,
+          grossUnitPrice: taxResult.grossUnitPrice,
+          lineNetAmount: taxResult.lineNetAmount,
+          lineGrossAmount: taxResult.lineGrossAmount,
+        } as unknown as import("@shared/schema").InsertSalesInvoiceLine);
       }
 
       const discountPercent = parseFloat(header.discountPercent || "0") || 0;
@@ -460,6 +508,9 @@ const methods = {
         if (wh?.pharmacyId) pharmacyId = wh.pharmacyId;
       }
 
+      // ── إجماليات الضريبة على مستوى الفاتورة ─────────────────────────────
+      const invoiceTaxTotals = computeInvoiceTaxTotals(processedLines.map(p => p.taxResult));
+
       const effectiveCustomerType = header.customerType || invoice.customerType;
       await tx.update(salesInvoiceHeaders).set({
         invoiceDate: header.invoiceDate || invoice.invoiceDate,
@@ -478,6 +529,9 @@ const methods = {
         netTotal: roundMoney(netTotal),
         notes: header.notes !== undefined ? header.notes : invoice.notes,
         createdBy: invoice.createdBy || header.createdBy || null,
+        totalTaxAmount: invoiceTaxTotals.totalTaxAmount,
+        totalNetAmount: invoiceTaxTotals.totalNetAmount,
+        totalGrossAmount: invoiceTaxTotals.totalGrossAmount,
         updatedAt: new Date(),
       }).where(eq(salesInvoiceHeaders.id, id));
 

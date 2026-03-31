@@ -286,6 +286,56 @@ export default function ItemFormFields({
               </div>
             </div>
           </div>
+          {/* ── ضريبة القيمة المضافة — الصيدلية ──────────────────────────── */}
+          <div className="border-t pt-1.5 mt-1.5">
+            <Label className="text-[9px] text-muted-foreground font-medium block mb-1">ض.ق.م — الصيدلية</Label>
+            <div className="grid grid-cols-3 gap-2 items-end">
+              <div>
+                <Label className="text-[10px] text-muted-foreground">نوع الضريبة</Label>
+                <Select
+                  value={(formData as any).taxType || "exempt"}
+                  onValueChange={(v) => setFormData({ ...formData, taxType: v === "exempt" ? null : v } as any)}
+                  disabled={!isEditing}
+                >
+                  <SelectTrigger className="h-6 text-[11px] px-1" data-testid="select-tax-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="exempt">معفى</SelectItem>
+                    <SelectItem value="taxable">خاضع</SelectItem>
+                    <SelectItem value="zero_rated">معدل صفر</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">نسبة الضريبة %</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="100"
+                  value={(formData as any).defaultTaxRate || ""}
+                  onChange={(e) => setFormData({ ...formData, defaultTaxRate: e.target.value } as any)}
+                  disabled={!isEditing || (formData as any).taxType !== "taxable"}
+                  className="h-6 text-[11px] px-1 font-mono text-left"
+                  dir="ltr"
+                  placeholder="14"
+                  data-testid="input-tax-rate"
+                />
+              </div>
+              <div className="flex items-center gap-1 pb-0.5">
+                <Checkbox
+                  id="pharmacyPricesIncludeTax"
+                  checked={(formData as any).pharmacyPricesIncludeTax || false}
+                  onCheckedChange={(c) => setFormData({ ...formData, pharmacyPricesIncludeTax: !!c } as any)}
+                  disabled={!isEditing || (formData as any).taxType !== "taxable"}
+                  className="h-3 w-3"
+                  data-testid="checkbox-prices-include-tax"
+                />
+                <Label htmlFor="pharmacyPricesIncludeTax" className="text-[10px] text-blue-600 font-medium" title="هل سعر البيع يشمل الضريبة مسبقاً؟">السعر شامل</Label>
+              </div>
+            </div>
+          </div>
         </fieldset>
 
         {!isService && <fieldset className="peachtree-grid p-2">

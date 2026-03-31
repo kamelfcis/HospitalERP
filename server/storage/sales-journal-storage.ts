@@ -407,7 +407,44 @@ const methods = {
       });
     }
 
-    // VAT: ضريبة القيمة المضافة غير مفعّلة حالياً — الربط محجوز للاستخدام المستقبلي
+    // ── ضريبة القيمة المضافة — vat_output ─────────────────────────────────
+    // يُحقن فقط عندما تحمل الفاتورة ضريبة مُحتسبة (totalTaxAmount > 0)
+    // المعادلة: Dr Receivables = netRevenue + taxAmount
+    //            Cr Revenue = netRevenue (الإيراد صافي بعد خصم الضريبة)
+    //            Cr VAT Output = taxAmount
+    // نتأكد أن مبالغ الإيراد تحمل القيمة بعد خصم الضريبة بشكل نسبي
+    {
+      const totalTaxAmount = parseFloat(invoice.totalTaxAmount || "0");
+      if (totalTaxAmount > 0.001) {
+        const vatOutputMapping = mappingMap.get("vat_output");
+        if (vatOutputMapping?.creditAccountId) {
+          // اخصم الضريبة نسبياً من الإيرادات
+          const totalRevenue = revenueDrugs + revenueSupplies;
+          if (totalRevenue > 0.001) {
+            const taxFraction = totalTaxAmount / totalRevenue;
+            revenueDrugs     = parseFloat((revenueDrugs     * (1 - taxFraction)).toFixed(2));
+            revenueSupplies  = parseFloat((revenueSupplies  * (1 - taxFraction)).toFixed(2));
+          }
+          journalLineData.push({
+            journalEntryId: "",
+            lineNumber: lineNum++,
+            accountId: vatOutputMapping.creditAccountId,
+            debit: "0",
+            credit: String(totalTaxAmount.toFixed(2)),
+            description: "ضريبة القيمة المضافة — مخرجات",
+          });
+        } else {
+          // لا يوجد ربط vat_output — سجّل حدثاً تحذيرياً ولا تكسر القيد
+          await logAcctEvent({
+            sourceType:   "sales_invoice",
+            sourceId:     invoiceId,
+            eventType:    "sales_invoice_vat_skipped",
+            status:       "completed",
+            errorMessage: `[تحذير] الفاتورة تحمل ضريبة (${totalTaxAmount.toFixed(2)} ج.م) لكن لا يوجد ربط حساب vat_output في ربط الحسابات. الضريبة مُدمجة في الإيراد مؤقتاً.`,
+          });
+        }
+      }
+    }
 
     if (hasInventoryAccount && totalCogs > 0.001) {
       journalLineData.push({
@@ -1029,6 +1066,24 @@ const methods = {
       inventoryAccountId = invM?.debitAccountId || null;
     }
 
+    // ── ضريبة القيمة المضافة — عكس vat_output في المردود ──────────────────
+    // إذا كانت الفاتورة الأصلية تحمل ضريبة → المردود يعكسها (Dr vat_output)
+    const totalTaxAmount = parseFloat(header.totalTaxAmount || "0");
+    const vatOutputDebitId =
+      retMM.get("vat_output")?.creditAccountId ||
+      (useFallback ? siMM.get("vat_output")?.creditAccountId : null) ||
+      null;
+
+    // خصم الضريبة نسبياً من مبالغ الإيراد قبل بناء سطور القيد
+    if (totalTaxAmount > 0.001 && vatOutputDebitId) {
+      const totalRevenueBefore = revenueDrugs + revenueSupplies;
+      if (totalRevenueBefore > 0.001) {
+        const taxFraction = totalTaxAmount / totalRevenueBefore;
+        revenueDrugs    = parseFloat((revenueDrugs    * (1 - taxFraction)).toFixed(2));
+        revenueSupplies = parseFloat((revenueSupplies * (1 - taxFraction)).toFixed(2));
+      }
+    }
+
     // ── بناء سطور القيد ────────────────────────────────────────────────────
     const jLines: InsertJournalLine[] = [];
     let ln = 1;
@@ -1045,6 +1100,12 @@ const methods = {
     if (effRevSuppId && revenueSupplies > 0.001) {
       jLines.push({ journalEntryId: "", lineNumber: ln++, accountId: effRevSuppId,
         debit: revenueSupplies.toFixed(2), credit: "0", description: "عكس إيراد مستلزمات — مردود مبيعات" });
+    }
+
+    // مدين: عكس ضريبة القيمة المضافة — vat_output
+    if (vatOutputDebitId && totalTaxAmount > 0.001) {
+      jLines.push({ journalEntryId: "", lineNumber: ln++, accountId: vatOutputDebitId,
+        debit: totalTaxAmount.toFixed(2), credit: "0", description: "عكس ضريبة القيمة المضافة — مردود مبيعات" });
     }
 
     // مدين: مخزون (رجوع البضاعة — GL المخزن)

@@ -666,6 +666,19 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] returns_mode seed error");
   }
 
+  // ── 5h-post2c. Seed enable_pharmacy_sales_output_vat default ────────────
+  // false = ضريبة الصيدلية معطّلة افتراضياً — المالك يُفعّلها يدوياً
+  try {
+    await db.execute(sql`
+      INSERT INTO system_settings (key, value)
+      VALUES ('enable_pharmacy_sales_output_vat', 'false')
+      ON CONFLICT (key) DO NOTHING
+    `);
+    log("[STARTUP] enable_pharmacy_sales_output_vat setting ensured (default: false)");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] enable_pharmacy_sales_output_vat seed error");
+  }
+
   // ── 5h-post3. Backfill CASHIER_OPEN_SHIFT → system groups ───────────────
   try {
     await db.execute(sql`

@@ -56,6 +56,7 @@ interface SalesInvoiceEditorProps {
   lines:             SalesLineLocal[];
   subtotal:          number;
   netTotal:          number;
+  totalTaxAmount?:   number;
 
   // حقل الباركود (العالمي يعمل بدون هذا — هذا فقط للعرض في الـ header)
   barcodeDisplay:    string;
@@ -112,7 +113,7 @@ function EditorNotFound({ onBack }: { onBack: () => void }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export function SalesInvoiceEditor({
   editId, isNew, isDraft, invoiceDetail, detailLoading,
-  warehouses, form, lines, subtotal, netTotal,
+  warehouses, form, lines, subtotal, netTotal, totalTaxAmount = 0,
   barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef, onBarcodeScan,
   linesHook, mutationsHook, itemSearchHook, serviceSearchHook,
   statsHook, onBack,
@@ -186,6 +187,7 @@ export function SalesInvoiceEditor({
         discountValue={form.discountValue}
         netTotal={netTotal}
         isDraft={isDraft}
+        totalTaxAmount={totalTaxAmount}
         onDiscountPctChange={(v) => form.handleDiscountPctChange(v, subtotal)}
         onDiscountValueChange={(v) => form.handleDiscountValueChange(v, subtotal)}
       />

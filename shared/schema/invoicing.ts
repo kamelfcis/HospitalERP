@@ -138,6 +138,11 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   // ── Cashier ownership (concurrency control + visual display) ───────────────
   claimedByShiftId: varchar("claimed_by_shift_id"),
   claimedAt: timestamp("claimed_at"),
+  // ── ضريبة القيمة المضافة — nullable — آمن للبيانات القائمة ───────────────
+  pricesIncludeTax: boolean("prices_include_tax"),
+  totalTaxAmount: decimal("total_tax_amount", { precision: 18, scale: 2 }).default("0"),
+  totalNetAmount: decimal("total_net_amount", { precision: 18, scale: 2 }),
+  totalGrossAmount: decimal("total_gross_amount", { precision: 18, scale: 2 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -174,6 +179,14 @@ export const salesInvoiceLines = pgTable("sales_invoice_lines", {
   companyShareAmount: decimal("company_share_amount", { precision: 18, scale: 2 }),
   patientShareAmount: decimal("patient_share_amount", { precision: 18, scale: 2 }),
   coverageStatus:     text("coverage_status"),
+  // ── ضريبة القيمة المضافة per-line — nullable — snapshot من الصنف وقت الإنشاء ─
+  taxType:        text("tax_type"),
+  taxRate:        decimal("tax_rate", { precision: 5, scale: 2 }),
+  taxAmount:      decimal("tax_amount", { precision: 18, scale: 2 }).default("0"),
+  netUnitPrice:   decimal("net_unit_price", { precision: 18, scale: 4 }),
+  grossUnitPrice: decimal("gross_unit_price", { precision: 18, scale: 4 }),
+  lineNetAmount:  decimal("line_net_amount", { precision: 18, scale: 2 }),
+  lineGrossAmount: decimal("line_gross_amount", { precision: 18, scale: 2 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   invoiceItemIdx:  index("idx_sales_lines_inv_item").on(table.invoiceId, table.itemId),

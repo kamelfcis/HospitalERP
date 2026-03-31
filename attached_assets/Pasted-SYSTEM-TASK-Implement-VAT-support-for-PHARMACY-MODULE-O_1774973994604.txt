@@ -1,0 +1,349 @@
+SYSTEM TASK: Implement VAT support for PHARMACY MODULE ONLY in the current hospital/pharmacy ERP, safely and incrementally, without breaking existing accounting templates, posting logic, inventory costing, FEFO, cashier flow, or any non-pharmacy modules.
+
+SCOPE LIMIT:
+This task is ONLY for pharmacy transactions now.
+Do NOT touch other hospital modules unless there is a shared utility that must be safely extended in a backward-compatible way.
+No broad system-wide tax rollout at this stage.
+
+CURRENT SYSTEM CONTEXT:
+- The ERP currently uses journal templates per screen / transaction type ("قيد اسطمبة لكل شاشة").
+- Pharmacy sales screen already has an accounting template, but currently VAT lines are NOT included.
+- Pharmacy purchase invoices also exist and may include taxed and non-taxed purchases.
+- Inventory is lot-based and uses FEFO.
+- The system is sensitive; no destructive changes are allowed.
+- Existing exempt/non-taxable behavior must continue to work exactly as before unless a pharmacy transaction is explicitly configured as taxable.
+
+BUSINESS REALITY TO SUPPORT:
+1) In pharmacy, some items may be purchased with VAT and some without VAT.
+2) The SAME item may sometimes be purchased with VAT and sometimes without VAT.
+3) If a pharmacy sale is taxable, the sale must generate OUTPUT VAT correctly.
+4) Selling price may already be tax-inclusive, so the system must split:
+   - net sales revenue
+   - output VAT
+   - gross amount
+5) INPUT VAT belongs to purchase side only.
+6) OUTPUT VAT belongs to sales side only.
+7) Do NOT derive input VAT from sales price.
+8) Do NOT blindly load purchase VAT into inventory cost in all cases.
+9) The implementation must be pharmacy-only for now.
+
+IMPORTANT ACCOUNTING GOALS:
+- Keep current journal-template architecture intact.
+- Add VAT support to pharmacy purchases and pharmacy sales safely.
+- Preserve existing posting for exempt pharmacy sales.
+- Inject VAT rows conditionally only when needed.
+- Do not hardcode accounts.
+- Do not rewrite old historical data.
+- Do not break current reports, inventory movements, FEFO, or approvals.
+
+PHASE 1 — AUDIT PHARMACY ONLY (NO CODING YET)
+Audit only the pharmacy-related files, flows, and templates:
+A) Pharmacy sales:
+   - draft save
+   - finalize
+   - collect/cashier if applicable
+   - sales returns if pharmacy returns exist
+B) Pharmacy purchases:
+   - purchase invoice
+   - receiving linkage
+   - purchase returns
+C) Pharmacy journal templates:
+   - current line types in pharmacy sales template
+   - current line types in pharmacy purchase template
+   - whether tax rows can be injected dynamically
+D) Pharmacy data model:
+   - whether sales lines currently store tax rate/tax amount/net/gross
+   - whether purchase lines currently store VAT separately or only gross
+   - whether lots currently store gross or net cost
+E) Pharmacy account mappings:
+   - whether there are configurable VAT input/output accounts
+F) Output an audit report first:
+   - current gaps
+   - exact files involved
+   - exact risks
+   - exact minimal change plan
+
+DO NOT START MASS CODING BEFORE THE AUDIT REPORT.
+
+PHASE 2 — BACKWARD-COMPATIBLE SCHEMA EXTENSION (PHARMACY ONLY IMPACT)
+Add only nullable or default-safe fields.
+Do NOT remove, rename, or repurpose existing columns.
+
+On pharmacy items / item master (if shared item table, extend safely but use only in pharmacy logic now):
+- tax_type: enum/text nullable
+  values:
+  - exempt
+  - taxable
+  - zero_rated
+- default_tax_rate decimal(5,2) nullable
+- pharmacy_prices_include_tax boolean default false
+
+On pharmacy sales invoice header:
+- sale_tax_mode nullable
+  values:
+  - exempt
+  - taxable
+  - zero_rated
+- prices_include_tax nullable
+- total_tax_amount decimal nullable default 0
+- total_net_amount decimal nullable
+- total_gross_amount decimal nullable
+
+On pharmacy sales invoice lines:
+- tax_type nullable
+- tax_rate decimal nullable
+- tax_amount decimal nullable default 0
+- net_unit_price nullable
+- gross_unit_price nullable
+- line_net_amount nullable
+- line_gross_amount nullable
+
+On pharmacy purchase invoice header:
+- total_input_vat_amount decimal nullable default 0
+- prices_include_tax nullable
+
+On pharmacy purchase invoice lines:
+- tax_type nullable
+- tax_rate decimal nullable
+- tax_amount nullable default 0
+- net_unit_cost nullable
+- gross_unit_cost nullable
+- is_input_vat_recoverable boolean nullable
+- purchase_tax_mode nullable (taxed / not_taxed / internal / unknown if needed)
+
+On lots:
+Do NOT break current costing fields.
+Add only safe optional fields if needed:
+- base_cost_ex_vat nullable
+- input_vat_amount nullable default 0
+- purchase_tax_type nullable
+- purchase_tax_rate nullable
+
+IMPORTANT:
+Do NOT switch global costing behavior automatically in this phase.
+
+PHASE 3 — PHARMACY VAT CONFIGURATION LAYER
+Add pharmacy VAT-related account mappings/config only:
+- pharmacy_input_vat_account_id
+- pharmacy_output_vat_account_id
+- pharmacy_non_recoverable_input_vat_account_id (optional)
+
+If current accounting engine uses line-type templates:
+add support for these optional dynamic line types:
+- output_vat
+- input_vat
+- non_recoverable_input_vat
+
+IMPORTANT:
+These line types must be optional and conditional.
+Do NOT force existing templates to fail for exempt transactions.
+
+PHASE 4 — BUILD A CENTRAL PHARMACY VAT ENGINE
+Create a dedicated reusable service:
+server/lib/tax/pharmacy-vat-engine.ts
+
+Do NOT scatter tax math across routes or UI.
+
+This service must:
+1) Accept:
+   - tax_type
+   - tax_rate
+   - quantity
+   - unit price
+   - prices_include_tax
+   - sale_tax_mode
+2) Return:
+   - net unit price
+   - gross unit price
+   - tax amount
+   - net line amount
+   - gross line amount
+3) If exempt:
+   - tax amount = 0
+   - net = gross
+4) If taxable and prices include tax:
+   - net = gross / (1 + rate)
+   - tax = gross - net
+5) If taxable and prices exclude tax:
+   - tax = net * rate
+   - gross = net + tax
+6) Use centralized rounding only.
+7) Be fully testable and isolated.
+
+CRITICAL:
+Output VAT must be calculated from the pharmacy sale.
+Do NOT use lot VAT / purchase VAT to derive sales VAT.
+
+PHASE 5 — PHARMACY PURCHASE VAT CAPTURE
+Implement purchase-side VAT capture for pharmacy only.
+
+Rules:
+1) Pharmacy purchase lines may be taxed or not taxed independently.
+2) Same item may have some taxed purchase lines and some untaxed ones.
+3) Capture on purchase invoice lines:
+   - net cost
+   - gross cost
+   - tax rate
+   - tax amount
+   - recoverable vs non-recoverable
+4) Preserve current receiving/purchase flow.
+5) Do NOT blindly push VAT into lot cost for all scenarios.
+6) First capture data safely, then apply accounting logic conditionally.
+
+PHASE 6 — PHARMACY SALES POSTING INTEGRATION
+This is the most sensitive part.
+We already have a pharmacy sales journal template without VAT rows.
+We must extend it safely.
+
+REQUIRED POSTING BEHAVIOR:
+A) For taxable pharmacy sales:
+   Dr customer / cash / receivable = gross
+   Cr pharmacy revenue = net
+   Cr output VAT = tax
+
+B) For exempt pharmacy sales:
+   Preserve current posting behavior:
+   Dr customer / cash / receivable
+   Cr pharmacy revenue
+
+IMPORTANT:
+- Keep current pharmacy sales template rows untouched for exempt flows.
+- Add optional dynamic VAT row injection only for taxable pharmacy sales.
+- If VAT account mapping is missing:
+  fail safely with a clear configuration error ONLY for taxable transactions.
+- Do not break exempt pharmacy transactions.
+
+PHASE 7 — PHARMACY PURCHASE POSTING INTEGRATION
+For pharmacy purchase invoices only:
+
+A) If purchase is taxed and input VAT is recoverable:
+   Dr inventory or expense = net
+   Dr input VAT = tax
+   Cr supplier = gross
+
+B) If purchase is not taxed:
+   Dr inventory or expense = gross
+   Cr supplier = gross
+
+C) If input VAT is non-recoverable by configuration/business rule:
+   either:
+   - load to inventory/expense
+   or
+   - post to non-recoverable input VAT account
+   Make this explicit and configurable.
+
+IMPORTANT:
+Do not hardcode accounts.
+Use current mapping/template architecture.
+
+PHASE 8 — PHARMACY-SPECIFIC TAX DECISION LOGIC
+Implement one resolver service for pharmacy:
+resolvePharmacyTaxMode(invoice, line, item)
+
+It must decide whether the pharmacy line is:
+- exempt
+- taxable
+- zero-rated
+
+Do NOT spread ad-hoc tax conditions across screens or routes.
+
+At this stage, apply it only to pharmacy sales and pharmacy purchase logic.
+
+PHASE 9 — UI CHANGES (MINIMAL AND SAFE)
+Do NOT redesign screens.
+Only add the minimum required tax fields and summaries to pharmacy screens.
+
+Pharmacy sales screen:
+- tax type
+- tax rate
+- prices include tax yes/no
+- line net / tax / gross
+- invoice totals: net / tax / gross
+
+Pharmacy purchase invoice screen:
+- taxed / not taxed per line
+- tax rate
+- net / tax / gross cost
+- recoverable / non-recoverable if needed by business
+
+Item card / pharmacy item setup:
+- tax_type
+- default_tax_rate
+- prices_include_tax
+
+Accounting template/config UI:
+- support mapping for output_vat and input_vat line types for pharmacy only
+
+PHASE 10 — RETURNS
+Do not forget pharmacy returns.
+
+Pharmacy sales return:
+- reverse revenue net
+- reverse output VAT if original sale was taxable
+
+Pharmacy purchase return:
+- reverse supplier/inventory
+- reverse input VAT if original purchase was taxed
+
+Return tax logic should follow original document tax treatment whenever possible.
+
+PHASE 11 — SAFETY / FEATURE FLAGS
+No destructive migration.
+No historical document rewriting.
+
+Use feature flags:
+- enablePharmacyVatEngine
+- enablePharmacySalesOutputVat
+- enablePharmacyPurchaseInputVat
+
+Rules:
+1) If flags are off, old pharmacy behavior remains unchanged.
+2) Only new documents use the new VAT logic after explicit enablement.
+3) Existing historical documents remain untouched.
+
+PHASE 12 — TESTS
+Add tests before rollout.
+
+Required scenarios:
+1) pharmacy item purchased with VAT, sold taxable, price includes tax
+2) pharmacy item purchased without VAT, sold taxable
+3) same item purchased once taxed and once not taxed
+4) exempt pharmacy sale
+5) taxable pharmacy sale with missing VAT mapping -> clear error
+6) taxed pharmacy purchase -> input VAT posting
+7) non-taxed pharmacy purchase -> no VAT posting
+8) pharmacy sales return taxable
+9) pharmacy purchase return taxable
+10) UI totals match posting totals exactly
+
+STRICT ENGINEERING RULES:
+1) Pharmacy only. Do not generalize to other modules now.
+2) No breaking changes.
+3) No hardcoded account IDs.
+4) No query-in-loop regressions.
+5) No direct tax math inside route handlers or React components.
+6) Centralize VAT math in pharmacy-vat-engine service.
+7) Preserve current template architecture.
+8) Keep routes thin and logic in services/storage.
+9) All new tax posting must be auditable.
+10) Do not alter exempt flows unintentionally.
+
+DELIVERABLES REQUIRED:
+1) Pharmacy-only audit report
+2) Exact pharmacy files to change
+3) Exact schema additions
+4) Exact posting engine changes for pharmacy only
+5) Required template/mapping changes
+6) Safe migration plan
+7) Feature flags
+8) Test scenarios
+9) Rollout sequence
+10) Explicit note of what was intentionally left unchanged outside pharmacy
+
+IMPORTANT FINAL INSTRUCTION:
+Do NOT jump into full implementation immediately.
+Start with:
+- pharmacy-only audit
+- architecture impact note
+- phased implementation plan
+Then implement safely phase by phase.

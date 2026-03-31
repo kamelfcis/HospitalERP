@@ -42,6 +42,7 @@ The system uses a RESTful JSON API. Drizzle ORM manages PostgreSQL interactions,
 - **Item Movement Report**: Detailed per-item inventory movement report with search, filters, unit-level toggle, signed quantities, running balance, and Excel export/print functionality, implemented with server-side pagination.
 - **Unit Conversion Overhaul**: Centralized unit conversion logic with `QTY_MINOR_TOLERANCE=0.0005`, supporting various unit configurations and server-side re-verification. Unit name changes are protected after transactions, and a Data Integrity Report page is available.
 - **Financial Integrity Hardening**: Includes measures for GL safety, inventory integrity, and accounting for returns, with a `returns_mode` system setting to define sales return accounting behavior.
+- **Pharmacy Sales VAT Module**: Per-item VAT configuration (`taxType`, `defaultTaxRate`, `pharmacyPricesIncludeTax`), pure VAT engine in `server/lib/tax/pharmacy-vat-engine.ts`, service layer in `server/services/pharmacy-sales-tax-service.ts`, per-line tax snapshot on sales invoice lines, header-level tax totals (`totalTaxAmount`, `totalNetAmount`, `totalGrossAmount`), GL journal `vat_output` line injection with proportional revenue split, returns reversal via `Dr vat_output`, and a feature flag `enable_pharmacy_sales_output_vat` (default: false). UI: item card tax fields, invoice totals bar shows VAT row when enabled.
 
 ## External Dependencies
 

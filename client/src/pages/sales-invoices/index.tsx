@@ -328,6 +328,7 @@ export default function SalesInvoices() {
         lines={lines}
         subtotal={subtotal}
         netTotal={netTotal}
+        totalTaxAmount={parseFloat(String(invoiceDetail?.totalTaxAmount || "0")) || 0}
         barcodeDisplay={barcode.barcodeDisplay}
         setBarcodeDisplay={barcode.setBarcodeDisplay}
         barcodeLoading={barcode.barcodeLoading}

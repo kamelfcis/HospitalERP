@@ -1,0 +1,282 @@
+SYSTEM TASK: Implement VAT (Output VAT) for PHARMACY SALES ONLY in the current ERP with strict safety, refactoring discipline, and performance guarantees. Preserve all existing behavior for exempt transactions and any non-pharmacy modules.
+
+================================================================
+SCOPE (PHARMACY ONLY)
+================================================================
+- Pharmacy sales invoices (create/update/finalize)
+- Pharmacy sales returns
+- Pharmacy item master (tax fields)
+- Pharmacy accounting posting (sales template extension only)
+
+OUT OF SCOPE:
+- Purchase VAT redesign (already working)
+- Any module outside pharmacy
+- Historical documents rewrite
+- ETA integration (later phase)
+
+================================================================
+MANDATORY ENGINEERING RULES
+================================================================
+1) NO BREAKING CHANGES to existing flows/templates.
+2) NO hardcoded account IDs — use mappings (getMappingsForTransaction).
+3) NO tax logic outside a single centralized service (pharmacy-vat-engine).
+4) NO await DB calls inside loops (N+1 forbidden).
+5) ROUTES MUST BE THIN — move logic to services/storage.
+6) ALL NEW FIELDS MUST BE NULLABLE OR DEFAULT-SAFE.
+7) FEATURE FLAG controls activation (default OFF).
+8) SERVER IS SOURCE OF TRUTH — recompute tax server-side.
+9) ALL VAT POSTING MUST BE AUDITABLE AND EXPLAINABLE.
+10) RETURNS MUST MIRROR ORIGINAL DOCUMENT TAX SNAPSHOT.
+
+================================================================
+PHASE 0 — AUDIT (DO THIS FIRST, NO CODING)
+================================================================
+- List pharmacy endpoints/files:
+  - sales create/update/finalize
+  - returns
+  - sales journal posting
+- Confirm current template line types and mapping behavior.
+- Confirm existing schema for items/sales lines.
+- Identify all places where totals are computed.
+
+DELIVER:
+- Audit report
+- Exact files to change
+- Risk notes
+
+STOP. WAIT FOR REVIEW.
+
+================================================================
+PHASE 1 — SCHEMA (BACKWARD COMPATIBLE)
+================================================================
+Add fields (NULLABLE):
+
+ITEMS:
+- taxType: ('exempt' | 'taxable' | 'zero_rated')
+- defaultTaxRate decimal(5,2)
+- pharmacyPricesIncludeTax boolean default false
+
+SALES HEADERS:
+- pricesIncludeTax boolean
+- totalTaxAmount decimal default 0
+- totalNetAmount decimal
+- totalGrossAmount decimal
+
+SALES LINES:
+- taxType
+- taxRate
+- taxAmount default 0
+- netUnitPrice
+- grossUnitPrice
+- lineNetAmount
+- lineGrossAmount
+
+SYSTEM SETTINGS:
+- enablePharmacySalesOutputVat (boolean default false)
+
+RUN db:push
+
+================================================================
+PHASE 2 — CENTRAL VAT ENGINE (MANDATORY)
+================================================================
+Create:
+server/lib/tax/pharmacy-vat-engine.ts
+
+PURE FUNCTION:
+calculatePharmacyVat({
+  taxType,
+  taxRate,
+  qty,
+  unitPrice,
+  pricesIncludeTax
+}) => {
+  netUnitPrice,
+  grossUnitPrice,
+  taxAmount,
+  lineNetAmount,
+  lineGrossAmount
+}
+
+RULES:
+- exempt → tax = 0, net = gross
+- taxable + include tax → net = gross/(1+rate)
+- taxable + exclude tax → tax = net*rate
+- use roundMoney ONLY
+
+NO SIDE EFFECTS.
+
+================================================================
+PHASE 3 — REFACTOR (CRITICAL)
+================================================================
+Create services:
+
+1) server/services/pharmacy-sales-tax-service.ts
+   - resolveTaxSnapshot(item)
+   - computeLineTax(line, item, header)
+   - recomputeInvoiceTotals(invoice)
+
+2) server/services/pharmacy-tax-resolver.ts
+   - resolveLineTaxType(item, context)
+
+MOVE ALL tax logic HERE.
+
+ROUTES:
+- must only call services
+- no math, no conditions duplicated
+
+FRONTEND:
+- useInvoiceLines.ts → call shared logic only for display
+- NEVER be source of truth
+
+================================================================
+PHASE 4 — SNAPSHOT RULE (CRITICAL)
+================================================================
+On adding item to invoice line:
+- copy:
+  - taxType
+  - taxRate
+into line
+
+FROM THIS POINT:
+LINE IS SOURCE OF TRUTH.
+
+Do NOT re-read item tax later.
+
+================================================================
+PHASE 5 — SERVER-SIDE RECOMPUTE (MANDATORY)
+================================================================
+On:
+- create
+- update
+- finalize
+
+SERVER MUST:
+- recompute ALL tax fields using VAT engine
+- ignore client-calculated values
+
+================================================================
+PHASE 6 — ACCOUNTING INTEGRATION (SAFE EXTENSION)
+================================================================
+Modify:
+sales-journal-storage.ts → buildSalesJournalLines
+
+IF:
+- enablePharmacySalesOutputVat = true
+- AND invoice.totalTaxAmount > 0
+
+THEN:
+POST:
+Dr customer/cash = gross
+Cr revenue = net
+Cr vat_output = tax
+
+ELSE:
+KEEP OLD BEHAVIOR EXACTLY.
+
+VALIDATION:
+- If taxable AND vat_output mapping missing → THROW CONFIG ERROR
+- Exempt invoices MUST NOT fail
+
+================================================================
+PHASE 7 — RETURNS (STRICT)
+================================================================
+On sales return:
+- DO NOT recalc tax
+- COPY FROM ORIGINAL LINE:
+  - taxAmount
+  - taxRate
+  - taxType
+
+Reverse:
+Cr customer
+Dr revenue
+Dr vat_output (if existed)
+
+================================================================
+PHASE 8 — UI (MINIMAL, NON-BREAKING)
+================================================================
+Sales screen:
+- show tax columns ONLY IF:
+  - flag ON
+  - line taxable
+
+Footer:
+- Net
+- Tax
+- Gross
+
+Item card:
+- taxType
+- defaultTaxRate
+
+NO redesign.
+
+================================================================
+PHASE 9 — PERFORMANCE & INDEXING
+================================================================
+ENSURE INDEXES:
+
+- sales_invoice_lines.invoice_id
+- sales_invoice_lines.item_id
+- items.id
+
+IF ANY NEW QUERY:
+- must use batch pattern:
+  inArray → Map → lookup
+
+NO query inside loop.
+
+================================================================
+PHASE 10 — VALIDATION RULES
+================================================================
+- taxable line MUST have taxRate > 0
+- exempt MUST have tax = 0
+- pricesIncludeTax must be explicit
+- item.taxType = exempt → taxRate must be 0/null
+
+================================================================
+PHASE 11 — TESTS (MANDATORY)
+================================================================
+1) taxable sale (price includes tax)
+2) taxable sale (price excludes tax)
+3) exempt sale
+4) mixed invoice (taxable + exempt lines)
+5) missing vat_output mapping → error
+6) return taxable
+7) rounding consistency UI vs DB vs journal
+
+================================================================
+PHASE 12 — FEATURE FLAG
+================================================================
+IF flag OFF:
+- ZERO CHANGE in behavior
+
+IF flag ON:
+- VAT applies ONLY to pharmacy sales
+
+================================================================
+FINAL EXECUTION INSTRUCTIONS
+================================================================
+1) Execute Phase 0 → produce audit
+2) WAIT for confirmation
+3) Execute Phases 1–3 (schema + engine + refactor)
+4) Execute Phase 5 (server recompute)
+5) Execute Phase 6 (posting)
+6) Execute UI + validation
+7) Run tests
+8) Enable feature flag in staging only
+9) Validate real scenarios
+10) THEN production rollout
+
+DO NOT SKIP ANY PHASE.
+DO NOT MERGE PARTIAL LOGIC.
+ALL CHANGES MUST BE SAFE, AUDITABLE, AND REVERSIBLE.
+
+DELIVERABLES:
+- audit report
+- changed files list
+- migration steps
+- test results
+- rollout checklist
+
+END TASK.

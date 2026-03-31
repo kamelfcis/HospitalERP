@@ -48,6 +48,10 @@ export const items = pgTable("items", {
   description: text("description"),
   allowFractionalSale: boolean("allow_fractional_sale").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
+  // ── ضريبة القيمة المضافة — الصيدلية فقط (nullable — آمن للبيانات القائمة) ─
+  taxType: text("tax_type"),         // 'exempt' | 'taxable' | 'zero_rated' | null
+  defaultTaxRate: decimal("default_tax_rate", { precision: 5, scale: 2 }),
+  pharmacyPricesIncludeTax: boolean("pharmacy_prices_include_tax").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
