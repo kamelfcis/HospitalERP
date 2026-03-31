@@ -76,6 +76,9 @@ export function useMappingRows(): UseMappingRowsResult {
   const [hasChanges, setHasChanges] = useState(false);
   const keyCounter = useRef(0);
 
+  // Track previous filter values to distinguish filter-change vs background-refetch
+  const prevFilterRef = useRef({ selectedTxType, selectedWarehouseId, selectedPharmacyId });
+
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
   });
@@ -95,9 +98,18 @@ export function useMappingRows(): UseMappingRowsResult {
     },
   });
 
-  // Rebuild rows whenever server data or filter selection changes
+  // Rebuild rows whenever server data or filter selection changes.
+  // Only reset hasChanges when the FILTER selection changes — not on background refetches.
   useEffect(() => {
     if (mappingsLoading) return;
+
+    const prev = prevFilterRef.current;
+    const filterChanged =
+      prev.selectedTxType      !== selectedTxType      ||
+      prev.selectedWarehouseId !== selectedWarehouseId ||
+      prev.selectedPharmacyId  !== selectedPharmacyId;
+    prevFilterRef.current = { selectedTxType, selectedWarehouseId, selectedPharmacyId };
+
     const allMappings = mappings ?? [];
 
     const effectiveWarehouseId = selectedWarehouseId === "__generic__" ? null : selectedWarehouseId;
@@ -123,7 +135,6 @@ export function useMappingRows(): UseMappingRowsResult {
       const warehouseRow = warehouseMappings.find(m => m.lineType === lt);
       const pharmacyRow  = pharmacyMappings.find(m => m.lineType === lt);
       const genericRow   = genericMappings.find(m => m.lineType === lt);
-      // Priority: warehouse > pharmacy > generic
       const activeRow = warehouseRow ?? pharmacyRow ?? genericRow;
       return {
         key:             `row-${keyCounter.current++}`,
@@ -135,7 +146,8 @@ export function useMappingRows(): UseMappingRowsResult {
     });
 
     setRows(newRows);
-    setHasChanges(false);
+    // Only clear pending-changes flag when the user actively switches filter — not on silent refetch
+    if (filterChanged) setHasChanges(false);
   }, [mappings, mappingsLoading, selectedTxType, selectedWarehouseId, selectedPharmacyId]);
 
   // ── Row actions ────────────────────────────────────────────────────────────
