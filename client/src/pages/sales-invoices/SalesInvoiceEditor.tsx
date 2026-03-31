@@ -155,20 +155,46 @@ export function SalesInvoiceEditor({
         contractCompany={form.contractCompany}
         setContractCompany={form.setContractCompany}
         contractMemberId={form.contractMemberId}
+        // ── حقول المريض والعقد الجديدة ─────────────────────────────────────
+        patientId={form.patientId}
+        patientName={form.patientName}
+        contractId={form.contractId}
+        onPatientChange={(id, name) => {
+          form.setPatientId(id);
+          form.setPatientName(name);
+          form.setCustomerName(name);
+        }}
+        onPatientClear={() => {
+          form.setPatientId("");
+          form.setPatientName("");
+          form.setCustomerName("");
+        }}
+        onContractChange={(resolved) => {
+          form.setContractId(resolved.contractId);
+          form.setCompanyId(resolved.companyId);
+          form.setContractCompany(resolved.companyName);
+          form.setCompanyCoveragePct(resolved.companyCoveragePct);
+        }}
+        onContractClear={() => {
+          form.setContractId("");
+          form.setCompanyId("");
+          form.setContractCompany("");
+          form.setCompanyCoveragePct(100);
+        }}
+        // ── بطاقة المنتسب (اختيارية) ────────────────────────────────────────
         onMemberResolved={(resolved) => {
           form.setContractId(resolved.contractId);
           form.setContractMemberId(resolved.memberId);
           form.setCompanyId(resolved.companyId);
           form.setContractCompany(resolved.companyName);
           form.setCompanyCoveragePct(resolved.companyCoveragePct);
-          if (resolved.memberName) form.setCustomerName(resolved.memberName);
+          // إذا لم يكن المريض محدداً بعد، استخدم اسم المنتسب
+          if (!form.patientId && resolved.memberName) {
+            form.setCustomerName(resolved.memberName);
+          }
         }}
         onMemberCleared={() => {
-          form.setContractId("");
           form.setContractMemberId("");
-          form.setCompanyId("");
-          form.setContractCompany("");
-          form.setCompanyCoveragePct(100);
         }}
         barcodeDisplay={barcodeDisplay}
         setBarcodeDisplay={setBarcodeDisplay}

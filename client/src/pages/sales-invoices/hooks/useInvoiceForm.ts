@@ -14,6 +14,9 @@ export interface InvoiceFormState {
   discountPct:        number;
   discountValue:      number;
   notes:              string;
+  // ── حقول المريض (للتعاقدات) ───────────────────────────────────────────
+  patientId:          string;
+  patientName:        string;
 }
 
 export function useInvoiceForm(today: string) {
@@ -30,6 +33,8 @@ export function useInvoiceForm(today: string) {
   const [discountPct,        setDiscountPct]        = useState(0);
   const [discountValue,      setDiscountValue]      = useState(0);
   const [notes,              setNotes]              = useState("");
+  const [patientId,          setPatientId]          = useState("");
+  const [patientName,        setPatientName]        = useState("");
 
   const resetForm = useCallback((defaults?: Partial<InvoiceFormState>) => {
     setWarehouseId(defaults?.warehouseId         ?? "");
@@ -45,6 +50,8 @@ export function useInvoiceForm(today: string) {
     setDiscountPct(defaults?.discountPct         ?? 0);
     setDiscountValue(defaults?.discountValue     ?? 0);
     setNotes(defaults?.notes                     ?? "");
+    setPatientId(defaults?.patientId             ?? "");
+    setPatientName(defaults?.patientName         ?? "");
   }, [today]);
 
   const handleDiscountPctChange = useCallback((val: string, subtotal: number) => {
@@ -73,6 +80,8 @@ export function useInvoiceForm(today: string) {
     discountPct,        setDiscountPct,
     discountValue,      setDiscountValue,
     notes,              setNotes,
+    patientId,          setPatientId,
+    patientName,        setPatientName,
     resetForm,
     handleDiscountPctChange,
     handleDiscountValueChange,

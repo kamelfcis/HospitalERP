@@ -199,7 +199,26 @@ export function registerContractRoutes(app: Express) {
     }
   );
 
-  // ─── Rules routes MUST be registered before /:id to avoid param collision ─
+  // ─── Routes that MUST be registered before /:id to avoid param collision ──
+
+  /**
+   * GET /api/contracts/active — جميع العقود النشطة مع اسم الشركة
+   * يُستخدم في dropdown الفاتورة لاختيار عقد بدون بطاقة منتسب
+   */
+  app.get(
+    "/api/contracts/active",
+    requireAuth,
+    checkPermission(PERMISSIONS.CONTRACTS_VIEW),
+    async (_req, res) => {
+      try {
+        const list = await storage.getAllActiveContracts();
+        res.json(list);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ";
+        res.status(500).json({ message: msg });
+      }
+    }
+  );
 
   /**
    * GET /api/contracts/rules/:ruleId — single rule (for internal use)

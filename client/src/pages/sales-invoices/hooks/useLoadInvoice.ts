@@ -60,6 +60,9 @@ export function useLoadInvoice({
       discountPct:        parseFloat(String(invoiceDetail.discountPercent)) || 0,
       discountValue:      parseFloat(String(invoiceDetail.discountValue))   || 0,
       notes:              invoiceDetail.notes || "",
+      // ── المريض — patientId غير مخزّن في DB؛ patientName = customerName للتعاقدات
+      patientId:   "",
+      patientName: invoiceDetail.customerType === "contract" ? (invoiceDetail.customerName || "") : "",
     });
 
     // تحويل سطور الفاتورة

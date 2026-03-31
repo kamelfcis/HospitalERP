@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowRight, Save, Loader2, Barcode, Search, ShoppingCart,
-  CreditCard, CheckCircle2, XCircle,
+  CreditCard, CheckCircle2, XCircle, User,
 } from "lucide-react";
 import { salesInvoiceStatusLabels, customerTypeLabels } from "@shared/schema";
 import type { Warehouse } from "@shared/schema";
@@ -11,6 +11,13 @@ import {
   CreditCustomerCombobox,
   type CreditCustomer,
 } from "@/components/shared/CreditCustomerCombobox";
+import {
+  PatientSearchCombobox,
+} from "@/components/shared/PatientSearchCombobox";
+import {
+  ContractSelectCombobox,
+  type ContractResolved,
+} from "@/components/shared/ContractSelectCombobox";
 
 interface MemberResolved {
   memberId:         string;
@@ -41,6 +48,15 @@ interface Props {
   contractCompany: string;
   setContractCompany: (v: string) => void;
   contractMemberId: string;
+  // ── حقول المريض ─────────────────────────────────────────────────────────
+  patientId:    string;
+  patientName:  string;
+  contractId:   string;
+  onPatientChange:  (id: string, name: string) => void;
+  onPatientClear:   () => void;
+  onContractChange: (resolved: ContractResolved) => void;
+  onContractClear:  () => void;
+  // ────────────────────────────────────────────────────────────────────────
   barcodeDisplay: string;
   setBarcodeDisplay: (v: string) => void;
   barcodeLoading: boolean;
@@ -73,6 +89,9 @@ export function InvoiceHeaderBar({
   customerName, setCustomerName,
   contractCompany, setContractCompany,
   contractMemberId,
+  patientId, patientName, contractId,
+  onPatientChange, onPatientClear,
+  onContractChange, onContractClear,
   barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef,
   warehouses, finalizePending, readinessBadge,
   onBack, onFinalize, onBarcodeScan, onOpenSearch, onOpenServiceSearch,
@@ -125,11 +144,11 @@ export function InvoiceHeaderBar({
     onMemberCleared?.();
   }, [onMemberCleared]);
 
-  // Sync resolved info if contractMemberId changes externally (loaded from existing invoice)
   const effectiveResolved = contractMemberId ? resolvedInfo : null;
 
   return (
     <>
+      {/* ── شريط العنوان والأزرار الرئيسية ─────────────────────────────── */}
       <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2 sticky top-0 z-50">
         <div className="flex items-center gap-3 flex-wrap">
           <Button variant="ghost" size="sm" onClick={onBack} data-testid="button-back">
@@ -163,6 +182,7 @@ export function InvoiceHeaderBar({
         )}
       </div>
 
+      {/* ── معلومات الفاتورة الأساسية ────────────────────────────────────── */}
       <div className="peachtree-toolbar flex items-center gap-4 flex-wrap text-[12px]">
         <div className="flex items-center gap-1">
           <span className="font-semibold">المخزن:</span>
@@ -214,107 +234,158 @@ export function InvoiceHeaderBar({
             <span data-testid="text-customer-type">{customerTypeLabels[customerType] || customerType}</span>
           )}
         </div>
-        <div className="flex items-center gap-1">
-          <span className="font-semibold">العميل:</span>
-          {isDraft && customerType === "credit" ? (
-            <CreditCustomerCombobox
-              value={customerId}
-              onChange={(id, c) => {
-                setCustomerId(id, c);
-                setCustomerName(c.name);
-              }}
-            />
-          ) : isDraft ? (
-            <input
-              type="text"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="اسم العميل"
-              className="peachtree-input w-[160px]"
-              data-testid="input-customer-name"
-            />
-          ) : (
-            <span data-testid="text-customer-name">{customerName || "-"}</span>
-          )}
-        </div>
 
-        {/* ── حقل شركة التعاقد ── */}
-        {customerType === "contract" && !isDraft && (
+        {/* ── اسم العميل (للغير تعاقد) ─────────────────────────── */}
+        {customerType !== "contract" && (
           <div className="flex items-center gap-1">
-            <span className="font-semibold">الشركة:</span>
-            <span data-testid="text-contract-company">{contractCompany || "-"}</span>
+            <span className="font-semibold">العميل:</span>
+            {isDraft && customerType === "credit" ? (
+              <CreditCustomerCombobox
+                value={customerId}
+                onChange={(id, c) => {
+                  setCustomerId(id, c);
+                  setCustomerName(c.name);
+                }}
+              />
+            ) : isDraft ? (
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="اسم العميل"
+                className="peachtree-input w-[160px]"
+                data-testid="input-customer-name"
+              />
+            ) : (
+              <span data-testid="text-customer-name">{customerName || "-"}</span>
+            )}
           </div>
+        )}
+
+        {/* ── عرض الشركة لغير المسودات (تعاقد) ───────────────────── */}
+        {customerType === "contract" && !isDraft && (
+          <>
+            <div className="flex items-center gap-1">
+              <span className="font-semibold">المريض:</span>
+              <span data-testid="text-patient-name">{patientName || customerName || "-"}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="font-semibold">الجهة:</span>
+              <span data-testid="text-contract-company">{contractCompany || "-"}</span>
+            </div>
+          </>
         )}
       </div>
 
-      {/* ── بحث بطاقة المنتسب (للمسودات، نوع عميل = تعاقد) ───────────────── */}
+      {/* ── قسم التعاقد (للمسودات فقط) ──────────────────────────────────── */}
       {isDraft && customerType === "contract" && (
-        <div className="peachtree-toolbar flex items-center gap-3 flex-wrap text-[12px]">
-          <CreditCard className="h-4 w-4 text-blue-600 shrink-0" />
-          <span className="font-semibold text-blue-600">بطاقة المنتسب:</span>
+        <div className="peachtree-toolbar space-y-1.5 text-[12px]" dir="rtl">
 
-          {effectiveResolved || (contractMemberId && !resolvedInfo) ? (
-            // ── عرض المنتسب المحدد ────────────────────────────────────────
-            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-1">
-              <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-              <span className="font-medium text-blue-700" data-testid="text-resolved-member">
-                {effectiveResolved?.memberName || customerName || "منتسب محدد"}
-              </span>
-              {effectiveResolved?.companyName && (
-                <span className="text-muted-foreground">— {effectiveResolved.companyName}</span>
-              )}
-              {effectiveResolved?.companyCoveragePct !== undefined && (
-                <Badge variant="outline" className="text-[10px] px-1">
-                  تغطية {effectiveResolved.companyCoveragePct}%
-                </Badge>
-              )}
-              {isDraft && (
+          {/* ── الصف الأول: المريض ─────────────────────────────────────── */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <User className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+              <span className="font-semibold text-emerald-700">المريض:</span>
+            </div>
+            <PatientSearchCombobox
+              value={patientId}
+              selectedName={patientName}
+              onChange={(id, name) => {
+                onPatientChange(id, name);
+                setCustomerName(name);
+              }}
+              onClear={() => {
+                onPatientClear();
+                setCustomerName("");
+              }}
+              data-testid="patient-search"
+            />
+          </div>
+
+          {/* ── الصف الثاني: العقد / الجهة ─────────────────────────────── */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-blue-700">العقد / الجهة:</span>
+            <ContractSelectCombobox
+              value={contractId}
+              onChange={(resolved) => {
+                onContractChange(resolved);
+                setContractCompany(resolved.companyName);
+              }}
+              onClear={() => {
+                onContractClear();
+                setContractCompany("");
+              }}
+              data-testid="contract-select"
+            />
+          </div>
+
+          {/* ── الصف الثالث: المنتسب (اختياري) ────────────────────────── */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="font-semibold text-muted-foreground">
+              بطاقة المنتسب:
+              <span className="font-normal text-[10px] mr-1 text-muted-foreground">(اختياري)</span>
+            </span>
+
+            {effectiveResolved || (contractMemberId && !resolvedInfo) ? (
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                <span className="font-medium text-blue-700 text-[11px]" data-testid="text-resolved-member">
+                  {effectiveResolved?.memberName || customerName || "منتسب محدد"}
+                </span>
+                {effectiveResolved?.companyName && (
+                  <span className="text-muted-foreground text-[10px]">— {effectiveResolved.companyName}</span>
+                )}
                 <button
                   onClick={handleClearMember}
                   className="text-muted-foreground hover:text-red-500 transition-colors"
                   data-testid="button-clear-member"
-                  title="إلغاء تحديد المنتسب"
                 >
                   <XCircle className="h-3.5 w-3.5" />
                 </button>
-              )}
-            </div>
-          ) : (
-            // ── حقل البحث ─────────────────────────────────────────────────
-            <div className="flex items-center gap-1">
-              <input
-                ref={cardInputRef}
-                type="text"
-                value={cardNumber}
-                onChange={(e) => setCardNumber(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleMemberLookup(); } }}
-                placeholder="رقم بطاقة المنتسب..."
-                className="peachtree-input w-[180px] font-mono"
-                dir="ltr"
-                data-testid="input-member-card"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleMemberLookup}
-                disabled={isLooking || cardNumber.trim().length < 2}
-                className="h-[26px] px-2"
-                data-testid="button-lookup-member"
-              >
-                {isLooking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
-              </Button>
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <input
+                  ref={cardInputRef}
+                  type="text"
+                  value={cardNumber}
+                  onChange={(e) => setCardNumber(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleMemberLookup(); } }}
+                  placeholder="رقم بطاقة المنتسب (اختياري)..."
+                  className="peachtree-input w-[200px] font-mono"
+                  dir="ltr"
+                  data-testid="input-member-card"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMemberLookup}
+                  disabled={isLooking || cardNumber.trim().length < 2}
+                  className="h-[26px] px-2"
+                  data-testid="button-lookup-member"
+                >
+                  {isLooking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                </Button>
+              </div>
+            )}
 
-          {lookupError && (
-            <span className="text-red-600 text-[11px]" data-testid="text-member-lookup-error">
-              {lookupError}
-            </span>
-          )}
+            {lookupError && (
+              <span className="text-red-600 text-[11px]" data-testid="text-member-lookup-error">
+                {lookupError}
+              </span>
+            )}
+          </div>
+
+          {/* ── helper text ─────────────────────────────────────────────── */}
+          <p className="text-[10px] text-muted-foreground pr-1">
+            في التأمينات الكبيرة مثل التأمين الصحي الشامل، يمكن اختيار المريض وترك المنتسب فارغاً
+          </p>
         </div>
       )}
 
+      {/* ── شريط الباركود ────────────────────────────────────────────────── */}
       {isDraft && (
         <div className="peachtree-toolbar flex items-center gap-2 text-[12px]">
           <Barcode className="h-4 w-4 text-muted-foreground" />

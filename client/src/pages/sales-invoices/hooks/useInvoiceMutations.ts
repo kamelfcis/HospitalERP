@@ -25,6 +25,9 @@ interface MutationParams {
   clinicOrderId?: string | null;
   clinicOrderIds?: string[];
   lines: SalesLineLocal[];
+  // ── حقول المريض (للتعاقدات) ──────────────────────────────────────────
+  patientId?: string;
+  patientName?: string;
   onSaveSuccess: (id?: string) => void;
   onFinalizeSuccess: () => void;
   navigate: (path: string) => void;
@@ -40,11 +43,11 @@ export function useInvoiceMutations(p: MutationParams) {
     customerName: p.customerName || null,
     customerId: p.customerType === "credit" ? (p.customerId || null) : null,
     contractCompany: p.customerType === "contract" ? p.contractCompany : null,
-    // ── حقول التعاقد (Phase 2) ──────────────────────────────────────────────
+    // ── حقول التعاقد ────────────────────────────────────────────────────────
     contractId:       p.customerType === "contract" ? (p.contractId || null) : null,
     contractMemberId: p.customerType === "contract" ? (p.contractMemberId || null) : null,
     companyId:        p.customerType === "contract" ? (p.companyId || null) : null,
-    // مجاميع الحصص — تُحسَب من السطور أدناه
+    // ── حصص التعاقد ─────────────────────────────────────────────────────────
     patientShareTotal: p.customerType === "contract" ? computePatientShareTotal(p.lines, p.companyCoveragePct, p.netTotal) : null,
     companyShareTotal: p.customerType === "contract" ? computeCompanyShareTotal(p.lines, p.companyCoveragePct, p.netTotal) : null,
     discountPercent: p.discountPct,
@@ -109,7 +112,7 @@ export function useInvoiceMutations(p: MutationParams) {
 
   const finalizeMutation = useMutation({
     mutationFn: async () => {
-      // ── فحص أمامي: منع الاعتماد إذا كانت أي وحدة غير قابلة للتسعير ──
+      // ── فحص وحدات التسعير ────────────────────────────────────────────────
       for (const ln of p.lines) {
         const opts = getUnitOptions(ln.item);
         const chosen = opts.find((o) => o.value === ln.unitLevel);
@@ -122,9 +125,9 @@ export function useInvoiceMutations(p: MutationParams) {
         }
       }
 
-      // ── فحص فواتير التعاقد: يجب أن يكون المنتسب محدداً ─────────────────
-      if (p.customerType === "contract" && !p.contractMemberId) {
-        throw new Error("فاتورة التعاقد تتطلب تحديد المنتسب — يرجى البحث ببطاقة المنتسب");
+      // ── فحص فواتير التعاقد: يجب أن يكون العقد محدداً (المنتسب اختياري) ──
+      if (p.customerType === "contract" && !p.contractId) {
+        throw new Error("فاتورة التعاقد تتطلب اختيار العقد / الجهة — يرجى اختيار عقد نشط");
       }
 
       if (p.isNew) {

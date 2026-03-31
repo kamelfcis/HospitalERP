@@ -18,7 +18,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lte, desc, isNull, or } from "drizzle-orm";
 import { db } from "../db";
 import {
   companies,
@@ -53,6 +53,35 @@ const contractsCoreMethods = {
       .from(contracts)
       .where(eq(contracts.companyId, companyId))
       .orderBy(desc(contracts.createdAt));
+  },
+
+  /** جلب كل العقود النشطة مع اسم الشركة — لـ dropdown اختيار عقد في الفاتورة */
+  async getAllActiveContracts(this: unknown): Promise<Array<{
+    id: string;
+    contractName: string;
+    contractCode: string | null;
+    companyCoveragePct: string | null;
+    startDate: string;
+    endDate: string;
+    companyId: string;
+    companyName: string;
+  }>> {
+    const rows = await db
+      .select({
+        id:                 contracts.id,
+        contractName:       contracts.contractName,
+        contractCode:       contracts.contractCode,
+        companyCoveragePct: contracts.companyCoveragePct,
+        startDate:          contracts.startDate,
+        endDate:            contracts.endDate,
+        companyId:          contracts.companyId,
+        companyName:        companies.nameAr,
+      })
+      .from(contracts)
+      .innerJoin(companies, eq(contracts.companyId, companies.id))
+      .where(eq(contracts.isActive, true))
+      .orderBy(companies.nameAr, contracts.contractName);
+    return rows;
   },
 
   async getContractById(
