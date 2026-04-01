@@ -933,15 +933,35 @@ const methods = {
       }
       if (!shiftRow.gl_account_id) throw new Error("الوردية لا تحتوي على حساب خزنة — يجب إغلاق الوردية وفتح وردية جديدة مع اختيار حساب الخزنة");
 
-      // ── فحص رصيد الخزنة ──
+      // ── فحص رصيد الخزنة (نفس معادلة netCash في getShiftTotals) ──
+      // available = افتتاح + تحصيل نقدي + آجل + توصيل − مرتجعات − موردين
       const [collectSum] = await tx.select({ total: sql<string>`COALESCE(SUM(amount::numeric), 0)` })
         .from(cashierReceipts).where(eq(cashierReceipts.shiftId, shiftId));
       const [refundSum] = await tx.select({ total: sql<string>`COALESCE(SUM(amount::numeric), 0)` })
         .from(cashierRefundReceipts).where(eq(cashierRefundReceipts.shiftId, shiftId));
+      const supplierPaidRes = await tx.execute(sql`
+        SELECT COALESCE(SUM(total_amount::numeric), 0)::text AS total
+        FROM supplier_payments WHERE shift_id = ${shiftId}
+      `);
+      const supplierPaid = parseFloat((supplierPaidRes as any).rows[0]?.total || "0");
+      const creditRes = await tx.execute(sql`
+        SELECT COALESCE(SUM(total_amount::numeric), 0)::text AS total
+        FROM customer_credit_payments WHERE shift_id = ${shiftId}
+      `);
+      const creditCollected = parseFloat((creditRes as any).rows[0]?.total || "0");
+      const deliveryRes = await tx.execute(sql`
+        SELECT COALESCE(SUM(total_amount::numeric), 0)::text AS total
+        FROM delivery_receipts WHERE shift_id = ${shiftId}
+      `);
+      const deliveryCollected = parseFloat((deliveryRes as any).rows[0]?.total || "0");
+
       const availableCash =
         parseFloat(shiftRow.opening_cash || "0") +
-        parseFloat(collectSum?.total || "0") -
-        parseFloat(refundSum?.total || "0");
+        parseFloat(collectSum?.total || "0") +
+        creditCollected +
+        deliveryCollected -
+        parseFloat(refundSum?.total || "0") -
+        supplierPaid;
 
       const invoiceRows = await tx.select({
         id:            salesInvoiceHeaders.id,
@@ -961,8 +981,15 @@ const methods = {
       }
 
       if (requestedTotal > availableCash) {
+        const openingF    = parseFloat(shiftRow.opening_cash || "0");
+        const collectedF  = parseFloat(collectSum?.total || "0");
+        const refundedF   = parseFloat(refundSum?.total || "0");
         throw new Error(
-          `رصيد الخزنة غير كافٍ — الرصيد المتاح: ${availableCash.toFixed(2)} ج.م، والمطلوب صرفه: ${requestedTotal.toFixed(2)} ج.م`
+          `رصيد الخزنة غير كافٍ للمرتجع\n` +
+          `• الرصيد المتاح: ${availableCash.toFixed(2)} ج.م\n` +
+          `  (افتتاح ${openingF.toFixed(2)} + تحصيل ${collectedF.toFixed(2)} + آجل ${creditCollected.toFixed(2)} + توصيل ${deliveryCollected.toFixed(2)} − مرتجعات سابقة ${refundedF.toFixed(2)} − موردين ${supplierPaid.toFixed(2)})\n` +
+          `• المطلوب صرفه: ${requestedTotal.toFixed(2)} ج.م\n` +
+          `• النقص: ${(requestedTotal - availableCash).toFixed(2)} ج.م`
         );
       }
 
