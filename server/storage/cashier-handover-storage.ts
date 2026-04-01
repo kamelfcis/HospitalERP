@@ -138,8 +138,13 @@ const methods = {
       params.push(cashierName.trim());
     }
     if (status && status !== "all") {
-      conditions.push(`s.status = $${paramIdx++}`);
-      params.push(status);
+      if (status === "open") {
+        // "مفتوحة" تشمل الورديات النشطة والمتوقفة (stale)
+        conditions.push(`s.status IN ('open', 'stale')`);
+      } else {
+        conditions.push(`s.status = $${paramIdx++}`);
+        params.push(status);
+      }
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

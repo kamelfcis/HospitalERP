@@ -304,6 +304,7 @@ export default function CashierCollection() {
         varianceCalc={varianceCalc}
         onConfirm={() => closeShiftMutation.mutate()}
         isPending={closeShiftMutation.isPending}
+        shiftTotals={shiftTotals}
       />
     </div>
   );

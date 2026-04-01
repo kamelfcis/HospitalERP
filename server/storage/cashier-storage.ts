@@ -251,7 +251,10 @@ const methods = {
 
   async getMyOpenShifts(this: DatabaseStorage, cashierId: string): Promise<CashierShift[]> {
     return db.select().from(cashierShifts)
-      .where(and(eq(cashierShifts.cashierId, cashierId), eq(cashierShifts.status, "open")))
+      .where(and(
+        eq(cashierShifts.cashierId, cashierId),
+        sql`${cashierShifts.status} IN ('open', 'stale')`,
+      ))
       .orderBy(cashierShifts.openedAt);
   },
 
