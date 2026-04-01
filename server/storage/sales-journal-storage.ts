@@ -300,17 +300,18 @@ const methods = {
       // ── حساب الضريبة الفعلية (على الصافي بعد الخصم) ─────────────────────
       // الضريبة المخزَّنة totalTaxAmount محتسبة على سعر القائمة (قبل الخصم التعاقدي).
       // للحصول على الضريبة الصحيحة (على الصافي) نضرب في نسبة الصافي إلى الإجمالي.
+      // تنبيه: roundMoney يُعيد string — نغلّفه بـ parseFloat لإبقاء النتائج أرقاماً
       const rawTaxAmount = parseFloat(invoice.totalTaxAmount || "0");
       if (rawTaxAmount > 0.001 && grossRevenue > 0.001) {
-        contractEffectiveVat = roundMoney(rawTaxAmount * (sharesSum / grossRevenue));
+        contractEffectiveVat = parseFloat(roundMoney(rawTaxAmount * (sharesSum / grossRevenue)));
       } else {
         contractEffectiveVat = 0;
       }
       // الضريبة تُوزَّع نسبياً بين المريض والشركة
-      const patientVatShare = (sharesSum > 0.001 && patientShareTotal > 0.001)
-        ? roundMoney(contractEffectiveVat * (patientShareTotal / sharesSum))
+      const patientVatShare: number = (sharesSum > 0.001 && patientShareTotal > 0.001)
+        ? parseFloat(roundMoney(contractEffectiveVat * (patientShareTotal / sharesSum)))
         : 0;
-      const companyVatShare = roundMoney(contractEffectiveVat - patientVatShare);
+      const companyVatShare: number = parseFloat(roundMoney(contractEffectiveVat - patientVatShare));
 
       // ── Audit: warn if contract AR split falls back to default account ─────
       const missingPatientMapping = !patientARMapping?.debitAccountId && patientShareTotal > 0.001;
@@ -332,23 +333,23 @@ const methods = {
 
       // ── مدين: ذمة مريض (حصة + الضريبة المقابلة) ─────────────────────────
       // المبلغ المدين = حصة المريض + نصيبه من الضريبة الفعلية
-      const totalPatientAR = roundMoney(patientShareTotal + patientVatShare);
+      const totalPatientAR: number = parseFloat(roundMoney(patientShareTotal + patientVatShare));
       if (totalPatientAR > 0.001) {
         const acct = patientARMapping?.debitAccountId || debitAccountId;
         journalLineData.push({
           journalEntryId: "", lineNumber: lineNum++, accountId: acct,
-          debit: String(totalPatientAR.toFixed(2)), credit: "0",
+          debit: totalPatientAR.toFixed(2), credit: "0",
           description: `ذمة مريض — ${invoice.customerName || "عميل عقد"}`,
         });
       }
       // ── مدين: ذمة شركة (حصة + الضريبة المقابلة) ─────────────────────────
       // المبلغ المدين = حصة الشركة + نصيبها من الضريبة الفعلية
-      const totalCompanyAR = roundMoney(companyShareTotal + companyVatShare);
+      const totalCompanyAR: number = parseFloat(roundMoney(companyShareTotal + companyVatShare));
       if (totalCompanyAR > 0.001) {
         const acct = companyARMapping?.debitAccountId || debitAccountId;
         journalLineData.push({
           journalEntryId: "", lineNumber: lineNum++, accountId: acct,
-          debit: String(totalCompanyAR.toFixed(2)), credit: "0",
+          debit: totalCompanyAR.toFixed(2), credit: "0",
           description: `ذمة شركة تأمين — ${(invoice as any).contractCompany || "شركة"}`,
         });
       }
@@ -361,7 +362,7 @@ const methods = {
       // التوازن مع ضريبة:
       //   Dr (مريض+ضريبته) + Dr (شركة+ضريبتها) + Dr (خصم) = Cr (إيراد إجمالي) + Cr (ضريبة فعلية)
       //   (sharesSum + effectiveVAT) + (gross - sharesSum) = gross + effectiveVAT  ✓
-      const contractDiscountAmount = roundMoney(grossRevenue - sharesSum);
+      const contractDiscountAmount: number = parseFloat(roundMoney(grossRevenue - sharesSum));
       if (contractDiscountAmount > 0.01) {
         const discountMapping = mappingMap.get("discount_allowed");
         if (discountMapping?.debitAccountId) {
@@ -369,7 +370,7 @@ const methods = {
             journalEntryId: "",
             lineNumber: lineNum++,
             accountId: discountMapping.debitAccountId,
-            debit: String(contractDiscountAmount.toFixed(2)),
+            debit: contractDiscountAmount.toFixed(2),
             credit: "0",
             description: "خصم تعاقدي — مخفضات الإيراد",
           });
