@@ -79,6 +79,12 @@ export interface PendingInvoice {
   subtotal: string;
   discountValue: string;
   netTotal: string;
+  /**
+   * نصيب المريض في الفواتير التعاقدية الجزئية.
+   * إذا كانت الفاتورة تعاقدية وهذا الحقل > 0 → يُحصَّل هذا المبلغ فقط.
+   * تعاقد 100% شركة (القيمة = 0) لا تظهر في القائمة أصلاً.
+   */
+  patientShareTotal: string | null;
   createdBy: string | null;
   /** الاسم الكامل لمنشئ الفاتورة (مشتق من جدول users بناءً على createdBy = UUID) */
   pharmacistName: string | null;
@@ -140,5 +146,11 @@ export interface ShiftCloseValidation {
 export interface SelectionAggregated {
   count: number;
   subtotal: number;
+  /** الصافي الكامل (سعر القائمة) — للعرض فقط */
   netTotal: number;
+  /** المبلغ الفعلي المراد تحصيله من المريض:
+   *  فاتورة تعاقد جزئية → patientShareTotal
+   *  غير ذلك → netTotal
+   */
+  collectibleTotal: number;
 }

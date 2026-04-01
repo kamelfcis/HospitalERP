@@ -22,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { salesInvoiceStatusLabels } from "@shared/schema";
 import { formatNumber, formatDateShort, formatDateTime } from "@/lib/formatters";
 import type { PendingInvoice, InvoiceDetails, SelectionAggregated } from "../types";
+import { getCollectibleAmount, isContractPartial } from "../utils/collectibleAmount";
 
 // ── ألوان حالة الفاتورة ──────────────────────────────────────
 const STATUS_CLASS: Record<string, string> = {
@@ -235,7 +236,21 @@ function InvoiceRow({
         </span>
       </TableCell>
       <TableCell className="text-right py-1 px-2">{formatNumber(inv.subtotal)}</TableCell>
-      <TableCell className="text-right font-medium py-1 px-2">{formatNumber(inv.netTotal)}</TableCell>
+      <TableCell className="text-right font-medium py-1 px-2">
+        {isContractPartial(inv) ? (
+          <span className="flex items-center gap-1 justify-end flex-wrap">
+            <span>{formatNumber(getCollectibleAmount(inv))}</span>
+            <Badge
+              variant="outline"
+              className="text-[9px] px-1 py-0 border-blue-400 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 no-default-hover-elevate no-default-active-elevate"
+            >
+              نصيب المريض
+            </Badge>
+          </span>
+        ) : (
+          formatNumber(inv.netTotal)
+        )}
+      </TableCell>
       <TableCell className="text-right py-1 px-2 text-muted-foreground">{inv.pharmacistName || "—"}</TableCell>
       <TableCell className="text-right py-1 px-2">{formatDateShort(inv.createdAt)}</TableCell>
       <TableCell className="text-right py-1 px-2">
@@ -310,7 +325,15 @@ function SingleInvoiceDetails({
         <span className="text-muted-foreground">الإجمالي:</span>
         <span>{formatNumber(details.subtotal)}</span>
         <span className="text-muted-foreground">الصافي:</span>
-        <span className="font-medium">{formatNumber(details.netTotal)}</span>
+        <span>{formatNumber(details.netTotal)}</span>
+        {isContractPartial(details) && (
+          <>
+            <span className="text-muted-foreground font-medium text-blue-700 dark:text-blue-400">نصيب المريض:</span>
+            <span className="font-bold text-blue-700 dark:text-blue-400">
+              {formatNumber(getCollectibleAmount(details))} ج.م
+            </span>
+          </>
+        )}
         <span className="text-muted-foreground">بواسطة:</span>
         <span data-testid={`text-${testPrefix}-detail-creator`}>{details.pharmacistName || "—"}</span>
         <span className="text-muted-foreground">التاريخ والوقت:</span>
@@ -365,7 +388,13 @@ function MultiSelectionSummary({
       <span className="text-muted-foreground">إجمالي قبل الخصم:</span>
       <span>{formatNumber(aggregated.subtotal)}</span>
       <span className="text-muted-foreground">الصافي الكلي:</span>
-      <span className="font-medium">{formatNumber(aggregated.netTotal)}</span>
+      <span>{formatNumber(aggregated.netTotal)}</span>
+      {aggregated.collectibleTotal !== aggregated.netTotal && (
+        <>
+          <span className="text-muted-foreground font-medium text-blue-700 dark:text-blue-400">إجمالي التحصيل:</span>
+          <span className="font-bold text-blue-700 dark:text-blue-400">{formatNumber(aggregated.collectibleTotal)}</span>
+        </>
+      )}
     </div>
   );
 }

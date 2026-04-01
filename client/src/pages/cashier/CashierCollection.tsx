@@ -230,7 +230,7 @@ export default function CashierCollection() {
 
                   {salesTab.selected.size > 0 && salesTab.aggregated && (
                     <span className="text-xs font-medium text-green-700 dark:text-green-400">
-                      الصافي: {formatNumber(salesTab.aggregated.netTotal)} ج.م
+                      إجمالي التحصيل: {formatNumber(salesTab.aggregated.collectibleTotal)} ج.م
                     </span>
                   )}
                   <span className="text-[10px] text-muted-foreground">Ctrl+Enter / F9</span>

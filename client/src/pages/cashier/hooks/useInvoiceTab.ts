@@ -12,6 +12,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { PendingInvoice, InvoiceDetails, SelectionAggregated } from "../types";
+import { getCollectibleAmount } from "../utils/collectibleAmount";
 
 interface UseInvoiceTabProps {
   /** قائمة الفواتير المرفوعة من hook جلب البيانات */
@@ -76,9 +77,11 @@ export function useInvoiceTab({ invoices, hasActiveShift, detailsEndpoint }: Use
     if (selected.size <= 1 || !invoices) return null;
     const items = invoices.filter((inv) => selected.has(inv.id));
     return {
-      count:     items.length,
-      subtotal:  items.reduce((s, i) => s + parseFloat(i.subtotal   || "0"), 0),
-      netTotal:  items.reduce((s, i) => s + parseFloat(i.netTotal   || "0"), 0),
+      count:            items.length,
+      subtotal:         items.reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0),
+      netTotal:         items.reduce((s, i) => s + parseFloat(i.netTotal || "0"), 0),
+      // للفواتير التعاقدية: يُجمَع نصيب المريض فقط، لا الإجمالي الكامل
+      collectibleTotal: items.reduce((s, i) => s + getCollectibleAmount(i), 0),
     };
   }, [selected, invoices]);
 

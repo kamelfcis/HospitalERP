@@ -42,6 +42,7 @@ import {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { logAcctEvent } from "../lib/accounting-event-logger";
+import { getCollectibleAmountStr } from "../lib/cashier-collection-amount";
 
 // ── ثابت: الحد الأقصى لساعات الوردية قبل اعتبارها منتهية ────────────────
 const MAX_SHIFT_HOURS = 24;
@@ -831,7 +832,9 @@ const methods = {
           .where(eq(cashierReceipts.invoiceId, invoiceId));
         if (existingReceipt) throw new Error(`الفاتورة ${invoice.invoiceNumber} محصّلة بالفعل`);
 
-        const amount = invoice.netTotal;
+        // للفواتير التعاقدية: يُحصَّل نصيب المريض فقط (patientShareTotal)
+        // لباقي الفواتير: الصافي الكامل (netTotal)
+        const amount = getCollectibleAmountStr(invoice);
         totalCollected += parseFloat(amount);
 
         // ── 1. اكتساب الملكية + إدراج الإيصال ضمن نفس transaction ──

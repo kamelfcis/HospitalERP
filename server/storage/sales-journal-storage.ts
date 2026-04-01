@@ -23,6 +23,7 @@ import type {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney } from "../finance-helpers";
+import { getCollectibleAmount } from "../lib/cashier-collection-amount";
 
 const methods = {
   async regenerateJournalForInvoice(this: DatabaseStorage, invoiceId: string): Promise<JournalEntry | null> {
@@ -874,9 +875,11 @@ const methods = {
 
       try {
         const [invoice] = await db.select({
-          netTotal:      salesInvoiceHeaders.netTotal,
-          invoiceNumber: salesInvoiceHeaders.invoiceNumber,
-          invoiceDate:   salesInvoiceHeaders.invoiceDate,
+          netTotal:         salesInvoiceHeaders.netTotal,
+          patientShareTotal: salesInvoiceHeaders.patientShareTotal,
+          customerType:     salesInvoiceHeaders.customerType,
+          invoiceNumber:    salesInvoiceHeaders.invoiceNumber,
+          invoiceDate:      salesInvoiceHeaders.invoiceDate,
         }).from(salesInvoiceHeaders).where(eq(salesInvoiceHeaders.id, invoiceId));
 
         if (!invoice) {
@@ -884,8 +887,9 @@ const methods = {
           continue;
         }
 
-        const netTotal = parseFloat(invoice.netTotal || "0");
-        if (netTotal <= 0) {
+        // للفواتير التعاقدية: يُقيَّد نصيب المريض فقط — باقي المبلغ سيُسوَّى عبر المطالبات
+        const collectible = getCollectibleAmount(invoice);
+        if (collectible <= 0) {
           if (eventId) await updateAcctEvent(eventId, "completed", { errorMessage: "المبلغ صفر — لا يلزم قيد تحصيل" });
           continue;
         }
@@ -896,7 +900,7 @@ const methods = {
           reference:        `COL-${invoice.invoiceNumber}`,
           description:      `قيد تحصيل فاتورة مبيعات رقم ${invoice.invoiceNumber}`,
           entryDate:        invoice.invoiceDate,
-          lines:            [{ lineType: "cash", amount: String(netTotal.toFixed(2)) }],
+          lines:            [{ lineType: "cash", amount: collectible.toFixed(2) }],
           // ─── Dynamic resolution: inject shift treasury as debit override ────
           // This ensures each cashier's own GL account is debited, not a generic
           // static treasury account. The credit side (receivable clearing) still
