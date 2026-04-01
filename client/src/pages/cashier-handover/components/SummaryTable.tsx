@@ -25,8 +25,11 @@ interface HandoverShiftRow {
   pharmacyName: string | null;
   unitType: string;
   status: string;
+  openingCash: number;
   cashSalesTotal: number;
   creditSalesTotal: number;
+  creditCollected: number;
+  supplierPaid: number;
   deliveryCollectedTotal: number;
   salesInvoiceCount: number;
   returnsTotal: number;
@@ -122,18 +125,21 @@ const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggl
 
   const handlePrint = useCallback(() => {
     const settings = receiptSettings ?? { header: "", footer: "", logoText: "", autoPrint: false, showPreview: false };
+    const expectedCash = row.openingCash + row.cashSalesTotal + row.creditCollected + row.deliveryCollectedTotal - row.returnsTotal - row.supplierPaid;
     printShiftHandover({
       receiptNumber:     row.handoverReceiptNumber ?? null,
       cashierName:       row.cashierName,
       unitName:          row.pharmacyName || "",
       openedAt:          row.openedAt,
       closedAt:          row.closedAt,
-      openingCash:       0,
+      openingCash:       row.openingCash,
       cashSales:         row.cashSalesTotal,
       creditSales:       row.creditSalesTotal,
+      creditCollected:   row.creditCollected,
       deliveryCollected: row.deliveryCollectedTotal,
       returns:           row.returnsTotal,
-      netShift:          row.netTotal,
+      supplierPaid:      row.supplierPaid,
+      netShift:          expectedCash,
       closingCash:       row.transferredToTreasury,
       variance:          row.variance,
     }, settings);
@@ -199,12 +205,17 @@ const ShiftSummaryRow = memo(function ShiftSummaryRow({ row, isExpanded, onToggl
           {row.returnInvoiceCount}
         </TableCell>
         <TableCell className="text-right tabular-nums font-semibold" data-testid={`text-net-${row.shiftId}`}>
-          {fmtMoney(row.openingCash + row.netTotal)}
-          {row.openingCash > 0 && (
-            <span className="block text-xs text-muted-foreground">
-              مبيعات {fmtMoney(row.netTotal)} + افتتاح {fmtMoney(row.openingCash)}
-            </span>
-          )}
+          {fmtMoney(row.openingCash + row.cashSalesTotal + row.creditCollected + row.deliveryCollectedTotal - row.returnsTotal - row.supplierPaid)}
+          <span className="block text-xs text-muted-foreground">
+            {[
+              row.openingCash > 0 && `افتتاح ${fmtMoney(row.openingCash)}`,
+              `نقدي ${fmtMoney(row.cashSalesTotal)}`,
+              row.creditCollected > 0 && `آجل ${fmtMoney(row.creditCollected)}`,
+              row.deliveryCollectedTotal > 0 && `توصيل ${fmtMoney(row.deliveryCollectedTotal)}`,
+              row.returnsTotal > 0 && `م. ${fmtMoney(row.returnsTotal)}`,
+              row.supplierPaid > 0 && `مورد ${fmtMoney(row.supplierPaid)}`,
+            ].filter(Boolean).join(" | ")}
+          </span>
         </TableCell>
         <TableCell className="text-right tabular-nums text-violet-700 dark:text-violet-400" data-testid={`text-treasury-${row.shiftId}`}>
           {fmtMoney(row.transferredToTreasury)}

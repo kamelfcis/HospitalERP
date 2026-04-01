@@ -186,8 +186,10 @@ export interface ShiftHandoverData {
   openingCash: number;
   cashSales: number;
   creditSales: number;
+  creditCollected: number;
   deliveryCollected: number;
   returns: number;
+  supplierPaid: number;
   netShift: number;
   closingCash: number;
   variance: number;
@@ -261,20 +263,44 @@ function buildShiftHandoverHtml(data: ShiftHandoverData, settings: ReceiptSettin
   <div class="info-row"><span class="bold">إغلاق:</span><span style="font-size:10px;">${fmtTime(data.closedAt)}</span></div>
 
   <div class="divider"></div>
-  <div class="section-title">تفاصيل الوردية</div>
 
+  <!-- الداخل -->
+  <div class="section-title">&#x2B07; الداخل</div>
   <table>
-    ${row("رصيد الافتتاح:", fmt(data.openingCash))}
+    ${data.openingCash > 0 ? row("رصيد الافتتاح:", fmt(data.openingCash)) : ""}
     ${row("تحصيل نقدي:", fmt(data.cashSales))}
-    ${data.creditSales > 0 ? row("آجل / تعاقد:", fmt(data.creditSales)) : ""}
-    ${data.deliveryCollected > 0 ? row("توصيل منزلي:", fmt(data.deliveryCollected)) : ""}
-    ${data.returns > 0 ? row("مرتجعات:", `(${fmt(data.returns)})`) : ""}
+    ${data.creditCollected > 0 ? row("تحصيل الآجل:", fmt(data.creditCollected)) : ""}
+    ${data.deliveryCollected > 0 ? row("تحصيل التوصيل:", fmt(data.deliveryCollected)) : ""}
+  </table>
+  <div class="divider"></div>
+  <table>
+    ${row("إجمالي الداخل:", fmt(data.openingCash + data.cashSales + data.creditCollected + data.deliveryCollected), true)}
   </table>
 
   <div class="divider"></div>
 
+  <!-- الخارج -->
+  <div class="section-title">&#x2B06; الخارج</div>
   <table>
-    ${row("صافي الوردية:", fmt(data.netShift), true)}
+    ${data.returns > 0 ? row("مرتجعات:", fmt(data.returns)) : ""}
+    ${data.supplierPaid > 0 ? row("منصرف موردين:", fmt(data.supplierPaid)) : ""}
+    ${(data.returns === 0 && data.supplierPaid === 0) ? row("لا توجد مصروفات", "—") : ""}
+  </table>
+  <div class="divider"></div>
+  <table>
+    ${row("إجمالي الخارج:", fmt(data.returns + data.supplierPaid), true)}
+  </table>
+
+  ${data.creditSales > 0 ? `
+  <div class="divider"></div>
+  <table>
+    ${row("آجل / تعاقد (للإعلام):", fmt(data.creditSales))}
+  </table>` : ""}
+
+  <div class="solid"></div>
+
+  <table>
+    ${row("إجمالي الخزنة:", fmt(data.netShift), true)}
   </table>
 
   <div class="solid"></div>

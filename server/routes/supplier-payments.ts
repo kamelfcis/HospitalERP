@@ -5,9 +5,10 @@
  */
 
 import type { Express } from "express";
-import { requireAuth, checkPermission } from "./_shared";
+import { requireAuth, checkPermission, broadcastToUnit } from "./_shared";
 import { PERMISSIONS } from "@shared/permissions";
 import { z }             from "zod";
+import { pool }          from "../db";
 import {
   getSupplierBalance,
   getSupplierInvoices,
@@ -116,6 +117,19 @@ export function registerSupplierPaymentRoutes(app: Express) {
             errorMessage: msg,
           }).catch(() => {});
         });
+      }
+
+      // ── SSE: إعلام الكاشير بمنصرف موردين (fire-and-forget) ─────────────
+      if (body.shiftId) {
+        pool.query<{ pharmacy_id: string | null; department_id: string | null; unit_type: string }>(
+          `SELECT pharmacy_id, department_id, unit_type FROM cashier_shifts WHERE id = $1 LIMIT 1`,
+          [body.shiftId]
+        ).then(({ rows }) => {
+          const sh = rows[0];
+          if (!sh) return;
+          const unitKey = sh.unit_type === "pharmacy" ? sh.pharmacy_id : sh.department_id;
+          if (unitKey) broadcastToUnit(unitKey, "supplier_paid", { shiftId: body.shiftId, paymentId: result.paymentId });
+        }).catch(() => {});
       }
 
       res.status(201).json(result);

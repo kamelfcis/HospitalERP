@@ -5,7 +5,7 @@
  */
 
 import type { Express } from "express";
-import { requireAuth, checkPermission } from "./_shared";
+import { requireAuth, checkPermission, broadcastToUnit } from "./_shared";
 import { z }             from "zod";
 import { pool }          from "../db";
 import {
@@ -158,6 +158,19 @@ export function registerCustomerPaymentRoutes(app: Express) {
         userId,
         lines: parsed.data.lines.map((l) => ({ invoiceId: l.invoiceId, amountPaid: l.amountPaid })),
       });
+
+      // ── SSE: إعلام الكاشير بتحصيل الآجل (fire-and-forget) ──────────────
+      if (parsed.data.shiftId) {
+        pool.query<{ pharmacy_id: string | null; department_id: string | null; unit_type: string }>(
+          `SELECT pharmacy_id, department_id, unit_type FROM cashier_shifts WHERE id = $1 LIMIT 1`,
+          [parsed.data.shiftId]
+        ).then(({ rows }) => {
+          const sh = rows[0];
+          if (!sh) return;
+          const unitKey = sh.unit_type === "pharmacy" ? sh.pharmacy_id : sh.department_id;
+          if (unitKey) broadcastToUnit(unitKey, "credit_collected", { shiftId: parsed.data.shiftId });
+        }).catch(() => {});
+      }
 
       res.status(201).json(result);
     } catch (err: any) {

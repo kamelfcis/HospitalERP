@@ -53,6 +53,8 @@ export interface HandoverShiftRow {
   variance: number;
   cashSalesTotal: number;
   creditSalesTotal: number;
+  creditCollected: number;
+  supplierPaid: number;
   deliveryCollectedTotal: number;
   salesInvoiceCount: number;
   returnsTotal: number;
@@ -66,6 +68,8 @@ export interface HandoverShiftRow {
 export interface HandoverTotals {
   totalCashSales: number;
   totalCreditSales: number;
+  totalCreditCollected: number;
+  totalSupplierPaid: number;
   totalDeliveryCollected: number;
   totalSalesInvoiceCount: number;
   totalReturns: number;
@@ -189,6 +193,22 @@ const methods = {
           COUNT(*)::int                              AS delivery_count
         FROM delivery_receipts dr
         GROUP BY 1
+      ),
+      credit_collected_agg AS (
+        SELECT shift_id,
+               COALESCE(SUM(total_amount::numeric), 0) AS credit_collected_total,
+               COUNT(*)::int                           AS credit_collected_count
+        FROM customer_receipts
+        WHERE shift_id IS NOT NULL
+        GROUP BY shift_id
+      ),
+      supplier_paid_agg AS (
+        SELECT shift_id,
+               COALESCE(SUM(total_amount::numeric), 0) AS supplier_paid_total,
+               COUNT(*)::int                           AS supplier_paid_count
+        FROM supplier_payments
+        WHERE shift_id IS NOT NULL
+        GROUP BY shift_id
       )
       SELECT
         s.id                                                        AS "shiftId",
@@ -205,10 +225,17 @@ const methods = {
         COALESCE(s.closing_cash, 0)::float                         AS "closingCash",
         COALESCE(s.expected_cash, 0)::float                        AS "expectedCash",
         (COALESCE(s.closing_cash, 0)
-          - (COALESCE(s.opening_cash, 0) + COALESCE(r.cash_total, 0) + COALESCE(c.credit_total, 0) + COALESCE(d.delivery_total, 0) - COALESCE(ref.refund_total, 0))
+          - (COALESCE(s.opening_cash, 0)
+             + COALESCE(r.cash_total, 0)
+             + COALESCE(cc.credit_collected_total, 0)
+             + COALESCE(d.delivery_total, 0)
+             - COALESCE(ref.refund_total, 0)
+             - COALESCE(sp.supplier_paid_total, 0))
         )::float                                                    AS "variance",
         COALESCE(r.cash_total, 0)::float                           AS "cashSalesTotal",
         COALESCE(c.credit_total, 0)::float                         AS "creditSalesTotal",
+        COALESCE(cc.credit_collected_total, 0)::float              AS "creditCollected",
+        COALESCE(sp.supplier_paid_total, 0)::float                 AS "supplierPaid",
         COALESCE(d.delivery_total, 0)::float                       AS "deliveryCollectedTotal",
         (COALESCE(r.sales_count, 0) + COALESCE(c.credit_count, 0))::int AS "salesInvoiceCount",
         COALESCE(ref.refund_total, 0)::float                       AS "returnsTotal",
@@ -217,11 +244,13 @@ const methods = {
         COALESCE(s.closing_cash, 0)::float                         AS "transferredToTreasury",
         s.handover_receipt_number                                   AS "handoverReceiptNumber"
       FROM cashier_shifts s
-      LEFT JOIN pharmacies p ON p.id = s.pharmacy_id
-      LEFT JOIN receipts_agg r   ON r.shift_id   = s.id
-      LEFT JOIN refunds_agg ref  ON ref.shift_id  = s.id
-      LEFT JOIN credit_agg c     ON c.shift_id    = s.id
-      LEFT JOIN delivery_agg d   ON d.shift_id    = s.id
+      LEFT JOIN pharmacies p             ON p.id = s.pharmacy_id
+      LEFT JOIN receipts_agg r           ON r.shift_id   = s.id
+      LEFT JOIN refunds_agg ref          ON ref.shift_id  = s.id
+      LEFT JOIN credit_agg c             ON c.shift_id    = s.id
+      LEFT JOIN delivery_agg d           ON d.shift_id    = s.id
+      LEFT JOIN credit_collected_agg cc  ON cc.shift_id   = s.id
+      LEFT JOIN supplier_paid_agg sp     ON sp.shift_id   = s.id
       ${whereClause}
     `;
 
@@ -297,6 +326,8 @@ const methods = {
     const totals: HandoverTotals = {
       totalCashSales:             rows.reduce((s, r) => s + r.cashSalesTotal, 0),
       totalCreditSales:           rows.reduce((s, r) => s + r.creditSalesTotal, 0),
+      totalCreditCollected:       rows.reduce((s, r) => s + r.creditCollected, 0),
+      totalSupplierPaid:          rows.reduce((s, r) => s + r.supplierPaid, 0),
       totalDeliveryCollected:     rows.reduce((s, r) => s + r.deliveryCollectedTotal, 0),
       totalSalesInvoiceCount:     rows.reduce((s, r) => s + r.salesInvoiceCount, 0),
       totalReturns:               rows.reduce((s, r) => s + r.returnsTotal, 0),
