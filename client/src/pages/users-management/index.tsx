@@ -16,7 +16,9 @@ import type { UserData, UserFormData } from "./types";
 const EMPTY_FORM: UserFormData = {
   username: "", password: "", fullName: "",
   role: "data_entry", departmentId: "", pharmacyId: "",
-  isActive: true, cashierGlAccountId: "", cashierVarianceAccountId: "",
+  isActive: true,
+  cashierGlAccountId: "", cashierVarianceAccountId: "",
+  cashierVarianceShortAccountId: "", cashierVarianceOverAccountId: "",
   defaultWarehouseId: "", defaultPurchaseWarehouseId: "",
   allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [], hasAllUnits: false,
 };
@@ -110,9 +112,11 @@ export default function UsersManagement() {
       departmentId:        user.departmentId || "",
       pharmacyId:          user.pharmacyId  || "",
       isActive:            user.isActive,
-      cashierGlAccountId:          user.cashierGlAccountId            || "",
-      cashierVarianceAccountId:    user.cashierVarianceAccountId      || "",
-      defaultWarehouseId:          user.defaultWarehouseId             || "",
+      cashierGlAccountId:            user.cashierGlAccountId              || "",
+      cashierVarianceAccountId:      user.cashierVarianceAccountId        || "",
+      cashierVarianceShortAccountId: user.cashierVarianceShortAccountId   || "",
+      cashierVarianceOverAccountId:  user.cashierVarianceOverAccountId    || "",
+      defaultWarehouseId:            user.defaultWarehouseId              || "",
       defaultPurchaseWarehouseId:  user.defaultPurchaseWarehouseId    || "",
       allowedPharmacyIds:  user.pharmacyId ? [user.pharmacyId] : [],
       allowedDepartmentIds: [],
@@ -152,11 +156,12 @@ export default function UsersManagement() {
   }
 
   function handleSave() {
-    // ── تحقق محاسبي: حساب GL كاشير بدون حساب فروق ──────────────────────
-    if (formData.cashierGlAccountId && !formData.cashierVarianceAccountId) {
+    // ── تحقق محاسبي: حساب GL كاشير بدون أي حساب فروق ──────────────────────
+    const hasAnyVariance = !!(formData.cashierVarianceAccountId || formData.cashierVarianceShortAccountId || formData.cashierVarianceOverAccountId);
+    if (formData.cashierGlAccountId && !hasAnyVariance) {
       toast({
         title: "تحذير: حساب فروق الجرد غير مُحدَّد",
-        description: "هذا المستخدم له حساب كاشير ولكن لم يُعيَّن له حساب فروق الجرد — لن يتمكن من إغلاق الوردية إذا كان هناك فرق نقدي.",
+        description: "هذا المستخدم له حساب كاشير ولكن لم يُعيَّن له أي حساب فروق الجرد — لن يتمكن من إغلاق الوردية إذا كان هناك فرق نقدي.",
         variant: "destructive",
       });
       return;
@@ -169,9 +174,11 @@ export default function UsersManagement() {
       departmentId:       formData.departmentId || null,
       pharmacyId:         formData.pharmacyId   || null,
       isActive:           formData.isActive,
-      cashierGlAccountId:          formData.cashierGlAccountId              || null,
-      cashierVarianceAccountId:    formData.cashierVarianceAccountId        || null,
-      defaultWarehouseId:          formData.defaultWarehouseId              || null,
+      cashierGlAccountId:            formData.cashierGlAccountId              || null,
+      cashierVarianceAccountId:      formData.cashierVarianceAccountId        || null,
+      cashierVarianceShortAccountId: formData.cashierVarianceShortAccountId   || null,
+      cashierVarianceOverAccountId:  formData.cashierVarianceOverAccountId    || null,
+      defaultWarehouseId:            formData.defaultWarehouseId              || null,
       defaultPurchaseWarehouseId:  formData.defaultPurchaseWarehouseId      || null,
     };
 

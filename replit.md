@@ -20,7 +20,7 @@ The system uses a RESTful JSON API. Drizzle ORM manages PostgreSQL interactions,
 - **Inventory & Sales**: Supplier receiving, sales invoicing (barcode, FEFO), sales returns, patient invoicing, patient admissions, and master data.
 - **Services & Price Lists**: CRUD for department-scoped services and price lists with inline editing and bulk adjustments.
 - **Multi-Pharmacy Support**: Isolation for invoicing and cashier operations across multiple pharmacies.
-- **Cashier & Security**: Real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC), Dynamic Account Resolution, and a complete cashier shift lifecycle.
+- **Cashier & Security**: Real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC), Dynamic Account Resolution, and a complete cashier shift lifecycle. Shift-close GL journals now resolve treasury account from `account_mappings` (cashier_shift_close/treasury) with fallback to `system_settings.cashier_treasury_account_code`. Per-cashier variance split into `cashierVarianceShortAccountId` (shortage) and `cashierVarianceOverAccountId` (surplus) with fallback to legacy `cashierVarianceAccountId`.
 - **Outpatient Clinic Module**: Clinic booking, doctor consultations, orders, integration with sales/service orders, doctor-specific pricing, clinic-scoped drug favorites, structured consultation fields (SOAP), doctor templates, and patient history optimization.
 - **Reporting & Audit**: Balanced financial reports, RBAC enforcement, comprehensive audit trails, and strict validation.
 - **Department Services Orders**: Unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
@@ -29,7 +29,7 @@ The system uses a RESTful JSON API. Drizzle ORM manages PostgreSQL interactions,
 - **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation and lot adjustments.
 - **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions with individual user overrides.
 - **Contracts Module**: Master data for insurance/contract companies, contracts, and member cards, including a 5-pass rule evaluator for contract coverage, claims GL accounting, and an approval workflow.
-- **Account Mappings Module**: Dedicated UI and transactional backend for bulk updates.
+- **Account Mappings Module**: Dedicated UI and transactional backend for bulk updates. All automatic journal transaction types are now configurable, including `cashier_shift_close` (treasury line type). Includes contextual info note explaining that variance accounts remain user-driven.
 - **Items Excel Import/Export**: Bulk management of items via xlsx with upsert functionality and barcode handling.
 - **Customer Credit Payments Module**: Manages customer credit, integrating with cashier handover summaries.
 - **Supplier Payments Module**: Manages supplier payments with dedicated database schemas, backend storage for balances, payment processing routes, and GL journal integration.

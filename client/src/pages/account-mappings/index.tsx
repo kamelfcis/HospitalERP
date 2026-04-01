@@ -8,7 +8,7 @@
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Settings, Save, Loader2, Plus } from "lucide-react";
+import { Settings, Save, Loader2, Plus, Info } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMappingRows } from "./hooks/useMappingRows";
 import { useMappingSave }  from "./hooks/useMappingSave";
@@ -98,6 +98,19 @@ export default function AccountMappings() {
             isWarehouseView={data.isWarehouseView}
             isPharmacyView={data.isPharmacyView}
           />
+        )}
+
+        {data.selectedTxType === "cashier_shift_close" && (
+          <div className="mx-4 mb-3 flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200" dir="rtl">
+            <Info className="h-4 w-4 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold mb-0.5">ملاحظة: حسابات فروق الجرد مُعيَّنة على مستوى المستخدم</p>
+              <p className="text-xs opacity-80">
+                هنا تُعيَّن فقط <strong>حساب عهدة أمين الخزنة</strong> (المدين — يستلم النقدية).
+                أما <strong>حسابا العجز والفائض</strong> فتُعيَّن لكل كاشير على حدة من صفحة إدارة المستخدمين.
+              </p>
+            </div>
+          </div>
         )}
 
         <CardContent>

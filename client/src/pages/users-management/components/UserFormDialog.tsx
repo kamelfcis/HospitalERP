@@ -207,39 +207,89 @@ export function UserFormDialog({
           </div>
 
           {formData.cashierGlAccountId && (
-            <div className="space-y-1">
-              <Label>
-                حساب فروق الجرد النقدي
-                <span className="text-destructive mr-1">*</span>
-              </Label>
-              <Select
-                value={formData.cashierVarianceAccountId || "none"}
-                onValueChange={v => onFormChange({ cashierVarianceAccountId: v === "none" ? "" : v })}
-              >
-                <SelectTrigger
-                  data-testid="select-user-variance-account"
-                  className={!formData.cashierVarianceAccountId ? "border-destructive" : ""}
+            <div className="space-y-3 border rounded-lg p-3 bg-muted/30">
+              <p className="text-xs font-semibold text-muted-foreground">حسابات فروق الجرد النقدي</p>
+
+              <div className="space-y-1">
+                <Label>
+                  حساب العجز النقدي
+                  <span className="text-muted-foreground text-xs mr-1">(اختياري — يُستخدم عند العجز)</span>
+                </Label>
+                <Select
+                  value={formData.cashierVarianceShortAccountId || "none"}
+                  onValueChange={v => onFormChange({ cashierVarianceShortAccountId: v === "none" ? "" : v })}
                 >
-                  <SelectValue placeholder="اختر حساب الفروق..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">بدون</SelectItem>
-                  {varianceAccounts.map(a => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} - {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!formData.cashierVarianceAccountId ? (
-                <p className="text-xs text-destructive font-medium">
-                  مطلوب — بدونه لن يتمكن الكاشير من إغلاق وردية بها فرق نقدي
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  يُستخدم لتسجيل فروق الجرد النقدي عند إغلاق الوردية (52920–52923)
-                </p>
-              )}
+                  <SelectTrigger data-testid="select-user-variance-short-account">
+                    <SelectValue placeholder="اختر حساب العجز..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">بدون</SelectItem>
+                    {varianceAccounts.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.code} - {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label>
+                  حساب الفائض النقدي
+                  <span className="text-muted-foreground text-xs mr-1">(اختياري — يُستخدم عند الفائض)</span>
+                </Label>
+                <Select
+                  value={formData.cashierVarianceOverAccountId || "none"}
+                  onValueChange={v => onFormChange({ cashierVarianceOverAccountId: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger data-testid="select-user-variance-over-account">
+                    <SelectValue placeholder="اختر حساب الفائض..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">بدون</SelectItem>
+                    {varianceAccounts.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.code} - {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label>
+                  حساب الفروق الموحد
+                  <span className="text-muted-foreground text-xs mr-1">(احتياطي — يُستخدم إن لم يُحدَّد العجز أو الفائض)</span>
+                </Label>
+                <Select
+                  value={formData.cashierVarianceAccountId || "none"}
+                  onValueChange={v => onFormChange({ cashierVarianceAccountId: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger
+                    data-testid="select-user-variance-account"
+                    className={!formData.cashierVarianceAccountId && !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId ? "border-destructive" : ""}
+                  >
+                    <SelectValue placeholder="اختر حساب الفروق الاحتياطي..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">بدون</SelectItem>
+                    {varianceAccounts.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.code} - {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!formData.cashierVarianceAccountId && !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId ? (
+                  <p className="text-xs text-destructive font-medium">
+                    يجب تحديد حساب فروق واحداً على الأقل — بدونه لن يتمكن الكاشير من إغلاق وردية بها فرق نقدي
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    إن حُدِّد العجز والفائض بشكل منفصل، يُعطى لهما الأولوية على هذا الحساب
+                  </p>
+                )}
+              </div>
             </div>
           )}
 

@@ -1,0 +1,197 @@
+TASK: Implement hybrid account mapping for cashier shift close (drawer handover) with strict separation between template-driven accounts and user-driven accounts.
+
+OBJECTIVE
+Make cashier shift close journal fully configurable from Account Management, while preserving dynamic accounts that must come from the logged-in cashier (user context).
+
+==================================================
+TRANSACTION TYPE
+==================================================
+
+Add new transaction type:
+- cashier_shift_close
+
+Expose it in Account Management UI (dropdown list).
+
+==================================================
+HYBRID ACCOUNT DESIGN
+==================================================
+
+Split accounts into two categories:
+
+1) TEMPLATE-DRIVEN (from account_mappings)
+2) USER-DRIVEN (from logged-in cashier user record)
+
+--------------------------------------------------
+A) TEMPLATE-DRIVEN ACCOUNTS
+--------------------------------------------------
+
+These must be configured from Account Management:
+
+- treasury → main treasury / central safe
+- (optional future) clearing / control accounts
+
+--------------------------------------------------
+B) USER-DRIVEN ACCOUNTS (MANDATORY)
+--------------------------------------------------
+
+These must NOT be selectable in Account Management:
+
+- cashier_drawer_account
+  source: users.cashier_gl_account_id
+
+- cashier_shortage_account
+  source: users.cashier_variance_short_account_id
+
+- cashier_overage_account
+  source: users.cashier_variance_over_account_id
+
+These accounts are tied to the cashier identity, not to the transaction template.
+
+==================================================
+POSTING LOGIC
+==================================================
+
+When closing shift:
+
+Inputs:
+- expected_cash
+- actual_cash
+- difference = actual - expected
+
+CASE 1: NO DIFFERENCE
+----------------------------------
+DEBIT:
+- treasury
+
+CREDIT:
+- cashier_drawer_account
+
+CASE 2: CASH SHORTAGE (difference < 0)
+----------------------------------
+shortage = abs(difference)
+
+DEBIT:
+- treasury (actual_cash)
+- cashier_shortage_account (shortage)
+
+CREDIT:
+- cashier_drawer_account (expected_cash)
+
+CASE 3: CASH OVERAGE (difference > 0)
+----------------------------------
+overage = difference
+
+DEBIT:
+- treasury (actual_cash)
+
+CREDIT:
+- cashier_drawer_account (expected_cash)
+- cashier_overage_account (overage)
+
+==================================================
+ACCOUNT RESOLUTION PRIORITY
+==================================================
+
+Resolve accounts in this order:
+
+1) treasury → from account_mappings (cashier_shift_close)
+2) cashier_drawer_account → from user
+3) shortage/overage → from user
+
+If any user-driven account is missing:
+- block shift close
+- show explicit error:
+  "Cashier account mapping missing for user"
+
+==================================================
+ACCOUNT MANAGEMENT UI RULES
+==================================================
+
+In Account Management:
+
+- Show cashier_shift_close as transaction type
+- Show only:
+  - treasury
+
+Do NOT show:
+- cashier drawer
+- shortage
+- overage
+
+Add note in UI:
+"Cashier drawer and variance accounts are defined per user and not configurable here"
+
+==================================================
+VALIDATION RULES
+==================================================
+
+- treasury must be asset / treasury account
+- cashier drawer must be asset account
+- shortage account must be expense
+- overage account must be revenue
+
+==================================================
+REFACTOR REQUIREMENTS
+==================================================
+
+- Move all shift close logic into a dedicated service:
+  cashierShiftCloseService.ts
+
+- Do NOT keep logic inside route/controller
+
+- Create reusable helpers:
+  - calculateNetCash()
+  - buildShiftCloseJournalLines()
+  - resolveShiftCloseAccounts()
+
+- Remove any hardcoded account references
+
+==================================================
+INDEXING & PERFORMANCE
+==================================================
+
+Ensure indexes exist on:
+- cashier_shifts (status, user_id)
+- cashier_transactions (shift_id, type)
+- users (id, cashier_gl_account_id)
+
+==================================================
+ERROR HANDLING
+==================================================
+
+- If treasury mapping missing → block with message
+- If user accounts missing → block with message
+- If journal not balanced → block
+
+==================================================
+OUTPUT REQUIREMENTS
+==================================================
+
+- Journal must be balanced
+- Journal must be generated as final (not draft)
+- Full audit log required:
+  - shift_id
+  - user_id
+  - difference
+  - accounts used
+
+==================================================
+TEST CASES
+==================================================
+
+Test:
+1) no difference
+2) shortage
+3) overage
+4) missing user mapping
+5) missing treasury mapping
+
+==================================================
+IMPORTANT
+==================================================
+
+This is a hybrid system:
+- template controls structure
+- user controls identity-specific accounts
+
+Do NOT merge them.

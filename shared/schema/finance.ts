@@ -280,6 +280,7 @@ export const transactionTypeLabels: Record<string, string> = {
   doctor_payable_settlement: "تسوية مستحقات الطبيب",
   stock_count_adjustment:    "تسوية جرد مخزني",
   supplier_payment:          "سداد موردين",
+  cashier_shift_close:       "إغلاق وردية كاشير",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
@@ -322,6 +323,8 @@ export const mappingLineTypeLabels: Record<string, string> = {
   // Contract pharmacy receivables (Phase 2)
   pharmacy_patient_receivable:  "ذمم مرضى أفراد - صيدلية",
   pharmacy_contract_receivable: "ذمم شركات تأمين طبي",
+  // Cashier shift close
+  treasury:             "حساب عهدة أمين الخزنة",
   // Generic
   other:                "أخرى",
 };

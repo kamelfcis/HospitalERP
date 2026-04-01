@@ -99,6 +99,17 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
       creditSide: true,
     },
   },
+  // ── إغلاق وردية كاشير ──────────────────────────────────────────────────────
+  // القيد: مدين حساب عهدة أمين الخزنة — دائن درج الكاشير (حساب GL الخاص بالمستخدم)
+  // ملاحظة: حسابا العجز والفائض مُعيَّنان على مستوى المستخدم في إدارة المستخدمين
+  cashier_shift_close: {
+    treasury: {
+      required: true,
+      condition: "حساب عهدة أمين الخزنة (مدين — يستلم النقدية من درج الكاشير)",
+      debitSide: true,
+      creditSide: false,
+    },
+  },
   // ── مردود مبيعات ────────────────────────────────────────────────────────────
   // القيد يعكس فاتورة البيع على مرحلتين:
   // م1 (عند الإنشاء):  مدين: إيراد — دائن: مدينون (وسيط)  +  مدين: مخزون — دائن: تكلفة
@@ -127,6 +138,7 @@ export const suggestedLineTypes: Record<string, string[]> = {
   doctor_payable_settlement: ["doctor_payable", "cash", "receivable_clear"],
   stock_count_adjustment:    ["stock_gain", "stock_loss"],
   supplier_payment:          ["ap_settlement"],
+  cashier_shift_close:       ["treasury"],
 };
 
 // Derived sets reused across multiple components

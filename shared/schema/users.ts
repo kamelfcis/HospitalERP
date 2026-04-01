@@ -45,8 +45,10 @@ export const users = pgTable("users", {
   defaultWarehouseId:          varchar("default_warehouse_id"),
   defaultPurchaseWarehouseId:  varchar("default_purchase_warehouse_id"),
   isActive:                    boolean("is_active").notNull().default(true),
-  cashierGlAccountId:       text("cashier_gl_account_id"),
-  cashierVarianceAccountId: text("cashier_variance_account_id"),
+  cashierGlAccountId:            text("cashier_gl_account_id"),
+  cashierVarianceAccountId:      text("cashier_variance_account_id"),        // legacy fallback — used when short/over not set
+  cashierVarianceShortAccountId: text("cashier_variance_short_account_id"),  // حساب عجز الجرد النقدي
+  cashierVarianceOverAccountId:  text("cashier_variance_over_account_id"),   // حساب فائض الجرد النقدي
   maxDiscountPct:           decimal("max_discount_pct", { precision: 5, scale: 2 }),
   createdAt:                timestamp("created_at").notNull().defaultNow(),
 });

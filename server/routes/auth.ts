@@ -182,7 +182,7 @@ export async function registerAuthRoutes(app: Express) {
   app.patch("/api/users/:id", requireAuth, checkPermission("users.edit"), async (req, res) => {
     try {
       const { id } = req.params;
-      const { username, password, fullName, role, departmentId, pharmacyId, isActive, cashierGlAccountId, defaultWarehouseId, defaultPurchaseWarehouseId, cashierVarianceAccountId } = req.body;
+      const { username, password, fullName, role, departmentId, pharmacyId, isActive, cashierGlAccountId, defaultWarehouseId, defaultPurchaseWarehouseId, cashierVarianceAccountId, cashierVarianceShortAccountId, cashierVarianceOverAccountId } = req.body;
 
       const updateData: any = {};
       if (username !== undefined) updateData.username = username;
@@ -193,6 +193,8 @@ export async function registerAuthRoutes(app: Express) {
       if (isActive !== undefined) updateData.isActive = isActive;
       if (cashierGlAccountId !== undefined) updateData.cashierGlAccountId = cashierGlAccountId || null;
       if (cashierVarianceAccountId !== undefined) updateData.cashierVarianceAccountId = cashierVarianceAccountId || null;
+      if (cashierVarianceShortAccountId !== undefined) updateData.cashierVarianceShortAccountId = cashierVarianceShortAccountId || null;
+      if (cashierVarianceOverAccountId !== undefined) updateData.cashierVarianceOverAccountId = cashierVarianceOverAccountId || null;
       if (defaultWarehouseId !== undefined) updateData.defaultWarehouseId = defaultWarehouseId || null;
       if (defaultPurchaseWarehouseId !== undefined) updateData.defaultPurchaseWarehouseId = defaultPurchaseWarehouseId || null;
       if (password) {

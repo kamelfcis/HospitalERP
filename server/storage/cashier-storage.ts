@@ -1316,23 +1316,46 @@ const methods = {
       }
       const periodId = periodRes.rows[0].id;
 
-      // ── 4. حساب عهدة الخزنة — كود ديناميكي من الإعدادات (لا hardcode) ────
-      const settingRes = await client.query(
-        `SELECT value FROM system_settings WHERE key = 'cashier_treasury_account_code' LIMIT 1`
+      // ── 4. حساب عهدة الخزنة — account_mappings أولاً، ثم system_settings كـ fallback ──
+      // البحث في account_mappings (cashier_shift_close / treasury)
+      const amTreasuryRes = await client.query(
+        `SELECT debit_account_id FROM account_mappings
+          WHERE transaction_type = 'cashier_shift_close'
+            AND line_type = 'treasury'
+            AND is_active = true
+          LIMIT 1`
       );
-      const treasuryCode = settingRes.rows[0]?.value || '12127';
-
-      const custRes = await client.query(
-        `SELECT id FROM accounts WHERE code = $1 AND is_active = true LIMIT 1`,
-        [treasuryCode]
-      );
-      if (!custRes.rows.length) {
-        throw Object.assign(
-          new Error(`لا يمكن إغلاق الوردية لعدم وجود حساب عهدة الخزنة (${treasuryCode}) أو إنه غير نشط — يرجى مراجعة إعدادات النظام`),
-          { status: 422, code: "SHIFT_CLOSE_NO_TREASURY_ACCOUNT" }
+      let custodianAccountId: string;
+      if (amTreasuryRes.rows.length && amTreasuryRes.rows[0].debit_account_id) {
+        const chk = await client.query(
+          `SELECT id FROM accounts WHERE id = $1 AND is_active = true LIMIT 1`,
+          [amTreasuryRes.rows[0].debit_account_id]
         );
+        if (!chk.rows.length) {
+          throw Object.assign(
+            new Error("حساب عهدة الخزنة المُعيَّن في ربط الحسابات (إغلاق وردية) غير موجود أو غير نشط"),
+            { status: 422, code: "SHIFT_CLOSE_NO_TREASURY_ACCOUNT" }
+          );
+        }
+        custodianAccountId = chk.rows[0].id;
+      } else {
+        // fallback: system_settings.cashier_treasury_account_code
+        const settingRes = await client.query(
+          `SELECT value FROM system_settings WHERE key = 'cashier_treasury_account_code' LIMIT 1`
+        );
+        const treasuryCode = settingRes.rows[0]?.value || '12127';
+        const custRes = await client.query(
+          `SELECT id FROM accounts WHERE code = $1 AND is_active = true LIMIT 1`,
+          [treasuryCode]
+        );
+        if (!custRes.rows.length) {
+          throw Object.assign(
+            new Error(`لا يمكن إغلاق الوردية لعدم وجود حساب عهدة الخزنة (${treasuryCode}) أو إنه غير نشط — يرجى إعداده في ربط الحسابات أو إعدادات النظام`),
+            { status: 422, code: "SHIFT_CLOSE_NO_TREASURY_ACCOUNT" }
+          );
+        }
+        custodianAccountId = custRes.rows[0].id;
       }
-      const custodianAccountId = custRes.rows[0].id;
 
       // ── 5. شرط: حساب GL الكاشير موجود ونشط ──────────────────────────
       if (!sr.gl_account_id) {
@@ -1353,13 +1376,24 @@ const methods = {
       }
 
       // ── 6. شرط: حساب فروق الجرد (إذا كان هناك فرق) ──────────────────
+      // الأولوية: cashierVarianceShortAccountId / cashierVarianceOverAccountId → fallback: cashierVarianceAccountId
       let varianceAccountId: string | null = null;
       if (Math.abs(variance) > 0.001) {
         const userRes = await client.query(
-          `SELECT cashier_variance_account_id FROM users WHERE id = $1 LIMIT 1`,
+          `SELECT cashier_variance_account_id,
+                  cashier_variance_short_account_id,
+                  cashier_variance_over_account_id
+           FROM users WHERE id = $1 LIMIT 1`,
           [sr.cashier_id]
         );
-        varianceAccountId = userRes.rows[0]?.cashier_variance_account_id ?? null;
+        const ur = userRes.rows[0];
+        if (variance < 0) {
+          // عجز: استخدم حساب العجز أو الـ fallback
+          varianceAccountId = ur?.cashier_variance_short_account_id || ur?.cashier_variance_account_id || null;
+        } else {
+          // فائض: استخدم حساب الفائض أو الـ fallback
+          varianceAccountId = ur?.cashier_variance_over_account_id || ur?.cashier_variance_account_id || null;
+        }
         if (!varianceAccountId) {
           throw Object.assign(
             new Error(
@@ -1442,31 +1476,62 @@ const methods = {
         return { journalId: existing.rows[0].id };
       }
 
-      // ── 2. حساب عهدة الخزنة — كود ديناميكي من الإعدادات ────── STRICT ──
-      const tSettingRes = await client.query(
-        `SELECT value FROM system_settings WHERE key = 'cashier_treasury_account_code' LIMIT 1`
+      // ── 2. حساب عهدة الخزنة — account_mappings أولاً، ثم system_settings كـ fallback ──
+      const amTreasuryRes2 = await client.query(
+        `SELECT debit_account_id FROM account_mappings
+          WHERE transaction_type = 'cashier_shift_close'
+            AND line_type = 'treasury'
+            AND is_active = true
+          LIMIT 1`
       );
-      const tCode = tSettingRes.rows[0]?.value || '12127';
-      const custodianRes = await client.query(
-        `SELECT id FROM accounts WHERE code = $1 AND is_active = true LIMIT 1`,
-        [tCode]
-      );
-      if (!custodianRes.rows.length) {
-        throw Object.assign(
-          new Error(`حساب عهدة الخزنة (${tCode}) غير موجود أو غير نشط — يرجى مراجعة إعدادات النظام`),
-          { status: 422, code: "SHIFT_CLOSE_NO_TREASURY_ACCOUNT" }
+      let custodianAccountId: string;
+      if (amTreasuryRes2.rows.length && amTreasuryRes2.rows[0].debit_account_id) {
+        const chk = await client.query(
+          `SELECT id FROM accounts WHERE id = $1 AND is_active = true LIMIT 1`,
+          [amTreasuryRes2.rows[0].debit_account_id]
         );
+        if (!chk.rows.length) {
+          throw Object.assign(
+            new Error("حساب عهدة الخزنة المُعيَّن في ربط الحسابات (إغلاق وردية) غير موجود أو غير نشط"),
+            { status: 422, code: "SHIFT_CLOSE_NO_TREASURY_ACCOUNT" }
+          );
+        }
+        custodianAccountId = chk.rows[0].id;
+      } else {
+        // fallback: system_settings.cashier_treasury_account_code
+        const tSettingRes = await client.query(
+          `SELECT value FROM system_settings WHERE key = 'cashier_treasury_account_code' LIMIT 1`
+        );
+        const tCode = tSettingRes.rows[0]?.value || '12127';
+        const custodianRes = await client.query(
+          `SELECT id FROM accounts WHERE code = $1 AND is_active = true LIMIT 1`,
+          [tCode]
+        );
+        if (!custodianRes.rows.length) {
+          throw Object.assign(
+            new Error(`حساب عهدة الخزنة (${tCode}) غير موجود أو غير نشط — يرجى إعداده في ربط الحسابات أو إعدادات النظام`),
+            { status: 422, code: "SHIFT_CLOSE_NO_TREASURY_ACCOUNT" }
+          );
+        }
+        custodianAccountId = custodianRes.rows[0].id;
       }
-      const custodianAccountId = custodianRes.rows[0].id;
 
-      // ── 3. حساب فروق الجرد — مطلوب إذا كان هناك فرق (لا fallback) ─────
+      // ── 3. حساب فروق الجرد — short/over أولاً، ثم fallback الموحد ─────
       let varianceAccountId: string | null = null;
       if (Math.abs(variance) > 0.001) {
         const userRes = await client.query(
-          `SELECT cashier_variance_account_id FROM users WHERE id = $1 LIMIT 1`,
+          `SELECT cashier_variance_account_id,
+                  cashier_variance_short_account_id,
+                  cashier_variance_over_account_id
+           FROM users WHERE id = $1 LIMIT 1`,
           [cashierId]
         );
-        varianceAccountId = userRes.rows[0]?.cashier_variance_account_id ?? null;
+        const ur = userRes.rows[0];
+        if (variance < 0) {
+          varianceAccountId = ur?.cashier_variance_short_account_id || ur?.cashier_variance_account_id || null;
+        } else {
+          varianceAccountId = ur?.cashier_variance_over_account_id || ur?.cashier_variance_account_id || null;
+        }
         if (!varianceAccountId) {
           throw Object.assign(
             new Error(
