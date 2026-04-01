@@ -296,6 +296,10 @@ export const ACCOUNT_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
 
   // Supplier payment: Dr = AP (liability), Cr = Bank/Cash (asset)
   ap_settlement:        { debit: ["liability"],            credit: ["asset"]             },
+
+  // Contract pharmacy receivables: Dr = AR asset, Cr = AR asset (clearing)
+  pharmacy_patient_receivable:  { debit: ["asset"],        credit: ["asset"]             },
+  pharmacy_contract_receivable: { debit: ["asset"],        credit: ["asset"]             },
 };
 
 /**

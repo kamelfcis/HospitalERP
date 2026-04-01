@@ -1,0 +1,331 @@
+TASK: Implement full DRAFT journal generation for SALES invoices from the Sales screen, using the configured journal template from "Account Management", with support for CONTRACT invoices and later cash collection by Cashier.
+
+IMPORTANT BUSINESS RULES
+==================================================
+
+1) Sales screen must generate ONLY a DRAFT accrual journal.
+2) Sales screen must NOT post any cash / cashier / treasury / bank entry.
+3) Cash collection is a later separate stage handled only by Cashier module.
+4) The journal engine must read account mappings dynamically from the configured Sales template in "Account Management".
+5) Do NOT hardcode account IDs in posting logic except as fallback suggestions for validation messages.
+6) If a required mapping is missing in the Sales template, block posting and show a clear error naming the missing line type.
+7) Contract discount account is a CONTRA REVENUE account, not an expense.
+8) VAT must be calculated on the net amount after contractual discount.
+9) Journal must remain balanced: total debit = total credit.
+10) Journal status after generation = draft.
+
+ACCOUNTING DESIGN
+==================================================
+
+The Sales module should post accrual only:
+- Revenue
+- VAT output
+- Patient receivable
+- Contract/company receivable
+- Contract discount (contra revenue)
+- COGS
+- Inventory credit
+
+The Cashier module later will handle collection:
+- Debit cashier / treasury
+- Credit patient receivable
+This collection entry is NOT part of this task and must NOT be generated from Sales screen.
+
+INVOICE TYPE DETECTION
+==================================================
+
+Treat invoice as CONTRACT if any of the following is true:
+- invoice.contractId exists
+- invoice.companyId exists
+- invoice.paymentType = 'CONTRACT'
+- invoice.invoiceType = 'CONTRACT'
+- invoice.claimType indicates insurance / contract / universal health insurance
+
+Otherwise treat invoice as CASH / SELF PAY.
+
+SOURCE OF ACCOUNTS
+==================================================
+
+The posting engine must use the Sales journal template configured in "Account Management".
+Read the mapped accounts by line type from the selected Sales template.
+
+Expected line types in the template include:
+- cogs_drugs
+- discount_allowed (used also for contract discount if mapped there)
+- revenue_drugs
+- vat_output
+- revenue_consumables
+- cogs_supplies
+- pharmacy_patient_receivable
+- pharmacy_contract_receivable
+- inventory
+
+If inventory credit is warehouse-based in the current system, allow inventory line to be resolved from warehouse GL mapping as already designed.
+
+If a required line type is not configured in the Sales template, stop and return a clear configuration error.
+
+SPECIAL ACCOUNT CATEGORY RULE
+==================================================
+
+Add a new account category/classification if not already present:
+- code: contra_revenue
+- arabic label: مخفضات الإيراد
+- english label: Contra Revenue
+
+Map these accounts to contra_revenue:
+- 4212 خصومات تعاقدية مع شركات التامين
+- 4218 خصم مسموح به صيدلية خارجية
+- 4219 خصم مسموح به صيدلية داخلية
+
+Do NOT classify these as operating expense.
+Contract discount must appear as a debit to contra revenue.
+
+AMOUNT CALCULATION RULES
+==================================================
+
+Calculate:
+- gross_amount = total line value before contract discount and before VAT
+- contract_discount_amount = total contractual discount
+- net_before_vat = gross_amount - contract_discount_amount
+- vat_amount = VAT calculated on net_before_vat
+- invoice_total = net_before_vat + vat_amount
+
+For contract invoice:
+- patient_share = amount borne by patient
+- company_share = amount borne by company / insurer / payer
+
+Validation:
+- patient_share + company_share must equal invoice_total
+- gross_amount >= contract_discount_amount
+- vat_amount >= 0
+- no negative journal lines unless explicitly supported
+- debit total must equal credit total
+
+JOURNAL GENERATION RULES
+==================================================
+
+CASE 1: CONTRACT INVOICE
+----------------------------------
+
+Generate ONE DRAFT journal for the Sales invoice from Sales screen only.
+
+DEBIT LINES:
+1) patient_share
+   line type: pharmacy_patient_receivable
+   meaning: patient copay receivable
+   suggested chart example: 12232
+   account must come from Sales template mapping
+
+2) company_share
+   line type: pharmacy_contract_receivable
+   meaning: company / insurer / government receivable
+   account must come from Sales template mapping
+   note:
+   - for universal health insurance / government payer, typical chart account is 12222
+   - for private companies, typical chart account is 12221
+   - for private insurance companies, typical chart account is 12231
+   but the engine must use configured mapping from template / contract settings if available
+
+3) contract_discount_amount
+   line type: discount_allowed
+   meaning: contract discount / contra revenue
+   suggested chart example: 4212
+   only create this line if contract_discount_amount > 0
+
+CREDIT LINES:
+4) gross_amount
+   line type: revenue_drugs and/or revenue_consumables
+   credit revenue at GROSS before discount
+   examples from chart:
+   - 4131 external pharmacy revenue
+   - 4141 internal pharmacy revenue
+   line generation rules:
+   - if invoice contains only drugs => use revenue_drugs
+   - if invoice contains only consumables => use revenue_consumables
+   - if invoice contains both => split revenue by actual line totals per category
+
+5) vat_amount
+   line type: vat_output
+   suggested chart example: 2117
+   only create if vat_amount > 0
+
+Then generate COGS / inventory part:
+
+DEBIT:
+6) total_drug_cost
+   line type: cogs_drugs
+
+7) total_consumables_cost
+   line type: cogs_supplies
+   only if applicable
+
+CREDIT:
+8) inventory value equal to total cost
+   line type: inventory
+   inventory account may come from warehouse GL mapping or configured template logic
+
+CASE 2: CASH / SELF PAY INVOICE
+----------------------------------
+
+Still generate ONLY accrual draft journal from Sales screen.
+Do NOT generate cashier entry here.
+
+DEBIT:
+1) invoice_total
+   line type: pharmacy_patient_receivable
+   patient receivable only, because collection happens later in cashier
+
+CREDIT:
+2) net_before_vat or gross split according to discount design
+   revenue line(s)
+
+3) vat_amount
+   vat_output
+
+Then COGS / inventory same as above.
+
+DISCOUNT BEHAVIOR
+==================================================
+
+A) Contract discount:
+- debit contra revenue account (4212 or mapped account)
+- credit revenue at gross
+- this is mandatory behavior for contract invoices with discount
+
+B) Normal allowed discount for non-contract invoices:
+- if business allows non-contract discount from Sales invoice, use configured discount_allowed line
+- still treat it as contra revenue, not expense
+
+REVENUE SPLIT RULE
+==================================================
+
+If invoice lines include multiple categories:
+- drugs revenue goes to revenue_drugs
+- consumables revenue goes to revenue_consumables
+- same concept for COGS:
+  - drugs cost -> cogs_drugs
+  - consumables cost -> cogs_supplies
+
+Do not collapse all sales into one account if category-specific mappings exist in template.
+
+EXAMPLE WITH NUMBERS - CONTRACT INVOICE
+==================================================
+
+Assume:
+- gross drug sales before discount = 1,000
+- contract discount = 200
+- net before VAT = 800
+- VAT 14% = 112
+- invoice total = 912
+
+Payer split:
+- patient share = 300
+- company share = 612
+
+Assume all sold items are drugs only.
+Assume cost of sold items = 550.
+
+Required DRAFT journal from Sales screen:
+
+First part: Revenue / receivables / discount / VAT
+
+DEBIT:
+- 300   patient receivable (pharmacy_patient_receivable) -> typical example 12232
+- 612   contract receivable (pharmacy_contract_receivable) -> typical example 12222 if government payer
+- 200   contract discount / contra revenue (discount_allowed) -> typical example 4212
+
+CREDIT:
+- 1,000 revenue drugs (revenue_drugs) -> typical example 4131 or 4141 حسب الصيدلية
+- 112   VAT output (vat_output) -> typical example 2117
+
+Balanced totals:
+Total debit = 1,112
+Total credit = 1,112
+
+Second part: COGS / inventory
+
+DEBIT:
+- 550   COGS drugs (cogs_drugs) -> typical example 5121 أو 5111 حسب الصيدلية
+
+CREDIT:
+- 550   Inventory (inventory) -> typical example 12312 أو 12313 أو warehouse GL inventory account
+
+IMPORTANT:
+Do NOT create any debit to cashier in this draft sales journal.
+
+EXPECTED POSTING RESULT IN THIS EXAMPLE
+==================================================
+
+The Sales screen should create a DRAFT journal that effectively means:
+
+مدين:
+- ذمم مريض 300
+- ذمم جهة/شركة 612
+- خصم تعاقد 200
+- تكلفة 550
+
+دائن:
+- إيراد 1,000
+- ضريبة قيمة مضافة مخرجات 112
+- مخزون 550
+
+This is correct because:
+- receivables + discount record the economic split of the invoice
+- revenue is shown at gross
+- contract discount is shown separately as contra revenue
+- COGS and inventory are recorded immediately
+- no cash is recognized before actual collection by cashier
+
+CASHIER LATER STAGE (NOT IN THIS TASK)
+==================================================
+
+Later, when cashier collects patient amount:
+DEBIT:
+- cashier / treasury
+
+CREDIT:
+- pharmacy_patient_receivable
+
+This later cashier entry must be generated only by Cashier module, not by Sales screen.
+
+VALIDATIONS
+==================================================
+
+Block journal generation with explicit error if:
+- Sales template not found
+- required line type missing
+- contra revenue category missing for contract discount account
+- patient_share + company_share != invoice_total
+- debit total != credit total
+- VAT calculated on wrong base
+- inventory / COGS account missing
+- revenue mapping missing for sold line category
+- contract invoice exists but contract receivable mapping missing
+
+IMPLEMENTATION NOTES
+==================================================
+
+1) Keep routes thin.
+2) Put all posting logic in a dedicated service / storage layer.
+3) Reuse existing template mapping resolution logic from Account Management.
+4) Add helper that resolves account by line type from selected template.
+5) Add helper that splits invoice amounts by category (drugs / consumables).
+6) Add helper that builds journal lines and validates balance before save.
+7) Save generated journal with status = draft.
+8) Add human-readable error messages naming the exact missing mapping line type.
+9) Do not hardcode payer account if template/config already defines it.
+10) Preserve extensibility for future service invoices and mixed invoices.
+
+DELIVERABLES
+==================================================
+
+Implement:
+- full draft sales journal generation
+- support for contract invoices
+- support for patient share + company share
+- contract discount as contra revenue
+- revenue split by category
+- COGS + inventory posting
+- template-driven mapping from Account Management
+- zero cashier posting from Sales screen
+- strict validation and clear errors

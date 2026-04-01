@@ -269,14 +269,21 @@ const methods = {
     const journalLineData: InsertJournalLine[] = [];
     let lineNum = 1;
 
+    // ── ضبط الإيراد الإجمالي قبل أي تعديل ضريبي ─────────────────────────────
+    // grossRevenue = مجموع lineTotals (قبل خصم التعاقد وقبل ضريبة القيمة المضافة)
+    // يُستخدم لحساب قيمة الخصم التعاقدي وضمان توازن القيد.
+    const grossRevenue = roundMoney(revenueDrugs + revenueSupplies);
+
     // ── AR Debit: split for contract invoices ──────────────────────────────
+    // isContract: true إذا كانت الفاتورة تعاقدية (شركة تأمين / جهة حكومية)
+    // canSplitAR: يُفعَّل متى وُجدت حصص محسوبة — لا يشترط تقاربها مع الإجمالي
+    //   (الخطأ القديم: كان يشترط |sharesSum - grossTotal| < 0.02 مما كان يُخفق
+    //    دائماً عند وجود خصم تعاقدي لأن الحصص = net وليس gross)
     const isContract = invoice.customerType === "contract";
     const patientShareTotal = parseFloat((invoice as any).patientShareTotal || "0");
     const companyShareTotal = parseFloat((invoice as any).companyShareTotal || "0");
-    const sharesSum = patientShareTotal + companyShareTotal;
-    // قارن مع subtotal (قبل الخصم) لأن الحصص محسوبة من lineTotals الإجمالية
-    const grossTotal = parseFloat((invoice as any).subtotal || invoice.netTotal || "0");
-    const canSplitAR = isContract && sharesSum > 0.001 && Math.abs(sharesSum - grossTotal) < 0.02;
+    const sharesSum = roundMoney(patientShareTotal + companyShareTotal);
+    const canSplitAR = isContract && sharesSum > 0.001;
 
     if (canSplitAR) {
       const patientARMapping = mappingMap.get("pharmacy_patient_receivable");
@@ -316,8 +323,43 @@ const methods = {
           description: `ذمة شركة تأمين — ${(invoice as any).contractCompany || "شركة"}`,
         });
       }
+
+      // ── الخصم التعاقدي (مخفضات الإيراد — contra revenue) ────────────────
+      // contractDiscountAmount = الإيراد الإجمالي − مجموع الحصص (مريض + شركة)
+      // يمثّل القيمة التي تنازلت عنها الصيدلية بموجب قواعد التغطية التعاقدية.
+      // يُرحَّل مديناً على discount_allowed (حساب مخفضات إيراد — contra revenue).
+      // بهذا يتوازن القيد: مدين (مريض + شركة + خصم) = دائن (إيراد إجمالي).
+      const contractDiscountAmount = roundMoney(grossRevenue - sharesSum);
+      if (contractDiscountAmount > 0.01) {
+        const discountMapping = mappingMap.get("discount_allowed");
+        if (discountMapping?.debitAccountId) {
+          journalLineData.push({
+            journalEntryId: "",
+            lineNumber: lineNum++,
+            accountId: discountMapping.debitAccountId,
+            debit: String(contractDiscountAmount.toFixed(2)),
+            credit: "0",
+            description: "خصم تعاقدي — مخفضات الإيراد",
+          });
+        } else {
+          await logAcctEvent({
+            sourceType:   "sales_invoice",
+            sourceId:     invoiceId,
+            eventType:    "contract_discount_account_missing",
+            status:       "completed",
+            errorMessage: [
+              `[تحذير] فاتورة تعاقد بها خصم تعاقدي (${contractDiscountAmount.toFixed(2)} ج.م) لكن لم يُعيَّن حساب discount_allowed.`,
+              `• القيد سيُنشأ غير متوازن إذا لم يُحدَّد حساب الخصم.`,
+              `الحل: أضف ربط discount_allowed في صفحة ربط الحسابات تحت فواتير المبيعات.`,
+            ].join("\n"),
+          });
+        }
+      }
+      // ملاحظة: لا يُضاف discountValue (الخصم اليدوي للصيدلاني) هنا لأن فواتير
+      // التعاقد لا يُطبَّق عليها خصم يدوي — الخصم كله يأتي من قواعد التغطية.
+      // إذا وُجد discountValue على فاتورة تعاقدية يُعامَل كخطأ في البيانات.
     } else {
-      // ── Audit: contract invoice posted to general AR without split ──────────
+      // ── مسار غير التعاقد (نقدي / تأمين بدون حصص محسوبة) ─────────────────
       if (isContract && netTotal > 0) {
         await logAcctEvent({
           sourceType:   "sales_invoice",
@@ -328,7 +370,7 @@ const methods = {
             `[تحذير] فاتورة تعاقد رُحِّلت على حساب الذمم العام دون تقسيم حصص.`,
             `• صافي الفاتورة: ${netTotal.toFixed(2)} ج.م`,
             `• مجموع الحصص المسجّلة: ${sharesSum.toFixed(2)} ج.م (مريض ${patientShareTotal.toFixed(2)} + شركة ${companyShareTotal.toFixed(2)})`,
-            `السبب: الحصص لا تتطابق مع الصافي (فارق > 0.02 ج.م) أو لم تُحسب بعد.`,
+            `السبب: الحصص لم تُحسب بعد (sharesSum = 0) — يرجى إعادة اعتماد الفاتورة بعد إعداد قواعد التغطية.`,
           ].join("\n"),
         });
       }
@@ -339,21 +381,22 @@ const methods = {
           accountId: debitAccountId,
           debit: String(netTotal.toFixed(2)),
           credit: "0",
-          description: "مدينون - في انتظار التحصيل",
+          description: isContract ? "ذمم تعاقد — بانتظار تقسيم الحصص" : "مدينون - في انتظار التحصيل",
         });
       }
-    }
 
-    const discountMapping = mappingMap.get("discount_allowed");
-    if (discountMapping?.debitAccountId && discountValue > 0.001) {
-      journalLineData.push({
-        journalEntryId: "",
-        lineNumber: lineNum++,
-        accountId: discountMapping.debitAccountId,
-        debit: String(discountValue.toFixed(2)),
-        credit: "0",
-        description: "خصم مسموح به",
-      });
+      // ── الخصم اليدوي للصيدلاني (للفواتير غير التعاقدية فقط) ─────────────
+      const discountMapping = mappingMap.get("discount_allowed");
+      if (discountMapping?.debitAccountId && discountValue > 0.001) {
+        journalLineData.push({
+          journalEntryId: "",
+          lineNumber: lineNum++,
+          accountId: discountMapping.debitAccountId,
+          debit: String(discountValue.toFixed(2)),
+          credit: "0",
+          description: "خصم مسموح به",
+        });
+      }
     }
 
     const totalCogs = cogsDrugs + cogsSupplies;
