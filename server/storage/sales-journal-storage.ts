@@ -285,9 +285,31 @@ const methods = {
     const sharesSum = roundMoney(patientShareTotal + companyShareTotal);
     const canSplitAR = isContract && sharesSum > 0.001;
 
+    // ── متغير: الضريبة الفعلية للتعاقد (تُحسب مبكراً وتُستخدم لاحقاً) ──────
+    // للفواتير التعاقدية: الضريبة تُحتسب على الصافي بعد الخصم التعاقدي
+    //   effectiveVAT = totalTaxAmount × (sharesSum / grossRevenue)
+    //   مثال: 14 × (90/100) = 12.6 (ضريبة على الصافي، وليس على الإجمالي)
+    // القيمة -1 تعني "لم تُطبَّق" (للفواتير غير التعاقدية يبقى المسار القديم)
+    let contractEffectiveVat = -1;
+
     if (canSplitAR) {
       const patientARMapping = mappingMap.get("pharmacy_patient_receivable");
       const companyARMapping = mappingMap.get("pharmacy_contract_receivable");
+
+      // ── حساب الضريبة الفعلية (على الصافي بعد الخصم) ─────────────────────
+      // الضريبة المخزَّنة totalTaxAmount محتسبة على سعر القائمة (قبل الخصم التعاقدي).
+      // للحصول على الضريبة الصحيحة (على الصافي) نضرب في نسبة الصافي إلى الإجمالي.
+      const rawTaxAmount = parseFloat(invoice.totalTaxAmount || "0");
+      if (rawTaxAmount > 0.001 && grossRevenue > 0.001) {
+        contractEffectiveVat = roundMoney(rawTaxAmount * (sharesSum / grossRevenue));
+      } else {
+        contractEffectiveVat = 0;
+      }
+      // الضريبة تُوزَّع نسبياً بين المريض والشركة
+      const patientVatShare = (sharesSum > 0.001 && patientShareTotal > 0.001)
+        ? roundMoney(contractEffectiveVat * (patientShareTotal / sharesSum))
+        : 0;
+      const companyVatShare = roundMoney(contractEffectiveVat - patientVatShare);
 
       // ── Audit: warn if contract AR split falls back to default account ─────
       const missingPatientMapping = !patientARMapping?.debitAccountId && patientShareTotal > 0.001;
@@ -307,28 +329,37 @@ const methods = {
         });
       }
 
-      if (patientShareTotal > 0.001) {
+      // ── مدين: ذمة مريض (حصة + الضريبة المقابلة) ─────────────────────────
+      // المبلغ المدين = حصة المريض + نصيبه من الضريبة الفعلية
+      const totalPatientAR = roundMoney(patientShareTotal + patientVatShare);
+      if (totalPatientAR > 0.001) {
         const acct = patientARMapping?.debitAccountId || debitAccountId;
         journalLineData.push({
           journalEntryId: "", lineNumber: lineNum++, accountId: acct,
-          debit: String(patientShareTotal.toFixed(2)), credit: "0",
+          debit: String(totalPatientAR.toFixed(2)), credit: "0",
           description: `ذمة مريض — ${invoice.customerName || "عميل عقد"}`,
         });
       }
-      if (companyShareTotal > 0.001) {
+      // ── مدين: ذمة شركة (حصة + الضريبة المقابلة) ─────────────────────────
+      // المبلغ المدين = حصة الشركة + نصيبها من الضريبة الفعلية
+      const totalCompanyAR = roundMoney(companyShareTotal + companyVatShare);
+      if (totalCompanyAR > 0.001) {
         const acct = companyARMapping?.debitAccountId || debitAccountId;
         journalLineData.push({
           journalEntryId: "", lineNumber: lineNum++, accountId: acct,
-          debit: String(companyShareTotal.toFixed(2)), credit: "0",
+          debit: String(totalCompanyAR.toFixed(2)), credit: "0",
           description: `ذمة شركة تأمين — ${(invoice as any).contractCompany || "شركة"}`,
         });
       }
 
-      // ── الخصم التعاقدي (مخفضات الإيراد — contra revenue) ────────────────
+      // ── مدين: الخصم التعاقدي (مخفضات الإيراد — contra revenue) ──────────
       // contractDiscountAmount = الإيراد الإجمالي − مجموع الحصص (مريض + شركة)
       // يمثّل القيمة التي تنازلت عنها الصيدلية بموجب قواعد التغطية التعاقدية.
       // يُرحَّل مديناً على discount_allowed (حساب مخفضات إيراد — contra revenue).
-      // بهذا يتوازن القيد: مدين (مريض + شركة + خصم) = دائن (إيراد إجمالي).
+      //
+      // التوازن مع ضريبة:
+      //   Dr (مريض+ضريبته) + Dr (شركة+ضريبتها) + Dr (خصم) = Cr (إيراد إجمالي) + Cr (ضريبة فعلية)
+      //   (sharesSum + effectiveVAT) + (gross - sharesSum) = gross + effectiveVAT  ✓
       const contractDiscountAmount = roundMoney(grossRevenue - sharesSum);
       if (contractDiscountAmount > 0.01) {
         const discountMapping = mappingMap.get("discount_allowed");
@@ -515,26 +546,42 @@ const methods = {
     }
 
     // ── ضريبة القيمة المضافة — vat_output ─────────────────────────────────
-    // يُحقن فقط عندما تحمل الفاتورة ضريبة مُحتسبة (totalTaxAmount > 0)
-    // المعادلة: Dr Receivables = netRevenue + taxAmount
-    //            Cr Revenue = netRevenue (الإيراد صافي بعد خصم الضريبة)
-    //            Cr VAT Output = taxAmount
-    // نتأكد أن مبالغ الإيراد تحمل القيمة بعد خصم الضريبة بشكل نسبي
+    // مسار التعاقد (canSplitAR = true):
+    //   الضريبة الفعلية = totalTaxAmount × (sharesSum/grossRevenue) حُسبت مسبقاً.
+    //   الإيراد يُرحَّل بالإجمالي قبل الخصم (grossRevenue). لا تعديل على revenueDrugs.
+    //   الذمم (مريض + شركة) تتضمن نصيبهم من الضريبة الفعلية.
+    //   هذا يحقق: Dr(AR+VAT) + Dr(contractDiscount) = Cr(grossRevenue) + Cr(effectiveVAT)
+    //
+    // مسار غير التعاقد (canSplitAR = false):
+    //   الضريبة الكاملة = totalTaxAmount.
+    //   الإيراد يُحفَظ بالإجمالي ويُضاف VAT Output كدائن. القيد متوازن بالتعريف.
     {
       const totalTaxAmount = parseFloat(invoice.totalTaxAmount || "0");
       if (totalTaxAmount > 0.001) {
         const vatOutputMapping = mappingMap.get("vat_output");
-        if (vatOutputMapping?.creditAccountId) {
-          // اخصم الضريبة نسبياً من الإيرادات مع تثبيت المجموع بدقة 2 خانة عشرية
-          // (رياضياً: netRevDrugs + netRevSupplies = totalRevenue - totalTaxAmount)
-          const totalRevenue = revenueDrugs + revenueSupplies;
-          if (totalRevenue > 0.001) {
-            const netRevTotal = parseFloat((totalRevenue - totalTaxAmount).toFixed(2));
-            const taxFraction = totalTaxAmount / totalRevenue;
-            const netRevDrugs = parseFloat((revenueDrugs * (1 - taxFraction)).toFixed(2));
-            revenueDrugs    = netRevDrugs;
-            revenueSupplies = parseFloat((netRevTotal - netRevDrugs).toFixed(2));
+        if (!vatOutputMapping?.creditAccountId) {
+          throw new Error(
+            `الفاتورة تحمل ضريبة قيمة مضافة (${totalTaxAmount.toFixed(2)} ج.م) لكن لم يُعيَّن حساب vat_output في ربط حسابات فواتير المبيعات — يرجى إضافة ربط الحساب من صفحة ربط الحسابات قبل استخدام ميزة الضريبة`
+          );
+        }
+
+        if (contractEffectiveVat >= 0) {
+          // ── مسار التعاقد: الضريبة على الصافي بعد الخصم ─────────────────
+          // الإيراد سبق أن أُضيف بالإجمالي (grossRevenue) في قسم سطور الإيراد.
+          // هنا نُضيف فقط دائن الضريبة الفعلية (لا تعديل على revenueDrugs).
+          if (contractEffectiveVat > 0.001) {
+            journalLineData.push({
+              journalEntryId: "",
+              lineNumber: lineNum++,
+              accountId: vatOutputMapping.creditAccountId,
+              debit: "0",
+              credit: String(contractEffectiveVat.toFixed(2)),
+              description: "ضريبة القيمة المضافة — مخرجات (تعاقد)",
+            });
           }
+        } else {
+          // ── مسار غير التعاقد: الضريبة الكاملة على الإجمالي ─────────────
+          // الإيراد أُضيف بالإجمالي أيضاً، نُضيف دائن الضريبة الكاملة.
           journalLineData.push({
             journalEntryId: "",
             lineNumber: lineNum++,
@@ -543,12 +590,6 @@ const methods = {
             credit: String(totalTaxAmount.toFixed(2)),
             description: "ضريبة القيمة المضافة — مخرجات",
           });
-        } else {
-          // لا يوجد ربط vat_output — توقف القيد حتى يُعرَّف الحساب
-          // يمنع دمج الضريبة في الإيراد بصمت (خطر رقابي ومحاسبي)
-          throw new Error(
-            `الفاتورة تحمل ضريبة قيمة مضافة (${totalTaxAmount.toFixed(2)} ج.م) لكن لم يُعيَّن حساب vat_output في ربط حسابات فواتير المبيعات — يرجى إضافة ربط الحساب من صفحة ربط الحسابات قبل استخدام ميزة الضريبة`
-          );
         }
       }
     }
