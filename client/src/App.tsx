@@ -1,5 +1,5 @@
 import { Switch, Route, Redirect, useLocation } from "wouter";
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -261,43 +261,37 @@ function AuthenticatedApp() {
   const [, navigate] = useLocation();
   const didInitialRedirectRef = useRef(false);
 
-  // ─── الشرط 3: هل هذا تسجيل دخول طازج (قادم من Login) أم تحديث صفحة؟ ───────
-  // use-auth.tsx يضع علامة "__plr" في sessionStorage عند نجاح تسجيل الدخول.
-  // إذا لم توجد العلامة → المستخدم حدّث الصفحة → نحترم الـ URL الحالي ولا نُحوِّل.
-  const isFreshLogin = useMemo(
-    () => () => !!sessionStorage.getItem("__plr"),
-    []
-  );
-
   useEffect(() => {
-    // ─── الشرط 1: تأكد من اكتمال تحميل بيانات المستخدم والصلاحيات ───────────
+    // ─── الشرط 1: انتظر اكتمال بيانات المستخدم والصلاحيات ──────────────────
     if (!isAuthenticated || !user || isLoading) return;
     if (didInitialRedirectRef.current) return;
     didInitialRedirectRef.current = true;
 
     const target = user.defaultRoute;
-    if (!target || target === "/") return; // لا توجد شاشة افتتاحية مخصصة
+    if (!target || target === "/") return;
 
-    const freshLogin = isFreshLogin();
-    const currentPath = window.location.pathname;
-
-    // ─── الشرط 3: وجّه فقط إذا كان تسجيل دخول طازج أو المستخدم على "/" ─────────
-    const shouldRedirect = freshLogin || currentPath === "/";
+    // ─── الشرط 3: فرّق بين تسجيل دخول طازج وتحديث صفحة ────────────────────
+    // "__plr" يوضعه use-auth بعد نجاح تسجيل الدخول مباشرةً
+    const isFreshLogin = !!sessionStorage.getItem("__plr");
+    const shouldRedirect = isFreshLogin || window.location.pathname === "/";
     if (!shouldRedirect) return;
 
-    // ─── الشرط 2: تحقق أن للمستخدم صلاحية الوصول للشاشة الافتتاحية ────────────
+    // ─── الشرط 2: تحقق من صلاحية الوصول للشاشة الافتتاحية ─────────────────
     const required = ROUTE_REQUIRED_PERMISSION[target];
     const hasAccess =
       required === undefined || // مسار غير مُعرَّف في الخريطة → نثق فيه
-      required === null ||        // لا صلاحية خاصة مطلوبة
+      required === null ||       // لا صلاحية خاصة مطلوبة
       permissions.includes(required);
 
-    if (freshLogin) sessionStorage.removeItem("__plr"); // استخدمنا العلامة، نحذفها
+    // احذف العلامة قبل الـ navigate (مهم: يحدث قبل أي async)
+    if (isFreshLogin) sessionStorage.removeItem("__plr");
 
+    // ─── الـ Prefetch حدث بالفعل (في AuthProvider) قبل هذا الـ effect ────────
+    // الـ redirect فوري — لا ينتظر اكتمال الـ prefetch
     if (hasAccess) {
       navigate(target);
     }
-    // إذا لم يكن لديه صلاحية: Fallback آمن — يبقى حيث هو، صفحة الـ G ستعرض رسالة "غير مصرح"
+    // إذا لم يكن لديه صلاحية: Fallback آمن — يبقى حيث هو
   }, [isAuthenticated, user, isLoading, permissions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // إعادة التعيين عند تسجيل الخروج حتى يعمل التوجيه في الجلسة القادمة

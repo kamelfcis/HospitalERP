@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useEffect } from "react";
+import { createContext, useContext, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -53,38 +53,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     retry: false,
   });
 
+  // ── Guard: تأكد أن الـ prefetch يحدث مرة واحدة فقط لكل session ────────────
+  // نستخدم userId حتى يُعاد الـ prefetch لو تسجّل مستخدم مختلف
+  const lastPrefetchedUserId = useRef<string | null>(null);
+
   useEffect(() => {
     if (!data?.user) return;
 
-    // ── البيانات العامة المشتركة بين جميع الشاشات ───────────────────────────
-    const commonKeys = [
-      ["/api/departments"],
-      ["/api/warehouses"],
-      ["/api/doctors"],
-    ];
-    for (const queryKey of commonKeys) {
-      queryClient.prefetchQuery({ queryKey });
-    }
+    // تجنّب double-prefetch عند إعادة الـ render
+    if (lastPrefetchedUserId.current === data.user.id) return;
+    lastPrefetchedUserId.current = data.user.id;
 
-    // ── Prefetch مبكّر لبيانات الشاشة الافتتاحية ────────────────────────────
-    // يُقلل الانتظار بتحميل البيانات بينما يُحمَّل chunk الـ JS للصفحة
+    const perms = data.permissions;
+    const has = (p: string) => perms.includes(p);
+
+    // ── البيانات العامة (خفيفة، مشتركة بين جميع الشاشات) ────────────────────
+    // prefetchQuery آمن: لا يُعيد الجلب لو البيانات موجودة في الكاش
+    queryClient.prefetchQuery({ queryKey: ["/api/departments"] });
+    queryClient.prefetchQuery({ queryKey: ["/api/warehouses"] });
+
+    // ── Prefetch مبكّر لبيانات الشاشة الافتتاحية (fire-and-forget) ──────────
+    // الـ redirect يحدث فوراً بعد هذا الـ effect بدون انتظار اكتمال الـ prefetch
+    // الصفحة تستفيد من البيانات لو وصلت قبلها، وإلا تُكمل loading طبيعي
     const route = data.user.defaultRoute;
-    if (route === "/cashier-collection") {
+
+    if (route === "/cashier-collection" && has("cashier.view")) {
       queryClient.prefetchQuery({ queryKey: ["/api/cashier/units"] });
       queryClient.prefetchQuery({ queryKey: ["/api/cashier/my-open-shift"] });
       queryClient.prefetchQuery({ queryKey: ["/api/receipt-settings"] });
-    } else if (route === "/sales-invoices") {
+
+    } else if (route === "/sales-invoices" && has("sales.view")) {
+      // pharmacists list خفيف (أسماء فقط) — آمن للـ prefetch
       queryClient.prefetchQuery({ queryKey: ["/api/sales-invoices/pharmacists"] });
-      queryClient.prefetchQuery({ queryKey: ["/api/items"] });
-    } else if (route === "/patient-invoices") {
-      queryClient.prefetchQuery({ queryKey: ["/api/patients"] });
+      // لا نعمل prefetch لـ /api/items — قد يكون كبير جداً
+
+    } else if (route === "/patient-invoices" && has("patient_invoices.view")) {
       queryClient.prefetchQuery({ queryKey: ["/api/doctors"] });
-    } else if (route === "/cashier-handover") {
+
+    } else if (route === "/cashier-handover" && has("cashier.handover_view")) {
       queryClient.prefetchQuery({ queryKey: ["/api/cashier/units"] });
-    } else if (route === "/clinic-booking") {
+
+    } else if (route === "/clinic-booking" && has("clinic.book")) {
       queryClient.prefetchQuery({ queryKey: ["/api/doctors"] });
+
+    } else if (route === "/store-transfers" && has("transfers.view")) {
+      queryClient.prefetchQuery({ queryKey: ["/api/warehouses"] });
+
+    } else if (route === "/supplier-receiving" && has("receiving.view")) {
+      queryClient.prefetchQuery({ queryKey: ["/api/warehouses"] });
     }
-  }, [data?.user]);
+  }, [data?.user?.id]); // userId فقط — يمنع double-prefetch عند إعادة الـ render
 
   const loginMutation = useMutation({
     mutationFn: async ({ username, password }: { username: string; password: string }) => {
@@ -105,6 +123,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.clear();
+      // إعادة تعيين الـ guard لضمان الـ prefetch عند الجلسة القادمة
+      lastPrefetchedUserId.current = null;
     },
   });
 
