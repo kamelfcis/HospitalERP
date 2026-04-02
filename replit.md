@@ -33,7 +33,7 @@ The system uses a RESTful JSON API. Drizzle ORM manages PostgreSQL interactions,
 - **Items Excel Import/Export**: Bulk management of items via xlsx with upsert functionality and barcode handling.
 - **Customer Credit Payments Module**: Manages customer credit, integrating with cashier handover summaries.
 - **Supplier Payments Module**: Manages supplier payments with dedicated database schemas, backend storage for balances, payment processing routes, and GL journal integration.
-- **Sales Return Accounting**: Two-stage journal entry system for sales returns, integrating with inventory movements and cashier refunds.
+- **Sales Return Accounting**: Two-stage journal entry system for sales returns, integrating with inventory movements and cashier refunds. **Credit Invoice Returns Rule (PERMANENT)**: Credit invoices (`customer_type='credit'`) appear in the returns search screen with amber visual distinction. Their returns are auto-set to `status='collected'` (no cashier step needed — debt is reduced directly via GL journal). Cash/delivery/contract returns remain `finalized` and appear in the cashier refund queue. Enforced in `patient-invoices-returns-storage.ts` (`searchSaleInvoicesForReturn`, `getSaleInvoiceForReturn`, `createSalesReturn`).
 - **Purchase Returns Module**: Full module for returning purchased items to suppliers, including invoice-linked returns, atomic lot decrement, and GL journal reversal.
 - **Delivery Payment Collection**: Full module for collecting delivery invoices, featuring atomic receipt creation with GL journal, shift totals integration, and cashier handover report columns.
 - **Thermal Receipt Printing**: Full 80mm thermal receipt system for the cashier module, with auto-printing, customizable settings, and a reprint function.

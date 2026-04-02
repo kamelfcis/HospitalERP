@@ -10,6 +10,8 @@ export interface ReturnSearchResult {
   invoiceDate: string;
   warehouseId: string;
   warehouseName: string;
+  /** نوع العميل: cash | credit | delivery | contract */
+  customerType: string;
   customerName: string | null;
   netTotal: string;
   itemCount: number;

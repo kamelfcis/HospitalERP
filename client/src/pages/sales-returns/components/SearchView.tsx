@@ -269,6 +269,8 @@ function ItemSearchField({
 
 // ============================================================
 //  Sub-component: جدول نتائج البحث
+//  ملاحظة: فواتير الآجل (credit) تظهر بخلفية كهرمانية مميّزة
+//  ومرتجعاتها تُغلق تلقائياً (collected) دون مرور على الكاشير.
 // ============================================================
 function SearchResultsTable({
   results, onSelect,
@@ -278,39 +280,68 @@ function SearchResultsTable({
 }) {
   return (
     <div className="border rounded-lg overflow-hidden" data-testid="section-results">
+      {/* تلميح توضيحي لفواتير الآجل */}
+      {results.some((r) => r.customerType === "credit") && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b text-[12px] text-amber-700 dark:text-amber-400" dir="rtl">
+          <span className="inline-block w-3 h-3 rounded-sm bg-amber-200 dark:bg-amber-700 border border-amber-400 flex-shrink-0" />
+          فواتير الآجل (المظلّلة) — مرتجعاتها تُخصَم من ذمة العميل مباشرة ولا تظهر عند الكاشير
+        </div>
+      )}
       <table className="w-full text-[13px]" dir="rtl">
         <thead>
           <tr className="peachtree-grid-header">
             <th className="py-1.5 px-3 text-right font-bold">رقم الفاتورة</th>
             <th className="py-1.5 px-3 text-right">التاريخ</th>
             <th className="py-1.5 px-3 text-right">المخزن</th>
-            <th className="py-1.5 px-3 text-right">العميل</th>
+            <th className="py-1.5 px-3 text-right">العميل / النوع</th>
             <th className="py-1.5 px-3 text-center">عدد الأصناف</th>
             <th className="py-1.5 px-3 text-left">الصافي</th>
             <th className="py-1.5 px-3 text-center">اختيار</th>
           </tr>
         </thead>
         <tbody>
-          {results.map((r) => (
-            <tr key={r.id} className="border-b hover:bg-muted/30" data-testid={`row-result-${r.invoiceNumber}`}>
-              <td className="py-1.5 px-3 font-bold text-[14px]">{r.invoiceNumber}</td>
-              <td className="py-1.5 px-3">{new Date(r.invoiceDate).toLocaleDateString("ar-EG")}</td>
-              <td className="py-1.5 px-3">{r.warehouseName}</td>
-              <td className="py-1.5 px-3">{r.customerName || "نقدي"}</td>
-              <td className="py-1.5 px-3 text-center">{r.itemCount}</td>
-              <td className="py-1.5 px-3 text-left font-mono font-semibold">{parseFloat(r.netTotal).toFixed(2)}</td>
-              <td className="py-1.5 px-3 text-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onSelect(r.id)}
-                  data-testid={`button-select-${r.invoiceNumber}`}
-                >
-                  اختيار
-                </Button>
-              </td>
-            </tr>
-          ))}
+          {results.map((r) => {
+            const isCredit = r.customerType === "credit";
+            return (
+              <tr
+                key={r.id}
+                className={[
+                  "border-b",
+                  isCredit
+                    ? "bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                    : "hover:bg-muted/30",
+                ].join(" ")}
+                data-testid={`row-result-${r.invoiceNumber}`}
+              >
+                <td className="py-1.5 px-3 font-bold text-[14px]">{r.invoiceNumber}</td>
+                <td className="py-1.5 px-3">{new Date(r.invoiceDate).toLocaleDateString("ar-EG")}</td>
+                <td className="py-1.5 px-3">{r.warehouseName}</td>
+                <td className="py-1.5 px-3">
+                  <div className="flex items-center gap-1.5">
+                    <span>{r.customerName || "نقدي"}</span>
+                    {isCredit && (
+                      <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 leading-none">
+                        آجل
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="py-1.5 px-3 text-center">{r.itemCount}</td>
+                <td className="py-1.5 px-3 text-left font-mono font-semibold">{parseFloat(r.netTotal).toFixed(2)}</td>
+                <td className="py-1.5 px-3 text-center">
+                  <Button
+                    variant={isCredit ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => onSelect(r.id)}
+                    className={isCredit ? "bg-amber-500 hover:bg-amber-600 text-white border-0" : ""}
+                    data-testid={`button-select-${r.invoiceNumber}`}
+                  >
+                    اختيار
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

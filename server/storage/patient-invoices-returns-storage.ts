@@ -36,10 +36,23 @@ import { logger } from "../lib/logger";
 
 const methods = {
   /*
-   * ملاحظة أمنية: فواتير المبيعات المؤهلة للمرتجع يجب أن تكون:
-   *   status = 'collected'  → الكاشير حصّل الكاش فعلياً
-   *   journal_status = 'completed' → القيد المحاسبي مكتمل
-   * لا يجوز مرتجع على فاتورة مرحّلة (finalized) لم يُحصَّل بعد.
+   * ══════════════════════════════════════════════════════════════════════════
+   *  قاعدة عامة — أهلية فاتورة المبيعات لإنشاء مرتجع عليها
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   *  ① فاتورة نقدية / توصيل / تعاقد:
+   *     - status = 'collected'      ← الكاشير حصّل المبلغ فعلياً من الخزنة
+   *     - journal_entries.status = 'posted'  ← القيد المحاسبي مكتمل
+   *     - مرتجعها → status = 'finalized' → يظهر عند الكاشير لصرف الأموال
+   *
+   *  ② فاتورة آجل (customer_type = 'credit'):
+   *     - status = 'finalized'      ← لا تمر على الكاشير أبداً (آجل)
+   *     - لا يُشترط journal_entries.status = 'posted' ← القيد يبقى draft حتى يُسدَّد
+   *     - مرتجعها → status = 'collected' مباشرة ← لا كاشير لأنه لا يوجد نقد يُرَدّ
+   *       (المردود يُخصم من ذمة العميل تلقائياً عبر القيد المحاسبي)
+   *
+   *  ③ مرتجع الآجل لا يظهر في شاشة الكاشير (status = 'collected' من اللحظة الأولى)
+   * ══════════════════════════════════════════════════════════════════════════
    */
   async searchSaleInvoicesForReturn(this: DatabaseStorage, params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string; allowedWarehouseIds?: string[] }): Promise<any[]> {
     let resolvedItemId: string | null = null;
@@ -90,24 +103,35 @@ const methods = {
       params.allowedWarehouseIds.forEach((id) => vals.push(id));
     }
 
-    // GUARD: check actual journal_entries.status = 'posted', not just the header flag.
-    // The header journal_status='posted' only means the journal entry was CREATED at finalize time
-    // (it starts as 'draft'). The real posting happens at cashier collection.
+    /*
+     * ══ شرط الأهلية — يتطابق مع القاعدة العامة المُوثَّقة فوق ══════════════
+     * ① نقدي/توصيل/تعاقد: status=collected + قيد محاسبي مُرحَّل
+     * ② آجل:               status=finalized  (لا يشترط قيد مُرحَّل)
+     * ══════════════════════════════════════════════════════════════════════════
+     */
     const q = `
       SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
              h.warehouse_id AS "warehouseId", w.name_ar AS "warehouseName",
+             h.customer_type AS "customerType",
              h.customer_name AS "customerName", h.net_total AS "netTotal",
              (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id = h.id) AS "itemCount"
       FROM sales_invoice_headers h
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
       WHERE h.is_return = false
-        AND h.status = 'collected'
-        AND h.journal_status = 'posted'
-        AND EXISTS (
-          SELECT 1 FROM journal_entries je
-          WHERE je.source_type = 'sales_invoice'
-            AND je.source_document_id = h.id
-            AND je.status = 'posted'
+        AND (
+          /* ① نقدي/توصيل/تعاقد — مشروط بالتحصيل والقيد */
+          (
+            h.status = 'collected'
+            AND h.journal_status = 'posted'
+            AND EXISTS (
+              SELECT 1 FROM journal_entries je
+              WHERE je.source_type = 'sales_invoice'
+                AND je.source_document_id = h.id
+                AND je.status = 'posted'
+            )
+          )
+          /* ② آجل — يكفي أن تكون مرحّلة */
+          OR (h.customer_type = 'credit' AND h.status = 'finalized')
         )${whereExtra}
       ORDER BY h.invoice_date DESC, h.invoice_number DESC
       LIMIT 50
@@ -117,6 +141,7 @@ const methods = {
   },
 
   async getSaleInvoiceForReturn(this: DatabaseStorage, invoiceId: string): Promise<any | null> {
+    /* يتطابق مع القاعدة العامة — ① نقدي: collected+posted ② آجل: finalized */
     const hdr = await db.execute(sql`
       SELECT h.id, h.invoice_number AS "invoiceNumber", h.invoice_date AS "invoiceDate",
              h.warehouse_id AS "warehouseId", w.name_ar AS "warehouseName",
@@ -127,12 +152,17 @@ const methods = {
       FROM sales_invoice_headers h
       LEFT JOIN warehouses w ON w.id = h.warehouse_id
       WHERE h.id = ${invoiceId} AND h.is_return = false
-        AND h.status = 'collected' AND h.journal_status = 'posted'
-        AND EXISTS (
-          SELECT 1 FROM journal_entries je
-          WHERE je.source_type = 'sales_invoice'
-            AND je.source_document_id = h.id
-            AND je.status = 'posted'
+        AND (
+          /* ① نقدي/توصيل/تعاقد */
+          (h.status = 'collected' AND h.journal_status = 'posted'
+           AND EXISTS (
+             SELECT 1 FROM journal_entries je
+             WHERE je.source_type = 'sales_invoice'
+               AND je.source_document_id = h.id
+               AND je.status = 'posted'
+           ))
+          /* ② آجل */
+          OR (h.customer_type = 'credit' AND h.status = 'finalized')
         )
     `);
     if (!hdr.rows.length) return null;
@@ -182,23 +212,38 @@ const methods = {
       const orig = origHeader.rows[0] as Record<string, unknown>;
       if (!orig) throw new Error("الفاتورة الأصلية غير موجودة");
       if (orig.is_return) throw new Error("لا يمكن إرجاع فاتورة مرتجع");
-      if (orig.status !== "collected") {
-        throw new Error("لا يمكن إنشاء مرتجع لأن الفاتورة الأصلية لم تُحصّل بالكامل من الخزنة");
+
+      /*
+       * ══ حراسة الحالة — مُتطابقة مع القاعدة العامة ══════════════════════════
+       * ① نقدي/توصيل/تعاقد: يجب أن تكون محصَّلة + قيد مُرحَّل
+       * ② آجل:               يكفي أن تكون مرحَّلة (finalized) — لا كاشير
+       * مرتجع الآجل → status=collected مباشرة (لا نقد يُرَدّ → لا يظهر بالكاشير)
+       * ════════════════════════════════════════════════════════════════════════
+       */
+      const isCreditInvoice = orig.customer_type === "credit";
+
+      if (!isCreditInvoice && orig.status !== "collected") {
+        throw new Error("لا يمكن إنشاء مرتجع لأن الفاتورة الأصلية لم تُحصَّل بالكامل من الخزنة");
       }
-      // STRUCTURAL GUARD: verify ACTUAL journal_entries.status, not just the header flag.
-      // header.journal_status='posted' only means the entry was created (as draft) at finalize time.
-      // The entry is only truly posted after cashier collection completes it.
-      const jeCheck = await tx.execute(sql`
-        SELECT status FROM journal_entries
-        WHERE source_type = 'sales_invoice'
-          AND source_document_id = ${data.originalInvoiceId}
-        LIMIT 1
-      `);
-      const jeStatus = (jeCheck.rows[0] as Record<string, unknown> | undefined)?.status as string | undefined;
-      if (jeStatus !== "posted") {
-        const detail = !jeStatus ? "لا يوجد قيد مرتبط بالفاتورة" : `حالة القيد: ${jeStatus}`;
-        throw new Error(`لا يمكن إنشاء مرتجع قبل اكتمال القيد المالي للفاتورة الأصلية (${detail})`);
+      if (isCreditInvoice && orig.status !== "finalized") {
+        throw new Error("لا يمكن إنشاء مرتجع — الفاتورة الآجل يجب أن تكون مرحَّلة");
       }
+
+      // STRUCTURAL GUARD: نقدي فقط — الآجل لا يشترط قيداً مُرحَّلاً
+      if (!isCreditInvoice) {
+        const jeCheck = await tx.execute(sql`
+          SELECT status FROM journal_entries
+          WHERE source_type = 'sales_invoice'
+            AND source_document_id = ${data.originalInvoiceId}
+          LIMIT 1
+        `);
+        const jeStatus = (jeCheck.rows[0] as Record<string, unknown> | undefined)?.status as string | undefined;
+        if (jeStatus !== "posted") {
+          const detail = !jeStatus ? "لا يوجد قيد مرتبط بالفاتورة" : `حالة القيد: ${jeStatus}`;
+          throw new Error(`لا يمكن إنشاء مرتجع قبل اكتمال القيد المالي للفاتورة الأصلية (${detail})`);
+        }
+      }
+
       if (orig.warehouse_id !== data.warehouseId) throw new Error("المخزن لا يتطابق مع فاتورة البيع الأصلية");
 
       const origLines = await tx.execute(sql`
@@ -294,6 +339,12 @@ const methods = {
       const finalNetAmount  = parseFloat(totalReturnNetAmount.toFixed(2));
       const finalGrossAmount= parseFloat(totalReturnGrossAmount.toFixed(2));
 
+      /*
+       * مرتجع الآجل → collected مباشرة (لا نقد يُرَدّ → لا يظهر عند الكاشير)
+       * مرتجع النقدي → finalized (يظهر عند الكاشير لصرف الأموال)
+       */
+      const returnStatus = isCreditInvoice ? "collected" : "finalized";
+
       const hdr = await tx.execute(sql`
         INSERT INTO sales_invoice_headers
           (invoice_number, invoice_date, warehouse_id, pharmacy_id, customer_type, customer_name, contract_company,
@@ -303,7 +354,7 @@ const methods = {
         VALUES
           (${nextInvoiceNumber}, now()::date, ${orig.warehouse_id}, ${orig.pharmacy_id ?? null},
            ${orig.customer_type ?? 'cash'}, ${orig.customer_name ?? null}, ${orig.contract_company ?? null},
-           'finalized', ${subtotal.toFixed(2)}, ${data.discountType},
+           ${returnStatus}, ${subtotal.toFixed(2)}, ${data.discountType},
            ${data.discountType === 'percent' ? data.discountPercent : '0'},
            ${discountValue.toFixed(2)}, ${netTotal.toFixed(2)},
            ${data.notes || null}, ${data.createdBy}, true, ${data.originalInvoiceId}, now(), ${data.createdBy},
