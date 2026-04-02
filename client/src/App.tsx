@@ -1,5 +1,5 @@
 import { Switch, Route, Redirect, useLocation } from "wouter";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -221,27 +221,86 @@ function Router() {
   );
 }
 
+/**
+ * خريطة الصلاحية الدنيا لكل شاشة افتتاحية ممكنة.
+ * null = لا تحتاج صلاحية خاصة (يكفي أن يكون المستخدم مسجّلاً).
+ * undefined = مسار غير معروف → يُسمح بالتوجيه إليه دون تحقق.
+ */
+const ROUTE_REQUIRED_PERMISSION: Record<string, string | null> = {
+  "/":                       null,
+  "/sales-invoices":         "sales.view",
+  "/cashier-collection":     "cashier.view",
+  "/cashier-handover":       "cashier.handover_view",
+  "/patient-invoices":       "patient_invoices.view",
+  "/clinic-booking":         "clinic.book",
+  "/bed-board":              "admissions.view",
+  "/doctor-orders":          "doctor_orders.view",
+  "/store-transfers":        "transfers.view",
+  "/transfer-preparation":   "transfers.view",
+  "/supplier-receiving":     "receiving.view",
+  "/purchase-invoices":      "purchase_invoices.view",
+  "/items":                  "items.view",
+  "/customer-payments":      "credit_payment.view",
+  "/supplier-payments":      "supplier_payments.view",
+  "/delivery-payments":      "delivery_payment.view",
+  "/stock-count":            "stock_count.view",
+  "/shortage-notebook":      "shortage.view",
+  "/journal-entries":        "journal.view",
+  "/chart-of-accounts":      "accounts.view",
+  "/reports/trial-balance":  "reports.trial_balance",
+  "/dept-services/LAB":      "dept_services.create",
+  "/dept-services/RAD":      "dept_services.create",
+  "/sales-returns":          "sales.view",
+  "/patient-inquiry":        "patients.view",
+  "/doctor-settlements":     "doctor_settlements.create",
+  "/system-settings":        null,
+};
+
 function AuthenticatedApp() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, permissions } = useAuth();
   const [, navigate] = useLocation();
   const didInitialRedirectRef = useRef(false);
 
-  // عند انتقال المستخدم من غير مسجّل → مسجّل، وجّهه للشاشة الافتتاحية مباشرةً
-  // بغض النظر عن الـ URL الحالي (قد يكون صفحة سبق وفتحها المسؤول قبل تسجيل الخروج)
+  // ─── الشرط 3: هل هذا تسجيل دخول طازج (قادم من Login) أم تحديث صفحة؟ ───────
+  // use-auth.tsx يضع علامة "__plr" في sessionStorage عند نجاح تسجيل الدخول.
+  // إذا لم توجد العلامة → المستخدم حدّث الصفحة → نحترم الـ URL الحالي ولا نُحوِّل.
+  const isFreshLogin = useMemo(
+    () => () => !!sessionStorage.getItem("__plr"),
+    []
+  );
+
   useEffect(() => {
+    // ─── الشرط 1: تأكد من اكتمال تحميل بيانات المستخدم والصلاحيات ───────────
     if (!isAuthenticated || !user || isLoading) return;
     if (didInitialRedirectRef.current) return;
     didInitialRedirectRef.current = true;
 
     const target = user.defaultRoute;
-    // وجّه دائماً للشاشة الافتتاحية عند أول تسجيل دخول بعد الجلسة الحالية
-    // (بغض النظر عن الـ URL — لأن المسؤول قد يسجّل خروجه من صفحة لا يملك الصيدلي صلاحية لها)
-    if (target && target !== "/") {
+    if (!target || target === "/") return; // لا توجد شاشة افتتاحية مخصصة
+
+    const freshLogin = isFreshLogin();
+    const currentPath = window.location.pathname;
+
+    // ─── الشرط 3: وجّه فقط إذا كان تسجيل دخول طازج أو المستخدم على "/" ─────────
+    const shouldRedirect = freshLogin || currentPath === "/";
+    if (!shouldRedirect) return;
+
+    // ─── الشرط 2: تحقق أن للمستخدم صلاحية الوصول للشاشة الافتتاحية ────────────
+    const required = ROUTE_REQUIRED_PERMISSION[target];
+    const hasAccess =
+      required === undefined || // مسار غير مُعرَّف في الخريطة → نثق فيه
+      required === null ||        // لا صلاحية خاصة مطلوبة
+      permissions.includes(required);
+
+    if (freshLogin) sessionStorage.removeItem("__plr"); // استخدمنا العلامة، نحذفها
+
+    if (hasAccess) {
       navigate(target);
     }
-  }, [isAuthenticated, user, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+    // إذا لم يكن لديه صلاحية: Fallback آمن — يبقى حيث هو، صفحة الـ G ستعرض رسالة "غير مصرح"
+  }, [isAuthenticated, user, isLoading, permissions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // إعادة التعيين عند تسجيل الخروج
+  // إعادة التعيين عند تسجيل الخروج حتى يعمل التوجيه في الجلسة القادمة
   useEffect(() => {
     if (!isAuthenticated) {
       didInitialRedirectRef.current = false;

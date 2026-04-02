@@ -71,6 +71,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return res.json();
     },
     onSuccess: () => {
+      // علّم أن الجلسة الحالية نتيجة تسجيل دخول طازج (لاستخدامه في التوجيه الافتتاحي)
+      sessionStorage.setItem("__plr", "1");
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
   });
