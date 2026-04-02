@@ -392,6 +392,18 @@ export const insertTreasuryTransactionSchema = createInsertSchema(treasuryTransa
 export type InsertPatient = z.infer<typeof insertPatientSchema>;
 export type Patient = typeof patients.$inferSelect;
 
+export type PatientSearchResult = {
+  id:          string;
+  patientCode: string | null;
+  fullName:    string;
+  phone:       string | null;
+  nationalId:  string | null;
+  age:         number | null;
+  isActive:    boolean;
+  createdAt:   Date;
+  isWalkIn:    boolean;
+};
+
 export type InsertDoctor = z.infer<typeof insertDoctorSchema>;
 export type Doctor = typeof doctors.$inferSelect;
 

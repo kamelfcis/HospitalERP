@@ -7,6 +7,7 @@ import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
 import { requireAuth, checkPermission, checkHospitalAccess, broadcastToUnit } from "./_shared";
 import { insertAdmissionSchema } from "@shared/schema";
+import { findOrCreatePatient } from "../lib/find-or-create-patient";
 
 export function registerAdmissionsRoutes(app: Express) {
   // ==================== Surgery Types API ====================
@@ -117,7 +118,12 @@ export function registerAdmissionsRoutes(app: Express) {
   app.post("/api/admissions", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
     try {
       const parsed = insertAdmissionSchema.parse(req.body);
-      const a = await storage.createAdmission(parsed);
+      let resolvedPatientId = parsed.patientId ?? undefined;
+      if (!resolvedPatientId && parsed.patientName?.trim()) {
+        const pt = await findOrCreatePatient(parsed.patientName, (parsed as any).patientPhone);
+        resolvedPatientId = pt.id;
+      }
+      const a = await storage.createAdmission({ ...parsed, patientId: resolvedPatientId });
       res.status(201).json(a);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

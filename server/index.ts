@@ -627,6 +627,23 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON sales_invoice_headers (customer_type, status, invoice_date DESC)
       WHERE customer_type = 'contract'
     `);
+    // patients: expression index for find-or-create exact match (LOWER(TRIM(full_name)))
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_patients_name_lower
+      ON patients (LOWER(TRIM(full_name)))
+    `);
+    // patients: GIN trigram index for ILIKE search (searchPatients)
+    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_patients_name_trgm
+      ON patients USING GIN (full_name gin_trgm_ops)
+    `);
+    // admissions: partial index for walk-in name search (patient_id IS NULL)
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_adm_walkin_name
+      ON admissions (LOWER(TRIM(patient_name)))
+      WHERE patient_id IS NULL
+    `);
     log("[STARTUP] Performance indexes ensured");
     // NOTE: purchase_invoice_lines(invoice_id) → idx_pi_lines_invoice (in Drizzle schema)
     // NOTE: purchase_return_lines(purchase_invoice_line_id) → idx_prl_invoice_line (in Drizzle schema)

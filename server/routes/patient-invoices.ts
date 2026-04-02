@@ -24,6 +24,7 @@ import {
   patientInvoiceLines,
 } from "@shared/schema";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
+import { findOrCreatePatient } from "../lib/find-or-create-patient";
 import { eq } from "drizzle-orm";
 
 async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Promise<boolean> {
@@ -142,9 +143,15 @@ export function registerPatientInvoicesRoutes(app: Express) {
     try {
       const { header, lines, payments } = req.body;
 
-      const headerParsed = insertPatientInvoiceHeaderSchema.parse(header);
+      let headerParsed = insertPatientInvoiceHeaderSchema.parse(header) as any;
       let linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
+
+      // إنشاء ملف مريض تلقائياً إذا لم يكن مرتبطاً
+      if (!headerParsed.patientId && headerParsed.patientName?.trim()) {
+        const ptRecord = await findOrCreatePatient(headerParsed.patientName, headerParsed.patientPhone || null);
+        headerParsed = { ...headerParsed, patientId: ptRecord.id };
+      }
 
       linesParsed = await applyContractCoverage(
         (headerParsed as any).contractId ?? null,

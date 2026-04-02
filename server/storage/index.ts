@@ -108,6 +108,7 @@ import {
   type Pharmacy,
   type InsertPharmacy,
   type Patient,
+  type PatientSearchResult,
   type InsertPatient,
   type Doctor,
   type InsertDoctor,
@@ -493,7 +494,7 @@ export interface IStorage {
 
   // Patients
   getPatients(limit?: number): Promise<Patient[]>;
-  searchPatients(search: string): Promise<Patient[]>;
+  searchPatients(search: string): Promise<PatientSearchResult[]>;
   getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }>;
   getPatient(id: string): Promise<Patient | undefined>;
   getPatientJourney(patientId: string): Promise<Record<string, unknown> | null>;

@@ -6,6 +6,7 @@ import { requireAuth, checkPermission } from "./_shared";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { resolveClinicScope } from "../lib/clinic-scope";
+import { findOrCreatePatient } from "../lib/find-or-create-patient";
 
 // ─── Fire-and-forget audit logger ────────────────────────────────────────────
 // Logs sensitive read access without blocking the response.
@@ -378,6 +379,18 @@ export function registerPatientsRoutes(app: Express) {
     } catch (error: unknown) {
       const code = (error as { statusCode?: number }).statusCode ?? 500;
       res.status(code).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ─── find-or-create: يُستخدم من الـ combobox عند اختيار مريض غير مسجّل ───────
+  app.post("/api/patients/find-or-create", requireAuth, async (req, res) => {
+    try {
+      const { fullName, phone } = req.body;
+      if (!fullName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
+      const result = await findOrCreatePatient(fullName.trim(), phone || null);
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
     }
   });
 

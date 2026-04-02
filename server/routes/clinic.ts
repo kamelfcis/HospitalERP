@@ -16,6 +16,7 @@ import {
   getOrderClinicId,
   getAppointmentClinicId,
 } from "../lib/clinic-scope";
+import { findOrCreatePatient } from "../lib/find-or-create-patient";
 
 function snakeToCamel(obj: unknown): any {
   if (Array.isArray(obj)) return obj.map(snakeToCamel);
@@ -241,6 +242,12 @@ export function registerClinicRoutes(app: Express) {
       if (!doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
       if (!appointmentDate) return res.status(400).json({ message: "تاريخ الموعد مطلوب" });
 
+      let resolvedPatientId: string | undefined = patientId || undefined;
+      if (!resolvedPatientId) {
+        const ptRecord = await findOrCreatePatient(patientName.trim(), patientPhone || null);
+        resolvedPatientId = ptRecord.id;
+      }
+
       const pt = (paymentType || 'CASH').toUpperCase();
 
       // ── FK contract validation ──────────────────────────────────────────────
@@ -271,7 +278,7 @@ export function registerClinicRoutes(app: Express) {
         clinicId: req.params.id as string,
         createdBy: userId,
         patientName: patientName.trim(),
-        patientId, patientPhone, doctorId, appointmentDate, appointmentTime, notes,
+        patientId: resolvedPatientId, patientPhone, doctorId, appointmentDate, appointmentTime, notes,
         paymentType: pt,
         insuranceCompany: insuranceCompany || undefined,
         payerReference: payerReference || undefined,

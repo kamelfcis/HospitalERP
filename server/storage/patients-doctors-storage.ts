@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { db, pool } from "../db";
 import { eq, and, sql, or, asc, ilike, ne, isNull } from "drizzle-orm";
 import {
   patients,
@@ -13,6 +13,7 @@ import {
   doctorTransfers,
   doctorSettlementAllocations,
   type Patient,
+  type PatientSearchResult,
   type InsertPatient,
   type Doctor,
   type InsertDoctor,
@@ -41,8 +42,11 @@ const methods = {
       .limit(limit);
   },
 
-  async searchPatients(this: DatabaseStorage, search: string): Promise<Patient[]> {
-    if (!search.trim()) return this.getPatients();
+  async searchPatients(this: DatabaseStorage, search: string): Promise<PatientSearchResult[]> {
+    if (!search.trim()) {
+      const rows = await this.getPatients();
+      return rows.map(p => ({ ...p, isWalkIn: false }));
+    }
     const tokens = search.trim().split(/\s+/).filter(Boolean);
     const conditions = tokens.map(token => {
       const pattern = token.includes('%') ? token : `%${token}%`;
@@ -52,10 +56,61 @@ const methods = {
         ilike(patients.nationalId, pattern),
       );
     });
-    return db.select().from(patients)
-      .where(and(eq(patients.isActive, true), ...conditions.filter(Boolean)))
+
+    // 1. البحث في ملفات المرضى المسجلين (بما فيهم غير النشطين)
+    const registered = await db.select({
+      id:          patients.id,
+      patientCode: patients.patientCode,
+      fullName:    patients.fullName,
+      phone:       patients.phone,
+      nationalId:  patients.nationalId,
+      age:         patients.age,
+      isActive:    patients.isActive,
+      createdAt:   patients.createdAt,
+    }).from(patients)
+      .where(and(...conditions.filter(Boolean)))
       .orderBy(asc(patients.fullName))
-      .limit(50);
+      .limit(40);
+
+    const registeredLower = new Set(registered.map(p => p.fullName.trim().toLowerCase()));
+
+    // 2. البحث في أسماء الإقامات غير المرتبطة بملف مريض (walk-in)
+    const walkInWhere: string[] = ["a.patient_id IS NULL"];
+    const walkInParams: string[] = [];
+    for (const token of tokens) {
+      const idx = walkInParams.length + 1;
+      walkInParams.push(`%${token}%`);
+      walkInWhere.push(`a.patient_name ILIKE $${idx}`);
+    }
+    const walkInSql = `
+      SELECT DISTINCT ON (LOWER(TRIM(a.patient_name)))
+        a.patient_name AS full_name,
+        a.patient_phone AS phone
+      FROM admissions a
+      WHERE ${walkInWhere.join(" AND ")}
+      ORDER BY LOWER(TRIM(a.patient_name))
+      LIMIT 10
+    `;
+    const { rows: walkInRows } = await pool.query(walkInSql, walkInParams);
+
+    const walkIns: PatientSearchResult[] = (walkInRows as { full_name: string; phone: string | null }[])
+      .filter(r => !registeredLower.has(r.full_name.trim().toLowerCase()))
+      .map(r => ({
+        id:          "",
+        patientCode: null,
+        fullName:    r.full_name,
+        phone:       r.phone ?? null,
+        nationalId:  null,
+        age:         null,
+        isActive:    false,
+        createdAt:   new Date(),
+        isWalkIn:    true,
+      }));
+
+    return [
+      ...registered.map(p => ({ ...p, isWalkIn: false })),
+      ...walkIns,
+    ];
   },
 
   async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }> {

@@ -1,12 +1,13 @@
 /**
- * PatientSearchCombobox — بحث وتحديد مريض من جدول المرضى
+ * PatientSearchCombobox — بحث وتحديد مريض
  *
  * يبحث في /api/patients?search=...
  * يعرض: اسم المريض + كود المريض + رقم الهاتف
- * يُرسل: patientId داخلياً فقط
+ * يعرض أيضاً: المرضى غير المسجلين (walk-in) من سجلات الإقامة
+ * يُرسل: patientId داخلياً — لو كان walk-in يُنشئ ملف أولاً
  */
 import { useState, useRef, useCallback } from "react";
-import { Search, X, User, Loader2 } from "lucide-react";
+import { Search, X, User, Building2, UserX, Loader2 } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -17,11 +18,13 @@ export interface PatientOption {
   patientCode?: string | null;
   phone?:      string | null;
   nationalId?: string | null;
+  isActive?:   boolean;
+  isWalkIn?:   boolean;
 }
 
 interface Props {
-  value?:        string;        // patientId المحدد
-  selectedName?: string;        // اسم المريض للعرض
+  value?:        string;
+  selectedName?: string;
   onChange:      (id: string, name: string) => void;
   onClear?:      () => void;
   disabled?:     boolean;
@@ -30,11 +33,13 @@ interface Props {
 }
 
 export function PatientSearchCombobox({
-  value, selectedName, onChange, onClear, disabled, placeholder = "ابحث باسم المريض أو الكود أو الهاتف...",
+  value, selectedName, onChange, onClear, disabled,
+  placeholder = "ابحث باسم المريض أو الكود أو الهاتف...",
   "data-testid": testId = "patient-search-combobox",
 }: Props) {
   const [inputValue,  setInputValue]  = useState("");
   const [open,        setOpen]        = useState(false);
+  const [resolving,   setResolving]   = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const debouncedSearch = useDebounce(inputValue, 300);
@@ -47,10 +52,31 @@ export function PatientSearchCombobox({
     enabled: debouncedSearch.length >= 1,
   });
 
-  const handleSelect = useCallback((patient: PatientOption) => {
-    onChange(patient.id, patient.fullName);
-    setInputValue("");
+  const handleSelect = useCallback(async (patient: PatientOption) => {
     setOpen(false);
+    setInputValue("");
+
+    // مريض مسجّل — استخدم id مباشرةً
+    if (!patient.isWalkIn) {
+      onChange(patient.id, patient.fullName);
+      return;
+    }
+
+    // walk-in: أنشئ/جد الملف ثم استخدم id الحقيقي
+    setResolving(true);
+    try {
+      const res = await apiRequest("POST", "/api/patients/find-or-create", {
+        fullName: patient.fullName,
+        phone:    patient.phone || null,
+      });
+      const created = await res.json();
+      onChange(created.id, created.fullName);
+    } catch {
+      // في حالة الخطأ، مرّر الاسم بدون id
+      onChange("", patient.fullName);
+    } finally {
+      setResolving(false);
+    }
   }, [onChange]);
 
   const handleClear = useCallback(() => {
@@ -82,6 +108,8 @@ export function PatientSearchCombobox({
     );
   }
 
+  const busy = isLoading || resolving;
+
   // ── حالة البحث ───────────────────────────────────────────────────────────
   return (
     <div className="relative" data-testid={testId}>
@@ -102,35 +130,61 @@ export function PatientSearchCombobox({
             autoComplete="off"
           />
         </div>
-        {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+        {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       </div>
 
       {open && debouncedSearch.length >= 1 && (
         <div className="absolute top-full right-0 z-50 mt-1 w-[320px] max-h-[240px] overflow-y-auto rounded-md border bg-popover shadow-lg">
-          {results.length === 0 && !isLoading && (
+          {results.length === 0 && !busy && (
             <div className="py-3 text-center text-sm text-muted-foreground">
               لا توجد نتائج
             </div>
           )}
-          {results.map(patient => (
-            <button
-              key={patient.id}
-              type="button"
-              onMouseDown={() => handleSelect(patient)}
-              className="w-full flex items-start gap-2 px-3 py-2 hover:bg-accent text-right transition-colors"
-              data-testid={`${testId}-option-${patient.id}`}
-            >
-              <User className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-              <div>
-                <div className="font-medium text-sm">{patient.fullName}</div>
-                <div className="text-[11px] text-muted-foreground flex gap-2">
-                  {patient.patientCode && <span>كود: {patient.patientCode}</span>}
-                  {patient.phone && <span>{patient.phone}</span>}
-                  {patient.nationalId && <span>رقم قومي: {patient.nationalId}</span>}
+          {results.map((patient, idx) => {
+            const isInactive = patient.isActive === false && !patient.isWalkIn;
+            const isWalkIn   = patient.isWalkIn === true;
+            const rowKey     = patient.id ? patient.id : `walkin-${idx}`;
+            return (
+              <button
+                key={rowKey}
+                type="button"
+                onMouseDown={() => handleSelect(patient)}
+                className={[
+                  "w-full flex items-start gap-2 px-3 py-2 hover:bg-accent text-right transition-colors",
+                  isInactive ? "opacity-70" : "",
+                ].join(" ")}
+                data-testid={`${testId}-option-${rowKey}`}
+              >
+                {isWalkIn
+                  ? <Building2 className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                  : isInactive
+                  ? <UserX className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                  : <User    className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                }
+                <div>
+                  <div className="font-medium text-sm flex items-center gap-1.5">
+                    {patient.fullName}
+                    {isInactive && (
+                      <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-1 py-0.5 rounded">
+                        غير نشط
+                      </span>
+                    )}
+                    {isWalkIn && (
+                      <span className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1 py-0.5 rounded">
+                        زيارة سابقة
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground flex gap-2">
+                    {patient.patientCode && <span>كود: {patient.patientCode}</span>}
+                    {patient.phone && <span>{patient.phone}</span>}
+                    {patient.nationalId && <span>رقم قومي: {patient.nationalId}</span>}
+                    {isWalkIn && <span className="text-blue-600 dark:text-blue-400">سيُنشأ ملف تلقائياً</span>}
+                  </div>
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
