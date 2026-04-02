@@ -50,7 +50,13 @@ const methods = {
       if (statuses.length === 1) {
         conditions.push(eq(salesInvoiceHeaders.status, statuses[0] as any));
       } else {
-        conditions.push(inArray(salesInvoiceHeaders.status, statuses as any[]));
+        // قائمة بيضاء للقيم المسموح بها (أمان ضد SQL injection)
+        const VALID_STATUSES = ["draft", "finalized", "collected", "cancelled"];
+        const safe = statuses.filter(s => VALID_STATUSES.includes(s));
+        if (safe.length > 0) {
+          const placeholders = safe.map(s => `'${s}'`).join(", ");
+          conditions.push(sql`${salesInvoiceHeaders.status}::text IN (${sql.raw(placeholders)})`);
+        }
       }
     } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
       conditions.push(sql`${salesInvoiceHeaders.status} != 'cancelled'`);
