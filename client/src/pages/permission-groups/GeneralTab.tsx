@@ -27,6 +27,8 @@ const ROUTE_OPTIONS = [
   { label: "حجز العيادات",            value: "/clinic-booking" },
   { label: "لوحة الأسرّة",            value: "/bed-board" },
   { label: "أوامر الطبيب",            value: "/doctor-orders" },
+  { label: "تحويل مخزني",             value: "/store-transfers" },
+  { label: "إعداد إذن تحويل",         value: "/transfer-preparation" },
   { label: "استلام من مورد",          value: "/supplier-receiving" },
   { label: "فواتير الشراء",           value: "/purchase-invoices" },
   { label: "الأصناف",                 value: "/items" },
