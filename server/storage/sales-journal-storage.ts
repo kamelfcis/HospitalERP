@@ -1097,6 +1097,10 @@ const methods = {
       return;
     }
 
+    // آجل: يُغلق مباشرة posted بلا كاشير — ذمة العميل تُخفَّض مباشرة
+    // نقدي: draft → يُكمله completeSalesReturnWithCash عند صرف الكاشير
+    const isCreditReturn = header.customerType === "credit";
+
     const lines = await db.select().from(salesInvoiceLines)
       .where(eq(salesInvoiceLines.invoiceId, returnId));
     if (lines.length === 0) {
@@ -1281,10 +1285,15 @@ const methods = {
         debit: totalCogs.toFixed(2), credit: "0", description: "استعادة مخزون — مردود مبيعات" });
     }
 
-    // دائن: مدينون (وسيط — يُستبدل بالخزنة عند الصرف)
+    // دائن: مدينون
+    // نقدي → وسيط "في انتظار صرف" يُستبدل بالخزنة في م2 عبر completeSalesReturnWithCash
+    // آجل  → ذمة العميل تُخفَّض مباشرة بلا مرحلة كاشير (القيد نهائي posted)
+    const receivableLineDesc = isCreditReturn
+      ? "تخفيض ذمة العميل — مردود مبيعات آجل"
+      : "مدينون — في انتظار صرف المرتجع";
     if (netTotal > 0.001) {
       jLines.push({ journalEntryId: "", lineNumber: ln++, accountId: receivablesCreditId,
-        debit: "0", credit: netTotal.toFixed(2), description: "مدينون — في انتظار صرف المرتجع" });
+        debit: "0", credit: netTotal.toFixed(2), description: receivableLineDesc });
     }
 
     // دائن: عكس خصم مسموح به (يوازن الفرق بين الإيراد والصافي)
@@ -1331,7 +1340,6 @@ const methods = {
      * نقدي:  draft  → يُرسَل في م2 عند صرف الكاشير (completeSalesReturnWithCash)
      * ══════════════════════════════════════════════════════════════════════
      */
-    const isCreditReturn = header.customerType === "credit";
     const returnJournalStatus = isCreditReturn ? "posted" : "draft";
     const returnDesc = isCreditReturn
       ? `قيد مردود مبيعات آجل رقم ${header.invoiceNumber} (نهائي — مخصوم من ذمة العميل)`

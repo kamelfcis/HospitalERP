@@ -305,6 +305,31 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier mismatch check skipped");
   }
 
+  // ── 5b-3b. Auto-post draft GL journals for credit invoices/returns ─────────
+  // Credit invoices (آجل) should have status='posted' immediately — no cashier step.
+  // Any existing 'draft' journals linked to credit invoices/returns are stale
+  // (created before the posted-immediately rule was introduced) and safe to post now,
+  // provided their lines are balanced (totalDebit == totalCredit).
+  try {
+    const { rowCount } = await pool.query(`
+      UPDATE journal_entries je
+      SET status = 'posted'
+      WHERE je.status = 'draft'
+        AND je.source_type IN ('sales_invoice', 'sales_return')
+        AND EXISTS (
+          SELECT 1 FROM sales_invoice_headers sih
+          WHERE sih.id = je.source_document_id
+            AND sih.customer_type = 'credit'
+        )
+        AND je.total_debit::numeric > 0
+        AND ABS(je.total_debit::numeric - je.total_credit::numeric) < 0.01
+    `);
+    const affected = rowCount ?? 0;
+    logger.info({ count: affected }, "[STARTUP] auto-post credit (آجل) GL journals: done");
+  } catch (err: unknown) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] auto-post credit journals skipped");
+  }
+
   // ── 5b-4. Patient Invoice GL integrity check ──────────────────────────────
   // Detects finalized patient invoices whose GL journal generation failed or
   // was never attempted. Root cause is almost always missing Account Mappings
