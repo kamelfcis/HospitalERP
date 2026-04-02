@@ -248,6 +248,15 @@ const methods = {
     const receivablesMapping = mappingMap.get("receivables");
     let debitAccountId: string | null = receivablesMapping?.debitAccountId || null;
 
+    // فواتير الآجل: إذا ضُبط receivables_credit فهو يُقدَّم على receivables العام
+    // (receivables_credit = حساب ذمم الآجل المخصص مثل "ذمم مرضى أفراد صيدلية 12212")
+    if (invoice.customerType === "credit") {
+      const creditReceivablesMapping = mappingMap.get("receivables_credit");
+      if (creditReceivablesMapping?.debitAccountId) {
+        debitAccountId = creditReceivablesMapping.debitAccountId;
+      }
+    }
+
     if (!debitAccountId) {
       throw new Error("لم يتم تعيين حساب المدينون (receivables) في ربط حسابات فواتير المبيعات");
     }
@@ -1176,10 +1185,16 @@ const methods = {
     const useFallback = forceReverseOriginal || retMappings.length === 0;
 
     // حساب المدينين (دائن في المرتجع = مدين في البيع)
-    const receivablesCreditId =
-      retMM.get("receivables")?.creditAccountId ||
-      (useFallback ? siMM.get("receivables")?.debitAccountId : null) ||
-      null;
+    // مرتجع آجل: يُقدَّم receivables_credit من sales_invoice إذا كان مضبوطاً
+    // (يعكس نفس الحساب المستخدم في قيد البيع الأصلي للآجل)
+    const receivablesCreditId = isCreditReturn
+      ? (siMM.get("receivables_credit")?.debitAccountId ||
+         retMM.get("receivables")?.creditAccountId ||
+         (useFallback ? siMM.get("receivables")?.debitAccountId : null) ||
+         null)
+      : (retMM.get("receivables")?.creditAccountId ||
+         (useFallback ? siMM.get("receivables")?.debitAccountId : null) ||
+         null);
 
     // إيراد الأدوية (مدين في المرتجع = دائن في البيع)
     const revDrugsCreditId =

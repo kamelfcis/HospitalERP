@@ -29,6 +29,10 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     payables_consumables: { required: "cond", condition: "لموردي المستلزمات",       debitSide: false, creditSide: true  },
   },
   sales_invoice: {
+    // ── حسابات المدينين ──────────────────────────────────────────────────────
+    receivables:                  { required: true,   condition: "حساب المدينين الموحد (نقدي وآجل) — مدين عند البيع، يُستبدل بالخزنة عند التحصيل",        debitSide: true, creditSide: false },
+    receivables_credit:           { required: "cond", condition: "حساب ذمم الآجل (اختياري) — إذا ضُبط يُستخدم بدلاً من حساب المدينين لفواتير الآجل فقط", debitSide: true, creditSide: false },
+    // ── إيرادات ──────────────────────────────────────────────────────────────
     revenue_drugs:                { required: "cond", condition: "إيراد الأدوية — أو اضبط إيراد عام كبديل موحد",       debitSide: true, creditSide: true },
     revenue_consumables:          { required: "cond", condition: "إيراد المستلزمات — أو اضبط إيراد عام كبديل موحد",   debitSide: true, creditSide: true },
     revenue_general:              { required: "cond", condition: "بديل موحد لإيراد الأدوية والمستلزمات معاً",          debitSide: true, creditSide: true },
@@ -127,7 +131,7 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
 
 // Ordered list of suggested line types per transaction type (controls default row order)
 export const suggestedLineTypes: Record<string, string[]> = {
-  sales_invoice:             ["revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "discount_allowed", "vat_output", "pharmacy_patient_receivable", "pharmacy_contract_receivable"],
+  sales_invoice:             ["receivables", "receivables_credit", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "discount_allowed", "vat_output", "pharmacy_patient_receivable", "pharmacy_contract_receivable"],
   sales_return:              ["receivables", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "inventory"],
   patient_invoice:           ["cash", "receivables", "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment"],
   receiving:                 ["inventory", "payables"],

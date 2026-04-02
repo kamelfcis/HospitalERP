@@ -291,6 +291,8 @@ export const mappingLineTypeLabels: Record<string, string> = {
   payables:             "ذمم موردين",
   payables_drugs:       "ذمم موردين - أدوية",
   payables_consumables: "ذمم موردين - مستلزمات",
+  // Sales invoice — حسابات المدينين
+  receivables_credit:   "ذمم مدينة - آجل فقط",
   // Sales invoice (generic path: each mapping produces Dr + Cr)
   revenue_drugs:        "إيراد أدوية",
   revenue_consumables:  "إيراد مستلزمات",
