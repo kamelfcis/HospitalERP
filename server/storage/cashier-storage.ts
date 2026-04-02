@@ -609,12 +609,24 @@ const methods = {
   // ── قائمة الفواتير المعلّقة (مبيعات) ─────────────────────────────────
   //  تُضمَّن claimedByShiftId للعرض البصري — GET لا يكتب
   async getPendingSalesInvoices(this: DatabaseStorage, unitType: string, unitId: string, search?: string): Promise<any[]> {
-    // ★ قاعدة "المعلّق": تُطبَّق على مستوى SQL — المصدر: cashier-pending.ts
+    // ╔══════════════════════════════════════════════════════════════════════════╗
+    // ║  قاعدة تصنيف الفواتير — IMMUTABLE RULE — لا تُعدَّل بدون مراجعة كاملة  ║
+    // ╠══════════════════════════════════════════════════════════════════════════╣
+    // ║  • customer_type = 'cash' / 'contract'  → تظهر هنا (قائمة الكاشير)     ║
+    // ║  • customer_type = 'credit'  (آجل)      → لا تظهر هنا إطلاقاً           ║
+    // ║      ‣ لها شاشة تحصيل مستقلة (تحصيل الآجل / Customer Payments)         ║
+    // ║      ‣ تُحسَب في ملخص الوردية كـ deferredCount فقط (بيان - ليس تحصيل)   ║
+    // ║  • customer_type = 'delivery' (توصيل)   → لا تظهر هنا إطلاقاً           ║
+    // ║      ‣ لها شاشة مستقلة (شاشة تحصيل التوصيل)                             ║
+    // ║      ‣ تُحسَب في ملخص الوردية بعد حفظها من شاشة التوصيل                 ║
+    // ╚══════════════════════════════════════════════════════════════════════════╝
     const baseConditions = [
       eq(salesInvoiceHeaders.status, "finalized"),
       eq(salesInvoiceHeaders.isReturn, false),
       sql`NOT EXISTS (SELECT 1 FROM cashier_receipts        cr  WHERE cr.invoice_id  = ${salesInvoiceHeaders.id})`,
       sql`NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = ${salesInvoiceHeaders.id})`,
+      // ★ قاعدة ثابتة: الآجل والتوصيل لا يظهران هنا أبداً — لهما شاشات مستقلة
+      sql`${salesInvoiceHeaders.customerType} NOT IN ('credit', 'delivery')`,
       // فواتير التعاقد التي نصيب المريض=0 تُدفع من شركة التأمين مباشرة — لا تظهر للكاشير
       sql`(${salesInvoiceHeaders.customerType} != 'contract' OR COALESCE(CAST(${salesInvoiceHeaders.patientShareTotal} AS numeric), 0) > 0)`,
     ];
@@ -1107,13 +1119,23 @@ const methods = {
       count: sql<number>`COUNT(*)`,
     }).from(cashierRefundReceipts).where(eq(cashierRefundReceipts.shiftId, shiftId));
 
+    // آجل: نحسب الفواتير المُنشَأة خلال فترة الوردية للوحدة ذاتها
+    // ★ لا نستخدم claimed_by_shift_id لأن الآجل لا يُحصَّل من شاشة الكاشير إطلاقاً
+    //   (claimed_by_shift_id يُفعَّل فقط عند التحصيل المباشر — لذا يبقى NULL للآجل)
     const deferredRes = await db.execute(sql`
-      SELECT COALESCE(SUM(net_total), 0)::text AS total, COUNT(*)::int AS count
-      FROM sales_invoice_headers
-      WHERE claimed_by_shift_id = ${shiftId}
-        AND is_return = false
-        AND customer_type = 'credit'
-        AND status IN ('finalized', 'collected')
+      SELECT COALESCE(SUM(sih.net_total), 0)::text AS total, COUNT(*)::int AS count
+      FROM sales_invoice_headers sih
+      LEFT JOIN warehouses w ON w.id = sih.warehouse_id
+      JOIN cashier_shifts cs ON cs.id = ${shiftId}
+      WHERE sih.is_return = false
+        AND sih.customer_type = 'credit'
+        AND sih.status IN ('finalized', 'collected')
+        AND sih.created_at >= cs.opened_at
+        AND (cs.closed_at IS NULL OR sih.created_at <= cs.closed_at)
+        AND (
+              (cs.unit_type = 'pharmacy'    AND sih.pharmacy_id   = cs.unit_id)
+           OR (cs.unit_type = 'department'  AND w.department_id   = cs.unit_id)
+        )
     `);
     const deferredRow = (deferredRes as any).rows[0];
 
