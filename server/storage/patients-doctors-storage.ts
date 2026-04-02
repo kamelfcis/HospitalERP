@@ -28,6 +28,7 @@ import {
   statusToRecommendedAction,
   DEDUP_BLOCK_THRESHOLD,
   DEDUP_WARN_THRESHOLD,
+  normalizeArabicName,
   type DuplicateCandidate,
   type DuplicateCheckResult,
 } from "../services/patient-dedup";
@@ -49,9 +50,12 @@ const methods = {
     }
     const tokens = search.trim().split(/\s+/).filter(Boolean);
     const conditions = tokens.map(token => {
-      const pattern = token.includes('%') ? token : `%${token}%`;
+      const pattern     = token.includes('%') ? token : `%${token}%`;
+      const normToken   = normalizeArabicName(token);
+      const normPattern = normToken.includes('%') ? normToken : `%${normToken}%`;
       return or(
         ilike(patients.fullName, pattern),
+        ilike(patients.normalizedFullName, normPattern),
         ilike(patients.phone, pattern),
         ilike(patients.nationalId, pattern),
       );

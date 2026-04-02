@@ -106,6 +106,22 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
+  // ─── autocomplete: بحث خفيف للـ combobox — يتطلب تسجيل الدخول فقط ─────────
+  // يُستخدم من أي وحدة تحتاج اختيار مريض (فواتير، مواعيد …)
+  // لا يُعيد بيانات طبية حساسة — الاسم والكود والهاتف فقط
+  // IMPORTANT: must be registered BEFORE /api/patients/:id to avoid "autocomplete"
+  //            being captured as an :id parameter by Express.
+  app.get("/api/patients/autocomplete", requireAuth, async (req, res) => {
+    try {
+      const search = (req.query.search as string || "").trim();
+      if (!search) return res.json([]);
+      const list = await storage.searchPatients(search);
+      res.json(list.slice(0, 15));
+    } catch (err: unknown) {
+      res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // Single patient record — PATIENTS_VIEW + dept scope check (prevent ID enumeration)
   app.get("/api/patients/:id", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {

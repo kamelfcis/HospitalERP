@@ -45,9 +45,9 @@ export function PatientSearchCombobox({
   const debouncedSearch = useDebounce(inputValue, 300);
 
   const { data: results = [], isLoading } = useQuery<PatientOption[]>({
-    queryKey: ["/api/patients", debouncedSearch],
+    queryKey: ["/api/patients/autocomplete", debouncedSearch],
     queryFn:  () =>
-      apiRequest("GET", `/api/patients?search=${encodeURIComponent(debouncedSearch)}&limit=10`)
+      apiRequest("GET", `/api/patients/autocomplete?search=${encodeURIComponent(debouncedSearch)}`)
         .then(r => r.json()),
     enabled: debouncedSearch.length >= 1,
   });
