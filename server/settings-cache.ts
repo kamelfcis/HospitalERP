@@ -29,3 +29,8 @@ export async function refreshSettings(): Promise<void> {
 export function isSettingsLoaded(): boolean {
   return loaded;
 }
+
+/** إرجاع كل الإعدادات من الكاش مباشرةً (بدون DB) */
+export function getAllSettings(): Record<string, string> {
+  return Object.fromEntries(cache);
+}

@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { systemSettings } from "@shared/schema";
 import { PERMISSIONS } from "@shared/permissions";
-import { setSetting } from "../settings-cache";
+import { setSetting, getAllSettings } from "../settings-cache";
 import {
   requireAuth,
   checkPermission,
@@ -45,16 +45,9 @@ export function registerSystemRoutes(app: Express) {
     }
   });
 
-  app.get("/api/settings", async (_req, res) => {
-    try {
-      const rows = await db.select().from(systemSettings);
-      const result: Record<string, string> = {};
-      for (const row of rows) result[row.key] = row.value;
-      res.json(result);
-    } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
-      res.status(500).json({ message: _em });
-    }
+  app.get("/api/settings", (_req, res) => {
+    // تُخدَّم من الكاش الذاكرة (محمَّل عند بدء التشغيل) — لا DB hit
+    res.json(getAllSettings());
   });
 
   app.put("/api/settings/:key", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {

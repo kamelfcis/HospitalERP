@@ -55,13 +55,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!data?.user) return;
-    const prefetchKeys = [
+
+    // ── البيانات العامة المشتركة بين جميع الشاشات ───────────────────────────
+    const commonKeys = [
       ["/api/departments"],
       ["/api/warehouses"],
       ["/api/doctors"],
     ];
-    for (const queryKey of prefetchKeys) {
+    for (const queryKey of commonKeys) {
       queryClient.prefetchQuery({ queryKey });
+    }
+
+    // ── Prefetch مبكّر لبيانات الشاشة الافتتاحية ────────────────────────────
+    // يُقلل الانتظار بتحميل البيانات بينما يُحمَّل chunk الـ JS للصفحة
+    const route = data.user.defaultRoute;
+    if (route === "/cashier-collection") {
+      queryClient.prefetchQuery({ queryKey: ["/api/cashier/units"] });
+      queryClient.prefetchQuery({ queryKey: ["/api/cashier/my-open-shift"] });
+      queryClient.prefetchQuery({ queryKey: ["/api/receipt-settings"] });
+    } else if (route === "/sales-invoices") {
+      queryClient.prefetchQuery({ queryKey: ["/api/sales-invoices/pharmacists"] });
+      queryClient.prefetchQuery({ queryKey: ["/api/items"] });
+    } else if (route === "/patient-invoices") {
+      queryClient.prefetchQuery({ queryKey: ["/api/patients"] });
+      queryClient.prefetchQuery({ queryKey: ["/api/doctors"] });
+    } else if (route === "/cashier-handover") {
+      queryClient.prefetchQuery({ queryKey: ["/api/cashier/units"] });
+    } else if (route === "/clinic-booking") {
+      queryClient.prefetchQuery({ queryKey: ["/api/doctors"] });
     }
   }, [data?.user]);
 
