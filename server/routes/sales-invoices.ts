@@ -208,6 +208,53 @@ export function registerSalesInvoicesRoutes(app: Express) {
       if (!existing) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       if (existing.status !== "draft") return res.status(409).json({ message: "الفاتورة ليست مسودة", code: "ALREADY_FINALIZED" });
 
+      // ── التحقق من حدود خصم المجموعة ─────────────────────────────────────
+      {
+        const userId = (req.session as any).userId as string;
+        const invoiceUser = await storage.getUser(userId);
+        if (invoiceUser?.permissionGroupId) {
+          const group = await storage.getPermissionGroup(invoiceUser.permissionGroupId);
+          if (group) {
+            const headerPct = parseFloat(String(existing.headerDiscountPercent ?? "0"));
+            const headerAmt = parseFloat(String(existing.headerDiscountAmount  ?? "0"));
+
+            // حد نسبة الخصم
+            if (group.maxDiscountPct != null) {
+              const limitPct = parseFloat(group.maxDiscountPct);
+              if (headerPct > limitPct) {
+                return res.status(422).json({
+                  message: `نسبة الخصم (${headerPct}%) تتجاوز الحد المسموح (${limitPct}%) لمجموعتك`,
+                  code: "DISCOUNT_LIMIT_EXCEEDED",
+                });
+              }
+            }
+
+            // حد قيمة الخصم
+            if (group.maxDiscountValue != null) {
+              const limitAmt = parseFloat(group.maxDiscountValue);
+              if (headerAmt > limitAmt) {
+                return res.status(422).json({
+                  message: `قيمة الخصم (${headerAmt.toFixed(2)} ج) تتجاوز الحد المسموح (${limitAmt.toFixed(2)} ج) لمجموعتك`,
+                  code: "DISCOUNT_LIMIT_EXCEEDED",
+                });
+              }
+            }
+
+            // حد نسبة الخصم على مستوى السطور (discountAmount ÷ subtotal)
+            if (group.maxDiscountPct != null) {
+              const limitPct = parseFloat(group.maxDiscountPct);
+              const lineDiscPct = parseFloat(String(existing.discountAmount ?? "0")) / Math.max(parseFloat(String(existing.subtotal ?? "1")), 0.01) * 100;
+              if (lineDiscPct > limitPct + 0.01) { // تسامح 0.01% للتقريب
+                return res.status(422).json({
+                  message: `خصم الأسطر (${lineDiscPct.toFixed(2)}%) يتجاوز الحد المسموح (${limitPct}%) لمجموعتك`,
+                  code: "DISCOUNT_LIMIT_EXCEEDED",
+                });
+              }
+            }
+          }
+        }
+      }
+
       await storage.assertPeriodOpen(existing.invoiceDate);
 
       // ── فحص قابلية التسعير لكل سطر قبل الاعتماد ─────────────────────────

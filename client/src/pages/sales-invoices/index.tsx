@@ -391,7 +391,8 @@ export default function SalesInvoices() {
         serviceSearchHook={serviceSearchHook}
         statsHook={statsHook}
         onBack={() => navigate("/sales-invoices")}
-        maxDiscountPct={user?.maxDiscountPct ? parseFloat(user.maxDiscountPct) : null}
+        maxDiscountPct={user?.maxDiscountPct   ? parseFloat(user.maxDiscountPct)   : null}
+        maxDiscountValue={user?.maxDiscountValue ? parseFloat(user.maxDiscountValue) : null}
         estimatedCompanyTotal={estimatedCompanyTotal}
         estimatedPatientTotal={estimatedPatientTotal}
       />

@@ -76,7 +76,8 @@ interface SalesInvoiceEditorProps {
   onBack:          () => void;
 
   // حد الخصم للمستخدم الحالي
-  maxDiscountPct?: number | null;
+  maxDiscountPct?:   number | null;
+  maxDiscountValue?: number | null;
   // تقديرات حصص التعاقد (محسوبة مسبقاً بناءً على قواعد التغطية)
   estimatedCompanyTotal?: number | null;
   estimatedPatientTotal?: number | null;
@@ -122,7 +123,7 @@ export function SalesInvoiceEditor({
   warehouses, form, lines, subtotal, netTotal, totalTaxAmount = 0,
   barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef, onBarcodeScan,
   linesHook, mutationsHook, itemSearchHook, serviceSearchHook,
-  statsHook, onBack, maxDiscountPct, estimatedCompanyTotal, estimatedPatientTotal,
+  statsHook, onBack, maxDiscountPct, maxDiscountValue, estimatedCompanyTotal, estimatedPatientTotal,
 }: SalesInvoiceEditorProps) {
 
   // حالة التحميل
@@ -241,6 +242,7 @@ export function SalesInvoiceEditor({
         customerType={form.customerType}
         companyCoveragePct={form.companyCoveragePct}
         maxDiscountPct={maxDiscountPct}
+        maxDiscountValue={maxDiscountValue}
         estimatedCompanyTotal={estimatedCompanyTotal}
         estimatedPatientTotal={estimatedPatientTotal}
       />

@@ -50,8 +50,11 @@ const createGroupSchema = z.object({
 });
 
 const updateGroupSchema = z.object({
-  name:        z.string().trim().min(1, "اسم المجموعة لا يمكن أن يكون فارغاً").max(100).optional(),
-  description: z.string().trim().max(300).optional(),
+  name:             z.string().trim().min(1, "اسم المجموعة لا يمكن أن يكون فارغاً").max(100).optional(),
+  description:      z.string().trim().max(300).optional(),
+  maxDiscountPct:   z.number().min(0).max(100).nullable().optional(),
+  maxDiscountValue: z.number().min(0).nullable().optional(),
+  defaultRoute:     z.string().max(200).nullable().optional(),
 });
 
 const setPermissionsSchema = z.object({
@@ -135,13 +138,15 @@ export function registerPermissionGroupRoutes(app: Express) {
         return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "بيانات غير صحيحة" });
       }
 
-      // حماية المجموعات النظامية — لا يُعدَّل أي حقل (اسم أو وصف)
+      // المجموعات النظامية: يُسمح بتعديل حدود الخصم والشاشة الافتتاحية لكنهم لا يُعدَّل اسمها
       const existing = await storage.getPermissionGroup(req.params.id);
       if (!existing) {
         return res.status(404).json({ message: "المجموعة غير موجودة" });
       }
-      if (existing.isSystem) {
-        return res.status(403).json({ message: "لا يمكن تعديل مجموعة نظامية" });
+
+      // منع تغيير الاسم للمجموعات النظامية (يُعالَج داخل storage أيضاً)
+      if (existing.isSystem && parsed.data.name !== undefined) {
+        return res.status(403).json({ message: "لا يمكن تغيير اسم مجموعة نظامية" });
       }
 
       const group = await storage.updatePermissionGroup(req.params.id, parsed.data);

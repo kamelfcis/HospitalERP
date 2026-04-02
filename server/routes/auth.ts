@@ -134,7 +134,39 @@ export async function registerAuthRoutes(app: Express) {
       const isAdminRole = user.role === "admin" || (user.role as string) === "owner";
       const allowedWarehouses = isAdminRole ? [] : await storage.getUserWarehouses(user.id);
       const allowedWarehouseIds = allowedWarehouses.map(w => w.id);
-      res.json({ user: safeUser, permissions, allowedWarehouseIds });
+
+      // ── حدود الخصم الفعّالة: مجموعة الصلاحيات تُحدّد الحد الأعلى ────────
+      let effectiveMaxDiscountPct:   string | null = safeUser.maxDiscountPct ?? null;
+      let effectiveMaxDiscountValue: string | null = null;
+      let groupDefaultRoute:         string | null = null;
+
+      if (user.permissionGroupId) {
+        const group = await storage.getPermissionGroup(user.permissionGroupId);
+        if (group) {
+          // الأشد تقييداً (الأصغر) هو الأولى
+          if (group.maxDiscountPct != null) {
+            const groupPct = parseFloat(group.maxDiscountPct);
+            if (effectiveMaxDiscountPct == null || groupPct < parseFloat(effectiveMaxDiscountPct)) {
+              effectiveMaxDiscountPct = String(groupPct);
+            }
+          }
+          if (group.maxDiscountValue != null) {
+            effectiveMaxDiscountValue = group.maxDiscountValue;
+          }
+          groupDefaultRoute = group.defaultRoute ?? null;
+        }
+      }
+
+      res.json({
+        user: {
+          ...safeUser,
+          maxDiscountPct:   effectiveMaxDiscountPct,
+          maxDiscountValue: effectiveMaxDiscountValue,
+          defaultRoute:     groupDefaultRoute,
+        },
+        permissions,
+        allowedWarehouseIds,
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

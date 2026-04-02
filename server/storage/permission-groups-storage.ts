@@ -27,15 +27,23 @@ import { clearAllPermissionCache, clearPermissionCacheForUser } from "./users-st
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PermissionGroupWithStats extends PermissionGroup {
-  permissionCount: number;
-  memberCount:     number;
-  systemKey:       string | null;
+  permissionCount:  number;
+  memberCount:      number;
+  systemKey:        string | null;
+  maxDiscountPct:   string | null;
+  maxDiscountValue: string | null;
+  defaultRoute:     string | null;
 }
 
 export interface PermissionGroupDetail extends PermissionGroup {
-  permissions: string[];
-  members:     { id: string; fullName: string; username: string }[];
-  systemKey:   string | null;
+  permissions:      string[];
+  members:          { id: string; fullName: string; username: string }[];
+  systemKey:        string | null;
+  maxDiscountPct:   string | null;
+  maxDiscountValue: string | null;
+  defaultRoute:     string | null;
+  permissionCount:  number;
+  memberCount:      number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,6 +72,9 @@ const permissionGroupsMethods = {
         pg.is_system,
         pg.system_key,
         pg.sort_order,
+        pg.max_discount_pct,
+        pg.max_discount_value,
+        pg.default_route,
         pg.created_at,
         COUNT(DISTINCT gp.id)::int  AS permission_count,
         COUNT(DISTINCT u.id)::int   AS member_count
@@ -75,15 +86,18 @@ const permissionGroupsMethods = {
     `);
 
     return ((rows as any).rows as any[]).map((r: any) => ({
-      id:              r.id,
-      name:            r.name,
-      description:     r.description ?? null,
-      isSystem:        Boolean(r.is_system),
-      systemKey:       r.system_key ?? null,
-      sortOrder:       Number(r.sort_order ?? 0),
-      createdAt:       r.created_at,
-      permissionCount: Number(r.permission_count ?? 0),
-      memberCount:     Number(r.member_count ?? 0),
+      id:               r.id,
+      name:             r.name,
+      description:      r.description ?? null,
+      isSystem:         Boolean(r.is_system),
+      systemKey:        r.system_key ?? null,
+      sortOrder:        Number(r.sort_order ?? 0),
+      createdAt:        r.created_at,
+      permissionCount:  Number(r.permission_count ?? 0),
+      memberCount:      Number(r.member_count ?? 0),
+      maxDiscountPct:   r.max_discount_pct   ?? null,
+      maxDiscountValue: r.max_discount_value ?? null,
+      defaultRoute:     r.default_route      ?? null,
     }));
   },
 
@@ -92,7 +106,8 @@ const permissionGroupsMethods = {
     id: string
   ): Promise<PermissionGroupDetail | null> {
     const grpRows = await db.execute(sql`
-      SELECT id, name, description, is_system, system_key, sort_order, created_at
+      SELECT id, name, description, is_system, system_key, sort_order,
+             max_discount_pct, max_discount_value, default_route, created_at
       FROM permission_groups WHERE id = ${id}
     `);
     const g = (grpRows as any).rows[0];
@@ -116,17 +131,20 @@ const permissionGroupsMethods = {
     }));
 
     return {
-      id:              g.id,
-      name:            g.name,
-      description:     g.description ?? null,
-      isSystem:        Boolean(g.is_system),
-      systemKey:       g.system_key ?? null,
-      sortOrder:       Number(g.sort_order ?? 0),
-      createdAt:       g.created_at,
+      id:               g.id,
+      name:             g.name,
+      description:      g.description ?? null,
+      isSystem:         Boolean(g.is_system),
+      systemKey:        g.system_key ?? null,
+      sortOrder:        Number(g.sort_order ?? 0),
+      createdAt:        g.created_at,
       permissions,
       members,
-      memberCount:     members.length,
-      permissionCount: permissions.length,
+      memberCount:      members.length,
+      permissionCount:  permissions.length,
+      maxDiscountPct:   g.max_discount_pct   ?? null,
+      maxDiscountValue: g.max_discount_value ?? null,
+      defaultRoute:     g.default_route      ?? null,
     };
   },
 
@@ -157,19 +175,25 @@ const permissionGroupsMethods = {
   async updatePermissionGroup(
     this: DatabaseStorage,
     id: string,
-    data: { name?: string; description?: string }
+    data: {
+      name?: string;
+      description?: string;
+      maxDiscountPct?:   number | null;
+      maxDiscountValue?: number | null;
+      defaultRoute?:     string | null;
+    }
   ): Promise<PermissionGroup> {
     const [existing] = await db.select().from(permissionGroups).where(eq(permissionGroups.id, id));
     if (!existing) throw new Error("المجموعة غير موجودة");
-    if (existing.isSystem) throw new Error("لا يمكن تعديل مجموعة نظامية");
 
+    // المجموعات النظامية: لا يُعدَّل الاسم — لكن يُسمح بتعديل حدود الخصم والشاشة الافتتاحية
     const updates: Record<string, unknown> = {};
 
     if (data.name !== undefined) {
+      if (existing.isSystem) throw new Error("لا يمكن تغيير اسم مجموعة نظامية");
       const name = data.name.trim();
       if (!name) throw new Error("اسم المجموعة لا يمكن أن يكون فارغاً");
 
-      // تحقق من التكرار (باستثناء المجموعة الحالية)
       const dup = await db.execute(sql`
         SELECT id FROM permission_groups
         WHERE LOWER(TRIM(name)) = ${normalizeName(name)} AND id != ${id}
@@ -183,6 +207,18 @@ const permissionGroupsMethods = {
     if (data.description !== undefined) {
       updates.description = data.description;
     }
+
+    if ("maxDiscountPct" in data) {
+      updates.maxDiscountPct = data.maxDiscountPct != null ? String(data.maxDiscountPct) : null;
+    }
+    if ("maxDiscountValue" in data) {
+      updates.maxDiscountValue = data.maxDiscountValue != null ? String(data.maxDiscountValue) : null;
+    }
+    if ("defaultRoute" in data) {
+      updates.defaultRoute = data.defaultRoute ?? null;
+    }
+
+    if (Object.keys(updates).length === 0) return existing;
 
     const [updated] = await db.update(permissionGroups)
       .set(updates)

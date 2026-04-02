@@ -11,14 +11,19 @@ import { userRoleEnum } from "./enums";
 //  is_system = true  →  مجموعة مُولَّدة من الأدوار الحالية، لا تُحذف.
 // ─────────────────────────────────────────────────────────────────────────────
 export const permissionGroups = pgTable("permission_groups", {
-  id:            varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name:          text("name").notNull().unique(),
-  description:   text("description"),
-  isSystem:      boolean("is_system").notNull().default(false),
-  systemKey:     varchar("system_key"),         // مفتاح الدور الأصلي (owner, admin, pharmacist…) — للمجموعات النظامية فقط
-  sortOrder:     integer("sort_order").notNull().default(0),
-  seedSnapshot:  text("seed_snapshot"),         // JSON array of last-seeded permissions — used by delta sync to detect truly new permissions
-  createdAt:     timestamp("created_at").notNull().defaultNow(),
+  id:               varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name:             text("name").notNull().unique(),
+  description:      text("description"),
+  isSystem:         boolean("is_system").notNull().default(false),
+  systemKey:        varchar("system_key"),         // مفتاح الدور الأصلي (owner, admin, pharmacist…) — للمجموعات النظامية فقط
+  sortOrder:        integer("sort_order").notNull().default(0),
+  seedSnapshot:     text("seed_snapshot"),         // JSON array of last-seeded permissions — used by delta sync to detect truly new permissions
+  // ── حدود الخصم — null = لا حد مطبّق ──────────────────────────────────
+  maxDiscountPct:   decimal("max_discount_pct",   { precision: 5,  scale: 2 }),   // أقصى نسبة خصم (0-100)
+  maxDiscountValue: decimal("max_discount_value",  { precision: 12, scale: 2 }),   // أقصى قيمة خصم ثابتة (جنيه)
+  // ── الشاشة الافتتاحية — null = لوحة التحكم الافتراضية ──────────────
+  defaultRoute:     varchar("default_route"),
+  createdAt:        timestamp("created_at").notNull().defaultNow(),
 });
 
 export const groupPermissions = pgTable("group_permissions", {

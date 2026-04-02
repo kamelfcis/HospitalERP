@@ -126,13 +126,21 @@ function RequireHospitalAccess({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function DefaultLanding() {
+  const { user } = useAuth();
+  if (user?.defaultRoute && user.defaultRoute !== "/") {
+    return <Redirect to={user.defaultRoute} />;
+  }
+  return <G p="dashboard.view"><Dashboard /></G>;
+}
+
 function Router() {
   return (
     <AppLayout>
       <RequireHospitalAccess>
       <Suspense fallback={<PageLoader />}>
         <Switch>
-          <Route path="/">{() => <G p="dashboard.view"><Dashboard /></G>}</Route>
+          <Route path="/">{() => <DefaultLanding />}</Route>
           <Route path="/chart-of-accounts">{() => <G p="accounts.view"><ChartOfAccounts /></G>}</Route>
           <Route path="/journal-entries">{() => <G p="journal.view"><JournalEntries /></G>}</Route>
           <Route path="/journal-entries/new">{() => <G p="journal.create"><JournalEntryForm /></G>}</Route>

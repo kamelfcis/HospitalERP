@@ -12,7 +12,8 @@ interface Props {
   onDiscountValueChange: (val: string) => void;
   customerType?: string;
   companyCoveragePct?: number;
-  maxDiscountPct?: number | null;
+  maxDiscountPct?:   number | null;
+  maxDiscountValue?: number | null;
   estimatedCompanyTotal?: number | null;
   estimatedPatientTotal?: number | null;
 }
@@ -22,12 +23,14 @@ export function InvoiceTotals({
   totalTaxAmount = 0,
   onDiscountPctChange, onDiscountValueChange,
   customerType, companyCoveragePct = 100,
-  maxDiscountPct,
+  maxDiscountPct, maxDiscountValue,
   estimatedCompanyTotal, estimatedPatientTotal,
 }: Props) {
-  const hasVat          = totalTaxAmount > 0.001;
-  const isContract      = customerType === "contract";
-  const discountOverMax = maxDiscountPct != null && discountPct > maxDiscountPct;
+  const hasVat               = totalTaxAmount > 0.001;
+  const isContract           = customerType === "contract";
+  const discountOverMaxPct   = maxDiscountPct   != null && discountPct   > maxDiscountPct;
+  const discountOverMaxValue = maxDiscountValue != null && discountValue > maxDiscountValue;
+  const discountOverMax      = discountOverMaxPct || discountOverMaxValue;
 
   const hasRuleEstimate = estimatedCompanyTotal != null && estimatedPatientTotal != null;
   const companyShare = isContract
@@ -41,10 +44,16 @@ export function InvoiceTotals({
 
   return (
     <div className="bg-gradient-to-l from-slate-700 to-slate-800 text-white p-3 m-2 rounded-md sticky bottom-0 z-40">
-      {discountOverMax && (
+      {discountOverMaxPct && (
         <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-red-600/80 rounded text-xs font-semibold text-white" data-testid="discount-over-limit-warning">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>تجاوز حد الخصم المسموح: الحد الأقصى {maxDiscountPct}% — الخصم الحالي {discountPct}%</span>
+          <span>تجاوز حد نسبة الخصم: الحد الأقصى {maxDiscountPct}% — الخصم الحالي {discountPct}%</span>
+        </div>
+      )}
+      {discountOverMaxValue && (
+        <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-red-600/80 rounded text-xs font-semibold text-white" data-testid="discount-value-over-limit-warning">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>تجاوز حد قيمة الخصم: الحد الأقصى {formatNumber(maxDiscountValue!)} ج — الخصم الحالي {formatNumber(discountValue)} ج</span>
         </div>
       )}
       <div className={`grid grid-cols-2 md:grid-cols-${colCount} gap-3 text-[12px]`}>

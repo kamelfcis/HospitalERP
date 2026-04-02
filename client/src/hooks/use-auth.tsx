@@ -12,7 +12,9 @@ interface AuthUser {
   isActive: boolean;
   defaultWarehouseId: string | null;
   defaultPurchaseWarehouseId: string | null;
-  maxDiscountPct: string | null;
+  maxDiscountPct:   string | null;
+  maxDiscountValue: string | null;
+  defaultRoute:     string | null;
 }
 
 interface AuthData {
