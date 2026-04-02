@@ -30,6 +30,7 @@ export interface InvoiceLine {
   vatAmount: string;
   valueBeforeVat: string;
   isFreeItem: boolean;
+  effectiveUnitCost: string;
 }
 
 export interface AvailableLot {
@@ -43,15 +44,18 @@ export interface AvailableLot {
 }
 
 export interface ReturnLineEntry {
+  splitKey:              string;   // unique per row (allows multi-lot splits per invoice line)
   purchaseInvoiceLineId: string;
   itemId:     string;
   itemNameAr: string;
   itemCode:   string;
-  invoiceQty:      string;
-  invoiceBonusQty: string;
-  purchasePrice:   string;
-  vatRate:         string;
-  isFreeItem:      boolean;
+  invoiceQty:         string;
+  invoiceBonusQty:    string;
+  purchasePrice:      string;
+  effectiveUnitCost:  string;   // for display & client-side preview computation
+  vatRate:            string;
+  isFreeItem:         boolean;
+  isSplitRow:         boolean;  // true = was added via split button
   lotId:           string;
   qtyReturned:     string;
   bonusQtyReturned: string;

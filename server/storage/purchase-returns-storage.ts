@@ -105,18 +105,19 @@ export interface AvailableLot {
 }
 
 export interface InvoiceLineForReturn {
-  id:              string;
-  itemId:          string;
-  itemNameAr:      string;
-  itemCode:        string;
-  unitLevel:       string;
-  qty:             string;
-  bonusQty:        string;
-  purchasePrice:   string;
-  vatRate:         string;
-  vatAmount:       string;
-  valueBeforeVat:  string;
-  isFreeItem:      boolean;
+  id:                 string;
+  itemId:             string;
+  itemNameAr:         string;
+  itemCode:           string;
+  unitLevel:          string;
+  qty:                string;
+  bonusQty:           string;
+  purchasePrice:      string;
+  vatRate:            string;
+  vatAmount:          string;
+  valueBeforeVat:     string;
+  isFreeItem:         boolean;
+  effectiveUnitCost:  string; // net unit cost after line+header discounts
 }
 
 // ─── getApprovedInvoicesForSupplier ──────────────────────────────────────────
@@ -165,8 +166,19 @@ export async function getApprovedInvoicesForSupplier(supplierId: string) {
 }
 
 // ─── getPurchaseInvoiceLinesForReturn ─────────────────────────────────────────
-// Returns invoice lines enriched with item name/code + remaining qty check
+// Returns invoice lines enriched with item name/code + remaining qty check.
+// effectiveUnitCost = net unit cost after BOTH line-level and header-level discounts.
+// Formula: (valueBeforeVat − proportional_header_discount) / qty
+// This mirrors the pro-rating logic used in sales returns.
 export async function getPurchaseInvoiceLinesForReturn(invoiceId: string): Promise<InvoiceLineForReturn[]> {
+  // 1. Fetch header discount (one cheap query — single row)
+  const hdrRes = await pool.query<{ discount_value: string }>(
+    `SELECT discount_value FROM purchase_invoice_headers WHERE id = $1`,
+    [invoiceId]
+  );
+  const headerDiscount = hdrRes.rows.length > 0 ? parseMoney(hdrRes.rows[0].discount_value) : 0;
+
+  // 2. Fetch invoice lines
   const res = await pool.query<{
     id: string; item_id: string; item_name_ar: string; item_code: string;
     unit_level: string; qty: string; bonus_qty: string;
@@ -189,20 +201,33 @@ export async function getPurchaseInvoiceLinesForReturn(invoiceId: string): Promi
     [invoiceId]
   );
 
-  return res.rows.map(r => ({
-    id:              r.id,
-    itemId:          r.item_id,
-    itemNameAr:      r.item_name_ar,
-    itemCode:        r.item_code,
-    unitLevel:       r.unit_level,
-    qty:             r.qty,
-    bonusQty:        r.bonus_qty,
-    purchasePrice:   r.purchase_price,
-    vatRate:         r.vat_rate,
-    vatAmount:       r.vat_amount,
-    valueBeforeVat:  r.value_before_vat,
-    isFreeItem:      parseMoney(r.purchase_price) === 0,
-  }));
+  // 3. Compute pro-rated effective unit cost (shared formula with sales returns)
+  const totalVBV = res.rows.reduce((s, r) => s + parseMoney(r.value_before_vat), 0);
+
+  return res.rows.map(r => {
+    const vbv = parseMoney(r.value_before_vat);
+    const qty = parseMoney(r.qty);
+    // Proportional share of header discount for this line
+    const proportionalDiscount = totalVBV > 0 ? (vbv / totalVBV) * headerDiscount : 0;
+    const netLineValue  = vbv - proportionalDiscount;
+    const effectiveUnitCost = qty > 0 ? netLineValue / qty : 0;
+
+    return {
+      id:                 r.id,
+      itemId:             r.item_id,
+      itemNameAr:         r.item_name_ar,
+      itemCode:           r.item_code,
+      unitLevel:          r.unit_level,
+      qty:                r.qty,
+      bonusQty:           r.bonus_qty,
+      purchasePrice:      r.purchase_price,
+      vatRate:            r.vat_rate,
+      vatAmount:          r.vat_amount,
+      valueBeforeVat:     r.value_before_vat,
+      isFreeItem:         parseMoney(r.purchase_price) === 0,
+      effectiveUnitCost:  effectiveUnitCost.toFixed(6),
+    };
+  });
 }
 
 // ─── getAvailableLots ─────────────────────────────────────────────────────────
@@ -316,7 +341,17 @@ async function validateAndEnrichLines(
     return inv?.itemId ?? "";
   });
 
-  // Build map: invoiceLineId → total qty already returned (for over-return check)
+  // Pre-compute total qty per invoice line WITHIN the current return document.
+  // This allows multiple lot-split rows for the same invoice line (lot flexibility).
+  const withinReturnTotals = new Map<string, number>();
+  for (const line of input.lines) {
+    withinReturnTotals.set(
+      line.purchaseInvoiceLineId,
+      (withinReturnTotals.get(line.purchaseInvoiceLineId) ?? 0) + line.qtyReturned
+    );
+  }
+
+  // Build map: invoiceLineId → total qty already returned in PREVIOUS finalized returns
   const alreadyReturnedRes = await pool.query<{ inv_line_id: string; returned: string }>(
     `SELECT prl.purchase_invoice_line_id AS inv_line_id,
             COALESCE(SUM(prl.qty_returned::numeric), 0)::text AS returned
@@ -355,15 +390,17 @@ async function validateAndEnrichLines(
       throw new Error(`الكمية المرتجعة للصنف "${invLine.itemNameAr}" يجب أن تكون أكبر من صفر.`);
     }
 
-    // Check item belongs to invoice (already implicit by purchaseInvoiceLineId FK, but double-check)
-    const invoiceQtyMinor = parseMoney(invLine.qty);
-    const alreadyReturned = alreadyReturnedMap.get(invLine.id) ?? 0;
-    const remainingQty    = invoiceQtyMinor - alreadyReturned;
+    // Validate total qty for this invoice line (across ALL split rows in this return + previous returns)
+    const invoiceQtyMinor    = parseMoney(invLine.qty);
+    const alreadyReturned    = alreadyReturnedMap.get(invLine.id) ?? 0;
+    const remainingQty       = invoiceQtyMinor - alreadyReturned;
+    const withinReturnTotal  = withinReturnTotals.get(invLine.id) ?? 0;
 
-    if (line.qtyReturned > remainingQty + 0.0001) {
+    if (withinReturnTotal > remainingQty + 0.0001) {
       throw new Error(
-        `الصنف "${invLine.itemNameAr}": الكمية المطلوبة (${line.qtyReturned.toFixed(4)}) ` +
-        `تتجاوز الكمية القابلة للإرجاع (${remainingQty.toFixed(4)}).`
+        `الصنف "${invLine.itemNameAr}": إجمالي الكمية المرتجعة في هذه الوثيقة ` +
+        `(${withinReturnTotal.toFixed(4)}) يتجاوز الكمية القابلة للإرجاع ` +
+        `(${remainingQty.toFixed(4)}).`
       );
     }
 
@@ -391,8 +428,9 @@ async function validateAndEnrichLines(
     const kindErr    = lotKindMismatchMessage(invLine.itemNameAr, lotKind, isFreeItem);
     if (kindErr) throw new Error(kindErr);
 
-    // unit_cost ALWAYS from invoice line, NOT from lot
-    const unitCost          = isFreeItem ? 0 : parseMoney(invLine.purchasePrice);
+    // unit_cost from invoice line effectiveUnitCost (includes line+header discount pro-rating)
+    // Falls back to purchasePrice if effectiveUnitCost is zero/missing (e.g., free items)
+    const unitCost          = isFreeItem ? 0 : parseMoney(invLine.effectiveUnitCost);
     const bonusQtyReturned  = line.bonusQtyReturned != null && !isNaN(line.bonusQtyReturned)
       ? Math.max(0, line.bonusQtyReturned)
       : 0;

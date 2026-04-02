@@ -63,6 +63,7 @@ export function CreateReturnTab() {
   useEffect(() => {
     if (!invoiceLines.length) return;
     setLines(invoiceLines.map(l => ({
+      splitKey:              crypto.randomUUID(),
       purchaseInvoiceLineId: l.id,
       itemId:                l.itemId,
       itemNameAr:            l.itemNameAr,
@@ -70,8 +71,10 @@ export function CreateReturnTab() {
       invoiceQty:            l.qty,
       invoiceBonusQty:       l.bonusQty,
       purchasePrice:         l.purchasePrice,
+      effectiveUnitCost:     l.effectiveUnitCost ?? l.purchasePrice,
       vatRate:               parseFloat(l.vatRate || "0").toFixed(2),
       isFreeItem:            l.isFreeItem,
+      isSplitRow:            false,
       lotId:                 "",
       qtyReturned:           "",
       bonusQtyReturned:      "",
