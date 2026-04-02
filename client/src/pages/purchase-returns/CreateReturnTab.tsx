@@ -122,12 +122,39 @@ export function CreateReturnTab() {
       const l     = { ...next[idx], ...patch };
       const qty   = parseFloat(l.qtyReturned)     || 0;
       const bonus = parseFloat(l.bonusQtyReturned) || 0;
-      const cost  = parseFloat(l.purchasePrice)    || 0;
+      // Use effectiveUnitCost (after pro-rated discount); fall back to purchasePrice if absent
+      const cost  = parseFloat(l.effectiveUnitCost || l.purchasePrice) || 0;
       const rate  = (() => { const v = parseFloat(String(l.vatRate)); return isNaN(v) ? 0 : v; })();
       const computed = computeLine(qty, cost, rate, l.isFreeItem, bonus);
       next[idx] = { ...l, ...computed };
       return next;
     });
+  }, []);
+
+  // Add an empty split row for the same invoice line (different lot selection)
+  const addSplitLine = useCallback((srcIdx: number) => {
+    setLines(prev => {
+      const src  = prev[srcIdx];
+      const split: ReturnLineEntry = {
+        ...src,
+        splitKey:        crypto.randomUUID(),
+        isSplitRow:      true,
+        lotId:           "",
+        qtyReturned:     "",
+        bonusQtyReturned: "",
+        subtotal:  0,
+        vatAmount: 0,
+        lineTotal: 0,
+      };
+      const next = [...prev];
+      next.splice(srcIdx + 1, 0, split);
+      return next;
+    });
+  }, []);
+
+  // Remove a split row (only split rows can be removed)
+  const removeSplitLine = useCallback((idx: number) => {
+    setLines(prev => prev.filter((_, i) => i !== idx));
   }, []);
 
   // ── Mutation ─────────────────────────────────────────────────────────────────
@@ -304,6 +331,8 @@ export function CreateReturnTab() {
               loadingLines={loadingLines}
               handleNavKey={handleNavKey}
               updateLine={updateLine}
+              addSplitLine={addSplitLine}
+              removeSplitLine={removeSplitLine}
             />
           </CardContent>
         </Card>
