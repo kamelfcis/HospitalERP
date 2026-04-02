@@ -1,4 +1,5 @@
 import { Switch, Route, Redirect, useLocation } from "wouter";
+import { useRef, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -221,7 +222,31 @@ function Router() {
 }
 
 function AuthenticatedApp() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const [, navigate] = useLocation();
+  const didInitialRedirectRef = useRef(false);
+
+  // عند انتقال المستخدم من غير مسجّل → مسجّل، وجّهه للشاشة الافتتاحية مباشرةً
+  // بغض النظر عن الـ URL الحالي (قد يكون صفحة سبق وفتحها المسؤول قبل تسجيل الخروج)
+  useEffect(() => {
+    if (!isAuthenticated || !user || isLoading) return;
+    if (didInitialRedirectRef.current) return;
+    didInitialRedirectRef.current = true;
+
+    const target = user.defaultRoute;
+    // وجّه دائماً للشاشة الافتتاحية عند أول تسجيل دخول بعد الجلسة الحالية
+    // (بغض النظر عن الـ URL — لأن المسؤول قد يسجّل خروجه من صفحة لا يملك الصيدلي صلاحية لها)
+    if (target && target !== "/") {
+      navigate(target);
+    }
+  }, [isAuthenticated, user, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // إعادة التعيين عند تسجيل الخروج
+  useEffect(() => {
+    if (!isAuthenticated) {
+      didInitialRedirectRef.current = false;
+    }
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (
