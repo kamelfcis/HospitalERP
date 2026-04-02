@@ -1122,6 +1122,7 @@ const methods = {
     // آجل: نحسب الفواتير المُنشَأة خلال فترة الوردية للوحدة ذاتها
     // ★ لا نستخدم claimed_by_shift_id لأن الآجل لا يُحصَّل من شاشة الكاشير إطلاقاً
     //   (claimed_by_shift_id يُفعَّل فقط عند التحصيل المباشر — لذا يبقى NULL للآجل)
+    // ملاحظة: cashier_shifts لها pharmacy_id و department_id منفصلان (لا يوجد unit_id)
     const deferredRes = await db.execute(sql`
       SELECT COALESCE(SUM(sih.net_total), 0)::text AS total, COUNT(*)::int AS count
       FROM sales_invoice_headers sih
@@ -1133,8 +1134,8 @@ const methods = {
         AND sih.created_at >= cs.opened_at
         AND (cs.closed_at IS NULL OR sih.created_at <= cs.closed_at)
         AND (
-              (cs.unit_type = 'pharmacy'    AND sih.pharmacy_id   = cs.unit_id)
-           OR (cs.unit_type = 'department'  AND w.department_id   = cs.unit_id)
+              (cs.unit_type = 'pharmacy'   AND sih.pharmacy_id = cs.pharmacy_id)
+           OR (cs.unit_type = 'department' AND w.department_id = cs.department_id)
         )
     `);
     const deferredRow = (deferredRes as any).rows[0];
