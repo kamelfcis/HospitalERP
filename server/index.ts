@@ -285,6 +285,8 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       FROM sales_invoice_headers sih
       WHERE sih.status = 'collected'
         AND sih.is_return = true
+        -- مرتجع الآجل يُغلق بـ collected مباشرة بدون إيصال صرف كاشير — هذا السلوك المقصود
+        AND sih.customer_type != 'credit'
         AND NOT EXISTS (SELECT 1 FROM cashier_refund_receipts crr WHERE crr.invoice_id = sih.id)
       LIMIT 20
     `);

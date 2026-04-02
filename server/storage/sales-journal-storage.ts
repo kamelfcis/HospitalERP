@@ -635,9 +635,20 @@ const methods = {
 
     const entryNumber = await this.getNextEntryNumber();
 
-    // فواتير التوصيل المنزلي: القيد يُرسَل فوراً (posted) لأن الذمم تثبت عند الإنشاء
-    // أما فواتير الكاشير العادية: تبدأ مسودة وتُرسَل عند تحصيل الكاشير
-    const initialStatus = invoice.customerType === "delivery" ? "posted" : "draft";
+    /*
+     * ══ حالة القيد الأولية — مبنية على طريقة السداد ══════════════════════════
+     * "posted" فوراً:
+     *   • delivery (توصيل): الذمة تثبت عند الإنشاء، لا كاشير مباشر
+     *   • credit  (آجل)   : لا كاشير إطلاقاً — القيد نهائي من اللحظة الأولى
+     *                        المرحلة التالية هي تحصيل ذمة العميل (customer_receipts)
+     * "draft" → يُرسَل عند تحصيل الكاشير:
+     *   • cash (نقدي) / contract (تعاقد) / أي نوع آخر
+     * ════════════════════════════════════════════════════════════════════════════
+     */
+    const initialStatus =
+      invoice.customerType === "delivery" || invoice.customerType === "credit"
+        ? "posted"
+        : "draft";
 
     const [entry] = await tx.insert(journalEntries).values({
       entryNumber,
@@ -1314,12 +1325,24 @@ const methods = {
 
     const entryNumber = await this.getNextEntryNumber();
 
+    /*
+     * ══ حالة قيد مردود المبيعات ═══════════════════════════════════════════
+     * آجل:   posted فوراً — لا كاشير، المبلغ يُخصَم من ذمة العميل مباشرة
+     * نقدي:  draft  → يُرسَل في م2 عند صرف الكاشير (completeSalesReturnWithCash)
+     * ══════════════════════════════════════════════════════════════════════
+     */
+    const isCreditReturn = header.customerType === "credit";
+    const returnJournalStatus = isCreditReturn ? "posted" : "draft";
+    const returnDesc = isCreditReturn
+      ? `قيد مردود مبيعات آجل رقم ${header.invoiceNumber} (نهائي — مخصوم من ذمة العميل)`
+      : `قيد مردود مبيعات رقم ${header.invoiceNumber} (مرحلة 1 — بانتظار الصرف)`;
+
     const [entry] = await db.insert(journalEntries).values({
       entryNumber,
       entryDate:        header.invoiceDate,
       reference:        `RET-${header.invoiceNumber}`,
-      description:      `قيد مردود مبيعات رقم ${header.invoiceNumber} (مرحلة 1 — بانتظار الصرف)`,
-      status:           "draft",
+      description:      returnDesc,
+      status:           returnJournalStatus,
       periodId:         period?.id || null,
       sourceType:       "sales_return",
       sourceDocumentId: returnId,
