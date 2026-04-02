@@ -45,7 +45,13 @@ const methods = {
   async getSalesInvoices(this: DatabaseStorage, filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; claimStatus?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: (SalesInvoiceHeader & { warehouse?: { nameAr: string }, pharmacistName: string | null, itemCount: number })[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}> {
     const conditions: Array<any> = [];
     if (filters.status && filters.status !== "all") {
-      conditions.push(eq(salesInvoiceHeaders.status, filters.status as any));
+      // دعم قائمة حالات متعددة مفصولة بفاصلة (مثلاً: "finalized,collected")
+      const statuses = filters.status.split(",").map(s => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        conditions.push(eq(salesInvoiceHeaders.status, statuses[0] as any));
+      } else {
+        conditions.push(inArray(salesInvoiceHeaders.status, statuses as any[]));
+      }
     } else if (!filters.includeCancelled && (!filters.status || filters.status === "all")) {
       conditions.push(sql`${salesInvoiceHeaders.status} != 'cancelled'`);
     }

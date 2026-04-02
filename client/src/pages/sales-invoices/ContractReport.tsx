@@ -72,7 +72,7 @@ export default function ContractReport() {
   const params = useMemo(() => {
     const p = new URLSearchParams({
       customerType: "contract",
-      status:       "finalized",
+      status:       "finalized,collected", // فواتير مرحَّلة + محصَّلة من الكاشير
       dateFrom,
       dateTo,
       page:         String(page),
