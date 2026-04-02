@@ -370,7 +370,8 @@ async function validateAndEnrichLines(
   const allLotIds = [...new Set(input.lines.map(l => l.lotId).filter(Boolean))];
   if (allLotIds.length > 0) {
     // FOR UPDATE داخل نفس الـ tx (نفس الـ connection) لضمان صحة القفل
-    const lockSql = sql.join(allLotIds.map(id => sql`${id}::uuid`), sql`, `);
+    // id column is varchar — no ::uuid cast (would cause "character varying = uuid" error)
+    const lockSql = sql.join(allLotIds.map(id => sql`${id}`), sql`, `);
     await tx.execute(sql`SELECT id FROM inventory_lots WHERE id IN (${lockSql}) FOR UPDATE`);
   }
   const allLotRows = allLotIds.length > 0
