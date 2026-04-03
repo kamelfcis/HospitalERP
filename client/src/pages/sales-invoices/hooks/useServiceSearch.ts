@@ -28,8 +28,9 @@ export function useServiceSearch(
         return;
       }
 
-      const warnings: string[] = [];
-      let addedCount = 0;
+      const stockWarnings: string[] = [];
+      let addedCount   = 0;
+      let skippedCount = 0;
 
       for (const cons of consumables) {
         if (!cons.item) continue;
@@ -39,36 +40,66 @@ export function useServiceSearch(
 
         const qtyMinor = calculateQtyInMinor(parseFloat(cons.quantity), cons.unitLevel, itemData);
 
-        if (warehouseId) {
-          try {
-            const stockRes = await fetch(
-              `/api/transfer/fefo-preview?itemId=${cons.itemId}&warehouseId=${warehouseId}&requiredQtyInMinor=${qtyMinor}&asOfDate=${invoiceDate}`
-            );
-            if (stockRes.ok) {
-              const stockData = await stockRes.json();
-              if (!stockData.fulfilled) {
-                warnings.push(
-                  `${itemData.nameAr}: الكمية غير كافية (المطلوب: ${cons.quantity} ${getUnitName(itemData, cons.unitLevel)})`
-                );
-              }
+        // ── فحص المخزون قبل الإضافة ────────────────────────────────────────────
+        // للأصناف ذات الصلاحية (hasExpiry): لو المخزون غير كافٍ، FEFO سيرفضها.
+        // نتحقق مسبقاً لنعطي رسالة واضحة ونتجنب الإضافة الوهمية.
+        let stockSufficient = true;
+        try {
+          const stockRes = await fetch(
+            `/api/transfer/fefo-preview?itemId=${cons.itemId}&warehouseId=${warehouseId}&requiredQtyInMinor=${qtyMinor}&asOfDate=${invoiceDate}`
+          );
+          if (stockRes.ok) {
+            const stockData = await stockRes.json();
+            if (!stockData.fulfilled) {
+              stockSufficient = false;
+              const needed = cons.quantity;
+              const unit   = getUnitName(itemData, cons.unitLevel);
+              stockWarnings.push(
+                `${itemData.nameAr}: رصيد غير كافٍ (المطلوب: ${needed} ${unit})`
+              );
             }
-          } catch {}
+          }
+        } catch {}
+
+        // للأصناف ذات الصلاحية: لا تحاول الإضافة لو المخزون غير كافٍ (ستفشل FEFO صامتة)
+        if (!stockSufficient && itemData.hasExpiry) {
+          skippedCount++;
+          continue;
         }
 
         await addItemToLines(itemData, { qty: parseFloat(cons.quantity) || 1, unitLevel: cons.unitLevel || "major" });
         addedCount++;
       }
 
-      if (warnings.length > 0) {
+      // ── رسائل النتيجة ─────────────────────────────────────────────────────────
+      if (stockWarnings.length > 0) {
         toast({
-          title: `تنبيه مخزون - ${serviceName}`,
-          description: warnings.join(" | "),
-          variant: "destructive",
-          duration: 8000,
+          title:       `رصيد غير كافٍ — ${serviceName}`,
+          description: stockWarnings.join(" | "),
+          variant:     "destructive",
+          duration:    9000,
         });
       }
-      if (addedCount > 0) {
-        toast({ title: `تمت إضافة مستهلكات: ${serviceName}`, description: `تم إضافة ${addedCount} صنف` });
+
+      if (addedCount > 0 && skippedCount === 0) {
+        toast({
+          title:       `تمت إضافة مستهلكات: ${serviceName}`,
+          description: `تم إضافة ${addedCount} صنف للفاتورة`,
+        });
+      } else if (addedCount > 0 && skippedCount > 0) {
+        toast({
+          title:       `مستهلكات ${serviceName}`,
+          description: `أُضيف ${addedCount} صنف — لم يُضَف ${skippedCount} بسبب نقص المخزون`,
+          variant:     "destructive",
+          duration:    8000,
+        });
+      } else if (addedCount === 0 && skippedCount > 0) {
+        toast({
+          title:       `لم تُضَف أي مستهلكات — ${serviceName}`,
+          description: `جميع الأصناف (${skippedCount}) غير متوفرة في المخزون`,
+          variant:     "destructive",
+          duration:    8000,
+        });
       }
     } catch (err: unknown) {
       const _em = err instanceof Error ? err.message : String(err);
