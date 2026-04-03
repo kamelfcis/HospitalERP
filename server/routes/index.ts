@@ -45,6 +45,7 @@ import { registerDeliveryPaymentRoutes }  from "./delivery-payments";
 import { registerReceiptSettingsRoutes }  from "./receipt-settings";
 import { registerShortageRoutes }        from "./shortage";
 import { registerUnitIntegrityRoutes }   from "./unit-integrity";
+import { registerTaskRoutes }            from "./tasks";
 
 export { broadcastToPharmacy, broadcastBedBoardUpdate } from "./_shared";
 
@@ -75,6 +76,7 @@ export async function registerRoutes(
   registerReceiptSettingsRoutes(app);
   registerShortageRoutes(app);
   registerUnitIntegrityRoutes(app);
+  registerTaskRoutes(app);
 
   return httpServer;
 }

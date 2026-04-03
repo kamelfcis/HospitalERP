@@ -44,6 +44,7 @@ The system uses a RESTful JSON API. Drizzle ORM manages PostgreSQL interactions,
 - **Unit Conversion Overhaul**: Centralized unit conversion logic with `QTY_MINOR_TOLERANCE=0.0005`, supporting various unit configurations and server-side re-verification.
 - **Financial Integrity Hardening**: Includes measures for GL safety, inventory integrity, and accounting for returns, with a `returns_mode` system setting to define sales return accounting behavior.
 - **Pharmacy Sales VAT Module**: Per-item VAT configuration, a pure VAT engine, service layer, per-line tax snapshot on sales invoice lines, header-level tax totals, GL journal `vat_output` line injection with proportional revenue split, and returns reversal via `Dr vat_output`.
+- **Internal Task Management System**: Replaces the internal chat system. Staff can create tasks assigned to one or more users, with priorities (normal/important/urgent), due dates, status lifecycle (new → in_progress → done / deferred / needs_clarification / cancelled), timeline comments, and real-time Facebook-style notification bell (🔔 red badge). SSE channel `taskNotifSseClients` in `_sse.ts`. Tables: `tasks`, `task_assignees`, `task_comments`, `task_notifications`. Routes in `server/routes/tasks.ts`. Frontend: `NotificationBell` in header, `/tasks` page with inbox/sent tabs and status filters. Chat system backend is preserved but UI removed.
 
 ## External Dependencies
 

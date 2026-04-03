@@ -55,6 +55,7 @@ import {
   Printer,
   NotebookPen,
   PackagePlus,
+  ListTodo,
   type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -64,7 +65,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePharmacyMode } from "@/hooks/use-pharmacy-mode";
 import { ROLE_LABELS } from "@shared/permissions";
 import { AppHeader } from "./AppHeader";
-import { ChatPopup } from "@/components/chat/ChatPopup";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -80,6 +80,7 @@ interface NavItem {
 
 const mainNavItems: NavItem[] = [
   { title: "لوحة التحكم",            href: "/",                      icon: LayoutDashboard,  permission: "dashboard.view" },
+  { title: "المهام الداخلية",         href: "/tasks",                 icon: ListTodo },
   { title: "دليل الحسابات",           href: "/chart-of-accounts",     icon: BookOpen,          permission: "accounts.view" },
   { title: "القيود اليومية",           href: "/journal-entries",       icon: FileText,          permission: "journal.view" },
   { title: "مراكز التكلفة",           href: "/cost-centers",          icon: Building2,         permission: "cost_centers.view" },
@@ -320,7 +321,6 @@ export function AppLayout({ children }: AppLayoutProps) {
           <main className="flex-1 overflow-auto">
             {children}
           </main>
-          <ChatPopup />
         </div>
       </div>
     </SidebarProvider>

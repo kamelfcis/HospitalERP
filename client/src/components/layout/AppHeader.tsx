@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { MarqueeTicker } from "./MarqueeTicker";
+import { NotificationBell } from "@/components/tasks/NotificationBell";
 
 interface Announcement {
   id: string;
@@ -17,7 +18,7 @@ export function AppHeader() {
 
   return (
     <header
-      className="flex items-center h-10 px-4 bg-sidebar shrink-0 no-print overflow-hidden border-b border-sidebar-border"
+      className="flex items-center h-10 px-4 bg-sidebar shrink-0 no-print overflow-hidden border-b border-sidebar-border gap-2"
       data-testid="app-header-ticker"
     >
       <MarqueeTicker
@@ -25,6 +26,7 @@ export function AppHeader() {
         speed={70}
         className="flex-1 text-sidebar-foreground/90"
       />
+      <NotificationBell />
     </header>
   );
 }

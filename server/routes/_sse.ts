@@ -102,3 +102,17 @@ export function broadcastDeliveryPaymentUpdate() {
     try { res.write(payload); (res as any).flush?.(); } catch { deliveryPaymentClients.delete(res); }
   });
 }
+
+// ── إشعارات المهام الداخلية ───────────────────────────────────
+export const taskNotifSseClients = new Map<string, Response>();
+
+export function broadcastTaskNotif(receiverId: string, data: unknown) {
+  const res = taskNotifSseClients.get(receiverId);
+  if (!res) return;
+  try {
+    res.write(`event: task-notification\ndata: ${JSON.stringify(data)}\n\n`);
+    (res as any).flush?.();
+  } catch {
+    taskNotifSseClients.delete(receiverId);
+  }
+}

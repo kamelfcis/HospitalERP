@@ -83,6 +83,7 @@ const CashierHandoverPage      = lazy(() => import("@/pages/cashier-handover/ind
 const ItemMovementReport       = lazy(() => import("@/pages/item-movement-report/index"));
 const WarehouseBalanceReport   = lazy(() => import("@/pages/warehouse-balance-report/index"));
 const ReceiptSettings          = lazy(() => import("@/pages/receipt-settings/index"));
+const TasksPage                = lazy(() => import("@/pages/tasks/index"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -143,6 +144,7 @@ function Router() {
       <Suspense fallback={<PageLoader />}>
         <Switch>
           <Route path="/">{() => <DefaultLanding />}</Route>
+          <Route path="/tasks">{() => <TasksPage />}</Route>
           <Route path="/chart-of-accounts">{() => <G p="accounts.view"><ChartOfAccounts /></G>}</Route>
           <Route path="/journal-entries">{() => <G p="journal.view"><JournalEntries /></G>}</Route>
           <Route path="/journal-entries/new">{() => <G p="journal.create"><JournalEntryForm /></G>}</Route>
