@@ -44,6 +44,16 @@ export function registerServicesRoutes(app: Express) {
     }
   });
 
+  app.get("/api/services/:id", requireAuth, async (req, res) => {
+    try {
+      const service = await storage.getService(req.params.id as string);
+      if (!service) return res.status(404).json({ message: "الخدمة غير موجودة" });
+      res.json(service);
+    } catch (error: unknown) {
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
+    }
+  });
+
   app.put("/api/services/:id", requireAuth, checkPermission(PERMISSIONS.SERVICES_MANAGE), async (req, res) => {
     try {
       const validated = insertServiceSchema.partial().parse(req.body);

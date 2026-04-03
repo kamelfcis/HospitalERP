@@ -97,6 +97,22 @@ const methods = {
     return { data, total };
   },
 
+  async getService(this: DatabaseStorage, id: string): Promise<ServiceWithDepartment | null> {
+    const [row] = await db.select({
+      service: services,
+      department: departments,
+      revenueAccount: accounts,
+      costCenter: costCenters,
+    })
+      .from(services)
+      .leftJoin(departments, eq(services.departmentId, departments.id))
+      .leftJoin(accounts, eq(services.revenueAccountId, accounts.id))
+      .leftJoin(costCenters, eq(services.costCenterId, costCenters.id))
+      .where(eq(services.id, id));
+    if (!row) return null;
+    return { ...row.service, department: row.department || undefined, revenueAccount: row.revenueAccount || undefined, costCenter: row.costCenter || undefined };
+  },
+
   async createService(this: DatabaseStorage, data: InsertService): Promise<Service> {
     const [row] = await db.insert(services).values(data).returning();
     return row;
@@ -127,6 +143,9 @@ const methods = {
         majorUnitName: items.majorUnitName,
         mediumUnitName: items.mediumUnitName,
         minorUnitName: items.minorUnitName,
+        majorToMinor: items.majorToMinor,
+        mediumToMinor: items.mediumToMinor,
+        hasExpiry: items.hasExpiry,
       })
       .from(serviceConsumables)
       .leftJoin(items, eq(serviceConsumables.itemId, items.id))
@@ -147,6 +166,11 @@ const methods = {
         majorUnitName: r.majorUnitName,
         mediumUnitName: r.mediumUnitName,
         minorUnitName: r.minorUnitName,
+        majorToMinor: r.majorToMinor,
+        mediumToMinor: r.mediumToMinor,
+        hasExpiry: r.hasExpiry,
+        salePriceCurrent: "0",
+        availableQtyMinor: "0",
       } as any : undefined,
     }));
   },

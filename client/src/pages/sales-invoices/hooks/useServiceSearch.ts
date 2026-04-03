@@ -28,7 +28,7 @@ export function useServiceSearch(
       // إضافة سطر الخدمة
       addServiceLine(serviceId, serviceData.nameAr || serviceName, parseFloat(serviceData.basePrice || "0") || 0);
 
-      // جلب المستهلكات
+      // جلب المستهلكات — يتضمن كل بيانات الصنف المطلوبة
       const res = await fetch(`/api/services/${serviceId}/consumables`, { credentials: "include" });
       if (!res.ok) throw new Error("فشل تحميل المستهلكات");
       const consumables = await res.json();
@@ -44,10 +44,9 @@ export function useServiceSearch(
       let skippedCount = 0;
 
       for (const cons of consumables) {
-        if (!cons.item) continue;
-        const itemRes = await fetch(`/api/items/${cons.itemId}`, { credentials: "include" });
-        if (!itemRes.ok) continue;
-        const itemData = await itemRes.json();
+        // استخدام بيانات الصنف المُضمَّنة في استجابة المستهلكات مباشرةً
+        const itemData = cons.item;
+        if (!itemData) continue;
 
         const qtyNum   = parseFloat(cons.quantity) || 1;
         const unitLv   = cons.unitLevel || "major";
