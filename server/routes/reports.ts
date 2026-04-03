@@ -813,8 +813,8 @@ export function registerReportsRoutes(app: Express) {
                 END
               WHEN 'medium' THEN
                 CASE WHEN medium_unit_name IS NOT NULL
-                     THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4)
-                     ELSE ROUND(qty_minor / NULLIF(major_to_minor,  0), 4)
+                     THEN ROUND(qty_minor / NULLIF(major_to_minor, 0) * major_to_medium, 4)
+                     ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4)
                 END
               ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4)
             END                                          AS qty_display,
@@ -927,7 +927,8 @@ export function registerReportsRoutes(app: Express) {
               CASE WHEN minor_unit_name IS NOT NULL THEN qty_minor
                    ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) END
             WHEN 'medium' THEN
-              CASE WHEN medium_unit_name IS NOT NULL THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4)
+              CASE WHEN medium_unit_name IS NOT NULL
+                   THEN ROUND(qty_minor / NULLIF(major_to_minor, 0) * major_to_medium, 4)
                    ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) END
             ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4)
           END) AS "totalQty",
@@ -939,7 +940,7 @@ export function registerReportsRoutes(app: Express) {
                      ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * purchase_price_major END
               WHEN 'medium' THEN
                 CASE WHEN medium_unit_name IS NOT NULL
-                     THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4) * ROUND(purchase_price_major / NULLIF(major_to_medium, 0), 4)
+                     THEN ROUND(qty_minor / NULLIF(major_to_minor, 0) * major_to_medium, 4) * ROUND(purchase_price_major / NULLIF(major_to_medium, 0), 4)
                      ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * purchase_price_major END
               ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * purchase_price_major
             END, 2)) AS "totalCost",
@@ -951,7 +952,7 @@ export function registerReportsRoutes(app: Express) {
                      ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * sale_price_major END
               WHEN 'medium' THEN
                 CASE WHEN medium_unit_name IS NOT NULL
-                     THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4) * ROUND(sale_price_major / NULLIF(major_to_medium, 0), 4)
+                     THEN ROUND(qty_minor / NULLIF(major_to_minor, 0) * major_to_medium, 4) * ROUND(sale_price_major / NULLIF(major_to_medium, 0), 4)
                      ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * sale_price_major END
               ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * sale_price_major
             END, 2)) AS "totalSaleValue"
@@ -1029,7 +1030,7 @@ export function registerReportsRoutes(app: Express) {
                      ELSE ROUND(lb.qty_minor / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4) END
               WHEN 'medium' THEN
                 CASE WHEN i.medium_unit_name IS NOT NULL
-                     THEN ROUND(lb.qty_minor / NULLIF(COALESCE(i.medium_to_minor::numeric, 1), 0), 4)
+                     THEN ROUND(lb.qty_minor / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0) * COALESCE(i.major_to_medium::numeric, 1), 4)
                      ELSE ROUND(lb.qty_minor / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4) END
               ELSE ROUND(lb.qty_minor / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4)
             END AS qty_display,
