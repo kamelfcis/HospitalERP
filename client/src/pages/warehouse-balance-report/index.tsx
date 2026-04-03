@@ -200,9 +200,9 @@ export default function WarehouseBalanceReport() {
 
           {/* Warehouse */}
           <div className="space-y-1">
-            <Label className="text-xs">المخزن *</Label>
+            <Label className="text-sm font-medium">المخزن *</Label>
             <Select value={filters.warehouseId} onValueChange={v => set("warehouseId", v)}>
-              <SelectTrigger className="h-8 text-xs" data-testid="select-warehouse">
+              <SelectTrigger className="h-9 text-sm" data-testid="select-warehouse">
                 <SelectValue placeholder="اختر مخزناً..." />
               </SelectTrigger>
               <SelectContent>
@@ -215,9 +215,9 @@ export default function WarehouseBalanceReport() {
 
           {/* As-Of Date */}
           <div className="space-y-1">
-            <Label className="text-xs">في تاريخ *</Label>
+            <Label className="text-sm font-medium">في تاريخ *</Label>
             <Input
-              type="date" className="h-8 text-xs"
+              type="date" className="h-9 text-sm"
               value={filters.asOfDate}
               onChange={e => set("asOfDate", e.target.value)}
               data-testid="input-as-of-date"
@@ -226,9 +226,9 @@ export default function WarehouseBalanceReport() {
 
           {/* Category */}
           <div className="space-y-1">
-            <Label className="text-xs">نوع الصنف</Label>
+            <Label className="text-sm font-medium">نوع الصنف</Label>
             <Select value={filters.category} onValueChange={v => set("category", v)}>
-              <SelectTrigger className="h-8 text-xs" data-testid="select-category">
+              <SelectTrigger className="h-9 text-sm" data-testid="select-category">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -241,9 +241,9 @@ export default function WarehouseBalanceReport() {
 
           {/* Unit Level */}
           <div className="space-y-1">
-            <Label className="text-xs">الوحدة</Label>
+            <Label className="text-sm font-medium">الوحدة</Label>
             <Select value={filters.unitLevel} onValueChange={v => set("unitLevel", v)}>
-              <SelectTrigger className="h-8 text-xs" data-testid="select-unit-level">
+              <SelectTrigger className="h-9 text-sm" data-testid="select-unit-level">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -256,12 +256,12 @@ export default function WarehouseBalanceReport() {
 
           {/* Search */}
           <div className="space-y-1">
-            <Label className="text-xs">بحث (كود / اسم)</Label>
+            <Label className="text-sm font-medium">بحث (كود / اسم)</Label>
             <div className="relative">
-              <Search className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Search className="h-4 w-4 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={searchRef}
-                className="h-8 text-xs pr-6"
+                className="h-9 text-sm pr-7"
                 placeholder="ابحث..."
                 value={filters.search}
                 onChange={e => set("search", e.target.value)}
@@ -273,22 +273,22 @@ export default function WarehouseBalanceReport() {
 
           {/* Actions col */}
           <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-1.5 h-5">
+            <div className="flex items-center gap-2 h-5">
               <Checkbox
                 id="exclude-zero"
                 checked={filters.excludeZero}
                 onCheckedChange={v => set("excludeZero", !!v)}
                 data-testid="checkbox-exclude-zero"
               />
-              <Label htmlFor="exclude-zero" className="text-[11px] cursor-pointer">استبعاد الصفري</Label>
+              <Label htmlFor="exclude-zero" className="text-sm font-medium cursor-pointer">استبعاد الصفري</Label>
             </div>
             <div className="flex gap-1">
-              <Button size="sm" className="flex-1 h-8 text-xs gap-1" onClick={handleApply} data-testid="button-apply">
-                {(isLoading || isFetching) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+              <Button size="sm" className="flex-1 h-9 text-sm gap-1" onClick={handleApply} data-testid="button-apply">
+                {(isLoading || isFetching) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 استعلام
               </Button>
-              <Button size="sm" variant="outline" className="h-8 px-2" onClick={handleReset} data-testid="button-reset" title="إعادة تعيين">
-                <RotateCcw className="h-3 w-3" />
+              <Button size="sm" variant="outline" className="h-9 px-2" onClick={handleReset} data-testid="button-reset" title="إعادة تعيين">
+                <RotateCcw className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -307,8 +307,8 @@ export default function WarehouseBalanceReport() {
               { label: "إجمالي قيمة البيع", value: `${fmt(summary.totalSaleValue)} ج`, color: "text-purple-600" },
             ].map(c => (
               <div key={c.label} className="peachtree-card p-2 text-center">
-                <div className={cn("text-lg font-bold font-mono", c.color)}>{c.value}</div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">{c.label}</div>
+                <div className={cn("text-xl font-bold font-mono", c.color)}>{c.value}</div>
+                <div className="text-xs font-medium text-muted-foreground mt-1">{c.label}</div>
               </div>
             ))}
           </div>
@@ -346,42 +346,42 @@ export default function WarehouseBalanceReport() {
             <p className="text-sm">لا توجد بيانات بالفلاتر المحددة</p>
           </div>
         ) : (
-          <Table className="text-xs">
+          <Table className="text-sm">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
-                <TableHead className="text-right w-8 print:hidden">#</TableHead>
-                <TableHead className="text-right w-24">كود الصنف</TableHead>
-                <TableHead className="text-right">اسم الصنف</TableHead>
-                <TableHead className="text-right w-20 hidden md:table-cell">اسم إنجليزي</TableHead>
-                <TableHead className="text-right w-16">النوع</TableHead>
-                <TableHead className="text-right w-20 hidden lg:table-cell">المخزن</TableHead>
-                <TableHead className="text-right w-16">الوحدة</TableHead>
-                <TableHead className="text-left w-20">الكمية</TableHead>
-                <TableHead className="text-left w-24">سعر الشراء</TableHead>
-                <TableHead className="text-left w-24">سعر البيع</TableHead>
-                <TableHead className="text-left w-28">إجمالي التكلفة</TableHead>
-                <TableHead className="text-left w-28">إجمالي البيع</TableHead>
+                <TableHead className="text-right w-8 print:hidden font-bold">#</TableHead>
+                <TableHead className="text-right w-28 font-bold">كود الصنف</TableHead>
+                <TableHead className="text-right w-44 font-bold">اسم الصنف</TableHead>
+                <TableHead className="text-right w-44 hidden md:table-cell font-bold">اسم إنجليزي</TableHead>
+                <TableHead className="text-right w-16 font-bold">النوع</TableHead>
+                <TableHead className="text-right w-24 hidden lg:table-cell font-bold">المخزن</TableHead>
+                <TableHead className="text-right w-20 font-bold">الوحدة</TableHead>
+                <TableHead className="text-left w-24 font-bold">الكمية</TableHead>
+                <TableHead className="text-left w-28 font-bold">سعر الشراء</TableHead>
+                <TableHead className="text-left w-28 font-bold">سعر البيع</TableHead>
+                <TableHead className="text-left w-32 font-bold">إجمالي التكلفة</TableHead>
+                <TableHead className="text-left w-32 font-bold">إجمالي البيع</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row, idx) => (
                 <TableRow key={row.itemId} className="hover:bg-muted/30" data-testid={`row-balance-${row.itemId}`}>
                   <TableCell className="text-muted-foreground print:hidden">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
-                  <TableCell className="font-mono font-medium">{row.itemCode}</TableCell>
-                  <TableCell className="font-medium">{row.nameAr}</TableCell>
-                  <TableCell className="text-muted-foreground text-[11px] hidden md:table-cell">{row.nameEn || "—"}</TableCell>
+                  <TableCell className="font-mono font-semibold">{row.itemCode}</TableCell>
+                  <TableCell className="font-semibold w-44">{row.nameAr}</TableCell>
+                  <TableCell className="w-44 hidden md:table-cell">{row.nameEn || "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={row.category === "drug" ? "default" : "secondary"} className="text-[10px] h-4 px-1">
+                    <Badge variant={row.category === "drug" ? "default" : "secondary"} className="text-xs px-2">
                       {categoryLabel(row.category)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="hidden lg:table-cell text-muted-foreground">{row.warehouseName}</TableCell>
-                  <TableCell className="text-muted-foreground">{row.unitLabel}</TableCell>
-                  <TableCell className="text-left font-mono">{fmt(row.qty, 3)}</TableCell>
-                  <TableCell className="text-left font-mono">{fmt(row.purchasePriceUnit)}</TableCell>
-                  <TableCell className="text-left font-mono">{fmt(row.salePriceUnit)}</TableCell>
-                  <TableCell className="text-left font-mono text-orange-700">{fmt(row.totalCost)}</TableCell>
-                  <TableCell className="text-left font-mono text-green-700">{fmt(row.totalSaleValue)}</TableCell>
+                  <TableCell className="hidden lg:table-cell">{row.warehouseName}</TableCell>
+                  <TableCell>{row.unitLabel}</TableCell>
+                  <TableCell className="text-left font-mono font-medium">{fmt(row.qty, 3)}</TableCell>
+                  <TableCell className="text-left font-mono font-medium">{fmt(row.purchasePriceUnit)}</TableCell>
+                  <TableCell className="text-left font-mono font-medium">{fmt(row.salePriceUnit)}</TableCell>
+                  <TableCell className="text-left font-mono font-semibold text-orange-700">{fmt(row.totalCost)}</TableCell>
+                  <TableCell className="text-left font-mono font-semibold text-green-700">{fmt(row.totalSaleValue)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
