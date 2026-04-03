@@ -18,6 +18,7 @@ import { journalEntries, journalLines, accountMappings } from "@shared/schema/fi
 import type { CustomerCreditInvoiceRow } from "@shared/schema/invoicing";
 import { logger } from "../lib/logger";
 import { logAcctEvent } from "../lib/accounting-event-logger";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -305,7 +306,7 @@ export async function createCustomerReceipt(
           totalCredit:      amount,
         }).returning({ id: journalEntries.id });
 
-        await tx.insert(journalLines).values([
+        const customerReceiptJournalLines = await resolveCostCenters([
           {
             journalEntryId: entry.id,
             lineNumber:     1,
@@ -323,6 +324,7 @@ export async function createCustomerReceipt(
             description:    `تحصيل آجل #${receiptNumber} - ذمم`,
           },
         ]);
+        await tx.insert(journalLines).values(customerReceiptJournalLines);
 
         journalEntryId = entry.id;
 

@@ -13,6 +13,7 @@
 import { db } from "../db";
 import { eq, and, asc, sql, gte, lte, isNull, inArray } from "drizzle-orm";
 import { roundMoney, parseMoney } from "../finance-helpers";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 import {
   journalEntries,
   journalLines,
@@ -443,11 +444,13 @@ const methods = {
         totalCredit: roundMoney(totalCredit),
       }).returning();
 
-      const linesWithEntryId = journalLineData.map((l, idx) => ({
-        ...l,
-        journalEntryId: entry.id,
-        lineNumber: idx + 1,
-      }));
+      const linesWithEntryId = await resolveCostCenters(
+        journalLineData.map((l, idx) => ({
+          ...l,
+          journalEntryId: entry.id,
+          lineNumber: idx + 1,
+        }))
+      );
 
       await tx.insert(journalLines).values(linesWithEntryId);
       console.log(`[GL] Created journal entry ${entry.entryNumber} for ${params.sourceType}/${params.sourceDocumentId}`);

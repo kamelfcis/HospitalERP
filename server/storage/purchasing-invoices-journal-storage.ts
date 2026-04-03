@@ -1,6 +1,7 @@
 import { db, type DrizzleTransaction } from "../db";
 import { eq, and, gte, lte, asc, sql, inArray } from "drizzle-orm";
 import { convertPriceToMinor } from "../inventory-helpers";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 import {
   items,
   inventoryLots,
@@ -251,11 +252,13 @@ async function generatePurchaseInvoiceJournalInTx(
     totalCredit:      String(totalCredits.toFixed(2)),
   }).returning();
 
-  const linesWithEntryId = journalLineData.map((l, idx) => ({
-    ...l,
-    journalEntryId: entry.id,
-    lineNumber:     idx + 1,
-  }));
+  const linesWithEntryId = await resolveCostCenters(
+    journalLineData.map((l, idx) => ({
+      ...l,
+      journalEntryId: entry.id,
+      lineNumber:     idx + 1,
+    }))
+  );
   await tx.insert(journalLines).values(linesWithEntryId);
 
   return entry;

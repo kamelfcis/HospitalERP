@@ -90,6 +90,7 @@ export function useChartOfAccounts() {
         level: account.level,
         isActive: account.isActive,
         requiresCostCenter: account.requiresCostCenter,
+        defaultCostCenterId: (account as any).defaultCostCenterId ?? null,
         description: account.description || "",
         openingBalance: account.openingBalance,
       });
@@ -103,6 +104,7 @@ export function useChartOfAccounts() {
         level: 1,
         isActive: true,
         requiresCostCenter: false,
+        defaultCostCenterId: null,
         description: "",
         openingBalance: "0",
       });
@@ -121,6 +123,7 @@ export function useChartOfAccounts() {
       level: 1,
       isActive: true,
       requiresCostCenter: false,
+      defaultCostCenterId: null,
       description: "",
       openingBalance: "0",
     });

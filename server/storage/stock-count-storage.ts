@@ -40,6 +40,7 @@ import type { DatabaseStorage } from "./index";
 import { scheduleInventorySnapshotRefresh } from "../lib/inventory-snapshot-scheduler";
 import { auditLog } from "../route-helpers";
 import { logger } from "../lib/logger";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 
 // ── رقم تسلسلي لجلسات الجرد ─────────────────────────────────────────────────
 async function getNextSessionNumber(): Promise<number> {
@@ -852,17 +853,17 @@ const stockCountStorage = {
             totalCredit:      totalCredit.toFixed(2),
           }).returning();
 
-          await tx.insert(journalLines).values(
+          const stockCountJournalLines = await resolveCostCenters(
             jLines.map((l) => ({
               journalEntryId: entry.id,
               lineNumber:     l.lineNumber,
               accountId:      l.accountId,
-              costCenterId:   null,
               debit:          l.debit,
               credit:         l.credit,
               description:    l.description,
             }))
           );
+          await tx.insert(journalLines).values(stockCountJournalLines);
 
           journalEntryId = entry.id;
           logger.info(

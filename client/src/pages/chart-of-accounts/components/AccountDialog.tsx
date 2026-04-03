@@ -45,6 +45,12 @@ function suggestNextCode(accounts: Account[], parentId: string | null | undefine
   return String(Math.max(...children) + 1);
 }
 
+interface CostCenter {
+  id: string;
+  code: string;
+  name: string;
+}
+
 interface AccountDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +58,7 @@ interface AccountDialogProps {
   formData: Partial<InsertAccount>;
   setFormData: (data: Partial<InsertAccount>) => void;
   accounts: Account[] | undefined;
+  costCenters: CostCenter[] | undefined;
   handleSubmit: () => void;
 }
 
@@ -62,6 +69,7 @@ export function AccountDialog({
   formData,
   setFormData,
   accounts,
+  costCenters,
   handleSubmit,
 }: AccountDialogProps) {
   return (
@@ -160,6 +168,27 @@ export function AccountDialog({
                       <span className="font-mono">{account.code}</span> - {account.name}
                     </SelectItem>
                   ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="defaultCostCenterId" className="text-xs">مركز التكلفة الافتراضي</Label>
+            <Select
+              value={(formData as any).defaultCostCenterId || "__none__"}
+              onValueChange={(value) => {
+                setFormData({ ...formData, defaultCostCenterId: value === "__none__" ? null : value } as any);
+              }}
+            >
+              <SelectTrigger id="defaultCostCenterId" className="peachtree-select text-xs" data-testid="select-default-cost-center">
+                <SelectValue placeholder="بدون مركز تكلفة افتراضي" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__" className="text-xs">بدون مركز تكلفة افتراضي</SelectItem>
+                {costCenters?.map((cc) => (
+                  <SelectItem key={cc.id} value={cc.id} className="text-xs">
+                    <span className="font-mono">{cc.code}</span> - {cc.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

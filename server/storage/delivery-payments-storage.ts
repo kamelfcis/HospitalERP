@@ -16,6 +16,7 @@ import { deliveryReceipts, deliveryReceiptLines } from "@shared/schema/invoicing
 import { journalEntries, journalLines, accountMappings } from "@shared/schema/finance";
 import { logger } from "../lib/logger";
 import { logAcctEvent } from "../lib/accounting-event-logger";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -274,7 +275,7 @@ export async function createDeliveryReceipt(
         createdBy:   input.createdBy ?? null,
       }).returning({ id: journalEntries.id });
 
-      await db.insert(journalLines).values([
+      const deliveryJournalLines = await resolveCostCenters([
         {
           journalEntryId: entry.id,
           lineNumber:     1,
@@ -292,6 +293,7 @@ export async function createDeliveryReceipt(
           description:    `ذمم توصيل منزلي - إيصال ${receiptNumber}`,
         },
       ]);
+      await db.insert(journalLines).values(deliveryJournalLines);
 
       await db.execute(sql`
         UPDATE delivery_receipts SET journal_entry_id = ${entry.id}

@@ -3,6 +3,7 @@ import type { DrizzleTransaction } from "../db";
 import { eq, and, sql, asc, gte, lte, inArray } from "drizzle-orm";
 import { logAcctEvent, updateAcctEvent } from "../lib/accounting-event-logger";
 import { logger } from "../lib/logger";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 import {
   items,
   warehouses,
@@ -672,11 +673,13 @@ const methods = {
       totalCredit: String(totalCredits.toFixed(2)),
     }).returning();
 
-    const linesWithEntryId = journalLineData.map((l, idx) => ({
-      ...l,
-      journalEntryId: entry.id,
-      lineNumber: idx + 1,
-    }));
+    const linesWithEntryId = await resolveCostCenters(
+      journalLineData.map((l, idx) => ({
+        ...l,
+        journalEntryId: entry.id,
+        lineNumber: idx + 1,
+      }))
+    );
 
     await tx.insert(journalLines).values(linesWithEntryId);
     return entry;
@@ -1373,9 +1376,10 @@ const methods = {
       totalCredit:      String(totalCredits.toFixed(2)),
     }).returning();
 
-    await db.insert(journalLines).values(
+    const salesReturnLines = await resolveCostCenters(
       jLines.map((l, i) => ({ ...l, journalEntryId: entry.id, lineNumber: i + 1 }))
     );
+    await db.insert(journalLines).values(salesReturnLines);
 
     await db.update(salesInvoiceHeaders)
       .set({ journalStatus: "posted" })

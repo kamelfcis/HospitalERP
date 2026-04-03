@@ -15,6 +15,9 @@ import {
   mappingLineTypeLabels,
 } from "@shared/schema";
 import { validateAccountCategory } from "../lib/account-category-validator";
+import { db } from "../db";
+import { accounts, journalLines } from "@shared/schema/finance";
+import { eq, isNull, isNotNull, sql } from "drizzle-orm";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -435,6 +438,37 @@ export function registerAccountSetupRoutes(app: Express) {
       res.json(results);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
+  // ─── Retroactive Cost Center Backfill ────────────────────────────────────────
+  // يملأ cost_center_id للسطور المحاسبية القديمة التي لا تحمل مركز تكلفة
+  // بناءً على الحساب الافتراضي (default_cost_center_id) لكل حساب
+  app.post("/api/admin/backfill-cost-centers", requireAuth, async (req, res) => {
+    try {
+      const accountRows = await db
+        .select({ id: accounts.id, defaultCostCenterId: accounts.defaultCostCenterId })
+        .from(accounts)
+        .where(isNotNull(accounts.defaultCostCenterId));
+
+      let totalUpdated = 0;
+      for (const acct of accountRows) {
+        if (!acct.defaultCostCenterId) continue;
+        const result = await db.execute(
+          sql`UPDATE journal_lines
+              SET cost_center_id = ${acct.defaultCostCenterId}
+              WHERE account_id = ${acct.id}
+                AND cost_center_id IS NULL`
+        );
+        totalUpdated += (result as any).rowCount ?? 0;
+      }
+
+      logger.info({ totalUpdated }, "[Backfill] Cost center backfill complete");
+      res.json({ success: true, linesUpdated: totalUpdated });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      logger.error({ error: _em }, "[Backfill] Cost center backfill failed");
       res.status(500).json({ message: _em });
     }
   });

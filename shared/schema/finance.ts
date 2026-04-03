@@ -45,6 +45,7 @@ export const accounts = pgTable("accounts", {
   level: integer("level").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true),
   requiresCostCenter: boolean("requires_cost_center").notNull().default(false),
+  defaultCostCenterId: varchar("default_cost_center_id").references((): any => costCenters.id, { onDelete: "set null" }),
   description: text("description"),
   openingBalance: decimal("opening_balance", { precision: 18, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

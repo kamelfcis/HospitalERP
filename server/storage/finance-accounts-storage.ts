@@ -15,6 +15,7 @@
 
 import { db } from "../db";
 import { eq, desc, and, asc, sql, gte, lte, or, ilike, isNull } from "drizzle-orm";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 import {
   accounts,
   costCenters,
@@ -274,9 +275,10 @@ const methods = {
         .returning();
 
       if (lines.length > 0) {
-        await tx.insert(journalLines).values(
+        const resolvedLines = await resolveCostCenters(
           lines.map((line) => ({ ...line, journalEntryId: newEntry.id }))
         );
+        await tx.insert(journalLines).values(resolvedLines);
       }
 
       return newEntry;
@@ -301,9 +303,10 @@ const methods = {
         // حذف السطور القديمة وإدراج الجديدة في نفس الـ transaction
         // لو فشل الإدراج: الحذف يُلغى تلقائياً ويرجع القيد لحالته
         await tx.delete(journalLines).where(eq(journalLines.journalEntryId, id));
-        await tx.insert(journalLines).values(
+        const resolvedUpdateLines = await resolveCostCenters(
           lines.map((line) => ({ ...line, journalEntryId: id }))
         );
+        await tx.insert(journalLines).values(resolvedUpdateLines);
       }
 
       return updated;

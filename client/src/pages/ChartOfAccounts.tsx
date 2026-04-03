@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useChartOfAccounts } from "./chart-of-accounts/hooks/useChartOfAccounts";
 import { AccountsToolbar } from "./chart-of-accounts/components/AccountsToolbar";
 import { AccountsTree } from "./chart-of-accounts/components/AccountsTree";
@@ -29,6 +30,10 @@ export default function ChartOfAccounts() {
     handleImport,
     handleDelete,
   } = useChartOfAccounts();
+
+  const { data: costCenters } = useQuery<{ id: string; code: string; name: string }[]>({
+    queryKey: ["/api/cost-centers"],
+  });
 
   if (isLoading) {
     return (
@@ -71,6 +76,7 @@ export default function ChartOfAccounts() {
         formData={formData}
         setFormData={setFormData}
         accounts={accounts}
+        costCenters={costCenters}
         handleSubmit={handleSubmit}
       />
     </div>

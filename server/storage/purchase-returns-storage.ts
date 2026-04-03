@@ -46,6 +46,7 @@ import {
 } from "@shared/schema/finance";
 import { roundMoney, roundQty, parseMoney } from "../finance-helpers";
 import type { DrizzleTransaction } from "../db";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -613,11 +614,13 @@ async function generatePurchaseReturnJournalInTx(
     totalCredit:      roundMoney(totalCr),
   }).returning();
 
-  const linesWithId = lines.map((l, idx) => ({
-    ...l,
-    journalEntryId: entry.id,
-    lineNumber:     idx + 1,
-  }));
+  const linesWithId = await resolveCostCenters(
+    lines.map((l, idx) => ({
+      ...l,
+      journalEntryId: entry.id,
+      lineNumber:     idx + 1,
+    }))
+  );
   await tx.insert(journalLines).values(linesWithId);
 
   return entry.id;

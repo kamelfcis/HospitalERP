@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 import { eq, desc, and, gte, lte, sql, or, ilike, asc } from "drizzle-orm";
 import {
   items,
@@ -208,7 +209,8 @@ export const transfersLogisticsMethods = {
       }
     ];
 
-    await db.insert(journalLines).values(journalLinesData);
+    const resolvedLines = await resolveCostCenters(journalLinesData);
+    await db.insert(journalLines).values(resolvedLines);
     return entry.id;
   },
 };

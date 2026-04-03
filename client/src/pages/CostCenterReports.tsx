@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,9 +10,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, Printer, Calendar, Building2 } from "lucide-react";
+import { Download, Printer, Calendar, Building2, RefreshCw } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import type { CostCenter } from "@shared/schema";
 
 interface CostCenterReportItem {
@@ -40,9 +42,26 @@ export default function CostCenterReports() {
   const [startDate, setStartDate] = useState(firstDayOfMonth.toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState(today.toISOString().split("T")[0]);
   const [selectedCostCenter, setSelectedCostCenter] = useState<string>("all");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: costCenters } = useQuery<CostCenter[]>({
     queryKey: ["/api/cost-centers"],
+  });
+
+  const backfillMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/admin/backfill-cost-centers"),
+    onSuccess: async (res) => {
+      const data = await res.json();
+      toast({
+        title: "تم تحديث مراكز التكلفة",
+        description: `تم تحديث ${data.linesUpdated} سطر محاسبي`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/cost-centers"] });
+    },
+    onError: () => {
+      toast({ title: "خطأ", description: "فشل تحديث مراكز التكلفة", variant: "destructive" });
+    },
   });
 
   const { data: report, isLoading } = useQuery<CostCenterReportData>({
@@ -76,6 +95,18 @@ export default function CostCenterReports() {
           </div>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs px-2 no-print"
+            onClick={() => backfillMutation.mutate()}
+            disabled={backfillMutation.isPending}
+            title="تحديث مراكز التكلفة للسطور المحاسبية القديمة بناءً على الحسابات الافتراضية"
+            data-testid="button-backfill-cost-centers"
+          >
+            <RefreshCw className={`h-3 w-3 ml-1 ${backfillMutation.isPending ? "animate-spin" : ""}`} />
+            تحديث مراكز التكلفة
+          </Button>
           <Button variant="outline" size="sm" className="h-7 text-xs px-2 no-print" onClick={() => window.print()} data-testid="button-print">
             <Printer className="h-3 w-3 ml-1" />
             طباعة

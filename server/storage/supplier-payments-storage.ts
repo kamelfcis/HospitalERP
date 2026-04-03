@@ -18,6 +18,7 @@ import type { SupplierInvoicePaymentRow } from "@shared/schema/purchasing";
 import { normalizeClaimNumber } from "./purchasing-invoices-core-storage";
 import { logger } from "../lib/logger";
 import { logAcctEvent } from "../lib/accounting-event-logger";
+import { resolveCostCenters } from "../lib/cost-center-resolver";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -306,7 +307,7 @@ export async function createSupplierPayment(
           totalCredit:      amount,
         }).returning({ id: journalEntries.id });
 
-        await tx.insert(journalLines).values([
+        const supplierPaymentLines2 = await resolveCostCenters([
           {
             journalEntryId: entry.id,
             lineNumber:     1,
@@ -324,6 +325,7 @@ export async function createSupplierPayment(
             description:    `سداد مورد #${paymentNumber} - خزنة`,
           },
         ]);
+        await tx.insert(journalLines).values(supplierPaymentLines2);
 
         journalEntryId = entry.id;
 
