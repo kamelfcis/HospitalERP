@@ -804,25 +804,49 @@ export function registerReportsRoutes(app: Express) {
         converted AS (
           SELECT
             *,
-            -- qty in chosen unit
+            -- qty in chosen unit — fallback to major when item lacks the requested unit
             CASE $6
-              WHEN 'minor'  THEN qty_minor
-              WHEN 'medium' THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4)
-              ELSE               ROUND(qty_minor / NULLIF(major_to_minor,  0), 4)
+              WHEN 'minor'  THEN
+                CASE WHEN minor_unit_name IS NOT NULL
+                     THEN qty_minor
+                     ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4)
+                END
+              WHEN 'medium' THEN
+                CASE WHEN medium_unit_name IS NOT NULL
+                     THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4)
+                     ELSE ROUND(qty_minor / NULLIF(major_to_minor,  0), 4)
+                END
+              ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4)
             END                                          AS qty_display,
-            -- purchase price per chosen unit
+            -- purchase price per chosen unit — fallback to major price when unit missing
             CASE $6
-              WHEN 'minor'  THEN ROUND(purchase_price_major / NULLIF(major_to_minor,  0), 4)
-              WHEN 'medium' THEN ROUND(purchase_price_major / NULLIF(major_to_medium, 0), 4)
-              ELSE               purchase_price_major
+              WHEN 'minor'  THEN
+                CASE WHEN minor_unit_name IS NOT NULL
+                     THEN ROUND(purchase_price_major / NULLIF(major_to_minor, 0), 4)
+                     ELSE purchase_price_major
+                END
+              WHEN 'medium' THEN
+                CASE WHEN medium_unit_name IS NOT NULL
+                     THEN ROUND(purchase_price_major / NULLIF(major_to_medium, 0), 4)
+                     ELSE purchase_price_major
+                END
+              ELSE purchase_price_major
             END                                          AS purchase_price_unit,
-            -- sale price per chosen unit
+            -- sale price per chosen unit — fallback to major price when unit missing
             CASE $6
-              WHEN 'minor'  THEN ROUND(sale_price_major / NULLIF(major_to_minor,  0), 4)
-              WHEN 'medium' THEN ROUND(sale_price_major / NULLIF(major_to_medium, 0), 4)
-              ELSE               sale_price_major
+              WHEN 'minor'  THEN
+                CASE WHEN minor_unit_name IS NOT NULL
+                     THEN ROUND(sale_price_major / NULLIF(major_to_minor, 0), 4)
+                     ELSE sale_price_major
+                END
+              WHEN 'medium' THEN
+                CASE WHEN medium_unit_name IS NOT NULL
+                     THEN ROUND(sale_price_major / NULLIF(major_to_medium, 0), 4)
+                     ELSE sale_price_major
+                END
+              ELSE sale_price_major
             END                                          AS sale_price_unit,
-            -- unit label
+            -- unit label — fallback to major label when unit missing
             CASE $6
               WHEN 'minor'  THEN COALESCE(minor_unit_name,  major_unit_name)
               WHEN 'medium' THEN COALESCE(medium_unit_name, major_unit_name)
@@ -883,6 +907,8 @@ export function registerReportsRoutes(app: Express) {
         enriched AS (
           SELECT
             lb.qty_minor,
+            i.minor_unit_name,
+            i.medium_unit_name,
             COALESCE(i.major_to_minor::numeric, 1)  AS major_to_minor,
             COALESCE(i.medium_to_minor::numeric, 1) AS medium_to_minor,
             COALESCE(i.major_to_medium::numeric, 1) AS major_to_medium,
@@ -895,20 +921,40 @@ export function registerReportsRoutes(app: Express) {
             AND ($5::boolean = false OR lb.qty_minor > 0.0005)
         )
         SELECT
-          COUNT(*)                                                           AS "itemCount",
+          COUNT(*) AS "itemCount",
           SUM(CASE $6::text
-            WHEN 'minor'  THEN qty_minor
-            WHEN 'medium' THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4)
-            ELSE               ROUND(qty_minor / NULLIF(major_to_minor,  0), 4)
-          END)                                                               AS "totalQty",
+            WHEN 'minor'  THEN
+              CASE WHEN minor_unit_name IS NOT NULL THEN qty_minor
+                   ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) END
+            WHEN 'medium' THEN
+              CASE WHEN medium_unit_name IS NOT NULL THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4)
+                   ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) END
+            ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4)
+          END) AS "totalQty",
           SUM(ROUND(
-            CASE $6::text WHEN 'minor' THEN ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * ROUND(purchase_price_major / NULLIF(major_to_minor, 0), 4)
-              WHEN 'medium' THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4) * ROUND(purchase_price_major / NULLIF(major_to_medium, 0), 4)
-              ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * purchase_price_major END, 2)) AS "totalCost",
+            CASE $6::text
+              WHEN 'minor'  THEN
+                CASE WHEN minor_unit_name IS NOT NULL
+                     THEN qty_minor * ROUND(purchase_price_major / NULLIF(major_to_minor, 0), 4)
+                     ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * purchase_price_major END
+              WHEN 'medium' THEN
+                CASE WHEN medium_unit_name IS NOT NULL
+                     THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4) * ROUND(purchase_price_major / NULLIF(major_to_medium, 0), 4)
+                     ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * purchase_price_major END
+              ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * purchase_price_major
+            END, 2)) AS "totalCost",
           SUM(ROUND(
-            CASE $6::text WHEN 'minor' THEN ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * ROUND(sale_price_major / NULLIF(major_to_minor, 0), 4)
-              WHEN 'medium' THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4) * ROUND(sale_price_major / NULLIF(major_to_medium, 0), 4)
-              ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * sale_price_major END, 2))     AS "totalSaleValue"
+            CASE $6::text
+              WHEN 'minor'  THEN
+                CASE WHEN minor_unit_name IS NOT NULL
+                     THEN qty_minor * ROUND(sale_price_major / NULLIF(major_to_minor, 0), 4)
+                     ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * sale_price_major END
+              WHEN 'medium' THEN
+                CASE WHEN medium_unit_name IS NOT NULL
+                     THEN ROUND(qty_minor / NULLIF(medium_to_minor, 0), 4) * ROUND(sale_price_major / NULLIF(major_to_medium, 0), 4)
+                     ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * sale_price_major END
+              ELSE ROUND(qty_minor / NULLIF(major_to_minor, 0), 4) * sale_price_major
+            END, 2)) AS "totalSaleValue"
         FROM enriched
       `, [asOfDate, warehouseId, catFilter, searchFilter, skipZero, unitLevel]);
 
@@ -971,22 +1017,46 @@ export function registerReportsRoutes(app: Express) {
             COALESCE(i.name_en, '')                                AS name_en,
             i.category,
             w.name_ar                                              AS warehouse_name,
-            CASE $3::text WHEN 'minor' THEN COALESCE(i.minor_unit_name, i.major_unit_name)
-                          WHEN 'medium' THEN COALESCE(i.medium_unit_name, i.major_unit_name)
-                          ELSE COALESCE(i.major_unit_name, 'وحدة') END AS unit_label,
             CASE $3::text
-              WHEN 'minor'  THEN lb.qty_minor
-              WHEN 'medium' THEN ROUND(lb.qty_minor / NULLIF(COALESCE(i.medium_to_minor::numeric,1), 0), 4)
-              ELSE               ROUND(lb.qty_minor / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4)
+              WHEN 'minor'  THEN COALESCE(i.minor_unit_name,  i.major_unit_name, 'وحدة')
+              WHEN 'medium' THEN COALESCE(i.medium_unit_name, i.major_unit_name, 'وحدة')
+              ELSE               COALESCE(i.major_unit_name, 'وحدة')
+            END AS unit_label,
+            -- qty in chosen unit — fallback to major when item lacks the requested unit
+            CASE $3::text
+              WHEN 'minor'  THEN
+                CASE WHEN i.minor_unit_name IS NOT NULL THEN lb.qty_minor
+                     ELSE ROUND(lb.qty_minor / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4) END
+              WHEN 'medium' THEN
+                CASE WHEN i.medium_unit_name IS NOT NULL
+                     THEN ROUND(lb.qty_minor / NULLIF(COALESCE(i.medium_to_minor::numeric, 1), 0), 4)
+                     ELSE ROUND(lb.qty_minor / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4) END
+              ELSE ROUND(lb.qty_minor / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4)
             END AS qty_display,
+            -- purchase price per chosen unit — fallback to major price when unit missing
             CASE $3::text
-              WHEN 'minor'  THEN ROUND(i.purchase_price_last::numeric / NULLIF(COALESCE(i.major_to_minor::numeric,1), 0), 4)
-              WHEN 'medium' THEN ROUND(i.purchase_price_last::numeric / NULLIF(COALESCE(i.major_to_medium::numeric,1), 0), 4)
-              ELSE i.purchase_price_last::numeric END AS purchase_price_unit,
+              WHEN 'minor'  THEN
+                CASE WHEN i.minor_unit_name IS NOT NULL
+                     THEN ROUND(i.purchase_price_last::numeric / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4)
+                     ELSE i.purchase_price_last::numeric END
+              WHEN 'medium' THEN
+                CASE WHEN i.medium_unit_name IS NOT NULL
+                     THEN ROUND(i.purchase_price_last::numeric / NULLIF(COALESCE(i.major_to_medium::numeric, 1), 0), 4)
+                     ELSE i.purchase_price_last::numeric END
+              ELSE i.purchase_price_last::numeric
+            END AS purchase_price_unit,
+            -- sale price per chosen unit — fallback to major price when unit missing
             CASE $3::text
-              WHEN 'minor'  THEN ROUND(i.sale_price_current::numeric / NULLIF(COALESCE(i.major_to_minor::numeric,1), 0), 4)
-              WHEN 'medium' THEN ROUND(i.sale_price_current::numeric / NULLIF(COALESCE(i.major_to_medium::numeric,1), 0), 4)
-              ELSE i.sale_price_current::numeric END AS sale_price_unit
+              WHEN 'minor'  THEN
+                CASE WHEN i.minor_unit_name IS NOT NULL
+                     THEN ROUND(i.sale_price_current::numeric / NULLIF(COALESCE(i.major_to_minor::numeric, 1), 0), 4)
+                     ELSE i.sale_price_current::numeric END
+              WHEN 'medium' THEN
+                CASE WHEN i.medium_unit_name IS NOT NULL
+                     THEN ROUND(i.sale_price_current::numeric / NULLIF(COALESCE(i.major_to_medium::numeric, 1), 0), 4)
+                     ELSE i.sale_price_current::numeric END
+              ELSE i.sale_price_current::numeric
+            END AS sale_price_unit
           FROM lot_balance lb
           JOIN items i   ON i.id = lb.item_id
           JOIN warehouses w ON w.id = lb.warehouse_id
