@@ -785,7 +785,7 @@ export function registerReportsRoutes(app: Express) {
             i.name_ar,
             i.name_en,
             i.category,
-            w.name                                 AS warehouse_name,
+            w.name_ar                              AS warehouse_name,
             COALESCE(i.major_unit_name, 'وحدة')   AS major_unit_name,
             i.medium_unit_name,
             i.minor_unit_name,
@@ -970,7 +970,7 @@ export function registerReportsRoutes(app: Express) {
             i.name_ar,
             COALESCE(i.name_en, '')                                AS name_en,
             i.category,
-            w.name                                                 AS warehouse_name,
+            w.name_ar                                              AS warehouse_name,
             CASE $3::text WHEN 'minor' THEN COALESCE(i.minor_unit_name, i.major_unit_name)
                           WHEN 'medium' THEN COALESCE(i.medium_unit_name, i.major_unit_name)
                           ELSE COALESCE(i.major_unit_name, 'وحدة') END AS unit_label,

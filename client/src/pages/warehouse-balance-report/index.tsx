@@ -125,7 +125,7 @@ export default function WarehouseBalanceReport() {
   }, [applied, page]);
 
   const { data, isLoading, isFetching } = useQuery<BalanceResult>({
-    queryKey: ["/api/reports/warehouse-balance", queryParams],
+    queryKey: [`/api/reports/warehouse-balance?${queryParams}`],
     enabled:  !!queryParams,
   });
 
