@@ -16,7 +16,11 @@ import { Button }   from "@/components/ui/button";
 import { Input }    from "@/components/ui/input";
 import { Label }    from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Coins } from "lucide-react";
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Loader2, Coins, HelpCircle } from "lucide-react";
+import { AccountLookup } from "@/components/lookups/AccountLookup";
 import type { SettlementLineInput } from "../hooks/useClaimSettlement";
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -146,23 +150,33 @@ export function SettlementDialog({
                 data-testid="input-settlement-ref"
               />
             </div>
+
+            {/* حساب البنك / الصندوق — AccountLookup */}
             <div className="space-y-1">
               <Label>حساب البنك / الصندوق</Label>
-              <Input
+              <AccountLookup
                 value={bankAccountId}
-                onChange={e => setBankAccountId(e.target.value)}
-                placeholder="معرّف الحساب (اختياري للقيد)"
+                onChange={v => setBankAccountId(v?.id ?? "")}
+                placeholder="اختر حساب البنك أو الصندوق..."
                 data-testid="input-bank-account"
               />
+              <p className="text-[11px] text-muted-foreground">
+                الحساب المدين عند استلام دفعة الشركة (اختياري — إن لم يُحدَّد لا يُنشأ قيد)
+              </p>
             </div>
+
+            {/* حساب الذمم المدينة للشركة — AccountLookup */}
             <div className="space-y-1">
               <Label>حساب الذمم المدينة للشركة</Label>
-              <Input
+              <AccountLookup
                 value={arAccountId}
-                onChange={e => setArAccountId(e.target.value)}
-                placeholder="معرّف حساب AR (اختياري)"
+                onChange={v => setArAccountId(v?.id ?? "")}
+                placeholder="اختر حساب ذمم الشركة..."
                 data-testid="input-ar-account"
               />
+              <p className="text-[11px] text-muted-foreground">
+                الحساب الدائن (يُخفَّض رصيد ذمم الشركة عند التسوية)
+              </p>
             </div>
           </div>
 
@@ -205,7 +219,23 @@ export function SettlementDialog({
                           />
                         </div>
                         <div className="space-y-0.5">
-                          <Label className="text-xs">شطب</Label>
+                          <div className="flex items-center gap-1">
+                            <Label className="text-xs">شطب</Label>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs text-right" dir="rtl">
+                                  <p className="text-xs font-medium mb-1">الشطب (Write-off)</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    المبلغ الذي رفضت الشركة دفعه من المبلغ المعتمد ويُشطَب كخسارة على المنشأة.
+                                    مثال: المعتمد 100 ج.م — دفعت الشركة 94 ج.م — الشطب 6 ج.م.
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
                           <Input
                             type="number" min="0" step="0.01"
                             value={writeoffs[line.id] ?? ""}
