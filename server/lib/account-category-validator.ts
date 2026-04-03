@@ -66,6 +66,18 @@ export const LINE_TYPE_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
 
   // Cashier shift close — treasury (عهدة أمين الخزنة)
   treasury: { debit: ["asset"], credit: ["asset"] },
+
+  // Contract settlement (Phase 6) ─────────────────────────────────────────────
+  //
+  // rejection_loss / contract_discount_exp / price_diff_expense:
+  //   يقبل "expense" (مصروف مباشر) و"revenue" (مخفض إيراد — مثل 4213 رفض مطالبات).
+  //   رفض مطالبات التأمين يُصنَّف في IFRS كـ Revenue Deduction ليس Expense مستقل.
+  ar_insurance:          {                                  credit: ["asset"]                         },
+  bank_settlement:       { debit: ["asset"]                                                           },
+  rejection_loss:        { debit: ["expense", "revenue"]                                              },
+  contract_discount_exp: { debit: ["expense", "revenue"]                                              },
+  price_diff_expense:    { debit: ["expense", "revenue"]                                              },
+  rounding_adjustment:   { debit: ["expense", "revenue", "asset"], credit: ["revenue", "asset"]       },
 };
 
 /** Arabic labels for account_type enum values */

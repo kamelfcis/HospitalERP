@@ -365,12 +365,15 @@ export const ACCOUNT_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
   pharmacy_patient_receivable:  { debit: ["asset"],        credit: ["asset"]             },
   pharmacy_contract_receivable: { debit: ["asset"],        credit: ["asset"]             },
   // Contract settlement (Phase 6)
+  // rejection_loss / price_diff_expense / contract_discount_exp:
+  //   يقبل "expense" (مصروف مباشر) و"revenue" (مخفض إيراد — مثل حساب 4213 رفض مطالبات)
+  //   لأن رفض مطالبات التأمين يُصنَّف أحياناً كـ Revenue Deduction وليس Expense مستقل
   ar_insurance:         {                                   credit: ["asset"]             },
   bank_settlement:      { debit: ["asset"]                                               },
-  rejection_loss:       { debit: ["expense"]                                             },
+  rejection_loss:       { debit: ["expense", "revenue"]                                  },
   contract_discount_exp:{ debit: ["expense", "revenue"]                                  },
-  price_diff_expense:   { debit: ["expense"]                                             },
-  rounding_adjustment:  { debit: ["expense", "asset"],     credit: ["revenue", "asset"]  },
+  price_diff_expense:   { debit: ["expense", "revenue"]                                  },
+  rounding_adjustment:  { debit: ["expense", "revenue", "asset"], credit: ["revenue", "asset"] },
 };
 
 /**
