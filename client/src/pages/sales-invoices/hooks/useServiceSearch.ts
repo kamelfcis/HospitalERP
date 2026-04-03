@@ -13,6 +13,107 @@ export function useServiceSearch(
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [addingServiceId, setAddingServiceId] = useState<string | null>(null);
 
+  // ── إضافة صنف-خدمة من كارت الصنف (item_consumables) ──────────────────────
+  const addItemServiceConsumables = useCallback(async (itemData: any) => {
+    if (!warehouseId) {
+      toast({ title: "اختر المخزن أولاً", variant: "destructive" });
+      return;
+    }
+    setAddingServiceId(itemData.id);
+    try {
+      const salePrice = parseFloat(itemData.salePriceCurrent || "0") || 0;
+
+      // إضافة سطر الخدمة باستخدام ID الصنف كـ serviceId
+      addServiceLine(itemData.id, itemData.nameAr, salePrice);
+
+      // جلب مستهلكات الصنف من item_consumables
+      const res = await fetch(`/api/items/${itemData.id}/consumables`, { credentials: "include" });
+      if (!res.ok) throw new Error("فشل تحميل مستهلكات الصنف");
+      const consumables = await res.json();
+
+      if (!consumables || consumables.length === 0) {
+        toast({ title: itemData.nameAr, description: "تمت الإضافة — لا توجد مستهلكات" });
+        setAddingServiceId(null);
+        return;
+      }
+
+      const stockWarnings: string[] = [];
+      let addedCount   = 0;
+      let skippedCount = 0;
+
+      for (const cons of consumables) {
+        const consItem = cons.item;
+        if (!consItem) continue;
+
+        const qtyNum   = parseFloat(cons.quantity) || 1;
+        const unitLv   = cons.unitLevel || "major";
+        const qtyMinor = calculateQtyInMinor(qtyNum, unitLv, consItem);
+
+        let stockSufficient = true;
+        try {
+          const stockRes = await fetch(
+            `/api/transfer/fefo-preview?itemId=${cons.consumableItemId}&warehouseId=${warehouseId}&requiredQtyInMinor=${qtyMinor}&asOfDate=${invoiceDate}`
+          );
+          if (stockRes.ok) {
+            const stockData = await stockRes.json();
+            if (!stockData.fulfilled) {
+              stockSufficient = false;
+              const unit = getUnitName(consItem, unitLv);
+              stockWarnings.push(
+                `${consItem.nameAr}: رصيد غير كافٍ (المطلوب: ${qtyNum} ${unit})`
+              );
+            }
+          }
+        } catch {}
+
+        if (!stockSufficient && consItem.hasExpiry) {
+          skippedCount++;
+          continue;
+        }
+
+        await addConsumableLine(consItem, qtyNum, unitLv, itemData.id);
+        addedCount++;
+      }
+
+      if (stockWarnings.length > 0) {
+        toast({
+          title:       `رصيد غير كافٍ — ${itemData.nameAr}`,
+          description: stockWarnings.join(" | "),
+          variant:     "destructive",
+          duration:    9000,
+        });
+      }
+
+      if (addedCount > 0 && skippedCount === 0) {
+        toast({
+          title:       `تمت إضافة الخدمة: ${itemData.nameAr}`,
+          description: `سطر الخدمة + ${addedCount} مستهلك بدون قيمة`,
+        });
+      } else if (addedCount > 0) {
+        toast({
+          title:       `خدمة ${itemData.nameAr}`,
+          description: `أُضيف ${addedCount} مستهلك — لم يُضَف ${skippedCount} بسبب نقص المخزون`,
+          variant:     "destructive",
+          duration:    8000,
+        });
+      } else if (skippedCount > 0) {
+        toast({
+          title:       `لم تُضَف المستهلكات — ${itemData.nameAr}`,
+          description: `جميع المستهلكات (${skippedCount}) غير متوفرة`,
+          variant:     "destructive",
+          duration:    8000,
+        });
+      } else {
+        toast({ title: `تمت إضافة الخدمة: ${itemData.nameAr}` });
+      }
+    } catch (err: unknown) {
+      const _em = err instanceof Error ? err.message : String(err);
+      toast({ title: "خطأ", description: _em, variant: "destructive" });
+    } finally {
+      setAddingServiceId(null);
+    }
+  }, [warehouseId, invoiceDate, addConsumableLine, addServiceLine, toast]);
+
   const addServiceConsumables = useCallback(async (serviceId: string, serviceName: string) => {
     if (!warehouseId) {
       toast({ title: "اختر المخزن أولاً", variant: "destructive" });
@@ -125,6 +226,7 @@ export function useServiceSearch(
     serviceModalOpen, setServiceModalOpen,
     addingServiceId,
     addServiceConsumables,
+    addItemServiceConsumables,
     openServiceModal,
   };
 }

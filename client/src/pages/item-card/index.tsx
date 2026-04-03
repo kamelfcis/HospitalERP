@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import ItemFormFields from "./ItemFormFields";
 import ItemStatsPanel from "./ItemStatsPanel";
 import ItemCardDialogs from "./ItemCardDialogs";
+import ItemConsumablesPanel from "./ItemConsumablesPanel";
 import { useItemCard } from "./hooks/useItemCard";
 
 export default function ItemCard() {
@@ -179,6 +180,12 @@ export default function ItemCard() {
               onDeleteBarcode={(id) => deleteBarcodeMutation.mutate(id)}
               deletingBarcode={deleteBarcodeMutation.isPending}
             />
+            {isService && !isNew && itemId && (
+              <ItemConsumablesPanel
+                itemId={itemId}
+                isEditing={isEditing}
+              />
+            )}
           </div>
 
           <ItemStatsPanel

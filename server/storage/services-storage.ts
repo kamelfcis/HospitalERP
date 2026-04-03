@@ -3,6 +3,7 @@ import { eq, and, sql, or, asc, isNotNull, ilike } from "drizzle-orm";
 import {
   services,
   serviceConsumables,
+  itemConsumables,
   priceLists,
   priceListItems,
   priceAdjustmentsLog,
@@ -17,6 +18,7 @@ import type {
   ServiceWithDepartment,
   ServiceConsumable,
   ServiceConsumableWithItem,
+  ItemConsumable,
   PriceList,
   InsertPriceList,
   PriceListItem,
@@ -182,6 +184,73 @@ const methods = {
       lines.map(l => ({ serviceId, itemId: l.itemId, quantity: l.quantity, unitLevel: l.unitLevel, notes: l.notes || null }))
     ).returning();
     return rows;
+  },
+
+  // ── مستهلكات الصنف (item_consumables) ─────────────────────────────────────
+  async getItemConsumables(this: DatabaseStorage, itemId: string): Promise<any[]> {
+    const consumableItems = items;  // alias
+    const rows = await db
+      .select({
+        id: itemConsumables.id,
+        itemId: itemConsumables.itemId,
+        consumableItemId: itemConsumables.consumableItemId,
+        quantity: itemConsumables.quantity,
+        unitLevel: itemConsumables.unitLevel,
+        notes: itemConsumables.notes,
+        nameAr: consumableItems.nameAr,
+        nameEn: consumableItems.nameEn,
+        itemCode: consumableItems.itemCode,
+        majorUnitName: consumableItems.majorUnitName,
+        mediumUnitName: consumableItems.mediumUnitName,
+        minorUnitName: consumableItems.minorUnitName,
+        majorToMinor: consumableItems.majorToMinor,
+        mediumToMinor: consumableItems.mediumToMinor,
+        hasExpiry: consumableItems.hasExpiry,
+      })
+      .from(itemConsumables)
+      .leftJoin(consumableItems, eq(itemConsumables.consumableItemId, consumableItems.id))
+      .where(eq(itemConsumables.itemId, itemId));
+
+    return rows.map(r => ({
+      id: r.id,
+      itemId: r.itemId,
+      consumableItemId: r.consumableItemId,
+      quantity: r.quantity,
+      unitLevel: r.unitLevel,
+      notes: r.notes,
+      item: r.itemCode ? {
+        id: r.consumableItemId,
+        itemCode: r.itemCode,
+        nameAr: r.nameAr!,
+        nameEn: r.nameEn,
+        majorUnitName: r.majorUnitName,
+        mediumUnitName: r.mediumUnitName,
+        minorUnitName: r.minorUnitName,
+        majorToMinor: r.majorToMinor,
+        mediumToMinor: r.mediumToMinor,
+        hasExpiry: r.hasExpiry,
+        salePriceCurrent: "0",
+        availableQtyMinor: "0",
+      } : undefined,
+    }));
+  },
+
+  async replaceItemConsumables(
+    this: DatabaseStorage,
+    itemId: string,
+    lines: { consumableItemId: string; quantity: string; unitLevel: string; notes?: string | null }[],
+  ): Promise<ItemConsumable[]> {
+    await db.delete(itemConsumables).where(eq(itemConsumables.itemId, itemId));
+    if (lines.length === 0) return [];
+    return db.insert(itemConsumables).values(
+      lines.map(l => ({
+        itemId,
+        consumableItemId: l.consumableItemId,
+        quantity: l.quantity,
+        unitLevel: l.unitLevel,
+        notes: l.notes || null,
+      }))
+    ).returning();
   },
 
   async getPriceLists(this: DatabaseStorage): Promise<PriceList[]> {

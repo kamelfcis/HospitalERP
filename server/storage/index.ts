@@ -722,6 +722,8 @@ export interface IStorage {
   createService(service: InsertService): Promise<Service>;
   updateService(id: string, service: Partial<InsertService>): Promise<Service | undefined>;
   getServiceCategories(): Promise<string[]>;
+  getItemConsumables(itemId: string): Promise<any[]>;
+  replaceItemConsumables(itemId: string, lines: { consumableItemId: string; quantity: string; unitLevel: string; notes?: string | null }[]): Promise<any[]>;
 
   // Price Lists
   getPriceLists(): Promise<PriceList[]>;

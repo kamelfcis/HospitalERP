@@ -10,12 +10,13 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Trash2, UserPlus } from "lucide-react";
+import { Loader2, UserPlus } from "lucide-react";
 import { serviceTypeLabels } from "@shared/schema";
 import type {
-  ServiceWithDepartment, CostCenter, Warehouse, Item, ServiceConsumableWithItem,
+  ServiceWithDepartment, CostCenter, Warehouse, ServiceConsumableWithItem,
 } from "@shared/schema";
 import { DepartmentLookup, DoctorLookup } from "@/components/lookups";
+import ConsumablesGrid from "@/components/ConsumablesGrid";
 
 // ─── 1. ثوابت ─────────────────────────────────────────────────────────────────
 const SERVICE_TYPES = ["SERVICE", "ACCOMMODATION", "OPERATING_ROOM", "DEVICE", "GAS", "OTHER"] as const;
@@ -37,13 +38,8 @@ export interface ServiceFormState {
   isActive: boolean;
 }
 
-export type ConsumableRow = {
-  itemId: string;
-  quantity: string;
-  unitLevel: string;
-  notes: string;
-  item?: Item;
-};
+export type { ConsumableRow } from "@/components/ConsumablesGrid";
+import type { ConsumableRow } from "@/components/ConsumablesGrid";
 
 export const defaultServiceForm: ServiceFormState = {
   code: "", nameAr: "", nameEn: "", departmentId: "", category: "",
@@ -72,10 +68,6 @@ interface Props {
 export default function ServiceDialog({
   open, onClose, editingService, form, setForm, consumables, setConsumables, onSave, saving,
 }: Props) {
-  const [consumableSearch, setConsumableSearch] = useState("");
-  const [consumableResults, setConsumableResults] = useState<Item[]>([]);
-  const [searchingItems, setSearchingItems] = useState(false);
-
   const { data: warehouses }  = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"] });
   const { data: revenueAccounts } = useRevenueAccounts();
   const { data: costCenters } = useQuery<CostCenter[]>({ queryKey: ["/api/cost-centers"] });
@@ -98,46 +90,7 @@ export default function ServiceDialog({
     }
   }, [editingService]);
 
-  // بحث الأصناف للمستهلكات
-  useEffect(() => {
-    if (!consumableSearch || consumableSearch.length < 2) {
-      setConsumableResults([]);
-      return;
-    }
-    const controller = new AbortController();
-    setSearchingItems(true);
-    fetch(`/api/items?search=${encodeURIComponent(consumableSearch)}&limit=10&page=1`, {
-      signal: controller.signal, credentials: "include",
-    })
-      .then(r => r.json())
-      .then(data => {
-        const existingIds = new Set(consumables.map(c => c.itemId));
-        setConsumableResults((data.items || []).filter((i: Item) => !existingIds.has(i.id)));
-        setSearchingItems(false);
-      })
-      .catch(() => setSearchingItems(false));
-    return () => controller.abort();
-  }, [consumableSearch]);
-
-  function handleClose() {
-    setConsumableSearch("");
-    setConsumableResults([]);
-    onClose();
-  }
-
-  function addConsumable(item: Item) {
-    setConsumables(prev => [...prev, { itemId: item.id, quantity: "1", unitLevel: "minor", notes: "", item }]);
-    setConsumableSearch("");
-    setConsumableResults([]);
-  }
-
-  function removeConsumable(idx: number) {
-    setConsumables(prev => prev.filter((_, i) => i !== idx));
-  }
-
-  function updateConsumable(idx: number, field: string, value: string) {
-    setConsumables(prev => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c));
-  }
+  function handleClose() { onClose(); }
 
   const canSave = !!(
     form.code && form.nameAr && form.departmentId &&
@@ -281,103 +234,11 @@ export default function ServiceDialog({
           <p className="text-xs text-muted-foreground mb-2">
             حدد الأصناف التي تُستهلك عند تقديم هذه الخدمة (مثال: سرنجة، كوب تحليل)
           </p>
-
-          <div className="relative mb-2">
-            <Input
-              data-testid="input-consumable-search"
-              placeholder="ابحث عن صنف لإضافته..."
-              value={consumableSearch}
-              onChange={e => setConsumableSearch(e.target.value)}
-              className="peachtree-input"
-            />
-            {searchingItems && (
-              <Loader2 className="h-3 w-3 animate-spin absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            )}
-            {consumableResults.length > 0 && (
-              <div className="absolute z-50 top-full right-0 left-0 mt-1 bg-background border rounded-md shadow-md max-h-40 overflow-auto">
-                {consumableResults.map(item => (
-                  <div
-                    key={item.id}
-                    className="px-3 py-1.5 text-xs cursor-pointer hover-elevate flex items-center justify-between"
-                    onClick={() => addConsumable(item)}
-                    data-testid={`consumable-result-${item.id}`}
-                  >
-                    <span>{item.nameAr} ({item.itemCode})</span>
-                    <span className="text-muted-foreground">{item.minorUnitName || item.majorUnitName}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {consumables.length > 0 ? (
-            <div className="border rounded-md overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-muted/50">
-                    <th className="text-right p-1.5">الصنف</th>
-                    <th className="text-right p-1.5 w-20">الكمية</th>
-                    <th className="text-right p-1.5 w-28">الوحدة</th>
-                    <th className="text-right p-1.5 w-32">ملاحظات</th>
-                    <th className="w-8"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {consumables.map((c, idx) => (
-                    <tr key={c.itemId} className="border-t" data-testid={`consumable-row-${idx}`}>
-                      <td className="p-1.5">
-                        <span className="font-medium">{c.item?.nameAr || c.itemId}</span>
-                        {c.item?.itemCode && (
-                          <span className="text-muted-foreground mr-1">({c.item.itemCode})</span>
-                        )}
-                      </td>
-                      <td className="p-1.5">
-                        <Input data-testid={`input-consumable-qty-${idx}`} type="number"
-                          min="0.01" step="0.01" value={c.quantity}
-                          onChange={e => updateConsumable(idx, "quantity", e.target.value)}
-                          className="h-7 text-xs w-full" />
-                      </td>
-                      <td className="p-1.5">
-                        <Select value={c.unitLevel} onValueChange={v => updateConsumable(idx, "unitLevel", v)}>
-                          <SelectTrigger className="h-7 text-xs" data-testid={`select-consumable-unit-${idx}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {c.item?.minorUnitName  && <SelectItem value="minor">{c.item.minorUnitName}</SelectItem>}
-                            {c.item?.mediumUnitName && <SelectItem value="medium">{c.item.mediumUnitName}</SelectItem>}
-                            {c.item?.majorUnitName  && <SelectItem value="major">{c.item.majorUnitName}</SelectItem>}
-                            {!c.item?.minorUnitName && !c.item?.mediumUnitName && !c.item?.majorUnitName && (
-                              <>
-                                <SelectItem value="minor">صغرى</SelectItem>
-                                <SelectItem value="medium">وسطى</SelectItem>
-                                <SelectItem value="major">كبرى</SelectItem>
-                              </>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td className="p-1.5">
-                        <Input data-testid={`input-consumable-notes-${idx}`} value={c.notes}
-                          onChange={e => updateConsumable(idx, "notes", e.target.value)}
-                          className="h-7 text-xs w-full" placeholder="اختياري" />
-                      </td>
-                      <td className="p-1.5">
-                        <Button size="icon" variant="ghost" className="h-6 w-6"
-                          onClick={() => removeConsumable(idx)}
-                          data-testid={`button-remove-consumable-${idx}`}>
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground text-center py-3 border rounded-md bg-muted/20">
-              لا توجد مستهلكات مرتبطة - ابحث عن صنف لإضافته
-            </div>
-          )}
+          <ConsumablesGrid
+            consumables={consumables}
+            onChange={rows => setConsumables(() => rows)}
+            isEditing={true}
+          />
         </div>
 
         {editingService && <DoctorPricingSection serviceId={editingService.id} />}

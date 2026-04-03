@@ -766,4 +766,33 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
     }
   });
 
+  // ── Item Consumables ────────────────────────────────────────────────────────
+  app.get("/api/items/:id/consumables", requireAuth, async (req, res) => {
+    try {
+      const rows = await storage.getItemConsumables(req.params.id);
+      res.json(rows);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
+  app.put("/api/items/:id/consumables", requireAuth, async (req, res) => {
+    try {
+      const lineSchema = z.object({
+        consumableItemId: z.string().min(1),
+        quantity: z.string(),
+        unitLevel: z.string(),
+        notes: z.string().nullable().optional(),
+      });
+      const lines = z.array(lineSchema).parse(req.body);
+      const rows = await storage.replaceItemConsumables(req.params.id, lines);
+      res.json(rows);
+    } catch (error: unknown) {
+      if (error instanceof z.ZodError) return res.status(422).json({ errors: error.errors });
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
 }

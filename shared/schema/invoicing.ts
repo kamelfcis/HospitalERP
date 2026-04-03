@@ -92,6 +92,21 @@ export const serviceConsumables = pgTable("service_consumables", {
   uniqueServiceItem: uniqueIndex("idx_sc_unique").on(table.serviceId, table.itemId),
 }));
 
+// ─── Item Consumables — مستهلكات الصنف (للأصناف من فئة "خدمة") ─────────────
+export const itemConsumables = pgTable("item_consumables", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  consumableItemId: varchar("consumable_item_id").notNull().references(() => items.id),
+  quantity: decimal("quantity", { precision: 10, scale: 4 }).notNull().default("1"),
+  unitLevel: text("unit_level").notNull().default("minor"),
+  notes: text("notes"),
+}, (table) => ({
+  itemIdx: index("idx_ic_item").on(table.itemId),
+  uniqueItemConsumable: uniqueIndex("idx_ic_unique").on(table.itemId, table.consumableItemId),
+}));
+
+export type ItemConsumable = typeof itemConsumables.$inferSelect;
+
 // ─── Pharmacy Credit Customers — عملاء الآجل ─────────────────────────────────
 export const pharmacyCreditCustomers = pgTable("pharmacy_credit_customers", {
   id:        varchar("id").primaryKey().default(sql`gen_random_uuid()`),

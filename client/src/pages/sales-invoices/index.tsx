@@ -11,7 +11,7 @@
  *
  * لا يوجد حفظ تلقائي (auto-save) ولا مسودات — الحفظ مباشر عند الاعتماد فقط.
  */
-import { useMemo, useRef, useEffect } from "react";
+import { useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -149,6 +149,15 @@ export default function SalesInvoices() {
     linesHook.addServiceLine, linesHook.addConsumableLine,
   );
 
+  // إذا كان الصنف من فئة "service"، يستخدم مسار المستهلكات من item_consumables
+  const smartAddItemToLines = useCallback(async (itemData: any, overrides?: { qty?: number; unitLevel?: string }) => {
+    if (!overrides && itemData?.category === "service") {
+      await serviceSearchHook.addItemServiceConsumables(itemData);
+    } else {
+      await linesHook.addItemToLines(itemData, overrides);
+    }
+  }, [serviceSearchHook.addItemServiceConsumables, linesHook.addItemToLines]);
+
   const clinicOrderId = params.get("clinicOrderId");
   const clinicOrderIdsParam = params.get("clinicOrderIds");
   const allClinicIds = clinicOrderIdsParam
@@ -187,7 +196,7 @@ export default function SalesInvoices() {
   const barcode = useBarcodeScanner({
     warehouseId:    form.warehouseId,
     isDraft:        !!isDraft,
-    addItemToLines: linesHook.addItemToLines,
+    addItemToLines: smartAddItemToLines,
     pendingQtyRef:  linesHook.pendingQtyRef,
     barcodeInputRef,
   });
@@ -386,7 +395,7 @@ export default function SalesInvoices() {
         barcodeLoading={barcode.barcodeLoading}
         barcodeInputRef={barcodeInputRef}
         onBarcodeScan={barcode.handleBarcodeInputSubmit}
-        linesHook={linesHook}
+        linesHook={{ ...linesHook, addItemToLines: smartAddItemToLines }}
         mutationsHook={mutationsHook}
         itemSearchHook={itemSearchHook}
         serviceSearchHook={serviceSearchHook}
