@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { X, BarChart3, Lock, AlertTriangle } from "lucide-react";
+import { X, BarChart3, Lock, AlertTriangle, Stethoscope } from "lucide-react";
 import { formatNumber, formatQty } from "@/lib/formatters";
 import {
   formatAvailability, getUnitOptions,
@@ -373,6 +373,148 @@ const InvoiceLineRow = memo(function InvoiceLineRow({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ServiceRow — سطر الخدمة (يتضمن السعر ويُحذف مع مستهلكاته)
+// ─────────────────────────────────────────────────────────────────────────────
+interface ServiceRowProps {
+  ln:            SalesLineLocal;
+  rowNum:        number;
+  isDraft:       boolean;
+  onRemoveGroup: (serviceId: string) => void;
+}
+const ServiceRow = memo(function ServiceRow({ ln, rowNum, isDraft, onRemoveGroup }: ServiceRowProps) {
+  return (
+    <tr className="bg-blue-50/60 dark:bg-blue-950/30 border-b border-blue-200/50 dark:border-blue-800/30"
+        data-testid={`row-service-${ln.tempId}`}>
+      <td className="text-center text-muted-foreground font-semibold text-[11px]">{rowNum}</td>
+      <td colSpan={1}>
+        <div className="flex items-center gap-1.5 py-0.5">
+          <span className="inline-flex items-center gap-0.5 bg-blue-600 text-white rounded px-1 py-0.5 text-[9px] font-bold shrink-0">
+            <Stethoscope className="h-2.5 w-2.5" />
+            خدمة
+          </span>
+          <span className="font-semibold text-[12px] text-blue-900 dark:text-blue-100">
+            {ln.serviceNameAr || "خدمة"}
+          </span>
+        </div>
+      </td>
+      <td className="text-center text-muted-foreground text-[11px]">—</td>
+      <td className="text-center text-[11px] font-medium">١</td>
+      <td className="text-center">
+        <span className="flex items-center justify-center gap-0.5 peachtree-amount font-semibold text-blue-700 dark:text-blue-300">
+          <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
+          {formatNumber(ln.salePrice)}
+        </span>
+      </td>
+      <td className="text-center peachtree-amount font-bold text-blue-700 dark:text-blue-300">
+        {formatNumber(ln.lineTotal)}
+      </td>
+      <td className="text-center text-muted-foreground">—</td>
+      <td className="text-center text-muted-foreground">—</td>
+      <td className="text-center text-muted-foreground">—</td>
+      {isDraft && (
+        <td className="text-center">
+          <Button
+            variant="ghost" size="icon"
+            onClick={() => onRemoveGroup(ln.serviceId || ln.tempId)}
+            title="حذف الخدمة ومستهلكاتها"
+            data-testid={`button-delete-service-${ln.tempId}`}
+          >
+            <X className="h-3 w-3 text-destructive" />
+          </Button>
+        </td>
+      )}
+    </tr>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ConsumableSubRow — سطر مستهلك تابع لخدمة (بدون قيمة، شجري التصميم)
+// ─────────────────────────────────────────────────────────────────────────────
+interface ConsumableSubRowProps {
+  ln:       SalesLineLocal;
+  index:    number;
+  isLast:   boolean;
+  isDraft:  boolean;
+  onRemove: (index: number) => void;
+}
+const ConsumableSubRow = memo(function ConsumableSubRow({
+  ln, index, isLast, isDraft, onRemove,
+}: ConsumableSubRowProps) {
+  const connector = isLast ? "└──" : "├──";
+  const unitName = ln.unitLevel === "major" ? ln.item?.majorUnitName
+    : ln.unitLevel === "medium" ? ln.item?.mediumUnitName
+    : ln.item?.minorUnitName;
+  return (
+    <tr className="bg-slate-50/40 dark:bg-slate-900/20 border-b border-dashed border-slate-200/60 dark:border-slate-700/40"
+        data-testid={`row-consumable-${ln.tempId}`}>
+      <td />
+      <td>
+        <div className="flex items-center gap-1 pr-2 py-0.5">
+          <span className="text-blue-400 dark:text-blue-600 font-mono text-[11px] shrink-0 select-none">
+            {connector}
+          </span>
+          <span className="text-[11px] text-muted-foreground truncate" title={ln.item?.nameAr || ""}>
+            {ln.item?.nameAr || ln.itemId}
+          </span>
+        </div>
+      </td>
+      <td className="text-center text-[11px] text-muted-foreground">{unitName || "—"}</td>
+      <td className="text-center text-[11px] text-muted-foreground">{formatQty(ln.qty)}</td>
+      <td className="text-center text-muted-foreground text-[11px]">—</td>
+      <td className="text-center text-muted-foreground text-[11px]">—</td>
+      <td className="text-center text-muted-foreground text-[11px]">—</td>
+      <td className="text-center text-muted-foreground text-[11px]">—</td>
+      <td />
+      {isDraft && (
+        <td className="text-center">
+          <Button
+            variant="ghost" size="icon"
+            onClick={() => onRemove(index)}
+            data-testid={`button-delete-consumable-${ln.tempId}`}
+          >
+            <X className="h-2.5 w-2.5 text-muted-foreground" />
+          </Button>
+        </td>
+      )}
+    </tr>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ServiceGroupRows — مجموعة خدمة + مستهلكاتها (تُعيد Fragment لتجنب تداخل <tr>)
+// ─────────────────────────────────────────────────────────────────────────────
+function ServiceGroupRows({
+  group, gi, isDraft, onRemoveLine, handleRemoveServiceGroup,
+}: {
+  group: { type: "service"; line: SalesLineLocal; index: number; consumables: { line: SalesLineLocal; index: number; isLast: boolean }[] };
+  gi: number;
+  isDraft: boolean;
+  onRemoveLine: (index: number) => void;
+  handleRemoveServiceGroup: (serviceId: string) => void;
+}) {
+  return (
+    <>
+      <ServiceRow
+        ln={group.line}
+        rowNum={gi + 1}
+        isDraft={isDraft}
+        onRemoveGroup={handleRemoveServiceGroup}
+      />
+      {group.consumables.map((c) => (
+        <ConsumableSubRow
+          key={c.line.tempId}
+          ln={c.line}
+          index={c.index}
+          isLast={c.isLast}
+          isDraft={isDraft}
+          onRemove={onRemoveLine}
+        />
+      ))}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Props — الجدول الرئيسي
 // ─────────────────────────────────────────────────────────────────────────────
 interface Props {
@@ -382,6 +524,7 @@ interface Props {
   pendingQtyRef:   React.MutableRefObject<Map<string, string>>;
   onUpdateLine:    (index: number, patch: Partial<SalesLineLocal>) => void;
   onRemoveLine:    (index: number) => void;
+  onRemoveLines:   (tempIds: string[]) => void;
   onQtyConfirm:    (tempId: string) => void;
   onOpenStats:     (itemId: string) => void;
   barcodeInputRef: React.RefObject<HTMLInputElement>;
@@ -392,7 +535,7 @@ interface Props {
 // ─────────────────────────────────────────────────────────────────────────────
 export function InvoiceLineTable({
   lines, isDraft, fefoLoading, pendingQtyRef,
-  onUpdateLine, onRemoveLine, onQtyConfirm, onOpenStats, barcodeInputRef,
+  onUpdateLine, onRemoveLine, onRemoveLines, onQtyConfirm, onOpenStats, barcodeInputRef,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -400,6 +543,7 @@ export function InvoiceLineTable({
   const multiPriceItems = useMemo(() => {
     const result = new Set<string>();
     lines.forEach((ln) => {
+      if (!ln.itemId || ln.lineType === "service") return;
       // كشف 1: نفس الصنف في سطور متعددة بأسعار مختلفة (بعد FEFO)
       const same = lines.filter((l) => l.itemId === ln.itemId);
       if (same.length > 1) {
@@ -427,6 +571,51 @@ export function InvoiceLineTable({
     });
     return result;
   }, [lines]);
+
+  // ── تجميع المستهلكات بـ serviceId ─────────────────────────────────────────
+  const consumablesByService = useMemo(() => {
+    const map = new Map<string, { line: SalesLineLocal; index: number }[]>();
+    lines.forEach((ln, i) => {
+      if (ln.lineType === "consumable" && ln.serviceId) {
+        if (!map.has(ln.serviceId)) map.set(ln.serviceId, []);
+        map.get(ln.serviceId)!.push({ line: ln, index: i });
+      }
+    });
+    return map;
+  }, [lines]);
+
+  // ── مجموعات العرض (خدمة + مستهلكات | صنف عادي) ───────────────────────────
+  const renderGroups = useMemo(() => {
+    const renderedTempIds = new Set<string>();
+    type Group =
+      | { type: "service"; line: SalesLineLocal; index: number; consumables: { line: SalesLineLocal; index: number; isLast: boolean }[] }
+      | { type: "item";    line: SalesLineLocal; index: number };
+    const groups: Group[] = [];
+
+    lines.forEach((ln, i) => {
+      if (renderedTempIds.has(ln.tempId)) return;
+      if (ln.lineType === "service") {
+        const cons = (consumablesByService.get(ln.serviceId || "") || []).map((c, ci, arr) => ({
+          ...c, isLast: ci === arr.length - 1,
+        }));
+        cons.forEach((c) => renderedTempIds.add(c.line.tempId));
+        groups.push({ type: "service", line: ln, index: i, consumables: cons });
+      } else if (ln.lineType === "consumable") {
+        // سيُعرض كـ sub-row — تجاهل هنا
+      } else {
+        groups.push({ type: "item", line: ln, index: i });
+      }
+    });
+    return groups;
+  }, [lines, consumablesByService]);
+
+  // ── حذف خدمة ومستهلكاتها دفعة واحدة ──────────────────────────────────────
+  const handleRemoveServiceGroup = useCallback((serviceId: string) => {
+    const toRemove = lines
+      .filter((l) => l.serviceId === serviceId && (l.lineType === "service" || l.lineType === "consumable"))
+      .map((l) => l.tempId);
+    onRemoveLines(toRemove);
+  }, [lines, onRemoveLines]);
 
   // ── التنقل بالأسهم (event bubbling على container — لا يتأثر بمemo الصفوف) ──
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -507,23 +696,37 @@ export function InvoiceLineTable({
           </tr>
         </thead>
         <tbody>
-          {lines.map((ln, i) => (
-            <InvoiceLineRow
-              key={ln.tempId}
-              ln={ln}
-              i={i}
-              isDraft={isDraft}
-              fefoLoading={fefoLoading}
-              hasMultiPrice={multiPriceItems.has(ln.itemId)}
-              needsExpiry={!!(ln.item?.hasExpiry && !ln.expiryMonth)}
-              pendingQtyRef={pendingQtyRef}
-              onUpdateLine={onUpdateLine}
-              onRemoveLine={onRemoveLine}
-              onQtyConfirm={onQtyConfirm}
-              onOpenStats={onOpenStats}
-              barcodeInputRef={barcodeInputRef}
-            />
-          ))}
+          {renderGroups.map((group, gi) => {
+            if (group.type === "service") {
+              return (
+                <ServiceGroupRows
+                  key={group.line.tempId}
+                  group={group}
+                  gi={gi}
+                  isDraft={isDraft}
+                  onRemoveLine={onRemoveLine}
+                  handleRemoveServiceGroup={handleRemoveServiceGroup}
+                />
+              );
+            }
+            return (
+              <InvoiceLineRow
+                key={group.line.tempId}
+                ln={group.line}
+                i={group.index}
+                isDraft={isDraft}
+                fefoLoading={fefoLoading}
+                hasMultiPrice={multiPriceItems.has(group.line.itemId)}
+                needsExpiry={!!(group.line.item?.hasExpiry && !group.line.expiryMonth)}
+                pendingQtyRef={pendingQtyRef}
+                onUpdateLine={onUpdateLine}
+                onRemoveLine={onRemoveLine}
+                onQtyConfirm={onQtyConfirm}
+                onOpenStats={onOpenStats}
+                barcodeInputRef={barcodeInputRef}
+              />
+            );
+          })}
 
           {lines.length === 0 && (
             <tr>

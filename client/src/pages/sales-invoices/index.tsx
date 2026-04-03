@@ -146,6 +146,7 @@ export default function SalesInvoices() {
   const itemSearchHook = useItemSearch(form.warehouseId);
   const serviceSearchHook = useServiceSearch(
     form.warehouseId, form.invoiceDate, linesHook.addItemToLines,
+    linesHook.addServiceLine, linesHook.addConsumableLine,
   );
 
   const clinicOrderId = params.get("clinicOrderId");

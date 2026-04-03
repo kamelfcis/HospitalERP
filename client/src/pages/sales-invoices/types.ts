@@ -1,9 +1,14 @@
 import type { Item } from "@shared/schema";
 
+export type SalesLineType = "item" | "service" | "consumable";
+
 export interface SalesLineLocal {
   tempId: string;
+  lineType?: SalesLineType;
   itemId: string;
   item: Item | null;
+  serviceId?: string;
+  serviceNameAr?: string;
   unitLevel: string;
   qty: number;
   salePrice: number;

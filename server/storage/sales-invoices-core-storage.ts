@@ -187,6 +187,7 @@ const methods = {
   async expandLinesFEFO(this: DatabaseStorage, tx: DrizzleTransaction, warehouseId: string, rawLines: Partial<InsertSalesInvoiceLine>[]): Promise<Partial<InsertSalesInvoiceLine>[]> {
     const expanded: Partial<InsertSalesInvoiceLine>[] = [];
     for (const line of rawLines) {
+      if (!line.itemId) { expanded.push(line); continue; }
       const [item] = await tx.select().from(items).where(eq(items.id, line.itemId!));
       if (!item || !item.hasExpiry || line.expiryMonth || line.expiryYear) {
         expanded.push(line);
@@ -245,6 +246,7 @@ const methods = {
       {
         const epsilon = 0.0001;
         for (const rawLine of lines) {
+          if (!rawLine.itemId) continue;
           const rawQty = parseFloat(rawLine.qty || "0") || 0;
           if (Math.abs(rawQty - Math.round(rawQty)) > epsilon) {
             const [rawItem] = await tx
@@ -281,6 +283,27 @@ const methods = {
 
       for (const line of expandedLines) {
         const qty = parseFloat(line.qty || "0") || 0;
+
+        // ── سطر خدمة: يُستخدم السعر المُرسَل من العميل مباشرةً (مُتحقَّق من DB) ─
+        if ((line as any).lineType === "service" || !(line.itemId)) {
+          const salePrice = parseFloat(String(line.salePrice || "0")) || 0;
+          const lineTotal = parseFloat((salePrice * 1).toFixed(2));
+          const taxResult = computeLineTax({ qty: 1, salePrice, taxType: null, taxRate: 0, pricesIncludeTax: false });
+          subtotal += lineTotal;
+          processedLines.push({ line, qty: 1, salePrice, qtyInMinor: 1, lineTotal, taxResult });
+          continue;
+        }
+
+        // ── سطر مستهلك (تابع لخدمة): سعر = 0 دائماً ─────────────────────────
+        if ((line as any).lineType === "consumable") {
+          const qty = parseFloat(line.qty || "0") || 0;
+          const item = itemMap.get(line.itemId!);
+          const qtyInMinor = item ? convertQtyToMinor(qty, line.unitLevel || "major", item) : qty;
+          const taxResult = computeLineTax({ qty, salePrice: 0, taxType: null, taxRate: 0, pricesIncludeTax: false });
+          processedLines.push({ line, qty, salePrice: 0, qtyInMinor, lineTotal: 0, taxResult });
+          continue;
+        }
+
         const item = itemMap.get(line.itemId!);
 
         // ── تسعير النظام: الباكند يُحدّد السعر دائماً — لا يثق بالعميل ──────
@@ -406,7 +429,10 @@ const methods = {
         await tx.insert(salesInvoiceLines).values({
           invoiceId: invoice.id,
           lineNo: i + 1,
-          itemId: line.itemId,
+          lineType: (line as any).lineType || "item",
+          itemId: line.itemId || null,
+          serviceId: (line as any).serviceId || null,
+          serviceDescription: (line as any).serviceDescription || null,
           unitLevel: line.unitLevel || "major",
           qty: String(qty),
           qtyInMinor: String(qtyInMinor),
@@ -449,6 +475,7 @@ const methods = {
       {
         const epsilon = 0.0001;
         for (const rawLine of lines) {
+          if (!rawLine.itemId) continue;
           const rawQty = parseFloat(rawLine.qty || "0") || 0;
           if (Math.abs(rawQty - Math.round(rawQty)) > epsilon) {
             const [rawItem] = await tx
@@ -485,6 +512,25 @@ const methods = {
 
       for (const line of expandedLines) {
         const qty = parseFloat(line.qty || "0") || 0;
+
+        if ((line as any).lineType === "service" || !(line.itemId)) {
+          const salePrice = parseFloat(String(line.salePrice || "0")) || 0;
+          const lineTotal = parseFloat((salePrice * 1).toFixed(2));
+          const taxResult = computeLineTax({ qty: 1, salePrice, taxType: null, taxRate: 0, pricesIncludeTax: false });
+          subtotal += lineTotal;
+          processedLines.push({ line, qty: 1, salePrice, qtyInMinor: 1, lineTotal, taxResult });
+          continue;
+        }
+
+        if ((line as any).lineType === "consumable") {
+          const qtyC = parseFloat(line.qty || "0") || 0;
+          const itemC = itemMapU.get(line.itemId!);
+          const qtyInMinorC = itemC ? convertQtyToMinor(qtyC, line.unitLevel || "major", itemC) : qtyC;
+          const taxResultC = computeLineTax({ qty: qtyC, salePrice: 0, taxType: null, taxRate: 0, pricesIncludeTax: false });
+          processedLines.push({ line, qty: qtyC, salePrice: 0, qtyInMinor: qtyInMinorC, lineTotal: 0, taxResult: taxResultC });
+          continue;
+        }
+
         const item = itemMapU.get(line.itemId!);
 
         // ── تسعير النظام: الباكند يُحدّد السعر دائماً — لا يثق بالعميل ──────
@@ -543,7 +589,10 @@ const methods = {
         await tx.insert(salesInvoiceLines).values({
           invoiceId: id,
           lineNo: i + 1,
-          itemId: line.itemId,
+          lineType: (line as any).lineType || "item",
+          itemId: line.itemId || null,
+          serviceId: (line as any).serviceId || null,
+          serviceDescription: (line as any).serviceDescription || null,
           unitLevel: line.unitLevel || "major",
           qty: String(qty),
           qtyInMinor: String(qtyInMinor),

@@ -5,7 +5,9 @@ import { getUnitName, calculateQtyInMinor } from "../utils";
 export function useServiceSearch(
   warehouseId: string,
   invoiceDate: string,
-  addItemToLines: (itemData: any, overrides?: { qty?: number; unitLevel?: string }) => Promise<void>
+  _addItemToLines: (itemData: any, overrides?: { qty?: number; unitLevel?: string }) => Promise<void>,
+  addServiceLine: (serviceId: string, serviceNameAr: string, salePrice: number) => void,
+  addConsumableLine: (itemData: any, qty: number, unitLevel: string, serviceId: string) => Promise<void>,
 ) {
   const { toast } = useToast();
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
@@ -18,12 +20,21 @@ export function useServiceSearch(
     }
     setAddingServiceId(serviceId);
     try {
+      // جلب بيانات الخدمة للحصول على السعر الأساسي
+      const serviceRes = await fetch(`/api/services/${serviceId}`, { credentials: "include" });
+      if (!serviceRes.ok) throw new Error("فشل تحميل بيانات الخدمة");
+      const serviceData = await serviceRes.json();
+
+      // إضافة سطر الخدمة
+      addServiceLine(serviceId, serviceData.nameAr || serviceName, parseFloat(serviceData.basePrice || "0") || 0);
+
+      // جلب المستهلكات
       const res = await fetch(`/api/services/${serviceId}/consumables`, { credentials: "include" });
       if (!res.ok) throw new Error("فشل تحميل المستهلكات");
       const consumables = await res.json();
 
       if (!consumables || consumables.length === 0) {
-        toast({ title: serviceName, description: "لا توجد مستهلكات مرتبطة بهذه الخدمة" });
+        toast({ title: serviceName, description: "تمت الإضافة — لا توجد مستهلكات" });
         setAddingServiceId(null);
         return;
       }
@@ -38,11 +49,10 @@ export function useServiceSearch(
         if (!itemRes.ok) continue;
         const itemData = await itemRes.json();
 
-        const qtyMinor = calculateQtyInMinor(parseFloat(cons.quantity), cons.unitLevel, itemData);
+        const qtyNum   = parseFloat(cons.quantity) || 1;
+        const unitLv   = cons.unitLevel || "major";
+        const qtyMinor = calculateQtyInMinor(qtyNum, unitLv, itemData);
 
-        // ── فحص المخزون قبل الإضافة ────────────────────────────────────────────
-        // للأصناف ذات الصلاحية (hasExpiry): لو المخزون غير كافٍ، FEFO سيرفضها.
-        // نتحقق مسبقاً لنعطي رسالة واضحة ونتجنب الإضافة الوهمية.
         let stockSufficient = true;
         try {
           const stockRes = await fetch(
@@ -52,26 +62,23 @@ export function useServiceSearch(
             const stockData = await stockRes.json();
             if (!stockData.fulfilled) {
               stockSufficient = false;
-              const needed = cons.quantity;
-              const unit   = getUnitName(itemData, cons.unitLevel);
+              const unit = getUnitName(itemData, unitLv);
               stockWarnings.push(
-                `${itemData.nameAr}: رصيد غير كافٍ (المطلوب: ${needed} ${unit})`
+                `${itemData.nameAr}: رصيد غير كافٍ (المطلوب: ${qtyNum} ${unit})`
               );
             }
           }
         } catch {}
 
-        // للأصناف ذات الصلاحية: لا تحاول الإضافة لو المخزون غير كافٍ (ستفشل FEFO صامتة)
         if (!stockSufficient && itemData.hasExpiry) {
           skippedCount++;
           continue;
         }
 
-        await addItemToLines(itemData, { qty: parseFloat(cons.quantity) || 1, unitLevel: cons.unitLevel || "major" });
+        await addConsumableLine(itemData, qtyNum, unitLv, serviceId);
         addedCount++;
       }
 
-      // ── رسائل النتيجة ─────────────────────────────────────────────────────────
       if (stockWarnings.length > 0) {
         toast({
           title:       `رصيد غير كافٍ — ${serviceName}`,
@@ -83,23 +90,25 @@ export function useServiceSearch(
 
       if (addedCount > 0 && skippedCount === 0) {
         toast({
-          title:       `تمت إضافة مستهلكات: ${serviceName}`,
-          description: `تم إضافة ${addedCount} صنف للفاتورة`,
+          title:       `تمت إضافة الخدمة: ${serviceName}`,
+          description: `سطر الخدمة + ${addedCount} مستهلك بدون قيمة`,
         });
       } else if (addedCount > 0 && skippedCount > 0) {
         toast({
-          title:       `مستهلكات ${serviceName}`,
-          description: `أُضيف ${addedCount} صنف — لم يُضَف ${skippedCount} بسبب نقص المخزون`,
+          title:       `خدمة ${serviceName}`,
+          description: `أُضيف ${addedCount} مستهلك — لم يُضَف ${skippedCount} بسبب نقص المخزون`,
           variant:     "destructive",
           duration:    8000,
         });
       } else if (addedCount === 0 && skippedCount > 0) {
         toast({
-          title:       `لم تُضَف أي مستهلكات — ${serviceName}`,
-          description: `جميع الأصناف (${skippedCount}) غير متوفرة في المخزون`,
+          title:       `لم تُضَف المستهلكات — ${serviceName}`,
+          description: `جميع المستهلكات (${skippedCount}) غير متوفرة`,
           variant:     "destructive",
           duration:    8000,
         });
+      } else {
+        toast({ title: `تمت إضافة الخدمة: ${serviceName}` });
       }
     } catch (err: unknown) {
       const _em = err instanceof Error ? err.message : String(err);
@@ -107,7 +116,7 @@ export function useServiceSearch(
     } finally {
       setAddingServiceId(null);
     }
-  }, [warehouseId, invoiceDate, addItemToLines, toast]);
+  }, [warehouseId, invoiceDate, addConsumableLine, addServiceLine, toast]);
 
   const openServiceModal = useCallback(() => {
     setServiceModalOpen(true);

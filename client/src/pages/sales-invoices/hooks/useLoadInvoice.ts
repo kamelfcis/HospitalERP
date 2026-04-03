@@ -78,8 +78,11 @@ export function useLoadInvoice({
 
       return {
       tempId:           ln.id || genId(),
-      itemId:           ln.itemId,
+      lineType:         (ln.lineType as any) || "item",
+      itemId:           ln.itemId || "",
       item:             ln.item || null,
+      serviceId:        ln.serviceId || undefined,
+      serviceNameAr:    ln.serviceDescription || undefined,
       unitLevel:        ln.unitLevel || "major",
       qty:              parseFloat(String(ln.qty))       || 0,
       salePrice:        parseFloat(String(ln.salePrice)) || 0,
@@ -96,9 +99,9 @@ export function useLoadInvoice({
     // بيانات مكملة فقط للمسودات
     if (invoiceDetail.status !== "draft" || !invoiceDetail.warehouseId) return;
 
-    const allItemIds   = Array.from(new Set(mapped.map((l) => l.itemId)));
+    const allItemIds   = Array.from(new Set(mapped.map((l) => l.itemId).filter(Boolean)));
     const expiryItemIds= Array.from(new Set(
-      mapped.filter((l) => l.item?.hasExpiry).map((l) => l.itemId)
+      mapped.filter((l) => l.item?.hasExpiry && l.itemId).map((l) => l.itemId)
     ));
 
     // 1. أرصدة المخزون

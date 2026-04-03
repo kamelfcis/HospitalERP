@@ -231,6 +231,11 @@ export function useInvoiceLines(
     setLines((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  // ── حذف مجموعة سطور بـ tempId (للخدمة + مستهلكاتها) ──────────────────────
+  const removeLines = useCallback((tempIds: string[]) => {
+    setLines((prev) => prev.filter((l) => !tempIds.includes(l.tempId)));
+  }, []);
+
   // ── جلب خيارات الصلاحية لسطر موجود ────────────────────────────────────────
   const fetchExpiryOptions = useCallback(async (itemId: string, lineIndex: number) => {
     if (!warehouseId) return;
@@ -436,6 +441,61 @@ export function useInvoiceLines(
     }
   }, [warehouseId, invoiceDate, toast, updateLine, linesRef]);
 
+  // ── إضافة سطر مستهلك تابع لخدمة (سعر = 0، مرتبط بـ serviceId) ─────────────
+  const addConsumableLine = useCallback(async (
+    itemData: InvoiceItemData,
+    qty: number,
+    unitLevel: string,
+    serviceId: string,
+  ) => {
+    // لا نستخدم FEFO للتسعير — نحن فقط نتتبع الكمية في المخزون
+    // السعر = 0 دائماً لأن الخدمة هي التي تُغطي التكلفة
+    setLines((prev) => [...prev, {
+      tempId:        genId(),
+      lineType:      "consumable" as const,
+      itemId:        itemData.id,
+      item:          itemData as unknown as SalesLineLocal["item"],
+      serviceId,
+      unitLevel,
+      qty,
+      salePrice:     0,
+      baseSalePrice: 0,
+      lineTotal:     0,
+      expiryMonth:   null,
+      expiryYear:    null,
+      lotId:         null,
+      fefoLocked:    false,
+      priceSource:   "service",
+      availableQtyMinor: itemData.availableQtyMinor || "0",
+    }]);
+  }, []);
+
+  // ── إضافة سطر خدمة (بدون صنف مخزني) ───────────────────────────────────────
+  const addServiceLine = useCallback((
+    serviceId: string,
+    serviceNameAr: string,
+    salePrice: number,
+  ) => {
+    setLines((prev) => [...prev, {
+      tempId:        genId(),
+      lineType:      "service" as const,
+      itemId:        "",
+      item:          null,
+      serviceId,
+      serviceNameAr,
+      unitLevel:     "major",
+      qty:           1,
+      salePrice,
+      baseSalePrice: salePrice,
+      lineTotal:     salePrice,
+      expiryMonth:   null,
+      expiryYear:    null,
+      lotId:         null,
+      fefoLocked:    false,
+      priceSource:   "service",
+    }]);
+  }, []);
+
   return {
     lines, setLines,
     fefoLoading,
@@ -443,7 +503,10 @@ export function useInvoiceLines(
     pendingQtyRef,
     updateLine,
     removeLine,
+    removeLines,
     addItemToLines,
+    addConsumableLine,
+    addServiceLine,
     handleQtyConfirm,
     fetchExpiryOptions,
   };

@@ -224,6 +224,7 @@ export function SalesInvoiceEditor({
         pendingQtyRef={linesHook.pendingQtyRef}
         onUpdateLine={linesHook.updateLine}
         onRemoveLine={linesHook.removeLine}
+        onRemoveLines={linesHook.removeLines}
         onQtyConfirm={linesHook.handleQtyConfirm}
         onOpenStats={statsHook.openStats}
         barcodeInputRef={barcodeInputRef}

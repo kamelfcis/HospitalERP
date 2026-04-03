@@ -68,9 +68,12 @@ export function useInvoiceMutations(p: MutationParams) {
         : undefined;
 
       return {
-        itemId: ln.itemId,
+        lineType: ln.lineType || "item",
+        itemId: ln.itemId || undefined,
+        serviceId: ln.serviceId || undefined,
+        serviceDescription: ln.serviceNameAr || undefined,
         unitLevel: ln.unitLevel,
-        qty: ln.qty,
+        qty: ln.lineType === "service" ? "1" : String(ln.qty),
         salePrice: ln.salePrice,
         lineTotal: ln.lineTotal,
         expiryMonth: ln.expiryMonth,
@@ -114,6 +117,7 @@ export function useInvoiceMutations(p: MutationParams) {
     mutationFn: async () => {
       // ── فحص وحدات التسعير ────────────────────────────────────────────────
       for (const ln of p.lines) {
+        if (ln.lineType === "service" || ln.lineType === "consumable") continue;
         const opts = getUnitOptions(ln.item);
         const chosen = opts.find((o) => o.value === ln.unitLevel);
         if (chosen && !chosen.priceable) {

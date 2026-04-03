@@ -362,6 +362,13 @@ const methods = {
 
       for (let li = 0; li < lines.length; li++) {
         const line = lines[li];
+
+        // ── سطر خدمة (lineType='service'): يُضاف للإيراد، يتجاوز المخزون ─────
+        if ((line as any).lineType === "service" || !line.itemId) {
+          revenueDrugs += parseFloat(line.lineTotal);
+          continue;
+        }
+
         const item = itemMap[line.itemId];
         if (!item) throw new Error(`الصنف غير موجود: ${line.itemId}`);
 
@@ -370,7 +377,10 @@ const methods = {
           continue;
         }
 
-        if (item.hasExpiry && !line.expiryMonth) {
+        // سطر مستهلك (تابع لخدمة): يُخصَم من المخزون بدون اشتراط الصلاحية
+        const isConsumable = (line as any).lineType === "consumable";
+
+        if (!isConsumable && item.hasExpiry && !line.expiryMonth) {
           throw new Error(`الصنف "${item.nameAr}" يتطلب تاريخ صلاحية`);
         }
         if (item.hasExpiry && line.expiryMonth && line.expiryYear) {

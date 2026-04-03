@@ -122,7 +122,7 @@ export function registerSalesInvoicesRoutes(app: Express) {
       if (!header?.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
       const forbiddenMsg = await assertUserWarehouseAllowed(req.session.userId!, header.warehouseId, storage);
       if (forbiddenMsg) return res.status(403).json({ message: forbiddenMsg });
-      const safeLines = Array.isArray(lines) ? lines.filter((l: Record<string, unknown>) => l.itemId) : [];
+      const safeLines = Array.isArray(lines) ? lines.filter((l: Record<string, unknown>) => l.itemId || l.serviceId) : [];
       const enrichedHeader = { ...header, createdBy: req.session?.userId || header.createdBy || null };
 
       if (existingId) {
@@ -156,8 +156,8 @@ export function registerSalesInvoicesRoutes(app: Express) {
       if (!lines || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
       
       for (const line of lines) {
-        if (!line.itemId) return res.status(400).json({ message: "الصنف مطلوب في كل سطر" });
-        if (!line.qty || parseFloat(line.qty) <= 0) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
+        if (!line.itemId && !line.serviceId) return res.status(400).json({ message: "الصنف أو الخدمة مطلوب في كل سطر" });
+        if (line.lineType !== "service" && (!line.qty || parseFloat(line.qty) <= 0)) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
       }
 
       const enriched = { ...header, createdBy: req.session?.userId || header.createdBy || null, clinicOrderId: header.clinicOrderId || null };
@@ -176,8 +176,8 @@ export function registerSalesInvoicesRoutes(app: Express) {
       if (!lines || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
       
       for (const line of lines) {
-        if (!line.itemId) return res.status(400).json({ message: "الصنف مطلوب في كل سطر" });
-        if (!line.qty || parseFloat(line.qty) <= 0) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
+        if (!line.itemId && !line.serviceId) return res.status(400).json({ message: "الصنف أو الخدمة مطلوب في كل سطر" });
+        if (line.lineType !== "service" && (!line.qty || parseFloat(line.qty) <= 0)) return res.status(400).json({ message: "الكمية يجب أن تكون أكبر من صفر" });
       }
 
       const enrichedHeader = { ...(header || {}), createdBy: req.session?.userId || (header || {}).createdBy || null };
