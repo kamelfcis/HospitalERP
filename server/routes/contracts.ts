@@ -816,6 +816,7 @@ export function registerContractRoutes(app: Express) {
             claimLineId:      z.string().min(1),
             settledAmount:    z.number().nonnegative(),
             writeOffAmount:   z.number().nonnegative().optional(),
+            writeOffType:     z.enum(["rejection", "contract_discount", "price_difference", "rounding"]).optional(),
             adjustmentReason: z.string().optional(),
           })).min(1, "يجب تحديد سطر واحد على الأقل"),
         });

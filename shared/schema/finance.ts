@@ -281,6 +281,7 @@ export const transactionTypeLabels: Record<string, string> = {
   stock_count_adjustment:    "تسوية جرد مخزني",
   supplier_payment:          "سداد موردين",
   cashier_shift_close:       "إغلاق وردية كاشير",
+  contract_settlement:       "تسوية مطالبات تأمين",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
@@ -327,6 +328,13 @@ export const mappingLineTypeLabels: Record<string, string> = {
   pharmacy_contract_receivable: "ذمم شركات تأمين طبي",
   // Cashier shift close
   treasury:             "حساب عهدة أمين الخزنة",
+  // Contract settlement (Phase 6)
+  ar_insurance:         "ذمم شركات التأمين (دائن عند التسوية)",
+  bank_settlement:      "بنك / صندوق التحصيل (مدين عند الاستلام)",
+  rejection_loss:       "خسارة مطالبات مرفوضة",
+  contract_discount_exp:"خصم تعاقد مسموح",
+  price_diff_expense:   "فرق سعر",
+  rounding_adjustment:  "تسوية تقريب",
   // Generic
   other:                "أخرى",
 };

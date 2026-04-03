@@ -103,6 +103,52 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
       creditSide: true,
     },
   },
+  // ── تسوية مطالبات التأمين (Phase 6) ─────────────────────────────────────────
+  //
+  //  عند التسوية تُنشأ قيود منفصلة حسب نوع الشطب:
+  //   تحصيل:        Dr bank_settlement   / Cr ar_insurance
+  //   رفض شركة:     Dr rejection_loss    / Cr ar_insurance
+  //   خصم تعاقد:   Dr contract_discount_exp / Cr ar_insurance
+  //   فرق سعر:     Dr price_diff_expense / Cr ar_insurance
+  //   تقريب:       Dr rounding_adjustment / Cr ar_insurance
+  contract_settlement: {
+    ar_insurance: {
+      required: true,
+      condition: "ذمم شركات التأمين — الحساب الدائن في كل سطر تسوية (يُخفَّض عند التحصيل أو الشطب)",
+      debitSide: false,
+      creditSide: true,
+    },
+    bank_settlement: {
+      required: "cond",
+      condition: "بنك / صندوق التحصيل — مدين عند استلام الدفعة من الشركة",
+      debitSide: true,
+      creditSide: false,
+    },
+    rejection_loss: {
+      required: "cond",
+      condition: "خسارة مطالبات مرفوضة — مدين عند شطب المبالغ المرفوضة من الشركة",
+      debitSide: true,
+      creditSide: false,
+    },
+    contract_discount_exp: {
+      required: "cond",
+      condition: "خصم تعاقد مسموح — مدين عند شطب فرق الخصم التعاقدي",
+      debitSide: true,
+      creditSide: false,
+    },
+    price_diff_expense: {
+      required: "cond",
+      condition: "فرق سعر — مدين عند الاعتراف بفروق الأسعار",
+      debitSide: true,
+      creditSide: false,
+    },
+    rounding_adjustment: {
+      required: "cond",
+      condition: "تسوية تقريب — لتصفية فروق التقريب الحسابية",
+      debitSide: true,
+      creditSide: true,
+    },
+  },
   // ── إغلاق وردية كاشير ──────────────────────────────────────────────────────
   // القيد: مدين حساب عهدة أمين الخزنة — دائن درج الكاشير (حساب GL الخاص بالمستخدم)
   // ملاحظة: حسابا العجز والفائض مُعيَّنان على مستوى المستخدم في إدارة المستخدمين
@@ -143,6 +189,7 @@ export const suggestedLineTypes: Record<string, string[]> = {
   stock_count_adjustment:    ["stock_gain", "stock_loss"],
   supplier_payment:          ["ap_settlement"],
   cashier_shift_close:       ["treasury"],
+  contract_settlement:       ["ar_insurance", "bank_settlement", "rejection_loss", "contract_discount_exp", "price_diff_expense", "rounding_adjustment"],
 };
 
 // Derived sets reused across multiple components
@@ -250,6 +297,7 @@ export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "warehouse_transfer",
   "supplier_payment",
   "doctor_payable_settlement",
+  "contract_settlement",
 ]);
 
 // ─── Transaction types where a pharmacy-level override can be configured ───────
@@ -316,6 +364,13 @@ export const ACCOUNT_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
   // Contract pharmacy receivables: Dr = AR asset, Cr = AR asset (clearing)
   pharmacy_patient_receivable:  { debit: ["asset"],        credit: ["asset"]             },
   pharmacy_contract_receivable: { debit: ["asset"],        credit: ["asset"]             },
+  // Contract settlement (Phase 6)
+  ar_insurance:         {                                   credit: ["asset"]             },
+  bank_settlement:      { debit: ["asset"]                                               },
+  rejection_loss:       { debit: ["expense"]                                             },
+  contract_discount_exp:{ debit: ["expense", "revenue"]                                  },
+  price_diff_expense:   { debit: ["expense"]                                             },
+  rounding_adjustment:  { debit: ["expense", "asset"],     credit: ["revenue", "asset"]  },
 };
 
 /**

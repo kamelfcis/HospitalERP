@@ -288,18 +288,32 @@ export const contractClaimSettlements = pgTable("contract_claim_settlements", {
   batchDateIdx:       index("idx_ccs_batch_date").on(table.batchId, table.settlementDate),
 }));
 
+/**
+ * writeOffType — نوع الشطب للمبالغ غير المحصَّلة
+ *   rejection         — رفض شركة       : Dr خسارة ديون معدومة / Cr ذمم شركة
+ *   contract_discount — خصم تعاقد      : Dr خصم تعاقد مسموح  / Cr ذمم شركة
+ *   price_difference  — فرق سعر       : Dr فرق سعر          / Cr ذمم شركة
+ *   rounding          — تقريب حسابي   : Dr/Cr حساب تقريب    / Cr ذمم شركة
+ */
+export const writeOffTypeEnum = pgEnum("write_off_type", [
+  "rejection",
+  "contract_discount",
+  "price_difference",
+  "rounding",
+]);
+
 export const contractClaimSettlementLines = pgTable("contract_claim_settlement_lines", {
   id:               varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   settlementId:     varchar("settlement_id").notNull().references(() => contractClaimSettlements.id, { onDelete: "cascade" }),
   claimLineId:      varchar("claim_line_id").notNull().references(() => contractClaimLines.id, { onDelete: "restrict" }),
   settledAmount:    decimal("settled_amount",   { precision: 18, scale: 2 }).notNull(),
   writeOffAmount:   decimal("write_off_amount", { precision: 18, scale: 2 }).default("0"),
+  writeOffType:     writeOffTypeEnum("write_off_type"),
   adjustmentReason: text("adjustment_reason"),
   createdAt:        timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   settlementIdx:  index("idx_ccsl_settlement").on(table.settlementId),
   claimLineIdx:   index("idx_ccsl_claim_line").on(table.claimLineId),
-  // One settlement line per claim line per settlement (allow multiple settlements if partial)
 }));
 
 // ─── Schemas & Types ──────────────────────────────────────────────────────

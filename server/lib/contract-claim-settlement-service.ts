@@ -34,10 +34,14 @@ import { logAcctEvent } from "./accounting-event-logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
+export type WriteOffType = "rejection" | "contract_discount" | "price_difference" | "rounding";
+
 export interface SettlementLineInput {
   claimLineId:      string;
   settledAmount:    number;
   writeOffAmount?:  number;
+  /** نوع الشطب — يحدد الحساب المدين في القيد المحاسبي */
+  writeOffType?:    WriteOffType;
   adjustmentReason?: string;
 }
 
@@ -232,7 +236,7 @@ export async function settleBatch(batchId: string, input: SettleBatchInput) {
       notes:           input.notes ?? null,
     }).returning();
 
-    // Insert settlement lines
+    // Insert settlement lines (with writeOffType)
     if (input.lines.length > 0) {
       await tx.insert(contractClaimSettlementLines).values(
         input.lines.map(l => ({
@@ -240,6 +244,7 @@ export async function settleBatch(batchId: string, input: SettleBatchInput) {
           claimLineId:      l.claimLineId,
           settledAmount:    String(l.settledAmount.toFixed(2)),
           writeOffAmount:   String((l.writeOffAmount ?? 0).toFixed(2)),
+          writeOffType:     (l.writeOffAmount ?? 0) > 0 ? (l.writeOffType ?? null) : null,
           adjustmentReason: l.adjustmentReason ?? null,
         }))
       );
@@ -294,62 +299,163 @@ export async function settleBatch(batchId: string, input: SettleBatchInput) {
     return settleRec;
   });
 
-  // 5. Optional GL posting (non-blocking, separate from transaction)
-  if (input.bankAccountId && input.companyArAccountId && input.settledAmount > 0) {
-    try {
-      // ── حل الفترة المالية أولاً ──────────────────────────────────────────
-      const periodRes = await db.execute(sql`
-        SELECT id FROM fiscal_periods
-        WHERE is_closed = false AND start_date <= ${input.settlementDate} AND end_date >= ${input.settlementDate}
-        LIMIT 1
-      `);
-      const periodId: string | null = (periodRes as any).rows?.[0]?.id ?? null;
-      if (!periodId) throw new Error("لا توجد فترة مالية مفتوحة لتاريخ التسوية");
+  // 5. Optional GL posting — reads account_mappings for contract_settlement type
+  //    Generates separate lines per write-off type (rejection / discount / price_diff / rounding)
+  try {
+    // ── Load account_mappings for contract_settlement ───────────────────
+    const mappingRes = await db.execute(sql`
+      SELECT line_type, debit_account_id, credit_account_id
+      FROM account_mappings
+      WHERE transaction_type = 'contract_settlement'
+        AND (pharmacy_id IS NULL OR pharmacy_id IS NOT NULL)
+      ORDER BY pharmacy_id NULLS LAST
+    `);
+    const rawMappings = (mappingRes as any).rows as any[];
 
-      const entryNumRes = await db.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
-      const entryNum = (entryNumRes as any).rows?.[0]?.n;
+    // Build map: lineType → { debitAccountId, creditAccountId }
+    // Last wins if both pharmacy-level and generic exist — but since pharmacy_id
+    // is not scoped for this type, we just deduplicate by line_type (generic wins)
+    const mappingMap: Record<string, { debit: string | null; credit: string | null }> = {};
+    for (const m of rawMappings) {
+      mappingMap[m.line_type] = { debit: m.debit_account_id, credit: m.credit_account_id };
+    }
 
-      const jeRes = await db.execute(sql`
-        INSERT INTO journal_entries
-          (entry_number, entry_date, description, status, period_id, source_type, source_document_id, created_by, created_at, updated_at)
-        VALUES
-          (${String(entryNum)}, ${input.settlementDate},
-           ${'تسوية مطالبة — ' + (batch as any).batchNumber},
-           'posted', ${periodId}, 'contract_settlement', ${settlement.id}, 'system', now(), now())
-        RETURNING id
-      `);
-      const journalEntryId: string | null = (jeRes as any).rows?.[0]?.id ?? null;
+    // Helper: get mapped account or fall back to UI-supplied override
+    const arAccount   = mappingMap["ar_insurance"]?.credit    ?? input.companyArAccountId ?? null;
+    const bankAccount = mappingMap["bank_settlement"]?.debit  ?? input.bankAccountId      ?? null;
+    const rejAcct     = mappingMap["rejection_loss"]?.debit;
+    const discAcct    = mappingMap["contract_discount_exp"]?.debit;
+    const priceAcct   = mappingMap["price_diff_expense"]?.debit;
+    const roundAcct   = mappingMap["rounding_adjustment"]?.debit;
 
-      if (journalEntryId) {
+    if (!arAccount) {
+      throw new Error("لم يُحدَّد حساب ذمم شركات التأمين (ar_insurance) في ربط الحسابات");
+    }
+
+    // ── Aggregate write-offs by type ─────────────────────────────────────
+    const writeOffGroups: Record<string, number> = {
+      rejection:        0,
+      contract_discount:0,
+      price_difference: 0,
+      rounding:         0,
+    };
+    for (const l of input.lines) {
+      const wo = l.writeOffAmount ?? 0;
+      if (wo > 0 && l.writeOffType) {
+        writeOffGroups[l.writeOffType] = (writeOffGroups[l.writeOffType] ?? 0) + wo;
+      }
+    }
+
+    const totalWriteOffs = Object.values(writeOffGroups).reduce((s, v) => s + v, 0);
+    const hasSettlement  = (bankAccount && input.settledAmount > 0);
+    const hasWriteoffs   = totalWriteOffs > 0.001;
+
+    if (!hasSettlement && !hasWriteoffs) {
+      // Nothing to post — skip GL silently
+      return settlement;
+    }
+
+    // ── Open fiscal period ────────────────────────────────────────────────
+    const periodRes = await db.execute(sql`
+      SELECT id FROM fiscal_periods
+      WHERE is_closed = false AND start_date <= ${input.settlementDate} AND end_date >= ${input.settlementDate}
+      LIMIT 1
+    `);
+    const periodId: string | null = (periodRes as any).rows?.[0]?.id ?? null;
+    if (!periodId) throw new Error("لا توجد فترة مالية مفتوحة لتاريخ التسوية");
+
+    const entryNumRes = await db.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
+    const entryNum    = (entryNumRes as any).rows?.[0]?.n;
+
+    const jeRes = await db.execute(sql`
+      INSERT INTO journal_entries
+        (entry_number, entry_date, description, status, period_id, source_type, source_document_id, created_by, created_at, updated_at)
+      VALUES
+        (${String(entryNum)}, ${input.settlementDate},
+         ${'تسوية مطالبة — ' + (batch as any).batchNumber},
+         'posted', ${periodId}, 'contract_settlement', ${settlement.id}, 'system', now(), now())
+      RETURNING id
+    `);
+    const journalEntryId: string | null = (jeRes as any).rows?.[0]?.id ?? null;
+
+    if (journalEntryId) {
+      // Build journal lines array
+      // Credit side: AR insurance account — total of settled + writeoffs
+      const totalCreditAR = input.settledAmount + totalWriteOffs;
+
+      type JLine = { account: string; debit: number; credit: number; description: string };
+      const jLines: JLine[] = [];
+
+      // Dr bank (تحصيل)
+      if (hasSettlement && bankAccount) {
+        jLines.push({
+          account:     bankAccount,
+          debit:       input.settledAmount,
+          credit:      0,
+          description: "تحصيل من شركة التأمين",
+        });
+      }
+
+      // Dr write-off accounts per type
+      const woLineTypeMap: Record<string, { acct: string | undefined; label: string }> = {
+        rejection:         { acct: rejAcct,   label: "خسارة مطالبات مرفوضة"    },
+        contract_discount: { acct: discAcct,  label: "خصم تعاقد مسموح"          },
+        price_difference:  { acct: priceAcct, label: "فرق سعر"                  },
+        rounding:          { acct: roundAcct, label: "تسوية تقريب"              },
+      };
+      for (const [type, amount] of Object.entries(writeOffGroups)) {
+        if (amount <= 0.001) continue;
+        const { acct, label } = woLineTypeMap[type];
+        if (!acct) {
+          logger.warn({ type, amount, batchId }, "[Settlement] write-off type has no mapped account — skipped");
+          continue;
+        }
+        jLines.push({ account: acct, debit: amount, credit: 0, description: label });
+      }
+
+      // Cr AR insurance — sum of all debit lines
+      const actualTotalDebit = jLines.reduce((s, l) => s + l.debit, 0);
+      if (actualTotalDebit > 0.001) {
+        jLines.push({
+          account:     arAccount,
+          debit:       0,
+          credit:      actualTotalDebit,
+          description: "تسوية ذمم مدينة — شركة تأمين",
+        });
+      }
+
+      // Insert all journal lines
+      for (let i = 0; i < jLines.length; i++) {
+        const jl = jLines[i];
         await db.execute(sql`
           INSERT INTO journal_lines (journal_entry_id, line_number, account_id, debit, credit, description, created_at)
-          VALUES
-            (${journalEntryId}, 1, ${input.bankAccountId}, ${input.settledAmount.toFixed(2)}, 0, 'تحصيل من شركة التأمين', now()),
-            (${journalEntryId}, 2, ${input.companyArAccountId}, 0, ${input.settledAmount.toFixed(2)}, 'تسوية ذمم مدينة — شركة تأمين', now())
+          VALUES (${journalEntryId}, ${i + 1}, ${jl.account}, ${jl.debit.toFixed(2)}, ${jl.credit.toFixed(2)}, ${jl.description}, now())
         `);
-        await db.update(contractClaimSettlements)
-          .set({ journalEntryId })
-          .where(eq(contractClaimSettlements.id, settlement.id));
-        logAcctEvent({
-          sourceType: "contract_settlement",
-          sourceId:   settlement.id,
-          eventType:  "settlement_gl_journal",
-          status:     "completed",
-          journalEntryId,
-        }).catch(() => {});
       }
-    } catch (err: any) {
-      const msg: string = err?.message ?? String(err);
-      logger.warn({ err: msg, batchId, settlementId: settlement.id },
-        "[Settlement] GL posting failed (non-fatal) — needs_retry");
+
+      await db.update(contractClaimSettlements)
+        .set({ journalEntryId })
+        .where(eq(contractClaimSettlements.id, settlement.id));
+
       logAcctEvent({
         sourceType: "contract_settlement",
         sourceId:   settlement.id,
         eventType:  "settlement_gl_journal",
-        status:     "needs_retry",
-        errorMessage: msg,
+        status:     "completed",
+        journalEntryId,
       }).catch(() => {});
     }
+  } catch (err: any) {
+    const msg: string = err?.message ?? String(err);
+    logger.warn({ err: msg, batchId, settlementId: settlement.id },
+      "[Settlement] GL posting failed (non-fatal) — needs_retry");
+    logAcctEvent({
+      sourceType: "contract_settlement",
+      sourceId:   settlement.id,
+      eventType:  "settlement_gl_journal",
+      status:     "needs_retry",
+      errorMessage: msg,
+    }).catch(() => {});
   }
 
   logger.info({ batchId, settlementId: settlement.id, amount: input.settledAmount },
