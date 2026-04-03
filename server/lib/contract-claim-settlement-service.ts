@@ -53,6 +53,8 @@ export interface SettleBatchInput {
   referenceNumber?:  string;
   notes?:            string;
   lines:             SettlementLineInput[];
+  /** معرّف المستخدم الذي أجرى التسوية — يُستخدم في حقل created_by بجدول journal_entries */
+  createdByUserId?:  string | null;
 }
 
 export interface ReconciliationLine {
@@ -369,13 +371,14 @@ export async function settleBatch(batchId: string, input: SettleBatchInput) {
     const entryNumRes = await db.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
     const entryNum    = (entryNumRes as any).rows?.[0]?.n;
 
+    const createdBy = input.createdByUserId ?? null;
     const jeRes = await db.execute(sql`
       INSERT INTO journal_entries
         (entry_number, entry_date, description, status, period_id, source_type, source_document_id, created_by, created_at, updated_at)
       VALUES
         (${String(entryNum)}, ${input.settlementDate},
          ${'تسوية مطالبة — ' + (batch as any).batchNumber},
-         'posted', ${periodId}, 'contract_settlement', ${settlement.id}, 'system', now(), now())
+         'posted', ${periodId}, 'contract_settlement', ${settlement.id}, ${createdBy}, now(), now())
       RETURNING id
     `);
     const journalEntryId: string | null = (jeRes as any).rows?.[0]?.id ?? null;

@@ -821,7 +821,10 @@ export function registerContractRoutes(app: Express) {
           })).min(1, "يجب تحديد سطر واحد على الأقل"),
         });
         const body = schema.parse(req.body);
-        const result = await settleBatch(req.params.id, body);
+        const result = await settleBatch(req.params.id, {
+          ...body,
+          createdByUserId: req.session.userId ?? null,
+        });
         res.status(201).json(result);
       } catch (err) {
         if (err instanceof z.ZodError) {
