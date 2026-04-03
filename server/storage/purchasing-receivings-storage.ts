@@ -246,6 +246,7 @@ const methods = {
     }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
     const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(receivingHeaders).where(where);
+    const [sumResult]   = await db.select({ totalCostSum: sql<string>`COALESCE(SUM(total_cost), 0)` }).from(receivingHeaders).where(where);
     const headers = await db.select().from(receivingHeaders).where(where).orderBy(desc(receivingHeaders.receiveDate), desc(receivingHeaders.receivingNumber)).limit(pageSize).offset(offset);
     
     // batch-fetch كل الـ lookups مرة واحدة (N+1 fix — كان: 3N + M² queries)
@@ -280,7 +281,7 @@ const methods = {
       warehouse: whMap.get(h.warehouseId),
       lines: (linesMap.get(h.id) ?? []).map(line => ({ ...line, item: itemMap.get(line.itemId) })),
     }));
-    return { data, total: Number(countResult.count) };
+    return { data, total: Number(countResult.count), totalCostSum: sumResult?.totalCostSum ?? "0" };
   },
 
   async getReceiving(this: DatabaseStorage, id: string): Promise<ReceivingHeaderWithDetails | undefined> {

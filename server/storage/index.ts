@@ -392,7 +392,7 @@ export interface IStorage {
   updateSupplier(id: string, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
 
   // Receiving
-  getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number; includeCancelled?: boolean }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number }>;
+  getReceivings(params: { supplierId?: string; warehouseId?: string; status?: string; statusFilter?: string; fromDate?: string; toDate?: string; search?: string; page: number; pageSize: number; includeCancelled?: boolean }): Promise<{ data: ReceivingHeaderWithDetails[]; total: number; totalCostSum: string }>;
   getReceiving(id: string): Promise<ReceivingHeaderWithDetails | undefined>;
   getNextReceivingNumber(): Promise<number>;
   checkSupplierInvoiceUnique(supplierId: string, supplierInvoiceNo: string, excludeId?: string): Promise<boolean>;

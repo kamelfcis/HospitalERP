@@ -63,7 +63,7 @@ export function ReceivingRegistry({
     return p.toString();
   };
 
-  const { data, isLoading } = useQuery<{ data: ReceivingHeaderWithDetails[]; total: number }>({
+  const { data, isLoading } = useQuery<{ data: ReceivingHeaderWithDetails[]; total: number; totalCostSum: string }>({
     queryKey: ["/api/receivings", page, filterFromDate, filterToDate, filterSupplierId, filterWarehouseId, filterStatus, debouncedSearch],
     queryFn: async () => {
       const res = await fetch(`/api/receivings?${buildQS()}`);
@@ -72,9 +72,10 @@ export function ReceivingRegistry({
     },
   });
 
-  const receivings  = data?.data  || [];
-  const total       = data?.total || 0;
-  const totalPages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const receivings     = data?.data       || [];
+  const total          = data?.total      || 0;
+  const totalCostSum   = parseFloat(data?.totalCostSum || "0");
+  const totalPages     = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleReset = () => {
     setFilterFromDate(today); setFilterToDate(today);
@@ -243,6 +244,21 @@ export function ReceivingRegistry({
                 </tbody>
               </table>
             </div>
+
+            {/* ── إجمالي السجل الكلي ── */}
+            {!isLoading && total > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 border-t bg-muted/30 text-[11px]" dir="rtl" data-testid="row-receiving-totals">
+                <span className="text-muted-foreground">
+                  إجمالي عدد الأذونات: <span className="font-semibold text-foreground">{total}</span>
+                </span>
+                <span className="font-semibold text-foreground">
+                  إجمالي أذونات الاستلام:{" "}
+                  <span className="font-mono text-primary" data-testid="text-total-cost-sum">
+                    {totalCostSum.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </span>
+              </div>
+            )}
 
             {/* ── Pagination ── */}
             {totalPages > 1 && (
