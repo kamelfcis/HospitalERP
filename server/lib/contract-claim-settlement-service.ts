@@ -188,6 +188,8 @@ export async function settleBatch(batchId: string, input: SettleBatchInput) {
     throw new SettlementServiceError("لا توجد سطور للتسوية", "EMPTY_LINES");
   }
 
+  // ANY(array) fails with Drizzle sql`` — use IN with sql.join instead
+  const idList = sql.join(claimLineIds.map(id => sql`${id}`), sql`, `);
   const dbLines = await db.execute(sql`
     SELECT
       cl.id,
@@ -202,7 +204,7 @@ export async function settleBatch(batchId: string, input: SettleBatchInput) {
     FROM contract_claim_lines cl
     LEFT JOIN contract_claim_settlement_lines csl
       ON csl.claim_line_id = cl.id
-    WHERE cl.id = ANY(${claimLineIds})
+    WHERE cl.id IN (${idList})
       AND cl.batch_id = ${batchId}
     GROUP BY cl.id
   `);
