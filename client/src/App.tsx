@@ -81,6 +81,7 @@ const ApprovalsPage            = lazy(() => import("@/pages/approvals/index"));
 const ContractsAnalyticsPage   = lazy(() => import("@/pages/contracts-analytics/index"));
 const CashierHandoverPage      = lazy(() => import("@/pages/cashier-handover/index"));
 const ItemMovementReport       = lazy(() => import("@/pages/item-movement-report/index"));
+const WarehouseBalanceReport   = lazy(() => import("@/pages/warehouse-balance-report/index"));
 const ReceiptSettings          = lazy(() => import("@/pages/receipt-settings/index"));
 import NotFound from "@/pages/not-found";
 
@@ -156,6 +157,7 @@ function Router() {
           <Route path="/reports/cost-centers">{() => <G p="reports.cost_centers"><CostCenterReports /></G>}</Route>
           <Route path="/reports/account-ledger">{() => <G p="reports.account_ledger"><AccountLedger /></G>}</Route>
           <Route path="/reports/item-movement">{() => <G p="reports.account_ledger"><ItemMovementReport /></G>}</Route>
+          <Route path="/reports/warehouse-balance">{() => <G p="reports.account_ledger"><WarehouseBalanceReport /></G>}</Route>
           <Route path="/items">{() => <G p="items.view"><ItemsList /></G>}</Route>
           <Route path="/items/new">{() => <G p="items.create"><ItemCard /></G>}</Route>
           <Route path="/items/:id">{(params) => <G p="items.view"><ItemCard /></G>}</Route>

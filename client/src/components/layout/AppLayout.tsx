@@ -130,6 +130,7 @@ const reportNavItems: NavItem[] = [
   { title: "تقارير مراكز التكلفة", href: "/reports/cost-centers",     icon: PieChart,      permission: "reports.cost_centers" },
   { title: "كشف حساب",            href: "/reports/account-ledger",   icon: FileText,      permission: "reports.account_ledger" },
   { title: "حركة صنف",            href: "/reports/item-movement",    icon: ClipboardList, permission: "reports.account_ledger" },
+  { title: "رصيد مخزن بتاريخ",   href: "/reports/warehouse-balance", icon: Warehouse,     permission: "reports.account_ledger" },
 ];
 
 const systemNavItems: NavItem[] = [
