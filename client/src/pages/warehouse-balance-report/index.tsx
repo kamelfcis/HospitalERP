@@ -54,9 +54,9 @@ interface BalanceResult {
 }
 
 interface WarehouseOption {
-  id:   string;
-  name: string;
-  code: string;
+  id:            string;
+  nameAr:        string;
+  warehouseCode: string;
 }
 
 // ── Filter state ──────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ export default function WarehouseBalanceReport() {
   const summary  = data?.summary ?? { itemCount: 0, totalQty: 0, totalCost: 0, totalSaleValue: 0 };
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  const warehouseName = warehouses.find(w => w.id === applied?.warehouseId)?.name ?? "";
+  const warehouseName = warehouses.find(w => w.id === applied?.warehouseId)?.nameAr ?? "";
 
   // ── Filter changed helper ──────────────────────────────────────────────────
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) =>
@@ -207,7 +207,7 @@ export default function WarehouseBalanceReport() {
               </SelectTrigger>
               <SelectContent>
                 {warehouses.map(w => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  <SelectItem key={w.id} value={w.id}>{w.nameAr}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
