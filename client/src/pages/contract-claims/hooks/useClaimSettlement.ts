@@ -46,21 +46,24 @@ export interface BatchReconciliation {
   lines:            ReconciliationLine[];
 }
 
+export type WriteOffType = "rejection" | "contract_discount" | "price_difference" | "rounding";
+
 export interface SettlementLineInput {
   claimLineId:      string;
   settledAmount:    number;
   writeOffAmount?:  number;
+  writeOffType?:    WriteOffType;
   adjustmentReason?: string;
 }
 
 export interface SettleBatchPayload {
-  settlementDate:     string;
-  settledAmount:      number;
-  bankAccountId?:     string | null;
+  settlementDate:      string;
+  settledAmount:       number;
+  bankAccountId?:      string | null;
   companyArAccountId?: string | null;
-  referenceNumber?:   string;
-  notes?:             string;
-  lines:              SettlementLineInput[];
+  referenceNumber?:    string;
+  notes?:              string;
+  lines:               SettlementLineInput[];
 }
 
 // ─── Hooks ────────────────────────────────────────────────────────────────

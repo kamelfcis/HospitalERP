@@ -1,11 +1,20 @@
 /**
- * SettlementDialog — Phase 5
+ * SettlementDialog — Phase 6
  *
- * Per-line settlement entry with optional write-off amounts.
+ * Per-line settlement entry with write-off type + coverage display.
  *
  * FILTER RULE: only lines with status === 'approved' are shown.
- * Pending/rejected lines are excluded from the UI entirely.
- * Backend enforces the same rule, but the UI prevents confusing errors.
+ *
+ * GL RULE:
+ *   All journal entries are driven by Account Mappings (contract_settlement type).
+ *   The admin configures accounts ONCE in Account Mappings — NOT per settlement.
+ *   Fields bankAccountId / companyArAccountId are fallback overrides only.
+ *
+ * WRITE-OFF TYPES (separate GL lines per type):
+ *   rejection         → Dr خسارة مطالبات / Cr ذمم شركة
+ *   contract_discount → Dr خصم تعاقد    / Cr ذمم شركة
+ *   price_difference  → Dr فرق سعر      / Cr ذمم شركة
+ *   rounding          → Dr تقريب         / Cr ذمم شركة
  */
 
 import { useState, useEffect } from "react";
@@ -17,11 +26,14 @@ import { Input }    from "@/components/ui/input";
 import { Label }    from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, Coins, HelpCircle } from "lucide-react";
+import { Loader2, Coins, HelpCircle, Info } from "lucide-react";
 import { AccountLookup } from "@/components/lookups/AccountLookup";
-import type { SettlementLineInput } from "../hooks/useClaimSettlement";
+import type { SettlementLineInput, WriteOffType } from "../hooks/useClaimSettlement";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -29,26 +41,28 @@ interface ClaimLine {
   id:                 string;
   serviceDescription: string;
   companyShareAmount:  string;
+  listPrice?:         string | null;
+  contractPrice?:     string | null;
   approvedAmount?:    string | null;
   /** Only 'approved' lines appear in the dialog */
   status:             string;
 }
 
 export interface SettlePayload {
-  settlementDate:     string;
-  settledAmount:      number;
-  bankAccountId?:     string | null;
+  settlementDate:      string;
+  settledAmount:       number;
+  bankAccountId?:      string | null;
   companyArAccountId?: string | null;
-  referenceNumber?:   string;
-  notes?:             string;
-  lines:              SettlementLineInput[];
+  referenceNumber?:    string;
+  notes?:              string;
+  lines:               SettlementLineInput[];
 }
 
 interface SettlementDialogProps {
   open:        boolean;
   onClose:     () => void;
   batchNumber: string;
-  /** All lines on the batch — dialog will filter to approved only */
+  batchId:     string;
   lines:       ClaimLine[];
   onSettle:    (payload: SettlePayload) => void;
   isPending:   boolean;
@@ -61,10 +75,23 @@ function fmt(v: string | null | undefined) {
   return parseFloat(v).toLocaleString("ar-EG", { minimumFractionDigits: 2 });
 }
 
-/** Returns the effective amount the company must pay (approved > claimed fallback) */
 function approvedAmount(line: ClaimLine): number {
   return parseFloat(String(line.approvedAmount ?? line.companyShareAmount ?? "0"));
 }
+
+function coveragePct(line: ClaimLine): number | null {
+  const list = parseFloat(line.listPrice ?? "0");
+  if (list <= 0) return null;
+  const share = parseFloat(String(line.companyShareAmount ?? "0"));
+  return Math.round((share / list) * 100);
+}
+
+const WRITE_OFF_TYPE_LABELS: Record<WriteOffType, string> = {
+  rejection:         "رفض شركة — خسارة ديون",
+  contract_discount: "خصم تعاقد",
+  price_difference:  "فرق سعر",
+  rounding:          "تقريب حسابي",
+};
 
 // ─── Component ────────────────────────────────────────────────────────────
 
@@ -77,33 +104,36 @@ export function SettlementDialog({
   const [arAccountId,     setArAccountId]     = useState("");
   const [notes,           setNotes]           = useState("");
 
-  // Per-line amounts (keyed by line.id)
-  const [lineAmounts, setLineAmounts] = useState<Record<string, string>>({});
-  const [writeoffs,   setWriteoffs]   = useState<Record<string, string>>({});
+  const [lineAmounts,    setLineAmounts]    = useState<Record<string, string>>({});
+  const [writeoffs,      setWriteoffs]      = useState<Record<string, string>>({});
+  const [writeOffTypes,  setWriteOffTypes]  = useState<Record<string, WriteOffType>>({});
 
-  // ── Only approved lines can be settled (business rule) ─────────────────
   const approvedLines = lines.filter(l => l.status === "approved");
 
-  // Reset line amounts when dialog opens with fresh data
   useEffect(() => {
     if (!open) return;
     const amounts: Record<string, string> = {};
     approvedLines.forEach(l => { amounts[l.id] = approvedAmount(l).toFixed(2); });
     setLineAmounts(amounts);
     setWriteoffs({});
-  }, [open]);   // intentionally omit approvedLines to avoid re-init on every render
+    setWriteOffTypes({});
+  }, [open]);
 
   const totalSettled = approvedLines.reduce(
     (sum, l) => sum + parseFloat(lineAmounts[l.id] || "0"), 0
   );
+  const totalWriteoff = approvedLines.reduce(
+    (sum, l) => sum + parseFloat(writeoffs[l.id] || "0"), 0
+  );
 
   function handleSubmit() {
     const settlementLines: SettlementLineInput[] = approvedLines
-      .filter(l => parseFloat(lineAmounts[l.id] || "0") > 0)
+      .filter(l => parseFloat(lineAmounts[l.id] || "0") > 0 || parseFloat(writeoffs[l.id] || "0") > 0)
       .map(l => ({
-        claimLineId:   l.id,
-        settledAmount: parseFloat(lineAmounts[l.id] || "0"),
+        claimLineId:    l.id,
+        settledAmount:  parseFloat(lineAmounts[l.id] || "0"),
         writeOffAmount: parseFloat(writeoffs[l.id] || "0") || undefined,
+        writeOffType:   parseFloat(writeoffs[l.id] || "0") > 0 ? (writeOffTypes[l.id] ?? undefined) : undefined,
       }));
 
     if (settlementLines.length === 0) return;
@@ -130,6 +160,17 @@ export function SettlementDialog({
         </DialogHeader>
 
         <div className="space-y-5 py-2">
+
+          {/* ── GL Info Banner ────────────────────────────────────────────── */}
+          <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 p-3 text-sm text-blue-800 dark:text-blue-300">
+            <Info className="h-4 w-4 mt-0.5 shrink-0" />
+            <div>
+              <span className="font-semibold">القيود تُنشأ أوتوماتيك</span> من إعدادات{" "}
+              <span className="font-semibold">ربط الحسابات → تسوية مطالبات تأمين</span>.
+              {" "}حدّد حسابات البنك والذمم والشطب هناك مرة واحدة، ويُطبَّق على كل تسوية.
+            </div>
+          </div>
+
           {/* ── Header fields ────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -151,36 +192,54 @@ export function SettlementDialog({
               />
             </div>
 
-            {/* حساب البنك / الصندوق — AccountLookup */}
+            {/* حساب البنك — fallback if not in account mappings */}
             <div className="space-y-1">
-              <Label>حساب البنك / الصندوق</Label>
+              <Label className="flex items-center gap-1">
+                حساب البنك / الصندوق
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" dir="rtl" className="max-w-xs text-right text-xs">
+                      احتياطي فقط — إن ضُبط حساب البنك في ربط الحسابات يُستخدم تلقائياً بدلاً من هذا
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
               <AccountLookup
                 value={bankAccountId}
                 onChange={v => setBankAccountId(v?.id ?? "")}
-                placeholder="اختر حساب البنك أو الصندوق..."
+                placeholder="احتياطي — الأولوية لربط الحسابات"
                 data-testid="input-bank-account"
               />
-              <p className="text-[11px] text-muted-foreground">
-                الحساب المدين عند استلام دفعة الشركة (اختياري — إن لم يُحدَّد لا يُنشأ قيد)
-              </p>
             </div>
 
-            {/* حساب الذمم المدينة للشركة — AccountLookup */}
+            {/* حساب الذمم — fallback */}
             <div className="space-y-1">
-              <Label>حساب الذمم المدينة للشركة</Label>
+              <Label className="flex items-center gap-1">
+                حساب ذمم الشركة
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" dir="rtl" className="max-w-xs text-right text-xs">
+                      احتياطي فقط — إن ضُبط حساب ar_insurance في ربط الحسابات يُستخدم تلقائياً
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
               <AccountLookup
                 value={arAccountId}
                 onChange={v => setArAccountId(v?.id ?? "")}
-                placeholder="اختر حساب ذمم الشركة..."
+                placeholder="احتياطي — الأولوية لربط الحسابات"
                 data-testid="input-ar-account"
               />
-              <p className="text-[11px] text-muted-foreground">
-                الحساب الدائن (يُخفَّض رصيد ذمم الشركة عند التسوية)
-              </p>
             </div>
           </div>
 
-          {/* ── Per-line settlement amounts ───────────────────────────────── */}
+          {/* ── Per-line settlement ───────────────────────────────────────── */}
           <div className="space-y-2">
             <div className="text-sm font-medium text-muted-foreground border-b pb-1">
               مبالغ التسوية — السطور المقبولة فقط
@@ -194,22 +253,35 @@ export function SettlementDialog({
                 يجب قبول سطور المطالبة أولاً قبل التسوية.
               </p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {approvedLines.map(line => {
                   const approved = approvedAmount(line);
+                  const pct      = coveragePct(line);
+                  const woAmt    = parseFloat(writeoffs[line.id] || "0");
+                  const woType   = writeOffTypes[line.id];
+
                   return (
                     <div key={line.id} className="border rounded-lg p-3 bg-muted/20 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium truncate max-w-[60%]" title={line.serviceDescription}>
+
+                      {/* ── Line header ── */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium truncate max-w-[55%]" title={line.serviceDescription}>
                           {line.serviceDescription}
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          المعتمد: {fmt(String(approved))} ج.م
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
+                          {pct !== null && (
+                            <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                              تغطية {pct}%
+                            </span>
+                          )}
+                          <span>المعتمد: {fmt(String(approved))} ج.م</span>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="col-span-2 space-y-0.5">
-                          <Label className="text-xs">مبلغ التسوية</Label>
+
+                      {/* ── Amounts row ── */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-0.5">
+                          <Label className="text-xs">مبلغ التسوية (تحصيل)</Label>
                           <Input
                             type="number" min="0" max={approved} step="0.01"
                             value={lineAmounts[line.id] ?? approved.toFixed(2)}
@@ -219,23 +291,20 @@ export function SettlementDialog({
                           />
                         </div>
                         <div className="space-y-0.5">
-                          <div className="flex items-center gap-1">
-                            <Label className="text-xs">شطب</Label>
+                          <Label className="text-xs flex items-center gap-1">
+                            شطب
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="max-w-xs text-right" dir="rtl">
-                                  <p className="text-xs font-medium mb-1">الشطب (Write-off)</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    المبلغ الذي رفضت الشركة دفعه من المبلغ المعتمد ويُشطَب كخسارة على المنشأة.
-                                    مثال: المعتمد 100 ج.م — دفعت الشركة 94 ج.م — الشطب 6 ج.م.
-                                  </p>
+                                <TooltipContent side="top" dir="rtl" className="max-w-xs text-right text-xs">
+                                  المبلغ الذي ترفض الشركة دفعه — يُسجَّل كخسارة أو خصم حسب النوع المحدد.
+                                  مثال: معتمد 100 ج.م — دفعت 94 — شطب 6 ج.م
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
-                          </div>
+                          </Label>
                           <Input
                             type="number" min="0" step="0.01"
                             value={writeoffs[line.id] ?? ""}
@@ -246,6 +315,41 @@ export function SettlementDialog({
                           />
                         </div>
                       </div>
+
+                      {/* ── Write-off type (shown only when write-off > 0) ── */}
+                      {woAmt > 0 && (
+                        <div className="space-y-0.5">
+                          <Label className="text-xs text-orange-600 dark:text-orange-400">
+                            نوع الشطب <span className="text-destructive">*</span>
+                          </Label>
+                          <Select
+                            value={woType ?? "__none__"}
+                            onValueChange={v =>
+                              v !== "__none__"
+                                ? setWriteOffTypes(p => ({ ...p, [line.id]: v as WriteOffType }))
+                                : setWriteOffTypes(p => { const n = { ...p }; delete n[line.id]; return n; })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-sm" data-testid={`select-writeoff-type-${line.id}`}>
+                              <SelectValue placeholder="حدّد نوع الشطب..." />
+                            </SelectTrigger>
+                            <SelectContent dir="rtl">
+                              <SelectItem value="__none__" disabled>حدّد نوع الشطب...</SelectItem>
+                              {(Object.entries(WRITE_OFF_TYPE_LABELS) as [WriteOffType, string][]).map(([k, label]) => (
+                                <SelectItem key={k} value={k}>{label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {woType && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {woType === "rejection"         && "سيُنشأ قيد: Dr خسارة مطالبات مرفوضة / Cr ذمم الشركة"}
+                              {woType === "contract_discount" && "سيُنشأ قيد: Dr خصم تعاقد مسموح / Cr ذمم الشركة"}
+                              {woType === "price_difference"  && "سيُنشأ قيد: Dr فرق سعر / Cr ذمم الشركة"}
+                              {woType === "rounding"          && "سيُنشأ قيد: Dr تسوية تقريب / Cr ذمم الشركة"}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -253,12 +357,22 @@ export function SettlementDialog({
             )}
           </div>
 
-          {/* ── Total ────────────────────────────────────────────────────── */}
-          <div className="bg-primary/5 rounded-lg p-3 flex items-center justify-between">
-            <span className="text-sm font-medium">إجمالي التسوية</span>
-            <span className="text-lg font-bold text-primary">
-              {totalSettled.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ج.م
-            </span>
+          {/* ── Totals ───────────────────────────────────────────────────── */}
+          <div className="bg-primary/5 rounded-lg p-3 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">إجمالي التسوية (تحصيل)</span>
+              <span className="text-lg font-bold text-primary">
+                {totalSettled.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ج.م
+              </span>
+            </div>
+            {totalWriteoff > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-orange-600 dark:text-orange-400">إجمالي الشطب</span>
+                <span className="font-semibold text-orange-600 dark:text-orange-400">
+                  {totalWriteoff.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ج.م
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -277,7 +391,14 @@ export function SettlementDialog({
           <Button variant="outline" onClick={onClose} disabled={isPending}>إلغاء</Button>
           <Button
             onClick={handleSubmit}
-            disabled={isPending || totalSettled <= 0 || !settlementDate || approvedLines.length === 0}
+            disabled={
+              isPending ||
+              (totalSettled <= 0 && totalWriteoff <= 0) ||
+              !settlementDate ||
+              approvedLines.length === 0 ||
+              // Require write-off type when write-off > 0
+              approvedLines.some(l => parseFloat(writeoffs[l.id] || "0") > 0 && !writeOffTypes[l.id])
+            }
             data-testid="button-confirm-settlement"
           >
             {isPending
