@@ -6,7 +6,7 @@ import { Loader2, Search, PackageX, Package, AlertCircle, SlidersHorizontal } fr
 import { formatNumber } from "@/lib/formatters";
 import { formatAvailability } from "@/lib/invoice-lines";
 import type {
-  ItemFastSearchProps, FastSearchItem, BatchOption, SearchMode, FastSearchResponse,
+  ItemFastSearchProps, FastSearchItem, BatchOption, ResolvedPrice, SearchMode, FastSearchResponse,
 } from "./types";
 
 // ── ثوابت ───────────────────────────────────────────────────────────────────
@@ -61,33 +61,36 @@ export function ItemFastSearch({
   const [maxPrice,    setMaxPrice]    = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  // ── حالة الدُفعات (للتحميل المسبق الصامت فقط — لا لوحة اختيار) ────────
-  const [batches,      setBatches]      = useState<BatchOption[]>([]);
-  const [batchLoading, setBatchLoading] = useState(false);
-  const [batchItemId,  setBatchItemId]  = useState<string | null>(null);
+  // ── حالة التحميل المسبق (دُفعات + سعر) ─────────────────────────────────
+  const [batches,         setBatches]         = useState<BatchOption[]>([]);
+  const [batchLoading,    setBatchLoading]     = useState(false);
+  const [batchItemId,     setBatchItemId]      = useState<string | null>(null);
+  const [preloadedPrice,  setPreloadedPrice]   = useState<ResolvedPrice | null>(null);
+  const [priceItemId,     setPriceItemId]      = useState<string | null>(null);
 
   // ── refs ────────────────────────────────────────────────────────────────
-  const searchRef    = useRef<HTMLInputElement>(null);
-  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const preloadRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rowRefs      = useRef<(HTMLTableRowElement | null)[]>([]);
-  const abortRef     = useRef<AbortController | null>(null);
+  const searchRef     = useRef<HTMLInputElement>(null);
+  const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preloadRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rowRefs       = useRef<(HTMLTableRowElement | null)[]>([]);
+  const abortRef      = useRef<AbortController | null>(null);
   const batchAbortRef = useRef<AbortController | null>(null);
   const lastKeyboardAt = useRef<number>(0);
 
-  // ── إعادة ضبط بيانات الدُفعات المحملة مسبقاً ─────────────────────────
+  // ── إعادة ضبط التحميل المسبق ─────────────────────────────────────────
   const resetBatches = useCallback(() => {
     if (batchAbortRef.current) { batchAbortRef.current.abort(); batchAbortRef.current = null; }
     setBatches([]);
     setBatchItemId(null);
     setBatchLoading(false);
+    setPreloadedPrice(null);
+    setPriceItemId(null);
   }, []);
 
-  // ── تحميل الدُفعات بشكل صامت (لتمرير allBatches للفاتورة/التحويل) ─────
+  // ── تحميل الدُفعات صامتاً عبر fefo-preview (يُعيد lotId لـ FEFO جانب العميل) ──
   const loadBatches = useCallback(async (item: FastSearchItem): Promise<BatchOption[]> => {
     if (!item.hasExpiry || !warehouseId) return [];
 
-    // إذا كانت محملة بالفعل لنفس الصنف → أعدها مباشرةً
     if (batchItemId === item.id && batches.length > 0 && !batchLoading) return batches;
 
     if (batchAbortRef.current) batchAbortRef.current.abort();
@@ -99,11 +102,22 @@ export function ItemFastSearch({
     try {
       const date = invoiceDate || new Date().toISOString().split("T")[0];
       const r = await fetch(
-        `/api/items/${item.id}/expiry-options?warehouseId=${warehouseId}&asOfDate=${date}`,
+        `/api/transfer/fefo-preview?itemId=${item.id}&warehouseId=${warehouseId}&requiredQtyInMinor=999999&asOfDate=${date}`,
         { signal: batchAbortRef.current.signal },
       );
       if (r.ok) {
-        const data: BatchOption[] = await r.json();
+        const preview = await r.json();
+        const data: BatchOption[] = (preview.allocations ?? [])
+          .filter((a: any) => parseFloat(a.availableQty || "0") > 0)
+          .map((a: any) => ({
+            expiryDate:       a.expiryDate || `${a.expiryYear}-${String(a.expiryMonth ?? 1).padStart(2, "0")}-01`,
+            expiryMonth:      a.expiryMonth ?? null,
+            expiryYear:       a.expiryYear  ?? null,
+            qtyAvailableMinor: a.availableQty || "0",
+            lotId:            a.lotId       || null,
+            lotSalePrice:     a.lotSalePrice || undefined,
+            hasPriceConflict: false,
+          }));
         setBatches(data);
         return data;
       }
@@ -115,34 +129,51 @@ export function ItemFastSearch({
     return [];
   }, [warehouseId, invoiceDate, batchItemId, batches, batchLoading]);
 
-  // ── تحميل مسبق صامت عند التمييز ─────────────────────────────────────
-  // يحذف race-condition: بحلول وقت الضغط على Enter تكون الدُفعات جاهزة
+  // ── تحميل سعر القسم صامتاً لتجنب طلب API عند الإضافة ───────────────────
+  const preloadPricing = useCallback(async (item: FastSearchItem) => {
+    if (!warehouseId || priceItemId === item.id) return;
+    try {
+      const r = await fetch(`/api/pricing?itemId=${item.id}&warehouseId=${warehouseId}`);
+      if (r.ok) {
+        const data = await r.json();
+        const base = parseFloat(data.price) || parseFloat(item.salePriceCurrent) || 0;
+        setPreloadedPrice({ baseSalePrice: base, isDeptPrice: data.source === "department", priceSource: data.source || "item" });
+        setPriceItemId(item.id);
+      }
+    } catch { /* صامت */ }
+  }, [warehouseId, priceItemId]);
+
+  // ── تحميل مسبق صامت عند التمييز (دُفعات + سعر بالتوازي) ───────────────
   useEffect(() => {
     if (preloadRef.current) clearTimeout(preloadRef.current);
     const item = items[highlighted];
-    if (!item?.hasExpiry || !warehouseId) return;
-    if (batchItemId === item.id) return;   // جاري التحميل أو محمّل بالفعل
+    if (!item || !warehouseId) return;
+
+    const needsBatch = item.hasExpiry && batchItemId !== item.id;
+    const needsPrice = priceItemId !== item.id;
+    if (!needsBatch && !needsPrice) return;
 
     preloadRef.current = setTimeout(() => {
-      loadBatches(item);                  // صامت: بدون لوحة
+      if (needsBatch) loadBatches(item);
+      if (needsPrice) preloadPricing(item);
     }, PRELOAD_DELAY_MS);
 
-    return () => {
-      if (preloadRef.current) clearTimeout(preloadRef.current);
-    };
-  }, [highlighted, items, warehouseId, batchItemId, loadBatches]);
+    return () => { if (preloadRef.current) clearTimeout(preloadRef.current); };
+  }, [highlighted, items, warehouseId, batchItemId, priceItemId, loadBatches, preloadPricing]);
 
-  // ── إضافة الصنف مباشرةً (FEFO يُعيّن الدُفعة في الفاتورة/التحويل) ─────
+  // ── إضافة الصنف فوراً — يمرر السعر والدُفعات المحملة مسبقاً ─────────────
   const selectItem = useCallback((item: FastSearchItem) => {
+    const resolved = priceItemId === item.id ? preloadedPrice ?? undefined : undefined;
     onItemSelected({
       item,
-      batch:             null,           // لا نختار دُفعة هنا — FEFO يختار
+      batch:             null,
       availableQtyMinor: item.availableQtyMinor,
-      allBatches:        item.hasExpiry ? batches : [],  // الدُفعات المحملة مسبقاً
+      allBatches:        item.hasExpiry ? batches : [],
+      resolvedPrice:     resolved,
     });
     resetBatches();
     setTimeout(() => searchRef.current?.focus(), 30);
-  }, [onItemSelected, batches, resetBatches]);
+  }, [onItemSelected, batches, preloadedPrice, priceItemId, resetBatches]);
 
 
   // ── البحث ─────────────────────────────────────────────────────────────

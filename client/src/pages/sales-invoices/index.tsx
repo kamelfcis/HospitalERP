@@ -150,11 +150,16 @@ export default function SalesInvoices() {
   );
 
   // إذا كان الصنف من فئة "service"، يستخدم مسار المستهلكات من item_consumables
-  const smartAddItemToLines = useCallback(async (itemData: any, overrides?: { qty?: number; unitLevel?: string }) => {
+  const smartAddItemToLines = useCallback(async (
+    itemData: any,
+    overrides?: { qty?: number; unitLevel?: string },
+    allBatches?: any[],
+    resolvedPrice?: { baseSalePrice: number; isDeptPrice: boolean; priceSource: string },
+  ) => {
     if (!overrides && itemData?.category === "service") {
       await serviceSearchHook.addItemServiceConsumables(itemData);
     } else {
-      await linesHook.addItemToLines(itemData, overrides);
+      await linesHook.addItemToLines(itemData, overrides, allBatches, resolvedPrice);
     }
   }, [serviceSearchHook.addItemServiceConsumables, linesHook.addItemToLines]);
 

@@ -200,7 +200,74 @@ export function useTransferLines({
       if (!item) return false;
       const loadingPlaceholderIndex = formLinesRef.current.length;
       setFefoLoadingIndex(loadingPlaceholderIndex);
+
+      // ── مساعدات تحويل الكميات ──────────────────────────────────────────────
+      const qtyFactor =
+        unitLevel === "major"
+          ? parseFloat(String(item.majorToMinor || "0")) || 1
+          : unitLevel === "medium"
+            ? getEffectiveMediumToMinor(item)
+            : 1;
+      const toDisplay = (minor: number): number => {
+        const d = minor / qtyFactor;
+        const r = Math.round(d * 10000) / 10000;
+        return Math.abs(r - Math.round(r)) < 0.005 ? Math.round(r) : r;
+      };
+
       try {
+        // ── FEFO من جانب العميل إذا كانت الدُفعات محملة مسبقاً ─────────────
+        if (allBatches.length > 0) {
+          let remaining = qtyInMinor;
+          const clientAllocs: TransferFefoAllocation[] = [];
+          for (const batch of allBatches) {
+            if (remaining <= 0) break;
+            const avail = parseFloat(batch.qtyAvailableMinor || "0");
+            if (avail <= 0) continue;
+            const take = Math.min(avail, remaining);
+            remaining -= take;
+            clientAllocs.push({
+              allocatedQty: String(take),
+              expiryDate:   batch.expiryDate   || null,
+              expiryMonth:  batch.expiryMonth  || null,
+              expiryYear:   batch.expiryYear   || null,
+              qtyAvailableMinor: batch.qtyAvailableMinor,
+              lotSalePrice: batch.lotSalePrice  || null,
+            });
+          }
+          if (remaining > 0.001) {
+            toast({
+              title: "الكمية غير متاحة",
+              description: `العجز: ${formatAvailability(String(remaining), unitLevel, item)}`,
+              variant: "destructive",
+            });
+            return false;
+          }
+          const newLines: TransferLineLocal[] = clientAllocs
+            .filter(a => parseFloat(a.allocatedQty) > 0)
+            .map(alloc => ({
+              id: crypto.randomUUID(),
+              itemId: item.id,
+              item,
+              unitLevel,
+              qtyEntered: toDisplay(parseFloat(alloc.allocatedQty)),
+              qtyInMinor: parseFloat(alloc.allocatedQty),
+              selectedExpiryDate:  alloc.expiryDate   || null,
+              selectedExpiryMonth: alloc.expiryMonth  || null,
+              selectedExpiryYear:  alloc.expiryYear   || null,
+              availableQtyMinor:   alloc.qtyAvailableMinor || item.availableQtyMinor || "0",
+              notes: "",
+              fefoLocked: true,
+              lotSalePrice: alloc.lotSalePrice,
+            }));
+          setFormLines((prev) => [...prev, ...newLines]);
+          const update: Record<string, ExpiryOption[]> = {};
+          newLines.forEach((nl) => { update[nl.id] = allBatches; });
+          setLineExpiryOptions((prev) => ({ ...prev, ...update }));
+          if (newLines.length > 1) toast({ title: `تم التوزيع على ${newLines.length} دفعات (FEFO)` });
+          return true;
+        }
+
+        // ── مسار API (احتياطي: عند الإضافة السريعة قبل اكتمال التحميل المسبق) ──
         const params = new URLSearchParams({
           itemId: item.id,
           warehouseId: sourceWarehouseId,
@@ -218,19 +285,6 @@ export function useTransferLines({
           });
           return false;
         }
-
-        const qtyFactor =
-          unitLevel === "major"
-            ? parseFloat(String(item.majorToMinor || "0")) || 1
-            : unitLevel === "medium"
-              ? getEffectiveMediumToMinor(item)
-              : 1;
-
-        const toDisplay = (minor: number): number => {
-          const d = minor / qtyFactor;
-          const r = Math.round(d * 10000) / 10000;
-          return Math.abs(r - Math.round(r)) < 0.005 ? Math.round(r) : r;
-        };
 
         const newLines: TransferLineLocal[] = preview.allocations
           .filter((a: TransferFefoAllocation) => parseFloat(a.allocatedQty) > 0)
@@ -252,26 +306,14 @@ export function useTransferLines({
 
         setFormLines((prev) => [...prev, ...newLines]);
 
-        // allBatches مجلوبة مسبقاً من ItemFastSearch (الطريق السريع)
-        // لو فارغة (المستخدم كان سريعاً قبل اكتمال التحميل) → نجلب القائمة الكاملة
-        // هذا ضروري لكشف تعارض الأسعار بدقة
-        let expiryOpts: ExpiryOption[] = allBatches.length > 0 ? allBatches : [];
-        if (expiryOpts.length === 0) {
-          try {
-            const ep = new URLSearchParams({ warehouseId: sourceWarehouseId, asOfDate: transferDate });
-            const er = await fetch(`/api/items/${item.id}/expiry-options?${ep}`);
-            if (er.ok) expiryOpts = await er.json();
-          } catch {
-            // fallback: على الأقل استخدم تخصيصات FEFO (سعر واحد فقط)
-            expiryOpts = preview.allocations.map((a: TransferFefoAllocation) => ({
-              expiryDate: a.expiryDate,
-              expiryMonth: a.expiryMonth,
-              expiryYear: a.expiryYear,
-              qtyAvailableMinor: a.qtyAvailableMinor,
-              lotSalePrice: a.lotSalePrice,
-            }));
-          }
-        }
+        // استخدم FEFO allocations كـ expiryOpts احتياطياً
+        const expiryOpts: ExpiryOption[] = preview.allocations.map((a: TransferFefoAllocation) => ({
+          expiryDate:       a.expiryDate,
+          expiryMonth:      a.expiryMonth,
+          expiryYear:       a.expiryYear,
+          qtyAvailableMinor: a.qtyAvailableMinor,
+          lotSalePrice:     a.lotSalePrice,
+        }));
         const update: Record<string, ExpiryOption[]> = {};
         newLines.forEach((nl) => { update[nl.id] = expiryOpts; });
         setLineExpiryOptions((prev) => ({ ...prev, ...update }));

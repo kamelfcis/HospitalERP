@@ -255,11 +255,14 @@ export function SalesInvoiceEditor({
         warehouseId={form.warehouseId}
         invoiceDate={form.invoiceDate}
         excludeServices={false}
-        onItemSelected={({ item, batch }) =>
+        onItemSelected={({ item, batch, allBatches, resolvedPrice }) =>
           linesHook.addItemToLines(
             batch?.qtyAvailableMinor
               ? { ...item, availableQtyMinor: batch.qtyAvailableMinor }
-              : item
+              : item,
+            undefined,
+            allBatches,
+            resolvedPrice,
           )
         }
       />

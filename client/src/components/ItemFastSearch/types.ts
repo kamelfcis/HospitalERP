@@ -20,9 +20,15 @@ export interface BatchOption {
   expiryMonth: number | null;
   expiryYear: number | null;
   qtyAvailableMinor: string;
+  lotId?: string | null;
   lotSalePrice?: string;
-  /** true عندما تحتوي نفس دفعة الصلاحية على دُفعات بأسعار مختلفة */
   hasPriceConflict?: boolean;
+}
+
+export interface ResolvedPrice {
+  baseSalePrice: number;
+  isDeptPrice: boolean;
+  priceSource: string;
 }
 
 export interface ItemSelectedPayload {
@@ -31,6 +37,8 @@ export interface ItemSelectedPayload {
   availableQtyMinor: string;
   /** جميع دُفعات الصلاحية المتاحة — مجلوبة مسبقاً من ItemFastSearch بدون API call إضافي */
   allBatches: BatchOption[];
+  /** سعر القسم المحمَّل مسبقاً — إن كان متاحاً يُلغي طلب API التسعير */
+  resolvedPrice?: ResolvedPrice;
 }
 
 export interface ItemFastSearchProps {
