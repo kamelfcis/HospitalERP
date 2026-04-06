@@ -38,7 +38,7 @@ export default function PatientInvoice() {
 
   // ── Navigation ──────────────────────────────────────────────────────────────
   const [mainTab, setMainTab] = useState("invoice");
-  const [subTab,  setSubTab]  = useState("services");
+  const [subTab,  setSubTab]  = useState("lines");
   const [distOpen, setDistOpen]               = useState(false);
   const [showDiscountDialog, setShowDiscountDialog] = useState(false);
 
@@ -80,7 +80,7 @@ export default function PatientInvoice() {
     form.resetForm();
     lm.resetLines();
     payments.resetPayments();
-    setSubTab("services");
+    setSubTab("lines");
   }, [form.resetForm, lm.resetLines, payments.resetPayments]);
 
   // ── Totals ───────────────────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ export default function PatientInvoice() {
       setOpdContext(data.opdContext ?? null);
 
       setMainTab("invoice");
-      setSubTab("services");
+      setSubTab("lines");
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
       toast({ title: "خطأ", description: _em, variant: "destructive" });
@@ -352,7 +352,6 @@ export default function PatientInvoice() {
             subTab={subTab}
             setSubTab={setSubTab}
             lines={lm.lines}
-            filteredLines={lm.filteredLines}
             itemSearch={search.itemSearch}
             setItemSearch={search.setItemSearch}
             setItemResults={search.setItemResults}

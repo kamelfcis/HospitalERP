@@ -10,12 +10,12 @@ import { Loader2, ArrowLeftRight, Stethoscope } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import type { Department, Service, Item, Admission, DoctorTransfer } from "@shared/schema";
 import type { LineLocal, PaymentLocal } from "../types";
-import { LineGrid } from "../components/LineGrid";
 import { InvoiceHeaderBar } from "../components/InvoiceHeaderBar";
 import { TotalsSummaryCard } from "../components/TotalsSummaryCard";
 import { DoctorLookup } from "@/components/lookups";
 import { PaymentsTab } from "./PaymentsTab";
 import { ConsolidatedTab } from "./ConsolidatedTab";
+import { UnifiedLinesTab } from "../components/UnifiedLinesTab";
 
 interface Totals {
   totalAmount: number;
@@ -76,7 +76,6 @@ interface InvoiceTabProps {
   setSubTab: (v: string) => void;
 
   lines: LineLocal[];
-  filteredLines: (type: string) => LineLocal[];
 
   itemSearch: string;
   setItemSearch: (v: string) => void;
@@ -146,7 +145,7 @@ export function InvoiceTab({
   contractName, setContractName,
   notes, setNotes,
   subTab, setSubTab,
-  lines, filteredLines,
+  lines,
   itemSearch, setItemSearch, setItemResults, itemResults, searchingItems, fefoLoading,
   itemSearchRef, itemDropdownRef,
   pendingQtyRef,
@@ -162,16 +161,6 @@ export function InvoiceTab({
   canDiscount, onOpenDiscountDialog,
 }: InvoiceTabProps) {
   const [localDtDoctorId, setLocalDtDoctorId] = useState("");
-
-  const lineGridSharedProps = {
-    isDraft,
-    itemSearch, setItemSearch, setItemResults, itemResults, searchingItems, fefoLoading,
-    itemSearchRef, itemDropdownRef,
-    pendingQtyRef,
-    addServiceLine, addItemLine, updateLine, removeLine,
-    handleQtyConfirm, handleUnitLevelChange, openStatsPopup,
-    getServiceRowClass,
-  };
 
   return (
     <div className="space-y-2">
@@ -223,26 +212,36 @@ export function InvoiceTab({
       <div className="border rounded-md p-2">
         <Tabs value={subTab} onValueChange={setSubTab}>
           <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
-            <TabsTrigger value="services" data-testid="tab-services">خدمات</TabsTrigger>
-            <TabsTrigger value="drugs" data-testid="tab-drugs">أدوية</TabsTrigger>
-            <TabsTrigger value="consumables" data-testid="tab-consumables">مستهلكات</TabsTrigger>
-            <TabsTrigger value="equipment" data-testid="tab-equipment">أجهزة</TabsTrigger>
+            <TabsTrigger value="lines" data-testid="tab-lines">بنود الفاتورة</TabsTrigger>
             <TabsTrigger value="payments" data-testid="tab-payments">سداد دفعات</TabsTrigger>
             <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="services" className="mt-2">
-            <LineGrid type="service" typeLines={filteredLines("service")} {...lineGridSharedProps} />
+          {/* ── التاب الموحد للبنود (خدمات + أدوية + مستهلكات + أجهزة) ── */}
+          <TabsContent value="lines" className="mt-2">
+            <UnifiedLinesTab
+              lines={lines}
+              isDraft={isDraft}
+              itemSearch={itemSearch}
+              setItemSearch={setItemSearch}
+              setItemResults={setItemResults}
+              itemResults={itemResults}
+              searchingItems={searchingItems}
+              fefoLoading={fefoLoading}
+              itemSearchRef={itemSearchRef}
+              itemDropdownRef={itemDropdownRef}
+              pendingQtyRef={pendingQtyRef}
+              addServiceLine={addServiceLine}
+              addItemLine={addItemLine}
+              updateLine={updateLine}
+              removeLine={removeLine}
+              handleQtyConfirm={handleQtyConfirm}
+              handleUnitLevelChange={handleUnitLevelChange}
+              openStatsPopup={openStatsPopup}
+              getServiceRowClass={getServiceRowClass}
+            />
           </TabsContent>
-          <TabsContent value="drugs" className="mt-2">
-            <LineGrid type="drug" typeLines={filteredLines("drug")} {...lineGridSharedProps} />
-          </TabsContent>
-          <TabsContent value="consumables" className="mt-2">
-            <LineGrid type="consumable" typeLines={filteredLines("consumable")} {...lineGridSharedProps} />
-          </TabsContent>
-          <TabsContent value="equipment" className="mt-2">
-            <LineGrid type="equipment" typeLines={filteredLines("equipment")} {...lineGridSharedProps} />
-          </TabsContent>
+
           <TabsContent value="payments" className="mt-2">
             <PaymentsTab
               isDraft={isDraft}
