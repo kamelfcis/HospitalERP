@@ -33,6 +33,8 @@ export interface ReceivingFormState {
   setFormConvertedToInvoiceId: (v: string | null) => void;
   invoiceDuplicateError: string;
   setInvoiceDuplicateError: (v: string) => void;
+  isEditingPosted: boolean;
+  setIsEditingPosted: (v: boolean) => void;
   isViewOnly: boolean;
   canSaveDraft: (lines: ReceivingLineLocal[]) => boolean;
   resetForm: (
@@ -56,7 +58,9 @@ export function useReceivingForm(): ReceivingFormState {
   const [formConvertedToInvoiceId, setFormConvertedToInvoiceId] = useState<string | null>(null);
   const [invoiceDuplicateError, setInvoiceDuplicateError] = useState("");
 
-  const isViewOnly = formStatus !== "draft";
+  const [isEditingPosted, setIsEditingPosted] = useState(false);
+
+  const isViewOnly = formStatus !== "draft" && !isEditingPosted;
 
   const canSaveDraft = (lines: ReceivingLineLocal[]) =>
     !!supplierId &&
@@ -64,7 +68,7 @@ export function useReceivingForm(): ReceivingFormState {
     !!warehouseId &&
     !!receiveDate &&
     lines.length > 0 &&
-    formStatus === "draft" &&
+    (formStatus === "draft" || isEditingPosted) &&
     !invoiceDuplicateError;
 
   const resetForm = (
@@ -84,6 +88,7 @@ export function useReceivingForm(): ReceivingFormState {
     setFormCorrectionStatus(null);
     setFormCorrectionOfId(null);
     setFormConvertedToInvoiceId(null);
+    setIsEditingPosted(false);
     resetLines();
     resetAutoSave();
     resetSupplier();
@@ -91,6 +96,7 @@ export function useReceivingForm(): ReceivingFormState {
 
   return {
     editingReceivingId, setEditingReceivingId,
+    isEditingPosted, setIsEditingPosted,
     receiveDate, setReceiveDate,
     supplierId, setSupplierId,
     supplierInvoiceNo, setSupplierInvoiceNo,

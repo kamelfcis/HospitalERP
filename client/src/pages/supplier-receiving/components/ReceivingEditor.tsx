@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Save, Send, RotateCcw, FileText, ScanBarcode, Loader2, Check, AlertTriangle } from "lucide-react";
+import { Plus, Save, Send, RotateCcw, FileText, ScanBarcode, Loader2, Check, AlertTriangle, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -55,11 +55,14 @@ interface Props {
   setQuickSupplierOpen: (v: boolean) => void;
 
   // ── mutations ──
-  onSaveDraft:  () => void;
-  onPost:       () => void;
-  onNew:        () => void;
-  onConvertForm: () => void;
-  onCorrectForm: () => void;
+  onSaveDraft:        () => void;
+  onPost:             () => void;
+  onNew:              () => void;
+  onConvertForm:      () => void;
+  onCorrectForm:      () => void;
+  onStartEditPosted:  () => void;
+  onCancelEditPosted: () => void;
+  onSaveEditPosted:   () => void;
 
   // ── scanner ──
   barcodeDisplay:    string;
@@ -83,11 +86,12 @@ export function ReceivingEditor({
   statsItemId, statsData, statsLoading, setStatsItemId, openStats,
   quickSupplierOpen, setQuickSupplierOpen,
   onSaveDraft, onPost, onNew, onConvertForm, onCorrectForm,
+  onStartEditPosted, onCancelEditPosted, onSaveEditPosted,
   barcodeDisplay, setBarcodeDisplay, barcodeLoading, barcodeInputRef, onBarcodeSubmit,
   warehouses, canSaveDraft,
   onItemSelected,
 }: Props) {
-  const { isViewOnly, formStatus, formCorrectionStatus, formConvertedToInvoiceId,
+  const { isViewOnly, isEditingPosted, formStatus, formCorrectionStatus, formConvertedToInvoiceId,
     formReceivingNumber, invoiceDuplicateError } = form;
 
   // شرط إضافة الأصناف: لازم المستودع والمورد ورقم فاتورة المورد مكملين
@@ -152,6 +156,12 @@ export function ReceivingEditor({
           {receivingStatusLabels[formStatus as keyof typeof receivingStatusLabels] || formStatus} — للعرض فقط
         </div>
       )}
+      {isEditingPosted && (
+        <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 rounded-md p-2 mb-2 flex items-center justify-center gap-2 text-sm text-blue-800 dark:text-blue-200" data-testid="banner-edit-posted">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          وضع تعديل إذن استلام مُرحَّل — يمكنك تعديل الكميات أو حذف أصناف. سيُعدَّل المخزون والقيد المحاسبي تلقائيًا عند الحفظ.
+        </div>
+      )}
       {formCorrectionStatus === "correction" && (
         <div className="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 rounded-md p-2 mb-2 text-center text-sm text-purple-800 dark:text-purple-200" data-testid="banner-correction">
           مستند تصحيح — يمكنك تعديل الأصناف ثم الترحيل لتطبيق التصحيح
@@ -169,6 +179,7 @@ export function ReceivingEditor({
         supplierSearch={supplierSearch}
         warehouses={warehouses}
         onOpenQuickSupplier={() => setQuickSupplierOpen(true)}
+        headerLocked={isEditingPosted}
       />
 
       {/* ── شريط الباركود ────────────────────────────────────────────────── */}
@@ -227,23 +238,46 @@ export function ReceivingEditor({
         />
       </div>
 
-      {/* ── شريط الأزرار (مسودة) ─────────────────────────────────────────── */}
+      {/* ── شريط الأزرار (مسودة أو وضع تعديل مُرحَّل) ───────────────────── */}
       {!isViewOnly && (
         <div className="flex items-center gap-2 flex-wrap no-print mt-2">
           <Button variant="outline" size="sm" onClick={handleOpenItemSearch} data-testid="button-add-item">
             <Plus className="h-3 w-3 ml-1" /> إضافة صنف
           </Button>
-          <Button variant="outline" size="sm" disabled={!canSaveDraft || isPending} onClick={onSaveDraft} data-testid="button-save-draft">
-            {isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
-            حفظ مسودة
-          </Button>
-          <AutoSaveIndicator status={autoSaveStatus} />
-          <Button variant="outline" size="sm" disabled={!canSaveDraft || isPending} onClick={() => setConfirmPostOpen(true)} data-testid="button-post-receiving">
-            <Send className="h-3 w-3 ml-1" /> ترحيل
-          </Button>
-          <Button variant="outline" size="sm" onClick={onNew} data-testid="button-new-receiving">
-            <Plus className="h-3 w-3 ml-1" /> جديد
-          </Button>
+
+          {/* أزرار المسودة العادية */}
+          {!isEditingPosted && (
+            <>
+              <Button variant="outline" size="sm" disabled={!canSaveDraft || isPending} onClick={onSaveDraft} data-testid="button-save-draft">
+                {isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
+                حفظ مسودة
+              </Button>
+              <AutoSaveIndicator status={autoSaveStatus} />
+              <Button variant="outline" size="sm" disabled={!canSaveDraft || isPending} onClick={() => setConfirmPostOpen(true)} data-testid="button-post-receiving">
+                <Send className="h-3 w-3 ml-1" /> ترحيل
+              </Button>
+            </>
+          )}
+
+          {/* أزرار وضع تعديل المُرحَّل */}
+          {isEditingPosted && (
+            <>
+              <Button variant="default" size="sm" disabled={!canSaveDraft || isPending} onClick={onSaveEditPosted} data-testid="button-save-edit-posted"
+                className="bg-blue-600 hover:bg-blue-700 text-white">
+                {isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
+                حفظ التعديلات
+              </Button>
+              <Button variant="outline" size="sm" disabled={isPending} onClick={onCancelEditPosted} data-testid="button-cancel-edit-posted">
+                <X className="h-3 w-3 ml-1" /> إلغاء التعديل
+              </Button>
+            </>
+          )}
+
+          {!isEditingPosted && (
+            <Button variant="outline" size="sm" onClick={onNew} data-testid="button-new-receiving">
+              <Plus className="h-3 w-3 ml-1" /> جديد
+            </Button>
+          )}
           {lines.formLines.length > 0 && (
             <span className="text-[10px] text-muted-foreground mr-auto">{lines.formLines.length} صنف</span>
           )}
@@ -256,6 +290,12 @@ export function ReceivingEditor({
           <Button variant="outline" size="sm" onClick={onNew} data-testid="button-new-receiving">
             <Plus className="h-3 w-3 ml-1" /> إذن جديد
           </Button>
+          {/* زر التعديل — يظهر فقط للمُرحَّل غير المحوَّل لفاتورة */}
+          {formStatus === "posted_qty_only" && !formConvertedToInvoiceId && formCorrectionStatus !== "corrected" && (
+            <Button variant="outline" size="sm" disabled={isPending} onClick={onStartEditPosted} data-testid="button-start-edit-posted">
+              <Pencil className="h-3 w-3 ml-1" /> تعديل الاستلام
+            </Button>
+          )}
           {formStatus === "posted_qty_only" && !formConvertedToInvoiceId && (
             <Button variant="outline" size="sm" disabled={isPending} onClick={onConvertForm} data-testid="button-form-convert-to-invoice">
               {isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <FileText className="h-3 w-3 ml-1" />}
@@ -350,12 +390,13 @@ function AutoSaveIndicator({ status }: { status: AutoSaveStatus }) {
 
 // ── رأس إذن الاستلام ────────────────────────────────────────────────────────
 function ReceivingHeaderBar({
-  form, supplierSearch, warehouses, onOpenQuickSupplier,
+  form, supplierSearch, warehouses, onOpenQuickSupplier, headerLocked = false,
 }: {
   form: ReceivingFormState;
   supplierSearch: UseSupplierSearchReturn;
   warehouses: Warehouse[];
   onOpenQuickSupplier: () => void;
+  headerLocked?: boolean;
 }) {
   const {
     isViewOnly, formStatus, receiveDate, setReceiveDate,
@@ -363,6 +404,10 @@ function ReceivingHeaderBar({
     formNotes, setFormNotes, formReceivingNumber, invoiceDuplicateError,
     setSupplierId,
   } = form;
+
+  // في وضع تعديل المُرحَّل: نقفل بيانات الرأس (المستودع، المورد، الفاتورة)
+  // لأن الـ API يُعدِّل السطور فقط
+  const headerDisabled = isViewOnly || headerLocked;
 
   const {
     supplierSearchText, supplierResults, supplierDropdownOpen,
@@ -381,7 +426,7 @@ function ReceivingHeaderBar({
           <Label className="text-[10px] text-muted-foreground">ملاحظات</Label>
           <Input type="text" value={formNotes} onChange={(e) => setFormNotes(e.target.value)}
             placeholder="اختياري" className="h-7 text-[11px] px-1"
-            disabled={isViewOnly} data-testid="input-notes" />
+            disabled={headerDisabled} data-testid="input-notes" />
         </div>
 
         {/* شارة الحالة */}
@@ -398,13 +443,13 @@ function ReceivingHeaderBar({
         <div className="space-y-1 w-[120px]">
           <Label className="text-[10px] text-muted-foreground">تاريخ الاستلام</Label>
           <Input type="date" value={receiveDate} onChange={(e) => setReceiveDate(e.target.value)}
-            className="h-7 text-[11px] px-1" disabled={isViewOnly} data-testid="input-receive-date" />
+            className="h-7 text-[11px] px-1" disabled={headerDisabled} data-testid="input-receive-date" />
         </div>
 
         {/* المستودع */}
         <div className="space-y-1 flex-1 min-w-[160px]">
           <Label className="text-[10px] text-muted-foreground">المستودع *</Label>
-          <Select value={warehouseId} onValueChange={setWarehouseId} disabled={isViewOnly}>
+          <Select value={warehouseId} onValueChange={setWarehouseId} disabled={headerDisabled}>
             <SelectTrigger className="h-7 text-[11px] px-1" data-testid="select-receiving-warehouse">
               <SelectValue placeholder="اختر المستودع" />
             </SelectTrigger>
@@ -423,7 +468,7 @@ function ReceivingHeaderBar({
             onChange={(e) => setSupplierInvoiceNo(e.target.value)}
             placeholder="رقم الفاتورة"
             className={`h-7 text-[11px] px-1 ${invoiceDuplicateError ? "border-destructive" : ""}`}
-            disabled={isViewOnly} data-testid="input-supplier-invoice" />
+            disabled={headerDisabled} data-testid="input-supplier-invoice" />
           {invoiceDuplicateError && (
             <span className="text-[9px] text-destructive flex items-center gap-0.5">
               <AlertTriangle className="h-3 w-3" /> {invoiceDuplicateError}
@@ -435,7 +480,7 @@ function ReceivingHeaderBar({
         <div className="space-y-1 flex-1 min-w-[200px] relative">
           <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
             المورد *
-            {!isViewOnly && (
+            {!headerDisabled && (
               <Button variant="outline" size="sm" className="text-[9px] gap-0.5 px-1 h-4"
                 onClick={onOpenQuickSupplier} data-testid="button-quick-add-supplier">
                 <Plus className="h-2.5 w-2.5" /> إضافة مورد
@@ -455,7 +500,7 @@ function ReceivingHeaderBar({
               onFocus={() => { if (supplierResults.length > 0) setSupplierDropdownOpen(true); }}
               onBlur={() => { setTimeout(() => setSupplierDropdownOpen(false), 400); }}
               placeholder="ابحث بالكود أو الاسم..."
-              className="h-7 text-[11px] px-1" disabled={isViewOnly}
+              className="h-7 text-[11px] px-1" disabled={headerDisabled}
               data-testid="select-supplier" />
             {supplierSearchLoading && (
               <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />

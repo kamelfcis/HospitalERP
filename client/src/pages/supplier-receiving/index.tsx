@@ -116,7 +116,7 @@ export default function SupplierReceiving() {
   // ── باركود ───────────────────────────────────────────────────────────────
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const pendingQtyRef   = useRef<Map<string, string>>(new Map());
-  const canAddItems     = form.formStatus === "draft"
+  const canAddItems     = (form.formStatus === "draft" || form.isEditingPosted)
     && !itemSearchOpen
     && !!form.warehouseId
     && !!form.supplierId
@@ -151,10 +151,14 @@ export default function SupplierReceiving() {
       if (id && !form.editingReceivingId) form.setEditingReceivingId(id);
       if (num !== null) form.setFormReceivingNumber(num);
     },
-    onPostSuccess:    () => handleNew(),
-    onCorrectSuccess: (newId) => loadReceivingForEditing(newId),
-    onConvertSuccess: (invoiceId) => navigate(`/purchase-invoices?id=${invoiceId}`),
-    onDismissConfirm: () => setConfirmPostOpen(false),
+    onPostSuccess:       () => handleNew(),
+    onCorrectSuccess:    (newId) => loadReceivingForEditing(newId),
+    onConvertSuccess:    (invoiceId) => navigate(`/purchase-invoices?id=${invoiceId}`),
+    onDismissConfirm:    () => setConfirmPostOpen(false),
+    onEditPostedSuccess: () => {
+      form.setIsEditingPosted(false);
+      if (form.editingReceivingId) loadReceivingForEditing(form.editingReceivingId);
+    },
     resetAutoSave:    autoSave.resetAutoSave,
   });
 
@@ -234,6 +238,12 @@ export default function SupplierReceiving() {
             onCorrectForm={() => {
               if (form.editingReceivingId) mutations.correctReceivingMutation.mutate(form.editingReceivingId);
             }}
+            onStartEditPosted={() => form.setIsEditingPosted(true)}
+            onCancelEditPosted={() => {
+              form.setIsEditingPosted(false);
+              if (form.editingReceivingId) loadReceivingForEditing(form.editingReceivingId);
+            }}
+            onSaveEditPosted={() => mutations.editPostedMutation.mutate()}
             barcodeDisplay={barcodeDisplay}
             setBarcodeDisplay={setBarcodeDisplay}
             barcodeLoading={barcodeLoading}

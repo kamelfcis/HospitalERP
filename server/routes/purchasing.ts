@@ -263,6 +263,41 @@ export function registerPurchasingRoutes(app: Express) {
     }
   });
 
+  // ── تعديل إذن استلام مُرحَّل (posted_qty_only) قبل تحويله لفاتورة ─────────
+  app.patch("/api/receivings/:id/edit-posted", requireAuth, checkPermission(PERMISSIONS.RECEIVING_EDIT), async (req, res) => {
+    try {
+      const { lines } = req.body;
+      if (!lines || !Array.isArray(lines) || lines.length === 0)
+        return res.status(400).json({ message: "السطور مطلوبة" });
+
+      const existing = await storage.getReceiving(req.params.id as string);
+      if (!existing) return res.status(404).json({ message: "المستند غير موجود" });
+      if (existing.status !== "posted_qty_only")
+        return res.status(409).json({ message: "يمكن تعديل أذونات الاستلام المُرحَّلة (غير المحوَّلة لفاتورة) فقط", code: "WRONG_STATUS" });
+
+      const lineErrors = await validateReceivingLines(lines);
+      if (lineErrors.length > 0)
+        return res.status(400).json({ message: "لا يمكن حفظ الإذن: تأكد من سعر البيع وتاريخ الصلاحية للأصناف المطلوبة", lineErrors });
+
+      await storage.assertPeriodOpen(existing.receiveDate);
+
+      const result = await storage.editPostedReceiving(req.params.id as string, lines);
+      await storage.createAuditLog({
+        tableName: "receiving_headers",
+        recordId: req.params.id as string,
+        action: "edit_posted",
+        oldValues: JSON.stringify({ status: existing.status }),
+        newValues: JSON.stringify({ linesCount: lines.filter((l: any) => !l.isRejected).length }),
+      });
+      res.json(result);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      if (_em.includes("الفترة") || _em.includes("مُحوَّل") || _em.includes("مُرحَّل") || _em.includes("يمكن") || _em.includes("لا يمكن") || _em.includes("تم بيع") || _em.includes("تم صرف"))
+        return res.status(400).json({ message: _em });
+      res.status(500).json({ message: _em });
+    }
+  });
+
   app.post("/api/receivings/:id/post", requireAuth, checkPermission(PERMISSIONS.RECEIVING_POST), async (req, res) => {
     try {
       const receiving = await storage.getReceiving(req.params.id as string);

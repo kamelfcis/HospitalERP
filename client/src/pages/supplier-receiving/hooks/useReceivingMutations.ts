@@ -24,17 +24,18 @@ interface UseReceivingMutationsParams {
   // lines ref
   lines:              UseReceivingLinesReturn;
   // callbacks
-  onSaveDraftSuccess: (id: string | null, number: number | null) => void;
-  onPostSuccess:      () => void;
-  onCorrectSuccess:   (newId: string) => void;
-  onConvertSuccess:   (invoiceId: string) => void;
-  onDismissConfirm:  () => void;
-  resetAutoSave:      () => void;
+  onSaveDraftSuccess:    (id: string | null, number: number | null) => void;
+  onPostSuccess:         () => void;
+  onCorrectSuccess:      (newId: string) => void;
+  onConvertSuccess:      (invoiceId: string) => void;
+  onDismissConfirm:      () => void;
+  onEditPostedSuccess:   () => void;
+  resetAutoSave:         () => void;
 }
 
 function buildHeaderPayload(p: Omit<UseReceivingMutationsParams,
   "lines" | "onSaveDraftSuccess" | "onPostSuccess" | "onCorrectSuccess" |
-  "onConvertSuccess" | "onDismissConfirm" | "resetAutoSave" | "editingReceivingId"
+  "onConvertSuccess" | "onDismissConfirm" | "resetAutoSave" | "onEditPostedSuccess" | "editingReceivingId"
 >) {
   return {
     supplierId:       p.supplierId,
@@ -49,7 +50,7 @@ export function useReceivingMutations({
   supplierId, supplierInvoiceNo, warehouseId, receiveDate, formNotes,
   editingReceivingId, lines,
   onSaveDraftSuccess, onPostSuccess, onCorrectSuccess, onConvertSuccess,
-  onDismissConfirm, resetAutoSave,
+  onDismissConfirm, onEditPostedSuccess, resetAutoSave,
 }: UseReceivingMutationsParams) {
   const { toast } = useToast();
 
@@ -158,11 +159,30 @@ export function useReceivingMutations({
     },
   });
 
+  // ── تعديل استلام مُرحَّل (posted_qty_only) ──────────────────────────────
+  const editPostedMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingReceivingId) throw new Error("لا يوجد إذن استلام محدد");
+      if (!runValidation()) throw new Error("راجع الأخطاء في السطور");
+      const linesPayload = lines.buildLinesPayload();
+      return apiRequest("PATCH", `/api/receivings/${editingReceivingId}/edit-posted`, { lines: linesPayload });
+    },
+    onSuccess: () => {
+      toast({ title: "تم حفظ التعديلات بنجاح", description: "تم تحديث المخزون والقيد المحاسبي تلقائيًا" });
+      queryClient.invalidateQueries({ queryKey: ["/api/receivings"] });
+      onEditPostedSuccess();
+    },
+    onError: (err: Error) => {
+      toast({ title: "خطأ في حفظ التعديلات", description: err.message, variant: "destructive" });
+    },
+  });
+
   const isPending =
     saveDraftMutation.isPending ||
     postReceivingMutation.isPending ||
     correctReceivingMutation.isPending ||
-    convertToInvoiceMutation.isPending;
+    convertToInvoiceMutation.isPending ||
+    editPostedMutation.isPending;
 
   return {
     saveDraftMutation,
@@ -170,6 +190,7 @@ export function useReceivingMutations({
     deleteDraftMutation,
     convertToInvoiceMutation,
     correctReceivingMutation,
+    editPostedMutation,
     isPending,
   };
 }
