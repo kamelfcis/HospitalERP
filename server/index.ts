@@ -815,7 +815,25 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] Inventory lots UNIQUE index error");
   }
 
-  // ── 5h. Listen ────────────────────────────────────────────────────────────
+  // ── 5h. Backfill expiry_month/expiry_year from expiry_date ────────────────
+  // حالات تاريخية: دفعات دخلت بـ expiry_date لكن بدون expiry_month/expiry_year
+  // (استيراد إكسيل، opening stock قديم). آمن ومتكرر الإجراء.
+  try {
+    const fix = await db.execute(sql`
+      UPDATE inventory_lots
+      SET    expiry_month = EXTRACT(MONTH FROM expiry_date)::int,
+             expiry_year  = EXTRACT(YEAR  FROM expiry_date)::int,
+             updated_at   = NOW()
+      WHERE  expiry_date IS NOT NULL
+        AND  (expiry_month IS NULL OR expiry_year IS NULL)
+    `);
+    const fixed = (fix as any).rowCount ?? 0;
+    if (fixed > 0) log(`[STARTUP] inventory_lots expiry backfill: ${fixed} row(s) fixed`);
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] expiry backfill error");
+  }
+
+  // ── 5i. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
     log(`serving on port ${port}`);

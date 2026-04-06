@@ -16,11 +16,13 @@ export const transfersInventoryMethods = {
     const asOfYear = asOf.getFullYear();
 
     const expiryCondition = item && item.hasExpiry
-      ? and(
-          sql`${inventoryLots.expiryMonth} IS NOT NULL`,
-          sql`${inventoryLots.expiryYear} IS NOT NULL`,
-          sql`(${inventoryLots.expiryYear} > ${asOfYear} OR (${inventoryLots.expiryYear} = ${asOfYear} AND ${inventoryLots.expiryMonth} >= ${asOfMonth}))`
-        )
+      ? sql`(
+          ${inventoryLots.expiryMonth} IS NULL
+          OR ${inventoryLots.expiryYear} IS NULL
+          OR (${inventoryLots.expiryYear} > ${asOfYear}
+              OR (${inventoryLots.expiryYear} = ${asOfYear}
+                  AND ${inventoryLots.expiryMonth} >= ${asOfMonth}))
+        )`
       : sql`${inventoryLots.expiryMonth} IS NULL`;
 
     const lots = await db.select().from(inventoryLots)

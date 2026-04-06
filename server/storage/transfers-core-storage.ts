@@ -261,11 +261,13 @@ const methods = {
           const tYear = transferDateParsed.getFullYear();
 
           const expiryCondition = item.hasExpiry
-            ? and(
-                sql`${inventoryLots.expiryMonth} IS NOT NULL`,
-                sql`${inventoryLots.expiryYear} IS NOT NULL`,
-                sql`(${inventoryLots.expiryYear} > ${tYear} OR (${inventoryLots.expiryYear} = ${tYear} AND ${inventoryLots.expiryMonth} >= ${tMonth}))`
-              )
+            ? sql`(
+                ${inventoryLots.expiryMonth} IS NULL
+                OR ${inventoryLots.expiryYear} IS NULL
+                OR (${inventoryLots.expiryYear} > ${tYear}
+                    OR (${inventoryLots.expiryYear} = ${tYear}
+                        AND ${inventoryLots.expiryMonth} >= ${tMonth}))
+              )`
             : and(
                 sql`${inventoryLots.expiryMonth} IS NULL`,
                 sql`${inventoryLots.expiryYear} IS NULL`
