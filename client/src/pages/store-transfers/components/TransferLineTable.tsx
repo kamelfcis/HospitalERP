@@ -11,12 +11,15 @@ interface Props {
   fefoLoadingIndex: number | null;
   focusedLineIdx: number | null;
   lineExpiryOptions: Record<string, ExpiryOption[]>;
+  expiryDropdownLoading: string | null;
   qtyInputRefs: React.MutableRefObject<Map<string, HTMLInputElement>>;
   pendingQtyRef: React.MutableRefObject<Map<string, string>>;
   barcodeInputRef: React.RefObject<HTMLInputElement>;
   onDeleteLine: (index: number) => void;
   onQtyConfirm: (lineId: string) => void;
   onUnitChange: (lineId: string, newUnit: string) => void;
+  onExpiryFocus: (lineId: string, itemId: string) => void;
+  onExpiryChange: (lineId: string, expiryKey: string) => void;
   onShowAvailability: (itemId: string, item: any, e: React.MouseEvent) => void;
   setFocusedLineIdx: (idx: number | null) => void;
 }
@@ -27,12 +30,15 @@ export function TransferLineTable({
   fefoLoadingIndex,
   focusedLineIdx,
   lineExpiryOptions,
+  expiryDropdownLoading,
   qtyInputRefs,
   pendingQtyRef,
   barcodeInputRef,
   onDeleteLine,
   onQtyConfirm,
   onUnitChange,
+  onExpiryFocus,
+  onExpiryChange,
   onShowAvailability,
   setFocusedLineIdx,
 }: Props) {
@@ -167,14 +173,49 @@ export function TransferLineTable({
                   <td className="py-0.5 px-2 whitespace-nowrap">
                     {fefoLoadingIndex === idx ? (
                       <Loader2 className="h-3 w-3 animate-spin text-muted-foreground inline" />
-                    ) : line.selectedExpiryMonth && line.selectedExpiryYear ? (
-                      <span className="font-mono text-[12px]" data-testid={`text-expiry-${idx}`}>
-                        {`${String(line.selectedExpiryMonth).padStart(2, "0")}/${line.selectedExpiryYear}`}
-                      </span>
-                    ) : line.selectedExpiryDate ? (
-                      <span className="font-mono text-[12px]">{formatDateShort(line.selectedExpiryDate)}</span>
+                    ) : isViewOnly || !line.item?.hasExpiry ? (
+                      line.selectedExpiryMonth && line.selectedExpiryYear
+                        ? `${String(line.selectedExpiryMonth).padStart(2, "0")}/${line.selectedExpiryYear}`
+                        : line.selectedExpiryDate
+                        ? formatDateShort(line.selectedExpiryDate)
+                        : "—"
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <select
+                        value={
+                          line.selectedExpiryMonth && line.selectedExpiryYear
+                            ? `${line.selectedExpiryMonth}/${line.selectedExpiryYear}`
+                            : ""
+                        }
+                        onFocus={() => onExpiryFocus(line.id, line.itemId)}
+                        onChange={(e) => onExpiryChange(line.id, e.target.value)}
+                        className="h-6 text-[12px] px-1 border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500 border-border min-w-[90px]"
+                        data-testid={`select-expiry-${idx}`}
+                      >
+                        {line.selectedExpiryMonth && line.selectedExpiryYear && (
+                          <option value={`${line.selectedExpiryMonth}/${line.selectedExpiryYear}`}>
+                            {`${String(line.selectedExpiryMonth).padStart(2, "0")}/${line.selectedExpiryYear}`}
+                          </option>
+                        )}
+                        {!line.selectedExpiryMonth && <option value="">اختر...</option>}
+                        {expiryDropdownLoading === line.id && !lineExpiryOptions[line.id] ? (
+                          <option disabled>جاري التحميل...</option>
+                        ) : (
+                          (lineExpiryOptions[line.id] || [])
+                            .filter((o) => !(o.expiryMonth === line.selectedExpiryMonth && o.expiryYear === line.selectedExpiryYear))
+                            .map((o) => (
+                              <option
+                                key={`${o.expiryMonth}/${o.expiryYear}`}
+                                value={`${o.expiryMonth}/${o.expiryYear}`}
+                              >
+                                {`${String(o.expiryMonth).padStart(2, "0")}/${o.expiryYear} (${formatAvailability(
+                                  o.qtyAvailableMinor,
+                                  line.unitLevel,
+                                  line.item
+                                )})`}
+                              </option>
+                            ))
+                        )}
+                      </select>
                     )}
                   </td>
 

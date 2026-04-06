@@ -33,6 +33,7 @@ interface Props {
   focusedLineIdx: number | null;
   setFocusedLineIdx: (idx: number | null) => void;
   lineExpiryOptions: Record<string, ExpiryOption[]>;
+  expiryDropdownLoading: string | null;
   qtyInputRefs: React.MutableRefObject<Map<string, HTMLInputElement>>;
   pendingQtyRef: React.MutableRefObject<Map<string, string>>;
   barcodeInputRef: React.RefObject<HTMLInputElement>;
@@ -46,6 +47,8 @@ interface Props {
   onDeleteLine: (index: number) => void;
   onQtyConfirm: (lineId: string) => void;
   onUnitChange: (lineId: string, newUnit: string) => void;
+  onExpiryFocus: (lineId: string, itemId: string) => void;
+  onExpiryChange: (lineId: string, expiryKey: string) => void;
   onShowAvailability: (itemId: string, item: any, e: React.MouseEvent) => void;
   onBarcodeScan: (value: string) => void;
   onSaveDraft: () => void;
@@ -76,6 +79,7 @@ export function TransferEditor({
   focusedLineIdx,
   setFocusedLineIdx,
   lineExpiryOptions,
+  expiryDropdownLoading,
   qtyInputRefs,
   pendingQtyRef,
   barcodeInputRef,
@@ -89,6 +93,8 @@ export function TransferEditor({
   onDeleteLine,
   onQtyConfirm,
   onUnitChange,
+  onExpiryFocus,
+  onExpiryChange,
   onShowAvailability,
   onBarcodeScan,
   onSaveDraft,
@@ -224,12 +230,15 @@ export function TransferEditor({
           fefoLoadingIndex={fefoLoadingIndex}
           focusedLineIdx={focusedLineIdx}
           lineExpiryOptions={lineExpiryOptions}
+          expiryDropdownLoading={expiryDropdownLoading}
           qtyInputRefs={qtyInputRefs}
           pendingQtyRef={pendingQtyRef}
           barcodeInputRef={barcodeInputRef}
           onDeleteLine={onDeleteLine}
           onQtyConfirm={onQtyConfirm}
           onUnitChange={onUnitChange}
+          onExpiryFocus={onExpiryFocus}
+          onExpiryChange={onExpiryChange}
           onShowAvailability={onShowAvailability}
           setFocusedLineIdx={setFocusedLineIdx}
         />

@@ -2,7 +2,7 @@ import {
   useState, useRef, useCallback, useEffect, useLayoutEffect,
 } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Search, PackageX, Package, ChevronLeft, AlertCircle, SlidersHorizontal } from "lucide-react";
+import { Loader2, Search, PackageX, Package, AlertCircle, SlidersHorizontal } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { formatAvailability } from "@/lib/invoice-lines";
 import type {
@@ -61,54 +61,40 @@ export function ItemFastSearch({
   const [maxPrice,    setMaxPrice]    = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  // ── حالة الدُفعات ─────────────────────────────────────────────────────
-  const [batches,       setBatches]       = useState<BatchOption[]>([]);
-  const [batchLoading,  setBatchLoading]  = useState(false);
-  const [selectedBatch, setSelectedBatch] = useState<BatchOption | null>(null);
-  const [batchItemId,   setBatchItemId]   = useState<string | null>(null);
-  const [batchMode,     setBatchMode]     = useState(false);
+  // ── حالة الدُفعات (للتحميل المسبق الصامت فقط — لا لوحة اختيار) ────────
+  const [batches,      setBatches]      = useState<BatchOption[]>([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchItemId,  setBatchItemId]  = useState<string | null>(null);
 
   // ── refs ────────────────────────────────────────────────────────────────
-  const searchRef      = useRef<HTMLInputElement>(null);
-  const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const preloadRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rowRefs        = useRef<(HTMLTableRowElement | null)[]>([]);
-  const abortRef       = useRef<AbortController | null>(null);
-  const batchAbortRef  = useRef<AbortController | null>(null);
-  const lastKeyboardAt   = useRef<number>(0);
-  // حارس: هل المستخدم ضغط Enter أثناء تحميل الدُفعات؟ ننفذها فور الانتهاء
-  const pendingSelectRef = useRef<boolean>(false);
+  const searchRef    = useRef<HTMLInputElement>(null);
+  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preloadRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rowRefs      = useRef<(HTMLTableRowElement | null)[]>([]);
+  const abortRef     = useRef<AbortController | null>(null);
+  const batchAbortRef = useRef<AbortController | null>(null);
+  const lastKeyboardAt = useRef<number>(0);
 
-  // ── إعادة ضبط الدُفعات ────────────────────────────────────────────────
+  // ── إعادة ضبط بيانات الدُفعات المحملة مسبقاً ─────────────────────────
   const resetBatches = useCallback(() => {
     if (batchAbortRef.current) { batchAbortRef.current.abort(); batchAbortRef.current = null; }
-    pendingSelectRef.current = false;
     setBatches([]);
-    setSelectedBatch(null);
     setBatchItemId(null);
-    setBatchMode(false);
     setBatchLoading(false);
   }, []);
 
-  // ── تحميل الدُفعات (مع أو بدون فتح اللوحة) ─────────────────────────
-  const loadBatches = useCallback(async (
-    item: FastSearchItem,
-    openPanel = true,
-  ): Promise<BatchOption[]> => {
+  // ── تحميل الدُفعات بشكل صامت (لتمرير allBatches للفاتورة/التحويل) ─────
+  const loadBatches = useCallback(async (item: FastSearchItem): Promise<BatchOption[]> => {
     if (!item.hasExpiry || !warehouseId) return [];
 
-    // إذا كانت محملة بالفعل لنفس الصنف → فقط افتح اللوحة
-    if (batchItemId === item.id && batches.length > 0 && !batchLoading) {
-      if (openPanel) setBatchMode(true);
-      return batches;
-    }
+    // إذا كانت محملة بالفعل لنفس الصنف → أعدها مباشرةً
+    if (batchItemId === item.id && batches.length > 0 && !batchLoading) return batches;
 
     if (batchAbortRef.current) batchAbortRef.current.abort();
     batchAbortRef.current = new AbortController();
 
     setBatchLoading(true);
     setBatchItemId(item.id);
-    if (openPanel) setBatchMode(true);
 
     try {
       const date = invoiceDate || new Date().toISOString().split("T")[0];
@@ -119,7 +105,6 @@ export function ItemFastSearch({
       if (r.ok) {
         const data: BatchOption[] = await r.json();
         setBatches(data);
-        setSelectedBatch(data[0] ?? null);
         return data;
       }
     } catch (e: any) {
@@ -135,44 +120,30 @@ export function ItemFastSearch({
   useEffect(() => {
     if (preloadRef.current) clearTimeout(preloadRef.current);
     const item = items[highlighted];
-    if (!item?.hasExpiry || !warehouseId || batchMode) return;
+    if (!item?.hasExpiry || !warehouseId) return;
     if (batchItemId === item.id) return;   // جاري التحميل أو محمّل بالفعل
 
     preloadRef.current = setTimeout(() => {
-      loadBatches(item, false);           // صامت: لا يفتح اللوحة
+      loadBatches(item);                  // صامت: بدون لوحة
     }, PRELOAD_DELAY_MS);
 
     return () => {
       if (preloadRef.current) clearTimeout(preloadRef.current);
     };
-  }, [highlighted, items, warehouseId, batchMode, batchItemId, loadBatches]);
+  }, [highlighted, items, warehouseId, batchItemId, loadBatches]);
 
-  // ── إضافة الصنف ──────────────────────────────────────────────────────
-  const selectItem = useCallback((item: FastSearchItem, batch?: BatchOption | null) => {
-    const resolved = batch !== undefined ? batch : (selectedBatch ?? batches[0] ?? null);
+  // ── إضافة الصنف مباشرةً (FEFO يُعيّن الدُفعة في الفاتورة/التحويل) ─────
+  const selectItem = useCallback((item: FastSearchItem) => {
     onItemSelected({
       item,
-      batch:             item.hasExpiry ? resolved : null,
+      batch:             null,           // لا نختار دُفعة هنا — FEFO يختار
       availableQtyMinor: item.availableQtyMinor,
-      allBatches:        item.hasExpiry ? batches : [],
+      allBatches:        item.hasExpiry ? batches : [],  // الدُفعات المحملة مسبقاً
     });
     resetBatches();
     setTimeout(() => searchRef.current?.focus(), 30);
-  }, [onItemSelected, selectedBatch, batches, resetBatches]);
+  }, [onItemSelected, batches, resetBatches]);
 
-  // ── تنفيذ الاختيار المؤجل فور انتهاء التحميل ────────────────────────
-  // السيناريو: المستخدم يضغط Enter مرتين بسرعة — الأولى تفتح اللوحة والثانية
-  // تأتي أثناء التحميل → نحفظ النية في pendingSelectRef → ننفذها هنا تلقائياً
-  useEffect(() => {
-    if (batchLoading) return;                          // لا تزال تحمّل
-    if (!batchMode) return;                            // اللوحة مغلقة
-    if (!pendingSelectRef.current) return;             // لا يوجد طلب مؤجل
-    if (batches.length === 0) return;                  // لا دُفعات — خطأ في التحميل
-    const item = items[highlighted];
-    if (!item) return;
-    pendingSelectRef.current = false;
-    selectItem(item);
-  }, [batchLoading, batchMode, batches, highlighted, items, selectItem]);
 
   // ── البحث ─────────────────────────────────────────────────────────────
   const doSearch = useCallback(async (q: string, pg: number, md: SearchMode) => {
@@ -245,7 +216,6 @@ export function ItemFastSearch({
         rowRefs.current[next]?.scrollIntoView({ block: "nearest" });
         return next;
       });
-      if (batchMode) resetBatches();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       lastKeyboardAt.current = Date.now();
@@ -254,34 +224,16 @@ export function ItemFastSearch({
         rowRefs.current[prev]?.scrollIntoView({ block: "nearest" });
         return prev;
       });
-      if (batchMode) resetBatches();
     } else if (e.key === "Enter") {
       e.preventDefault();
       const item = items[highlighted];
       if (!item) return;
-
-      if (!item.hasExpiry || hideStockWarning) {
-        // صنف بلا صلاحية: أضفه مباشرةً
-        selectItem(item, null);
-      } else if (batchMode) {
-        if (batchLoading) {
-          // المستخدم أسرع من التحميل → احجز النية، ستُنفَّذ تلقائياً فور الانتهاء
-          pendingSelectRef.current = true;
-        } else {
-          selectItem(item);
-        }
-      } else {
-        // صنف بصلاحية: افتح لوحة الدُفعات (غالباً تكون محملة مسبقاً)
-        setBatchMode(true);
-        if (batchItemId !== item.id || batches.length === 0) {
-          loadBatches(item, true);
-        }
-      }
+      // أضف الصنف مباشرةً بغض النظر عن وجود صلاحية (FEFO يعمل في الفاتورة/التحويل)
+      selectItem(item);
     } else if (e.key === "Escape") {
-      if (batchMode) resetBatches();
-      else onClose();
+      onClose();
     }
-  }, [items, highlighted, batchMode, batchLoading, batchItemId, batches, selectItem, loadBatches, resetBatches, onClose, hideStockWarning]);
+  }, [items, highlighted, selectItem, onClose]);
 
   // ── إعادة الضبط عند الإغلاق ──────────────────────────────────────────
   useEffect(() => {
@@ -300,14 +252,8 @@ export function ItemFastSearch({
   }, [open]);
 
   // ── قيم مشتقة ─────────────────────────────────────────────────────────
-  const totalPages    = Math.ceil(total / PAGE_SIZE);
-  const currentItem   = highlighted >= 0 ? items[highlighted] : null;
-  const showBatchPanel = batchMode && currentItem?.hasExpiry;
-
-  const batchesReadyForCurrentItem =
-    currentItem != null &&
-    batchItemId === currentItem.id &&
-    !batchLoading;
+  const totalPages  = Math.ceil(total / PAGE_SIZE);
+  const currentItem = highlighted >= 0 ? items[highlighted] : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -386,13 +332,7 @@ export function ItemFastSearch({
 
             {/* تلميح لوحة المفاتيح */}
             <div className="text-[11px] text-muted-foreground whitespace-nowrap hidden md:block">
-              {!batchMode ? (
-                <span>↑↓ · ↵ {currentItem?.hasExpiry ? "دُفعات" : "إضافة"} · ESC</span>
-              ) : (
-                <span className="text-primary font-semibold">
-                  {batchLoading ? "⏳ جاري..." : "↵ إضافة · ESC رجوع"}
-                </span>
-              )}
+              <span>↑↓ · ↵ إضافة · ESC</span>
             </div>
           </div>
 
@@ -487,17 +427,9 @@ export function ItemFastSearch({
                       ].join(" ")}
                       onClick={() => {
                         setHighlighted(idx);
-                        if (!item.hasExpiry || hideStockWarning) {
-                          selectItem(item, null);
-                        } else {
-                          setBatchMode(true);
-                          if (batchItemId !== item.id || batches.length === 0) {
-                            loadBatches(item, true);
-                          }
-                        }
+                        selectItem(item);
                       }}
                       onMouseEnter={() => {
-                        if (batchMode) return;
                         if (Date.now() - lastKeyboardAt.current < 400) return;
                         if (!isHl) setHighlighted(idx);
                       }}
@@ -556,74 +488,6 @@ export function ItemFastSearch({
             </table>
           </div>
 
-          {/* ── لوحة الدُفعات ── */}
-          {showBatchPanel && (
-            <div className="w-64 border-r flex flex-col bg-amber-50/80 dark:bg-amber-900/20 shrink-0">
-              <div className="px-3 py-2.5 border-b text-[12px] font-semibold text-amber-800 dark:text-amber-300 flex items-center justify-between">
-                <span>اختر الدُفعة · ↵ للإضافة</span>
-                {batchLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              </div>
-
-              {batchLoading ? (
-                <div className="flex items-center justify-center flex-1 gap-2 text-[13px] text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />جاري التحميل...
-                </div>
-              ) : batches.length === 0 ? (
-                <div className="flex items-center justify-center flex-1 text-[13px] text-muted-foreground">
-                  لا توجد دُفعات متاحة
-                </div>
-              ) : (
-                <div className="overflow-auto flex-1">
-                  {batches.map((b, i) => {
-                    const isSel     = selectedBatch?.expiryDate === b.expiryDate;
-                    const qtyMinor  = parseFloat(b.qtyAvailableMinor);
-                    const expLabel  = `${String(b.expiryMonth).padStart(2, "0")}/${b.expiryYear}`;
-                    const qtyLabel  = currentItem
-                      ? formatAvailability(b.qtyAvailableMinor, "major", currentItem)
-                      : String(qtyMinor);
-                    return (
-                      <div
-                        key={i}
-                        className={[
-                          "flex items-center justify-between px-3 py-2.5 cursor-pointer border-b text-[13px] transition-colors",
-                          isSel
-                            ? "bg-amber-200/80 font-semibold text-amber-900"
-                            : "hover:bg-amber-100/70 text-foreground",
-                        ].join(" ")}
-                        onClick={() => {
-                          setSelectedBatch(b);
-                          if (currentItem) selectItem(currentItem, b);
-                        }}
-                        data-testid={`batch-option-${i}`}
-                      >
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-mono font-semibold">{expLabel}</span>
-                          {b.lotSalePrice && b.lotSalePrice !== "0" && (
-                            <span className="text-[11px] text-blue-600 font-medium">
-                              {formatNumber(b.lotSalePrice)} جنيه
-                            </span>
-                          )}
-                          {b.hasPriceConflict && (
-                            <span className="text-[10px] text-rose-500 font-bold">⚠ سعرين</span>
-                          )}
-                        </div>
-                        <span className={qtyMinor > 0 ? "text-emerald-700 font-bold text-[12px]" : "text-slate-400 text-[12px]"}>
-                          {qtyLabel}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div
-                className="px-3 py-2 border-t text-[11px] text-muted-foreground cursor-pointer hover:bg-muted/40 flex items-center gap-1"
-                onClick={resetBatches}
-              >
-                <ChevronLeft className="h-3 w-3" />ESC رجوع للقائمة
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ── Pagination + أزرار الإجراء ── */}
@@ -645,44 +509,22 @@ export function ItemFastSearch({
           </div>
 
           <div className="flex items-center gap-2">
-            {currentItem && !showBatchPanel && (
+            {currentItem && (
               <button
                 className="peachtree-btn-sm bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
-                onClick={() => {
-                  if (!currentItem.hasExpiry || hideStockWarning) {
-                    selectItem(currentItem, null);
-                  } else {
-                    setBatchMode(true);
-                    if (batchItemId !== currentItem.id || batches.length === 0) {
-                      loadBatches(currentItem, true);
-                    }
-                  }
-                }}
+                onClick={() => selectItem(currentItem)}
                 data-testid="button-fast-search-add"
               >
-                {currentItem.hasExpiry
-                  ? (batchesReadyForCurrentItem ? `دُفعات (${batches.length}) ↵` : "دُفعات ↵")
-                  : "إضافة ↵"}
-              </button>
-            )}
-
-            {showBatchPanel && currentItem && (
-              <button
-                className="peachtree-btn-sm bg-emerald-600 text-white hover:bg-emerald-700 font-semibold disabled:opacity-50"
-                onClick={() => !batchLoading && selectItem(currentItem)}
-                disabled={batchLoading}
-                data-testid="button-fast-search-confirm-batch"
-              >
-                {batchLoading ? "⏳ جاري التحميل..." : "إضافة الدفعة ↵"}
+                إضافة ↵
               </button>
             )}
 
             <button
               className="peachtree-btn-sm"
-              onClick={() => batchMode ? resetBatches() : onClose()}
+              onClick={onClose}
               data-testid="button-fast-search-close"
             >
-              {batchMode ? "رجوع ESC" : "إغلاق ESC"}
+              إغلاق ESC
             </button>
           </div>
         </div>

@@ -38,57 +38,63 @@ interface FefoAllocation {
 interface FefoExpiryOption {
   expiryMonth?: number | null;
   expiryYear?: number | null;
-  qtyAvailableMinor?: string | null;
+  availableQty?: string | null;
   lotId?: string | null;
   lotSalePrice?: string | null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// جلب بيانات FEFO (شبكة فقط — بدون حساب)
-// ─────────────────────────────────────────────────────────────────────────────
-async function fetchFefoPreview(itemId: string, warehouseId: string, invoiceDate: string) {
-  const params = new URLSearchParams({
-    itemId, warehouseId,
-    requiredQtyInMinor: "999999",
-    asOfDate: invoiceDate,
-  });
-  const res = await fetch(`/api/transfer/fefo-preview?${params}`);
-  if (!res.ok) throw new Error("فشل حساب توزيع الصلاحية");
-  return res.json();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// حساب سطور FEFO من بيانات مُجلَبة مسبقاً (لا شبكة)
-// ─────────────────────────────────────────────────────────────────────────────
-interface ComputeFefoOpts {
+interface FefoOptions {
   itemId: string;
   itemData: InvoiceItemData;
+  warehouseId: string;
+  invoiceDate: string;
   unitLevel: string;
   totalRequiredMinor: number;
+  /** السعر الأساسي المعتمد (من القسم أو من الصنف) */
   baseSalePrice: number;
+  /** هل السعر سعر قسم؟ يلغي سعر الدُفعة */
   isDeptPrice: boolean;
   priceSource: string;
   availableQtyMinor: string;
 }
 
-function computeFefoFromPreview(
-  allPreview: { allocations: FefoAllocation[] },
-  opts: ComputeFefoOpts,
-): { ok: boolean; lines?: SalesLineLocal[]; shortfall?: string } {
-  const { itemId, itemData, unitLevel, totalRequiredMinor, baseSalePrice, isDeptPrice, priceSource, availableQtyMinor } = opts;
+interface FefoResult {
+  ok: boolean;
+  lines?: SalesLineLocal[];
+  shortfall?: string;
+}
 
-  // قائمة الصلاحية (للكشف عن تعارض الأسعار لاحقاً)
+// ─────────────────────────────────────────────────────────────────────────────
+// دالة FEFO المشتركة — تُستدعى من addItemToLines و handleQtyConfirm
+// ─────────────────────────────────────────────────────────────────────────────
+async function runFefo(opts: FefoOptions): Promise<FefoResult> {
+  const {
+    itemId, itemData, warehouseId, invoiceDate,
+    unitLevel, totalRequiredMinor, baseSalePrice, isDeptPrice, priceSource, availableQtyMinor,
+  } = opts;
+
+  // طلب واحد فقط بكمية كبيرة → جميع الدُفعات مرتبة FEFO
+  const allParams = new URLSearchParams({
+    itemId, warehouseId,
+    requiredQtyInMinor: "999999",
+    asOfDate: invoiceDate,
+  });
+  const allRes = await fetch(`/api/transfer/fefo-preview?${allParams}`);
+  if (!allRes.ok) throw new Error("فشل حساب توزيع الصلاحية");
+  const allPreview = await allRes.json();
+
+  // قائمة الصلاحية الاختيارية
   const expiryOptions = (allPreview.allocations as FefoExpiryOption[])
-    .filter(a => a.expiryMonth && a.expiryYear && parseFloat(a.qtyAvailableMinor || "0") > 0)
+    .filter(a => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty || "0") > 0)
     .map(a => ({
-      expiryMonth:       a.expiryMonth       as number,
-      expiryYear:        a.expiryYear        as number,
-      qtyAvailableMinor: a.qtyAvailableMinor as string,
-      lotId:             a.lotId             as string,
-      lotSalePrice:      a.lotSalePrice      || "0",
+      expiryMonth:       a.expiryMonth as number,
+      expiryYear:        a.expiryYear  as number,
+      qtyAvailableMinor: a.availableQty as string,
+      lotId:             a.lotId        as string,
+      lotSalePrice:      a.lotSalePrice || "0",
     }));
 
-  // توزيع FEFO
+  // حساب توزيع FEFO للكمية المطلوبة من جانب العميل
   let remaining = totalRequiredMinor;
   const fefoAllocations: FefoAllocation[] = [];
   for (const lot of allPreview.allocations as FefoAllocation[]) {
@@ -103,7 +109,7 @@ function computeFefoFromPreview(
     return { ok: false, shortfall: String(remaining) };
   }
 
-  // بناء سطور الفاتورة
+  // بنِ سطور الفاتورة من توزيع FEFO
   const lines: SalesLineLocal[] = fefoAllocations
     .filter((a: FefoAllocation) => parseFloat(a.allocatedQty) > 0)
     .map((alloc: FefoAllocation) => {
@@ -128,6 +134,7 @@ function computeFefoFromPreview(
         lotId:            alloc.lotId        || null,
         fefoLocked:       true,
         priceSource:      src,
+        // رصيد الدُفعة المحددة (lot) وليس الإجمالي الكلي
         availableQtyMinor: expiryOptions.find(o => o.lotId === alloc.lotId)?.qtyAvailableMinor || availableQtyMinor,
         expiryOptions,
       } as SalesLineLocal;
@@ -176,6 +183,7 @@ function spliceItemLines(
   if (insertAt < 0) {
     return [...withoutItem, ...newLines];
   }
+  // كم صنف (من أصناف أخرى) يسبق أول ظهور لهذا الصنف في القائمة المفلترة؟
   const posInFiltered = prev.slice(0, insertAt).filter((l) => l.itemId !== itemId).length;
   return [
     ...withoutItem.slice(0, posInFiltered),
@@ -192,13 +200,14 @@ export function useInvoiceLines(
   invoiceDate: string,
 ) {
   const { toast } = useToast();
-  const [lines, setLines]             = useState<SalesLineLocal[]>([]);
+  const [lines, setLines]           = useState<SalesLineLocal[]>([]);
   const [fefoLoading, setFefoLoading] = useState(false);
-  const linesRef                      = useRef<SalesLineLocal[]>([]);
-  linesRef.current                    = lines;
-  const pendingQtyRef                 = useRef<Map<string, string>>(new Map());
+  const linesRef                    = useRef<SalesLineLocal[]>([]);
+  linesRef.current                  = lines;
+  const pendingQtyRef               = useRef<Map<string, string>>(new Map());
 
   // ── تحديث سطر ──────────────────────────────────────────────────────────────
+  // كل سطر يتحدث بشكل مستقل — حتى لو كان FEFO
   const updateLine = useCallback((index: number, patch: Partial<SalesLineLocal>) => {
     setLines((prev) => {
       const updated = [...prev];
@@ -206,6 +215,7 @@ export function useInvoiceLines(
       const ln      = { ...target, ...patch };
 
       if (patch.unitLevel) {
+        // تغيير الوحدة يُعيد الكمية لـ 1 بدلاً من تحويل الكمية الحالية
         ln.qty       = 1;
         ln.salePrice = computeUnitPriceFromBase(ln.baseSalePrice, patch.unitLevel, ln.item);
       }
@@ -221,16 +231,21 @@ export function useInvoiceLines(
     setLines((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  // ── حذف مجموعة سطور بـ tempId ──────────────────────────────────────────────
+  // ── حذف مجموعة سطور بـ tempId (للخدمة + مستهلكاتها) ──────────────────────
   const removeLines = useCallback((tempIds: string[]) => {
     setLines((prev) => prev.filter((l) => !tempIds.includes(l.tempId)));
   }, []);
 
-  // ── جلب خيارات الصلاحية لسطر موجود (للكشف عن تعارض الأسعار) ───────────────
+  // ── جلب خيارات الصلاحية لسطر موجود ────────────────────────────────────────
   const fetchExpiryOptions = useCallback(async (itemId: string, lineIndex: number) => {
     if (!warehouseId) return;
     try {
-      const preview = await fetchFefoPreview(itemId, warehouseId, invoiceDate);
+      const params = new URLSearchParams({
+        itemId, warehouseId, requiredQtyInMinor: "999999", asOfDate: invoiceDate,
+      });
+      const res = await fetch(`/api/transfer/fefo-preview?${params}`);
+      if (!res.ok) return;
+      const preview = await res.json();
       const opts = preview.allocations
         .filter((a: FefoExpiryOption) => a.expiryMonth && a.expiryYear && parseFloat(a.availableQty || "0") > 0)
         .map((a: FefoExpiryOption) => ({
@@ -248,12 +263,12 @@ export function useInvoiceLines(
     } catch {}
   }, [warehouseId, invoiceDate]);
 
-  // ── إضافة صنف للفاتورة ─────────────────────────────────────────────────────
-  // السرعة: التسعير + FEFO يعملان بشكل متوازٍ (Promise.all)
+  // ── إضافة صنف للفاتورة (من البحث السريع أو الباركود) ──────────────────────
   const addItemToLines = useCallback(async (
     itemData: InvoiceItemData,
     overrides?: { qty?: number; unitLevel?: string },
   ) => {
+    const { baseSalePrice, isDeptPrice, priceSource } = await resolvePricing(itemData, warehouseId);
 
     // ── مسار FEFO (صنف بصلاحية) ──────────────────────────────────────────────
     if (itemData.hasExpiry && warehouseId) {
@@ -272,17 +287,9 @@ export function useInvoiceLines(
 
       setFefoLoading(true);
       try {
-        // تشغيل التسعير وجلب بيانات FEFO بشكل متوازٍ ← أسرع بـ ~50%
-        const [pricingResult, allPreview] = await Promise.all([
-          resolvePricing(itemData, warehouseId),
-          fetchFefoPreview(itemData.id, warehouseId, invoiceDate),
-        ]);
-
-        const { baseSalePrice, isDeptPrice, priceSource } = pricingResult;
-
-        const result = computeFefoFromPreview(allPreview, {
-          itemId: itemData.id, itemData, unitLevel,
-          totalRequiredMinor, baseSalePrice, isDeptPrice, priceSource,
+        const result = await runFefo({
+          itemId: itemData.id, itemData, warehouseId, invoiceDate,
+          unitLevel, totalRequiredMinor, baseSalePrice, isDeptPrice, priceSource,
           availableQtyMinor: itemData.availableQtyMinor || "0",
         });
 
@@ -305,7 +312,6 @@ export function useInvoiceLines(
     }
 
     // ── مسار عادي (صنف بدون صلاحية) ─────────────────────────────────────────
-    const { baseSalePrice, priceSource } = await resolvePricing(itemData, warehouseId);
     const targetUnit = overrides?.unitLevel ?? getSmartDefaultUnitLevel(itemData);
     const targetQty  = overrides?.qty ?? 1;
 
@@ -344,6 +350,9 @@ export function useInvoiceLines(
     const line         = currentLines[index];
     if (!line) return;
 
+    // ── خروج سريع إن لم يُغيَّر المستخدم الكمية أصلاً ──────────────────────
+    // pendingQtyRef فارغ = المستخدم تنقَّل بالسهم دون كتابة شيء
+    // → لا داعي لأي حساب FEFO أو شبكة = تنقل سلس فوري
     const pendingVal = pendingQtyRef.current.get(tempId);
     if (pendingVal === undefined) return;
 
@@ -364,19 +373,18 @@ export function useInvoiceLines(
       const totalRequiredMinor = otherMinor + thisMinor;
       if (totalRequiredMinor <= 0) return;
 
+      // أعد جلب السعر لضمان دقته (قد يتغير سعر القسم)
+      const { baseSalePrice, isDeptPrice, priceSource } = await resolvePricing(
+        line.item, warehouseId,
+      );
+
       setFefoLoading(true);
       try {
-        // تشغيل التسعير وجلب FEFO بشكل متوازٍ
-        const [pricingResult, allPreview] = await Promise.all([
-          resolvePricing(line.item, warehouseId),
-          fetchFefoPreview(line.itemId, warehouseId, invoiceDate),
-        ]);
-
-        const { baseSalePrice, isDeptPrice, priceSource } = pricingResult;
-
-        const result = computeFefoFromPreview(allPreview, {
+        const result = await runFefo({
           itemId:            line.itemId,
           itemData:          line.item,
+          warehouseId,
+          invoiceDate,
           unitLevel:         line.unitLevel,
           totalRequiredMinor,
           baseSalePrice,
@@ -396,10 +404,15 @@ export function useInvoiceLines(
 
         setLines((prev) => spliceItemLines(prev, line.itemId, result.lines ?? []));
 
-        // استعادة التركيز بعد FEFO
+        // ── استعادة التركيز بعد FEFO ──────────────────────────────────────────
+        // FEFO يستبدل السطور بـ tempId جديدة → الخلية التي انتقل إليها المستخدم
+        // قد تختفي من الـ DOM فيضيع التركيز (يذهب لـ body تلقائياً).
+        // • إن كان التركيز على عنصر مفيد (خلية أخرى / باركود) → لا نتدخل
+        // • إن كان ضاع (body / null) → ابحث عن أول خلية كمية بعد آخر سطر للصنف
         setTimeout(() => {
           const active = document.activeElement;
           if (!active || active === document.body) {
+            // جد موضع آخر سطر لهذا الصنف في السطور المحدَّثة
             const updatedLines = linesRef.current;
             const lastItemIdx  = updatedLines.reduce(
               (last, l, i) => (l.itemId === line.itemId ? i : last), -1,
@@ -412,6 +425,7 @@ export function useInvoiceLines(
               nextEl.focus();
               if (nextEl instanceof HTMLInputElement) nextEl.select();
             }
+            // إن لم يوجد صف تالٍ → ابقَ على body (الاسكنر العالمي يعمل منه)
           }
         }, 50);
       } catch (err: unknown) {
@@ -421,17 +435,21 @@ export function useInvoiceLines(
       }
     } else {
       // ── مسار عادي ──────────────────────────────────────────────────────────
+      // لا نُغيّر التركيز: Enter/Tab أرسله للباركود في QtyCell.onKeyDown،
+      // وArrowDown أرسله للخلية التالية قبل تشغيل هذه الدالة
       updateLine(index, { qty: qtyEntered });
     }
   }, [warehouseId, invoiceDate, toast, updateLine, linesRef]);
 
-  // ── إضافة سطر مستهلك تابع لخدمة ────────────────────────────────────────────
+  // ── إضافة سطر مستهلك تابع لخدمة (سعر = 0، مرتبط بـ serviceId) ─────────────
   const addConsumableLine = useCallback(async (
     itemData: InvoiceItemData,
     qty: number,
     unitLevel: string,
     serviceId: string,
   ) => {
+    // لا نستخدم FEFO للتسعير — نحن فقط نتتبع الكمية في المخزون
+    // السعر = 0 دائماً لأن الخدمة هي التي تُغطي التكلفة
     setLines((prev) => [...prev, {
       tempId:        genId(),
       lineType:      "consumable" as const,
@@ -452,7 +470,7 @@ export function useInvoiceLines(
     }]);
   }, []);
 
-  // ── إضافة سطر خدمة ──────────────────────────────────────────────────────────
+  // ── إضافة سطر خدمة (بدون صنف مخزني) ───────────────────────────────────────
   const addServiceLine = useCallback((
     serviceId: string,
     serviceNameAr: string,
