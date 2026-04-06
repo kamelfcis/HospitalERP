@@ -89,9 +89,9 @@ export function PatientSearchCombobox({
   // ── حالة: تم اختيار مريض ────────────────────────────────────────────────
   if (value && selectedName) {
     return (
-      <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-700 rounded px-2 py-1 min-w-[160px]">
+      <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-700 rounded px-2 py-1 min-w-[160px] max-w-[280px]">
         <User className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-        <span className="font-medium text-emerald-800 dark:text-emerald-200 text-[12px] truncate max-w-[160px]" data-testid={`${testId}-selected-name`}>
+        <span className="font-medium text-emerald-800 dark:text-emerald-200 text-[12px] truncate" title={selectedName} data-testid={`${testId}-selected-name`}>
           {selectedName}
         </span>
         {!disabled && (
