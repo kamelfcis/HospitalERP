@@ -258,8 +258,10 @@ export function registerSalesInvoicesRoutes(app: Express) {
       await storage.assertPeriodOpen(existing.invoiceDate);
 
       // ── فحص قابلية التسعير لكل سطر قبل الاعتماد ─────────────────────────
+      // سطور المستهلكات (line_type='consumable') مُستثناة: سعرها صفر ولا يُؤثّر في الحساب
       {
         type LineWithItem = {
+          line_type: string | null;
           unit_level: string;
           name_ar: string;
           major_unit_name: string | null;
@@ -271,6 +273,7 @@ export function registerSalesInvoicesRoutes(app: Express) {
         };
         const linesResult = await db.execute(sql`
           SELECT
+            sil.line_type,
             sil.unit_level,
             i.name_ar,
             i.major_unit_name,
@@ -286,6 +289,9 @@ export function registerSalesInvoicesRoutes(app: Express) {
         const linesWithItems = (linesResult as any).rows as LineWithItem[];
 
         for (const ln of linesWithItems) {
+          // المستهلكات: سعر صفر — لا تخضع لفحص معامل التحويل
+          if (ln.line_type === "consumable") continue;
+
           const m2med = parseFloat(String(ln.major_to_medium ?? "0")) || 0;
           const m2min = parseFloat(String(ln.major_to_minor  ?? "0")) || 0;
           const med2m = parseFloat(String(ln.medium_to_minor ?? "0")) || 0;
