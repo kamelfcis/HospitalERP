@@ -197,6 +197,7 @@ interface InvoiceLineRowProps {
   i:               number;
   isDraft:         boolean;
   fefoLoading:     boolean;
+  isLotContinuation?: boolean; // true إذا كان السطر تتمة لنفس الصنف (multi-lot FEFO)
   hasMultiPrice:   boolean;
   needsExpiry:     boolean;
   pendingQtyRef:   React.MutableRefObject<Map<string, string>>;
@@ -208,24 +209,33 @@ interface InvoiceLineRowProps {
 }
 
 const InvoiceLineRow = memo(function InvoiceLineRow({
-  ln, i, isDraft, fefoLoading, hasMultiPrice, needsExpiry,
+  ln, i, isDraft, fefoLoading, isLotContinuation, hasMultiPrice, needsExpiry,
   pendingQtyRef, onUpdateLine, onRemoveLine, onQtyConfirm, onOpenStats, barcodeInputRef,
 }: InvoiceLineRowProps) {
   return (
     <tr
-      className={`peachtree-grid-row ${needsExpiry ? "bg-yellow-50 dark:bg-yellow-900/20" : ""}`}
+      className={`peachtree-grid-row ${needsExpiry ? "bg-yellow-50 dark:bg-yellow-900/20" : ""} ${isLotContinuation ? "border-r-2 border-r-indigo-300 dark:border-r-indigo-600" : ""}`}
       data-testid={`row-line-${i}`}
     >
       {/* # */}
-      <td className="text-center text-muted-foreground">{i + 1}</td>
+      <td className="text-center text-muted-foreground">
+        {isLotContinuation ? (
+          <span className="text-indigo-400 dark:text-indigo-500 font-mono text-[10px] select-none">└</span>
+        ) : (
+          i + 1
+        )}
+      </td>
 
       {/* ── اسم الصنف ──────────────────────────────────────── */}
       <td className="max-w-[200px]">
         <div className="flex flex-col gap-0.5">
           <span
-            className="line-entry-name truncate"
+            className={`line-entry-name truncate ${isLotContinuation ? "text-muted-foreground pr-2" : ""}`}
             title={`${ln.item?.nameAr || ""} — ${ln.item?.itemCode || ""}`}
           >
+            {isLotContinuation && (
+              <span className="text-indigo-400 dark:text-indigo-500 font-mono text-[10px] ml-1 select-none">دُفعة </span>
+            )}
             {ln.item?.nameAr || ln.itemId}
           </span>
           <div className="flex items-center gap-1 flex-wrap">
@@ -709,6 +719,14 @@ export function InvoiceLineTable({
                 />
               );
             }
+            // سطر FEFO تابع لنفس الصنف السابق → مؤشر بصري "دُفعة أخرى"
+            const prevGroup = gi > 0 ? renderGroups[gi - 1] : null;
+            const isLotContinuation = !!(
+              prevGroup?.type === "item" &&
+              prevGroup.line.itemId === group.line.itemId &&
+              group.line.fefoLocked &&
+              prevGroup.line.fefoLocked
+            );
             return (
               <InvoiceLineRow
                 key={group.line.tempId}
@@ -716,6 +734,7 @@ export function InvoiceLineTable({
                 i={group.index}
                 isDraft={isDraft}
                 fefoLoading={fefoLoading}
+                isLotContinuation={isLotContinuation}
                 hasMultiPrice={multiPriceItems.has(group.line.itemId)}
                 needsExpiry={!!(group.line.item?.hasExpiry && !group.line.expiryMonth)}
                 pendingQtyRef={pendingQtyRef}
