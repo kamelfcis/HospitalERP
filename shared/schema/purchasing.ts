@@ -35,8 +35,10 @@ export const suppliers = pgTable("suppliers", {
   // إذا كان null    → يعود النظام للنموذج المجمّع الحالي (الـ fallback الدائم)
   glAccountId: varchar("gl_account_id"),
 }, (table) => ({
-  codeIdx:   index("idx_suppliers_code").on(table.code),
-  nameArIdx: index("idx_suppliers_name_ar").on(table.nameAr),
+  codeIdx:          index("idx_suppliers_code").on(table.code),
+  nameArIdx:        index("idx_suppliers_name_ar").on(table.nameAr),
+  isActiveIdx:      index("idx_suppliers_is_active").on(table.isActive),
+  supplierTypeIdx:  index("idx_suppliers_supplier_type").on(table.supplierType),
 }));
 
 export const receivingHeaders = pgTable("receiving_headers", {

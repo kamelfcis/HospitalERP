@@ -55,9 +55,10 @@ export const items = pgTable("items", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
-  categoryIdx: index("idx_items_category").on(table.category),
-  nameArIdx: index("idx_items_name_ar").on(table.nameAr),
-  formTypeIdx: index("idx_items_form_type").on(table.formTypeId),
+  categoryIdx:  index("idx_items_category").on(table.category),
+  nameArIdx:    index("idx_items_name_ar").on(table.nameAr),
+  formTypeIdx:  index("idx_items_form_type").on(table.formTypeId),
+  isActiveIdx:  index("idx_items_is_active").on(table.isActive),
 }));
 
 export const purchaseTransactions = pgTable("purchase_transactions", {
