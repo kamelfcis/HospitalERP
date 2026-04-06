@@ -371,13 +371,15 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   serviceId: varchar("service_id").references(() => services.id),
   itemId: varchar("item_id").references(() => items.id),
   description: text("description").notNull(),
-  quantity: decimal("quantity", { precision: 10, scale: 4 }).notNull().default("1"),
+  quantity: decimal("quantity", { precision: 10, scale: 4 }),
   unitPrice: decimal("unit_price", { precision: 18, scale: 2 }).notNull().default("0"),
   discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
   discountAmount: decimal("discount_amount", { precision: 18, scale: 2 }).notNull().default("0"),
   totalPrice: decimal("total_price", { precision: 18, scale: 2 }).notNull().default("0"),
   unitLevel: text("unit_level").notNull().default("minor"),
   lotId: varchar("lot_id"),
+  templateId: varchar("template_id"),
+  templateNameSnapshot: text("template_name_snapshot"),
   expiryMonth: integer("expiry_month"),
   expiryYear: integer("expiry_year"),
   priceSource: text("price_source"),
@@ -431,6 +433,42 @@ export const patientInvoicePayments = pgTable("patient_invoice_payments", {
   headerIdx: index("idx_pat_pay_header").on(table.headerId),
 }));
 
+// ── Invoice Templates (نماذج فاتورة المريض) ──────────────────────────────────
+export const invoiceTemplates = pgTable("invoice_templates", {
+  id:          varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name:        varchar("name", { length: 200 }).notNull(),
+  description: text("description"),
+  category:    varchar("category", { length: 100 }),
+  isActive:    boolean("is_active").notNull().default(true),
+  createdBy:   varchar("created_by").references(() => users.id),
+  createdAt:   timestamp("created_at").notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  activeIdx:   index("idx_tmpl_active").on(table.isActive, table.category),
+  createdByIdx: index("idx_tmpl_created_by").on(table.createdBy),
+}));
+
+export const invoiceTemplateLines = pgTable("invoice_template_lines", {
+  id:                    varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId:            varchar("template_id").notNull().references(() => invoiceTemplates.id, { onDelete: "cascade" }),
+  sortOrder:             integer("sort_order").notNull().default(0),
+  lineType:              text("line_type").notNull(),
+  serviceId:             varchar("service_id").references(() => services.id),
+  itemId:                varchar("item_id").references(() => items.id),
+  descriptionSnapshot:   text("description_snapshot").notNull(),
+  defaultQty:            decimal("default_qty", { precision: 10, scale: 4 }).notNull().default("1"),
+  unitLevel:             text("unit_level").notNull().default("minor"),
+  notes:                 text("notes"),
+  doctorName:            text("doctor_name"),
+  nurseName:             text("nurse_name"),
+  businessClassification: varchar("business_classification"),
+  createdAt:             timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  templateIdx: index("idx_tmpl_lines_tmpl").on(table.templateId, table.sortOrder),
+  svcIdx:      index("idx_tmpl_lines_svc").on(table.serviceId),
+  itemIdx:     index("idx_tmpl_lines_item").on(table.itemId),
+}));
+
 // Insert schemas
 export const insertServiceSchema = createInsertSchema(services).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPriceListSchema = createInsertSchema(priceLists).omit({ id: true, createdAt: true, updatedAt: true });
@@ -442,6 +480,8 @@ export const insertSalesInvoiceLineSchema = createInsertSchema(salesInvoiceLines
 export const insertPatientInvoiceHeaderSchema = createInsertSchema(patientInvoiceHeaders).omit({ id: true, createdAt: true, updatedAt: true, finalizedAt: true, version: true });
 export const insertPatientInvoiceLineSchema = createInsertSchema(patientInvoiceLines).omit({ id: true, createdAt: true, isVoid: true, voidedAt: true, voidedBy: true, voidReason: true });
 export const insertPatientInvoicePaymentSchema = createInsertSchema(patientInvoicePayments).omit({ id: true, createdAt: true });
+export const insertInvoiceTemplateSchema = createInsertSchema(invoiceTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertInvoiceTemplateLineSchema = createInsertSchema(invoiceTemplateLines).omit({ id: true, createdAt: true });
 
 // Types
 export type InsertService = z.infer<typeof insertServiceSchema>;
@@ -474,6 +514,16 @@ export type PatientInvoiceLine = typeof patientInvoiceLines.$inferSelect;
 
 export type InsertPatientInvoicePayment = z.infer<typeof insertPatientInvoicePaymentSchema>;
 export type PatientInvoicePayment = typeof patientInvoicePayments.$inferSelect;
+
+export type InsertInvoiceTemplate = z.infer<typeof insertInvoiceTemplateSchema>;
+export type InvoiceTemplate = typeof invoiceTemplates.$inferSelect;
+
+export type InsertInvoiceTemplateLine = z.infer<typeof insertInvoiceTemplateLineSchema>;
+export type InvoiceTemplateLine = typeof invoiceTemplateLines.$inferSelect;
+
+export type InvoiceTemplateWithLines = InvoiceTemplate & {
+  lines: InvoiceTemplateLine[];
+};
 
 // Extended types
 export type ServiceConsumableWithItem = ServiceConsumable & {

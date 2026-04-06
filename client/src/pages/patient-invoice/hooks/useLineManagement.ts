@@ -146,7 +146,7 @@ export function useLineManagement({
       nurseName: l.nurseName || "",
       requiresDoctor: l.service?.requiresDoctor ?? l.requiresDoctor ?? false,
       requiresNurse: l.service?.requiresNurse ?? l.requiresNurse ?? false,
-      quantity: parseFloat(l.quantity || "0") || 1,
+      quantity: parseFloat(l.quantity ?? "0") || 0,
       unitPrice: parseFloat(l.unitPrice || "0") || 0,
       discountPercent: parseFloat(l.discountPercent || "0") || 0,
       discountAmount: parseFloat(l.discountAmount || "0") || 0,
@@ -170,6 +170,8 @@ export function useLineManagement({
       listPrice:          (l as any).listPrice           ?? null,
       contractRuleId:     (l as any).contractRuleId      ?? null,
       businessClassification: l.businessClassification ?? (l as any).business_classification ?? null,
+      templateId:           (l as any).templateId           ?? (l as any).template_id            ?? null,
+      templateNameSnapshot: (l as any).templateNameSnapshot ?? (l as any).template_name_snapshot ?? null,
     }));
     setLines(loaded);
     return loaded;
@@ -198,29 +200,34 @@ export function useLineManagement({
   );
 
   // ── Add service line ───────────────────────────────────────────────────────
-  const addServiceLine = useCallback((svc: ServiceSearchResult) => {
+  const addServiceLine = useCallback((
+    svc: ServiceSearchResult,
+    opts?: { templateId?: string | null; templateNameSnapshot?: string | null; defaultQty?: number; doctorName?: string; nurseName?: string; notes?: string }
+  ) => {
     const businessClassification = resolveBusinessClassificationClient({
       lineType: "service",
       serviceBusinessClassification: svc.businessClassification ?? null,
       serviceType: svc.serviceType ?? null,
       serviceId: svc.id,
     });
+    const qty       = opts?.defaultQty ?? 1;
+    const unitPrice = parseFloat(svc.basePrice || "0") || 0;
     const newLine: LineLocal = {
       tempId: genId(),
       lineType: "service",
       serviceId: svc.id,
       itemId: null,
       description: svc.nameAr || svc.name || svc.code || "",
-      quantity: 1,
-      unitPrice: parseFloat(svc.basePrice || "0") || 0,
+      quantity: qty,
+      unitPrice,
       discountPercent: 0,
       discountAmount: 0,
-      totalPrice: parseFloat(svc.basePrice || "0") || 0,
-      doctorName: "",
-      nurseName: "",
+      totalPrice: +(qty * unitPrice).toFixed(2),
+      doctorName: opts?.doctorName || "",
+      nurseName: opts?.nurseName || "",
       requiresDoctor: svc.requiresDoctor ?? false,
       requiresNurse: svc.requiresNurse ?? false,
-      notes: "",
+      notes: opts?.notes || "",
       sortOrder: 0,
       serviceType: svc.serviceType || "SERVICE",
       unitLevel: "minor" as const,
@@ -238,12 +245,18 @@ export function useLineManagement({
       listPrice:          null,
       contractRuleId:     null,
       businessClassification,
+      templateId:           opts?.templateId           ?? null,
+      templateNameSnapshot: opts?.templateNameSnapshot ?? null,
     };
     setLines(prev => [...prev, newLine]);
   }, []);
 
   // ── Add item line (with FEFO) ──────────────────────────────────────────────
-  const addItemLine = useCallback(async (item: ItemSearchResult, lineType: "drug" | "consumable" | "equipment") => {
+  const addItemLine = useCallback(async (
+    item: ItemSearchResult,
+    lineType: "drug" | "consumable" | "equipment",
+    opts?: { templateId?: string | null; templateNameSnapshot?: string | null; defaultQty?: number; notes?: string }
+  ) => {
     const defaultUnit = getSmartDefaultUnitLevel(item) as "major" | "medium" | "minor";
     const baseSalePrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
     const unitPrice = computeUnitPriceFromBase(baseSalePrice, defaultUnit, item);
@@ -252,6 +265,7 @@ export function useLineManagement({
       itemBusinessClassification: item.businessClassification ?? null,
       itemId: item.id,
     });
+    const requestedQty = opts?.defaultQty ?? 1;
 
     if (item.hasExpiry && !warehouseId) {
       toast({
@@ -270,16 +284,16 @@ export function useLineManagement({
       serviceId: null,
       itemId: item.id,
       description: item.nameAr || item.itemCode || "",
-      quantity: 1,
+      quantity: requestedQty,
       unitPrice,
       discountPercent: 0,
       discountAmount: 0,
-      totalPrice: unitPrice,
+      totalPrice: +(requestedQty * unitPrice).toFixed(2),
       doctorName: "",
       nurseName: "",
       requiresDoctor: false,
       requiresNurse: false,
-      notes: "",
+      notes: opts?.notes || "",
       sortOrder: 0,
       serviceType: "",
       unitLevel: defaultUnit,
@@ -298,6 +312,8 @@ export function useLineManagement({
       listPrice:          null,
       contractRuleId:     null,
       businessClassification,
+      templateId:           opts?.templateId           ?? null,
+      templateNameSnapshot: opts?.templateNameSnapshot ?? null,
     };
     setLines(prev => [...prev, placeholder]);
     setItemSearch(""); setItemResults([]);
@@ -333,8 +349,8 @@ export function useLineManagement({
         try {
           const currentLines     = linesRef.current;
           const existingLines    = currentLines.filter(l => l.itemId === item.id && l.tempId !== tempLineId);
-          const existingQtyMinor = existingLines.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity, l.unitLevel, l.item || item), 0);
-          const additionalMinor  = calculateQtyInMinor(1, defaultUnit, item);
+          const existingQtyMinor = existingLines.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity || 1, l.unitLevel, l.item || item), 0);
+          const additionalMinor  = calculateQtyInMinor(requestedQty, defaultUnit, item);
           const totalRequired    = existingQtyMinor + additionalMinor;
 
           const fefoParams = new URLSearchParams({
@@ -357,6 +373,7 @@ export function useLineManagement({
             return;
           }
 
+          const origLine = linesRef.current.find(l => l.tempId === tempLineId);
           const newFefoLines: LineLocal[] = (preview.allocations as FefoAllocation[])
             .filter((a) => parseFloat(a.allocatedQty) > 0)
             .map((alloc) => {
@@ -384,6 +401,8 @@ export function useLineManagement({
                 companyShareAmount: null, patientShareAmount: null,
                 contractPrice: null, listPrice: null, contractRuleId: null,
                 businessClassification,
+                templateId:           origLine?.templateId           ?? null,
+                templateNameSnapshot: origLine?.templateNameSnapshot ?? null,
               } as LineLocal;
             });
 
@@ -589,6 +608,8 @@ export function useLineManagement({
             companyShareAmount: null, patientShareAmount: null,
             contractPrice: null, listPrice: null, contractRuleId: null,
             businessClassification: line.businessClassification ?? null,
+            templateId:           line.templateId           ?? null,
+            templateNameSnapshot: line.templateNameSnapshot ?? null,
           } as LineLocal;
         });
 
@@ -604,6 +625,49 @@ export function useLineManagement({
     }
   }, [warehouseId, invoiceDate, departmentId, toast, updateLine]);
 
+  // ── Apply template (bulk, one API call) ───────────────────────────────────
+  const applyTemplate = useCallback(async (templateId: string) => {
+    try {
+      const res = await fetch(`/api/invoice-templates/${templateId}/apply`);
+      if (!res.ok) throw new Error("فشل تحميل النموذج");
+      const tmpl = await res.json() as {
+        id: string;
+        name: string;
+        lines: Array<{
+          id: string;
+          lineType: string;
+          serviceId: string | null;
+          itemId: string | null;
+          defaultQty: string | null;
+          notes: string | null;
+          doctorName: string | null;
+          nurseName: string | null;
+          service?: { id: string; nameAr: string; name: string; code: string; basePrice: string; serviceType: string; requiresDoctor: boolean; requiresNurse: boolean; businessClassification?: string | null } | null;
+          item?: { id: string; nameAr: string; itemCode: string; salePriceCurrent: string; purchasePriceLast: string; hasExpiry: boolean; businessClassification?: string | null; category?: string } | null;
+        }>;
+      };
+
+      const trace = { templateId: tmpl.id, templateNameSnapshot: tmpl.name };
+
+      for (const tl of tmpl.lines) {
+        const qty = parseFloat(tl.defaultQty ?? "1") || 1;
+        const opts = { ...trace, defaultQty: qty, notes: tl.notes || "", doctorName: tl.doctorName || "", nurseName: tl.nurseName || "" };
+
+        if (tl.lineType === "service" && tl.service) {
+          addServiceLine(tl.service as Parameters<typeof addServiceLine>[0], opts);
+        } else if (tl.item) {
+          const lineType = (tl.lineType as "drug" | "consumable" | "equipment") || "drug";
+          await addItemLine(tl.item as Parameters<typeof addItemLine>[0], lineType, opts);
+        }
+      }
+
+      toast({ title: `تم تطبيق النموذج: ${tmpl.name}` });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: "خطأ في تطبيق النموذج", description: msg, variant: "destructive" });
+    }
+  }, [addServiceLine, addItemLine, toast]);
+
   return {
     lines,
     fefoLoading,
@@ -618,5 +682,6 @@ export function useLineManagement({
     filteredLines,
     handleUnitLevelChange,
     handleQtyConfirm,
+    applyTemplate,
   };
 }

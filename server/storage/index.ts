@@ -828,6 +828,15 @@ export interface IStorage {
   updateApproval(id: string, updates: Partial<{ approvalStatus: string; approvalDecision: string; approvedAmount: string; rejectionReason: string; decidedAt: Date; decidedBy: string; notes: string }>): Promise<import("@shared/schema").ContractApproval>;
   listApprovals(filters?: import("./contracts-approvals-storage").ApprovalFilters): Promise<import("./contracts-approvals-storage").ApprovalWithContext[]>;
 
+  // ── Invoice Templates (نماذج فاتورة المريض) ─────────────────────────────────
+  listTemplates(params?: import("./invoice-templates-storage").TemplateListParams): Promise<import("@shared/schema").InvoiceTemplate[]>;
+  getTemplateById(id: string): Promise<import("@shared/schema").InvoiceTemplateWithLines | null>;
+  getTemplateForApply(id: string): Promise<import("./invoice-templates-storage").TemplateForApply | null>;
+  createTemplate(input: import("./invoice-templates-storage").CreateTemplateInput, userId?: string): Promise<import("@shared/schema").InvoiceTemplateWithLines>;
+  updateTemplate(id: string, input: import("./invoice-templates-storage").UpdateTemplateInput): Promise<import("@shared/schema").InvoiceTemplateWithLines | null>;
+  deactivateTemplate(id: string): Promise<import("@shared/schema").InvoiceTemplate | null>;
+  getTemplateCategories(): Promise<string[]>;
+
   [key: string]: unknown;
 }
 
@@ -888,6 +897,7 @@ import contractsApprovalsMethods from "./contracts-approvals-storage";
 import clinicIntakeMethods from "./clinic-intake-storage";
 import clinicDashboardMethods from "./clinic-dashboard-storage";
 import cashierHandoverMethods from "./cashier-handover-storage";
+import invoiceTemplatesMethods from "./invoice-templates-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -929,6 +939,7 @@ Object.assign(
   contractsClaimsMethods,
   contractsApprovalsMethods,
   cashierHandoverMethods,
+  invoiceTemplatesMethods,
 );
 
 export const storage = new DatabaseStorage();

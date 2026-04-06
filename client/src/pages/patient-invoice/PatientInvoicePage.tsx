@@ -393,6 +393,7 @@ export default function PatientInvoice() {
             getServiceRowClass={getServiceRowClass}
             canDiscount={canDiscount}
             onOpenDiscountDialog={() => setShowDiscountDialog(true)}
+            applyTemplate={lm.applyTemplate}
           />
         </TabsContent>
 

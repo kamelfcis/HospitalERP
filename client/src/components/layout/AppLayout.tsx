@@ -102,6 +102,7 @@ const mainNavItems: NavItem[] = [
   { title: "فواتير البيع",            href: "/sales-invoices",        icon: ShoppingCart,      permission: "sales.view" },
   { title: "مردودات المبيعات",        href: "/sales-returns",         icon: Undo2,             permission: "sales.create" },
   { title: "فاتورة مريض",            href: "/patient-invoices",      icon: UserRound,         permission: "patient_invoices.view",  hospitalOnly: true },
+  { title: "نماذج الفواتير",         href: "/invoice-templates",     icon: FileText,          permission: "patient_invoices.view",  hospitalOnly: true },
   { title: "لوحة الأسرّة",            href: "/bed-board",             icon: BedDouble,         permission: "patient_invoices.view",  hospitalOnly: true },
   { title: "إدارة الأدوار والغرف",    href: "/room-management",       icon: DoorOpen,          permission: "patient_invoices.view",  hospitalOnly: true },
   { title: "أنواع العمليات الجراحية", href: "/surgery-types",         icon: Scissors,          permission: "patient_invoices.view",  hospitalOnly: true },

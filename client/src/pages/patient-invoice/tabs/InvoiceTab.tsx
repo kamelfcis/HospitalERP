@@ -125,6 +125,7 @@ interface InvoiceTabProps {
 
   canDiscount?: boolean;
   onOpenDiscountDialog?: () => void;
+  applyTemplate?: (templateId: string) => Promise<void>;
 }
 
 export function InvoiceTab({
@@ -159,6 +160,7 @@ export function InvoiceTab({
   dtDoctorName, setDtDoctorName, dtNotes, setDtNotes, openDtConfirm,
   getStatusBadgeClass, getServiceRowClass,
   canDiscount, onOpenDiscountDialog,
+  applyTemplate,
 }: InvoiceTabProps) {
   const [localDtDoctorId, setLocalDtDoctorId] = useState("");
 
@@ -239,6 +241,7 @@ export function InvoiceTab({
               handleUnitLevelChange={handleUnitLevelChange}
               openStatsPopup={openStatsPopup}
               getServiceRowClass={getServiceRowClass}
+              applyTemplate={applyTemplate}
             />
           </TabsContent>
 

@@ -63,29 +63,35 @@ export function useInvoiceMutations({
       netAmount: String(totals.netAmount),
       paidAmount: String(totals.paidAmount),
     };
-    const lineData = lines.map((l, i) => ({
-      lineType: l.lineType,
-      serviceId: l.serviceId || null,
-      itemId: l.itemId || null,
-      description: l.description,
-      quantity: String(l.quantity),
-      unitPrice: String(l.unitPrice),
-      discountPercent: String(l.discountPercent),
-      discountAmount: String(l.discountAmount),
-      totalPrice: String(l.totalPrice),
-      unitLevel: l.unitLevel || "minor",
-      doctorName: l.doctorName || null,
-      nurseName: l.nurseName || null,
-      notes: l.notes || null,
-      sortOrder: i,
-      lotId: l.lotId || null,
-      expiryMonth: l.expiryMonth || null,
-      expiryYear: l.expiryYear || null,
-      priceSource: l.priceSource || null,
-      sourceType: l.sourceType || null,
-      sourceId: l.sourceId || null,
-      businessClassification: l.businessClassification || null,
-    }));
+    const lineData = lines.map((l, i) => {
+      const isStayEngine = l.sourceType === "STAY_ENGINE";
+      const qty = isStayEngine && (l.quantity === 0 || !l.quantity) ? null : String(l.quantity);
+      return {
+        lineType: l.lineType,
+        serviceId: l.serviceId || null,
+        itemId: l.itemId || null,
+        description: l.description,
+        quantity: qty,
+        unitPrice: String(l.unitPrice),
+        discountPercent: String(l.discountPercent),
+        discountAmount: String(l.discountAmount),
+        totalPrice: String(l.totalPrice),
+        unitLevel: l.unitLevel || "minor",
+        doctorName: l.doctorName || null,
+        nurseName: l.nurseName || null,
+        notes: l.notes || null,
+        sortOrder: i,
+        lotId: l.lotId || null,
+        expiryMonth: l.expiryMonth || null,
+        expiryYear: l.expiryYear || null,
+        priceSource: l.priceSource || null,
+        sourceType: l.sourceType || null,
+        sourceId: l.sourceId || null,
+        businessClassification: l.businessClassification || null,
+        templateId:           (l as any).templateId           || null,
+        templateNameSnapshot: (l as any).templateNameSnapshot || null,
+      };
+    });
     const payData = payments.map(p => ({
       paymentDate: p.paymentDate,
       amount: String(p.amount),

@@ -33,8 +33,11 @@ export interface LineLocal {
   contractPrice: string | null;
   listPrice: string | null;
   contractRuleId: string | null;
-  /** التصنيف التجاري — snapshot محدد وقت إنشاء البند */
+  /** التصنيف التجاري — snapshot محدد وقت إنشاء البند، مقفول بعد finalize */
   businessClassification: string | null;
+  /** trace — النموذج الذي أُنشئ منه البند (null لو لم يكن من نموذج) */
+  templateId: string | null;
+  templateNameSnapshot: string | null;
 }
 
 export interface PaymentLocal {

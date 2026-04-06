@@ -268,8 +268,8 @@ const methods = {
                  business_classification)
               VALUES
                 (${seg.invoice_id}, 'service', ${seg.service_id}, ${description},
-                 '1', ${rateStr}, '0', '0',
-                 ${rateStr}, 'minor', 0, 'STAY_ENGINE', ${sourceId},
+                 NULL, ${rateStr}, '0', '0',
+                 '0', 'minor', 0, 'STAY_ENGINE', ${sourceId},
                  'accommodation')
               ON CONFLICT (source_type, source_id)
                 WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL

@@ -84,6 +84,7 @@ const ItemMovementReport       = lazy(() => import("@/pages/item-movement-report
 const WarehouseBalanceReport   = lazy(() => import("@/pages/warehouse-balance-report/index"));
 const ReceiptSettings          = lazy(() => import("@/pages/receipt-settings/index"));
 const TasksPage                = lazy(() => import("@/pages/tasks/index"));
+const InvoiceTemplatesPage     = lazy(() => import("@/pages/invoice-templates/InvoiceTemplatesPage"));
 import NotFound from "@/pages/not-found";
 
 function PageLoader() {
@@ -153,6 +154,7 @@ function Router() {
           <Route path="/cost-centers">{() => <G p="cost_centers.view"><CostCenters /></G>}</Route>
           <Route path="/fiscal-periods">{() => <G p="fiscal_periods.view"><FiscalPeriods /></G>}</Route>
           <Route path="/templates">{() => <G p="templates.view"><Templates /></G>}</Route>
+          <Route path="/invoice-templates">{() => <InvoiceTemplatesPage />}</Route>
           <Route path="/reports/trial-balance">{() => <G p="reports.trial_balance"><TrialBalance /></G>}</Route>
           <Route path="/reports/income-statement">{() => <G p="reports.income_statement"><IncomeStatement /></G>}</Route>
           <Route path="/reports/balance-sheet">{() => <G p="reports.balance_sheet"><BalanceSheet /></G>}</Route>
