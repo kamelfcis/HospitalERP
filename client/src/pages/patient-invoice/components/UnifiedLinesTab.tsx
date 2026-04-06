@@ -33,7 +33,6 @@ import {
   itemHasMediumUnit,
   getUnitName,
 } from "../utils/units";
-import { SearchDropdown } from "./SearchDropdown";
 import { ServiceLookup } from "@/components/lookups";
 
 // ── نوع البند — مخطط الألوان والتسميات ────────────────────────────────────────
@@ -82,26 +81,37 @@ function getBizClassBadge(bc: string | null | undefined) {
 
 // ── نوع الصنف المختار للإضافة ──────────────────────────────────────────────────
 type ItemAddType = "drug" | "consumable" | "equipment";
-const ITEM_ADD_TYPES: { value: ItemAddType; label: string }[] = [
-  { value: "drug",       label: "دواء" },
-  { value: "consumable", label: "مستهلك" },
-  { value: "equipment",  label: "جهاز" },
+const ITEM_ADD_TYPES: { value: ItemAddType; label: string; color: string }[] = [
+  { value: "drug",       label: "دواء",    color: "bg-green-100 text-green-700 border-green-300 dark:bg-green-950/50 dark:text-green-400" },
+  { value: "consumable", label: "مستهلك",  color: "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950/50 dark:text-orange-400" },
+  { value: "equipment",  label: "جهاز",   color: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950/50 dark:text-purple-400" },
 ];
+
+// نحوّل category الصنف → lineType (مع دعم gas وservice)
+function categoryToLineType(category: string | null | undefined, fallback: ItemAddType): ItemAddType {
+  switch (category) {
+    case "drug":        return "drug";
+    case "equipment":   return "equipment";
+    case "gas":         return "consumable";  // الغاز → مستهلك
+    case "consumable":  return "consumable";
+    default:            return fallback;
+  }
+}
 
 interface UnifiedLinesTabProps {
   lines: LineLocal[];
   isDraft: boolean;
 
-  // Item search state (shared from parent)
-  itemSearch: string;
-  setItemSearch: (v: string) => void;
-  setItemResults: (v: Item[]) => void;
-  itemResults: Item[];
-  searchingItems: boolean;
+  // Item search state — kept for back-compat but no longer used in UI (ItemFastSearch handles search)
+  itemSearch?: string;
+  setItemSearch?: (v: string) => void;
+  setItemResults?: (v: Item[]) => void;
+  itemResults?: Item[];
+  searchingItems?: boolean;
   fefoLoading: boolean;
-  itemSearchRef: React.RefObject<HTMLInputElement>;
-  itemDropdownRef: React.RefObject<HTMLDivElement>;
-  pendingQtyRef: React.MutableRefObject<Map<string, string>>;
+  itemSearchRef?: React.RefObject<HTMLInputElement>;
+  itemDropdownRef?: React.RefObject<HTMLDivElement>;
+  pendingQtyRef?: React.MutableRefObject<Map<string, string>>;
 
   // Mutation functions
   addServiceLine: (svc: Service) => void;
@@ -164,10 +174,8 @@ export function UnifiedLinesTab({
       majorToMinor:  item.majorToMinor  ? Number(item.majorToMinor)  : null,
       mediumToMinor: item.mediumToMinor ? Number(item.mediumToMinor) : null,
     };
-    // Determine type: "drug" for normal drugs, else use current itemAddType
-    const lineType = item.category === "drug" ? "drug"
-      : item.category === "equipment" ? "equipment"
-      : itemAddType;
+    // تحديد النوع تلقائياً من category الصنف (دواء / مستهلك / جهاز / غاز)
+    const lineType = categoryToLineType(item.category, itemAddType);
     addItemLine(adapted as unknown as Item, lineType);
     setFastSearchOpen(false);
   }, [addItemLine, itemAddType]);
@@ -265,21 +273,6 @@ export function UnifiedLinesTab({
                 صنف
               </Button>
             </div>
-            {/* بحث سريع بالمودال (F2) */}
-            {warehouseId && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs px-2 mr-auto border-blue-400 text-blue-600 dark:border-blue-500 dark:text-blue-400"
-                onClick={() => { setSourceMode("item"); setFastSearchOpen(true); }}
-                data-testid="btn-fast-search-f2"
-                title="بحث سريع (F2)"
-              >
-                <SearchIcon className="h-3 w-3 ml-1" />
-                بحث سريع
-                <kbd className="mr-1 text-[9px] bg-muted px-0.5 rounded border">F2</kbd>
-              </Button>
-            )}
           </div>
 
           {/* إضافة خدمة */}
@@ -302,75 +295,46 @@ export function UnifiedLinesTab({
             </div>
           )}
 
-          {/* إضافة صنف */}
+          {/* إضافة صنف — يفتح شاشة البحث السريع مباشرة */}
           {sourceMode === "item" && (
             <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
-              {/* نوع الصنف */}
-              <div className="flex gap-1 shrink-0">
-                {ITEM_ADD_TYPES.map(t => (
-                  <Button
-                    key={t.value}
-                    size="sm"
-                    variant={itemAddType === t.value ? "secondary" : "ghost"}
-                    className={`h-7 text-xs px-2 border ${
-                      itemAddType === t.value
-                        ? LINE_TYPE_CONFIG[t.value].className
-                        : ""
-                    }`}
-                    onClick={() => setItemAddType(t.value)}
-                    data-testid={`btn-item-type-${t.value}`}
-                  >
-                    {t.label}
-                  </Button>
-                ))}
+              {/* نوع احتياطي: يُستخدم فقط عندما لا يمكن استنتاج النوع من category الصنف */}
+              <div className="flex flex-row-reverse items-center gap-1 shrink-0">
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap">نوع احتياطي:</span>
+                <div className="flex gap-1">
+                  {ITEM_ADD_TYPES.map(t => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setItemAddType(t.value)}
+                      disabled={!isDraft || applyingTemplate}
+                      data-testid={`btn-item-type-${t.value}`}
+                      className={`h-6 px-2 text-[10px] rounded border font-medium transition-colors ${
+                        itemAddType === t.value
+                          ? t.color
+                          : "border-border text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {/* حقل البحث */}
-              <div className="flex-1 min-w-[200px]">
-                <SearchDropdown
-                  inputRef={itemSearchRef}
-                  dropdownRef={itemDropdownRef}
-                  value={itemSearch}
-                  onChange={setItemSearch}
-                  onClear={() => { setItemSearch(""); setItemResults([]); }}
-                  show={itemResults.length > 0}
-                  setShow={(v) => { if (!v) setItemResults([]); }}
-                  loading={false}
-                  items={itemResults.map((item) => ({
-                    id: item.id,
-                    primary: item.nameAr || (item as any).itemCode || "",
-                    raw: item,
-                  }))}
-                  onSelect={(si) => addItemLine(si.raw, itemAddType)}
-                  placeholder="بحث عن صنف... (استخدم % للبحث المتقدم)"
-                  disabled={!isDraft || applyingTemplate}
-                  showSearchIcon
-                  inputClassName="pr-8"
-                  inputTestId={`input-item-search-unified`}
-                  itemTestIdPrefix={`result-item-unified`}
-                  renderItem={(si) => {
-                    const item = si.raw as Item & {
-                      itemCode?: string;
-                      majorUnitName?: string;
-                      salePriceCurrent?: number;
-                      purchasePriceLast?: number;
-                    };
-                    return (
-                      <div className="flex flex-row-reverse items-center justify-between gap-2 w-full">
-                        <div className="flex flex-row-reverse items-center gap-2">
-                          <span className="text-sm">{item.nameAr || item.itemCode}</span>
-                          {item.itemCode && (
-                            <span className="text-[10px] text-muted-foreground">({item.itemCode})</span>
-                          )}
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {formatNumber((item as any).salePriceCurrent || (item as any).purchasePriceLast || 0)}
-                        </span>
-                      </div>
-                    );
-                  }}
-                />
-              </div>
-              {searchingItems && <Loader2 className="h-4 w-4 animate-spin shrink-0" />}
+
+              {/* زر البحث الرئيسي — يفتح ItemFastSearch */}
+              <Button
+                size="sm"
+                variant="default"
+                className="h-8 text-sm px-4 gap-1.5 shrink-0"
+                onClick={() => setFastSearchOpen(true)}
+                disabled={!isDraft || applyingTemplate || !warehouseId}
+                data-testid="btn-open-item-fast-search"
+              >
+                <SearchIcon className="h-4 w-4" />
+                بحث وإضافة صنف
+                <kbd className="mr-1 text-[9px] bg-white/20 px-1 rounded border border-white/30">F2</kbd>
+              </Button>
+
               {fefoLoading && <Badge variant="secondary" className="text-xs shrink-0">جاري توزيع الصلاحية...</Badge>}
             </div>
           )}
@@ -378,7 +342,7 @@ export function UnifiedLinesTab({
       )}
 
       {/* ── جدول البنود الموحد ────────────────────────────────────────────────── */}
-      <div className="overflow-x-auto border rounded-md">
+      <div className="overflow-x-auto border rounded-md" dir="rtl">
         <table className="peachtree-grid w-full text-sm">
           <thead>
             <tr className="peachtree-grid-header">

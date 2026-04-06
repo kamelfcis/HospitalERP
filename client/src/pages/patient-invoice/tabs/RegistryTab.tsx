@@ -106,7 +106,7 @@ export function RegistryTab({
           ))}
         </div>
       ) : (
-        <div className="overflow-x-auto border rounded-md">
+        <div className="overflow-x-auto border rounded-md" dir="rtl">
           <table className="peachtree-grid w-full text-sm">
             <thead>
               <tr className="peachtree-grid-header">
