@@ -17,7 +17,7 @@ export const handoverReceiptNumSeq = pgSequence("handover_receipt_num_seq", { st
 
 export const patients = pgTable("patients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  patientCode: varchar("patient_code", { length: 20 }),
+  patientCode: varchar("patient_code", { length: 20 }).unique(),
   fullName: text("full_name").notNull(),
   phone: varchar("phone", { length: 20 }),
   nationalId: varchar("national_id", { length: 20 }),
@@ -232,6 +232,7 @@ export const admissions = pgTable("admissions", {
 }, (table) => ({
   admNumIdx:         index("idx_adm_number").on(table.admissionNumber),
   patientIdx:        index("idx_adm_patient").on(table.patientName),
+  patientIdIdx:      index("idx_adm_patient_id").on(table.patientId),
   statusIdx:         index("idx_adm_status").on(table.status),
   dateIdx:           index("idx_adm_date").on(table.admissionDate),
   companyIdx:        index("idx_adm_company").on(table.companyId),

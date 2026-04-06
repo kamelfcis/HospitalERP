@@ -611,4 +611,38 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
+  // ── Backfill: ربط فواتير الصيدلية القديمة بملف المريض الموحد ─────────────
+  // يبحث عن الفواتير التي ليس فيها patient_id ويحاول مطابقتها بالاسم (تطابق حصري)
+  app.post("/api/admin/backfill-pharmacy-invoice-patients", requireAuth, async (req, res) => {
+    try {
+      const result = await db.execute(sql`
+        WITH matched AS (
+          SELECT
+            sih.id   AS invoice_id,
+            p.id     AS patient_id,
+            COUNT(*) OVER (PARTITION BY sih.id) AS match_count
+          FROM sales_invoice_headers sih
+          JOIN patients p
+            ON LOWER(TRIM(p.full_name)) = LOWER(TRIM(sih.customer_name))
+           AND p.is_active = true
+          WHERE sih.patient_id IS NULL
+            AND sih.customer_name IS NOT NULL
+            AND TRIM(sih.customer_name) <> ''
+        )
+        UPDATE sales_invoice_headers sih
+        SET patient_id = m.patient_id,
+            updated_at = NOW()
+        FROM matched m
+        WHERE sih.id = m.invoice_id
+          AND m.match_count = 1
+        RETURNING sih.id
+      `);
+      const updated = (result as any).rows?.length ?? 0;
+      return res.json({ updated, message: `تم ربط ${updated} فاتورة بملف المريض بنجاح` });
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      return res.status(500).json({ message: _em });
+    }
+  });
+
 }

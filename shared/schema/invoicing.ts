@@ -133,6 +133,8 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   customerType: customerTypeEnum("customer_type").notNull().default("cash"),
   customerId: varchar("customer_id").references(() => pharmacyCreditCustomers.id),
   customerName: text("customer_name"),
+  // ── ربط المريض بالملف الموحد (nullable — آمن للبيانات القائمة) ───────────
+  patientId: varchar("patient_id"),
   contractCompany: text("contract_company"),
   // ── Contract FK fields — Phase 2 (member card + shares) ─────────────────
   companyId:         varchar("company_id").references(() => companies.id),
@@ -184,6 +186,7 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   customerIdx:         index("idx_sales_inv_customer").on(table.customerId),
   contractMemberIdx:   index("idx_sales_inv_contract_member").on(table.contractMemberId),
   claimStatusIdx:      index("idx_sales_inv_claim_status").on(table.claimStatus),
+  patientIdIdx:        index("idx_sales_inv_patient_id").on(table.patientId),
 }));
 
 export const salesInvoiceLines = pgTable("sales_invoice_lines", {

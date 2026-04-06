@@ -401,6 +401,7 @@ const methods = {
         pharmacyId,
         customerType: header.customerType || "cash",
         customerName: header.customerName || null,
+        patientId: (header as any).patientId || null,
         customerId: (header.customerType === "credit" && header.customerId) ? header.customerId : null,
         contractCompany: header.contractCompany || null,
         companyId:        (header.customerType === "contract" ? header.companyId || null : null) as any,
@@ -662,6 +663,7 @@ const methods = {
         pharmacyId,
         customerType: effectiveCustomerType,
         customerName: header.customerName !== undefined ? header.customerName : invoice.customerName,
+        patientId: (header as any).patientId !== undefined ? ((header as any).patientId || null) : (invoice as any).patientId,
         customerId: effectiveCustomerType === "credit"
           ? (header.customerId !== undefined ? (header.customerId || null) : invoice.customerId)
           : null,

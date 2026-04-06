@@ -192,6 +192,8 @@ export default function SalesInvoices() {
     notes:              form.notes,
     clinicOrderId:      savedClinicOrderIds[0] || null,
     clinicOrderIds:     savedClinicOrderIds,
+    patientId:          form.patientId,
+    patientName:        form.patientName,
     lines,
     onSaveSuccess:      () => {},
     onFinalizeSuccess:  () => { setSavedClinicOrderIds([]); },

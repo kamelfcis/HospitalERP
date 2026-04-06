@@ -41,6 +41,7 @@ export function useInvoiceMutations(p: MutationParams) {
     invoiceDate: p.invoiceDate,
     customerType: p.customerType,
     customerName: p.customerName || null,
+    patientId: p.patientId || null,
     customerId: p.customerType === "credit" ? (p.customerId || null) : null,
     contractCompany: p.customerType === "contract" ? p.contractCompany : null,
     // ── حقول التعاقد ────────────────────────────────────────────────────────
