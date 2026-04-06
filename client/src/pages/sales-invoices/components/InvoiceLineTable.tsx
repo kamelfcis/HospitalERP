@@ -274,12 +274,24 @@ const InvoiceLineRow = memo(function InvoiceLineRow({
       </td>
 
       {/* الوحدة */}
-      <td className={`text-center ${ln.unitLevel !== "major" ? "bg-amber-50 dark:bg-amber-900/20" : ""}`}>
+      <td className={`text-center ${
+        ln.unitLevel === "medium"
+          ? "bg-orange-100 dark:bg-orange-900/30"
+          : ln.unitLevel === "minor"
+          ? "bg-rose-100 dark:bg-rose-900/30"
+          : ""
+      }`}>
         {isDraft ? (
           <select
             value={ln.unitLevel}
             onChange={(e) => onUpdateLine(i, { unitLevel: e.target.value })}
-            className={`peachtree-select w-full ${ln.unitLevel !== "major" ? "border-amber-400 text-amber-700 dark:text-amber-300 font-semibold" : ""}`}
+            className={`peachtree-select w-full font-bold ${
+              ln.unitLevel === "medium"
+                ? "border-orange-500 text-orange-800 dark:text-orange-200 bg-orange-50 dark:bg-orange-900/40"
+                : ln.unitLevel === "minor"
+                ? "border-rose-500 text-rose-800 dark:text-rose-200 bg-rose-50 dark:bg-rose-900/40"
+                : ""
+            }`}
             data-testid={`select-unit-${i}`}
             data-grid-row={i}
             data-grid-col="unit"
@@ -297,7 +309,13 @@ const InvoiceLineRow = memo(function InvoiceLineRow({
           </select>
         ) : (
           <span
-            className={`${ln.unitLevel !== "major" ? "text-amber-700 dark:text-amber-300 font-semibold" : "text-foreground"}`}
+            className={`font-bold ${
+              ln.unitLevel === "medium"
+                ? "text-orange-700 dark:text-orange-300"
+                : ln.unitLevel === "minor"
+                ? "text-rose-700 dark:text-rose-300"
+                : "text-foreground font-normal"
+            }`}
             data-testid={`text-unit-${i}`}
           >
             {ln.unitLevel === "major" ? ln.item?.majorUnitName
