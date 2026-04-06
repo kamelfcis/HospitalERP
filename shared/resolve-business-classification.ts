@@ -8,7 +8,12 @@
  *  1. Stay Engine (sourceType='STAY_ENGINE') → دائماً 'accommodation'
  *  2. الخدمات: service.businessClassification أولاً → fallback على serviceType
  *  3. الأصناف: item.businessClassification أولاً  → fallback على lineType
- *  4. الـ fallback يُسجَّل كـ CLASSIFICATION_FALLBACK_USED warning
+ *
+ * التصميم:
+ *  - resolveBusinessClassification : pure function — لا side effects إطلاقاً
+ *  - resolveBusinessClassificationWithMeta : يُعيد النتيجة + هل تم الـ fallback
+ *    (الـ caller يقرر إذا كان يريد تسجيل تحذير)
+ *  - resolveBusinessClassificationClient : اختصار للـ frontend (يستدعي Pure)
  */
 
 export type BusinessClassification =
@@ -36,7 +41,6 @@ export const BUSINESS_CLASSIFICATION_LABELS: Record<BusinessClassification, stri
   device:         "معدة طبية",
 };
 
-/** الألوان المقابلة لكل تصنيف (Tailwind classes) */
 export const BUSINESS_CLASSIFICATION_COLORS: Record<BusinessClassification, string> = {
   drug:           "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400 border-green-300",
   consumable:     "bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400 border-orange-300",
@@ -50,7 +54,6 @@ export const BUSINESS_CLASSIFICATION_COLORS: Record<BusinessClassification, stri
   device:         "bg-teal-100 text-teal-700 dark:bg-teal-950/50 dark:text-teal-400 border-teal-300",
 };
 
-// serviceType → businessClassification mapping
 const SERVICE_TYPE_MAP: Record<string, BusinessClassification> = {
   ACCOMMODATION:  "accommodation",
   OPERATING_ROOM: "operating_room",
@@ -60,100 +63,91 @@ const SERVICE_TYPE_MAP: Record<string, BusinessClassification> = {
   OTHER:          "medical_service",
 };
 
-// lineType → businessClassification fallback for items
 const LINE_TYPE_FALLBACK_MAP: Record<string, BusinessClassification> = {
   drug:       "drug",
   consumable: "consumable",
   equipment:  "equipment",
 };
 
-interface ResolveInput {
+export interface ResolveInput {
   lineType: "drug" | "consumable" | "equipment" | "service";
   sourceType?: string | null;
 
-  // للخدمات
   serviceBusinessClassification?: string | null;
   serviceType?: string | null;
   serviceId?: string | null;
 
-  // للأصناف
   itemBusinessClassification?: string | null;
   itemId?: string | null;
 }
 
-interface Logger {
-  warn(event: string, data: Record<string, unknown>): void;
+export interface ResolveResult {
+  result: BusinessClassification;
+  usedFallback: boolean;
+  fallbackReason?: string;
 }
 
 /**
- * يشتق business_classification لبند الفاتورة.
- * يُستدعى عند إضافة البند فقط — النتيجة تُخزَّن كـ snapshot على السطر.
+ * Pure function — لا logger، لا side effects.
+ * يُستدعى مباشرة من الـ frontend والـ backend بدون تعديل.
  */
-export function resolveBusinessClassification(
-  input: ResolveInput,
-  logger?: Logger,
-): BusinessClassification {
-
-  // ── 1. Stay Engine — مؤكد دائماً ────────────────────────────────────────────
-  if (input.sourceType === "STAY_ENGINE") {
-    return "accommodation";
-  }
-
-  // ── 2. خدمة ─────────────────────────────────────────────────────────────────
-  if (input.lineType === "service") {
-    // master data أولاً
-    if (input.serviceBusinessClassification) {
-      return input.serviceBusinessClassification as BusinessClassification;
-    }
-    // fallback على serviceType
-    const mapped = SERVICE_TYPE_MAP[input.serviceType ?? "SERVICE"];
-    if (mapped) {
-      logger?.warn("CLASSIFICATION_FALLBACK_USED", {
-        reason:      "service.business_classification is null — fell back to serviceType",
-        serviceType: input.serviceType,
-        serviceId:   input.serviceId,
-        result:      mapped,
-      });
-      return mapped;
-    }
-    logger?.warn("CLASSIFICATION_FALLBACK_USED", {
-      reason:      "service.business_classification is null AND serviceType unrecognized — defaulting to medical_service",
-      serviceType: input.serviceType,
-      serviceId:   input.serviceId,
-      result:      "medical_service",
-    });
-    return "medical_service";
-  }
-
-  // ── 3. صنف ──────────────────────────────────────────────────────────────────
-  if (input.itemBusinessClassification) {
-    return input.itemBusinessClassification as BusinessClassification;
-  }
-  // fallback على lineType
-  const ltMapped = LINE_TYPE_FALLBACK_MAP[input.lineType];
-  if (ltMapped) {
-    logger?.warn("CLASSIFICATION_FALLBACK_USED", {
-      reason:   "item.business_classification is null — fell back to lineType",
-      lineType: input.lineType,
-      itemId:   input.itemId,
-      result:   ltMapped,
-    });
-    return ltMapped;
-  }
-
-  logger?.warn("CLASSIFICATION_FALLBACK_USED", {
-    reason:   "unresolved classification — defaulting to consumable",
-    lineType: input.lineType,
-    itemId:   input.itemId,
-  });
-  return "consumable";
+export function resolveBusinessClassification(input: ResolveInput): BusinessClassification {
+  return resolveBusinessClassificationWithMeta(input).result;
 }
 
-/** للاستخدام في الـ Frontend (بدون logger) */
+/**
+ * يُعيد النتيجة مع معلومات الـ fallback.
+ * الـ caller مسؤول عن التسجيل إذا كان usedFallback = true.
+ */
+export function resolveBusinessClassificationWithMeta(input: ResolveInput): ResolveResult {
+  if (input.sourceType === "STAY_ENGINE") {
+    return { result: "accommodation", usedFallback: false };
+  }
+
+  if (input.lineType === "service") {
+    if (input.serviceBusinessClassification) {
+      return { result: input.serviceBusinessClassification as BusinessClassification, usedFallback: false };
+    }
+    const mapped = SERVICE_TYPE_MAP[input.serviceType ?? "SERVICE"];
+    if (mapped) {
+      return {
+        result: mapped,
+        usedFallback: true,
+        fallbackReason: `service.businessClassification=null — fell back to serviceType=${input.serviceType} → ${mapped}`,
+      };
+    }
+    return {
+      result: "medical_service",
+      usedFallback: true,
+      fallbackReason: `service.businessClassification=null AND serviceType unrecognized (${input.serviceType}) — default medical_service`,
+    };
+  }
+
+  if (input.itemBusinessClassification) {
+    return { result: input.itemBusinessClassification as BusinessClassification, usedFallback: false };
+  }
+
+  const ltMapped = LINE_TYPE_FALLBACK_MAP[input.lineType];
+  if (ltMapped) {
+    return {
+      result: ltMapped,
+      usedFallback: true,
+      fallbackReason: `item.businessClassification=null — fell back to lineType=${input.lineType} → ${ltMapped}`,
+    };
+  }
+
+  return {
+    result: "consumable",
+    usedFallback: true,
+    fallbackReason: `unresolved classification (lineType=${input.lineType}) — default consumable`,
+  };
+}
+
+/** للاستخدام في الـ Frontend (pure, بدون meta) */
 export function resolveBusinessClassificationClient(
   input: ResolveInput,
 ): BusinessClassification {
-  return resolveBusinessClassification(input, undefined);
+  return resolveBusinessClassification(input);
 }
 
 /** helper للـ backfill و reporting */

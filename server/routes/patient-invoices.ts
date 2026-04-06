@@ -23,7 +23,7 @@ import {
   patientInvoiceHeaders,
   patientInvoiceLines,
 } from "@shared/schema";
-import { resolveBusinessClassification } from "@shared/resolve-business-classification";
+import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
 import { eq } from "drizzle-orm";
@@ -56,6 +56,53 @@ async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Prom
   }).catch(() => {});
 
   return true;
+}
+
+/**
+ * Server-side safety net: يملأ business_classification لأي بند وصل بدون قيمة.
+ * يستعلم عن master data للخدمات والأصناف بشكل bulk ثم يستدعي الـ resolver.
+ * الـ client يرسل القيمة عادةً — لكن الـ server هو مصدر الحقيقة.
+ */
+async function autoFillClassification(lines: any[]): Promise<any[]> {
+  const nullLines = lines.filter(l => !l.businessClassification);
+  if (nullLines.length === 0) return lines;
+
+  const serviceIds = [...new Set(nullLines.map((l: any) => l.serviceId).filter(Boolean))] as string[];
+  const itemIds    = [...new Set(nullLines.map((l: any) => l.itemId).filter(Boolean))] as string[];
+
+  const [svcRows, itmRows] = await Promise.all([
+    serviceIds.length > 0
+      ? db.execute(sql`SELECT id, business_classification, service_type FROM services WHERE id IN (${sql.join(serviceIds.map(id => sql`${id}`), sql`, `)})`)
+      : { rows: [] },
+    itemIds.length > 0
+      ? db.execute(sql`SELECT id, business_classification FROM items WHERE id IN (${sql.join(itemIds.map(id => sql`${id}`), sql`, `)})`)
+      : { rows: [] },
+  ]);
+
+  const svcMap = new Map((svcRows.rows as any[]).map(r => [r.id, r]));
+  const itmMap = new Map((itmRows.rows as any[]).map(r => [r.id, r]));
+
+  return lines.map(l => {
+    if (l.businessClassification) return l;
+    const svc = svcMap.get(l.serviceId);
+    const itm = itmMap.get(l.itemId);
+    const { result, usedFallback, fallbackReason } = resolveBusinessClassificationWithMeta({
+      lineType:                       l.lineType as "service" | "drug" | "consumable" | "equipment",
+      sourceType:                     l.sourceType ?? null,
+      serviceId:                      l.serviceId ?? null,
+      serviceBusinessClassification:  svc?.business_classification ?? null,
+      serviceType:                    svc?.service_type ?? null,
+      itemId:                         l.itemId ?? null,
+      itemBusinessClassification:     itm?.business_classification ?? null,
+    });
+    if (usedFallback) {
+      logger.warn(
+        { lineType: l.lineType, serviceId: l.serviceId, itemId: l.itemId, fallbackReason },
+        "[CLASSIFICATION] server-side fallback used",
+      );
+    }
+    return { ...l, businessClassification: result };
+  });
 }
 
 /** Fires approval requests for all approval_required lines — non-blocking */
@@ -154,6 +201,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
         headerParsed = { ...headerParsed, patientId: ptRecord.id };
       }
 
+      linesParsed = await autoFillClassification(linesParsed);
+
       linesParsed = await applyContractCoverage(
         (headerParsed as any).contractId ?? null,
         linesParsed,
@@ -189,6 +238,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const headerParsed = insertPatientInvoiceHeaderSchema.partial().parse(header);
       let linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
+
+      linesParsed = await autoFillClassification(linesParsed);
 
       linesParsed = await applyContractCoverage(
         (headerParsed as any).contractId ?? null,
@@ -476,18 +527,20 @@ export function registerPatientInvoicesRoutes(app: Express) {
   // ═══════════════════════════════════════════════════════════════════════════
   //  Backfill: business_classification لبنود فاتورة المريض
   //  POST /api/admin/backfill-business-classification
-  //  يعالج البنود ذات business_classification = NULL
-  //  ويشتق القيمة من service.business_classification أو service_type أو line_type
+  //  ?dryRun=true  → معاينة فقط بدون كتابة (Safe Preview Mode)
+  //  يعالج فقط البنود ذات business_classification IS NULL (آمن — لا يمسّ مصنَّف)
   // ═══════════════════════════════════════════════════════════════════════════
   app.post("/api/admin/backfill-business-classification", requireAuth, async (req, res) => {
     try {
-      // 1. جلب البنود التي لا تحمل تصنيفاً مع بيانات الخدمة
+      const dryRun = req.query.dryRun === "true" || req.body?.dryRun === true;
+
       const rows = await db.execute(sql`
         SELECT
           pil.id,
           pil.line_type,
           pil.source_type,
           pil.service_id,
+          pil.item_id,
           s.business_classification AS svc_biz_class,
           s.service_type            AS svc_type,
           i.business_classification AS item_biz_class
@@ -504,6 +557,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         line_type: string;
         source_type: string | null;
         service_id: string | null;
+        item_id: string | null;
         svc_biz_class: string | null;
         svc_type: string | null;
         item_biz_class: string | null;
@@ -511,33 +565,49 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
       let updated = 0;
       let fallbacks = 0;
+      const preview: Array<{ id: string; lineType: string; resolved: string; usedFallback: boolean; fallbackReason?: string }> = [];
 
       for (const row of lines) {
-        const resolved = resolveBusinessClassification({
-          lineType:  row.line_type as "service" | "drug" | "consumable" | "equipment",
-          sourceType: row.source_type,
-          serviceId: row.service_id,
+        const { result, usedFallback, fallbackReason } = resolveBusinessClassificationWithMeta({
+          lineType:                      row.line_type as "service" | "drug" | "consumable" | "equipment",
+          sourceType:                    row.source_type,
+          serviceId:                     row.service_id,
           serviceBusinessClassification: row.svc_biz_class,
-          serviceType: row.svc_type,
-          itemBusinessClassification: row.item_biz_class,
-        }, logger);
+          serviceType:                   row.svc_type,
+          itemBusinessClassification:    row.item_biz_class,
+          itemId:                        row.item_id,
+        });
 
-        // تحقق إذا كان fallback استُخدم
-        const isFallback =
-          (row.line_type === "service" && !row.svc_biz_class && row.source_type !== "STAY_ENGINE") ||
-          (row.line_type !== "service" && !row.item_biz_class);
-        if (isFallback) fallbacks++;
+        if (usedFallback) {
+          fallbacks++;
+          logger.warn({ id: row.id, lineType: row.line_type, fallbackReason }, "[BACKFILL] fallback classification");
+        }
 
-        await db.execute(sql`
-          UPDATE patient_invoice_lines
-          SET business_classification = ${resolved}
-          WHERE id = ${row.id}
-        `);
-        updated++;
+        if (dryRun) {
+          preview.push({ id: row.id, lineType: row.line_type, resolved: result, usedFallback, fallbackReason });
+        } else {
+          await db.execute(sql`
+            UPDATE patient_invoice_lines
+            SET business_classification = ${result}
+            WHERE id = ${row.id}
+              AND business_classification IS NULL
+          `);
+          updated++;
+        }
+      }
+
+      if (dryRun) {
+        logger.info({ total: lines.length, fallbacks }, "[BACKFILL] dry-run preview complete");
+        return res.json({
+          dryRun: true,
+          total:     lines.length,
+          fallbacks,
+          preview,
+          message: `معاينة: ${lines.length} بند سيتم تحديثه — منها ${fallbacks} بند بـ fallback`,
+        });
       }
 
       logger.info({ updated, fallbacks }, "[BACKFILL] business_classification backfill complete");
-
       res.json({
         success: true,
         updated,
