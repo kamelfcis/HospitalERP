@@ -311,16 +311,6 @@ export default function PatientInvoice() {
   }, [toast, form, lm, payments]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
-  const openDistributeDialog = useCallback(() => {
-    if (!validate.validateDistribute({
-      departmentId: form.departmentId,
-      warehouseId:  form.warehouseId,
-      doctorName:   form.doctorName,
-      lines:        lm.lines,
-    })) return;
-    setDistOpen(true);
-  }, [validate, form.departmentId, form.warehouseId, form.doctorName, lm.lines]);
-
   const admHandleCreateSubmit = () => {
     if (!admFormData.patientName.trim()) { toast({ title: "خطأ", description: "اسم المريض مطلوب", variant: "destructive" }); return; }
     if (!admFormData.admissionNumber.trim()) { toast({ title: "خطأ", description: "رقم الإقامة مطلوب", variant: "destructive" }); return; }
@@ -462,7 +452,6 @@ export default function PatientInvoice() {
             resetForm={resetAll}
             saveMutation={saveMutation}
             finalizeMutation={finalizeMutation}
-            openDistributeDialog={openDistributeDialog}
             dtTransfers={dt.dtTransfers}
             dtAlreadyTransferred={dt.dtAlreadyTransferred}
             dtRemaining={dt.dtRemaining}

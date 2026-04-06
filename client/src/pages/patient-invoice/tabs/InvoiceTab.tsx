@@ -117,8 +117,6 @@ interface InvoiceTabProps {
   resetForm: () => void;
   saveMutation: { mutate: () => void; isPending: boolean };
   finalizeMutation: { mutate: () => void; isPending: boolean };
-  openDistributeDialog: () => void;
-
   dtTransfers: DoctorTransfer[];
   dtAlreadyTransferred: number;
   dtRemaining: number;
@@ -167,7 +165,7 @@ export function InvoiceTab({
   handleQtyConfirm, handleUnitLevelChange, openStatsPopup,
   payments, addPayment, updatePayment, removePayment,
   totals,
-  resetForm, saveMutation, finalizeMutation, openDistributeDialog,
+  resetForm, saveMutation, finalizeMutation,
   dtTransfers, dtAlreadyTransferred, dtRemaining,
   dtOpen, setDtOpen, dtAmount, setDtAmount,
   dtDoctorName, setDtDoctorName, dtNotes, setDtNotes, openDtConfirm,
@@ -219,7 +217,6 @@ export function InvoiceTab({
         resetForm={resetForm}
         saveMutation={saveMutation}
         finalizeMutation={finalizeMutation}
-        openDistributeDialog={openDistributeDialog}
         getStatusBadgeClass={getStatusBadgeClass}
       />
 
