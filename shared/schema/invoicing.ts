@@ -442,6 +442,8 @@ export const invoiceTemplates = pgTable("invoice_templates", {
   description: text("description"),
   category:    varchar("category", { length: 100 }),
   isActive:    boolean("is_active").notNull().default(true),
+  usageCount:  integer("usage_count").notNull().default(0),
+  lastUsedAt:  timestamp("last_used_at"),
   createdBy:   varchar("created_by").references(() => users.id),
   createdAt:   timestamp("created_at").notNull().defaultNow(),
   updatedAt:   timestamp("updated_at").notNull().defaultNow(),

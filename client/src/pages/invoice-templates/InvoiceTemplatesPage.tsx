@@ -339,6 +339,7 @@ export default function InvoiceTemplatesPage() {
                 <TableHead className="text-right">اسم النموذج</TableHead>
                 <TableHead className="text-right">التصنيف</TableHead>
                 <TableHead className="text-center">البنود</TableHead>
+                <TableHead className="text-center">الاستخدام</TableHead>
                 <TableHead className="text-center">الحالة</TableHead>
                 <TableHead className="w-24"></TableHead>
               </TableRow>
@@ -360,6 +361,16 @@ export default function InvoiceTemplatesPage() {
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.category ?? "—"}</TableCell>
                     <TableCell className="text-center text-sm">{(t as any).lineCount ?? "—"}</TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-sm font-medium">{t.usageCount ?? 0}</span>
+                        {t.lastUsedAt && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(t.lastUsedAt).toLocaleDateString("ar-EG", { day: "numeric", month: "short" })}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-center">
                       {t.isActive ? (
                         <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-300">نشط</Badge>

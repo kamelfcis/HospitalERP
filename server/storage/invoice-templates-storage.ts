@@ -1,4 +1,4 @@
-import { eq, and, ilike, desc, inArray } from "drizzle-orm";
+import { eq, and, ilike, desc, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   invoiceTemplates,
@@ -114,6 +114,11 @@ const invoiceTemplatesMethods = {
       .from(invoiceTemplates)
       .where(and(eq(invoiceTemplates.id, id), eq(invoiceTemplates.isActive, true)));
     if (!tmpl) return null;
+
+    // Non-blocking usage metrics increment (fire-and-forget)
+    db.execute(
+      sql`UPDATE invoice_templates SET usage_count = usage_count + 1, last_used_at = NOW() WHERE id = ${id}`
+    ).catch(() => { /* non-critical, ignore */ });
 
     const lines = await db
       .select()
