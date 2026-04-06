@@ -1,0 +1,221 @@
+ريد اعتماد التنفيذ الحالي كنسخة production، لكن مع مراعاة المعمارية الحالية للنظام التي تستخدم جداول / ملفات *_rpt كطبقة Reporting منفصلة.
+
+⚠️ مهم جدًا:
+هذه الملاحظات ليست لتغيير التنفيذ الأساسي الذي تم بنجاح، وإنما لضبط *الاستخدام الصحيح لـ business classification + snapshot + _rpt ومنع أي خلط معماري لاحقًا.
+
+1) تأكيد الفصل بين الطبقات الثلاث
+
+أريد تثبيت هذا المفهوم بوضوح داخل التصميم والكود:
+
+A. Live Layer
+
+الجداول الحية التشغيلية مثل:
+
+patient_invoice_headers
+patient_invoice_lines
+
+هذه هي المصدر أثناء:
+
+الإدخال
+التعديل
+الحذف
+الحفظ كمسودة
+ما قبل الاعتماد
+B. Snapshot / Audit Layer
+
+مثل:
+
+finalized_snapshot_json
+
+هذه الطبقة هدفها:
+
+الأرشفة
+الـ audit
+التحقيقات
+حفظ صورة نهائية وقت الاعتماد
+
+⚠️ ليست هي محرك التقارير الثقيلة.
+
+C. Reporting Layer (*_rpt)
+
+الجداول / الملفات التي تنتهي بـ *_rpt هي:
+
+طبقة تقارير
+طبقة محسنة للأداء
+طبقة مهيأة للتجميع والفلاتر والتحليلات
+
+ويجب استخدامها للتقارير الثقيلة فقط، وليس كبديل عن الجداول الحية أثناء التشغيل اليومي.
+
+2) قاعدة حاكمة مهمة جدًا
+المطلوب تثبيت القاعدة التالية:
+أثناء Draft:
+المصدر = live tables فقط
+لا تعتمد أي شاشة تشغيلية على *_rpt
+لا تعتمد على finalized_snapshot_json
+بعد Finalized:
+المصدر التشغيلي يظل موجودًا في live tables
+الـ snapshot يبقى مرجع audit
+وتقارير الإدارة / التحليل / الربحية / التجميع الكبير يمكن أن تعتمد على *_rpt
+3) business_classification لا يتوقف عند live tables فقط
+
+بما أن النظام يستخدم *_rpt، فيجب مراعاة أن:
+
+المطلوب:
+
+إذا كان هناك أي جدول/ملف تقارير متعلق بفواتير المرضى أو بنودها، فيجب تقييم هل يلزم إضافة:
+
+business_classification
+
+إليه أيضًا.
+
+الهدف:
+
+حتى تصبح التقارير مثل:
+
+إيراد حسب النوع
+ربحية حسب النوع
+subtotal حسب النوع
+تحليل حسب مريض / قسم / طبيب / عقد / تاريخ
+
+كلها تعمل من *_rpt بسرعة، بدون الرجوع كل مرة إلى الجداول الحية أو إلى JSON.
+
+4) ممنوع الاعتماد على finalized_snapshot_json كمحرك تقارير
+
+⚠️ مهم جدًا:
+
+finalized_snapshot_json دوره:
+
+audit
+historical trace
+reference snapshot
+
+❌ وليس:
+
+data source أساسي للتقارير الثقيلة
+engine للتجميع والتحليل الدوري
+المطلوب:
+لا تبنِ تقارير revenue/profitability الثقيلة من JSON
+استخدم live أو *_rpt حسب الحالة
+الـ JSON يبقى فقط للرجوع والمراجعة
+5) لو فيه *_rpt خاص بفواتير المرضى أو بنودها، راجعه الآن
+
+أريد مراجعة أي جداول / ملفات تقارير حالية مرتبطة بـ:
+
+patient invoices
+invoice lines
+revenue reports
+patient profitability
+consolidated billing
+service revenue
+والمطلوب تحديد:
+هل فيها business_classification أم لا
+هل تحتاج إضافته
+هل يتم ملؤه من live lines بعد finalize
+هل تحتاج migration أو refresh logic
+هل توجد فهارس إضافية لازمة عليه
+6) قاعدة التحديث بين live و *_rpt
+
+أريد توضيح واعتماد القاعدة التالية:
+
+إذا كانت تقارير *_rpt تُبنى من فواتير المرضى:
+
+فإن business_classification يجب أن ينتقل إلى طبقة *_rpt من مصدر موثوق:
+
+المصدر الموثوق بالترتيب:
+patient_invoice_lines.business_classification
+وليس من UI
+وليس من JSON parsing وقت التقرير
+ويفضل:
+إدخاله في *_rpt وقت refresh / rebuild / ETL / job
+أو وقت finalize إذا كانت المعمارية الحالية تعمل بهذه الطريقة
+7) فهارس الـ *_rpt
+
+إذا تقرر إضافة business_classification إلى أي جدول *_rpt، راعِ الفهرسة المناسبة حسب التقارير الفعلية.
+
+أمثلة للفهارس المقترحة حسب الاستخدام:
+(invoice_date, business_classification)
+(patient_id, business_classification)
+(department_id, business_classification)
+(contract_id, business_classification)
+(doctor_id, business_classification)
+
+⚠️ لا تضف فهارس عشوائية.
+أضف فقط ما يخدم التقارير الحقيقية الموجودة أو المخطط لها.
+
+8) عدم الخلط بين audit و reporting
+
+أريد تثبيت هذا الفصل بوضوح:
+
+Audit Snapshot
+مرجع نهائي
+لا يتغير
+مناسب للمراجعة والتحقيق
+Reporting Tables (*_rpt)
+مناسبة للتجميع والتحليل
+ممكن يعاد بناؤها أو تحديثها
+مخصصة للأداء
+بالتالي:
+لا نستخدم *_rpt كدليل قانوني نهائي
+ولا نستخدم JSON كبديل عن *_rpt
+9) تأثير ذلك على الخطوات القادمة
+
+التصنيف الجديد سيفتح لنا لاحقًا:
+
+revenue_by_classification_rpt
+patient_profitability_rpt
+تقارير مجمعة حسب النوع
+تحليل الإيراد حسب:
+دواء
+تحاليل
+أشعة
+إقامة
+خدمات طبية
+غازات
+أجهزة
+
+لذلك المطلوب من الآن:
+
+تجهيز طبقة *_rpt لتكون compatible مع business_classification
+بدون كسر أي تقرير حالي
+وبدون فرض rebuild كامل إذا لم يكن لازمًا
+10) المطلوب منك الآن
+
+أريد منك مراجعة أثر التنفيذ الحالي على طبقة *_rpt وإخراج تقرير قصير ومنظم يشمل:
+
+A. Current RPT Impact
+ما هي جداول/ملفات *_rpt المتأثرة أو المحتمل تأثرها
+B. Gaps
+أين يلزم إضافة business_classification
+وأين لا يلزم
+C. Recommended RPT Changes
+التعديلات المطلوبة على *_rpt
+إن وجدت
+D. Refresh / Population Strategy
+كيف سيتم نقل التصنيف من live إلى *_rpt
+E. Index Recommendations
+الفهارس المقترحة فقط عند الحاجة
+F. Safety Rules
+تأكيد عدم استخدام JSON كمصدر تقارير ثقيلة
+وعدم استخدام *_rpt أثناء إدخال أو تعديل الفاتورة
+11) قواعد حاكمة
+لا تغيّر التنفيذ الأساسي الناجح
+لا تكسر أي تقرير قائم
+لا تستخدم finalized_snapshot_json كمصدر reporting رئيسي
+لا تستخدم *_rpt في التشغيل اليومي للفواتير
+اجعل business_classification يمر إلى *_rpt فقط حيث توجد فائدة حقيقية
+راعِ refactor والنظافة المعمارية
+راعِ الأداء والفهارس بعناية
+لا تعمل over-engineering
+12) الهدف النهائي
+
+أريد معمارية واضحة كالتالي:
+
+Live tables = تشغيل يومي
+Snapshot JSON = audit
+*_rpt = reporting/performance
+
+ومعها:
+
+business_classification متاح في المكان الصحيح
+بدون تكرار غير ضروري
+وبدون خلط بين الأدوار
