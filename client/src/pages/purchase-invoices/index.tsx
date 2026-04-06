@@ -14,7 +14,6 @@ import type { Supplier, PurchaseInvoiceWithDetails } from "@shared/schema";
 
 import { useInvoiceLines }    from "./hooks/useInvoiceLines";
 import { useInvoiceDiscount } from "./hooks/useInvoiceDiscount";
-import { useAutoSave }        from "./hooks/useAutoSave";
 import { useInvoiceMutations } from "./hooks/useInvoiceMutations";
 
 import { InvoiceRegistry } from "./components/InvoiceRegistry";
@@ -64,15 +63,6 @@ export default function PurchaseInvoices() {
 
   const isDraft = invoiceDetail?.status === "draft";
 
-  // ── الحفظ التلقائي ────────────────────────────────────────────────────
-  const autoSave = useAutoSave({
-    editId, isDraft,
-    lines:         invoiceLines.lines,
-    invoiceDate, notes, claimNumber,
-    discountType:  discount.discountType,
-    discountValue: discount.discountValue,
-  });
-
   // ── Mutations ─────────────────────────────────────────────────────────
   const mutations = useInvoiceMutations({
     editId,
@@ -80,7 +70,6 @@ export default function PurchaseInvoices() {
     invoiceDate, notes, claimNumber,
     discountType:  discount.discountType,
     discountValue: discount.discountValue,
-    onSaveSuccess:    autoSave.resetAutoSave,
     onApproveSuccess: () => setConfirmApproveOpen(false),
   });
 
@@ -95,7 +84,6 @@ export default function PurchaseInvoices() {
       isLoading={detailLoading}
       invoiceLines={invoiceLines}
       discount={discount}
-      autoSaveStatus={autoSave.autoSaveStatus}
       isPending={mutations.isPending}
       invoiceDate={invoiceDate}
       notes={notes}

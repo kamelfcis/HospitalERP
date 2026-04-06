@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { ArrowRight, Save, CheckCircle, Loader2, Check } from "lucide-react";
+import { ArrowRight, Save, CheckCircle, Loader2 } from "lucide-react";
 import { formatDateShort } from "@/lib/formatters";
 import { purchaseInvoiceStatusLabels } from "@shared/schema";
 import type { PurchaseInvoiceWithDetails } from "@shared/schema";
@@ -18,7 +18,6 @@ import { InvoiceLineTable } from "./InvoiceLineTable";
 import { InvoiceTotals }    from "./InvoiceTotals";
 import type { UseInvoiceLinesReturn }   from "../hooks/useInvoiceLines";
 import type { UseInvoiceDiscountReturn } from "../hooks/useInvoiceDiscount";
-import type { AutoSaveStatus }          from "../hooks/useAutoSave";
 
 interface Props {
   // ── البيانات ──────────────────────────────────────────────────────────
@@ -26,7 +25,6 @@ interface Props {
   isLoading:      boolean;
   invoiceLines:   UseInvoiceLinesReturn;
   discount:       UseInvoiceDiscountReturn;
-  autoSaveStatus: AutoSaveStatus;
   isPending:      boolean;
 
   // ── حقول الرأس ─────────────────────────────────────────────────────────
@@ -47,7 +45,7 @@ interface Props {
 
 export function InvoiceEditor({
   invoiceDetail, isLoading,
-  invoiceLines, discount, autoSaveStatus, isPending,
+  invoiceLines, discount, isPending,
   invoiceDate, notes, claimNumber,
   onInvoiceDateChange, onClaimNumberChange,
   onSave, onApprove,
@@ -111,16 +109,6 @@ export function InvoiceEditor({
               {isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
               اعتماد وتسعير
             </Button>
-            {autoSaveStatus === "saving" && (
-              <span className="text-[10px] text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
-                <Loader2 className="h-3 w-3 animate-spin" /> جاري الحفظ التلقائي...
-              </span>
-            )}
-            {autoSaveStatus === "saved" && (
-              <span className="text-[10px] text-green-600 flex items-center gap-1" data-testid="text-auto-save-status">
-                <Check className="h-3 w-3" /> تم الحفظ التلقائي
-              </span>
-            )}
           </div>
         )}
       </div>
