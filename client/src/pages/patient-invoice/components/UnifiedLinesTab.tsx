@@ -203,41 +203,38 @@ export function UnifiedLinesTab({
   const colSpanFull = isDraft ? 12 : 11;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
 
-      {/* ── منطقة إضافة البند ─────────────────────────────────────────────────── */}
+      {/* ══ شريط إضافة البنود (سطر واحد مضغوط) ════════════════════════════════ */}
       {isDraft && (
-        <div className="space-y-2 border rounded-md p-2 bg-muted/20">
+        <div className="flex items-center gap-1.5 border rounded-md px-2 py-1 bg-muted/20 flex-wrap" dir="rtl">
 
-          {/* تطبيق نموذج */}
+          {/* ── نموذج (إذا وُجد) ─────────────────── */}
           {applyTemplate && templates && templates.length > 0 && (
-            <div className="flex flex-col gap-1 pb-1 border-b border-dashed">
-              <div className="flex flex-row-reverse items-center gap-2">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs text-muted-foreground shrink-0">نموذج:</span>
-                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId} disabled={applyingTemplate}>
-                  <SelectTrigger className="h-7 text-xs flex-1" data-testid="select-template">
-                    <SelectValue placeholder="اختر نموذجاً..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— اختر نموذجاً —</SelectItem>
-                    {templates.map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="h-7 text-xs px-3 shrink-0"
-                  onClick={handleApplyTemplate}
-                  disabled={selectedTemplateId === "__none__" || applyingTemplate}
-                  data-testid="btn-apply-template"
-                >
-                  {applyingTemplate ? <Loader2 className="h-3 w-3 animate-spin" /> : "تطبيق"}
-                </Button>
-              </div>
-              <label className="flex flex-row-reverse items-center gap-1.5 cursor-pointer self-end" data-testid="toggle-replace-existing">
+            <>
+              <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+              <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId} disabled={applyingTemplate}>
+                <SelectTrigger className="h-6 text-[11px] w-36 px-1" data-testid="select-template">
+                  <SelectValue placeholder="نموذج..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— نموذج —</SelectItem>
+                  {templates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-6 text-[11px] px-2 shrink-0"
+                onClick={handleApplyTemplate}
+                disabled={selectedTemplateId === "__none__" || applyingTemplate}
+                data-testid="btn-apply-template"
+              >
+                {applyingTemplate ? <Loader2 className="h-3 w-3 animate-spin" /> : "تطبيق"}
+              </Button>
+              <label className="flex items-center gap-1 cursor-pointer shrink-0" data-testid="toggle-replace-existing">
                 <input
                   type="checkbox"
                   checked={replaceExisting}
@@ -245,98 +242,99 @@ export function UnifiedLinesTab({
                   disabled={applyingTemplate}
                   className="h-3 w-3 accent-primary"
                 />
-                <span className="text-[10px] text-muted-foreground">استبدال البنود الحالية</span>
+                <span className="text-[10px] text-muted-foreground">استبدال</span>
               </label>
-            </div>
+              <div className="w-px h-4 bg-border/50 shrink-0" />
+            </>
           )}
 
-          {/* مفتاح المصدر */}
-          <div className="flex flex-row-reverse items-center gap-1">
-            <span className="text-xs text-muted-foreground ml-2">نوع البند:</span>
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant={sourceMode === "service" ? "default" : "outline"}
-                className="h-7 text-xs px-3"
-                onClick={() => setSourceMode("service")}
-                data-testid="btn-source-service"
-              >
-                خدمة
-              </Button>
-              <Button
-                size="sm"
-                variant={sourceMode === "item" ? "default" : "outline"}
-                className="h-7 text-xs px-3"
-                onClick={() => setSourceMode("item")}
-                data-testid="btn-source-item"
-              >
-                صنف
-              </Button>
-            </div>
+          {/* ── مفتاح المصدر: خدمة / صنف ───────── */}
+          <span className="text-[10px] text-muted-foreground shrink-0">إضافة:</span>
+          <div className="flex gap-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setSourceMode("service")}
+              data-testid="btn-source-service"
+              className={`h-6 px-2.5 text-[11px] rounded border font-medium transition-colors ${
+                sourceMode === "service"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              خدمة
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceMode("item")}
+              data-testid="btn-source-item"
+              className={`h-6 px-2.5 text-[11px] rounded border font-medium transition-colors ${
+                sourceMode === "item"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              صنف
+            </button>
           </div>
 
-          {/* إضافة خدمة */}
+          {/* ── بحث عن خدمة ─────────────────────── */}
           {sourceMode === "service" && (
-            <div className="flex flex-row-reverse items-center gap-2">
-              <div className="flex-1 min-w-[200px]">
-                <ServiceLookup
-                  value={selectedServiceId}
-                  onChange={(item) => {
-                    if (item) {
-                      addServiceLine(item.meta as Service);
-                      setSelectedServiceId("");
-                    }
-                  }}
-                  placeholder="بحث عن خدمة..."
-                  disabled={!isDraft || applyingTemplate}
-                  data-testid="input-service-search-unified"
-                />
-              </div>
+            <div className="flex-1 min-w-[180px]">
+              <ServiceLookup
+                value={selectedServiceId}
+                onChange={(item) => {
+                  if (item) {
+                    addServiceLine(item.meta as Service);
+                    setSelectedServiceId("");
+                  }
+                }}
+                placeholder="بحث عن خدمة..."
+                disabled={!isDraft || applyingTemplate}
+                data-testid="input-service-search-unified"
+              />
             </div>
           )}
 
-          {/* إضافة صنف — يفتح شاشة البحث السريع مباشرة */}
+          {/* ── بحث عن صنف (F2 modal) ─────────── */}
           {sourceMode === "item" && (
-            <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
-              {/* نوع احتياطي: يُستخدم فقط عندما لا يمكن استنتاج النوع من category الصنف */}
-              <div className="flex flex-row-reverse items-center gap-1 shrink-0">
-                <span className="text-[10px] text-muted-foreground whitespace-nowrap">نوع احتياطي:</span>
-                <div className="flex gap-1">
-                  {ITEM_ADD_TYPES.map(t => (
-                    <button
-                      key={t.value}
-                      type="button"
-                      onClick={() => setItemAddType(t.value)}
-                      disabled={!isDraft || applyingTemplate}
-                      data-testid={`btn-item-type-${t.value}`}
-                      className={`h-6 px-2 text-[10px] rounded border font-medium transition-colors ${
-                        itemAddType === t.value
-                          ? t.color
-                          : "border-border text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* زر البحث الرئيسي — يفتح ItemFastSearch */}
+            <>
               <Button
                 size="sm"
                 variant="default"
-                className="h-8 text-sm px-4 gap-1.5 shrink-0"
+                className="h-6 text-[11px] px-3 gap-1 shrink-0"
                 onClick={() => setFastSearchOpen(true)}
                 disabled={!isDraft || applyingTemplate || !warehouseId}
                 data-testid="btn-open-item-fast-search"
               >
-                <SearchIcon className="h-4 w-4" />
-                بحث وإضافة صنف
-                <kbd className="mr-1 text-[9px] bg-white/20 px-1 rounded border border-white/30">F2</kbd>
+                <SearchIcon className="h-3 w-3" />
+                بحث صنف
+                <kbd className="text-[8px] bg-white/20 px-0.5 rounded border border-white/30">F2</kbd>
               </Button>
+              {/* نوع احتياطي */}
+              <span className="text-[9px] text-muted-foreground shrink-0">نوع احتياطي:</span>
+              {ITEM_ADD_TYPES.map(t => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setItemAddType(t.value)}
+                  disabled={!isDraft || applyingTemplate}
+                  data-testid={`btn-item-type-${t.value}`}
+                  className={`h-5 px-1.5 text-[10px] rounded border font-medium transition-colors shrink-0 ${
+                    itemAddType === t.value
+                      ? t.color
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </>
+          )}
 
-              {fefoLoading && <Badge variant="secondary" className="text-xs shrink-0">جاري توزيع الصلاحية...</Badge>}
-            </div>
+          {fefoLoading && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
+              جاري توزيع الصلاحية...
+            </Badge>
           )}
         </div>
       )}

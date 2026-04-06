@@ -3,12 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
-  Save, CheckCircle, Plus, Loader2, Users, CreditCard,
+  Save, CheckCircle, Plus, Loader2, CreditCard,
   Search, XCircle, CheckCircle2,
 } from "lucide-react";
-import { patientInvoiceStatusLabels, patientTypeLabels } from "@shared/schema";
+import { patientInvoiceStatusLabels } from "@shared/schema";
 import type { Department, Admission } from "@shared/schema";
 import type { LineLocal } from "../types";
 import { DoctorLookup } from "@/components/lookups";
@@ -37,7 +36,6 @@ interface InvoiceHeaderBarProps {
   status: string;
   isDraft: boolean;
 
-  // Patient fields — via PatientSearchCombobox
   patientId: string;
   patientName: string;
   patientPhone: string;
@@ -60,7 +58,6 @@ interface InvoiceHeaderBarProps {
   setAdmissionId: (v: string) => void;
   activeAdmissions: Admission[] | undefined;
 
-  // Contract / member card
   patientType: "cash" | "contract";
   setPatientType: (v: "cash" | "contract") => void;
   contractId: string;
@@ -104,7 +101,6 @@ export function InvoiceHeaderBar({
 }: InvoiceHeaderBarProps) {
   const [localDoctorId, setLocalDoctorId] = useState("");
 
-  // ── member card lookup state ───────────────────────────────────────────────
   const [cardNumber,   setCardNumber]   = useState("");
   const [isLooking,    setIsLooking]    = useState(false);
   const [lookupError,  setLookupError]  = useState<string | null>(null);
@@ -154,79 +150,81 @@ export function InvoiceHeaderBar({
   const effectiveResolved = contractMemberId ? resolvedInfo : null;
 
   return (
-    <div className="border rounded-md p-2 space-y-1.5 text-[12px]" dir="rtl">
+    <div className="border rounded-md bg-card text-[12px]" dir="rtl">
 
-      {/* ── Row 1: رقم + تاريخ + حالة + نوع المريض + الإقامة ───────────────── */}
-      <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
+      {/* ══ شريط رئيسي: كل الحقول في سطر واحد ════════════════════════════════ */}
+      <div className="flex items-center gap-1.5 px-2 py-1.5 flex-wrap border-b border-border/50">
+
+        {/* الحالة */}
         {invoiceId && (
-          <Badge className={getStatusBadgeClass(status)} data-testid="badge-invoice-status">
+          <Badge className={`${getStatusBadgeClass(status)} shrink-0 text-[10px] px-1.5 py-0`} data-testid="badge-invoice-status">
             {patientInvoiceStatusLabels[status] || status}
           </Badge>
         )}
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">رقم:</Label>
+
+        {/* رقم */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[10px] text-muted-foreground">رقم</span>
           <Input
             value={invoiceNumber}
             onChange={(e) => setInvoiceNumber(e.target.value)}
             disabled={!isDraft}
-            className="h-7 text-xs w-24"
+            className="h-6 text-xs w-16 px-1"
             data-testid="input-invoice-number"
           />
         </div>
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">تاريخ:</Label>
+
+        {/* تاريخ */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[10px] text-muted-foreground">تاريخ</span>
           <Input
             type="date"
             value={invoiceDate}
             onChange={(e) => setInvoiceDate(e.target.value)}
             disabled={!isDraft}
-            className="h-7 text-xs w-36"
+            className="h-6 text-xs w-32 px-1"
             data-testid="input-invoice-date"
           />
         </div>
 
-        {/* نوع المريض: نقدي / تعاقد */}
-        <div className="flex flex-row-reverse items-center gap-2">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">النوع:</Label>
-          <label className="flex flex-row-reverse items-center gap-1 cursor-pointer text-xs">
+        {/* نوع المريض */}
+        <div className="flex items-center gap-1.5 shrink-0 border-r border-border/40 pr-2 mr-0.5">
+          <span className="text-[10px] text-muted-foreground">نوع:</span>
+          <label className="flex items-center gap-0.5 cursor-pointer text-xs">
             <input
-              type="radio"
-              name="patientType"
-              value="cash"
+              type="radio" name="patientType" value="cash"
               checked={patientType === "cash"}
               onChange={() => setPatientType("cash")}
               disabled={!isDraft}
+              className="accent-primary"
               data-testid="radio-patient-type-cash"
             />
-            {patientTypeLabels.cash}
+            <span className="text-[11px]">نقدي</span>
           </label>
-          <label className="flex flex-row-reverse items-center gap-1 cursor-pointer text-xs">
+          <label className="flex items-center gap-0.5 cursor-pointer text-xs">
             <input
-              type="radio"
-              name="patientType"
-              value="contract"
+              type="radio" name="patientType" value="contract"
               checked={patientType === "contract"}
               onChange={() => setPatientType("contract")}
               disabled={!isDraft}
+              className="accent-primary"
               data-testid="radio-patient-type-contract"
             />
-            {patientTypeLabels.contract}
+            <span className="text-[11px]">تعاقد</span>
           </label>
         </div>
 
         {/* الإقامة */}
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">الإقامة:</Label>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[10px] text-muted-foreground">إقامة</span>
           <Select value={admissionId || "none"} onValueChange={(val) => {
             setAdmissionId(val === "none" ? "" : val);
             if (val && val !== "none") {
               const adm = (activeAdmissions || []).find(a => a.id === val);
-              if (adm && !patientName) {
-                onPatientChange("", adm.patientName);
-              }
+              if (adm && !patientName) onPatientChange("", adm.patientName);
             }
           }} disabled={!isDraft}>
-            <SelectTrigger className="h-7 text-xs w-36" data-testid="select-admission">
+            <SelectTrigger className="h-6 text-[11px] w-28 px-1" data-testid="select-admission">
               <SelectValue placeholder="بدون إقامة" />
             </SelectTrigger>
             <SelectContent>
@@ -239,12 +237,12 @@ export function InvoiceHeaderBar({
             </SelectContent>
           </Select>
         </div>
-      </div>
 
-      {/* ── Row 2: المريض + هاتف + القسم + المخزن + الطبيب ────────────────── */}
-      <div className="flex flex-row-reverse items-center gap-3 flex-wrap">
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">المريض:</Label>
+        <div className="w-px h-4 bg-border/50 shrink-0" />
+
+        {/* المريض */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[10px] text-muted-foreground">مريض</span>
           <PatientSearchCombobox
             value={patientId}
             selectedName={patientName}
@@ -254,20 +252,26 @@ export function InvoiceHeaderBar({
             data-testid="patient-search"
           />
         </div>
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">هاتف:</Label>
+
+        {/* هاتف */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[10px] text-muted-foreground">هاتف</span>
           <Input
             value={patientPhone}
             onChange={(e) => setPatientPhone(e.target.value)}
             disabled={!isDraft}
-            className="h-7 text-xs w-28"
+            className="h-6 text-xs w-24 px-1"
             data-testid="input-patient-phone"
           />
         </div>
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
+
+        <div className="w-px h-4 bg-border/50 shrink-0" />
+
+        {/* القسم */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[10px] text-muted-foreground">قسم</span>
           <Select value={departmentId} onValueChange={setDepartmentId} disabled={!isDraft}>
-            <SelectTrigger className="h-7 text-xs w-32" data-testid="select-department">
+            <SelectTrigger className="h-6 text-[11px] w-28 px-1" data-testid="select-department">
               <SelectValue placeholder="اختر" />
             </SelectTrigger>
             <SelectContent>
@@ -277,10 +281,12 @@ export function InvoiceHeaderBar({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">المخزن:</Label>
+
+        {/* المخزن */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[10px] text-muted-foreground">مخزن</span>
           <Select value={warehouseId} onValueChange={setWarehouseId} disabled={!isDraft}>
-            <SelectTrigger className="h-7 text-xs w-36" data-testid="select-warehouse">
+            <SelectTrigger className="h-6 text-[11px] w-28 px-1" data-testid="select-warehouse">
               <SelectValue placeholder="اختر مخزن" />
             </SelectTrigger>
             <SelectContent>
@@ -290,9 +296,11 @@ export function InvoiceHeaderBar({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-row-reverse items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">الطبيب:</Label>
-          <div className="w-44">
+
+        {/* الطبيب */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[10px] text-muted-foreground">طبيب</span>
+          <div className="w-36">
             <DoctorLookup
               value={localDoctorId}
               displayValue={doctorName}
@@ -307,159 +315,155 @@ export function InvoiceHeaderBar({
         </div>
       </div>
 
-      {/* ── Row 3 (contract only): العقد / الجهة + بطاقة المنتسب ─────────── */}
+      {/* ══ شريط ثانوي: ملاحظات + أزرار الإجراء ══════════════════════════════ */}
+      <div className="flex items-center gap-1.5 px-2 py-1 flex-wrap">
+
+        {/* أزرار الإجراء — على اليمين */}
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 text-xs px-2 gap-0.5"
+            onClick={resetForm}
+            data-testid="button-new"
+          >
+            <Plus className="h-3 w-3" />
+            جديد
+          </Button>
+          {isDraft && (
+            <>
+              <Button
+                size="sm"
+                className="h-6 text-xs px-2 gap-0.5"
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending || !patientName || !invoiceNumber}
+                data-testid="button-save"
+              >
+                {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                حفظ
+              </Button>
+              {invoiceId && (
+                <Button
+                  size="sm"
+                  className="h-6 text-xs px-2 gap-0.5 bg-green-600 hover:bg-green-700 text-white border-green-700"
+                  onClick={() => finalizeMutation.mutate()}
+                  disabled={finalizeMutation.isPending}
+                  data-testid="button-finalize"
+                >
+                  {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                  اعتماد
+                </Button>
+              )}
+              {lines.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-xs px-2 border-blue-400 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                  onClick={openDistributeDialog}
+                  data-testid="button-distribute"
+                >
+                  توزيع
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="w-px h-4 bg-border/50 shrink-0" />
+
+        {/* ملاحظات — تأخذ بقية المساحة */}
+        <div className="flex items-center gap-0.5 flex-1 min-w-[160px]">
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">ملاحظات</span>
+          <Input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            disabled={!isDraft}
+            className="h-6 text-xs flex-1 px-1"
+            placeholder="ملاحظات..."
+            data-testid="input-notes"
+          />
+        </div>
+
+        {/* عرض الجهة للفواتير المعتمدة */}
+        {patientType === "contract" && !isDraft && contractName && (
+          <div className="flex items-center gap-1 text-xs shrink-0">
+            <span className="text-muted-foreground">الجهة:</span>
+            <span className="font-medium text-blue-700 dark:text-blue-300" data-testid="text-contract-company">
+              {contractName}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* ══ شريط التعاقد (يظهر فقط إذا النوع = تعاقد) ═══════════════════════ */}
       {patientType === "contract" && isDraft && (
-        <div className="border rounded p-1.5 bg-blue-50/50 dark:bg-blue-950/20 space-y-1.5">
-          {/* العقد */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-blue-700 dark:text-blue-300 text-xs">العقد / الجهة:</span>
+        <div className="flex items-center gap-2 px-2 py-1 bg-blue-50/60 dark:bg-blue-950/20 border-t border-blue-200/50 dark:border-blue-800/30 flex-wrap">
+          <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 shrink-0">العقد / الجهة:</span>
+          <div className="shrink-0">
             <ContractSelectCombobox
               value={contractId}
-              onChange={(resolved) => {
-                onContractChange(resolved);
-              }}
-              onClear={() => {
-                onContractClear();
-              }}
+              onChange={onContractChange}
+              onClear={onContractClear}
               disabled={!isDraft}
               data-testid="contract-select"
             />
           </div>
 
-          {/* بطاقة المنتسب (اختياري) */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="font-semibold text-muted-foreground text-xs">
-              بطاقة المنتسب:
-              <span className="font-normal text-[10px] mr-1">(اختياري)</span>
-            </span>
+          <div className="w-px h-4 bg-blue-200/60 shrink-0" />
 
-            {effectiveResolved || (contractMemberId && !resolvedInfo) ? (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-1">
-                <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                <span className="font-medium text-blue-700 text-[11px]" data-testid="text-resolved-member">
-                  {effectiveResolved?.memberName || patientName || "منتسب محدد"}
-                </span>
-                {effectiveResolved?.companyName && (
-                  <span className="text-muted-foreground text-[10px]">— {effectiveResolved.companyName}</span>
-                )}
-                <button
-                  onClick={handleClearMember}
-                  className="text-muted-foreground hover:text-red-500 transition-colors"
-                  data-testid="button-clear-member"
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1">
-                <input
-                  ref={cardInputRef}
-                  type="text"
-                  value={cardNumber}
-                  onChange={(e) => setCardNumber(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleMemberLookup(); } }}
-                  placeholder="رقم بطاقة المنتسب..."
-                  className="peachtree-input w-[180px] font-mono text-[11px]"
-                  dir="ltr"
-                  data-testid="input-member-card"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleMemberLookup}
-                  disabled={isLooking || cardNumber.trim().length < 2}
-                  className="h-[26px] px-2"
-                  data-testid="button-lookup-member"
-                >
-                  {isLooking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
-                </Button>
-              </div>
-            )}
+          <CreditCard className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span className="text-[10px] text-muted-foreground shrink-0">بطاقة:</span>
 
-            {lookupError && (
-              <span className="text-red-600 text-[11px]" data-testid="text-member-lookup-error">
-                {lookupError}
+          {effectiveResolved || (contractMemberId && !resolvedInfo) ? (
+            <div className="flex items-center gap-1.5 bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded px-2 py-0.5">
+              <CheckCircle2 className="h-3 w-3 text-blue-600 shrink-0" />
+              <span className="font-medium text-blue-700 dark:text-blue-300 text-[11px]" data-testid="text-resolved-member">
+                {effectiveResolved?.memberName || patientName || "منتسب محدد"}
               </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* عرض الجهة للفواتير المعتمدة فقط */}
-      {patientType === "contract" && !isDraft && contractName && (
-        <div className="flex items-center gap-1 text-xs">
-          <Label className="text-muted-foreground whitespace-nowrap">الجهة:</Label>
-          <span className="font-medium text-blue-700 dark:text-blue-300" data-testid="text-contract-company">
-            {contractName}
-          </span>
-        </div>
-      )}
-
-      {/* ── Row 4: ملاحظات ───────────────────────────────────────────────────── */}
-      <div className="flex flex-row-reverse items-center gap-1">
-        <Label className="text-xs text-muted-foreground whitespace-nowrap">ملاحظات:</Label>
-        <Input
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          disabled={!isDraft}
-          className="h-7 text-xs flex-1"
-          placeholder="ملاحظات..."
-          data-testid="input-notes"
-        />
-      </div>
-
-      {/* ── Row 5: أزرار الإجراء ────────────────────────────────────────────── */}
-      <div className="flex flex-row-reverse items-center gap-2 flex-wrap">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={resetForm}
-          data-testid="button-new"
-        >
-          <Plus className="h-3 w-3 ml-1" />
-          جديد
-        </Button>
-        {isDraft && (
-          <>
-            <Button
-              size="sm"
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || !patientName || !invoiceNumber}
-              data-testid="button-save"
-            >
-              {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Save className="h-3 w-3 ml-1" />}
-              حفظ
-            </Button>
-            {invoiceId && (
-              <Button
-                size="sm"
-                variant="default"
-                onClick={() => finalizeMutation.mutate()}
-                disabled={finalizeMutation.isPending}
-                className="bg-green-600 text-white border-green-700"
-                data-testid="button-finalize"
+              {effectiveResolved?.companyName && (
+                <span className="text-muted-foreground text-[10px]">— {effectiveResolved.companyName}</span>
+              )}
+              <button
+                onClick={handleClearMember}
+                className="text-muted-foreground hover:text-red-500 transition-colors"
+                data-testid="button-clear-member"
               >
-                {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <CheckCircle className="h-3 w-3 ml-1" />}
-                اعتماد
-              </Button>
-            )}
-            {lines.length > 0 && (
+                <XCircle className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <input
+                ref={cardInputRef}
+                type="text"
+                value={cardNumber}
+                onChange={(e) => setCardNumber(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleMemberLookup(); } }}
+                placeholder="رقم البطاقة..."
+                className="peachtree-input w-36 font-mono text-[11px] h-6"
+                dir="ltr"
+                data-testid="input-member-card"
+              />
               <Button
-                size="sm"
+                type="button"
                 variant="outline"
-                onClick={openDistributeDialog}
-                data-testid="button-distribute"
-                className="border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                size="sm"
+                onClick={handleMemberLookup}
+                disabled={isLooking || cardNumber.trim().length < 2}
+                className="h-6 px-2"
+                data-testid="button-lookup-member"
               >
-                <Users className="h-3 w-3 ml-1" />
-                توزيع على حالات
+                {isLooking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
               </Button>
-            )}
-          </>
-        )}
-      </div>
+              {lookupError && (
+                <span className="text-red-600 text-[10px]" data-testid="text-member-lookup-error">
+                  {lookupError}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
