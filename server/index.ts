@@ -571,6 +571,14 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON inventory_lots (item_id, warehouse_id, expiry_year NULLS FIRST, expiry_month NULLS FIRST, received_date)
       WHERE is_active = true
     `);
+    // inventory_lots: covering extension — يُضيف الأعمدة المقروءة دائماً في FEFO
+    // يلغي heap fetches ويرفع أداء فواتير المبيعات والتحويلات عند فتح الدفعات
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_lots_fefo_covering
+      ON inventory_lots (item_id, warehouse_id, expiry_year NULLS FIRST, expiry_month NULLS FIRST, received_date)
+      INCLUDE (id, qty_in_minor, purchase_price, sale_price, expiry_date)
+      WHERE is_active = true
+    `);
     // journal_entries: source_type + date for list filter queries
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_je_source_type_date

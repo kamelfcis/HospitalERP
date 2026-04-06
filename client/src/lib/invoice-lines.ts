@@ -274,6 +274,32 @@ export function formatAvailability(availQtyMinor: string, unitLevel: string, ite
 // أدوات مساعدة
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * يحدّ الكمية المطلوبة بسقف الرصيد المتاح الفعلي (بالوحدة الصغرى).
+ *
+ * الحالة المُعالَجة: صنف كبرى فقط (بلا وحدة صغرى)، رصيده كسري (مثل 0.66 علبة).
+ * الإضافة الافتراضية = 1 علبة كاملة → ترفضها FEFO؛ هذه الدالة تضبطها للمتاح.
+ *
+ * @param additionalMinor   الكمية المطلوبة إضافتها (بالوحدة الداخلية)
+ * @param availableTotal    إجمالي الرصيد المتاح للصنف (availableQtyMinor)
+ * @param existingMinor     ما هو مُضاف بالفعل في سطور الفاتورة الحالية
+ * @returns الكمية الفعلية للإضافة، أو `null` إذا نفد الرصيد كلياً
+ *
+ * ملاحظة: لا تُستدعى إلا عند الإضافة الذكية (!overrides).
+ * الإدخال اليدوي للكمية يتحقق صارماً بدونها.
+ */
+export function capMinorToAvailable(
+  additionalMinor: number,
+  availableTotal: number,
+  existingMinor: number,
+): number | null {
+  if (availableTotal <= 0) return additionalMinor;
+  const remaining = availableTotal - existingMinor;
+  if (remaining <= 0) return null;
+  if (additionalMinor <= remaining) return additionalMinor;
+  return remaining;
+}
+
 export function genId(): string {
   return crypto.randomUUID
     ? crypto.randomUUID()

@@ -7,7 +7,7 @@ import {
   calculateQtyInMinor,
   getDefaultUnitLevel,
 } from "../types";
-import { getSmartDefaultUnitLevel } from "@/lib/invoice-lines";
+import { getSmartDefaultUnitLevel, capMinorToAvailable } from "@/lib/invoice-lines";
 import type { ItemSelectedPayload } from "@/components/ItemFastSearch/types";
 import { useTransferLines } from "./sub-hooks/useTransferLines";
 import { useTransferAutoSave } from "./sub-hooks/useTransferAutoSave";
@@ -208,8 +208,8 @@ export function useTransferForm() {
 
       // ── رصيد منقوص: إذا المتاح أقل من وحدة كاملة، استخدم المتاح ──────────
       // مثال: علبة رصيدها 0.66 بلا وحدة أصغر → نطلب 0.66 بدلاً من 1
-      const totalAvail         = parseFloat(String(item.availableQtyMinor || "0"));
-      const effectiveQtyInMinor = (totalAvail > 0 && totalAvail < qtyInMinor) ? totalAvail : qtyInMinor;
+      const totalAvail          = parseFloat(String(item.availableQtyMinor || "0"));
+      const effectiveQtyInMinor = capMinorToAvailable(qtyInMinor, totalAvail, 0) ?? qtyInMinor;
 
       // صنف بصلاحية + لم يُختر دفعة محددة + مخزن مصدر محدد
       // → شغّل FEFO فوراً بكمية 1 بدلاً من انتظار تأكيد الكمية

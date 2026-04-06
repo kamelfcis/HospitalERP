@@ -8,6 +8,7 @@ import {
   computeLineTotal,
   convertMinorToDisplayQty,
   getSmartDefaultUnitLevel,
+  capMinorToAvailable,
 } from "@/lib/invoice-lines";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -379,16 +380,14 @@ export function useInvoiceLines(
       const additionalMinor = calculateQtyInMinor(overrideQty, overrideUnit, itemData);
 
       // ── رصيد منقوص: إذا المتاح أقل من وحدة كاملة، استخدم المتاح ──────────
-      // يحدث مثلاً: علبة = 30 شريط، رصيد = 2 شريط أو 0.66 علبة بلا وحدة أصغر
+      // مثال: علبة 30 شريطاً، رصيد = 0.66 علبة بلا وحدة صغرى → نطلب 0.66 لا 1
       const availableTotal      = parseFloat(String(itemData.availableQtyMinor || "0"));
-      let   effectiveAdditional = additionalMinor;
-      if (!overrides && availableTotal > 0 && (availableTotal - existingMinor) < additionalMinor) {
-        const remaining = Math.max(0, availableTotal - existingMinor);
-        if (remaining <= 0) {
-          toast({ title: "نفد المخزون", description: "السطور الحالية تستوعب الرصيد المتاح بالكامل", variant: "destructive" });
-          return;
-        }
-        effectiveAdditional = remaining;
+      const effectiveAdditional = !overrides
+        ? capMinorToAvailable(additionalMinor, availableTotal, existingMinor)
+        : additionalMinor;
+      if (effectiveAdditional === null) {
+        toast({ title: "نفد المخزون", description: "السطور الحالية تستوعب الرصيد المتاح بالكامل", variant: "destructive" });
+        return;
       }
       const totalRequiredMinor = existingMinor + effectiveAdditional;
       const unitLevel          = overrides?.unitLevel
