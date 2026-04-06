@@ -103,6 +103,7 @@ const methods = {
     //
     const searchClause  = search ? sql`AND (s.name_ar ILIKE ${`%${search}%`} OR s.code ILIKE ${`%${search}%`} OR s.phone ILIKE ${`%${search}%`} OR s.tax_id ILIKE ${`%${search}%`})` : sql``;
     const typeClause    = supplierType ? sql`AND s.supplier_type = ${supplierType}` : sql``;
+    const activeClause  = (isActive === null || isActive === undefined) ? sql`` : sql`AND s.is_active = ${isActive}`;
 
     const rawRows = await db.execute(sql`
       WITH supplier_invoice_totals AS (
@@ -123,7 +124,8 @@ const methods = {
         )::text AS current_balance
       FROM   suppliers s
       LEFT   JOIN supplier_invoice_totals sit ON sit.supplier_id = s.id
-      WHERE  s.is_active = ${isActive === null || isActive === undefined ? true : isActive}
+      WHERE  TRUE
+        ${activeClause}
         ${typeClause}
         ${searchClause}
       ORDER BY ${orderExpr}
@@ -134,7 +136,8 @@ const methods = {
     const countRaw = await db.execute(sql`
       SELECT COUNT(*)::int AS total
       FROM   suppliers s
-      WHERE  s.is_active = ${isActive === null || isActive === undefined ? true : isActive}
+      WHERE  TRUE
+        ${activeClause}
         ${typeClause}
         ${searchClause}
     `);
