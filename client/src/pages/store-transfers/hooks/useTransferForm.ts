@@ -206,10 +206,15 @@ export function useTransferForm() {
       const qtyEntered = 1;
       const qtyInMinor = calculateQtyInMinor(qtyEntered, unitLevel, item);
 
+      // ── رصيد منقوص: إذا المتاح أقل من وحدة كاملة، استخدم المتاح ──────────
+      // مثال: علبة رصيدها 0.66 بلا وحدة أصغر → نطلب 0.66 بدلاً من 1
+      const totalAvail         = parseFloat(String(item.availableQtyMinor || "0"));
+      const effectiveQtyInMinor = (totalAvail > 0 && totalAvail < qtyInMinor) ? totalAvail : qtyInMinor;
+
       // صنف بصلاحية + لم يُختر دفعة محددة + مخزن مصدر محدد
       // → شغّل FEFO فوراً بكمية 1 بدلاً من انتظار تأكيد الكمية
       if (item.hasExpiry && !batch && sourceWarehouseId) {
-        const ok = await triggerFefoForItem(item, unitLevel, qtyInMinor, allBatches);
+        const ok = await triggerFefoForItem(item, unitLevel, effectiveQtyInMinor, allBatches);
         if (ok) {
           setTimeout(() => barcodeInputRef.current?.focus(), 50);
           return;

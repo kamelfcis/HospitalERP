@@ -376,8 +376,21 @@ export function useInvoiceLines(
       const smartDefault       = getSmartDefaultUnitLevel(itemData);
       const overrideQty        = overrides?.qty ?? 1;
       const overrideUnit       = overrides?.unitLevel ?? smartDefault;
-      const additionalMinor    = calculateQtyInMinor(overrideQty, overrideUnit, itemData);
-      const totalRequiredMinor = existingMinor + additionalMinor;
+      const additionalMinor = calculateQtyInMinor(overrideQty, overrideUnit, itemData);
+
+      // ── رصيد منقوص: إذا المتاح أقل من وحدة كاملة، استخدم المتاح ──────────
+      // يحدث مثلاً: علبة = 30 شريط، رصيد = 2 شريط أو 0.66 علبة بلا وحدة أصغر
+      const availableTotal      = parseFloat(String(itemData.availableQtyMinor || "0"));
+      let   effectiveAdditional = additionalMinor;
+      if (!overrides && availableTotal > 0 && (availableTotal - existingMinor) < additionalMinor) {
+        const remaining = Math.max(0, availableTotal - existingMinor);
+        if (remaining <= 0) {
+          toast({ title: "نفد المخزون", description: "السطور الحالية تستوعب الرصيد المتاح بالكامل", variant: "destructive" });
+          return;
+        }
+        effectiveAdditional = remaining;
+      }
+      const totalRequiredMinor = existingMinor + effectiveAdditional;
       const unitLevel          = overrides?.unitLevel
         ?? (existingForItem.length > 0 ? existingForItem[0].unitLevel : smartDefault);
 
