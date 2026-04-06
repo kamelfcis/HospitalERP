@@ -380,6 +380,8 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   lotId: varchar("lot_id"),
   templateId: varchar("template_id"),
   templateNameSnapshot: text("template_name_snapshot"),
+  appliedAt: timestamp("applied_at"),
+  appliedBy: varchar("applied_by", { length: 50 }),
   expiryMonth: integer("expiry_month"),
   expiryYear: integer("expiry_year"),
   priceSource: text("price_source"),

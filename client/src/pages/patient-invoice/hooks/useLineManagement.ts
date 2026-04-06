@@ -127,6 +127,7 @@ export function useLineManagement({
 
   const [lines, setLines]       = useState<LineLocal[]>([]);
   const [fefoLoading, setFefoLoading] = useState(false);
+  const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
   const linesRef                 = useRef(lines);
   const pendingQtyRef            = useRef<Map<string, string>>(new Map());
 
@@ -172,6 +173,8 @@ export function useLineManagement({
       businessClassification: l.businessClassification ?? (l as any).business_classification ?? null,
       templateId:           (l as any).templateId           ?? (l as any).template_id            ?? null,
       templateNameSnapshot: (l as any).templateNameSnapshot ?? (l as any).template_name_snapshot ?? null,
+      appliedAt:            (l as any).appliedAt            ?? (l as any).applied_at              ?? null,
+      appliedBy:            (l as any).appliedBy            ?? (l as any).applied_by              ?? null,
     }));
     setLines(loaded);
     return loaded;
@@ -202,7 +205,7 @@ export function useLineManagement({
   // ── Add service line ───────────────────────────────────────────────────────
   const addServiceLine = useCallback((
     svc: ServiceSearchResult,
-    opts?: { templateId?: string | null; templateNameSnapshot?: string | null; defaultQty?: number; doctorName?: string; nurseName?: string; notes?: string }
+    opts?: { templateId?: string | null; templateNameSnapshot?: string | null; appliedAt?: string | null; defaultQty?: number; doctorName?: string; nurseName?: string; notes?: string }
   ) => {
     const businessClassification = resolveBusinessClassificationClient({
       lineType: "service",
@@ -247,6 +250,8 @@ export function useLineManagement({
       businessClassification,
       templateId:           opts?.templateId           ?? null,
       templateNameSnapshot: opts?.templateNameSnapshot ?? null,
+      appliedAt:            opts?.appliedAt            ?? null,
+      appliedBy:            null,
     };
     setLines(prev => [...prev, newLine]);
   }, []);
@@ -255,7 +260,7 @@ export function useLineManagement({
   const addItemLine = useCallback(async (
     item: ItemSearchResult,
     lineType: "drug" | "consumable" | "equipment",
-    opts?: { templateId?: string | null; templateNameSnapshot?: string | null; defaultQty?: number; notes?: string }
+    opts?: { templateId?: string | null; templateNameSnapshot?: string | null; appliedAt?: string | null; defaultQty?: number; notes?: string }
   ) => {
     const defaultUnit = getSmartDefaultUnitLevel(item) as "major" | "medium" | "minor";
     const baseSalePrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
@@ -314,6 +319,8 @@ export function useLineManagement({
       businessClassification,
       templateId:           opts?.templateId           ?? null,
       templateNameSnapshot: opts?.templateNameSnapshot ?? null,
+      appliedAt:            opts?.appliedAt            ?? null,
+      appliedBy:            null,
     };
     setLines(prev => [...prev, placeholder]);
     setItemSearch(""); setItemResults([]);
@@ -403,6 +410,8 @@ export function useLineManagement({
                 businessClassification,
                 templateId:           origLine?.templateId           ?? null,
                 templateNameSnapshot: origLine?.templateNameSnapshot ?? null,
+                appliedAt:            origLine?.appliedAt            ?? null,
+                appliedBy:            origLine?.appliedBy            ?? null,
               } as LineLocal;
             });
 
@@ -501,6 +510,8 @@ export function useLineManagement({
                 companyShareAmount: null, patientShareAmount: null,
                 contractPrice: null, listPrice: null, contractRuleId: null,
                 businessClassification: line.businessClassification ?? null,
+                appliedAt:  line.appliedAt  ?? null,
+                appliedBy:  line.appliedBy  ?? null,
               } as LineLocal;
             });
           setLines(prev => [...prev.filter(l => l.itemId !== line.itemId), ...newFefoLines]);
@@ -610,6 +621,8 @@ export function useLineManagement({
             businessClassification: line.businessClassification ?? null,
             templateId:           line.templateId           ?? null,
             templateNameSnapshot: line.templateNameSnapshot ?? null,
+            appliedAt:            line.appliedAt            ?? null,
+            appliedBy:            line.appliedBy            ?? null,
           } as LineLocal;
         });
 
@@ -625,8 +638,12 @@ export function useLineManagement({
     }
   }, [warehouseId, invoiceDate, departmentId, toast, updateLine]);
 
-  // ── Apply template (bulk, one API call) ───────────────────────────────────
-  const applyTemplate = useCallback(async (templateId: string) => {
+  // ── Apply template (bulk, one API call, atomic UI lock) ──────────────────
+  const applyTemplate = useCallback(async (
+    templateId: string,
+    opts?: { replaceExisting?: boolean }
+  ) => {
+    setIsApplyingTemplate(true);
     try {
       const res = await fetch(`/api/invoice-templates/${templateId}/apply`);
       if (!res.ok) throw new Error("فشل تحميل النموذج");
@@ -647,17 +664,23 @@ export function useLineManagement({
         }>;
       };
 
-      const trace = { templateId: tmpl.id, templateNameSnapshot: tmpl.name };
+      // Replace mode: remove all non-STAY_ENGINE lines before applying
+      if (opts?.replaceExisting) {
+        setLines(prev => prev.filter(l => l.sourceType === "STAY_ENGINE" || l.sourceType === "stay_engine"));
+      }
+
+      const appliedAt = new Date().toISOString();
+      const trace = { templateId: tmpl.id, templateNameSnapshot: tmpl.name, appliedAt };
 
       for (const tl of tmpl.lines) {
         const qty = parseFloat(tl.defaultQty ?? "1") || 1;
-        const opts = { ...trace, defaultQty: qty, notes: tl.notes || "", doctorName: tl.doctorName || "", nurseName: tl.nurseName || "" };
+        const lineOpts = { ...trace, defaultQty: qty, notes: tl.notes || "", doctorName: tl.doctorName || "", nurseName: tl.nurseName || "" };
 
         if (tl.lineType === "service" && tl.service) {
-          addServiceLine(tl.service as Parameters<typeof addServiceLine>[0], opts);
+          addServiceLine(tl.service as Parameters<typeof addServiceLine>[0], lineOpts);
         } else if (tl.item) {
           const lineType = (tl.lineType as "drug" | "consumable" | "equipment") || "drug";
-          await addItemLine(tl.item as Parameters<typeof addItemLine>[0], lineType, opts);
+          await addItemLine(tl.item as Parameters<typeof addItemLine>[0], lineType, lineOpts);
         }
       }
 
@@ -665,12 +688,15 @@ export function useLineManagement({
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast({ title: "خطأ في تطبيق النموذج", description: msg, variant: "destructive" });
+    } finally {
+      setIsApplyingTemplate(false);
     }
   }, [addServiceLine, addItemLine, toast]);
 
   return {
     lines,
     fefoLoading,
+    isApplyingTemplate,
     linesRef,
     pendingQtyRef,
     resetLines,

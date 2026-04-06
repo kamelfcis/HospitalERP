@@ -222,6 +222,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
       linesParsed = await autoFillClassification(linesParsed);
 
+      // Server fills appliedBy from session for all template-traced lines
+      const _createUserId = (req.session as any)?.userId as string | undefined;
+      linesParsed = linesParsed.map((l: any) => ({
+        ...l,
+        appliedBy: l.templateId ? (_createUserId || null) : null,
+        appliedAt: l.templateId ? (l.appliedAt ? new Date(l.appliedAt) : new Date()) : null,
+      }));
+
       linesParsed = await applyContractCoverage(
         (headerParsed as any).contractId ?? null,
         linesParsed,
@@ -259,6 +267,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
 
       linesParsed = await autoFillClassification(linesParsed);
+
+      // Server fills appliedBy from session for all template-traced lines
+      const _updateUserId = (req.session as any)?.userId as string | undefined;
+      linesParsed = linesParsed.map((l: any) => ({
+        ...l,
+        appliedBy: l.templateId ? (_updateUserId || null) : null,
+        appliedAt: l.templateId ? (l.appliedAt ? new Date(l.appliedAt) : new Date()) : null,
+      }));
 
       linesParsed = await applyContractCoverage(
         (headerParsed as any).contractId ?? null,

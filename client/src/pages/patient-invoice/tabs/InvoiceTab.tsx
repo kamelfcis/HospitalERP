@@ -125,7 +125,7 @@ interface InvoiceTabProps {
 
   canDiscount?: boolean;
   onOpenDiscountDialog?: () => void;
-  applyTemplate?: (templateId: string) => Promise<void>;
+  applyTemplate?: (templateId: string, opts?: { replaceExisting?: boolean }) => Promise<void>;
 }
 
 export function InvoiceTab({

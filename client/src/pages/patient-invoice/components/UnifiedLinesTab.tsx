@@ -109,7 +109,7 @@ interface UnifiedLinesTabProps {
   handleUnitLevelChange: (tempId: string, level: "major" | "medium" | "minor") => void;
   openStatsPopup: (itemId: string, name: string) => void;
   getServiceRowClass: (serviceType: string) => string;
-  applyTemplate?: (templateId: string) => Promise<void>;
+  applyTemplate?: (templateId: string, opts?: { replaceExisting?: boolean }) => Promise<void>;
 }
 
 export function UnifiedLinesTab({
@@ -126,6 +126,7 @@ export function UnifiedLinesTab({
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("__none__");
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [replaceExisting, setReplaceExisting] = useState(false);
 
   const { data: templates } = useQuery<InvoiceTemplate[]>({
     queryKey: ["/api/invoice-templates"],
@@ -136,7 +137,7 @@ export function UnifiedLinesTab({
     if (!applyTemplate || !selectedTemplateId || selectedTemplateId === "__none__") return;
     setApplyingTemplate(true);
     try {
-      await applyTemplate(selectedTemplateId);
+      await applyTemplate(selectedTemplateId, { replaceExisting });
       setSelectedTemplateId("__none__");
     } finally {
       setApplyingTemplate(false);
@@ -154,30 +155,42 @@ export function UnifiedLinesTab({
 
           {/* تطبيق نموذج */}
           {applyTemplate && templates && templates.length > 0 && (
-            <div className="flex flex-row-reverse items-center gap-2 pb-1 border-b border-dashed">
-              <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-xs text-muted-foreground shrink-0">نموذج:</span>
-              <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                <SelectTrigger className="h-7 text-xs flex-1" data-testid="select-template">
-                  <SelectValue placeholder="اختر نموذجاً..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— اختر نموذجاً —</SelectItem>
-                  {templates.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-7 text-xs px-3 shrink-0"
-                onClick={handleApplyTemplate}
-                disabled={selectedTemplateId === "__none__" || applyingTemplate}
-                data-testid="btn-apply-template"
-              >
-                {applyingTemplate ? <Loader2 className="h-3 w-3 animate-spin" /> : "تطبيق"}
-              </Button>
+            <div className="flex flex-col gap-1 pb-1 border-b border-dashed">
+              <div className="flex flex-row-reverse items-center gap-2">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-xs text-muted-foreground shrink-0">نموذج:</span>
+                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId} disabled={applyingTemplate}>
+                  <SelectTrigger className="h-7 text-xs flex-1" data-testid="select-template">
+                    <SelectValue placeholder="اختر نموذجاً..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— اختر نموذجاً —</SelectItem>
+                    {templates.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 text-xs px-3 shrink-0"
+                  onClick={handleApplyTemplate}
+                  disabled={selectedTemplateId === "__none__" || applyingTemplate}
+                  data-testid="btn-apply-template"
+                >
+                  {applyingTemplate ? <Loader2 className="h-3 w-3 animate-spin" /> : "تطبيق"}
+                </Button>
+              </div>
+              <label className="flex flex-row-reverse items-center gap-1.5 cursor-pointer self-end" data-testid="toggle-replace-existing">
+                <input
+                  type="checkbox"
+                  checked={replaceExisting}
+                  onChange={e => setReplaceExisting(e.target.checked)}
+                  disabled={applyingTemplate}
+                  className="h-3 w-3 accent-primary"
+                />
+                <span className="text-[10px] text-muted-foreground">استبدال البنود الحالية</span>
+              </label>
             </div>
           )}
 
@@ -219,7 +232,7 @@ export function UnifiedLinesTab({
                     }
                   }}
                   placeholder="بحث عن خدمة..."
-                  disabled={!isDraft}
+                  disabled={!isDraft || applyingTemplate}
                   data-testid="input-service-search-unified"
                 />
               </div>
@@ -266,7 +279,7 @@ export function UnifiedLinesTab({
                   }))}
                   onSelect={(si) => addItemLine(si.raw, itemAddType)}
                   placeholder="بحث عن صنف... (استخدم % للبحث المتقدم)"
-                  disabled={!isDraft}
+                  disabled={!isDraft || applyingTemplate}
                   showSearchIcon
                   inputClassName="pr-8"
                   inputTestId={`input-item-search-unified`}

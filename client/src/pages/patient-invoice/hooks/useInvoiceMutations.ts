@@ -63,6 +63,13 @@ export function useInvoiceMutations({
       netAmount: String(totals.netAmount),
       paidAmount: String(totals.paidAmount),
     };
+    // Validate STAY_ENGINE lines before building payload
+    for (const l of lines) {
+      if (l.sourceType === "STAY_ENGINE" && (!l.quantity || l.quantity === 0)) {
+        throw new Error(`سطر الإقامة "${l.description || 'بند إقامة'}" يتطلب إدخال عدد الأيام`);
+      }
+    }
+
     const lineData = lines.map((l, i) => {
       const isStayEngine = l.sourceType === "STAY_ENGINE";
       const qty = isStayEngine && (l.quantity === 0 || !l.quantity) ? null : String(l.quantity);
@@ -90,6 +97,8 @@ export function useInvoiceMutations({
         businessClassification: l.businessClassification || null,
         templateId:           (l as any).templateId           || null,
         templateNameSnapshot: (l as any).templateNameSnapshot || null,
+        appliedAt:            (l as any).appliedAt            || null,
+        appliedBy:            (l as any).appliedBy            || null,
       };
     });
     const payData = payments.map(p => ({

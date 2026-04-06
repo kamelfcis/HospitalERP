@@ -38,6 +38,10 @@ export interface LineLocal {
   /** trace — النموذج الذي أُنشئ منه البند (null لو لم يكن من نموذج) */
   templateId: string | null;
   templateNameSnapshot: string | null;
+  /** وقت تطبيق النموذج — يُسجَّل لحظة الإضافة */
+  appliedAt: string | null;
+  /** المستخدم الذي طبّق النموذج */
+  appliedBy: string | null;
 }
 
 export interface PaymentLocal {
