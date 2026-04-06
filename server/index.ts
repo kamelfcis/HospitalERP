@@ -915,6 +915,14 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
   setTimeout(runRptRefresh("startup"), 10000);
   setInterval(runRptRefresh("polling"), RPT_REFRESH_MS);
 
+  const runVisitClassRefresh = (trigger: "startup" | "polling") => async () => {
+    try {
+      await runRefresh(REFRESH_KEYS.PATIENT_VISIT_CLASS, () => storage.refreshPatientVisitClassification(), trigger);
+    } catch {}
+  };
+  setTimeout(runVisitClassRefresh("startup"), 11000);
+  setInterval(runVisitClassRefresh("polling"), RPT_REFRESH_MS);
+
   const runSnapRefresh = (trigger: "startup" | "polling") => async () => {
     try {
       await Promise.all([

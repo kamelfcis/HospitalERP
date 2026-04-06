@@ -20,7 +20,8 @@
  *
  *  POST /api/admin/rpt/refresh/:key
  *    تشغيل يدوي لـ job محدد. آمن للإعادة. يرفض التشغيل المتزامن.
- *    keys: patient_visit_summary | inventory_snapshot | item_movements_summary
+ *    keys: patient_visit_summary | patient_visit_classification |
+ *          inventory_snapshot | item_movements_summary
  *
  *  POST /api/admin/rpt/refresh-all
  *    تشغيل يدوي لجميع jobs دفعةً واحدة.
@@ -64,9 +65,10 @@ type RefreshFn = () => Promise<{ upserted: number; durationMs: number; ranAt: st
 
 function getRefreshFn(key: string): RefreshFn | null {
   switch (key) {
-    case REFRESH_KEYS.PATIENT_VISIT:  return () => storage.refreshPatientVisitSummary();
-    case REFRESH_KEYS.INVENTORY_SNAP: return () => storage.refreshInventorySnapshot();
-    case REFRESH_KEYS.ITEM_MOVEMENTS: return () => storage.refreshItemMovementsSummary();
+    case REFRESH_KEYS.PATIENT_VISIT:       return () => storage.refreshPatientVisitSummary();
+    case REFRESH_KEYS.PATIENT_VISIT_CLASS: return () => storage.refreshPatientVisitClassification();
+    case REFRESH_KEYS.INVENTORY_SNAP:      return () => storage.refreshInventorySnapshot();
+    case REFRESH_KEYS.ITEM_MOVEMENTS:      return () => storage.refreshItemMovementsSummary();
     default: return null;
   }
 }
@@ -428,9 +430,10 @@ export function registerReportsRoutes(app: Express) {
     if (!requireAdmin(req, res)) return;
 
     const jobs = [
-      { key: REFRESH_KEYS.PATIENT_VISIT,  fn: () => storage.refreshPatientVisitSummary() },
-      { key: REFRESH_KEYS.INVENTORY_SNAP, fn: () => storage.refreshInventorySnapshot() },
-      { key: REFRESH_KEYS.ITEM_MOVEMENTS, fn: () => storage.refreshItemMovementsSummary() },
+      { key: REFRESH_KEYS.PATIENT_VISIT,       fn: () => storage.refreshPatientVisitSummary() },
+      { key: REFRESH_KEYS.PATIENT_VISIT_CLASS,  fn: () => storage.refreshPatientVisitClassification() },
+      { key: REFRESH_KEYS.INVENTORY_SNAP,       fn: () => storage.refreshInventorySnapshot() },
+      { key: REFRESH_KEYS.ITEM_MOVEMENTS,       fn: () => storage.refreshItemMovementsSummary() },
     ];
 
     const settled = await Promise.allSettled(

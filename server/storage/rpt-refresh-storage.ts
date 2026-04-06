@@ -10,6 +10,22 @@
  *  - مشكلة N×M محلولة: تجميع رؤوس/بنود الفواتير منفصل
  *  - يُغطّي حالياً: source_type = 'admission' فقط
  *
+ *  refreshPatientVisitClassification()
+ *  ────────────────────────────────────
+ *  يُحدّث جدول `rpt_patient_visit_classification` من البيانات الحية.
+ *  - Grain: صف واحد لكل (source_type × source_id × business_classification)
+ *  - source_type = 'admission'       → source_id = admissions.id
+ *  - source_type = 'patient_invoice' → source_id = patient_invoice_headers.id
+ *  - المصدر الوحيد: patient_invoice_lines.business_classification
+ *  - Draft مستبعد (status = 'finalized' | 'partial_paid' | 'paid' فقط)
+ *  - Cancelled مستبعد دائماً
+ *  - is_void مستبعد دائماً على مستوى البند
+ *  - business_classification = NULL مستبعد (بنود غير مصنّفة)
+ *  - patient_id و department_id يُسمح بـ NULL لا يوقفان الـ refresh
+ *  - refreshed_at = وقت بناء صف الـ rpt وليس وقت العملية الأصلية
+ *  - ❌ لا يُقرأ أثناء إنشاء/تعديل الفاتورة
+ *  - ❌ لا يستخدم finalized_snapshot_json كمصدر
+ *
  *  refreshInventorySnapshot()
  *  ───────────────────────────
  *  يُحدّث جدول `rpt_inventory_snapshot` من `inventory_lots` الحية.
@@ -723,6 +739,177 @@ const methods = {
       durationMs,
       ranAt: new Date().toISOString(),
     };
+  },
+
+  // ─── rpt_patient_visit_classification ──────────────────────────────────────
+  //
+  // Grain: صف واحد لكل (source_type × source_id × business_classification)
+  //
+  // قواعد الاستبعاد:
+  //   Draft     → مستبعد — الجدول يعكس الإيراد المعتمد فقط
+  //   Cancelled → مستبعد دائماً
+  //   status enum: draft | finalized | cancelled (لا partial_paid أو paid)
+  //   is_void   → مستبعد على مستوى البند
+  //   business_classification IS NULL → مستبعد (بنود غير مصنّفة)
+  //
+  // التدفق:
+  //   1. UPSERT للإقامات   (source_type = 'admission')
+  //   2. UPSERT للفواتير المستقلة (source_type = 'patient_invoice')
+  //   3. تنظيف الصفوف اليتيمة
+  //
+  async refreshPatientVisitClassification(): Promise<RptRefreshResult> {
+    const start = Date.now();
+    let totalUpserted = 0;
+
+    // ── 1. الإقامات (source_type = 'admission') ─────────────────────────────
+    //
+    // source_id   = admissions.id
+    // department  = آخر department_id على فواتير الإقامة
+    // period_*    = من admission_date
+    // الفواتير المؤهلة: status = 'finalized' فقط (enum: draft|finalized|cancelled)
+    //
+    const admResult = await db.execute(sql`
+      INSERT INTO rpt_patient_visit_classification (
+        source_type, source_id,
+        patient_id, department_id,
+        period_year, period_month,
+        business_classification,
+        total_amount, line_count,
+        refreshed_at
+      )
+      SELECT
+        'admission'                                                     AS source_type,
+        a.id                                                            AS source_id,
+        a.patient_id,
+        dept_agg.latest_dept_id                                         AS department_id,
+        EXTRACT(YEAR  FROM a.admission_date)::smallint                 AS period_year,
+        EXTRACT(MONTH FROM a.admission_date)::smallint                 AS period_month,
+        pil.business_classification,
+        SUM(pil.total_price::numeric)                                   AS total_amount,
+        COUNT(*)::integer                                               AS line_count,
+        NOW()
+
+      FROM admissions a
+
+      -- ── آخر department_id على فواتير هذه الإقامة ─────────────────────────
+      LEFT JOIN (
+        SELECT
+          pih2.admission_id,
+          (ARRAY_AGG(pih2.department_id ORDER BY pih2.created_at DESC))[1] AS latest_dept_id
+        FROM patient_invoice_headers pih2
+        WHERE pih2.status = 'finalized'
+          AND pih2.admission_id IS NOT NULL
+        GROUP BY pih2.admission_id
+      ) dept_agg ON dept_agg.admission_id = a.id
+
+      JOIN patient_invoice_headers pih
+        ON pih.admission_id = a.id
+       AND pih.status = 'finalized'
+
+      JOIN patient_invoice_lines pil
+        ON pil.header_id = pih.id
+       AND NOT pil.is_void
+       AND pil.business_classification IS NOT NULL
+
+      GROUP BY
+        a.id, a.patient_id, dept_agg.latest_dept_id,
+        a.admission_date, pil.business_classification
+
+      ON CONFLICT (source_type, source_id, business_classification) DO UPDATE SET
+        patient_id              = EXCLUDED.patient_id,
+        department_id           = EXCLUDED.department_id,
+        period_year             = EXCLUDED.period_year,
+        period_month            = EXCLUDED.period_month,
+        total_amount            = EXCLUDED.total_amount,
+        line_count              = EXCLUDED.line_count,
+        refreshed_at            = EXCLUDED.refreshed_at
+    `);
+    totalUpserted += Number((admResult as any).rowCount ?? 0);
+
+    // ── 2. الفواتير المستقلة (source_type = 'patient_invoice') ──────────────
+    //
+    // source_id   = patient_invoice_headers.id
+    // period_*    = من invoice_date
+    // department  = COALESCE(pih.department_id, warehouses.department_id)
+    // patient_id  = best-effort عبر مطابقة الاسم (nullable OK)
+    // الفواتير المؤهلة: status = 'finalized' فقط (enum: draft|finalized|cancelled)
+    //
+    const invResult = await db.execute(sql`
+      INSERT INTO rpt_patient_visit_classification (
+        source_type, source_id,
+        patient_id, department_id,
+        period_year, period_month,
+        business_classification,
+        total_amount, line_count,
+        refreshed_at
+      )
+      SELECT
+        'patient_invoice'                                               AS source_type,
+        pih.id                                                          AS source_id,
+        pat.id                                                          AS patient_id,
+        COALESCE(pih.department_id, w.department_id)                   AS department_id,
+        EXTRACT(YEAR  FROM pih.invoice_date)::smallint                 AS period_year,
+        EXTRACT(MONTH FROM pih.invoice_date)::smallint                 AS period_month,
+        pil.business_classification,
+        SUM(pil.total_price::numeric)                                   AS total_amount,
+        COUNT(*)::integer                                               AS line_count,
+        NOW()
+
+      FROM patient_invoice_headers pih
+
+      JOIN patient_invoice_lines pil
+        ON pil.header_id = pih.id
+       AND NOT pil.is_void
+       AND pil.business_classification IS NOT NULL
+
+      LEFT JOIN patients    pat ON pat.full_name = pih.patient_name
+      LEFT JOIN warehouses  w   ON w.id = pih.warehouse_id
+
+      WHERE pih.admission_id IS NULL
+        AND pih.status = 'finalized'
+
+      GROUP BY
+        pih.id, pih.invoice_date,
+        pat.id,
+        pih.department_id, w.department_id,
+        pil.business_classification
+
+      ON CONFLICT (source_type, source_id, business_classification) DO UPDATE SET
+        patient_id              = EXCLUDED.patient_id,
+        department_id           = EXCLUDED.department_id,
+        period_year             = EXCLUDED.period_year,
+        period_month            = EXCLUDED.period_month,
+        total_amount            = EXCLUDED.total_amount,
+        line_count              = EXCLUDED.line_count,
+        refreshed_at            = EXCLUDED.refreshed_at
+    `);
+    totalUpserted += Number((invResult as any).rowCount ?? 0);
+
+    // ── 3. تنظيف — حذف الصفوف اليتيمة ──────────────────────────────────────
+    //
+    // إقامة محذوفة أو فاتورة أصبحت cancelled/draft بعد refresh سابق.
+    //
+    await db.execute(sql`
+      DELETE FROM rpt_patient_visit_classification rpc
+      WHERE rpc.source_type = 'admission'
+        AND NOT EXISTS (
+          SELECT 1 FROM admissions a WHERE a.id = rpc.source_id
+        )
+    `);
+
+    await db.execute(sql`
+      DELETE FROM rpt_patient_visit_classification rpc
+      WHERE rpc.source_type = 'patient_invoice'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM patient_invoice_headers pih
+          WHERE pih.id     = rpc.source_id
+            AND pih.status = 'finalized'
+        )
+    `);
+
+    const durationMs = Date.now() - start;
+    return { upserted: totalUpserted, durationMs, ranAt: new Date().toISOString() };
   },
 };
 

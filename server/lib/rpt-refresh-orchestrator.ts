@@ -27,6 +27,17 @@
  *  │             manual via POST /api/admin/rpt/refresh/patient_visit_summary│
  *  │  Consumers: GET /api/patients/stats                                     │
  *  ├─────────────────────────────────────────────────────────────────────────┤
+ *  │  rpt_patient_visit_classification                                       │
+ *  │  ────────────────────────────────                                       │
+ *  │  Grain:     source_type × source_id × business_classification           │
+ *  │  Sources:   admissions, patient_invoice_headers, patient_invoice_lines  │
+ *  │  Rules:     draft+cancelled excluded; is_void excluded; bc NULL excl.   │
+ *  │  Refresh:   refreshPatientVisitClassification()                         │
+ *  │  Triggers:  startup (11s delay) → polling (15 min)                     │
+ *  │             manual via POST /api/admin/rpt/refresh/                     │
+ *  │                           patient_visit_classification                  │
+ *  │  Consumers: revenue-by-classification reports, patient profitability    │
+ *  ├─────────────────────────────────────────────────────────────────────────┤
  *  │  rpt_inventory_snapshot                                                 │
  *  │  ──────────────────────                                                 │
  *  │  Sources:   inventory_lots (qty_in_minor, is_active, expiry, costs)     │
@@ -78,9 +89,10 @@ export interface RptRefreshResult {
 
 // ── Canonical refresh keys ────────────────────────────────────────────────────
 export const REFRESH_KEYS = {
-  PATIENT_VISIT:  "patient_visit_summary",
-  INVENTORY_SNAP: "inventory_snapshot",
-  ITEM_MOVEMENTS: "item_movements_summary",
+  PATIENT_VISIT:       "patient_visit_summary",
+  PATIENT_VISIT_CLASS: "patient_visit_classification",
+  INVENTORY_SNAP:      "inventory_snapshot",
+  ITEM_MOVEMENTS:      "item_movements_summary",
 } as const;
 
 export type RefreshKey = typeof REFRESH_KEYS[keyof typeof REFRESH_KEYS];
