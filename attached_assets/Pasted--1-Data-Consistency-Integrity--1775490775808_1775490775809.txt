@@ -1,0 +1,130 @@
+⚠️ ملاحظات مهمة على التقرير
+1) ❗ غايبة أهم نقطة: Data Consistency / Integrity
+
+أنت ركزت على الأداء (ممتاز)، لكن ناقص توضيح:
+
+👉 ماذا يحدث لو:
+
+الـ FEFO اتغيرت بعد preload؟
+الكمية خلصت من نفس الـ lot؟
+السعر اتغير؟
+لازم تضيف:
+
+Server-side validation still runs at finalize لضمان:
+
+صحة الـ lotId
+الكمية متاحة
+السعر صحيح
+
+📌 دي نقطة IFRS/Control مهمة جدًا (منع بيع على بيانات قديمة)
+
+2) ❗ Missing: Concurrency Handling
+
+أنت ذكرت السرعة، لكن لم تذكر:
+
+ماذا لو نفس الصنف تم اختياره بسرعة؟
+ماذا لو async رجع بترتيب مختلف؟
+لازم توضح:
+كل line مربوط بـ lineId
+async updates لا تكتب إلا لنفس السطر
+لا يوجد overwrite لتعديل أحدث
+3) ❗ Price Cache Risk (مهمة جدًا)
+
+الكاش 60 ثانية ممتاز… لكن:
+
+👉 ماذا لو:
+
+السعر مرتبط بتعاقد dynamic؟
+أو خصم حسب الحالة؟
+لازم تضيف:
+
+Cache is context-aware and safe only when:
+
+contract ثابت
+customerType ثابت
+
+📌 أو:
+
+invalidate الكاش عند تغيير contract / price context
+4) ❗ Missing: Fallback Clarity
+
+أنت ذكرت fallback، لكن مش واضح كفاية
+
+لازم تضيف بوضوح:
+لو allBatches غير متاحة:
+API fallback يعمل تلقائي
+لو لا يوجد lot:
+يظهر warning
+يمنع الحفظ أو يكمل حسب السياسة
+5) ❗ FEFO Client-side Risk (في التحويل)
+
+النقطة دي مهمة جدًا:
+
+👉 FEFO على العميل ممتاز… لكن:
+
+هل كل batches محمّلة؟
+هل البيانات up-to-date؟
+لازم تضيف:
+
+Client-side FEFO is an optimization, but:
+
+server validation is mandatory before commit
+6) ❗ Missing: Single Source of Truth Enforcement
+
+أنت ذكرت lotId، لكن مش مؤكّد عليه كفاية
+
+لازم تضيف جملة واضحة:
+
+All downstream operations (posting, stock movement, costing) تعتمد فقط على lotId وليس expiry أو batchNumber
+
+7) ❗ Missing: Unit Conversion Impact
+
+في سيستمك (وأنت شغال صح جدًا فيه):
+
+👉 السعر + الكمية مرتبطين بالوحدة
+
+لكن التقرير لم يذكر:
+
+هل resolvedPrice مربوط بالـ unit؟
+هل FEFO يتأثر بالوحدة؟
+لازم تضيف:
+
+Pricing and FEFO resolution respect unit conversion rules
+
+8) ❗ Missing: Atomic Update Guarantee
+
+أنت قلت performance، لكن ما قلتش:
+
+👉 هل السطر بيتحدث مرة واحدة؟
+
+دي نقطة critical
+
+لازم تضيف:
+
+Line update is atomic (single state update) لتفادي:
+
+partial state
+UI inconsistency
+9) ❗ Missing: Error Handling UX
+
+مفيش ذكر لـ:
+
+لو مفيش سعر
+لو مفيش lot
+لو API فشل
+لازم تضيف:
+user feedback واضح
+منع silent failure
+10) ❗ Missing: Audit / Accounting Impact (مهم ليك جدًا)
+
+بما إنك شغال ERP محترم:
+
+👉 لازم تضيف:
+
+Changes do not affect:
+
+journal posting logic
+COGS calculation
+inventory valuation
+
+📌 دي نقطة هتطمن أي CFO أو Auditor

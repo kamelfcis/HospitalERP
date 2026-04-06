@@ -68,7 +68,6 @@ interface FefoOptions {
 
 // ── كاش أسعار القسم (60 ثانية) لتجنب طلب API متكرر لنفس الصنف ──────────────
 type PriceCacheEntry = { baseSalePrice: number; isDeptPrice: boolean; priceSource: string; ts: number };
-const _pricingCache = new Map<string, PriceCacheEntry>();
 const PRICING_CACHE_TTL = 60_000;
 
 interface FefoResult {
@@ -232,6 +231,7 @@ async function runFefo(opts: FefoOptions): Promise<FefoResult> {
 async function resolvePricing(
   itemData: InvoiceItemData,
   warehouseId: string,
+  cache: Map<string, PriceCacheEntry>,
 ): Promise<{ baseSalePrice: number; isDeptPrice: boolean; priceSource: string }> {
   let baseSalePrice = parseFloat(String(itemData.salePriceCurrent)) || 0;
   let priceSource   = "item";
@@ -239,7 +239,7 @@ async function resolvePricing(
 
   if (warehouseId) {
     const cacheKey = `${itemData.id}_${warehouseId}`;
-    const cached   = _pricingCache.get(cacheKey);
+    const cached   = cache.get(cacheKey);
     if (cached && Date.now() - cached.ts < PRICING_CACHE_TTL) {
       return { baseSalePrice: cached.baseSalePrice, isDeptPrice: cached.isDeptPrice, priceSource: cached.priceSource };
     }
@@ -251,7 +251,7 @@ async function resolvePricing(
         if (resolved > 0) baseSalePrice = resolved;
         if (data.source) priceSource = data.source;
         isDeptPrice = data.source === "department";
-        _pricingCache.set(cacheKey, { baseSalePrice, isDeptPrice, priceSource, ts: Date.now() });
+        cache.set(cacheKey, { baseSalePrice, isDeptPrice, priceSource, ts: Date.now() });
       }
     } catch {}
   }
@@ -294,6 +294,8 @@ export function useInvoiceLines(
   const linesRef                    = useRef<SalesLineLocal[]>([]);
   linesRef.current                  = lines;
   const pendingQtyRef               = useRef<Map<string, string>>(new Map());
+  // كاش أسعار نطاقه الفاتورة الحالية فقط — يُعاد ضبطه عند فتح فاتورة جديدة
+  const pricingCacheRef             = useRef<Map<string, PriceCacheEntry>>(new Map());
 
   // ── تحديث سطر ──────────────────────────────────────────────────────────────
   // كل سطر يتحدث بشكل مستقل — حتى لو كان FEFO
@@ -385,7 +387,7 @@ export function useInvoiceLines(
         const [pricing, allocResult] = await Promise.all([
           resolvedPriceArg
             ? Promise.resolve(resolvedPriceArg)
-            : resolvePricing(itemData, warehouseId),
+            : resolvePricing(itemData, warehouseId, pricingCacheRef.current),
           getFefoAllocations({
             itemId: itemData.id, warehouseId, invoiceDate,
             totalRequiredMinor,
@@ -417,7 +419,7 @@ export function useInvoiceLines(
 
     // ── مسار عادي (صنف بدون صلاحية) ─────────────────────────────────────────
     const { baseSalePrice, isDeptPrice: _dep, priceSource } = resolvedPriceArg
-      ?? await resolvePricing(itemData, warehouseId);
+      ?? await resolvePricing(itemData, warehouseId, pricingCacheRef.current);
     const targetUnit = overrides?.unitLevel ?? getSmartDefaultUnitLevel(itemData);
     const targetQty  = overrides?.qty ?? 1;
 
@@ -481,7 +483,7 @@ export function useInvoiceLines(
 
       // أعد جلب السعر لضمان دقته (قد يتغير سعر القسم)
       const { baseSalePrice, isDeptPrice, priceSource } = await resolvePricing(
-        line.item, warehouseId,
+        line.item, warehouseId, pricingCacheRef.current,
       );
 
       setFefoLoading(true);
