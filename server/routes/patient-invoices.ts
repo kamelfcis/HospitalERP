@@ -59,16 +59,20 @@ async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Prom
 }
 
 /**
- * Server-side safety net: يملأ business_classification لأي بند وصل بدون قيمة.
- * يستعلم عن master data للخدمات والأصناف بشكل bulk ثم يستدعي الـ resolver.
- * الـ client يرسل القيمة عادةً — لكن الـ server هو مصدر الحقيقة.
+ * Server-side classification guard — المصدر الوحيد للحقيقة.
+ *
+ * القاعدة: لا نثق أبداً في قيمة الـ client.
+ * نحسب دائماً من master data بغض النظر عما أرسله الـ client.
+ *
+ * - إذا كانت قيمة الـ client تختلف عن المحسوبة → نسجل تحذير ونتجاهل الـ client
+ * - إذا استُخدم fallback (master data فارغ) → نسجل تحذير
  */
 async function autoFillClassification(lines: any[]): Promise<any[]> {
-  const nullLines = lines.filter(l => !l.businessClassification);
-  if (nullLines.length === 0) return lines;
+  if (lines.length === 0) return lines;
 
-  const serviceIds = [...new Set(nullLines.map((l: any) => l.serviceId).filter(Boolean))] as string[];
-  const itemIds    = [...new Set(nullLines.map((l: any) => l.itemId).filter(Boolean))] as string[];
+  // نجلب كل الـ IDs (مش بس الـ null) — لأن الـ server يُعيد الحساب دائماً
+  const serviceIds = [...new Set(lines.map((l: any) => l.serviceId).filter(Boolean))] as string[];
+  const itemIds    = [...new Set(lines.map((l: any) => l.itemId).filter(Boolean))] as string[];
 
   const [svcRows, itmRows] = await Promise.all([
     serviceIds.length > 0
@@ -83,7 +87,6 @@ async function autoFillClassification(lines: any[]): Promise<any[]> {
   const itmMap = new Map((itmRows.rows as any[]).map(r => [r.id, r]));
 
   return lines.map(l => {
-    if (l.businessClassification) return l;
     const svc = svcMap.get(l.serviceId);
     const itm = itmMap.get(l.itemId);
     const { result, usedFallback, fallbackReason } = resolveBusinessClassificationWithMeta({
@@ -95,12 +98,28 @@ async function autoFillClassification(lines: any[]): Promise<any[]> {
       itemId:                         l.itemId ?? null,
       itemBusinessClassification:     itm?.business_classification ?? null,
     });
+
+    // Guard: الـ client أرسل قيمة مختلفة عن ما حسبه الـ server من master data
+    if (l.businessClassification && l.businessClassification !== result) {
+      logger.warn(
+        {
+          clientValue:  l.businessClassification,
+          serverValue:  result,
+          lineType:     l.lineType,
+          serviceId:    l.serviceId,
+          itemId:       l.itemId,
+        },
+        "[CLASSIFICATION] client value rejected — server recomputed from master",
+      );
+    }
+
     if (usedFallback) {
       logger.warn(
         { lineType: l.lineType, serviceId: l.serviceId, itemId: l.itemId, fallbackReason },
         "[CLASSIFICATION] server-side fallback used",
       );
     }
+
     return { ...l, businessClassification: result };
   });
 }
@@ -387,6 +406,34 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
       const invoiceLines = await storage.getPatientInvoice(invoiceId);
       if (invoiceLines) {
+        // ── INVOICE_FINALIZED audit log مع ملخص التصنيفات التجارية ─────────────
+        const finalizedLines = invoiceLines.lines || [];
+        const classificationsSummary = finalizedLines.reduce(
+          (acc: Record<string, { count: number; totalEGP: number }>, l: any) => {
+            const cls = l.businessClassification || "unclassified";
+            if (!acc[cls]) acc[cls] = { count: 0, totalEGP: 0 };
+            acc[cls].count++;
+            acc[cls].totalEGP = parseFloat(
+              (acc[cls].totalEGP + parseFloat(String(l.totalPrice || "0"))).toFixed(2)
+            );
+            return acc;
+          },
+          {},
+        );
+        logger.info(
+          {
+            invoiceId,
+            invoiceNumber:          result.invoiceNumber,
+            patientName:            result.patientName,
+            totalAmount:            result.totalAmount,
+            netAmount:              result.netAmount,
+            lineCount:              finalizedLines.length,
+            finalizedBy:            (req.session as any)?.userId ?? null,
+            classificationsSummary,
+          },
+          "INVOICE_FINALIZED",
+        );
+
         const glLines = storage.buildPatientInvoiceGLLines(result, invoiceLines.lines || []);
 
         // Set source doc + event log to "pending" BEFORE fire-and-forget
