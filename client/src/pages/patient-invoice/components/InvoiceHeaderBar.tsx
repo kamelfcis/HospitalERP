@@ -288,7 +288,7 @@ export function InvoiceHeaderBar({
       </Dialog>
 
       {/* ── Card ────────────────────────────────────────────────────────────── */}
-      <div className="border rounded-md bg-card text-[12px] overflow-hidden" dir="rtl">
+      <div className="border rounded-md bg-card text-[12px]" dir="rtl">
 
         {/* ── Summary bar (always visible) ──────────────────────────────────── */}
         <div className="flex items-center gap-2 px-2 py-1 bg-muted/30 border-b border-border/40">
