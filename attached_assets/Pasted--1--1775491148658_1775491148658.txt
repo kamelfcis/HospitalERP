@@ -1,0 +1,114 @@
+⚠️ تحسينات دقيقة على ردك
+1) 🔥 نقطة خطيرة صغيرة: “آخر استجابة تحل محل الأولى”
+
+أنت كاتب:
+
+آخر استجابة تحلّ محل الأولى بشكل صحيح
+
+⚠️ دي مش دايمًا آمنة 100%
+
+السيناريو:
+المستخدم غيّر الكمية أو الوحدة بعد أول request
+request قديم رجع متأخر
+overwrite حصل
+الأفضل تضيف:
+
+Updates are applied only if the line context (itemId + unitId + request timestamp) still matches the latest state
+
+📌 أو على الأقل:
+
+check إن السطر لم يتغير قبل apply
+2) ⚠️ نقطة الكاش — لسه فيها مخاطرة خفيفة
+
+أنت قلت:
+
+endpoint التسعير لا يقبل context العقد
+
+ده ممتاز 👌
+لكن في سيستمك:
+
+👉 السعر النهائي بيتأثر بـ:
+
+contract
+discount rules
+coverage
+يبقى لازم تضيف توضيح مهم:
+
+Cached price is base price only — final pricing adjustments (contracts/discounts) are applied server-side
+
+📌 دي تحميك من أي لبس مستقبلي
+
+3) ⚠️ FEFO preview vs actual FEFO
+
+أنت قلت:
+
+fefo-preview يُعيد lotId الفعلي
+
+ده صح… لكن:
+
+⚠️ لازم تضيف:
+
+fefo-preview is non-locking and indicative only — final FEFO is resolved under transaction lock at commit
+
+📌 دي نقطة critical لأي auditor
+
+4) ⚠️ Missing: Partial Allocation Handling
+
+دلوقتي أنت بتفترض:
+
+lot واحدة تكفي
+
+لكن لو:
+
+الكمية أكبر من lot واحدة؟
+لازم توضح:
+
+إما:
+
+Current implementation allocates from a single lot only
+
+أو:
+
+Multi-lot allocation handled server-side at finalize
+
+📌 مهم جدًا عشان ما يبقاش فيه mismatch
+
+5) ⚠️ fallback السعر (مهم جدًا محاسبيًا)
+
+أنت قلت:
+
+fallback إلى salePriceCurrent
+
+⚠️ دي نقطة لازم تتوضح أقوى:
+
+لازم تضيف:
+
+Fallback price is used for UI only — final price is always revalidated server-side before posting
+
+📌 علشان تمنع:
+
+بيع بسعر قديم
+مشاكل IFRS / revenue recognition
+🧠 إضافة احترافية قوية جدًا (أنصح تضيفها)
+🔒 Transaction Safety Model
+
+أضف سيكشن صغير زي ده 👇
+
+All critical operations (FEFO allocation, stock deduction, pricing validation) are executed within a database transaction with row-level locking (FOR UPDATE), ensuring:
+
+no overselling
+no stale allocation
+consistent COGS calculation
+
+📌 دي هترفع التقرير لمستوى SAP حرفيًا
+
+🔥 النسخة المحسّنة (إضافة صغيرة على كلامك)
+
+تقدر تضيف الفقرة دي في الآخر 👇
+
+⚙️ Additional Safety Guarantees
+fefo-preview is indicative only — final allocation is resolved under transaction lock
+Cached prices represent base pricing only — final adjustments are applied server-side
+Async updates are applied only if the line context remains unchanged
+UI fallbacks (price/lot) do not affect final posted values
+Multi-lot allocation handled at server level when required

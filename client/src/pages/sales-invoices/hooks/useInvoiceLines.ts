@@ -296,6 +296,8 @@ export function useInvoiceLines(
   const pendingQtyRef               = useRef<Map<string, string>>(new Map());
   // كاش أسعار نطاقه الفاتورة الحالية فقط — يُعاد ضبطه عند فتح فاتورة جديدة
   const pricingCacheRef             = useRef<Map<string, PriceCacheEntry>>(new Map());
+  // رقم الطلب الأحدث لكل صنف — لرفض استجابات async قديمة (stale writes)
+  const fefoRequestRef              = useRef<Map<string, number>>(new Map());
 
   // ── تحديث سطر ──────────────────────────────────────────────────────────────
   // كل سطر يتحدث بشكل مستقل — حتى لو كان FEFO
@@ -381,6 +383,11 @@ export function useInvoiceLines(
 
       const hasBatches = (allBatches?.length ?? 0) > 0;
 
+      // ── حماية من الكتابة القديمة (stale write protection) ────────────────────
+      // كل طلب FEFO للصنف يأخذ رقماً متصاعداً — إذا عاد طلب قديم بعد طلب أحدث يُهمَل
+      const reqVersion = (fefoRequestRef.current.get(itemData.id) ?? 0) + 1;
+      fefoRequestRef.current.set(itemData.id, reqVersion);
+
       setFefoLoading(true);
       try {
         // ── التسعير و FEFO بالتوازي ──────────────────────────────────────────
@@ -394,6 +401,9 @@ export function useInvoiceLines(
             preloadedBatches: hasBatches ? allBatches : undefined,
           }),
         ]);
+
+        // إذا جاء طلب أحدث أثناء الانتظار → تجاهل هذه النتيجة
+        if (fefoRequestRef.current.get(itemData.id) !== reqVersion) return;
 
         if (!allocResult.ok) {
           toast({
@@ -481,6 +491,10 @@ export function useInvoiceLines(
       const totalRequiredMinor = otherMinor + thisMinor;
       if (totalRequiredMinor <= 0) return;
 
+      // حماية من stale write — تأكيد الكمية يلغي أي طلب addItem سابق
+      const reqVersion = (fefoRequestRef.current.get(line.itemId) ?? 0) + 1;
+      fefoRequestRef.current.set(line.itemId, reqVersion);
+
       // أعد جلب السعر لضمان دقته (قد يتغير سعر القسم)
       const { baseSalePrice, isDeptPrice, priceSource } = await resolvePricing(
         line.item, warehouseId, pricingCacheRef.current,
@@ -500,6 +514,9 @@ export function useInvoiceLines(
           priceSource,
           availableQtyMinor: line.availableQtyMinor || "0",
         });
+
+        // إذا جاء طلب addItem جديد أثناء الانتظار → تجاهل هذا التأكيد
+        if (fefoRequestRef.current.get(line.itemId) !== reqVersion) return;
 
         if (!result.ok) {
           toast({
