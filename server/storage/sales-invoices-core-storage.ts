@@ -402,6 +402,8 @@ const methods = {
         customerType: header.customerType || "cash",
         customerName: header.customerName || null,
         patientId: (header as any).patientId || null,
+        patientAssignedAt: (header as any).patientId ? new Date() : null,
+        patientAssignedBy: (header as any).patientId ? ((header as any).createdBy || null) : null,
         customerId: (header.customerType === "credit" && header.customerId) ? header.customerId : null,
         contractCompany: header.contractCompany || null,
         companyId:        (header.customerType === "contract" ? header.companyId || null : null) as any,
@@ -664,6 +666,19 @@ const methods = {
         customerType: effectiveCustomerType,
         customerName: header.customerName !== undefined ? header.customerName : invoice.customerName,
         patientId: (header as any).patientId !== undefined ? ((header as any).patientId || null) : (invoice as any).patientId,
+        // audit trail: سجّل مَن ربط المريض ومتى — فقط عند تعيين patient جديد لم يكن موجوداً
+        patientAssignedAt: (() => {
+          const newPid = (header as any).patientId !== undefined ? ((header as any).patientId || null) : (invoice as any).patientId;
+          const oldPid = (invoice as any).patientId || null;
+          if (newPid && !oldPid) return new Date();
+          return (invoice as any).patientAssignedAt ?? null;
+        })(),
+        patientAssignedBy: (() => {
+          const newPid = (header as any).patientId !== undefined ? ((header as any).patientId || null) : (invoice as any).patientId;
+          const oldPid = (invoice as any).patientId || null;
+          if (newPid && !oldPid) return (header as any).createdBy || null;
+          return (invoice as any).patientAssignedBy ?? null;
+        })(),
         customerId: effectiveCustomerType === "credit"
           ? (header.customerId !== undefined ? (header.customerId || null) : invoice.customerId)
           : null,

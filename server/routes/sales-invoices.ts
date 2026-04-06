@@ -16,6 +16,7 @@ import {
 import { salesInvoiceHeaders, warehouses } from "@shared/schema";
 import { runPharmacyDemoSeed } from "../seeds/pharmacy-demo";
 import { assertUserWarehouseAllowed } from "../lib/warehouse-guard";
+import { findOrCreatePatient } from "../lib/find-or-create-patient";
 
 export function registerSalesInvoicesRoutes(app: Express) {
   // ==================== Sales Invoice Pharmacist Lookup ====================
@@ -161,6 +162,15 @@ export function registerSalesInvoicesRoutes(app: Express) {
       }
 
       const enriched = { ...header, createdBy: req.session?.userId || header.createdBy || null, clinicOrderId: header.clinicOrderId || null };
+
+      // ── Auto-resolve patient: للفواتير غير النقدية — إذا كان الاسم موجوداً بدون patient_id ──
+      if (!enriched.patientId && enriched.customerName && enriched.customerType && enriched.customerType !== "cash") {
+        try {
+          const found = await findOrCreatePatient(enriched.customerName);
+          enriched.patientId = found.id;
+        } catch { /* non-fatal: لا توقف الحفظ إذا فشل الإنشاء */ }
+      }
+
       const invoice = await storage.createSalesInvoice(enriched, lines);
       res.status(201).json(invoice);
     } catch (error: unknown) {
@@ -181,6 +191,15 @@ export function registerSalesInvoicesRoutes(app: Express) {
       }
 
       const enrichedHeader = { ...(header || {}), createdBy: req.session?.userId || (header || {}).createdBy || null };
+
+      // ── Auto-resolve patient: للفواتير غير النقدية عند التحديث ──────────────
+      if (!enrichedHeader.patientId && enrichedHeader.customerName && enrichedHeader.customerType && enrichedHeader.customerType !== "cash") {
+        try {
+          const found = await findOrCreatePatient(enrichedHeader.customerName);
+          enrichedHeader.patientId = found.id;
+        } catch { /* non-fatal */ }
+      }
+
       const invoice = await storage.updateSalesInvoice(req.params.id as string, enrichedHeader, lines);
       res.json(invoice);
     } catch (error: unknown) {
@@ -256,6 +275,15 @@ export function registerSalesInvoicesRoutes(app: Express) {
       }
 
       await storage.assertPeriodOpen(existing.invoiceDate);
+
+      // ── Progressive validation: فواتير غير النقدي تستوجب ربط مريض ────────
+      // المرحلة الحالية: آجل (credit) + تأمين (contract) + توصيل (delivery)
+      if (existing.customerType !== "cash" && !(existing as any).patientId) {
+        return res.status(422).json({
+          message: "فواتير الآجل والتأمين والتوصيل تستوجب ربط المريض — يرجى اختيار مريض من السجل الموحد قبل الاعتماد",
+          code: "PATIENT_REQUIRED",
+        });
+      }
 
       // ── فحص قابلية التسعير لكل سطر قبل الاعتماد ─────────────────────────
       // سطور المستهلكات (line_type='consumable') مُستثناة: سعرها صفر ولا يُؤثّر في الحساب

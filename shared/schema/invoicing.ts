@@ -135,6 +135,9 @@ export const salesInvoiceHeaders = pgTable("sales_invoice_headers", {
   customerName: text("customer_name"),
   // ── ربط المريض بالملف الموحد (nullable — آمن للبيانات القائمة) ───────────
   patientId: varchar("patient_id"),
+  // audit: متى وبواسطة مَن تم ربط المريض بالفاتورة
+  patientAssignedAt: timestamp("patient_assigned_at", { withTimezone: true }),
+  patientAssignedBy: varchar("patient_assigned_by"),
   contractCompany: text("contract_company"),
   // ── Contract FK fields — Phase 2 (member card + shares) ─────────────────
   companyId:         varchar("company_id").references(() => companies.id),
