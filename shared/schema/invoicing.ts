@@ -346,6 +346,8 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   journalError: text("journal_error"),
   // claimStatus tracks fire-and-forget claim generation visibility (null = not a contract invoice)
   claimStatus: text("claim_status"),
+  // snapshot دائم يُحفظ عند الاعتماد — يظل مرجعاً حتى لو تغيّر master data
+  finalizedSnapshotJson: text("finalized_snapshot_json"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

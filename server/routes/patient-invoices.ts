@@ -378,7 +378,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
       const existing = await storage.getPatientInvoice(invoiceId);
       if (!existing) return res.status(404).json({ message: "فاتورة المريض غير موجودة" });
-      if (existing.status !== "draft") return res.status(409).json({ message: "الفاتورة ليست مسودة", code: "ALREADY_FINALIZED" });
+
+      // ── Idempotent: لو الفاتورة معتمدة بالفعل → نرجع نجاح بدون تسجيل مكرر ──
+      if (existing.status === "finalized") {
+        return res.json({ ...existing, _idempotent: true });
+      }
+      if (existing.status !== "draft") {
+        return res.status(409).json({ message: "لا يمكن اعتماد فاتورة ملغاة", code: "INVALID_STATUS" });
+      }
 
       const paidAmount = parseFloat(String(existing.paidAmount || "0"));
       const netAmount = parseFloat(String(existing.netAmount || "0"));
@@ -420,6 +427,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
           },
           {},
         );
+        const finalizedBy = (req.session as any)?.userId ?? null;
+
         logger.info(
           {
             invoiceId,
@@ -428,11 +437,38 @@ export function registerPatientInvoicesRoutes(app: Express) {
             totalAmount:            result.totalAmount,
             netAmount:              result.netAmount,
             lineCount:              finalizedLines.length,
-            finalizedBy:            (req.session as any)?.userId ?? null,
+            finalizedBy,
             classificationsSummary,
           },
           "INVOICE_FINALIZED",
         );
+
+        // ── حفظ الـ snapshot في DB (مرجع دائم — لا يضيع مع الـ logs) ──────────
+        const snapshotPayload = {
+          invoiceId,
+          invoiceNumber:  result.invoiceNumber,
+          patientName:    result.patientName,
+          invoiceDate:    result.invoiceDate,
+          finalizedAt:    new Date().toISOString(),
+          finalizedBy,
+          totalAmount:    result.totalAmount,
+          netAmount:      result.netAmount,
+          paidAmount:     result.paidAmount,
+          lineCount:      finalizedLines.length,
+          classificationsSummary,
+          lineTotals:     finalizedLines.map((l: any) => ({
+            lineType:               l.lineType,
+            businessClassification: l.businessClassification,
+            description:            l.description,
+            quantity:               l.quantity,
+            unitPrice:              l.unitPrice,
+            totalPrice:             l.totalPrice,
+          })),
+        };
+        db.update(patientInvoiceHeaders)
+          .set({ finalizedSnapshotJson: JSON.stringify(snapshotPayload), updatedAt: new Date() })
+          .where(eq(patientInvoiceHeaders.id, invoiceId))
+          .catch((err: any) => logger.warn({ err: err.message, invoiceId }, "[Snapshot] failed to save finalized snapshot to DB"));
 
         const glLines = storage.buildPatientInvoiceGLLines(result, invoiceLines.lines || []);
 
