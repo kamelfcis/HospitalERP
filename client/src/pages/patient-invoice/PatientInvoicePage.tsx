@@ -30,10 +30,21 @@ import { useInvoiceValidation }  from "./hooks/useInvoiceValidation";
 import { useSearchState }        from "./hooks/useSearchState";
 import { useDoctorTransfer }     from "./hooks/useDoctorTransfer";
 import { useStatsDialog }        from "./hooks/useStatsDialog";
+import type { ContractResolved } from "@/components/shared/ContractSelectCombobox";
+
+interface MemberResolved {
+  memberId:           string;
+  contractId:         string;
+  companyId:          string;
+  memberName:         string;
+  companyName:        string;
+  cardNumber:         string;
+  companyCoveragePct: number;
+}
 
 export default function PatientInvoice() {
   const { toast }        = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const canDiscount      = hasPermission("patient_invoices.discount");
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -42,7 +53,7 @@ export default function PatientInvoice() {
   const [distOpen, setDistOpen]               = useState(false);
   const [showDiscountDialog, setShowDiscountDialog] = useState(false);
 
-  // ── OPD Appointment context (populated when loading an OPD-linked invoice) ──
+  // ── OPD Appointment context ──────────────────────────────────────────────────
   const [opdContext, setOpdContext] = useState<{
     appointmentId: string;
     aptStatus: string;
@@ -55,8 +66,24 @@ export default function PatientInvoice() {
   // ── Shared data ─────────────────────────────────────────────────────────────
   const { nextNumber, departments, warehouses, activeAdmissions } = useInvoiceBootstrap();
 
-  // ── Form state ──────────────────────────────────────────────────────────────
-  const form = useInvoiceForm(nextNumber);
+  // ── Form state (with user defaults for new invoices) ────────────────────────
+  const userDefaults = useMemo(() => ({
+    warehouseId:  user?.defaultWarehouseId  ? String(user.defaultWarehouseId)  : undefined,
+    departmentId: user?.departmentId        ? String(user.departmentId)        : undefined,
+  }), [user?.defaultWarehouseId, user?.departmentId]);
+
+  const form = useInvoiceForm(nextNumber, userDefaults);
+
+  // ── Apply user defaults on first load (new invoice) ─────────────────────────
+  useEffect(() => {
+    if (!form.invoiceId && !form.warehouseId && userDefaults.warehouseId) {
+      form.setWarehouseId(userDefaults.warehouseId);
+    }
+    if (!form.invoiceId && !form.departmentId && userDefaults.departmentId) {
+      form.setDepartmentId(userDefaults.departmentId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userDefaults.warehouseId, userDefaults.departmentId]);
 
   // ── Search state ────────────────────────────────────────────────────────────
   const search = useSearchState({ departmentId: form.departmentId });
@@ -77,11 +104,12 @@ export default function PatientInvoice() {
 
   // ── Composite reset ──────────────────────────────────────────────────────────
   const resetAll = useCallback(() => {
-    form.resetForm();
+    form.resetForm({ warehouseId: userDefaults.warehouseId, departmentId: userDefaults.departmentId });
     lm.resetLines();
     payments.resetPayments();
     setSubTab("lines");
-  }, [form.resetForm, lm.resetLines, payments.resetPayments]);
+    setOpdContext(null);
+  }, [form.resetForm, lm.resetLines, payments.resetPayments, userDefaults.warehouseId, userDefaults.departmentId]);
 
   // ── Totals ───────────────────────────────────────────────────────────────────
   const totals = useMemo(() => {
@@ -109,26 +137,80 @@ export default function PatientInvoice() {
   const [zeroPriceReason, setZeroPriceReason] = useState("sample");
 
   const { saveMutation, finalizeMutation, zeroPriceOpen, setZeroPriceOpen, confirmZeroPrice } = useInvoiceMutations({
-    invoiceId:    form.invoiceId,
-    invoiceNumber: form.invoiceNumber,
-    invoiceDate:  form.invoiceDate,
-    patientName:  form.patientName,
-    patientPhone: form.patientPhone,
-    patientType:  form.patientType,
-    departmentId: form.departmentId,
-    warehouseId:  form.warehouseId,
-    doctorName:   form.doctorName,
-    contractName: form.contractName,
-    notes:        form.notes,
-    admissionId:  form.admissionId,
+    invoiceId:        form.invoiceId,
+    invoiceNumber:    form.invoiceNumber,
+    invoiceDate:      form.invoiceDate,
+    patientName:      form.patientName,
+    patientPhone:     form.patientPhone,
+    patientId:        form.patientId,
+    patientType:      form.patientType,
+    departmentId:     form.departmentId,
+    warehouseId:      form.warehouseId,
+    doctorName:       form.doctorName,
+    contractName:     form.contractName,
+    contractId:       form.contractId,
+    companyId:        form.companyId,
+    contractMemberId: form.contractMemberId,
+    notes:            form.notes,
+    admissionId:      form.admissionId,
     totals,
-    lines:        lm.lines,
-    payments:     payments.payments,
-    setInvoiceId: form.setInvoiceId as (id: string) => void,
-    setStatus:    form.setStatus,
+    lines:            lm.lines,
+    payments:         payments.payments,
+    setInvoiceId:     form.setInvoiceId as (id: string) => void,
+    setStatus:        form.setStatus,
     resetAll,
   });
 
+  // ── Patient search callbacks (for PatientSearchCombobox) ─────────────────────
+  const onPatientChange = useCallback((id: string, name: string) => {
+    form.setPatientId(id);
+    form.setPatientName(name);
+  }, [form.setPatientId, form.setPatientName]);
+
+  const onPatientClear = useCallback(() => {
+    form.setPatientId("");
+    form.setPatientName("");
+  }, [form.setPatientId, form.setPatientName]);
+
+  // ── Contract callbacks ───────────────────────────────────────────────────────
+  const onContractChange = useCallback((resolved: ContractResolved) => {
+    form.setContractId(resolved.contractId);
+    form.setCompanyId(resolved.companyId);
+    form.setContractName(resolved.contractName || resolved.companyName || "");
+    form.setCompanyCoveragePct(resolved.companyCoveragePct || 100);
+  }, [form.setContractId, form.setCompanyId, form.setContractName, form.setCompanyCoveragePct]);
+
+  const onContractClear = useCallback(() => {
+    form.setContractId("");
+    form.setCompanyId("");
+    form.setContractName("");
+    form.setCompanyCoveragePct(100);
+    form.setContractMemberId("");
+  }, [form.setContractId, form.setCompanyId, form.setContractName, form.setCompanyCoveragePct, form.setContractMemberId]);
+
+  // ── Member card callbacks ────────────────────────────────────────────────────
+  const onMemberResolved = useCallback((resolved: MemberResolved) => {
+    form.setContractMemberId(resolved.memberId);
+    if (!form.contractId && resolved.contractId) {
+      form.setContractId(resolved.contractId);
+    }
+    if (!form.companyId && resolved.companyId) {
+      form.setCompanyId(resolved.companyId);
+    }
+    if (!form.contractName && resolved.companyName) {
+      form.setContractName(resolved.companyName);
+    }
+    if (resolved.memberName && !form.patientName) {
+      form.setPatientName(resolved.memberName);
+    }
+    form.setCompanyCoveragePct(resolved.companyCoveragePct);
+  }, [form]);
+
+  const onMemberCleared = useCallback(() => {
+    form.setContractMemberId("");
+  }, [form.setContractMemberId]);
+
+  // ── Admissions hook ──────────────────────────────────────────────────────────
   const {
     admSelectedAdmission, setAdmSelectedAdmission,
     admIsCreateOpen, setAdmIsCreateOpen,
@@ -200,11 +282,16 @@ export default function PatientInvoice() {
       form.setInvoiceDate(data.invoiceDate);
       form.setPatientName(data.patientName);
       form.setPatientPhone(data.patientPhone || "");
+      form.setPatientId(data.patientId || "");
       form.setDepartmentId(data.departmentId || "");
       form.setWarehouseId(data.warehouseId || "");
       form.setDoctorName(data.doctorName || "");
       form.setPatientType(data.patientType || "cash");
       form.setContractName(data.contractName || "");
+      form.setContractId(data.contractId || "");
+      form.setCompanyId(data.companyId || "");
+      form.setContractMemberId(data.contractMemberId || "");
+      form.setCompanyCoveragePct(parseFloat(data.companyCoveragePct) || 100);
       form.setNotes(data.notes || "");
       form.setAdmissionId(data.admissionId || "");
       form.setStatus(data.status);
@@ -279,7 +366,7 @@ export default function PatientInvoice() {
             />
           )}
 
-          {/* ── OPD Context Banner — يظهر فقط للفواتير المرتبطة بموعد عيادة ── */}
+          {/* ── OPD Context Banner ────────────────────────────────────────────── */}
           {opdContext && (
             <div className="flex items-center gap-3 flex-wrap bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-2 text-xs text-blue-800" dir="rtl">
               <Info className="h-3.5 w-3.5 text-blue-500 shrink-0" />
@@ -320,18 +407,12 @@ export default function PatientInvoice() {
             setInvoiceDate={form.setInvoiceDate}
             status={form.status}
             isDraft={form.isDraft}
+            patientId={form.patientId}
             patientName={form.patientName}
-            setPatientName={form.setPatientName}
             patientPhone={form.patientPhone}
             setPatientPhone={form.setPatientPhone}
-            patientSearch={search.patientSearch}
-            setPatientSearch={search.setPatientSearch}
-            patientResults={search.patientResults}
-            searchingPatients={search.searchingPatients}
-            showPatientDropdown={search.showPatientDropdown}
-            setShowPatientDropdown={search.setShowPatientDropdown}
-            patientSearchRef={search.patientSearchRef}
-            patientDropdownRef={search.patientDropdownRef}
+            onPatientChange={onPatientChange}
+            onPatientClear={onPatientClear}
             doctorName={form.doctorName}
             setDoctorName={form.setDoctorName}
             departmentId={form.departmentId}
@@ -345,8 +426,13 @@ export default function PatientInvoice() {
             activeAdmissions={activeAdmissions}
             patientType={form.patientType}
             setPatientType={form.setPatientType}
+            contractId={form.contractId}
             contractName={form.contractName}
-            setContractName={form.setContractName}
+            onContractChange={onContractChange}
+            onContractClear={onContractClear}
+            contractMemberId={form.contractMemberId}
+            onMemberResolved={onMemberResolved}
+            onMemberCleared={onMemberCleared}
             notes={form.notes}
             setNotes={form.setNotes}
             subTab={subTab}
@@ -476,7 +562,7 @@ export default function PatientInvoice() {
         </TabsContent>
       </Tabs>
 
-      {/* ── Doctor Transfer confirm sheet ─────────────────────────────────────── */}
+      {/* ── Doctor Transfer confirm sheet ──────────────────────────────────────── */}
       <DoctorTransferSheet
         open={dt.dtConfirmOpen}
         onOpenChange={dt.setDtConfirmOpen}
@@ -487,7 +573,7 @@ export default function PatientInvoice() {
         onConfirm={() => dt.dtMutation.mutate()}
       />
 
-      {/* ── Distribute dialog ──────────────────────────────────────────────────── */}
+      {/* ── Distribute dialog ────────────────────────────────────────────────── */}
       <DistributeDialog
         open={distOpen}
         onClose={() => setDistOpen(false)}
@@ -506,7 +592,7 @@ export default function PatientInvoice() {
         onSuccess={resetAll}
       />
 
-      {/* ── Header discount dialog ────────────────────────────────────────────── */}
+      {/* ── Header discount dialog ─────────────────────────────────────────── */}
       {canDiscount && (
         <HeaderDiscountDialog
           open={showDiscountDialog}
@@ -521,7 +607,7 @@ export default function PatientInvoice() {
         />
       )}
 
-      {/* ── Stock stats dialog ────────────────────────────────────────────────── */}
+      {/* ── Stock stats dialog ─────────────────────────────────────────────── */}
       <StockStatsDialog
         open={!!stats.statsItemId}
         itemName={stats.statsItemName}
@@ -530,37 +616,40 @@ export default function PatientInvoice() {
         onClose={stats.closeStatsDialog}
       />
 
-      {/* ── Zero-price confirmation dialog ───────────────────────────────────── */}
+      {/* ── Zero-price confirmation dialog ─────────────────────────────────── */}
       <Dialog open={zeroPriceOpen} onOpenChange={setZeroPriceOpen}>
         <DialogContent className="max-w-sm" dir="rtl">
           <DialogHeader>
             <DialogTitle className="text-amber-600">بنود بسعر صفري</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            بعض بنود الفاتورة تحتوي على سعر صفري. يرجى اختيار سبب الموافقة قبل الحفظ.
+            يوجد بنود بسعر صفري في الفاتورة. هل تريد المتابعة؟
           </p>
-          <Select value={zeroPriceReason} onValueChange={setZeroPriceReason} dir="rtl">
-            <SelectTrigger data-testid="select-zero-price-reason">
-              <SelectValue placeholder="اختر السبب" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="sample">عينة مجانية</SelectItem>
-              <SelectItem value="promotional">عرض ترويجي</SelectItem>
-              <SelectItem value="charity">خيري / إعانة</SelectItem>
-              <SelectItem value="correction">تصحيح خطأ</SelectItem>
-              <SelectItem value="other">أخرى</SelectItem>
-            </SelectContent>
-          </Select>
-          <DialogFooter className="flex gap-2 mt-2">
-            <Button variant="outline" onClick={() => setZeroPriceOpen(false)} data-testid="button-cancel-zero-price">
-              إلغاء
-            </Button>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs text-muted-foreground">سبب السعر الصفري:</label>
+            <Select value={zeroPriceReason} onValueChange={setZeroPriceReason}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sample">عينة مجانية</SelectItem>
+                <SelectItem value="donation">تبرع</SelectItem>
+                <SelectItem value="internal">استخدام داخلي</SelectItem>
+                <SelectItem value="other">أخرى</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="flex flex-row-reverse gap-2">
             <Button
+              variant="default"
+              size="sm"
               onClick={() => confirmZeroPrice(zeroPriceReason)}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
               data-testid="button-confirm-zero-price"
             >
-              تأكيد الحفظ
+              متابعة
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setZeroPriceOpen(false)}>
+              إلغاء
             </Button>
           </DialogFooter>
         </DialogContent>

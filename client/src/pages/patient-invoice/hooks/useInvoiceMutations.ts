@@ -19,11 +19,15 @@ interface UseInvoiceMutationsParams {
   invoiceDate: string;
   patientName: string;
   patientPhone: string;
+  patientId: string;
   patientType: "cash" | "contract";
   departmentId: string;
   warehouseId: string;
   doctorName: string;
   contractName: string;
+  contractId: string;
+  companyId: string;
+  contractMemberId: string;
   notes: string;
   admissionId: string;
   totals: Totals;
@@ -36,7 +40,8 @@ interface UseInvoiceMutationsParams {
 
 export function useInvoiceMutations({
   invoiceId, invoiceNumber, invoiceDate, patientName, patientPhone,
-  patientType, departmentId, warehouseId, doctorName, contractName,
+  patientId, patientType, departmentId, warehouseId, doctorName, contractName,
+  contractId, companyId, contractMemberId,
   notes, admissionId, totals, lines, payments,
   setInvoiceId, setStatus, resetAll,
 }: UseInvoiceMutationsParams) {
@@ -50,11 +55,15 @@ export function useInvoiceMutations({
     const header = {
       invoiceNumber, invoiceDate, patientName,
       patientPhone: patientPhone || null,
+      patientId: patientId || null,
       patientType,
       departmentId: departmentId || null,
       warehouseId: warehouseId || null,
       doctorName: doctorName || null,
       contractName: patientType === "contract" ? contractName : null,
+      contractId: patientType === "contract" ? contractId || null : null,
+      companyId: patientType === "contract" ? companyId || null : null,
+      contractMemberId: patientType === "contract" ? contractMemberId || null : null,
       notes: notes || null,
       admissionId: admissionId || null,
       status: "draft",

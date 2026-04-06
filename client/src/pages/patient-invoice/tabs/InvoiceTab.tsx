@@ -16,6 +16,17 @@ import { DoctorLookup } from "@/components/lookups";
 import { PaymentsTab } from "./PaymentsTab";
 import { ConsolidatedTab } from "./ConsolidatedTab";
 import { UnifiedLinesTab } from "../components/UnifiedLinesTab";
+import type { ContractResolved } from "@/components/shared/ContractSelectCombobox";
+
+interface MemberResolved {
+  memberId:           string;
+  contractId:         string;
+  companyId:          string;
+  memberName:         string;
+  companyName:        string;
+  cardNumber:         string;
+  companyCoveragePct: number;
+}
 
 interface Totals {
   totalAmount: number;
@@ -36,18 +47,13 @@ interface InvoiceTabProps {
   status: string;
   isDraft: boolean;
 
+  // Patient (via PatientSearchCombobox)
+  patientId: string;
   patientName: string;
-  setPatientName: (v: string) => void;
   patientPhone: string;
   setPatientPhone: (v: string) => void;
-  patientSearch: string;
-  setPatientSearch: (v: string) => void;
-  patientResults: Record<string, unknown>[];
-  searchingPatients: boolean;
-  showPatientDropdown: boolean;
-  setShowPatientDropdown: (v: boolean) => void;
-  patientSearchRef: React.RefObject<HTMLInputElement>;
-  patientDropdownRef: React.RefObject<HTMLDivElement>;
+  onPatientChange: (id: string, name: string) => void;
+  onPatientClear: () => void;
 
   doctorName: string;
   setDoctorName: (v: string) => void;
@@ -64,10 +70,16 @@ interface InvoiceTabProps {
   setAdmissionId: (v: string) => void;
   activeAdmissions: Admission[] | undefined;
 
+  // Contract / member card
   patientType: "cash" | "contract";
   setPatientType: (v: "cash" | "contract") => void;
+  contractId: string;
   contractName: string;
-  setContractName: (v: string) => void;
+  onContractChange: (resolved: ContractResolved) => void;
+  onContractClear: () => void;
+  contractMemberId: string;
+  onMemberResolved: (resolved: MemberResolved) => void;
+  onMemberCleared: () => void;
 
   notes: string;
   setNotes: (v: string) => void;
@@ -126,24 +138,25 @@ interface InvoiceTabProps {
   canDiscount?: boolean;
   onOpenDiscountDialog?: () => void;
   applyTemplate?: (templateId: string, opts?: { replaceExisting?: boolean }) => Promise<void>;
+
+  // ItemFastSearch support
+  warehouseIdForSearch?: string;
 }
 
 export function InvoiceTab({
   invoiceId, invoiceNumber, setInvoiceNumber,
   invoiceDate, setInvoiceDate,
   status, isDraft,
-  patientName, setPatientName,
-  patientPhone, setPatientPhone,
-  patientSearch, setPatientSearch,
-  patientResults, searchingPatients,
-  showPatientDropdown, setShowPatientDropdown,
-  patientSearchRef, patientDropdownRef,
+  patientId, patientName, patientPhone, setPatientPhone,
+  onPatientChange, onPatientClear,
   doctorName, setDoctorName,
   departmentId, setDepartmentId, departments,
   warehouseId, setWarehouseId, warehouses,
   admissionId, setAdmissionId, activeAdmissions,
   patientType, setPatientType,
-  contractName, setContractName,
+  contractId, contractName,
+  onContractChange, onContractClear,
+  contractMemberId, onMemberResolved, onMemberCleared,
   notes, setNotes,
   subTab, setSubTab,
   lines,
@@ -174,18 +187,12 @@ export function InvoiceTab({
         setInvoiceDate={setInvoiceDate}
         status={status}
         isDraft={isDraft}
+        patientId={patientId}
         patientName={patientName}
-        setPatientName={setPatientName}
         patientPhone={patientPhone}
         setPatientPhone={setPatientPhone}
-        patientSearch={patientSearch}
-        setPatientSearch={setPatientSearch}
-        patientResults={patientResults}
-        searchingPatients={searchingPatients}
-        showPatientDropdown={showPatientDropdown}
-        setShowPatientDropdown={setShowPatientDropdown}
-        patientSearchRef={patientSearchRef}
-        patientDropdownRef={patientDropdownRef}
+        onPatientChange={onPatientChange}
+        onPatientClear={onPatientClear}
         doctorName={doctorName}
         setDoctorName={setDoctorName}
         departmentId={departmentId}
@@ -199,8 +206,13 @@ export function InvoiceTab({
         activeAdmissions={activeAdmissions}
         patientType={patientType}
         setPatientType={setPatientType}
+        contractId={contractId}
         contractName={contractName}
-        setContractName={setContractName}
+        onContractChange={onContractChange}
+        onContractClear={onContractClear}
+        contractMemberId={contractMemberId}
+        onMemberResolved={onMemberResolved}
+        onMemberCleared={onMemberCleared}
         notes={notes}
         setNotes={setNotes}
         lines={lines}
@@ -219,7 +231,6 @@ export function InvoiceTab({
             <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
           </TabsList>
 
-          {/* ── التاب الموحد للبنود (خدمات + أدوية + مستهلكات + أجهزة) ── */}
           <TabsContent value="lines" className="mt-2">
             <UnifiedLinesTab
               lines={lines}
@@ -242,6 +253,8 @@ export function InvoiceTab({
               openStatsPopup={openStatsPopup}
               getServiceRowClass={getServiceRowClass}
               applyTemplate={applyTemplate}
+              warehouseId={warehouseId}
+              invoiceDate={invoiceDate}
             />
           </TabsContent>
 

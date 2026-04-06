@@ -6,10 +6,15 @@ export interface InvoiceFormState {
   invoiceDate: string;
   patientName: string;
   patientPhone: string;
+  patientId: string;
   departmentId: string;
   doctorName: string;
   patientType: "cash" | "contract";
   contractName: string;
+  contractId: string;
+  companyId: string;
+  contractMemberId: string;
+  companyCoveragePct: number;
   notes: string;
   status: string;
   admissionId: string;
@@ -25,29 +30,45 @@ export interface InvoiceFormSetters {
   setInvoiceDate: (v: string) => void;
   setPatientName: (v: string) => void;
   setPatientPhone: (v: string) => void;
+  setPatientId: (v: string) => void;
   setDepartmentId: (v: string) => void;
   setDoctorName: (v: string) => void;
   setPatientType: (v: "cash" | "contract") => void;
   setContractName: (v: string) => void;
+  setContractId: (v: string) => void;
+  setCompanyId: (v: string) => void;
+  setContractMemberId: (v: string) => void;
+  setCompanyCoveragePct: (v: number) => void;
   setNotes: (v: string) => void;
   setStatus: (v: string) => void;
   setAdmissionId: (v: string) => void;
   setWarehouseId: (v: string) => void;
   setHeaderDiscountPercent: (v: number) => void;
   setHeaderDiscountAmount: (v: number) => void;
-  resetForm: () => void;
+  resetForm: (defaults?: {
+    warehouseId?: string;
+    departmentId?: string;
+  }) => void;
 }
 
-export function useInvoiceForm(nextNumber: string | undefined): InvoiceFormState & InvoiceFormSetters {
+export function useInvoiceForm(
+  nextNumber: string | undefined,
+  userDefaults?: { warehouseId?: string | null; departmentId?: string | null }
+): InvoiceFormState & InvoiceFormSetters {
   const [invoiceId, setInvoiceId]         = useState<string | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate]     = useState(new Date().toISOString().split("T")[0]);
   const [patientName, setPatientName]     = useState("");
   const [patientPhone, setPatientPhone]   = useState("");
+  const [patientId, setPatientId]         = useState("");
   const [departmentId, setDepartmentId]   = useState("");
   const [doctorName, setDoctorName]       = useState("");
   const [patientType, setPatientType]     = useState<"cash" | "contract">("cash");
   const [contractName, setContractName]   = useState("");
+  const [contractId, setContractId]       = useState("");
+  const [companyId, setCompanyId]         = useState("");
+  const [contractMemberId, setContractMemberId] = useState("");
+  const [companyCoveragePct, setCompanyCoveragePct] = useState(100);
   const [notes, setNotes]                 = useState("");
   const [status, setStatus]               = useState("draft");
   const [admissionId, setAdmissionId]     = useState("");
@@ -55,23 +76,28 @@ export function useInvoiceForm(nextNumber: string | undefined): InvoiceFormState
   const [headerDiscountPercent, setHeaderDiscountPercent] = useState(0);
   const [headerDiscountAmount, setHeaderDiscountAmount]   = useState(0);
 
-  const resetForm = useCallback(() => {
+  const resetForm = useCallback((defaults?: { warehouseId?: string; departmentId?: string }) => {
     setInvoiceId(null);
     setInvoiceNumber(nextNumber || "");
     setInvoiceDate(new Date().toISOString().split("T")[0]);
     setPatientName("");
     setPatientPhone("");
-    setDepartmentId("");
-    setWarehouseId("");
+    setPatientId("");
+    setDepartmentId(defaults?.departmentId ?? userDefaults?.departmentId ?? "");
+    setWarehouseId(defaults?.warehouseId ?? userDefaults?.warehouseId ?? "");
     setDoctorName("");
     setPatientType("cash");
     setContractName("");
+    setContractId("");
+    setCompanyId("");
+    setContractMemberId("");
+    setCompanyCoveragePct(100);
     setNotes("");
     setAdmissionId("");
     setStatus("draft");
     setHeaderDiscountPercent(0);
     setHeaderDiscountAmount(0);
-  }, [nextNumber]);
+  }, [nextNumber, userDefaults?.warehouseId, userDefaults?.departmentId]);
 
   return {
     invoiceId, setInvoiceId,
@@ -79,10 +105,15 @@ export function useInvoiceForm(nextNumber: string | undefined): InvoiceFormState
     invoiceDate, setInvoiceDate,
     patientName, setPatientName,
     patientPhone, setPatientPhone,
+    patientId, setPatientId,
     departmentId, setDepartmentId,
     doctorName, setDoctorName,
     patientType, setPatientType,
     contractName, setContractName,
+    contractId, setContractId,
+    companyId, setCompanyId,
+    contractMemberId, setContractMemberId,
+    companyCoveragePct, setCompanyCoveragePct,
     notes, setNotes,
     status, setStatus,
     admissionId, setAdmissionId,

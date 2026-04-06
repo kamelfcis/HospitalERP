@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, X, BarChart3, ShieldCheck, ShieldOff, Clock, FileText } from "lucide-react";
+import { Loader2, X, BarChart3, ShieldCheck, ShieldOff, Clock, FileText, Search as SearchIcon } from "lucide-react";
+import { ItemFastSearch } from "@/components/ItemFastSearch/ItemFastSearch";
+import type { ItemSelectedPayload } from "@/components/ItemFastSearch/types";
+import type { ItemSearchResult } from "../hooks/useLineManagement";
 import { useQuery } from "@tanstack/react-query";
 import type { InvoiceTemplate } from "@shared/schema";
 import { formatNumber } from "@/lib/formatters";
@@ -110,6 +113,9 @@ interface UnifiedLinesTabProps {
   openStatsPopup: (itemId: string, name: string) => void;
   getServiceRowClass: (serviceType: string) => string;
   applyTemplate?: (templateId: string, opts?: { replaceExisting?: boolean }) => Promise<void>;
+  // For ItemFastSearch
+  warehouseId?: string;
+  invoiceDate?: string;
 }
 
 export function UnifiedLinesTab({
@@ -120,9 +126,51 @@ export function UnifiedLinesTab({
   addServiceLine, addItemLine, updateLine, removeLine,
   handleQtyConfirm, handleUnitLevelChange, openStatsPopup, getServiceRowClass,
   applyTemplate,
+  warehouseId = "",
+  invoiceDate,
 }: UnifiedLinesTabProps) {
   const [sourceMode, setSourceMode] = useState<"service" | "item">("service");
   const [itemAddType, setItemAddType] = useState<ItemAddType>("drug");
+  const [fastSearchOpen, setFastSearchOpen] = useState(false);
+
+  // F2 shortcut to open ItemFastSearch
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "F2" && isDraft && !fastSearchOpen) {
+        e.preventDefault();
+        setSourceMode("item");
+        setFastSearchOpen(true);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isDraft, fastSearchOpen]);
+
+  // Adapter: FastSearchItem → ItemSearchResult → addItemLine
+  const handleFastItemSelected = useCallback((payload: ItemSelectedPayload) => {
+    const { item } = payload;
+    const adapted: ItemSearchResult = {
+      id: item.id,
+      nameAr: item.nameAr,
+      itemCode: item.itemCode,
+      hasExpiry: item.hasExpiry,
+      salePriceCurrent: item.salePriceCurrent,
+      purchasePriceLast: undefined,
+      businessClassification: undefined,
+      majorUnitName: item.majorUnitName,
+      mediumUnitName: item.mediumUnitName,
+      minorUnitName: item.minorUnitName,
+      majorToMedium: item.majorToMedium ? Number(item.majorToMedium) : null,
+      majorToMinor:  item.majorToMinor  ? Number(item.majorToMinor)  : null,
+      mediumToMinor: item.mediumToMinor ? Number(item.mediumToMinor) : null,
+    };
+    // Determine type: "drug" for normal drugs, else use current itemAddType
+    const lineType = item.category === "drug" ? "drug"
+      : item.category === "equipment" ? "equipment"
+      : itemAddType;
+    addItemLine(adapted as unknown as Item, lineType);
+    setFastSearchOpen(false);
+  }, [addItemLine, itemAddType]);
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("__none__");
   const [applyingTemplate, setApplyingTemplate] = useState(false);
@@ -217,6 +265,21 @@ export function UnifiedLinesTab({
                 صنف
               </Button>
             </div>
+            {/* بحث سريع بالمودال (F2) */}
+            {warehouseId && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs px-2 mr-auto border-blue-400 text-blue-600 dark:border-blue-500 dark:text-blue-400"
+                onClick={() => { setSourceMode("item"); setFastSearchOpen(true); }}
+                data-testid="btn-fast-search-f2"
+                title="بحث سريع (F2)"
+              >
+                <SearchIcon className="h-3 w-3 ml-1" />
+                بحث سريع
+                <kbd className="mr-1 text-[9px] bg-muted px-0.5 rounded border">F2</kbd>
+              </Button>
+            )}
           </div>
 
           {/* إضافة خدمة */}
@@ -676,6 +739,18 @@ export function UnifiedLinesTab({
             })}
           <span className="mr-auto">إجمالي البنود: {lines.length}</span>
         </div>
+      )}
+
+      {/* ── ItemFastSearch modal ────────────────────────────────────────────── */}
+      {fastSearchOpen && (
+        <ItemFastSearch
+          open={fastSearchOpen}
+          onClose={() => setFastSearchOpen(false)}
+          warehouseId={warehouseId}
+          invoiceDate={invoiceDate || new Date().toISOString().split("T")[0]}
+          onItemSelected={handleFastItemSelected}
+          title="بحث سريع — أضف صنف للفاتورة"
+        />
       )}
     </div>
   );
