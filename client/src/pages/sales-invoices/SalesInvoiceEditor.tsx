@@ -16,6 +16,7 @@
  *   └─────────────────────────────────────────────────────────────────┘
  *   ─ Dialogs (ItemFastSearch | ServiceSearchDialog | StockStatsDialog)
  */
+import { useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button }   from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
@@ -125,6 +126,19 @@ export function SalesInvoiceEditor({
   linesHook, mutationsHook, itemSearchHook, serviceSearchHook,
   statsHook, onBack, maxDiscountPct, maxDiscountValue, estimatedCompanyTotal, estimatedPatientTotal,
 }: SalesInvoiceEditorProps) {
+
+  // ── اختصار F2 لفتح بحث الأصناف ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!isDraft) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "F2") {
+        e.preventDefault();
+        itemSearchHook.openSearchModal();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isDraft, itemSearchHook.openSearchModal]);
 
   // حالة التحميل
   if (editId !== "new" && detailLoading) return <EditorSkeleton />;

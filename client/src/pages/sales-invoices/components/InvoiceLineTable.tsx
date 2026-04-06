@@ -274,12 +274,12 @@ const InvoiceLineRow = memo(function InvoiceLineRow({
       </td>
 
       {/* الوحدة */}
-      <td className="text-center">
+      <td className={`text-center ${ln.unitLevel !== "major" ? "bg-amber-50 dark:bg-amber-900/20" : ""}`}>
         {isDraft ? (
           <select
             value={ln.unitLevel}
             onChange={(e) => onUpdateLine(i, { unitLevel: e.target.value })}
-            className="peachtree-select w-full"
+            className={`peachtree-select w-full ${ln.unitLevel !== "major" ? "border-amber-400 text-amber-700 dark:text-amber-300 font-semibold" : ""}`}
             data-testid={`select-unit-${i}`}
             data-grid-row={i}
             data-grid-col="unit"
@@ -296,7 +296,10 @@ const InvoiceLineRow = memo(function InvoiceLineRow({
             ))}
           </select>
         ) : (
-          <span className="text-foreground" data-testid={`text-unit-${i}`}>
+          <span
+            className={`${ln.unitLevel !== "major" ? "text-amber-700 dark:text-amber-300 font-semibold" : "text-foreground"}`}
+            data-testid={`text-unit-${i}`}
+          >
             {ln.unitLevel === "major" ? ln.item?.majorUnitName
               : ln.unitLevel === "medium" ? ln.item?.mediumUnitName
               : ln.item?.minorUnitName}

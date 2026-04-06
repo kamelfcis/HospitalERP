@@ -401,9 +401,10 @@ export function InvoiceHeaderBar({
             data-testid="input-barcode"
           />
           {barcodeLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-          <Button variant="outline" size="sm" onClick={onOpenSearch} data-testid="button-open-search">
+          <Button variant="outline" size="sm" onClick={onOpenSearch} data-testid="button-open-search" title="اختصار: F2">
             <Search className="h-3 w-3 ml-1" />
             بحث
+            <span className="mr-1 text-[9px] text-muted-foreground font-mono opacity-70">[F2]</span>
           </Button>
           <Button variant="outline" size="sm" onClick={onOpenServiceSearch} data-testid="button-open-service-search">
             <ShoppingCart className="h-3 w-3 ml-1" />
