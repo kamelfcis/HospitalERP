@@ -208,8 +208,13 @@ export function useTransferForm() {
 
       // ── رصيد منقوص: إذا المتاح أقل من وحدة كاملة، استخدم المتاح ──────────
       // مثال: علبة رصيدها 0.66 بلا وحدة أصغر → نطلب 0.66 بدلاً من 1
+      // existingMinor: ما هو مُضاف بالفعل لنفس الصنف في سطور التحويل الحالية
+      // (مطابق لمنطق الفاتورة — يمنع التجاوز عند مسح الصنف أكثر من مرة)
+      const existingMinor = formLinesRef.current
+        .filter((l) => l.itemId === item.id)
+        .reduce((s, l) => s + calculateQtyInMinor(Number(l.qtyEntered), l.unitLevel, l.item), 0);
       const totalAvail          = parseFloat(String(item.availableQtyMinor || "0"));
-      const effectiveQtyInMinor = capMinorToAvailable(qtyInMinor, totalAvail, 0) ?? qtyInMinor;
+      const effectiveQtyInMinor = capMinorToAvailable(qtyInMinor, totalAvail, existingMinor) ?? qtyInMinor;
 
       // صنف بصلاحية + لم يُختر دفعة محددة + مخزن مصدر محدد
       // → شغّل FEFO فوراً بكمية 1 بدلاً من انتظار تأكيد الكمية
