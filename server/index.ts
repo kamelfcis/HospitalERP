@@ -563,21 +563,28 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
 
   // ── 5h-bis. Performance indexes (FEFO, journals, permissions) ────────────
   try {
-    // inventory_lots: remove exact duplicate index (identical to idx_lots_item_warehouse_expiry)
-    try { await db.execute(sql`DROP INDEX IF EXISTS idx_lots_item_warehouse_expiry_month`); } catch { /* ignore lock errors */ }
-    // inventory_lots: FEFO covering index — item+warehouse prefix, FEFO sort columns, active lots only
+    // inventory_lots: تنظيف الفهارس القديمة ذات NULLS FIRST (تعارض مع ORDER BY NULLS LAST)
+    // وإعادة بنائها بشكل صحيح حتى يختارها الـ planner فعلياً
+    try { await db.execute(sql`DROP INDEX IF EXISTS idx_lots_item_warehouse_expiry_month`); } catch { /* ignore */ }
+    try { await db.execute(sql`DROP INDEX IF EXISTS idx_lots_fefo`);          } catch { /* ignore */ }
+    try { await db.execute(sql`DROP INDEX IF EXISTS idx_lots_fefo_covering`); } catch { /* ignore */ }
+
+    // idx_lots_fefo — index خفيف للبحث (بدون INCLUDE)
+    // NULLS LAST يطابق ORDER BY في استعلامات FEFO الفعلية
+    // WHERE يضيف qty_in_minor::numeric > 0 ليطابق شرط الاستعلام تماماً
+    // → يسمح للـ planner بـ Index-Only Scan بدون فرز إضافي
     await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_lots_fefo
-      ON inventory_lots (item_id, warehouse_id, expiry_year NULLS FIRST, expiry_month NULLS FIRST, received_date)
-      WHERE is_active = true
+      CREATE INDEX idx_lots_fefo
+      ON inventory_lots (item_id, warehouse_id, expiry_year ASC NULLS LAST, expiry_month ASC NULLS LAST, received_date ASC)
+      WHERE is_active = true AND qty_in_minor::numeric > 0
     `);
-    // inventory_lots: covering extension — يُضيف الأعمدة المقروءة دائماً في FEFO
-    // يلغي heap fetches ويرفع أداء فواتير المبيعات والتحويلات عند فتح الدفعات
+    // idx_lots_fefo_covering — covering index يلغي heap fetches تماماً
+    // يشمل كل الأعمدة المقروءة في FEFO حتى لا يحتاج الـ planner لقراءة الـ heap
     await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_lots_fefo_covering
-      ON inventory_lots (item_id, warehouse_id, expiry_year NULLS FIRST, expiry_month NULLS FIRST, received_date)
+      CREATE INDEX idx_lots_fefo_covering
+      ON inventory_lots (item_id, warehouse_id, expiry_year ASC NULLS LAST, expiry_month ASC NULLS LAST, received_date ASC)
       INCLUDE (id, qty_in_minor, purchase_price, sale_price, expiry_date)
-      WHERE is_active = true
+      WHERE is_active = true AND qty_in_minor::numeric > 0
     `);
     // journal_entries: source_type + date for list filter queries
     await db.execute(sql`
