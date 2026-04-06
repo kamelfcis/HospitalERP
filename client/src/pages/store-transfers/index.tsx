@@ -135,7 +135,6 @@ export default function StoreTransfers() {
             focusedLineIdx={form.focusedLineIdx}
             setFocusedLineIdx={form.setFocusedLineIdx}
             lineExpiryOptions={form.lineExpiryOptions}
-            expiryDropdownLoading={form.expiryDropdownLoading}
             qtyInputRefs={form.qtyInputRefs}
             pendingQtyRef={form.pendingQtyRef}
             barcodeInputRef={form.barcodeInputRef}
@@ -149,8 +148,6 @@ export default function StoreTransfers() {
             onDeleteLine={form.handleDeleteLine}
             onQtyConfirm={form.handleQtyConfirm}
             onUnitChange={form.handleUnitChange}
-            onExpiryFocus={form.loadExpiryOptionsForLine}
-            onExpiryChange={form.handleExpiryChange}
             onShowAvailability={showAvailabilityPopup}
             onBarcodeScan={barcode.handleBarcodeScan}
             onSaveDraft={() => mutations.saveDraftMutation.mutate()}

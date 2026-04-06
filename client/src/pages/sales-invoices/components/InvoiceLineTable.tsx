@@ -4,15 +4,13 @@ import { X, BarChart3, Lock, AlertTriangle, Stethoscope } from "lucide-react";
 import { formatNumber, formatQty } from "@/lib/formatters";
 import {
   formatAvailability, getUnitOptions,
-  computeUnitPriceFromBase, computeLineTotal,
 } from "@/lib/invoice-lines";
 import type { SalesLineLocal } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ترتيب الأعمدة للتنقل بالأسهم (من اليسار إلى اليمين في DOM)
-// في RTL: السهم الأيسر = للأمام (عمود أعلى index)، السهم الأيمن = للخلف
+// ترتيب الأعمدة للتنقل بالأسهم (الصلاحية عرض نص فقط — لا تفاعل)
 // ─────────────────────────────────────────────────────────────────────────────
-const GRID_COLS = ["unit", "qty", "expiry"] as const;
+const GRID_COLS = ["unit", "qty"] as const;
 type GridCol = (typeof GRID_COLS)[number];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,104 +76,18 @@ const QtyCell = memo(function QtyCell({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ExpiryCell
+// ExpiryCell — عرض نص فقط (FEFO يعيّن الصلاحية تلقائياً، لا dropdown)
 // ─────────────────────────────────────────────────────────────────────────────
 interface ExpiryCellProps {
-  line:         SalesLineLocal;
-  index:        number;
-  isDraft:      boolean;
-  needsExpiry:  boolean;
-  onUpdateLine: (index: number, patch: Partial<SalesLineLocal>) => void;
+  line:        SalesLineLocal;
+  index:       number;
+  isDraft:     boolean;
+  needsExpiry: boolean;
 }
 
-function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: ExpiryCellProps) {
+function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry }: ExpiryCellProps) {
   if (!ln.item?.hasExpiry) return <span className="text-muted-foreground">—</span>;
 
-  const gridAttrs = { "data-grid-row": i, "data-grid-col": "expiry" } as const;
-
-  // ── حالة 1: fefoLocked — سطور موزّعة تلقائياً بـ FEFO ───────────────────
-  if (isDraft && ln.fefoLocked && ln.expiryOptions && ln.expiryOptions.length > 0) {
-    return (
-      <select
-        value={ln.lotId || ""}
-        onChange={(e) => {
-          const opt = ln.expiryOptions?.find((o) => o.lotId === e.target.value);
-          if (!opt) return;
-          const updates: Partial<SalesLineLocal> = {
-            expiryMonth:       opt.expiryMonth,
-            expiryYear:        opt.expiryYear,
-            lotId:             opt.lotId || null,
-            availableQtyMinor: opt.qtyAvailableMinor,
-          };
-          if (opt.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
-            const newBase  = parseFloat(opt.lotSalePrice);
-            updates.baseSalePrice = newBase;
-            updates.salePrice     = computeUnitPriceFromBase(newBase, ln.unitLevel, ln.item);
-            updates.lineTotal     = computeLineTotal(ln.qty, newBase, ln.unitLevel, ln.item);
-            updates.priceSource   = "lot";
-          }
-          onUpdateLine(i, updates);
-        }}
-        className={`peachtree-select w-full ${needsExpiry ? "border-yellow-400" : ""}`}
-        data-testid={`select-expiry-${i}`}
-        title={ln.expiryMonth && ln.expiryYear
-          ? `${String(ln.expiryMonth).padStart(2, "0")}/${ln.expiryYear}`
-          : "اختر الصلاحية"}
-        {...gridAttrs}
-      >
-        {ln.expiryOptions.map((opt) => (
-          <option key={opt.lotId} value={opt.lotId}>
-            {String(opt.expiryMonth).padStart(2, "0")}/{opt.expiryYear}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  // ── حالة 2: اختيار يدوي من قائمة الدُفعات المتاحة ───────────────────────
-  if (isDraft && ln.expiryOptions && ln.expiryOptions.length > 0) {
-    return (
-      <select
-        value={ln.expiryMonth && ln.expiryYear ? `${ln.expiryMonth}-${ln.expiryYear}` : ""}
-        onChange={(e) => {
-          if (!e.target.value) {
-            onUpdateLine(i, { expiryMonth: null, expiryYear: null, lotId: null });
-            return;
-          }
-          const [m, y] = e.target.value.split("-").map(Number);
-          const opt = ln.expiryOptions?.find(
-            (o) => o.expiryMonth === m && o.expiryYear === y,
-          );
-          const updates: Partial<SalesLineLocal> = {
-            expiryMonth:       m || null,
-            expiryYear:        y || null,
-            lotId:             opt?.lotId || null,
-            availableQtyMinor: opt?.qtyAvailableMinor || "0",
-          };
-          if (opt?.lotSalePrice && parseFloat(opt.lotSalePrice) > 0 && ln.priceSource !== "department") {
-            const newBase = parseFloat(opt.lotSalePrice);
-            updates.baseSalePrice = newBase;
-            updates.salePrice     = computeUnitPriceFromBase(newBase, ln.unitLevel, ln.item);
-            updates.lineTotal     = computeLineTotal(ln.qty, newBase, ln.unitLevel, ln.item);
-            updates.priceSource   = "lot";
-          }
-          onUpdateLine(i, updates);
-        }}
-        className={`peachtree-select w-full ${needsExpiry ? "border-yellow-400" : ""}`}
-        data-testid={`select-expiry-${i}`}
-        {...gridAttrs}
-      >
-        <option value="">— اختر —</option>
-        {ln.expiryOptions.map((opt) => (
-          <option key={`${opt.expiryMonth}-${opt.expiryYear}`} value={`${opt.expiryMonth}-${opt.expiryYear}`}>
-            {String(opt.expiryMonth).padStart(2, "0")}/{opt.expiryYear}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  // ── عرض ثابت ─────────────────────────────────────────────────────────────
   if (ln.expiryMonth && ln.expiryYear) {
     return (
       <span className="font-mono text-[12px] text-foreground" data-testid={`text-expiry-${i}`}>
@@ -184,7 +96,9 @@ function ExpiryCell({ line: ln, index: i, isDraft, needsExpiry, onUpdateLine }: 
     );
   }
 
-  if (isDraft) return <span className="text-yellow-600 font-semibold text-[11px]">مطلوب !</span>;
+  if (isDraft && needsExpiry) {
+    return <span className="text-yellow-600 font-semibold text-[11px]">مطلوب !</span>;
+  }
   return <span className="text-muted-foreground">—</span>;
 }
 
@@ -335,7 +249,6 @@ const InvoiceLineRow = memo(function InvoiceLineRow({
           index={i}
           isDraft={isDraft}
           needsExpiry={needsExpiry}
-          onUpdateLine={onUpdateLine}
         />
       </td>
 
