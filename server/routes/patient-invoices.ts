@@ -23,6 +23,7 @@ import {
   patientInvoiceHeaders,
   patientInvoiceLines,
 } from "@shared/schema";
+import { resolveBusinessClassification } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
 import { eq } from "drizzle-orm";
@@ -469,6 +470,83 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
       if (_em?.includes("نهائية")) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
       res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Backfill: business_classification لبنود فاتورة المريض
+  //  POST /api/admin/backfill-business-classification
+  //  يعالج البنود ذات business_classification = NULL
+  //  ويشتق القيمة من service.business_classification أو service_type أو line_type
+  // ═══════════════════════════════════════════════════════════════════════════
+  app.post("/api/admin/backfill-business-classification", requireAuth, async (req, res) => {
+    try {
+      // 1. جلب البنود التي لا تحمل تصنيفاً مع بيانات الخدمة
+      const rows = await db.execute(sql`
+        SELECT
+          pil.id,
+          pil.line_type,
+          pil.source_type,
+          pil.service_id,
+          s.business_classification AS svc_biz_class,
+          s.service_type            AS svc_type,
+          i.business_classification AS item_biz_class
+        FROM patient_invoice_lines pil
+        LEFT JOIN services s ON s.id = pil.service_id
+        LEFT JOIN items    i ON i.id = pil.item_id
+        WHERE pil.business_classification IS NULL
+          AND pil.is_void = false
+        ORDER BY pil.created_at
+      `);
+
+      const lines = rows.rows as Array<{
+        id: string;
+        line_type: string;
+        source_type: string | null;
+        service_id: string | null;
+        svc_biz_class: string | null;
+        svc_type: string | null;
+        item_biz_class: string | null;
+      }>;
+
+      let updated = 0;
+      let fallbacks = 0;
+
+      for (const row of lines) {
+        const resolved = resolveBusinessClassification({
+          lineType:  row.line_type as "service" | "drug" | "consumable" | "equipment",
+          sourceType: row.source_type,
+          serviceId: row.service_id,
+          serviceBusinessClassification: row.svc_biz_class,
+          serviceType: row.svc_type,
+          itemBusinessClassification: row.item_biz_class,
+        }, logger);
+
+        // تحقق إذا كان fallback استُخدم
+        const isFallback =
+          (row.line_type === "service" && !row.svc_biz_class && row.source_type !== "STAY_ENGINE") ||
+          (row.line_type !== "service" && !row.item_biz_class);
+        if (isFallback) fallbacks++;
+
+        await db.execute(sql`
+          UPDATE patient_invoice_lines
+          SET business_classification = ${resolved}
+          WHERE id = ${row.id}
+        `);
+        updated++;
+      }
+
+      logger.info({ updated, fallbacks }, "[BACKFILL] business_classification backfill complete");
+
+      res.json({
+        success: true,
+        updated,
+        fallbacks,
+        message: `تم تحديث ${updated} بند — منها ${fallbacks} بند استُخدم فيه الاشتقاق التلقائي`,
+      });
+    } catch (err: unknown) {
+      logger.error({ err }, "[BACKFILL] business_classification backfill failed");
+      res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
     }
   });
 

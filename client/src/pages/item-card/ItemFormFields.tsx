@@ -13,6 +13,7 @@ import {
 import { Plus, Trash2, Barcode, CalendarClock, Lock } from "lucide-react";
 import { formatDateShort } from "@/lib/formatters";
 import type { InsertItem, ItemFormType, ItemBarcode, ItemUom } from "@shared/schema";
+import { BUSINESS_CLASSIFICATION_LABELS } from "@shared/resolve-business-classification";
 import type { ItemWithFormType } from "./types";
 
 interface ItemFormFieldsProps {
@@ -245,6 +246,26 @@ export default function ItemFormFields({
               className="h-6 text-[11px] px-1"
               data-testid="input-description"
             />
+          </div>
+          <div className="col-span-2">
+            <Label className="text-[10px] text-muted-foreground">التصنيف التجاري</Label>
+            <Select
+              value={(formData as any).businessClassification || "__none__"}
+              onValueChange={(v) =>
+                setFormData({ ...formData, businessClassification: v === "__none__" ? null : v } as any)
+              }
+              disabled={!isEditing}
+            >
+              <SelectTrigger className="h-6 text-[11px] px-1" data-testid="select-biz-classification">
+                <SelectValue placeholder="— غير محدد —" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— غير محدد —</SelectItem>
+                {(Object.entries(BUSINESS_CLASSIFICATION_LABELS) as [string, string][]).map(([k, label]) => (
+                  <SelectItem key={k} value={k}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </fieldset>

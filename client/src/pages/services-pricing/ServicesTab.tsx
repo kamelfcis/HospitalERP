@@ -122,7 +122,9 @@ export default function ServicesTab() {
     setForm({
       code: s.code, nameAr: s.nameAr, nameEn: s.nameEn || "",
       departmentId: s.departmentId, category: s.category || "",
-      serviceType: s.serviceType, defaultWarehouseId: s.defaultWarehouseId || "",
+      serviceType: s.serviceType,
+      businessClassification: (s as any).businessClassification || "__none__",
+      defaultWarehouseId: s.defaultWarehouseId || "",
       revenueAccountId: s.revenueAccountId, costCenterId: s.costCenterId,
       basePrice: String(s.basePrice), requiresDoctor: s.requiresDoctor ?? false,
       requiresNurse: s.requiresNurse ?? false, isActive: s.isActive,
@@ -138,6 +140,10 @@ export default function ServicesTab() {
       defaultWarehouseId: form.defaultWarehouseId || null,
       nameEn:   form.nameEn   || null,
       category: form.category || null,
+      businessClassification:
+        form.businessClassification && form.businessClassification !== "__none__"
+          ? form.businessClassification
+          : null,
     };
     if (editingService) {
       updateMutation.mutate({ id: editingService.id, data: payload });

@@ -33,6 +33,8 @@ export interface LineLocal {
   contractPrice: string | null;
   listPrice: string | null;
   contractRuleId: string | null;
+  /** التصنيف التجاري — snapshot محدد وقت إنشاء البند */
+  businessClassification: string | null;
 }
 
 export interface PaymentLocal {

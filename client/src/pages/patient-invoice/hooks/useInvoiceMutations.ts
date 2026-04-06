@@ -84,6 +84,7 @@ export function useInvoiceMutations({
       priceSource: l.priceSource || null,
       sourceType: l.sourceType || null,
       sourceId: l.sourceId || null,
+      businessClassification: l.businessClassification || null,
     }));
     const payData = payments.map(p => ({
       paymentDate: p.paymentDate,

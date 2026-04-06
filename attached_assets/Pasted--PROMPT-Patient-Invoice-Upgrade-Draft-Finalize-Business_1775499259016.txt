@@ -1,0 +1,198 @@
+🧠 PROMPT — Patient Invoice Upgrade (Draft/Finalize + Business Classification + Enterprise Refactor)
+
+أريد تنفيذ ترقية احترافية وآمنة لنظام فاتورة المريض، بناءً على النظام الحالي، مع الالتزام الكامل بعدم كسر أي منطق قائم، خصوصًا:
+
+نظام الصيدلية (FEFO / FIFO / batch / expiry)
+منطق المخزون
+منطق القيود المحاسبية
+الـ APIs الحالية
+البيانات القديمة
+🎯 الهدف العام
+
+تحقيق 3 أهداف رئيسية:
+
+1) نموذج حالات الفاتورة
+
+تحويل الفاتورة إلى نظام:
+
+Draft (مسودة) → مرنة بالكامل
+Finalized (معتمدة) → مغلقة تمامًا
+2) إضافة Business Classification
+
+إضافة تصنيف موحد لكل بند داخل الفاتورة (أدوية / خدمات / تحاليل / أشعة / إقامة / غازات… إلخ)
+
+3) تنفيذ Refactor احترافي
+بدون كسر النظام
+مع تحسين الأداء
+مع استخدام compound design
+مع فهرسة ذكية
+⚠️ قواعد حاكمة (لا يُسمح بكسرها)
+❌ لا يتم تعديل:
+items.category
+services.serviceType
+line_type
+❌ لا يتم تغيير أي logic خاص بـ:
+FEFO
+inventory
+COGS
+❌ لا يتم ربط business classification مباشرة بالمحاسبة
+❌ لا يتم استخدام UI لتحديد التصنيف
+❌ لا يتم hardcode في أكثر من مكان
+1️⃣ Invoice State Model (Draft / Finalized)
+المطلوب
+
+إضافة حالة للفاتورة:
+
+status: "draft" | "finalized"
+السلوك
+Draft:
+إضافة / تعديل / حذف البنود
+تعديل الأسعار والخصومات
+تعديل المريض
+تعديل business_classification
+Finalized:
+❌ لا تعديل
+❌ لا حذف
+❌ لا إضافة
+❌ لا تغيير business_classification
+Backend Rules
+عند التعديل:
+if (invoice.status === "finalized") {
+  throw HTTP 422 "INVOICE_FINALIZED_NO_EDIT"
+}
+خاص بـ business_classification:
+مسموح في Draft
+ممنوع بعد Finalized
+Frontend
+زر: حفظ مسودة
+زر: اعتماد الفاتورة
+2️⃣ Business Classification Design
+التصنيفات
+enum BusinessClassification {
+  drug
+  consumable
+  equipment
+  gas
+  medical_service
+  lab
+  radiology
+  accommodation
+  operating_room
+}
+أماكن التخزين
+items.businessClassification
+services.businessClassification
+patient_invoice_lines.business_classification
+
+⚠️ جميعها nullable
+
+مهم جدًا
+التصنيف يأتي من master data
+الفاتورة فقط تخزن snapshot
+لا يعتمد على UI
+3️⃣ Central Resolver (مهم جدًا)
+
+ملف واحد فقط:
+
+resolveBusinessClassification()
+القواعد:
+Stay Engine:
+if (sourceType === "STAY_ENGINE") return "accommodation"
+Service:
+يستخدم service.businessClassification
+fallback على serviceType
+Item:
+يستخدم item.businessClassification
+fallback على lineType
+⚠️ Fallback Logging
+logger.warn("CLASSIFICATION_FALLBACK_USED", {...})
+4️⃣ Immutability Rule
+قبل Finalize → editable
+بعد Finalize → locked
+5️⃣ Backfill
+
+Endpoint:
+
+POST /api/admin/backfill-business-classification
+المطلوب:
+تصنيف تلقائي
+تقرير:
+النوع	العدد
+تم التصنيف	X
+medical_service	Y
+غير معروف	Z
+6️⃣ Refactor (إجباري)
+المطلوب:
+1) استخراج منطق التصنيف
+resolveBusinessClassification()
+2) إزالة التكرار
+لا تكرار mapping في أكثر من مكان
+3) توحيد logic
+addServiceLine
+addItemLine
+stay engine
+7️⃣ Compound Design
+الهدف:
+
+فصل:
+
+source_type
+line_type
+business_classification
+مثال:
+المصدر	التصنيف
+item	gas
+service	gas
+8️⃣ Indexing (مهم جدًا)
+
+أضف فهارس:
+
+CREATE INDEX idx_invoice_lines_classification
+ON patient_invoice_lines(business_classification);
+
+CREATE INDEX idx_invoice_lines_invoice
+ON patient_invoice_lines(invoice_id, business_classification);
+9️⃣ Performance
+لا تستخدم JOIN في التقارير
+استخدم snapshot
+استخدم indexes
+لا تعمل recalculation runtime
+🔟 UI Changes
+UnifiedLinesTab:
+Badge حسب business_classification
+Grouping
+Subtotal per type
+11️⃣ Backward Compatibility
+الفواتير القديمة تعمل
+لا كسر
+fallback يعمل
+classification nullable
+12️⃣ Testing
+
+اختبر:
+
+فاتورة Draft
+اعتماد الفاتورة
+منع التعديل
+Stay Engine
+backfill
+fallback logs
+13️⃣ Deliverables
+
+أريد:
+
+الملفات المعدلة
+migrations
+backfill report
+logs fallback
+test cases
+risks
+🔥 القاعدة النهائية
+
+لا تهدم النظام
+لا تمس المخزون
+لا تمس المحاسبة
+أضف طبقة تصنيف ذكية فقط
+مع refactor نظيف وبدون duplication
+ومع indexing مناسب
+ومع audit كامل

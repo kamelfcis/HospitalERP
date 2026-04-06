@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, UserPlus } from "lucide-react";
 import { serviceTypeLabels } from "@shared/schema";
+import { BUSINESS_CLASSIFICATION_LABELS } from "@shared/resolve-business-classification";
 import type {
   ServiceWithDepartment, CostCenter, Warehouse, ServiceConsumableWithItem,
 } from "@shared/schema";
@@ -29,6 +30,7 @@ export interface ServiceFormState {
   departmentId: string;
   category: string;
   serviceType: string;
+  businessClassification: string;
   defaultWarehouseId: string;
   revenueAccountId: string;
   costCenterId: string;
@@ -43,7 +45,8 @@ import type { ConsumableRow } from "@/components/ConsumablesGrid";
 
 export const defaultServiceForm: ServiceFormState = {
   code: "", nameAr: "", nameEn: "", departmentId: "", category: "",
-  serviceType: "SERVICE", defaultWarehouseId: "", revenueAccountId: "",
+  serviceType: "SERVICE", businessClassification: "__none__",
+  defaultWarehouseId: "", revenueAccountId: "",
   costCenterId: "", basePrice: "0", requiresDoctor: false, requiresNurse: false, isActive: true,
 };
 
@@ -152,6 +155,24 @@ export default function ServiceDialog({
               <SelectContent>
                 {SERVICE_TYPES.map(t => (
                   <SelectItem key={t} value={t}>{serviceTypeLabels[t]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label>التصنيف التجاري</Label>
+            <Select
+              value={form.businessClassification || "__none__"}
+              onValueChange={v => set("businessClassification", v === "__none__" ? "" : v)}
+            >
+              <SelectTrigger data-testid="select-trigger-service-biz-class">
+                <SelectValue placeholder="اختياري" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— غير محدد —</SelectItem>
+                {(Object.entries(BUSINESS_CLASSIFICATION_LABELS) as [string, string][]).map(([k, label]) => (
+                  <SelectItem key={k} value={k}>{label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { genId } from "../utils/id";
 import type { LineLocal } from "../types";
+import { resolveBusinessClassificationClient } from "@shared/resolve-business-classification";
 import {
   type ItemUnitConfig,
   computeUnitPriceFromBase,
@@ -32,6 +33,7 @@ export interface ServiceSearchResult {
   requiresDoctor?: boolean | null;
   requiresNurse?: boolean | null;
   serviceType?: string | null;
+  businessClassification?: string | null;
 }
 
 export interface ItemSearchResult extends ItemUnitConfig {
@@ -41,6 +43,7 @@ export interface ItemSearchResult extends ItemUnitConfig {
   hasExpiry?: boolean | null;
   salePriceCurrent?: string | number | null;
   purchasePriceLast?: string | number | null;
+  businessClassification?: string | null;
 }
 
 interface RawInvoiceLine {
@@ -65,10 +68,12 @@ interface RawInvoiceLine {
   lotId?: string | null;
   expiryMonth?: number | string | null;
   expiryYear?: number | string | null;
+  businessClassification?: string | null;
   service?: {
     requiresDoctor?: boolean | null;
     requiresNurse?: boolean | null;
     serviceType?: string | null;
+    businessClassification?: string | null;
   } | null;
   line?: {
     lotId?: string | null;
@@ -164,6 +169,7 @@ export function useLineManagement({
       contractPrice:      (l as any).contractPrice       ?? null,
       listPrice:          (l as any).listPrice           ?? null,
       contractRuleId:     (l as any).contractRuleId      ?? null,
+      businessClassification: l.businessClassification ?? (l as any).business_classification ?? null,
     }));
     setLines(loaded);
     return loaded;
@@ -193,6 +199,12 @@ export function useLineManagement({
 
   // ── Add service line ───────────────────────────────────────────────────────
   const addServiceLine = useCallback((svc: ServiceSearchResult) => {
+    const businessClassification = resolveBusinessClassificationClient({
+      lineType: "service",
+      serviceBusinessClassification: svc.businessClassification ?? null,
+      serviceType: svc.serviceType ?? null,
+      serviceId: svc.id,
+    });
     const newLine: LineLocal = {
       tempId: genId(),
       lineType: "service",
@@ -225,6 +237,7 @@ export function useLineManagement({
       contractPrice:      null,
       listPrice:          null,
       contractRuleId:     null,
+      businessClassification,
     };
     setLines(prev => [...prev, newLine]);
   }, []);
@@ -234,6 +247,11 @@ export function useLineManagement({
     const defaultUnit = getSmartDefaultUnitLevel(item) as "major" | "medium" | "minor";
     const baseSalePrice = parseFloat(String(item.salePriceCurrent || item.purchasePriceLast || "0")) || 0;
     const unitPrice = computeUnitPriceFromBase(baseSalePrice, defaultUnit, item);
+    const businessClassification = resolveBusinessClassificationClient({
+      lineType,
+      itemBusinessClassification: item.businessClassification ?? null,
+      itemId: item.id,
+    });
 
     if (item.hasExpiry && !warehouseId) {
       toast({
@@ -279,6 +297,7 @@ export function useLineManagement({
       contractPrice:      null,
       listPrice:          null,
       contractRuleId:     null,
+      businessClassification,
     };
     setLines(prev => [...prev, placeholder]);
     setItemSearch(""); setItemResults([]);
@@ -361,6 +380,10 @@ export function useLineManagement({
                 expiryMonth: alloc.expiryMonth || null,
                 expiryYear: alloc.expiryYear || null,
                 priceSource, sourceType: null, sourceId: null,
+                coverageStatus: null, approvalStatus: null,
+                companyShareAmount: null, patientShareAmount: null,
+                contractPrice: null, listPrice: null, contractRuleId: null,
+                businessClassification,
               } as LineLocal;
             });
 
@@ -455,6 +478,10 @@ export function useLineManagement({
                 expiryMonth: alloc.expiryMonth || null,
                 expiryYear: alloc.expiryYear || null,
                 priceSource: line.priceSource, sourceType: null, sourceId: null,
+                coverageStatus: null, approvalStatus: null,
+                companyShareAmount: null, patientShareAmount: null,
+                contractPrice: null, listPrice: null, contractRuleId: null,
+                businessClassification: line.businessClassification ?? null,
               } as LineLocal;
             });
           setLines(prev => [...prev.filter(l => l.itemId !== line.itemId), ...newFefoLines]);
@@ -558,6 +585,10 @@ export function useLineManagement({
             expiryYear: alloc.expiryYear || null,
             priceSource: isDeptPrice ? "department" : (parseFloat(alloc.lotSalePrice || "0") > 0 ? "lot" : "item"),
             sourceType: null, sourceId: null,
+            coverageStatus: null, approvalStatus: null,
+            companyShareAmount: null, patientShareAmount: null,
+            contractPrice: null, listPrice: null, contractRuleId: null,
+            businessClassification: line.businessClassification ?? null,
           } as LineLocal;
         });
 

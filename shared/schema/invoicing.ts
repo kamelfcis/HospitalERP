@@ -20,6 +20,8 @@ export const services = pgTable("services", {
   departmentId: varchar("department_id").notNull().references(() => departments.id),
   category: text("category"),
   serviceType: text("service_type").notNull().default("SERVICE"),
+  // ── تصنيف تجاري مستقل عن serviceType — لا يؤثر على توزيع الفاتورة ──────────
+  businessClassification: varchar("business_classification"),
   defaultWarehouseId: varchar("default_warehouse_id").references(() => warehouses.id),
   revenueAccountId: varchar("revenue_account_id").notNull().references(() => accounts.id),
   costCenterId: varchar("cost_center_id").notNull().references(() => costCenters.id),
@@ -398,6 +400,8 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   patientShareAmount: decimal("patient_share_amount", { precision: 18, scale: 2 }),
   coverageStatus:     text("coverage_status"),
   approvalStatus:     text("approval_status"),
+  // ── تصنيف تجاري — snapshot محدد وقت إنشاء البند، مقفول بعد finalize ─────────
+  businessClassification: varchar("business_classification"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx:         index("idx_pat_line_header").on(table.headerId),
@@ -406,6 +410,9 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   companyIdx:        index("idx_pat_line_company").on(table.companyId),
   contractIdx:       index("idx_pat_line_contract").on(table.contractId),
   contractMemberIdx: index("idx_pat_line_contract_member").on(table.contractMemberId),
+  // ── فهارس التصنيف التجاري — للتقارير والـ grouping ──────────────────────────
+  bizClassIdx:       index("idx_invoice_lines_classification").on(table.businessClassification),
+  bizClassHeaderIdx: index("idx_invoice_lines_invoice_class").on(table.headerId, table.businessClassification),
 }));
 
 export const patientInvoicePayments = pgTable("patient_invoice_payments", {

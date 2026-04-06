@@ -264,11 +264,13 @@ const methods = {
               INSERT INTO patient_invoice_lines
                 (header_id, line_type, service_id, description,
                  quantity, unit_price, discount_percent, discount_amount,
-                 total_price, unit_level, sort_order, source_type, source_id)
+                 total_price, unit_level, sort_order, source_type, source_id,
+                 business_classification)
               VALUES
                 (${seg.invoice_id}, 'service', ${seg.service_id}, ${description},
                  '1', ${rateStr}, '0', '0',
-                 ${rateStr}, 'minor', 0, 'STAY_ENGINE', ${sourceId})
+                 ${rateStr}, 'minor', 0, 'STAY_ENGINE', ${sourceId},
+                 'accommodation')
               ON CONFLICT (source_type, source_id)
                 WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL
               DO NOTHING

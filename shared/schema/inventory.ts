@@ -52,6 +52,8 @@ export const items = pgTable("items", {
   taxType: text("tax_type"),         // 'exempt' | 'taxable' | 'zero_rated' | null
   defaultTaxRate: decimal("default_tax_rate", { precision: 5, scale: 2 }),
   pharmacyPricesIncludeTax: boolean("pharmacy_prices_include_tax").default(false),
+  // ── تصنيف تجاري مستقل عن category — لا يؤثر على FEFO أو المحاسبة ─────────
+  businessClassification: varchar("business_classification"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -59,6 +61,7 @@ export const items = pgTable("items", {
   nameArIdx:    index("idx_items_name_ar").on(table.nameAr),
   formTypeIdx:  index("idx_items_form_type").on(table.formTypeId),
   isActiveIdx:  index("idx_items_is_active").on(table.isActive),
+  bizClassIdx:  index("idx_items_biz_class").on(table.businessClassification),
 }));
 
 export const purchaseTransactions = pgTable("purchase_transactions", {
