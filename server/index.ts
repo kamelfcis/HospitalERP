@@ -829,6 +829,26 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] pharmacies.manage backfill error");
   }
 
+  // ── 5h-post3c. Migrate cashier.all_units → users.all_cashier_units (scope flag) ──
+  // يحوّل صلاحية cashier.all_units الفردية (user_permissions) إلى حقل scope على المستخدم
+  try {
+    await db.execute(sql`
+      UPDATE users u
+      SET all_cashier_units = true
+      FROM user_permissions up
+      WHERE up.user_id = u.id
+        AND up.permission = 'cashier.all_units'
+        AND up.granted = true
+        AND u.all_cashier_units = false
+    `);
+    await db.execute(sql`
+      DELETE FROM user_permissions WHERE permission = 'cashier.all_units'
+    `);
+    log("[STARTUP] cashier.all_units migrated to users.all_cashier_units scope flag");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] cashier.all_units migration error");
+  }
+
   // ── 5h-post4. Stay Engine UNIQUE constraint ───────────────────────────────
   // Stay Engine uses ON CONFLICT (source_type, source_id) WHERE is_void = false ...
   // This partial unique index MUST exist or every accrual tick throws:

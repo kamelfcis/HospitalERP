@@ -81,9 +81,8 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
           <PermissionsMatrixTab
             key={groupId}
             groupId={groupId}
-            isSystem={group.isSystem}
-            initialPermissions={group.permissions}
-            canManage={canManage}
+            permissions={group.permissions}
+            canEdit={canManage && !group.isSystem}
           />
         </TabsContent>
 

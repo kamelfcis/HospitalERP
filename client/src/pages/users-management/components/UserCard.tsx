@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button }            from "@/components/ui/button";
 import { Badge }             from "@/components/ui/badge";
-import { Pencil, Trash2, Shield, UserCircle, Wallet, Lock, Warehouse, Building2, Pill } from "lucide-react";
+import { Pencil, Trash2, UserCircle, Wallet, Lock, Warehouse, Building2, Pill } from "lucide-react";
 import { ROLE_LABELS } from "@shared/permissions";
 import { ScopeBadge } from "../../cashier/components/ScopeBadge";
 import type { UserData } from "../types";
@@ -15,14 +15,13 @@ interface UserCardProps {
   warehouses:       { id: string; nameAr: string }[];
   onEdit:           (u: UserData) => void;
   onDelete:         (id: string) => void;
-  onOpenPerms:      (id: string) => void;
   onOpenAcctScope:  (u: UserData) => void;
 }
 
-export function UserCard({ user, canEdit, canDelete, departments, pharmacies, warehouses, onEdit, onDelete, onOpenPerms, onOpenAcctScope }: UserCardProps) {
-  const deptName = user.departmentId ? departments.find(d => d.id === user.departmentId)?.nameAr : null;
-  const pharmName = user.pharmacyId ? pharmacies.find(p => p.id === user.pharmacyId)?.nameAr : null;
-  const whName = user.defaultWarehouseId ? warehouses.find(w => w.id === user.defaultWarehouseId)?.nameAr : null;
+export function UserCard({ user, canEdit, canDelete, departments, pharmacies, warehouses, onEdit, onDelete, onOpenAcctScope }: UserCardProps) {
+  const deptName  = user.departmentId       ? departments.find(d => d.id === user.departmentId)?.nameAr       : null;
+  const pharmName = user.pharmacyId         ? pharmacies.find(p => p.id === user.pharmacyId)?.nameAr          : null;
+  const whName    = user.defaultWarehouseId ? warehouses.find(w => w.id === user.defaultWarehouseId)?.nameAr  : null;
 
   const hasSettings = deptName || pharmName || whName;
 
@@ -89,14 +88,6 @@ export function UserCard({ user, canEdit, canDelete, departments, pharmacies, wa
           <div className="flex items-center gap-1">
             {canEdit && (
               <>
-                <Button
-                  variant="ghost" size="icon"
-                  onClick={() => onOpenPerms(user.id)}
-                  data-testid={`button-user-perms-${user.id}`}
-                  title="الصلاحيات"
-                >
-                  <Shield className="h-4 w-4" />
-                </Button>
                 <Button
                   variant="ghost" size="icon"
                   onClick={() => onOpenAcctScope(user)}

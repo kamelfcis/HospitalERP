@@ -214,7 +214,7 @@ export async function registerAuthRoutes(app: Express) {
   app.patch("/api/users/:id", requireAuth, checkPermission("users.edit"), async (req, res) => {
     try {
       const { id } = req.params;
-      const { username, password, fullName, role, departmentId, pharmacyId, isActive, cashierGlAccountId, defaultWarehouseId, defaultPurchaseWarehouseId, cashierVarianceAccountId, cashierVarianceShortAccountId, cashierVarianceOverAccountId } = req.body;
+      const { username, password, fullName, role, departmentId, pharmacyId, isActive, cashierGlAccountId, defaultWarehouseId, defaultPurchaseWarehouseId, cashierVarianceAccountId, cashierVarianceShortAccountId, cashierVarianceOverAccountId, allCashierUnits } = req.body;
 
       const updateData: any = {};
       if (username !== undefined) updateData.username = username;
@@ -229,6 +229,8 @@ export async function registerAuthRoutes(app: Express) {
       if (cashierVarianceOverAccountId !== undefined) updateData.cashierVarianceOverAccountId = cashierVarianceOverAccountId || null;
       if (defaultWarehouseId !== undefined) updateData.defaultWarehouseId = defaultWarehouseId || null;
       if (defaultPurchaseWarehouseId !== undefined) updateData.defaultPurchaseWarehouseId = defaultPurchaseWarehouseId || null;
+      if (allCashierUnits !== undefined) updateData.allCashierUnits = !!allCashierUnits;
+      if ("permissionGroupId" in req.body) updateData.permissionGroupId = req.body.permissionGroupId || null;
       if (password) {
         updateData.password = await bcrypt.hash(password, 10);
       }
@@ -255,34 +257,6 @@ export async function registerAuthRoutes(app: Express) {
         return res.status(404).json({ message: "المستخدم غير موجود" });
       }
       res.json({ message: "تم حذف المستخدم" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  app.get("/api/users/:id/permissions", requireAuth, checkPermission("users.view"), async (req, res) => {
-    try {
-      const userPerms = await storage.getUserPermissions(req.params.id);
-      res.json(userPerms);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  app.put("/api/users/:id/permissions", requireAuth, checkPermission("users.edit"), async (req, res) => {
-    try {
-      const { permissions } = req.body;
-      const oldPerms = await storage.getUserPermissions(req.params.id);
-      await storage.setUserPermissions(req.params.id, permissions || []);
-      auditLog({
-        tableName: "user_permissions",
-        recordId: req.params.id,
-        action: "update",
-        oldValues: oldPerms.map((p: any) => p.permission),
-        newValues: permissions || [],
-        userId: req.session.userId,
-      }).catch(err => logger.warn({ err: err.message }, "[Audit] permission change"));
-      res.json({ message: "تم تحديث الصلاحيات" });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -411,17 +385,12 @@ export async function registerAuthRoutes(app: Express) {
     }
   });
 
+  // Scope route: only saves department assignments now.
+  // allCashierUnits is a column on users, saved via PATCH /api/users/:id
   app.put("/api/users/:id/cashier-scope", requireAuth, checkPermission("users.edit"), async (req, res) => {
     try {
-      const { departmentIds = [], hasAllUnits = false } = req.body;
+      const { departmentIds = [] } = req.body;
       await storage.setUserDepartments(req.params.id, departmentIds);
-      const allPerms = await storage.getUserPermissions(req.params.id);
-      const filtered = allPerms.filter(p => p.permission !== "cashier.all_units");
-      const updated = [
-        ...filtered.map(p => ({ permission: p.permission, granted: p.granted as boolean })),
-        ...(hasAllUnits ? [{ permission: "cashier.all_units", granted: true }] : []),
-      ];
-      await storage.setUserPermissions(req.params.id, updated);
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message });

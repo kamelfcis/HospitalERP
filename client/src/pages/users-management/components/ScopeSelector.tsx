@@ -1,8 +1,7 @@
-import { Globe, Lock, Stethoscope } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Stethoscope } from "lucide-react";
+import { Badge }      from "@/components/ui/badge";
+import { Label }      from "@/components/ui/label";
+import { Checkbox }   from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ScopeItem { id: string; nameAr: string; }
@@ -17,136 +16,104 @@ interface ScopeSelectorProps {
   onPharmaciesChange:   (ids: string[]) => void;
   onDepartmentsChange:  (ids: string[]) => void;
   onClinicsChange:      (ids: string[]) => void;
-  hasAllUnits:          boolean;
-  onAllUnitsChange:     (v: boolean) => void;
 }
 
 export function ScopeSelector({
   pharmacies, departments, clinics,
   allowedPharmacyIds, allowedDepartmentIds, allowedClinicIds,
   onPharmaciesChange, onDepartmentsChange, onClinicsChange,
-  hasAllUnits, onAllUnitsChange,
 }: ScopeSelectorProps) {
   function toggleItem(list: string[], id: string, onChange: (ids: string[]) => void) {
     if (list.includes(id)) onChange(list.filter(x => x !== id));
     else onChange([...list, id]);
   }
 
-  const totalUnits = allowedPharmacyIds.length + allowedDepartmentIds.length;
-
   return (
     <div className="space-y-3 rounded-md border p-3">
-      <div className="flex items-center justify-between">
-        <Label className="font-semibold text-sm">نطاق الكاشير</Label>
-        {hasAllUnits ? (
-          <Badge variant="secondary" className="gap-1 text-[10px]"><Globe className="h-3 w-3 text-green-600" />كل الوحدات</Badge>
-        ) : (
-          <Badge variant="outline" className="gap-1 text-[10px]">
-            <Lock className="h-3 w-3 text-amber-600" />
-            {totalUnits} وحدة
-          </Badge>
-        )}
-      </div>
+      <Label className="font-semibold text-sm">نطاق الكاشير — الوحدات المسموحة</Label>
+      <p className="text-xs text-muted-foreground">
+        اختر الصيدليات والأقسام التي يعمل فيها هذا الكاشير. اتركها فارغة لقصره على قسمه الافتراضي.
+      </p>
 
-      <div className="flex items-center gap-2">
-        <Switch
-          id="all-units-toggle"
-          checked={hasAllUnits}
-          onCheckedChange={onAllUnitsChange}
-          data-testid="switch-all-units"
-        />
-        <Label htmlFor="all-units-toggle" className="text-sm cursor-pointer">
-          صلاحية كل الوحدات (بدون قيود)
-        </Label>
-      </div>
-
-      {!hasAllUnits && (
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">اختر الصيدليات والأقسام المسموحة لهذا الكاشير:</p>
-
-          {pharmacies.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">الصيدليات</p>
-              <ScrollArea className="max-h-28">
-                <div className="space-y-1.5 pr-1">
-                  {pharmacies.map(p => (
-                    <label key={p.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded p-0.5">
-                      <Checkbox
-                        checked={allowedPharmacyIds.includes(p.id)}
-                        onCheckedChange={() => toggleItem(allowedPharmacyIds, p.id, onPharmaciesChange)}
-                        data-testid={`checkbox-pharm-${p.id}`}
-                      />
-                      <span className="text-sm">{p.nameAr}</span>
-                    </label>
-                  ))}
-                </div>
-              </ScrollArea>
+      {pharmacies.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">الصيدليات</p>
+          <ScrollArea className="max-h-28">
+            <div className="space-y-1.5 pr-1">
+              {pharmacies.map(p => (
+                <label key={p.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded p-0.5">
+                  <Checkbox
+                    checked={allowedPharmacyIds.includes(p.id)}
+                    onCheckedChange={() => toggleItem(allowedPharmacyIds, p.id, onPharmaciesChange)}
+                    data-testid={`checkbox-pharm-${p.id}`}
+                  />
+                  <span className="text-sm">{p.nameAr}</span>
+                </label>
+              ))}
             </div>
-          )}
+          </ScrollArea>
+        </div>
+      )}
 
-          {departments.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">الأقسام</p>
-              <ScrollArea className="max-h-28">
-                <div className="space-y-1.5 pr-1">
-                  {departments.map(d => (
-                    <label key={d.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded p-0.5">
-                      <Checkbox
-                        checked={allowedDepartmentIds.includes(d.id)}
-                        onCheckedChange={() => toggleItem(allowedDepartmentIds, d.id, onDepartmentsChange)}
-                        data-testid={`checkbox-dept-${d.id}`}
-                      />
-                      <span className="text-sm">{d.nameAr}</span>
-                    </label>
-                  ))}
-                </div>
-              </ScrollArea>
+      {departments.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">الأقسام</p>
+          <ScrollArea className="max-h-28">
+            <div className="space-y-1.5 pr-1">
+              {departments.map(d => (
+                <label key={d.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded p-0.5">
+                  <Checkbox
+                    checked={allowedDepartmentIds.includes(d.id)}
+                    onCheckedChange={() => toggleItem(allowedDepartmentIds, d.id, onDepartmentsChange)}
+                    data-testid={`checkbox-dept-${d.id}`}
+                  />
+                  <span className="text-sm">{d.nameAr}</span>
+                </label>
+              ))}
             </div>
-          )}
+          </ScrollArea>
+        </div>
+      )}
 
-          {pharmacies.length === 0 && departments.length === 0 && (
-            <p className="text-xs text-muted-foreground italic">لا توجد صيدليات أو أقسام بعد</p>
-          )}
+      {pharmacies.length === 0 && departments.length === 0 && (
+        <p className="text-xs text-muted-foreground italic">لا توجد صيدليات أو أقسام بعد</p>
+      )}
 
-          {/* ─── تحديد العيادة (لموظفي الاستقبال في العيادات الخارجية) ─── */}
-          {clinics.length > 0 && (
-            <div className="space-y-1.5 border-t pt-2">
-              <div className="flex items-center gap-1.5">
-                <Stethoscope className="h-3.5 w-3.5 text-blue-600" />
-                <p className="text-xs font-medium text-blue-700">عيادات محددة للموظف</p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                إذا حددت عيادة، سيرى الموظف مرضى هذه العيادة فقط في الاستعلام.
-                اتركها فارغة لرؤية كل عيادات قسمه.
-              </p>
-              <ScrollArea className="max-h-36">
-                <div className="space-y-1.5 pr-1">
-                  {clinics.map(c => (
-                    <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:bg-blue-50 rounded p-0.5">
-                      <Checkbox
-                        checked={allowedClinicIds.includes(c.id)}
-                        onCheckedChange={() => toggleItem(allowedClinicIds, c.id, onClinicsChange)}
-                        data-testid={`checkbox-clinic-${c.id}`}
-                        className="border-blue-300"
-                      />
-                      <span className="text-sm">{c.nameAr}</span>
-                    </label>
-                  ))}
-                </div>
-              </ScrollArea>
-              {allowedClinicIds.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {allowedClinicIds.map(id => {
-                    const c = clinics.find(x => x.id === id);
-                    return c ? (
-                      <Badge key={id} variant="outline" className="text-[10px] border-blue-300 text-blue-700 gap-1">
-                        <Stethoscope className="h-2.5 w-2.5" />
-                        {c.nameAr}
-                      </Badge>
-                    ) : null;
-                  })}
-                </div>
-              )}
+      {clinics.length > 0 && (
+        <div className="space-y-1.5 border-t pt-2">
+          <div className="flex items-center gap-1.5">
+            <Stethoscope className="h-3.5 w-3.5 text-blue-600" />
+            <p className="text-xs font-medium text-blue-700">عيادات محددة للموظف</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            إذا حددت عيادة، سيرى الموظف مرضى هذه العيادة فقط. اتركها فارغة لرؤية كل عيادات قسمه.
+          </p>
+          <ScrollArea className="max-h-36">
+            <div className="space-y-1.5 pr-1">
+              {clinics.map(c => (
+                <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:bg-blue-50 rounded p-0.5">
+                  <Checkbox
+                    checked={allowedClinicIds.includes(c.id)}
+                    onCheckedChange={() => toggleItem(allowedClinicIds, c.id, onClinicsChange)}
+                    data-testid={`checkbox-clinic-${c.id}`}
+                    className="border-blue-300"
+                  />
+                  <span className="text-sm">{c.nameAr}</span>
+                </label>
+              ))}
+            </div>
+          </ScrollArea>
+          {allowedClinicIds.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {allowedClinicIds.map(id => {
+                const c = clinics.find(x => x.id === id);
+                return c ? (
+                  <Badge key={id} variant="outline" className="text-[10px] border-blue-300 text-blue-700 gap-1">
+                    <Stethoscope className="h-2.5 w-2.5" />
+                    {c.nameAr}
+                  </Badge>
+                ) : null;
+              })}
             </div>
           )}
         </div>

@@ -4,19 +4,15 @@
  * تخطيط ثنائي الألواح (RTL):
  *  يمين: قائمة المجموعات
  *  يسار: تفاصيل المجموعة المختارة (مصفوفة الشاشات / الأعضاء / عام)
- *        أو لوح صلاحيات مستخدم فردي عند وجود ?userId= في الرابط
  */
 
 import { useState, useEffect } from "react";
 import { useQuery }            from "@tanstack/react-query";
 import { useAuth }             from "@/hooks/use-auth";
-import { useSearch, useLocation } from "wouter";
-import { Shield, ShieldCheck, ArrowRight } from "lucide-react";
-import { Button }              from "@/components/ui/button";
+import { Shield, ShieldCheck } from "lucide-react";
 import { GroupsList }          from "./GroupsList";
 import { GroupDetail }         from "./GroupDetail";
 import { CreateGroupDialog }   from "./CreateGroupDialog";
-import { UserPermissionsPanel } from "./UserPermissionsPanel";
 import type { GroupSummary }   from "./types";
 
 export default function PermissionGroupsPage() {
@@ -27,21 +23,16 @@ export default function PermissionGroupsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  const [, navigate] = useLocation();
-  const searchString = useSearch();
-  const searchParams = new URLSearchParams(searchString);
-  const userIdParam  = searchParams.get("userId");
-
   const { data: groups = [] } = useQuery<GroupSummary[]>({
     queryKey: ["/api/permission-groups"],
     enabled:  canView,
   });
 
   useEffect(() => {
-    if (!selectedId && groups.length > 0 && !userIdParam) {
+    if (!selectedId && groups.length > 0) {
       setSelectedId(groups[0].id);
     }
-  }, [groups, selectedId, userIdParam]);
+  }, [groups, selectedId]);
 
   if (!canView) {
     return (
@@ -53,35 +44,6 @@ export default function PermissionGroupsPage() {
     );
   }
 
-  // ── وضع صلاحيات مستخدم فردي ─────────────────────────────────────────────
-  if (userIdParam) {
-    return (
-      <div className="flex flex-col h-full overflow-hidden" dir="rtl">
-        {/* شريط التنقل العلوي */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/20 shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1 text-muted-foreground"
-            onClick={() => navigate("/users")}
-            data-testid="button-back-to-users"
-          >
-            <ArrowRight className="h-4 w-4" />
-            العودة لإدارة المستخدمين
-          </Button>
-          <span className="text-muted-foreground text-xs">|</span>
-          <span className="text-xs text-muted-foreground">صلاحيات مستخدم</span>
-        </div>
-
-        {/* لوح الصلاحيات */}
-        <div className="flex-1 overflow-auto p-4">
-          <UserPermissionsPanel userId={userIdParam} />
-        </div>
-      </div>
-    );
-  }
-
-  // ── الوضع الاعتيادي: مجموعات الصلاحيات ─────────────────────────────────
   return (
     <div className="flex h-full overflow-hidden" dir="rtl">
       {/* ── اللوح الأيمن: قائمة المجموعات ──────────────────────────────── */}

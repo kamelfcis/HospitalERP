@@ -5,7 +5,6 @@ import { useDepartmentsLookup } from "@/hooks/lookups/useDepartmentsLookup";
 import { useClinicsLookup } from "@/hooks/lookups/useClinicsLookup";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus } from "lucide-react";
 import { UserCard } from "./components/UserCard";
@@ -21,13 +20,13 @@ const EMPTY_FORM: UserFormData = {
   cashierGlAccountId: "", cashierVarianceAccountId: "",
   cashierVarianceShortAccountId: "", cashierVarianceOverAccountId: "",
   defaultWarehouseId: "", defaultPurchaseWarehouseId: "",
-  allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [], hasAllUnits: false,
+  allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [],
+  allCashierUnits: false, permissionGroupId: "",
 };
 
 export default function UsersManagement() {
   const { hasPermission } = useAuth();
   const { toast }         = useToast();
-  const [, navigate]      = useLocation();
 
   const canCreate = hasPermission("users.create");
   const canEdit   = hasPermission("users.edit");
@@ -91,12 +90,10 @@ export default function UsersManagement() {
       try {
         await apiRequest("PUT", `/api/users/${userId}/cashier-scope`, {
           departmentIds: formData.allowedDepartmentIds,
-          hasAllUnits:   formData.hasAllUnits,
         });
       } catch {
       }
     }
-    // Save clinic assignments always (independent from cashier scope)
     try {
       await apiRequest("PUT", `/api/users/${userId}/clinics`, {
         clinicIds: formData.allowedClinicIds,
@@ -124,7 +121,8 @@ export default function UsersManagement() {
       allowedPharmacyIds:  user.pharmacyId ? [user.pharmacyId] : [],
       allowedDepartmentIds: [],
       allowedClinicIds:    [],
-      hasAllUnits:         false,
+      allCashierUnits:     user.allCashierUnits ?? false,
+      permissionGroupId:   user.permissionGroupId ?? "",
     };
     setFormData(base);
     setShowDialog(true);
@@ -142,7 +140,6 @@ export default function UsersManagement() {
         ...(scopeRes ? {
           allowedPharmacyIds:   scopeRes.allowedPharmacyIds || [],
           allowedDepartmentIds: (scopeRes.assignedDepartments || []).map((d: any) => d.id),
-          hasAllUnits:          scopeRes.isFullAccess && user.role !== "admin" && user.role !== "owner",
         } : {}),
         allowedClinicIds: clinicsRes.clinicIds || [],
       }));
@@ -182,8 +179,10 @@ export default function UsersManagement() {
       cashierVarianceShortAccountId: formData.cashierVarianceShortAccountId   || null,
       cashierVarianceOverAccountId:  formData.cashierVarianceOverAccountId    || null,
       defaultWarehouseId:            formData.defaultWarehouseId              || null,
-      defaultPurchaseWarehouseId:  formData.defaultPurchaseWarehouseId      || null,
-    };
+      defaultPurchaseWarehouseId:    formData.defaultPurchaseWarehouseId      || null,
+      allCashierUnits:               formData.allCashierUnits,
+      permissionGroupId:             formData.permissionGroupId               || null,
+    } as any;
 
     if (editingUser) {
       if (formData.password) (payload as any).password = formData.password;
@@ -196,10 +195,6 @@ export default function UsersManagement() {
       (payload as any).password = formData.password;
       createMutation.mutate(payload);
     }
-  }
-
-  function handleOpenPerms(userId: string) {
-    navigate(`/permission-groups?userId=${userId}`);
   }
 
   function handleOpenAcctScope(user: UserData) {
@@ -239,7 +234,6 @@ export default function UsersManagement() {
               warehouses={warehouses}
               onEdit={handleOpenEdit}
               onDelete={(id) => deleteMutation.mutate(id)}
-              onOpenPerms={handleOpenPerms}
               onOpenAcctScope={handleOpenAcctScope}
             />
           ))}

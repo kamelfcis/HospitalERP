@@ -12,6 +12,8 @@ export interface UserData {
   cashierVarianceOverAccountId:  string | null;
   defaultWarehouseId:            string | null;
   defaultPurchaseWarehouseId:    string | null;
+  allCashierUnits:               boolean;
+  permissionGroupId:             string | null;
   createdAt:                     string;
 }
 
@@ -32,5 +34,6 @@ export interface UserFormData {
   allowedPharmacyIds:            string[];
   allowedDepartmentIds:          string[];
   allowedClinicIds:              string[];
-  hasAllUnits:                   boolean;
+  allCashierUnits:               boolean;
+  permissionGroupId:             string;
 }

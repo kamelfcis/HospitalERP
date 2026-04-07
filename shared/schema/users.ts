@@ -55,6 +55,7 @@ export const users = pgTable("users", {
   cashierVarianceShortAccountId: text("cashier_variance_short_account_id"),  // حساب عجز الجرد النقدي
   cashierVarianceOverAccountId:  text("cashier_variance_over_account_id"),   // حساب فائض الجرد النقدي
   maxDiscountPct:           decimal("max_discount_pct", { precision: 5, scale: 2 }),
+  allCashierUnits:          boolean("all_cashier_units").notNull().default(false),
   createdAt:                timestamp("created_at").notNull().defaultNow(),
 });
 

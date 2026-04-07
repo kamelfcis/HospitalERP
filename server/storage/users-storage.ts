@@ -119,16 +119,6 @@ const methods = {
       );
     }
 
-    // ── user_permissions overrides (grant / revoke) ────────────────────────
-    const userPerms = await db.select().from(userPermissions).where(eq(userPermissions.userId, userId));
-    for (const up of userPerms) {
-      if (up.granted) {
-        basePermSet.add(up.permission);
-      } else {
-        basePermSet.delete(up.permission);
-      }
-    }
-
     const perms = Array.from(basePermSet);
     _permCache.set(userId, { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS });
     return perms;
@@ -269,8 +259,7 @@ const methods = {
       return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
     }
 
-    const perms = await this.getUserEffectivePermissions(userId);
-    if (perms.includes("cashier.all_units")) {
+    if (user.allCashierUnits) {
       return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
     }
 
