@@ -408,6 +408,10 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   approvalStatus:     text("approval_status"),
   // ── تصنيف تجاري — snapshot محدد وقت إنشاء البند، مقفول بعد finalize ─────────
   businessClassification: varchar("business_classification"),
+  // ── حالة الصرف من المخزون — للصرف بدون رصيد (deferred cost issue) ──────
+  stockIssueStatus: varchar("stock_issue_status", { length: 30 }).default("normal").notNull(),
+  // normal | pending_cost | cost_resolved | skipped_no_stock
+  oversellReason: text("oversell_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx:         index("idx_pat_line_header").on(table.headerId),

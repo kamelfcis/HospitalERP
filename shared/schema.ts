@@ -11,3 +11,4 @@ export * from "./schema/companies";
 export * from "./schema/contracts";
 export * from "./schema/intake";
 export * from "./schema/shortage";
+export * from "./schema/oversell";

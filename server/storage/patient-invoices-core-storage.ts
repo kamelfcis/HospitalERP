@@ -19,6 +19,7 @@ import {
   patientInvoiceHeaders,
   patientInvoiceLines,
   patientInvoicePayments,
+  pendingStockAllocations,
   auditLog,
 } from "@shared/schema";
 import type {
@@ -269,10 +270,32 @@ const methods = {
         if (invLines.length > 0) {
           const invItemIds = Array.from(new Set(invLines.map(l => l.itemId!)));
           const invItemRows = await tx.execute(
-            sql`SELECT id, name_ar, has_expiry, major_to_medium, major_to_minor, medium_to_minor FROM items WHERE id IN (${sql.join(invItemIds.map(i => sql`${i}`), sql`, `)})`
+            sql`SELECT id, name_ar, has_expiry, allow_oversell, major_to_medium, major_to_minor, medium_to_minor FROM items WHERE id IN (${sql.join(invItemIds.map(i => sql`${i}`), sql`, `)})`
           );
           const invItemMap: Record<string, any> = {};
           for (const row of invItemRows.rows as Array<Record<string, unknown>>) invItemMap[row.id as string] = row;
+
+          // ── Check feature flag for deferred cost issue ──────────────────
+          const flagRes = await tx.execute(
+            sql`SELECT value FROM system_settings WHERE key = 'enable_deferred_cost_issue' LIMIT 1`
+          );
+          const deferredEnabled = (flagRes.rows?.[0] as any)?.value === 'true';
+
+          // ── Check current stock availability for oversell detection ──────
+          const stockBalanceRes = await tx.execute(
+            sql`SELECT item_id, SUM(qty_in_minor::numeric) as avail
+                FROM inventory_lots
+                WHERE item_id IN (${sql.join(invItemIds.map(i => sql`${i}`), sql`, `)})
+                  AND warehouse_id = ${warehouseId}
+                  AND is_active = true
+                GROUP BY item_id`
+          );
+          const stockBalanceMap: Record<string, number> = {};
+          for (const row of stockBalanceRes.rows as any[]) {
+            stockBalanceMap[row.item_id as string] = parseFloat(row.avail ?? "0");
+          }
+          // Track per-item running total as we process lines (FIFO claim)
+          const itemClaimedMap: Record<string, number> = {};
 
           const now = new Date();
           const currentMonth = now.getMonth() + 1;
@@ -281,6 +304,12 @@ const methods = {
           const stockLines: Array<{
             lineIdx: number; itemId: string; qtyMinor: number;
             hasExpiry: boolean; expiryMonth?: number | null; expiryYear?: number | null;
+          }> = [];
+
+          // Pending lines to be created in pending_stock_allocations after stock deduction
+          const oversellLines: Array<{
+            lineId: string; itemId: string; qtyMinorPending: number;
+            qtyMinorAvailableAtFinalize: number;
           }> = [];
 
           for (let li = 0; li < invLines.length; li++) {
@@ -303,14 +332,54 @@ const methods = {
               mediumToMinor: item.medium_to_minor != null ? String(item.medium_to_minor) : null,
             });
 
-            stockLines.push({
-              lineIdx: li,
-              itemId: line.itemId!,
-              qtyMinor,
-              hasExpiry: !!item.has_expiry,
-              expiryMonth: line.expiryMonth,
-              expiryYear: line.expiryYear,
-            });
+            // ── Oversell detection ────────────────────────────────────────
+            const totalAvail = stockBalanceMap[line.itemId!] ?? 0;
+            const alreadyClaimed = itemClaimedMap[line.itemId!] ?? 0;
+            const netAvail = totalAvail - alreadyClaimed;
+
+            if (deferredEnabled && item.allow_oversell && netAvail < qtyMinor - 0.00005) {
+              // Oversell allowed: record as pending, skip from stock allocation
+              const availableForThisLine = Math.max(0, netAvail);
+              itemClaimedMap[line.itemId!] = alreadyClaimed + availableForThisLine;
+
+              oversellLines.push({
+                lineId: line.id,
+                itemId: line.itemId!,
+                qtyMinorPending: qtyMinor - availableForThisLine,
+                qtyMinorAvailableAtFinalize: totalAvail,
+              });
+
+              if (availableForThisLine > 0.00005) {
+                // Partially allocate the available portion
+                stockLines.push({
+                  lineIdx: li,
+                  itemId: line.itemId!,
+                  qtyMinor: availableForThisLine,
+                  hasExpiry: !!item.has_expiry,
+                  expiryMonth: line.expiryMonth,
+                  expiryYear: line.expiryYear,
+                });
+              }
+
+              // Mark line as pending_cost
+              await tx.execute(
+                sql`UPDATE patient_invoice_lines
+                    SET stock_issue_status = 'pending_cost',
+                        oversell_reason = ${(line as any).oversellReason ?? null}
+                    WHERE id = ${line.id}`
+              );
+            } else {
+              // Normal: enough stock (or oversell not allowed → allocateStockInTx will throw if insufficient)
+              itemClaimedMap[line.itemId!] = alreadyClaimed + qtyMinor;
+              stockLines.push({
+                lineIdx: li,
+                itemId: line.itemId!,
+                qtyMinor,
+                hasExpiry: !!item.has_expiry,
+                expiryMonth: line.expiryMonth,
+                expiryYear: line.expiryYear,
+              });
+            }
           }
 
           if (stockLines.length > 0) {
@@ -321,6 +390,32 @@ const methods = {
               warehouseId,
               lines: stockLines,
             });
+          }
+
+          // ── Create pending_stock_allocations for oversell lines ──────────
+          if (oversellLines.length > 0) {
+            const userId = (locked.created_by as string) ?? null;
+            for (const ol of oversellLines) {
+              await tx.insert(pendingStockAllocations).values({
+                invoiceId: id,
+                invoiceLineId: ol.lineId,
+                itemId: ol.itemId,
+                warehouseId,
+                qtyMinorPending: String(ol.qtyMinorPending),
+                qtyMinorOriginal: String(ol.qtyMinorPending),
+                status: "pending",
+                qtyMinorAvailableAtFinalize: String(ol.qtyMinorAvailableAtFinalize),
+                createdBy: userId,
+              }).onConflictDoUpdate({
+                target: pendingStockAllocations.invoiceLineId,
+                set: {
+                  qtyMinorPending: String(ol.qtyMinorPending),
+                  status: "pending",
+                  updatedAt: new Date(),
+                },
+              });
+            }
+            console.log(`[OVERSELL] Invoice ${id}: ${oversellLines.length} line(s) deferred to pending_stock_allocations`);
           }
         }
       }

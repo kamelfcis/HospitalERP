@@ -744,6 +744,19 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] enable_pharmacy_sales_output_vat seed error");
   }
 
+  // ── 5h-post2d. Seed enable_deferred_cost_issue default ──────────────────
+  // false = الصرف بدون رصيد معطّل افتراضياً — يتطلب تفعيلاً يدوياً
+  try {
+    await db.execute(sql`
+      INSERT INTO system_settings (key, value)
+      VALUES ('enable_deferred_cost_issue', 'false')
+      ON CONFLICT (key) DO NOTHING
+    `);
+    log("[STARTUP] enable_deferred_cost_issue setting ensured (default: false)");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] enable_deferred_cost_issue seed error");
+  }
+
   // ── 5h-post3. Backfill CASHIER_OPEN_SHIFT → system groups ───────────────
   try {
     await db.execute(sql`

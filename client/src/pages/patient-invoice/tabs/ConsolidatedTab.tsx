@@ -71,6 +71,16 @@ export function ConsolidatedTab({ lines, payments, totals, getServiceRowClass }:
                           </Badge>
                         </span>
                       )}
+                      {(line as any).stockIssueStatus === "pending_cost" && (
+                        <span className="mr-1">
+                          <Badge variant="destructive" className="text-[10px]">⏳ معلق</Badge>
+                        </span>
+                      )}
+                      {(line as any).stockIssueStatus === "cost_resolved" && (
+                        <span className="mr-1">
+                          <Badge className="text-[10px] bg-green-100 text-green-700">✓ مسوّى</Badge>
+                        </span>
+                      )}
                     </td>
                     <td className="text-center">{formatNumber(line.quantity)}</td>
                     <td className="text-center">{formatNumber(line.unitPrice)}</td>

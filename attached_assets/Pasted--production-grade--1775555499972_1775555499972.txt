@@ -1,0 +1,299 @@
+أريد تنفيذ هذه الميزة الآن بشكل production-grade، لكن بتنفيذ حذر جدًا ومنضبط، مع الحفاظ الكامل على كل الموجود وعدم كسر أي flow قائم.
+
+الميزة المطلوب تنفيذها:
+"صرف مؤجل التكلفة" (Deferred Cost Issue)
+وليس Negative Inventory.
+المطلوب السماح بالصرف/البيع بدون رصيد فقط في نطاق ضيق جدًا، ثم تسوية التكلفة لاحقًا بضغطة واحدة عندما يدخل الرصيد الحقيقي، مع تطبيق FIFO/FEFO الصحيح وتثبيت التكلفة على البنود المعلقة.
+
+مهم جدًا:
+أنت الآن لا تعمل Discovery عام، بل أريدك أن تنتقل إلى:
+1) التصميم النهائي المبسط القابل للتنفيذ فورًا
+2) تقسيم التنفيذ إلى مهام واضحة وصغيرة وآمنة
+3) تحديد الجداول/الأعمدة/القيود/الشاشات/الخدمات المطلوبة بدقة
+ثم تبدأ التنفيذ الفعلي بعد عرض الخطة النهائية المختصرة جدًا.
+
+## أهداف التنفيذ
+- سرعة تشغيل ممتازة
+- UI سلس وواضح جدًا
+- لا نكسر أي شيء موجود
+- لا نلمس flows مستقرة إلا من خلال extension points واضحة
+- Refactor-first
+- Componentization واضحة
+- Thin routes
+- Service layer نظيفة
+- DB-safe design
+- Audit trail كامل
+- Indexing محترم
+- Backward compatibility 100%
+- Atomicity كاملة
+- لا Monolith files
+- لا حلول تقديرية تفسد التكلفة أو الفيفو
+
+## النطاق الوظيفي المطلوب
+الميزة تكون متاحة فقط في:
+- OR / العمليات
+- Patient Invoice / فاتورة المريض
+
+ولا تكون متاحة في:
+- الصيدلية الخارجية
+- البيع العام
+- أي شاشة أخرى
+
+وتكون مشروطة بـ:
+- Permission مستقلة inventory.oversell
+- الصنف allow_oversell = true
+- موقع/قسم مسموح
+- سبب إجباري
+- حد أقصى مضبوط من الإعدادات
+- Audit log كامل
+
+## المطلوب منك في الرد قبل التنفيذ
+أريد منك أولاً أن تعطيني "FINAL IMPLEMENTATION BLUEPRINT" مختصر جدًا لكنه حاسم، تحت العناوين التالية فقط:
+
+### A) Final Simplified Design
+اختر النسخة النهائية الأبسط والأصح للتنفيذ الآن
+- ما الذي سننفذه الآن؟
+- ما الذي سنؤجله؟
+- ما الذي سنمنعه تمامًا؟
+- ما هي حدود النسخة الأولى V1؟
+
+### B) Concrete Data Model
+أعطني الجداول/الأعمدة النهائية فقط التي سننفذها الآن
+لا تعطيني اختيارات كثيرة
+اختر schema محددة ونهائية
+ويجب أن تشمل:
+- الأعمدة الجديدة على patient_invoice_lines / sales lines إذا لزم
+- جدول pending_stock_allocations إن كان هو التصميم النهائي
+- جدول resolution batch / audit إن كان مطلوبًا
+- أي enums / statuses
+- كل index مطلوب
+- أي constraints تمنع التكرار والـ double resolution
+
+### C) Accounting Design (Final)
+أعطني القيد المحاسبي النهائي المعتمد في V1 فقط
+- وقت البيع بدون رصيد
+- وقت التسوية
+- كيف يظهر pending COGS في التقارير
+- ما الحسابات المطلوبة في Account Mappings
+- ما الذي لن نفعله الآن محاسبيًا لو كان معقدًا
+
+### D) UI/UX Screens (Final)
+حدد الشاشات النهائية في V1 فقط:
+1. أين سيظهر التحذير داخل الفاتورة؟
+2. ما شكل السطر المعلق؟
+3. ما الحقول الإضافية؟
+4. ما شاشة التسوية المركزية؟
+5. ما الأعمدة؟
+6. ما الأزرار؟
+7. ما preview المطلوب قبل التنفيذ؟
+8. ما رسائل الخطأ والتحذير؟
+
+### E) Execution Plan
+قسّم التنفيذ إلى Phases صغيرة جدًا وآمنة
+كل Phase معها:
+- الهدف
+- الملفات التي ستُنشأ أو تُعدل
+- الخدمات الجديدة
+- ما الذي سنختبره
+- Done looks like
+
+### F) Risk Controls
+حدد controls واضحة لمنع الباجات:
+- concurrency
+- duplicate allocation
+- partial resolution
+- return before resolution
+- cancel invoice
+- edit quantity
+- close period
+- performance under load
+- rollback safety
+
+بعد هذا الـ blueprint المختصر، ابدأ التنفيذ الفعلي مباشرة.
+
+## قواعد تنفيذ صارمة جدًا
+### 1) لا تكسر الموجود
+- لا تعدّل أي flow حالي إلا لو لازم جدًا
+- أي integration يكون عبر service واضحة وقابلة للاختبار
+- لا تعيد بناء شاشات كاملة بلا داع
+
+### 2) Refactor-first
+- لو الملف الحالي كبير، افصله
+- أنشئ services مستقلة
+- أنشئ components مستقلة
+- لا تضف منطق ثقيل داخل route أو component ضخم
+
+### 3) Componentization
+أريد Components واضحة مثل:
+- OversellWarningBadge
+- OversellReasonField
+- OversellStatusPill
+- ResolutionPreviewModal
+- PendingCostSummaryCard
+استخدم أسماء واضحة وقابلة لإعادة الاستخدام
+
+### 4) Service Layer
+أريد Services مستقلة مثل:
+- oversell-guard.service.ts
+- pending-cost-allocation.service.ts
+- oversell-resolution-engine.service.ts
+- oversell-audit.service.ts
+- oversell-journal.service.ts
+وإذا وجدت أسماء أفضل استخدمها
+
+### 5) Database Safety
+- كل شيء داخل transactions عند التنفيذ الحساس
+- استخدم row locking المناسب
+- امنع double resolution
+- امنع duplicate pending records
+- لا تستخدم أي hack يلوث lots أو inventory tables
+
+### 6) Performance & Indexing
+لا أريد أي Full Table Scan على الجداول الكبيرة
+أضف الفهارس اللازمة من البداية
+خصوصًا على:
+- pending allocations open only
+- item + warehouse + pending status
+- invoice_date
+- stock_issue_status != normal
+- lots resolution order
+واذكر لماذا كل index مهم
+راجع أي query حرجة بعين performance-conscious
+
+### 7) Backward Compatibility
+- default behavior يظل كما هو إذا feature flag مغلق
+- لا شيء يتغير لأي مستخدم أو شاشة خارج النطاق
+- أي أعمدة جديدة تكون آمنة ولها defaults مناسبة
+- لا تعتمد على data migration خطرة
+
+### 8) Feature Flag
+أريد feature flag واضح:
+- enable_deferred_cost_issue = false افتراضيًا
+ولا يتغير أي سلوك قبل تفعيله يدويًا
+
+### 9) Permissions
+أضف صلاحيات صريحة:
+- inventory.oversell
+- inventory.oversell_resolve
+- inventory.oversell_view
+ولا تربطها ضمنيًا بأي view permission عامة
+
+### 10) Testing
+أريدك تضع Tests أو على الأقل Test Scenarios قوية جدًا قبل اعتبار المهمة منتهية، وتشمل:
+- oversell line created
+- invoice saved with pending cost
+- receiving posted then resolution succeeds
+- partial resolution
+- duplicate click on resolve
+- return before resolution
+- cancel invoice
+- user without permission
+- feature flag off
+- performance sanity
+- accounting entry correctness
+
+## قرارات معمارية مطلوبة
+نفّذ النسخة الأولى V1 بهذه السياسة:
+- لا Auto-resolution الآن
+- التسوية Manual من شاشة مركزية فقط
+- لا تسمح بالصرف بدون رصيد إلا في OR + Patient Invoice
+- لا Negative Inventory
+- لا Estimated Cost
+- لا Ghost Lots
+- لا Average Cost fallback
+- لا reopening للفاتورة بعد finalization
+- إذا الفاتورة finalized والتكلفة pending، يتم تحديث التكلفة فقط عبر engine مع audit trail، بدون إعادة فتحها
+
+## المطلوب محاسبيًا في V1
+أريد Implementation واضح لحساب:
+- Deferred COGS
+مع ربطه من Account Mappings أو settings بشكل نظيف
+وإذا كان هناك mapping ناقص:
+- لا تكمل silently
+- أظهر blocking readiness error واضح
+- وسجل accounting_event مناسب
+
+## المطلوب في شاشة التسوية
+أريد شاشة واحدة فقط في V1 تكون قوية وبسيطة وسريعة:
+- Filters: warehouse / item / date / status / source type
+- Grid واضح
+- يظهر:
+  - item
+  - source document
+  - department
+  - warehouse
+  - pending qty
+  - resolved qty
+  - remaining qty
+  - invoice date
+  - created by
+  - reason
+  - status
+- أزرار:
+  - Preview Resolution
+  - Resolve Selected
+  - Resolve All Eligible (إذا كان آمنًا فقط)
+- Preview modal يجب أن يعرض:
+  - اللوتات المقترحة
+  - الكميات
+  - التكلفة
+  - أثر القيد
+  - عدد البنود التي ستُسوّى
+  - ما سيفشل ولماذا
+
+## المطلوب في واجهة الفاتورة
+عند عدم وجود رصيد:
+- لو لا توجد صلاحية → block واضح
+- لو توجد صلاحية → يسمح بالإضافة مع:
+  - badge واضح
+  - لون مميز
+  - سبب إجباري
+  - status pending cost
+- أريد UX سريع جدًا، لا يبطئ المستخدم
+- لا تعمل round trips كثيرة
+- افصل التحقق والقرار عن rendering قدر الإمكان
+
+## المطلوب في التقارير
+في V1 لا أريد تعقيد تقارير كثيرة
+لكن أريد الحد الأدنى الضروري:
+- Pending COGS summary واضح
+- تحذير إذا يوجد pending cost unresolved
+- لا تعرض gross profit وكأنه نهائي بدون تنبيه واضح
+
+## أسلوب التنفيذ
+- ابدأ بخطة نهائية مختصرة
+- ثم نفّذ Phase-by-Phase
+- بعد كل Phase:
+  - قل ماذا تم
+  - ما الملفات التي تغيرت
+  - ما المخاطر المتبقية
+  - ما الذي اختبرته
+- لا تعتبر التنفيذ منتهيًا قبل:
+  - schema complete
+  - UI complete
+  - engine complete
+  - audit complete
+  - permissions complete
+  - feature flag complete
+  - indexing complete
+  - smoke test complete
+
+## مهم جدًا
+أريدك أن تكون شديد الحرص على:
+- السرعة
+- السلاسة
+- عدم كسر الموجود
+- الريفاكتور
+- الكمبوننت
+- الفهرسة
+- وضوح الحالة في UI
+- وضوح القيود المحاسبية
+- وضوح الـ audit trail
+
+ولا أريد أي حل "يمشي الموضوع" فقط.
+أريد تنفيذًا نظيفًا وقويًا وقابلًا للتشغيل الحقيقي داخل ERP/HMIS.
+
+ابدأ الآن بـ:
+1) FINAL IMPLEMENTATION BLUEPRINT
+2) ثم التنفيذ الفعلي
+3) ثم تقرير نهائي يوضح ما تم وما الذي يجب مراجعته قبل Go-Live

@@ -68,6 +68,7 @@ const OpeningStockForm = lazy(() => import("@/pages/opening-stock/form"));
 const StockCount = lazy(() => import("@/pages/stock-count/index"));
 const StockCountDetail = lazy(() => import("@/pages/stock-count/session-detail"));
 const ShortageNotebook = lazy(() => import("@/pages/shortage-notebook/index"));
+const OversellResolution = lazy(() => import("@/pages/oversell-resolution/index"));
 const UnitIntegrityPage = lazy(() => import("@/pages/unit-integrity/index"));
 const SuppliersPage = lazy(() => import("@/pages/suppliers/index"));
 const SupplierPaymentsPage  = lazy(() => import("@/pages/supplier-payments/index"));
@@ -173,6 +174,7 @@ function Router() {
           <Route path="/stock-count">{() => <G p="stock_count.view"><StockCount /></G>}</Route>
           <Route path="/stock-count/:id">{() => <G p="stock_count.view"><StockCountDetail /></G>}</Route>
           <Route path="/shortage-notebook">{() => <G p="shortage.view"><ShortageNotebook /></G>}</Route>
+          <Route path="/oversell-resolution">{() => <G p="oversell.view"><OversellResolution /></G>}</Route>
           <Route path="/unit-integrity">{() => <G p="items.edit"><UnitIntegrityPage /></G>}</Route>
           <Route path="/suppliers">{() => <G p="receiving.view"><SuppliersPage /></G>}</Route>
           <Route path="/supplier-receiving">{() => <G p="receiving.view"><SupplierReceiving /></G>}</Route>
@@ -251,6 +253,7 @@ const ROUTE_REQUIRED_PERMISSION: Record<string, string | null> = {
   "/delivery-payments":      "delivery_payment.view",
   "/stock-count":            "stock_count.view",
   "/shortage-notebook":      "shortage.view",
+  "/oversell-resolution":    "oversell.view",
   "/journal-entries":        "journal.view",
   "/chart-of-accounts":      "accounts.view",
   "/reports/trial-balance":  "reports.trial_balance",

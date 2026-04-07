@@ -157,6 +157,11 @@ export const PERMISSIONS = {
   SHORTAGE_VIEW:    "shortage.view",    // عرض لوحة كشكول النواقص وتحليل الأصناف
   SHORTAGE_MANAGE:  "shortage.manage",  // حل النواقص وتصدير التقارير
 
+  // ── الصرف بدون رصيد (Deferred Cost Issue) ───────────────────────────────
+  OVERSELL_VIEW:    "oversell.view",    // عرض لوحة الطلبات المعلقة بدون رصيد
+  OVERSELL_MANAGE:  "oversell.manage",  // تسوية الطلبات المعلقة وتحديد البنود
+  OVERSELL_APPROVE: "oversell.approve", // تشغيل/إيقاف Allow Oversell على الأصناف
+
   // ── الرصيد الافتتاحي للمخزن ──────────────────────────────────────────────
   OPENING_STOCK_MANAGE: "opening_stock.manage", // إنشاء ومراجعة وترحيل الرصيد الافتتاحي
 } as const;
@@ -242,6 +247,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.CONTRACTS_VIEW,
     PERMISSIONS.CONTRACTS_MANAGE,
     PERMISSIONS.OPENING_STOCK_MANAGE,
+    PERMISSIONS.OVERSELL_VIEW,
+    PERMISSIONS.OVERSELL_MANAGE,
+    PERMISSIONS.OVERSELL_APPROVE,
   ],
 
   admin: Object.values(PERMISSIONS),
@@ -300,6 +308,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.STOCK_COUNT_CREATE,
     PERMISSIONS.STOCK_COUNT_POST,
     PERMISSIONS.OPENING_STOCK_MANAGE,
+    PERMISSIONS.OVERSELL_VIEW,
+    PERMISSIONS.OVERSELL_MANAGE,
   ],
 
   data_entry: [
@@ -329,6 +339,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.PHARMACY_DRUG_ORDERS,
     PERMISSIONS.PATIENTS_VIEW,
     PERMISSIONS.DOCTORS_VIEW,
+    PERMISSIONS.OVERSELL_VIEW,
   ],
 
   pharmacy_assistant: [
@@ -355,6 +366,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.STOCK_COUNT_CREATE,
     PERMISSIONS.STOCK_COUNT_POST,
     PERMISSIONS.OPENING_STOCK_MANAGE,
+    PERMISSIONS.OVERSELL_VIEW,
+    PERMISSIONS.OVERSELL_MANAGE,
   ],
 
   cashier: [
@@ -703,6 +716,14 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
     label: "الرصيد الافتتاحي",
     permissions: [
       { key: PERMISSIONS.OPENING_STOCK_MANAGE, label: "إنشاء وترحيل الرصيد الافتتاحي" },
+    ],
+  },
+  {
+    label: "الصرف بدون رصيد",
+    permissions: [
+      { key: PERMISSIONS.OVERSELL_VIEW,    label: "عرض الطلبات المعلقة بدون رصيد" },
+      { key: PERMISSIONS.OVERSELL_MANAGE,  label: "تسوية الطلبات المعلقة" },
+      { key: PERMISSIONS.OVERSELL_APPROVE, label: "تشغيل/إيقاف الصرف بدون رصيد على الأصناف" },
     ],
   },
 ];

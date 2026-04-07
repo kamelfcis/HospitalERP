@@ -99,6 +99,7 @@ const mainNavItems: NavItem[] = [
   { title: "الرصيد الافتتاحي",       href: "/opening-stock",         icon: PackagePlus,       permission: "opening_stock.manage" },
   { title: "جرد الأصناف",            href: "/stock-count",           icon: ClipboardList,     permission: "stock_count.view" },
   { title: "كشكول النواقص",          href: "/shortage-notebook",     icon: NotebookPen,       permission: "shortage.view" },
+  { title: "صرف بدون رصيد",         href: "/oversell-resolution",   icon: AlertCircle,       permission: "oversell.view" },
   { title: "فواتير البيع",            href: "/sales-invoices",        icon: ShoppingCart,      permission: "sales.view" },
   { title: "مردودات المبيعات",        href: "/sales-returns",         icon: Undo2,             permission: "sales.create" },
   { title: "فاتورة مريض",            href: "/patient-invoices",      icon: UserRound,         permission: "patient_invoices.view",  hospitalOnly: true },

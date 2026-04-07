@@ -216,6 +216,17 @@ export default function ItemFormFields({
             </div>
             <div className="flex items-center gap-1">
               <Checkbox
+                id="allowOversell"
+                checked={(formData as any).allowOversell || false}
+                onCheckedChange={(c) => setFormData({ ...formData, allowOversell: !!c } as any)}
+                disabled={!isEditing}
+                className="h-3 w-3"
+                data-testid="checkbox-allow-oversell"
+              />
+              <Label htmlFor="allowOversell" className="text-[10px] text-purple-600 font-medium">صرف بدون رصيد</Label>
+            </div>
+            <div className="flex items-center gap-1">
+              <Checkbox
                 id="isActive"
                 checked={formData.isActive || false}
                 onCheckedChange={(c) => setFormData({ ...formData, isActive: !!c })}

@@ -54,6 +54,8 @@ export const items = pgTable("items", {
   pharmacyPricesIncludeTax: boolean("pharmacy_prices_include_tax").default(false),
   // ── تصنيف تجاري مستقل عن category — لا يؤثر على FEFO أو المحاسبة ─────────
   businessClassification: varchar("business_classification"),
+  // ── إعدادات الصرف بدون رصيد ─────────────────────────────────────────────
+  allowOversell: boolean("allow_oversell").default(false).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
