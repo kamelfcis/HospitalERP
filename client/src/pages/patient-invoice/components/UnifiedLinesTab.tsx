@@ -37,6 +37,16 @@ import {
 import { getUnitOptions } from "@/lib/invoice-lines";
 import { ServiceLookup } from "@/components/lookups";
 
+// ── مساعد: هل تاريخ الصلاحية قريب (أقل من 3 أشهر)؟ ──────────────────────────
+function isExpiryNear(month: number | null | undefined, year: number | null | undefined): boolean {
+  if (!month || !year) return false;
+  const now   = new Date();
+  const expiry = new Date(year, month - 1, 1); // أول الشهر
+  const diffMs = expiry.getTime() - now.getTime();
+  const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.44);
+  return diffMonths < 3;
+}
+
 // ── نوع البند — مخطط الألوان والتسميات ────────────────────────────────────────
 type KnownLineType = "service" | "drug" | "consumable" | "equipment";
 
@@ -355,6 +365,7 @@ export function UnifiedLinesTab({
               <th className="text-center" style={{ width: 90 }}>الممرض</th>
               <th className="text-center" style={{ width: 76 }}>الوحدة</th>
               <th className="text-center" style={{ width: 76 }}>الكمية</th>
+              <th className="text-center" style={{ width: 80 }}>الصلاحية</th>
               <th className="text-center" style={{ width: 90 }}>سعر الوحدة</th>
               <th className="text-center" style={{ width: 70 }}>خصم %</th>
               <th className="text-center" style={{ width: 90 }}>قيمة الخصم</th>
@@ -420,16 +431,11 @@ export function UnifiedLinesTab({
                             </Button>
                           )}
                         </div>
-                        {hasExpiry && line.expiryMonth && line.expiryYear && (
+                        {line.priceSource === "department" && (
                           <div className="flex flex-row-reverse items-center gap-1">
-                            <Badge variant="secondary" className="text-[10px]">
-                              {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
+                            <Badge variant="secondary" className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">
+                              سعر القسم
                             </Badge>
-                            {line.priceSource === "department" && (
-                              <Badge variant="secondary" className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">
-                                سعر القسم
-                              </Badge>
-                            )}
                           </div>
                         )}
                       </div>
@@ -447,13 +453,6 @@ export function UnifiedLinesTab({
                             </Button>
                           )}
                         </div>
-                        {hasExpiry && line.expiryMonth && line.expiryYear && (
-                          <div className="flex flex-row-reverse items-center gap-1 mt-0.5">
-                            <Badge variant="secondary" className="text-[10px]">
-                              {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
-                            </Badge>
-                          </div>
-                        )}
                         {line.coverageStatus && line.coverageStatus !== "not_required" && (
                           <TooltipProvider>
                             <div className="flex flex-row-reverse items-center gap-1 mt-0.5 flex-wrap">
@@ -638,6 +637,34 @@ export function UnifiedLinesTab({
                           ? <span className="text-amber-600 text-[10px]">— أيام —</span>
                           : formatNumber(line.quantity)}
                       </span>
+                    )}
+                  </td>
+
+                  {/* الصلاحية — قراءة فقط، يحددها FEFO تلقائياً */}
+                  <td className={`text-center ${
+                    hasExpiry && isExpiryNear(line.expiryMonth, line.expiryYear)
+                      ? "bg-yellow-50 dark:bg-yellow-900/20"
+                      : ""
+                  }`} data-testid={`td-expiry-unified-${i}`}>
+                    {hasExpiry ? (
+                      line.expiryMonth && line.expiryYear ? (
+                        <span
+                          className={`text-[11px] font-mono font-semibold ${
+                            isExpiryNear(line.expiryMonth, line.expiryYear)
+                              ? "text-amber-700 dark:text-amber-400"
+                              : "text-foreground"
+                          }`}
+                          title={`دفعة ${line.lotId ? "(" + line.lotId.slice(0, 8) + "…)" : ""}`}
+                        >
+                          {String(line.expiryMonth).padStart(2, "0")}/{line.expiryYear}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">
+                          {isDraft ? "— جارٍ —" : "—"}
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
 
