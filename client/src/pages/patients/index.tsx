@@ -158,12 +158,12 @@ export default function Patients() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
 
         {/* شريط العنوان مع التابات */}
-        <div className="peachtree-toolbar flex flex-row-reverse items-center justify-between flex-wrap gap-2 rounded">
-          <div className="flex flex-row-reverse items-center gap-3">
+        <div className="peachtree-toolbar flex items-center justify-between flex-wrap gap-2 rounded">
+          <div className="flex items-center gap-3">
             <div>
-              <h1 className="text-sm font-bold text-foreground flex flex-row-reverse items-center gap-1">
-                حالات دخول المستشفى
+              <h1 className="text-sm font-bold text-foreground flex items-center gap-1">
                 <Users className="h-4 w-4" />
+                حالات دخول المستشفى
               </h1>
               <p className="text-xs text-muted-foreground text-right">
                 إدارة بيانات المرضى ({totalCount} مريض)
@@ -199,8 +199,9 @@ export default function Patients() {
         {/* محتوى تاب القائمة */}
         {activeTab === "list" && <div className="flex-1 flex flex-col min-h-0 mt-1 space-y-2">
 
-          <div className="peachtree-toolbar rounded flex flex-row-reverse items-center gap-3 flex-wrap">
+          <div className="peachtree-toolbar rounded flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1">
+              <Search className="h-3 w-3 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="بحث بالاسم أو التليفون أو الطبيب..."
@@ -209,31 +210,31 @@ export default function Patients() {
                 className="peachtree-input text-xs w-48"
                 data-testid="input-search-patients"
               />
-              <Search className="h-3 w-3 text-muted-foreground" />
             </div>
 
             <div className="flex items-center gap-1">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">من:</Label>
               <input
                 type="date" value={dateFrom}
                 onChange={e => setDateFrom(e.target.value)}
                 className="peachtree-input text-xs w-32"
                 data-testid="input-date-from"
               />
-              <Label className="text-xs text-muted-foreground whitespace-nowrap">من:</Label>
             </div>
 
             <div className="flex items-center gap-1">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">إلى:</Label>
               <input
                 type="date" value={dateTo}
                 onChange={e => setDateTo(e.target.value)}
                 className="peachtree-input text-xs w-32"
                 data-testid="input-date-to"
               />
-              <Label className="text-xs text-muted-foreground whitespace-nowrap">إلى:</Label>
             </div>
 
             {isFullAccess ? (
               <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
                 <Select value={deptId || "all"} onValueChange={v => setDeptId(v === "all" ? "" : v)}>
                   <SelectTrigger className="h-7 text-xs w-36" data-testid="select-dept-filter">
                     <SelectValue placeholder="كل الأقسام" />
@@ -245,10 +246,9 @@ export default function Patients() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">القسم:</Label>
               </div>
             ) : (
-              <div className="flex flex-row-reverse items-center gap-1 flex-wrap">
+              <div className="flex items-center gap-1 flex-wrap">
                 {allowedDeptIds.map(id => {
                   const deptName = departments.find(d => d.id === id)?.nameAr ?? "...";
                   return (
@@ -302,20 +302,11 @@ export default function Patients() {
           </div>
 
           {totalPages > 1 && (
-            <div className="flex flex-row-reverse items-center justify-between px-1 py-1">
+            <div className="flex items-center justify-between px-1 py-1">
               <span className="text-xs text-muted-foreground">
                 عرض {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, totalCount)} من {totalCount} مريض
               </span>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="outline" size="sm" className="h-6 px-2"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(p => p + 1)}
-                  data-testid="button-patients-next-page"
-                >
-                  <ChevronLeft className="h-3 w-3" />
-                </Button>
-                <span className="text-xs px-2">صفحة {page} من {totalPages}</span>
                 <Button
                   variant="outline" size="sm" className="h-6 px-2"
                   disabled={page <= 1}
@@ -323,6 +314,15 @@ export default function Patients() {
                   data-testid="button-patients-prev-page"
                 >
                   <ChevronRight className="h-3 w-3" />
+                </Button>
+                <span className="text-xs px-2">صفحة {page} من {totalPages}</span>
+                <Button
+                  variant="outline" size="sm" className="h-6 px-2"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(p => p + 1)}
+                  data-testid="button-patients-next-page"
+                >
+                  <ChevronLeft className="h-3 w-3" />
                 </Button>
               </div>
             </div>

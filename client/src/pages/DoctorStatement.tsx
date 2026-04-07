@@ -110,7 +110,7 @@ export default function DoctorStatement() {
       </div>
 
       {/* ── فلتر التاريخ ── */}
-      <div className="peachtree-toolbar rounded flex flex-row-reverse items-center gap-3 flex-wrap">
+      <div className="peachtree-toolbar rounded flex items-center gap-3 flex-wrap">
         <CalendarRange className="h-3 w-3 text-muted-foreground" />
         <div className="flex items-center gap-1">
           <label className="text-xs text-muted-foreground">من:</label>

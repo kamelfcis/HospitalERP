@@ -222,12 +222,12 @@ export default function AuditLog() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            data-testid="button-next-page"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            data-testid="button-prev-page"
           >
-            <ChevronLeft className="h-3 w-3" />
-            التالي
+            السابق
+            <ChevronRight className="h-3 w-3" />
           </Button>
           <span className="text-xs text-muted-foreground" data-testid="text-page-info">
             صفحة {page} من {totalPages}
@@ -235,12 +235,12 @@ export default function AuditLog() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            data-testid="button-prev-page"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            data-testid="button-next-page"
           >
-            السابق
-            <ChevronRight className="h-3 w-3" />
+            <ChevronLeft className="h-3 w-3" />
+            التالي
           </Button>
         </div>
       )}

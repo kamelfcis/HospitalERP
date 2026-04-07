@@ -512,14 +512,14 @@ export default function JournalEntries() {
         </ScrollArea>
       </div>
 
-      <div className="flex flex-row-reverse items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
             صفحة {page} من {totalPages} ({total} قيد)
           </span>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
         </div>
-        <div className="flex flex-row-reverse items-center gap-1">
+        <div className="flex items-center gap-1">
           <Button
             variant="outline"
             size="icon"

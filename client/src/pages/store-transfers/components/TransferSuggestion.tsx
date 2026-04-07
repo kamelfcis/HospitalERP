@@ -376,14 +376,14 @@ export function TransferSuggestion({ warehouses, sourceWarehouseId, destWarehous
       {/* ── Pagination ────────────────────────────────────────────────────── */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 py-2 text-[11px]">
-          <Button variant="outline" size="sm" disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)} data-testid="sug-next-page">
-            <ChevronLeft className="h-3 w-3" />
-          </Button>
-          <span className="text-muted-foreground">صفحة {page} من {totalPages} ({total} صنف)</span>
           <Button variant="outline" size="sm" disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)} data-testid="sug-prev-page">
             <ChevronRight className="h-3 w-3" />
+          </Button>
+          <span className="text-muted-foreground">صفحة {page} من {totalPages} ({total} صنف)</span>
+          <Button variant="outline" size="sm" disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)} data-testid="sug-next-page">
+            <ChevronLeft className="h-3 w-3" />
           </Button>
         </div>
       )}

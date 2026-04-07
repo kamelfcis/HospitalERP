@@ -442,18 +442,9 @@ export default function AccountingEventsPage() {
 
       {/* ── Pagination ── */}
       {totalPages > 1 && (
-        <div className="flex flex-row-reverse items-center justify-between text-sm text-muted-foreground">
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>الإجمالي: {total} حدث</span>
           <div className="flex gap-2">
-            <Button
-              variant="outline" size="sm"
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage(p => p + 1)}
-              data-testid="button-next-page"
-            >
-              التالي
-            </Button>
-            <span className="px-2 py-1">{page + 1} / {totalPages}</span>
             <Button
               variant="outline" size="sm"
               disabled={page === 0}
@@ -461,6 +452,15 @@ export default function AccountingEventsPage() {
               data-testid="button-prev-page"
             >
               السابق
+            </Button>
+            <span className="px-2 py-1">{page + 1} / {totalPages}</span>
+            <Button
+              variant="outline" size="sm"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage(p => p + 1)}
+              data-testid="button-next-page"
+            >
+              التالي
             </Button>
           </div>
         </div>

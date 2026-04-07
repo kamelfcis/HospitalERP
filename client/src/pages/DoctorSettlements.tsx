@@ -187,20 +187,11 @@ export default function DoctorSettlements() {
       </div>
 
       {totalPages > 1 && (
-        <div className="flex flex-row-reverse items-center justify-between px-1">
+        <div className="flex items-center justify-between px-1">
           <span className="text-xs text-muted-foreground">
             عرض {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} من {total} تسوية
           </span>
           <div className="flex items-center gap-1">
-            <Button
-              variant="outline" size="sm" className="h-6 px-2"
-              disabled={page >= totalPages}
-              onClick={() => setPage(p => p + 1)}
-              data-testid="button-settlements-next-page"
-            >
-              <ChevronLeft className="h-3 w-3" />
-            </Button>
-            <span className="text-xs px-2">صفحة {page} من {totalPages}</span>
             <Button
               variant="outline" size="sm" className="h-6 px-2"
               disabled={page <= 1}
@@ -208,6 +199,15 @@ export default function DoctorSettlements() {
               data-testid="button-settlements-prev-page"
             >
               <ChevronRight className="h-3 w-3" />
+            </Button>
+            <span className="text-xs px-2">صفحة {page} من {totalPages}</span>
+            <Button
+              variant="outline" size="sm" className="h-6 px-2"
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => p + 1)}
+              data-testid="button-settlements-next-page"
+            >
+              <ChevronLeft className="h-3 w-3" />
             </Button>
           </div>
         </div>

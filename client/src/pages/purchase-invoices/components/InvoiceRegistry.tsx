@@ -216,14 +216,14 @@ export function InvoiceRegistry({ suppliers }: Props) {
       {/* ── تصفح الصفحات ────────────────────────────────────────────────── */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 py-2">
-          <Button variant="outline" size="sm" disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)} data-testid="button-next-page">
-            <ChevronLeft className="h-3 w-3" />
-          </Button>
-          <span className="text-xs text-muted-foreground">صفحة {page} من {totalPages}</span>
           <Button variant="outline" size="sm" disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)} data-testid="button-prev-page">
             <ChevronRight className="h-3 w-3" />
+          </Button>
+          <span className="text-xs text-muted-foreground">صفحة {page} من {totalPages}</span>
+          <Button variant="outline" size="sm" disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)} data-testid="button-next-page">
+            <ChevronLeft className="h-3 w-3" />
           </Button>
         </div>
       )}

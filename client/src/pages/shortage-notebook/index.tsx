@@ -773,24 +773,24 @@ export default function ShortageNotebook() {
         <div className="flex items-center justify-center gap-2">
           <Button
             variant="outline" size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-            data-testid="btn-next-page"
-          >
-            <ChevronLeft className="h-3 w-3" />
-            التالي
-          </Button>
-          <span className="text-sm text-gray-600">
-            {page} / {totalPages}
-          </span>
-          <Button
-            variant="outline" size="sm"
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
             data-testid="btn-prev-page"
           >
             السابق
             <ChevronRight className="h-3 w-3" />
+          </Button>
+          <span className="text-sm text-gray-600">
+            {page} / {totalPages}
+          </span>
+          <Button
+            variant="outline" size="sm"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+            data-testid="btn-next-page"
+          >
+            <ChevronLeft className="h-3 w-3" />
+            التالي
           </Button>
         </div>
       )}

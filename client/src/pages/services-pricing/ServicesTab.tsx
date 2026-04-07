@@ -304,13 +304,13 @@ export default function ServicesTab() {
             صفحة {page} من {totalPages} ({total} خدمة)
           </span>
           <div className="flex items-center gap-1">
-            <Button size="sm" variant="outline" disabled={page >= totalPages}
-              onClick={() => setPage(p => p + 1)} data-testid="button-next-page-services">
-              <ChevronLeft className="h-3 w-3" />
-            </Button>
             <Button size="sm" variant="outline" disabled={page <= 1}
               onClick={() => setPage(p => p - 1)} data-testid="button-prev-page-services">
               <ChevronRight className="h-3 w-3" />
+            </Button>
+            <Button size="sm" variant="outline" disabled={page >= totalPages}
+              onClick={() => setPage(p => p + 1)} data-testid="button-next-page-services">
+              <ChevronLeft className="h-3 w-3" />
             </Button>
           </div>
         </div>

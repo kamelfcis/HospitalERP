@@ -191,20 +191,11 @@ export function StatementTab({ summaries, initialTreasuryId = "" }: Props) {
             </Table>
 
             {totalPages > 1 && (
-              <div className="flex flex-row-reverse items-center justify-between pt-2">
+              <div className="flex items-center justify-between pt-2">
                 <span className="text-xs text-muted-foreground">
                   عرض {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, statement.total)} من {statement.total} حركة
                 </span>
                 <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline" size="sm" className="h-6 px-2"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage(p => p + 1)}
-                    data-testid="button-stmt-next-page"
-                  >
-                    <ChevronLeft className="h-3 w-3" />
-                  </Button>
-                  <span className="text-xs px-2">صفحة {page} من {totalPages}</span>
                   <Button
                     variant="outline" size="sm" className="h-6 px-2"
                     disabled={page <= 1}
@@ -212,6 +203,15 @@ export function StatementTab({ summaries, initialTreasuryId = "" }: Props) {
                     data-testid="button-stmt-prev-page"
                   >
                     <ChevronRight className="h-3 w-3" />
+                  </Button>
+                  <span className="text-xs px-2">صفحة {page} من {totalPages}</span>
+                  <Button
+                    variant="outline" size="sm" className="h-6 px-2"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage(p => p + 1)}
+                    data-testid="button-stmt-next-page"
+                  >
+                    <ChevronLeft className="h-3 w-3" />
                   </Button>
                 </div>
               </div>
