@@ -248,7 +248,20 @@ const methods = {
     return rows.map(r => r.accountId);
   },
 
-  async getUserCashierScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }> {
+  /**
+   * getUserOperationalScope — نطاق الوحدات التشغيلية للمستخدم
+   *
+   * ترتيب الأولوية لأقسام الوصول:
+   *   1. admin / owner         → isFullAccess = true (وصول كامل)
+   *   2. cashier.all_units     → isFullAccess = true
+   *   3. userDepartments rows  → نطاق صريح معيَّن (مثلاً عبر شاشة نطاق الكاشير) ← الأولوية القصوى
+   *   4. user.departmentId     → fallback تلقائي إذا لم يُعيَّن نطاق صريح
+   *   5. (لا شيء)              → قائمة فارغة → 403 من المسار الطالب
+   *
+   * ملاحظة: الخاصية سُمِّيت سابقاً getUserCashierScope ولا تزال موجودة كـ alias
+   * للحفاظ على التوافق مع جميع المسارات الحالية.
+   */
+  async getUserOperationalScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }> {
     const user = await this.getUser(userId);
     if (!user) return { isFullAccess: false, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
 
@@ -262,12 +275,15 @@ const methods = {
     }
 
     const allowedPharmacyIds = user.pharmacyId ? [user.pharmacyId] : [];
+
+    // الأولوية الأولى: نطاق صريح معيَّن في جدول userDepartments (شاشة الكاشير)
     const deptRows = await db.select({ id: userDepartments.departmentId })
       .from(userDepartments)
       .where(eq(userDepartments.userId, userId));
     let allowedDepartmentIds = deptRows.map(r => r.id);
 
-    // fallback: إذا لم يُعيَّن نطاق أقسام صريح (cashier scope) لكن للمستخدم قسم افتراضي → استخدمه
+    // الأولوية الثانية (fallback): القسم الافتراضي في بروفايل المستخدم
+    // يُفعَّل فقط إذا لم يُعيَّن أي نطاق صريح — لا يتعارض مع إعدادات الكاشير الحالية
     if (allowedDepartmentIds.length === 0 && user.departmentId) {
       allowedDepartmentIds = [user.departmentId];
     }
@@ -278,6 +294,11 @@ const methods = {
     const allowedClinicIds = clinicRows.map(r => r.clinicId);
 
     return { isFullAccess: false, allowedPharmacyIds, allowedDepartmentIds, allowedClinicIds };
+  },
+
+  /** @deprecated استخدم getUserOperationalScope — محتفظ به للتوافق مع المسارات الحالية */
+  async getUserCashierScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }> {
+    return this.getUserOperationalScope(userId);
   },
 
   async getChatUsers(this: DatabaseStorage, currentUserId: string): Promise<{ id: string; fullName: string; role: string; unreadCount: number; lastMessage: string | null; lastMessageAt: Date | null }[]> {

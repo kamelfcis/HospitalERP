@@ -344,7 +344,9 @@ export interface IStorage {
   setUserAccountScope(userId: string, accountIds: string[], actorUserId: string): Promise<void>;
   getVisibleAccountIds(userId: string): Promise<string[] | null>;
 
-  // Cashier scope
+  // نطاق الوحدات التشغيلية للمستخدم (يشمل الكاشير وغير الكاشير)
+  getUserOperationalScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }>;
+  /** @deprecated استخدم getUserOperationalScope */
   getUserCashierScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }>;
 
   // Store Transfers
