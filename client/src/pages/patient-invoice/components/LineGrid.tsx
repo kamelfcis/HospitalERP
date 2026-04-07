@@ -159,10 +159,16 @@ export function LineGrid({
             </tr>
           </thead>
           <tbody>
-            {typeLines.map((line, i) => (
+            {typeLines.map((line, i) => {
+              const isOversellNoStock =
+                type !== "service" &&
+                type !== "consumable" &&
+                line.item?.allowOversell === true &&
+                parseFloat(String(line.item?.availableQtyMinor ?? "1")) <= 0;
+              return (
               <tr
                 key={line.tempId}
-                className={`peachtree-grid-row ${type === "service" ? getServiceRowClass(line.serviceType) : ""}`}
+                className={`peachtree-grid-row ${type === "service" ? getServiceRowClass(line.serviceType) : ""} ${isOversellNoStock ? "bg-orange-50 dark:bg-orange-950/20 border-r-2 border-r-orange-400" : ""}`}
                 data-testid={`row-line-${type}-${i}`}
               >
                 <td className="text-center">{i + 1}</td>
@@ -435,7 +441,8 @@ export function LineGrid({
                   </td>
                 )}
               </tr>
-            ))}
+              );
+            })}
             {typeLines.length === 0 && (
               <tr>
                 <td colSpan={type === "service" ? (isDraft ? 10 : 9) : (isDraft ? 8 : 7)} className="text-center text-muted-foreground py-4">

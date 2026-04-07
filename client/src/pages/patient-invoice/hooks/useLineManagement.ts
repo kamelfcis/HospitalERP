@@ -42,6 +42,7 @@ export interface ItemSearchResult extends ItemUnitConfig {
   itemCode?: string | null;
   hasExpiry?: boolean | null;
   allowOversell?: boolean | null;
+  availableQtyMinor?: string | number | null;
   salePriceCurrent?: string | number | null;
   purchasePriceLast?: string | number | null;
   businessClassification?: string | null;

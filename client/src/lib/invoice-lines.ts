@@ -31,6 +31,7 @@ export interface ItemLike {
     availableQtyMinor?: string | number | null;
     salePriceCurrent?: string | number | null;
     purchasePriceLast?: string | number | null;
+    allowOversell?: boolean | null;
   }
 
 export function getUnitName(item: ItemLike | null | undefined, unitLevel: string): string {
