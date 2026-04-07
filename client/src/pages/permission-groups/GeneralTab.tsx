@@ -124,7 +124,7 @@ export function GeneralTab({ group, canManage, onDeleted }: Props) {
       {group.isSystem && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex-row-reverse">
           <Info className="h-4 w-4 shrink-0 mt-0.5" />
-          <span>هذه مجموعة نظامية. لا يمكن تغيير اسمها أو حذفها. يمكن تعديل الوصف وحدود الخصم والشاشة الافتتاحية.</span>
+          <span>هذه مجموعة نظامية. لا يمكن تغيير اسمها أو حذفها. يمكن تعديل الوصف وحدود الخصم والشاشة الافتتاحية وصلاحيات المصفوفة.</span>
         </div>
       )}
 

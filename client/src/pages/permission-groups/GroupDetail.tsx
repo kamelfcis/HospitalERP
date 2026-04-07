@@ -82,7 +82,7 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
             key={groupId}
             groupId={groupId}
             permissions={group.permissions}
-            canEdit={canManage && !group.isSystem}
+            canEdit={canManage}
           />
         </TabsContent>
 
