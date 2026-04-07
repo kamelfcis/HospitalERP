@@ -13,6 +13,7 @@ import {
   itemHasMajorUnit,
   itemHasMediumUnit,
   getSmartDefaultUnitLevel,
+  capMinorToAvailable,
 } from "../utils/units";
 
 // ── Domain types ───────────────────────────────────────────────────────────────
@@ -361,8 +362,23 @@ export function useLineManagement({
           const currentLines     = linesRef.current;
           const existingLines    = currentLines.filter(l => l.itemId === item.id && l.tempId !== tempLineId);
           const existingQtyMinor = existingLines.reduce((sum, l) => sum + calculateQtyInMinor(l.quantity || 1, l.unitLevel, l.item || item), 0);
-          const additionalMinor  = calculateQtyInMinor(requestedQty, defaultUnit, item);
-          const totalRequired    = existingQtyMinor + additionalMinor;
+          const additionalMinorRaw = calculateQtyInMinor(requestedQty, defaultUnit, item);
+
+          // ── رصيد منقوص: لو المتاح أقل من وحدة كاملة، استخدم المتاح ──────────
+          // مثال: شريط = 2 حبة، متاح = 1 حبة → نطلب 0.5 شريط بدل 1
+          const availableTotal = parseFloat(String(item.availableQtyMinor ?? "0"));
+          const effectiveAdditional = opts?.defaultQty != null
+            ? additionalMinorRaw   // كمية صريحة من نموذج → لا تُكبَّت
+            : capMinorToAvailable(additionalMinorRaw, availableTotal, existingQtyMinor);
+
+          if (effectiveAdditional === null) {
+            // السطور الموجودة استوعبت الرصيد كاملاً
+            setLines(prev => prev.filter(l => l.tempId !== tempLineId));
+            toast({ title: "نفد المخزون", description: "السطور الحالية تستوعب الرصيد المتاح بالكامل", variant: "destructive" });
+            return;
+          }
+
+          const totalRequired = existingQtyMinor + effectiveAdditional;
 
           const fefoParams = new URLSearchParams({
             itemId: item.id, warehouseId,

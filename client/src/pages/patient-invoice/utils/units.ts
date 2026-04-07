@@ -122,3 +122,21 @@ export function getUnitName(item: ItemUnitConfig | null | undefined, unitLevel: 
   if (unitLevel === "medium") return item.mediumUnitName || "وحدة متوسطة";
   return item.minorUnitName || "وحدة صغرى";
 }
+
+/**
+ * يُحدّد الكمية الفعلية المطلوبة (بالوحدة الصغرى) بحيث لا تتجاوز الرصيد المتاح.
+ * إذا لم يكن هناك رصيد محدد (availableTotal=0) → يُعاد additionalMinor كما هو.
+ * إذا كانت السطور الحالية تستوعب الرصيد بالكامل → يُعاد null.
+ * مشتركة مع invoice-lines.ts بنفس المنطق.
+ */
+export function capMinorToAvailable(
+  additionalMinor: number,
+  availableTotal: number,
+  existingMinor: number,
+): number | null {
+  if (availableTotal <= 0) return additionalMinor;
+  const remaining = availableTotal - existingMinor;
+  if (remaining <= 0) return null;
+  if (additionalMinor <= remaining) return additionalMinor;
+  return remaining;
+}
