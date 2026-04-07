@@ -240,6 +240,7 @@ export const transfersSearchMethods = {
         i.name_ar                AS "nameAr",
         i.name_en                AS "nameEn",
         i.has_expiry             AS "hasExpiry",
+        i.allow_oversell         AS "allowOversell",
         i.category,
         i.major_unit_name        AS "majorUnitName",
         i.minor_unit_name        AS "minorUnitName",

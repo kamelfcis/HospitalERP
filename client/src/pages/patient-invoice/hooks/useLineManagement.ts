@@ -41,6 +41,7 @@ export interface ItemSearchResult extends ItemUnitConfig {
   nameAr?: string | null;
   itemCode?: string | null;
   hasExpiry?: boolean | null;
+  allowOversell?: boolean | null;
   salePriceCurrent?: string | number | null;
   purchasePriceLast?: string | number | null;
   businessClassification?: string | null;
@@ -112,6 +113,7 @@ interface UseLineManagementParams {
   setItemResults: (v: ItemSearchResult[]) => void;
   addingItemRef: React.MutableRefObject<Set<string>>;
   itemSearchRef: React.RefObject<HTMLInputElement>;
+  oversellEnabled?: boolean;
 }
 
 export function useLineManagement({
@@ -122,6 +124,7 @@ export function useLineManagement({
   setItemResults,
   addingItemRef,
   itemSearchRef,
+  oversellEnabled = false,
 }: UseLineManagementParams) {
   const { toast } = useToast();
 
@@ -371,6 +374,20 @@ export function useLineManagement({
           if (!addingItemRef.current.has(asyncToken)) return;
 
           if (!preview.fulfilled) {
+            if (item.allowOversell && oversellEnabled) {
+              toast({
+                title: "صرف بدون رصيد",
+                description: `${item.nameAr || item.itemCode} — سيتم إضافة البند بدون دفعة (تكلفة مؤجلة)`,
+                variant: "default",
+              });
+              setLines(prev => prev.map(l => l.tempId !== tempLineId ? l : {
+                ...l,
+                unitPrice: finalUnitPrice,
+                totalPrice: +(l.quantity * finalUnitPrice).toFixed(2),
+                priceSource,
+              }));
+              return;
+            }
             setLines(prev => prev.filter(l => l.tempId !== tempLineId));
             toast({
               title: "الكمية غير متاحة",
@@ -436,7 +453,7 @@ export function useLineManagement({
     } finally {
       addingItemRef.current.delete(asyncToken);
     }
-  }, [warehouseId, invoiceDate, departmentId, toast, setItemSearch, setItemResults]);
+  }, [warehouseId, invoiceDate, departmentId, toast, setItemSearch, setItemResults, oversellEnabled]);
 
   // ── FEFO: unit level change ────────────────────────────────────────────────
   const handleUnitLevelChange = useCallback(async (tempId: string, newLevel: "major" | "medium" | "minor") => {
@@ -564,6 +581,15 @@ export function useLineManagement({
       const preview = await res.json();
 
       if (!preview.fulfilled) {
+        if (line.item?.allowOversell && oversellEnabled) {
+          updateLine(tempId, "quantity", qtyEntered);
+          toast({
+            title: "صرف بدون رصيد",
+            description: `الكمية المطلوبة تتجاوز الرصيد — سيتم معالجتها كتكلفة مؤجلة`,
+            variant: "default",
+          });
+          return;
+        }
         toast({
           title: "الكمية غير متاحة",
           description: preview.shortfall ? `العجز: ${preview.shortfall}` : "الرصيد غير كافي",
@@ -636,7 +662,7 @@ export function useLineManagement({
     } finally {
       setFefoLoading(false);
     }
-  }, [warehouseId, invoiceDate, departmentId, toast, updateLine]);
+  }, [warehouseId, invoiceDate, departmentId, toast, updateLine, oversellEnabled]);
 
   // ── Apply template (bulk, one API call, atomic UI lock) ──────────────────
   const applyTemplate = useCallback(async (

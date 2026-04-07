@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,12 @@ export default function PatientInvoice() {
   // ── Search state ────────────────────────────────────────────────────────────
   const search = useSearchState({ departmentId: form.departmentId });
 
+  // ── Oversell feature flag (from public /api/settings cache) ─────────────
+  const { data: publicSettings } = useQuery<Record<string, string>>({
+    queryKey: ["/api/settings"],
+  });
+  const oversellEnabled = publicSettings?.["enable_deferred_cost_issue"] === "true";
+
   // ── Line management (FEFO included) ─────────────────────────────────────────
   const lm = useLineManagement({
     warehouseId:      form.warehouseId,
@@ -98,6 +105,7 @@ export default function PatientInvoice() {
     setItemResults:   (v) => search.setItemResults(v as unknown as Parameters<typeof search.setItemResults>[0]),
     addingItemRef:    search.addingItemRef,
     itemSearchRef:    search.itemSearchRef,
+    oversellEnabled,
   });
 
   // ── Payments ─────────────────────────────────────────────────────────────────
