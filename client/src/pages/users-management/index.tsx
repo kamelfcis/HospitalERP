@@ -234,6 +234,9 @@ export default function UsersManagement() {
               user={user}
               canEdit={canEdit}
               canDelete={canDelete}
+              departments={departmentItems.map(d => ({ id: d.id, nameAr: d.label }))}
+              pharmacies={pharmacies}
+              warehouses={warehouses}
               onEdit={handleOpenEdit}
               onDelete={(id) => deleteMutation.mutate(id)}
               onOpenPerms={handleOpenPerms}
