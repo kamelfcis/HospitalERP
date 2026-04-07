@@ -173,7 +173,15 @@ export function useItemForm({
       }
       const units = [formData.majorUnitName, formData.mediumUnitName, formData.minorUnitName].filter(Boolean);
       const unique = new Set(units.map(u => u?.trim().toLowerCase()));
-      if (units.length > 0 && unique.size < units.length) errors.unitDuplicate = "لا يمكن تكرار نفس الوحدة";
+      // تجاهل خطأ التكرار إذا الوحدات لم تتغير عن القيم المحفوظة في قاعدة البيانات
+      // (بيانات قديمة مُدخلة بشكل خاطئ — لا نمنع تعديل حقول أخرى بسببها)
+      const unitNamesChanged = isNew
+        || formData.majorUnitName  !== (item?.majorUnitName  || "")
+        || formData.mediumUnitName !== (item?.mediumUnitName || "")
+        || formData.minorUnitName  !== (item?.minorUnitName  || "");
+      if (unitNamesChanged && units.length > 0 && unique.size < units.length) {
+        errors.unitDuplicate = "لا يمكن تكرار نفس الوحدة";
+      }
     }
     return errors;
   };
