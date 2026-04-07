@@ -43,6 +43,7 @@ const ROUTE_OPTIONS = [
   { label: "خدمات المعمل",            value: "/dept-services/LAB" },
   { label: "خدمات الأشعة",           value: "/dept-services/RAD" },
   { label: "مردودات المبيعات",        value: "/sales-returns" },
+  { label: "حالات دخول المستشفى",    value: "/patients" },
   { label: "استعلام المرضى",         value: "/patient-inquiry" },
   { label: "تسوية مستحقات الأطباء",   value: "/doctor-settlements" },
   { label: "إعدادات النظام",          value: "/system-settings" },
