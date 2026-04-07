@@ -1,7 +1,11 @@
 /**
  * useAutoSave — حفظ تلقائي لفاتورة المريض
  *
- * يحفظ كل 15 ثانية إذا تغيّرت البيانات.
+ * يبدأ الحفظ عندما تكتمل البيانات الأساسية الثلاثة:
+ *   1. اسم المريض
+ *   2. المخزن
+ *   3. القسم
+ * ويحفظ كل 15 ثانية إذا تغيّرت البيانات.
  * يُرسل beacon عند إغلاق التبويب.
  */
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -39,6 +43,16 @@ interface UseAutoSaveParams {
   lines:            LineLocal[];
   payments:         PaymentLocal[];
   onIdAssigned:     (id: string) => void;
+}
+
+/** الشرط الأساسي: البيانات الإلزامية الثلاثة مكتملة */
+function canAutoSave(p: UseAutoSaveParams): boolean {
+  return (
+    p.formStatus === "draft" &&
+    !!p.patientName.trim() &&
+    !!p.warehouseId &&
+    !!p.departmentId
+  );
 }
 
 function buildAutoSavePayload(params: UseAutoSaveParams) {
@@ -121,9 +135,8 @@ export function useAutoSave(params: UseAutoSaveParams) {
 
   const performAutoSave = useCallback(async () => {
     const p = paramsRef.current;
-    if (p.formStatus !== "draft") return;
-    // لا تحفظ فاتورة فارغة تماماً (بدون أسطر ولا ID) — نفس منطق التحويل المخزني
-    if (!p.invoiceId && p.lines.length === 0) return;
+    // شرط الاكتمال: اسم المريض + المخزن + القسم
+    if (!canAutoSave(p)) return;
 
     let payload: ReturnType<typeof buildAutoSavePayload>;
     try { payload = buildAutoSavePayload(p); } catch { return; }
@@ -157,10 +170,8 @@ export function useAutoSave(params: UseAutoSaveParams) {
 
   // حفظ كل 15 ثانية عند تغيّر البيانات
   useEffect(() => {
-    const p = params;
-    if (p.formStatus !== "draft") return;
-    // لا نبدأ العد التنازلي لفاتورة فارغة تماماً — نفس منطق التحويل المخزني
-    if (!p.invoiceId && p.lines.length === 0) return;
+    // لا نبدأ العد التنازلي إلا إذا اكتملت البيانات الأساسية الثلاثة
+    if (!canAutoSave(params)) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(performAutoSave, 15_000);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
@@ -178,8 +189,7 @@ export function useAutoSave(params: UseAutoSaveParams) {
   useEffect(() => {
     const handleBeforeUnload = () => {
       const p = paramsRef.current;
-      if (p.formStatus !== "draft") return;
-      if (!p.invoiceId && p.lines.length === 0) return;
+      if (!canAutoSave(p)) return;
       let payload: ReturnType<typeof buildAutoSavePayload>;
       try { payload = buildAutoSavePayload(p); } catch { return; }
       const url = p.invoiceId ? `/api/patient-invoices/${p.invoiceId}` : "/api/patient-invoices";
