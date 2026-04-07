@@ -122,7 +122,8 @@ export function useAutoSave(params: UseAutoSaveParams) {
   const performAutoSave = useCallback(async () => {
     const p = paramsRef.current;
     if (p.formStatus !== "draft") return;
-    if (!p.patientName.trim()) return;
+    // لا تحفظ فاتورة فارغة تماماً (بدون أسطر ولا ID) — نفس منطق التحويل المخزني
+    if (!p.invoiceId && p.lines.length === 0) return;
 
     let payload: ReturnType<typeof buildAutoSavePayload>;
     try { payload = buildAutoSavePayload(p); } catch { return; }
@@ -157,7 +158,9 @@ export function useAutoSave(params: UseAutoSaveParams) {
   // حفظ كل 15 ثانية عند تغيّر البيانات
   useEffect(() => {
     const p = params;
-    if (p.formStatus !== "draft" || !p.patientName.trim()) return;
+    if (p.formStatus !== "draft") return;
+    // لا نبدأ العد التنازلي لفاتورة فارغة تماماً — نفس منطق التحويل المخزني
+    if (!p.invoiceId && p.lines.length === 0) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(performAutoSave, 15_000);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
@@ -175,7 +178,8 @@ export function useAutoSave(params: UseAutoSaveParams) {
   useEffect(() => {
     const handleBeforeUnload = () => {
       const p = paramsRef.current;
-      if (p.formStatus !== "draft" || !p.patientName.trim()) return;
+      if (p.formStatus !== "draft") return;
+      if (!p.invoiceId && p.lines.length === 0) return;
       let payload: ReturnType<typeof buildAutoSavePayload>;
       try { payload = buildAutoSavePayload(p); } catch { return; }
       const url = p.invoiceId ? `/api/patient-invoices/${p.invoiceId}` : "/api/patient-invoices";
