@@ -50,9 +50,10 @@ interface InvoiceTabProps {
   // Patient (via PatientSearchCombobox)
   patientId: string;
   patientName: string;
+  patientCode: string;
   patientPhone: string;
   setPatientPhone: (v: string) => void;
-  onPatientChange: (id: string, name: string) => void;
+  onPatientChange: (id: string, name: string, patientCode?: string | null) => void;
   onPatientClear: () => void;
 
   doctorName: string;
@@ -145,7 +146,7 @@ export function InvoiceTab({
   invoiceId, invoiceNumber, setInvoiceNumber,
   invoiceDate, setInvoiceDate,
   status, isDraft,
-  patientId, patientName, patientPhone, setPatientPhone,
+  patientId, patientName, patientCode, patientPhone, setPatientPhone,
   onPatientChange, onPatientClear,
   doctorName, setDoctorName,
   departmentId, setDepartmentId, departments,
@@ -187,6 +188,7 @@ export function InvoiceTab({
         isDraft={isDraft}
         patientId={patientId}
         patientName={patientName}
+        patientCode={patientCode}
         patientPhone={patientPhone}
         setPatientPhone={setPatientPhone}
         onPatientChange={onPatientChange}
