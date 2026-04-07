@@ -52,6 +52,7 @@ export interface PatientGridProps {
   hasDeptFilter:  boolean;
   canViewInvoice: boolean;
   canEdit:        boolean;
+  canAdmit:       boolean;
   onEdit:         (p: PatientStats) => void;
   onDelete:       (p: PatientStats) => void;
   onOpenInvoice:  (invoiceId: string) => void;
@@ -65,6 +66,7 @@ export interface PatientRowProps {
   dimmed:         boolean;
   canViewInvoice: boolean;
   canEdit:        boolean;
+  canAdmit:       boolean;
   onEdit:         (p: PatientStats) => void;
   onDelete:       (p: PatientStats) => void;
   onOpenInvoice:  (invoiceId: string) => void;

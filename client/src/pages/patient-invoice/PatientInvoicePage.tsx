@@ -4,14 +4,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Search, BedDouble, Building2, Stethoscope, UserCheck, Info } from "lucide-react";
+import { FileText, BedDouble, Building2, Stethoscope, UserCheck, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
 import { getStatusBadgeClass, getServiceRowClass } from "./utils/statusHelpers";
 
 import { InvoiceTab }       from "./tabs/InvoiceTab";
-import { RegistryTab }      from "./tabs/RegistryTab";
 import { AdmissionsTab }    from "./tabs/AdmissionsTab";
 import { SurgeryTypeBar }   from "./components/SurgeryTypeBar";
 import { DistributeDialog } from "./components/DistributeDialog";
@@ -25,7 +24,6 @@ import { useLineManagement }     from "./hooks/useLineManagement";
 import { usePayments }           from "./hooks/usePayments";
 import { useAdmissions }         from "./hooks/useAdmissions";
 import { useAdmissionsMutations } from "./hooks/useAdmissionsMutations";
-import { useRegistry }           from "./hooks/useRegistry";
 import { useInvoiceMutations }   from "./hooks/useInvoiceMutations";
 import { useInvoiceValidation }  from "./hooks/useInvoiceValidation";
 import { useSearchState }        from "./hooks/useSearchState";
@@ -281,13 +279,6 @@ export default function PatientInvoice() {
     setAdmSelectedAdmission,
   });
 
-  const {
-    regPage, setRegPage, regDateFrom, setRegDateFrom,
-    regDateTo, setRegDateTo, regPatientName, setRegPatientName,
-    regDoctorName, setRegDoctorName, regStatus, setRegStatus,
-    regPageSize, regTotalPages, regLoading, registryData,
-  } = useRegistry(mainTab);
-
   // ── Document title ───────────────────────────────────────────────────────────
   useEffect(() => {
     const original = document.title;
@@ -377,10 +368,6 @@ export default function PatientInvoice() {
           <TabsTrigger value="invoice" data-testid="tab-invoice">
             <FileText className="h-4 w-4 ml-1" />
             فاتورة مريض
-          </TabsTrigger>
-          <TabsTrigger value="registry" data-testid="tab-registry">
-            <Search className="h-4 w-4 ml-1" />
-            حالات دخول المستشفى
           </TabsTrigger>
           <TabsTrigger value="admission" data-testid="tab-admission">
             <BedDouble className="h-4 w-4 ml-1" />
@@ -513,29 +500,6 @@ export default function PatientInvoice() {
             canDiscount={canDiscount}
             onOpenDiscountDialog={() => setShowDiscountDialog(true)}
             applyTemplate={lm.applyTemplate}
-          />
-        </TabsContent>
-
-        <TabsContent value="registry" className="mt-2">
-          <RegistryTab
-            regDateFrom={regDateFrom}
-            setRegDateFrom={setRegDateFrom}
-            regDateTo={regDateTo}
-            setRegDateTo={setRegDateTo}
-            regPatientName={regPatientName}
-            setRegPatientName={setRegPatientName}
-            regDoctorName={regDoctorName}
-            setRegDoctorName={setRegDoctorName}
-            regStatus={regStatus}
-            setRegStatus={setRegStatus}
-            regPage={regPage}
-            setRegPage={setRegPage}
-            regTotalPages={regTotalPages}
-            regLoading={regLoading}
-            registryData={registryData}
-            regPageSize={regPageSize}
-            loadInvoice={loadInvoice}
-            getStatusBadgeClass={getStatusBadgeClass}
           />
         </TabsContent>
 

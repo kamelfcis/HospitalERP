@@ -288,6 +288,7 @@ export default function Patients() {
               hasDeptFilter={isFullAccess ? !!deptId : true}
               canViewInvoice={canViewInvoice}
               canEdit={canEdit}
+              canAdmit={canCreate}
               onEdit={handleEdit}
               onDelete={handleDelete}
               onOpenInvoice={handleOpenInvoice}

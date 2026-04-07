@@ -6,7 +6,7 @@ import { formatNumber } from "@/lib/formatters";
 import { AmountCell, InvoiceStatusBadge, TotalsRow } from "./PatientCells";
 import type { PatientGridProps, PatientRowProps } from "./types";
 
-function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit, onDelete, onOpenInvoice, onViewFile, onNewVisit }: PatientRowProps) {
+function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile, onNewVisit }: PatientRowProps) {
   const rowClass = `peachtree-grid-row${dimmed ? " opacity-50" : ""}`;
 
   return (
@@ -34,14 +34,16 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit
 
       <td>
         <div className="flex items-center justify-center gap-0.5">
-          <Button
-            variant="ghost" size="icon" className="h-6 w-6 text-emerald-600"
-            title="تذكرة جديدة"
-            onClick={() => onNewVisit(p)}
-            data-testid={`button-new-visit-${p.id}`}
-          >
-            <Ticket className="h-3 w-3" />
-          </Button>
+          {canAdmit && (
+            <Button
+              variant="ghost" size="icon" className="h-6 w-6 text-emerald-600"
+              title="تذكرة جديدة"
+              onClick={() => onNewVisit(p)}
+              data-testid={`button-new-visit-${p.id}`}
+            >
+              <Ticket className="h-3 w-3" />
+            </Button>
+          )}
 
           <Button
             variant="ghost" size="icon" className="h-6 w-6 text-purple-600"
@@ -95,7 +97,7 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, onEdit
   );
 }
 
-export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, onEdit, onDelete, onOpenInvoice, onViewFile, onNewVisit }: PatientGridProps) {
+export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile, onNewVisit }: PatientGridProps) {
   if (isLoading) {
     return (
       <div className="p-3 space-y-2">
@@ -148,6 +150,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
                   dimmed={false}
                   canViewInvoice={canViewInvoice}
                   canEdit={canEdit}
+                  canAdmit={canAdmit}
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onOpenInvoice={onOpenInvoice}
@@ -174,6 +177,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
                       dimmed={true}
                       canViewInvoice={canViewInvoice}
                       canEdit={canEdit}
+                      canAdmit={canAdmit}
                       onEdit={onEdit}
                       onDelete={onDelete}
                       onOpenInvoice={onOpenInvoice}
