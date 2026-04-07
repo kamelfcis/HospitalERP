@@ -61,7 +61,7 @@ export function registerPatientsRoutes(app: Express) {
   // Scope endpoint — requireAuth only (every logged-in user needs their own scope)
   app.get("/api/patient-scope", requireAuth, async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
       res.json(scope);
     } catch (error: unknown) {
       res.status(500).json({ message: error instanceof Error ? error.message : String(error) });
@@ -74,7 +74,7 @@ export function registerPatientsRoutes(app: Express) {
       const { search, dateFrom, dateTo } = req.query as Record<string, string>;
       const page     = parseInt(String(req.query.page     || "1"))  || 1;
       const pageSize = parseInt(String(req.query.pageSize || "50")) || 50;
-      const scope    = await storage.getUserCashierScope(req.session.userId!);
+      const scope    = await storage.getUserOperationalScope(req.session.userId!);
 
       let deptIds: string[] | undefined;
       if (!scope.isFullAccess) {
@@ -125,7 +125,7 @@ export function registerPatientsRoutes(app: Express) {
   // Single patient record — PATIENTS_VIEW + dept scope check (prevent ID enumeration)
   app.get("/api/patients/:id", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
       const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
 
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
@@ -150,7 +150,7 @@ export function registerPatientsRoutes(app: Express) {
   // Patient journey — PATIENTS_VIEW + dept scope check
   app.get("/api/patients/:id/journey", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
       const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
 
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
@@ -171,7 +171,7 @@ export function registerPatientsRoutes(app: Express) {
   // Patient timeline — PATIENTS_VIEW + dept scope check
   app.get("/api/patients/:id/timeline", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
       const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
 
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
@@ -193,7 +193,7 @@ export function registerPatientsRoutes(app: Express) {
   app.get("/api/patients/:id/previous-consultations", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const userId = req.session.userId!;
-      const scope = await storage.getUserCashierScope(userId);
+      const scope = await storage.getUserOperationalScope(userId);
       const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
 
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
@@ -221,7 +221,7 @@ export function registerPatientsRoutes(app: Express) {
   // Doctor transfer records — PATIENT_INVOICES_VIEW + invoice dept scope check
   app.get("/api/patient-invoices/:id/transfers", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_VIEW), async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
       const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
 
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
@@ -521,7 +521,7 @@ export function registerPatientsRoutes(app: Express) {
 
   app.get("/api/patient-inquiry", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
 
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
         return res.status(403).json({ message: "ليس لديك صلاحية عرض أي قسم، تواصل مع مدير النظام" });
@@ -571,7 +571,7 @@ export function registerPatientsRoutes(app: Express) {
 
   app.get("/api/patient-inquiry/lines", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.session.userId!);
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
 
       if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
         return res.status(403).json({ message: "ليس لديك صلاحية عرض أي قسم، تواصل مع مدير النظام" });

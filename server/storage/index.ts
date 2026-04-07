@@ -117,7 +117,6 @@ import {
   type AccountMapping,
   type InsertAccountMapping,
   type RolePermission,
-  type UserPermission,
   type PermissionGroup,
   type GroupPermission,
   type InsertPermissionGroup,
@@ -193,8 +192,6 @@ export interface IStorage {
   getUserEffectivePermissions(userId: string): Promise<string[]>;
   getRolePermissions(role: string): Promise<RolePermission[]>;
   setRolePermissions(role: string, permissions: string[]): Promise<void>;
-  getUserPermissions(userId: string): Promise<UserPermission[]>;
-  setUserPermissions(userId: string, permissions: { permission: string; granted: boolean }[]): Promise<void>;
 
   // Permission Groups
   getPermissionGroups(): Promise<import("./permission-groups-storage").PermissionGroupWithStats[]>;
@@ -346,8 +343,6 @@ export interface IStorage {
 
   // نطاق الوحدات التشغيلية للمستخدم (يشمل الكاشير وغير الكاشير)
   getUserOperationalScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }>;
-  /** @deprecated استخدم getUserOperationalScope */
-  getUserCashierScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }>;
 
   // Store Transfers
   getTransfers(): Promise<StoreTransferWithDetails[]>;

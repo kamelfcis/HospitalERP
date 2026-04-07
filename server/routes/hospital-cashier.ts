@@ -161,7 +161,7 @@ export function registerCashierRoutes(app: Express) {
       const activePharms = pharms.filter((p) => p.isActive);
       const activeDepts  = depts.filter((d) => d.isActive);
       if (!userId) return res.json({ pharmacies: activePharms, departments: activeDepts });
-      const scope = await storage.getUserCashierScope(userId);
+      const scope = await storage.getUserOperationalScope(userId);
       if (scope.isFullAccess) return res.json({ pharmacies: activePharms, departments: activeDepts, isFullAccess: true });
       res.json({
         pharmacies: activePharms.filter((p) => scope.allowedPharmacyIds.includes(p.id)),
@@ -208,7 +208,7 @@ export function registerCashierRoutes(app: Express) {
       const userGlAccount = await storage.getUserCashierGlAccount(cashierId);
       if (!userGlAccount) return res.status(400).json({ message: "لم يتم تحديد حساب خزنة لهذا المستخدم — تواصل مع المدير لتعيين حساب الخزنة" });
 
-      const scope = await storage.getUserCashierScope(cashierId);
+      const scope = await storage.getUserOperationalScope(cashierId);
       if (!scope.isFullAccess) {
         const selectedId = unitType === "pharmacy" ? pharmacyId : departmentId;
         const allowed = unitType === "pharmacy"

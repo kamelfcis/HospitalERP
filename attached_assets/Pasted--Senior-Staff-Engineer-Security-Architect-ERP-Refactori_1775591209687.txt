@@ -1,0 +1,309 @@
+أنت الآن Senior Staff Engineer + Security Architect + ERP Refactoring Lead تعمل على نظام ERP/HMIS إنتاجي تم بالفعل إعادة هيكلة نظام الصلاحيات فيه (RBAC + Operational Scope)، والمطلوب الآن هو:
+
+👉 **إغلاق النظام بشكل Production-grade (Hardening + Consistency + Enforcement + Performance)**
+👉 بدون كسر أي سلوك قائم صحيح
+👉 مع الحفاظ الكامل على الـ backward compatibility
+
+---
+
+# الهدف النهائي
+
+تحويل النظام الحالي من:
+✔️ RBAC يعمل بشكل جيد
+إلى:
+🔥 **Enterprise-grade secure & consistent authorization system**
+
+---
+
+# القاعدة الذهبية (لا يُسمح بكسرها)
+
+## 1) Permissions = Groups ONLY
+
+* كل الصلاحيات تأتي من المجموعات فقط
+* لا يوجد أي user-specific permission override نهائيًا
+
+## 2) Scope = User Operational Context
+
+* النطاق التشغيلي (clinic / department / pharmacy / warehouse / cashier units) يبقى على المستخدم
+* لا يتم تحويله إلى permissions
+* لا يتم حذفه
+
+---
+
+# المرحلة 1 — Enforcement Audit (أهم مرحلة)
+
+راجع كل endpoints في النظام، خاصة:
+
+* appointments
+* clinic queues
+* patient visits
+* admissions
+* invoices
+* cashier
+* inventory
+* reports
+
+## المطلوب
+
+لكل endpoint:
+
+### 1. requireAuth ✔️
+
+### 2. checkPermission ✔️
+
+### 3. scope enforcement ✔️ (مهم جدًا)
+
+## مثال إلزامي
+
+```ts
+allowedClinicIds = scope.clinicIds
+
+WHERE clinic_id IN (allowedClinicIds)
+```
+
+❌ ممنوع:
+
+* الاعتماد على UI فقط
+* إرجاع كل البيانات ثم الفلترة في frontend
+* تجاهل scope
+
+---
+
+# المرحلة 2 — Central Scope Resolver (توحيد المصدر)
+
+تأكد أن كل النظام يعتمد على:
+
+```ts
+getUserOperationalScope(userId)
+```
+
+ويرجع:
+
+```ts
+{
+  pharmacyId,
+  departmentIds,
+  clinicIds,
+  warehouseIds,
+  allCashierUnits
+}
+```
+
+## ممنوع:
+
+* قراءة scope من أكثر من مكان
+* logic مكرر في routes
+* اختلاف في تفسير scope بين modules
+
+---
+
+# المرحلة 3 — Scope Consistency Pattern
+
+وحّد نمط كل scopes في النظام:
+
+```ts
+scope = {
+  allClinics: boolean,
+  clinicIds: number[],
+  allDepartments: boolean,
+  departmentIds: number[],
+  allWarehouses: boolean,
+  warehouseIds: number[]
+}
+```
+
+## الهدف
+
+* منع inconsistency
+* تسهيل التوسع لاحقًا
+* نفس pattern في كل modules
+
+---
+
+# المرحلة 4 — Clinic Assignment (Critical Safety Check)
+
+هذا جزء حساس جدًا — لا تلمسه بشكل خاطئ.
+
+## المطلوب
+
+* تأكد أن clinic assignment:
+
+  * محفوظ في user scope ✔️
+  * مستخدم في كل queries ✔️
+  * مفروض في backend ✔️
+
+## تحقق من:
+
+* appointment list
+* doctor schedule
+* clinic queues
+* patient visits
+
+❗ أي endpoint يعرض بيانات بدون clinic filter = bug أمني
+
+---
+
+# المرحلة 5 — Critical Permissions Protection
+
+حدد الصلاحيات الحساسة مثل:
+
+* close shift
+* finalize invoice
+* post journal
+* delete transaction
+* reverse entry
+
+## المطلوب:
+
+* UI:
+
+  * 🔒 lock icon
+  * confirm modal (double confirm)
+* Backend:
+
+  * log audit event
+
+---
+
+# المرحلة 6 — Groups UX تحسين
+
+أضف داخل GroupsList:
+
+* عدد الصلاحيات لكل مجموعة
+* badge يوضح نوع المجموعة (system / custom)
+* تحسين القراءة البصرية
+
+مثال:
+
+```text
+صيدلي (34 صلاحية)
+كاشير (22 صلاحية)
+```
+
+---
+
+# المرحلة 7 — Effective Permissions View
+
+أضف داخل UserForm:
+
+عرض read-only:
+
+```text
+المجموعة: كاشير
+عدد الصلاحيات: 22
+```
+
+بدون أي grant/deny فردي
+
+---
+
+# المرحلة 8 — Performance Hardening
+
+راجع:
+
+## Permissions Matrix
+
+* memoization
+* collapse state stable
+* avoid full re-render
+
+## Backend
+
+* no N+1
+* batch fetch
+* proper indexing
+
+---
+
+# المرحلة 9 — Indexing (مهم جدًا)
+
+تأكد من وجود فهارس على:
+
+* user_id في scopes
+* group_id في memberships
+* clinic assignments
+* department assignments
+* joins المستخدمة في filtering
+
+❌ لا تضف فهارس عشوائية
+✔️ فقط حسب الاستخدام الفعلي
+
+---
+
+# المرحلة 10 — Cleanup Final Sweep
+
+تأكد من عدم وجود:
+
+* user_permissions logic
+* override APIs
+* dead hooks
+* unused components
+* orphan routes
+* legacy params مثل ?userId=
+
+احذف من الجذور بالكامل
+
+---
+
+# المرحلة 11 — Regression Safety
+
+اختبر السيناريوهات:
+
+## سكرتير عيادة
+
+* يرى عيادته فقط ✔️
+* لا يرى عيادات أخرى ✔️
+
+## كاشير
+
+* يرى وحداته فقط ✔️
+* allCashierUnits يعمل ✔️
+
+## أدمن
+
+* full access ✔️
+
+## مستخدم بدون scope
+
+* لا يرى بيانات خارج نطاقه ✔️
+
+---
+
+# معايير القبول النهائية
+
+لا يعتبر التنفيذ مكتملًا إلا إذا:
+
+* كل endpoint مفروض عليه scope + permission
+* لا يوجد override فردي
+* clinic assignment يعمل بالكامل
+* system consistent across modules
+* performance مقبولة
+* لا يوجد dead code
+* لا يوجد duplication
+* naming واضح
+* behavior لم يتكسر
+
+---
+
+# توجيه تنفيذي أخير
+
+نفّذ كـ:
+
+* refactor حقيقي
+* security hardening
+* consistency enforcement
+
+لا تترك:
+
+* loopholes
+* inconsistencies
+* hidden behaviors
+
+ولا تكسر:
+
+* أي flow شغال
+* أي scope مطلوب
+* أي تخصيص مستخدم حقيقي (مثل العيادات)
+
+واجعل النتيجة النهائية:
+👉 نظام صلاحيات واضح + آمن + قابل للتوسع + مفهوم إداريًا بالكامل

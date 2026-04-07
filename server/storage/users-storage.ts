@@ -5,14 +5,13 @@
  *
  *  ترتيب حل الصلاحيات (Permission Resolution Order):
  *  ──────────────────────────────────────────────────
- *  1. group_permissions  (المجموعة المُعيَّنة للمستخدم — المصدر الأساسي)
- *  2. user_permissions   (overrides فردية — منح أو سحب)
- *  3. role_permissions   (fallback للمستخدمين بدون مجموعة — backward compat)
+ *  1. group_permissions  (المجموعة المُعيَّنة للمستخدم — المصدر الوحيد)
+ *  2. role_permissions   (fallback للمستخدمين بدون مجموعة — backward compat)
  *
  *  القاعدة:
  *   - إذا كان للمستخدم permission_group_id → استخدم group_permissions
  *   - إذا لم يكن → fallback إلى role_permissions حسب users.role
- *   - في الحالتين: طبِّق user_permissions overrides فوقها
+ *   - لا يوجد user_permissions overrides — المجموعات هي المصدر الوحيد
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -21,7 +20,6 @@ import { eq, desc, sql } from "drizzle-orm";
 import {
   users,
   rolePermissions,
-  userPermissions,
   groupPermissions,
   userDepartments,
   userWarehouses,
@@ -35,7 +33,6 @@ import type {
   User,
   InsertUser,
   RolePermission,
-  UserPermission,
   Department,
   Warehouse,
   Account,
@@ -91,7 +88,6 @@ const methods = {
   // الترتيب الصارم:
   //  1. إذا permission_group_id مضبوط → اقرأ group_permissions
   //  2. وإلا                          → اقرأ role_permissions (fallback)
-  //  3. طبِّق user_permissions overrides (grant/revoke) فوق الخطوة 1 أو 2
   async getUserEffectivePermissions(this: DatabaseStorage, userId: string): Promise<string[]> {
     const cached = _permCache.get(userId);
     if (cached && cached.expiresAt > Date.now()) return cached.perms;
@@ -140,22 +136,6 @@ const methods = {
       }
     });
     clearAllPermissionCache();
-  },
-
-  async getUserPermissions(this: DatabaseStorage, userId: string): Promise<UserPermission[]> {
-    return db.select().from(userPermissions).where(eq(userPermissions.userId, userId));
-  },
-
-  async setUserPermissions(this: DatabaseStorage, userId: string, perms: { permission: string; granted: boolean }[]): Promise<void> {
-    await db.transaction(async (tx) => {
-      await tx.delete(userPermissions).where(eq(userPermissions.userId, userId));
-      if (perms.length > 0) {
-        await tx.insert(userPermissions).values(
-          perms.map(p => ({ userId, permission: p.permission, granted: p.granted }))
-        );
-      }
-    });
-    clearPermissionCacheForUser(userId);
   },
 
   async getUserDepartments(this: DatabaseStorage, userId: string): Promise<Department[]> {
@@ -243,13 +223,10 @@ const methods = {
    *
    * ترتيب الأولوية لأقسام الوصول:
    *   1. admin / owner         → isFullAccess = true (وصول كامل)
-   *   2. cashier.all_units     → isFullAccess = true
-   *   3. userDepartments rows  → نطاق صريح معيَّن (مثلاً عبر شاشة نطاق الكاشير) ← الأولوية القصوى
+   *   2. allCashierUnits = true → isFullAccess = true
+   *   3. userDepartments rows  → نطاق صريح معيَّن ← الأولوية القصوى
    *   4. user.departmentId     → fallback تلقائي إذا لم يُعيَّن نطاق صريح
    *   5. (لا شيء)              → قائمة فارغة → 403 من المسار الطالب
-   *
-   * ملاحظة: الخاصية سُمِّيت سابقاً getUserCashierScope ولا تزال موجودة كـ alias
-   * للحفاظ على التوافق مع جميع المسارات الحالية.
    */
   async getUserOperationalScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }> {
     const user = await this.getUser(userId);
@@ -283,11 +260,6 @@ const methods = {
     const allowedClinicIds = clinicRows.map(r => r.clinicId);
 
     return { isFullAccess: false, allowedPharmacyIds, allowedDepartmentIds, allowedClinicIds };
-  },
-
-  /** @deprecated استخدم getUserOperationalScope — محتفظ به للتوافق مع المسارات الحالية */
-  async getUserCashierScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }> {
-    return this.getUserOperationalScope(userId);
   },
 
   async getChatUsers(this: DatabaseStorage, currentUserId: string): Promise<{ id: string; fullName: string; role: string; unreadCount: number; lastMessage: string | null; lastMessageAt: Date | null }[]> {

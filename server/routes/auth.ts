@@ -328,7 +328,7 @@ export async function registerAuthRoutes(app: Express) {
 
   app.get("/api/users/:id/cashier-scope", requireAuth, checkPermission("users.view"), async (req, res) => {
     try {
-      const scope = await storage.getUserCashierScope(req.params.id);
+      const scope = await storage.getUserOperationalScope(req.params.id);
       const [depts] = await Promise.all([
         storage.getUserDepartments(req.params.id),
         storage.getUserWarehouses(req.params.id),

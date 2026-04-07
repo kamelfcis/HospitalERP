@@ -148,10 +148,12 @@ export function UserFormDialog({
   const hasNoVarianceAccount = !formData.cashierVarianceAccountId &&
     !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId;
 
-  const { data: groups = [] } = useQuery<{ id: string; name: string; isSystem: boolean }[]>({
+  const { data: groups = [] } = useQuery<{ id: string; name: string; isSystem: boolean; permissionCount: number; memberCount: number }[]>({
     queryKey: ["/api/permission-groups"],
     staleTime: 60_000,
   });
+
+  const selectedGroup = groups.find(g => g.id === formData.permissionGroupId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -273,6 +275,24 @@ export function UserFormDialog({
                 المجموعة هي المصدر الوحيد للصلاحيات — تُدار من صفحة مجموعات الصلاحيات
               </p>
             </div>
+
+            {selectedGroup ? (
+              <div className="flex items-center gap-2 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-sm">
+                <Info className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                <span className="text-muted-foreground">الصلاحيات النشطة:</span>
+                <span className="font-medium text-blue-700 dark:text-blue-300">{selectedGroup.permissionCount} صلاحية</span>
+                <span className="text-muted-foreground mx-1">·</span>
+                <span className="text-muted-foreground">{selectedGroup.memberCount} مستخدم</span>
+                {selectedGroup.isSystem && (
+                  <Badge variant="secondary" className="text-[9px] mr-auto">نظام</Badge>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm">
+                <Info className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <span className="text-muted-foreground">بدون مجموعة — يعمل بصلاحيات الدور Legacy</span>
+              </div>
+            )}
           </div>
 
           {/* ══ 3. النطاق التشغيلي ═══════════════════════════════════════════ */}
