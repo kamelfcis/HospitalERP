@@ -51,7 +51,7 @@ The system uses a RESTful JSON API. Database interactions are managed by Drizzle
 - **Patient Audit Trail**: Tracks who linked a patient and when for internal audit and tamper detection.
 - **Patient Financial Summary API**: Provides aggregated financial data for patients including total amounts, outstanding balances, invoice counts, and a breakdown by invoice type.
 - **Business Classification for Patient Invoice Lines**: Introduces a separate `business_classification` field for items, services, and patient invoice lines, decoupled from other categorizations, with a central resolver for auto-derivation.
-- **Deferred Cost Issue (الصرف بدون رصيد)**: Allows dispensing items with insufficient stock in patient invoices (feature flag enabled), creating pending allocations that are resolved by a dedicated engine.
+- **Deferred Cost Issue (الصرف بدون رصيد) — V1+V2**: Full production-grade feature for dispensing items with insufficient stock in patient invoices. Feature flag `enable_deferred_cost_issue` + per-item `allow_oversell` toggle. Schema: `pending_stock_allocations`, `oversell_resolution_batches` (with `journal_entry_id`/`journal_status`), `oversell_cost_resolutions`. `oversellReason` is mandatory at finalize when deferred lines are created. Resolution engine does GL pre-check (`checkOversellGlReadiness`), FEFO lot deduction, then posts `Dr COGS / Cr Inventory` journal from Account Mappings `oversell_resolution` tx type. Resolution screen shows GL readiness banner, journal preview with real account codes, and blocks resolve when GL is not configured. GL readiness endpoint: `GET /api/oversell/gl-readiness?warehouseId=`.
 
 ## External Dependencies
 

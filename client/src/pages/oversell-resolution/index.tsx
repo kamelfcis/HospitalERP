@@ -3,6 +3,7 @@
  *
  * يعرض جميع بنود patient_invoice_lines ذات status = pending_cost
  * ويتيح للمسؤول تسويتها عبر خصم حقيقي من أدوار المخزن.
+ * يشمل: حالة القيد المحاسبي، معاينة القيد قبل التنفيذ، تقرير البنود المعلقة.
  */
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -21,8 +22,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 import {
   Package, RefreshCw, CheckCircle, Clock, AlertTriangle, Settings, Eye,
+  BookOpen, ShieldAlert,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,6 +64,7 @@ interface OversellStats {
 
 interface PreviewResult {
   allocationId: string;
+  warehouseId: string;
   qtyPending: number;
   qtyCanResolve: number;
   qtyShortfall: number;
@@ -76,6 +80,20 @@ interface PreviewResult {
   }>;
 }
 
+interface GlReadinessCheck {
+  key: string;
+  label: string;
+  ok: boolean;
+  accountCode?: string;
+  accountName?: string;
+  message?: string;
+}
+
+interface GlReadinessResult {
+  ready: boolean;
+  checks: GlReadinessCheck[];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,6 +106,24 @@ function statusBadge(status: PendingAllocation["status"]) {
   }
 }
 
+function GlStatusBadge({ readiness }: { readiness: GlReadinessResult | null | undefined }) {
+  if (!readiness) return <Badge variant="outline" className="text-xs">جاري الفحص...</Badge>;
+  if (readiness.ready) {
+    return (
+      <Badge className="text-xs bg-green-100 text-green-700 border border-green-300">
+        <CheckCircle className="h-3 w-3 ml-1" />
+        القيد جاهز
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="text-xs bg-red-100 text-red-700 border border-red-300">
+      <ShieldAlert className="h-3 w-3 ml-1" />
+      القيد محجوب
+    </Badge>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +132,7 @@ export default function OversellResolutionPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
   const [previewId, setPreviewId]     = useState<string | null>(null);
+  const [previewWarehouseId, setPreviewWarehouseId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // ── Queries ─────────────────────────────────────────────────────────────
@@ -113,15 +150,25 @@ export default function OversellResolutionPage() {
     queryKey: ["/api/settings/deferred-cost-issue"],
   });
 
+  // GL readiness for the allocation being previewed
+  const { data: glReadiness, isLoading: glLoading } = useQuery<GlReadinessResult>({
+    queryKey: ["/api/oversell/gl-readiness", previewWarehouseId],
+    enabled: !!previewWarehouseId,
+    queryFn: () =>
+      fetch(`/api/oversell/gl-readiness?warehouseId=${previewWarehouseId}`, { credentials: "include" })
+        .then(r => r.json()),
+  });
+
   const allocations = pendingData?.data ?? [];
 
   // ── Preview mutation ─────────────────────────────────────────────────────
   const previewMutation = useMutation({
-    mutationFn: (allocationId: string) =>
-      apiRequest("POST", "/api/oversell/preview", { allocationId }).then(r => r.json()),
-    onSuccess: (data: PreviewResult) => {
-      setPreviewData(data);
+    mutationFn: (alloc: PendingAllocation) =>
+      apiRequest("POST", "/api/oversell/preview", { allocationId: alloc.id }).then(r => r.json()),
+    onSuccess: (data: PreviewResult, alloc: PendingAllocation) => {
+      setPreviewData({ ...data, warehouseId: alloc.warehouse_id });
       setPreviewId(data.allocationId);
+      setPreviewWarehouseId(alloc.warehouse_id);
     },
     onError: (err: Error) => toast({ variant: "destructive", title: "خطأ", description: err.message }),
   });
@@ -141,9 +188,15 @@ export default function OversellResolutionPage() {
         })),
       }).then(r => r.json());
     },
-    onSuccess: () => {
-      toast({ title: "تمت التسوية", description: "تم خصم الكميات من المخزون بنجاح" });
+    onSuccess: (data: any) => {
+      const journalMsg = data.journalStatus === "posted"
+        ? ` — قيد محاسبي #${data.journalEntryId?.slice(-6)?.toUpperCase() ?? ""} مُرحَّل`
+        : data.journalStatus === "blocked"
+          ? " ⚠️ (القيد المحاسبي لم يُنشأ)"
+          : "";
+      toast({ title: "تمت التسوية", description: `تم خصم الكميات من المخزون بنجاح${journalMsg}` });
       setSelectedIds(new Set());
+      setPreviewData(null);
       queryClient.invalidateQueries({ queryKey: ["/api/oversell/pending"] });
       queryClient.invalidateQueries({ queryKey: ["/api/oversell/stats"] });
     },
@@ -173,6 +226,8 @@ export default function OversellResolutionPage() {
     const allIds = allocations.filter(a => a.status !== "fully_resolved").map(a => a.id);
     setSelectedIds(prev => prev.size === allIds.length ? new Set() : new Set(allIds));
   }, [allocations]);
+
+  const glBlocked = glReadiness && !glReadiness.ready;
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
@@ -244,6 +299,16 @@ export default function OversellResolutionPage() {
         </Card>
       </div>
 
+      {/* Gross profit warning when pending lines exist */}
+      {(stats?.activeCount ?? 0) > 0 && (
+        <Alert className="border-amber-300 bg-amber-50">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800 text-sm">
+            <strong>تنبيه مراجعة:</strong> يوجد {stats?.activeCount} بند بدون تكلفة محاسبية مسجّلة — مجمل الربح غير نهائي حتى تمام التسوية.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Feature flag warning */}
       {featureFlag && !featureFlag.enabled && (
         <Alert>
@@ -304,6 +369,7 @@ export default function OversellResolutionPage() {
                   <TableHead className="text-right">المخزن</TableHead>
                   <TableHead className="text-right">الكمية المعلقة</TableHead>
                   <TableHead className="text-right">الرصيد الحالي</TableHead>
+                  <TableHead className="text-right">السبب</TableHead>
                   <TableHead className="text-right">الحالة</TableHead>
                   <TableHead className="text-right">التاريخ</TableHead>
                   <TableHead className="text-right">إجراء</TableHead>
@@ -359,6 +425,11 @@ export default function OversellResolutionPage() {
                           {currentStock.toFixed(2)} {alloc.item_minor_unit ?? ""}
                         </span>
                       </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-gray-500 max-w-[120px] truncate block" title={alloc.reason ?? ""}>
+                          {alloc.reason ?? "—"}
+                        </span>
+                      </TableCell>
                       <TableCell>{statusBadge(alloc.status)}</TableCell>
                       <TableCell className="text-xs text-gray-500">
                         {new Date(alloc.created_at).toLocaleDateString("ar")}
@@ -368,7 +439,7 @@ export default function OversellResolutionPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => previewMutation.mutate(alloc.id)}
+                            onClick={() => previewMutation.mutate(alloc)}
                             disabled={previewMutation.isPending || isResolved}
                             data-testid={`preview-btn-${alloc.id}`}
                           >
@@ -399,13 +470,58 @@ export default function OversellResolutionPage() {
       </Card>
 
       {/* Preview Dialog */}
-      <Dialog open={!!previewData} onOpenChange={() => setPreviewData(null)}>
-        <DialogContent className="max-w-lg" dir="rtl">
+      <Dialog open={!!previewData} onOpenChange={() => { setPreviewData(null); setPreviewWarehouseId(null); }}>
+        <DialogContent className="max-w-xl" dir="rtl">
           <DialogHeader>
             <DialogTitle>معاينة التسوية</DialogTitle>
           </DialogHeader>
           {previewData && (
             <div className="space-y-4 text-sm">
+              {/* GL Readiness Banner */}
+              <div className={`rounded-lg p-3 border ${glBlocked ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-sm">الحالة المحاسبية</span>
+                  {glLoading ? (
+                    <span className="text-xs text-gray-400">جاري الفحص...</span>
+                  ) : (
+                    <GlStatusBadge readiness={glReadiness} />
+                  )}
+                </div>
+                {glReadiness && (
+                  <div className="space-y-1">
+                    {glReadiness.checks.map(check => (
+                      <div key={check.key} className="flex items-start gap-2 text-xs">
+                        {check.ok ? (
+                          <CheckCircle className="h-3 w-3 text-green-600 mt-0.5 shrink-0" />
+                        ) : (
+                          <ShieldAlert className="h-3 w-3 text-red-600 mt-0.5 shrink-0" />
+                        )}
+                        <div>
+                          <span className={check.ok ? "text-green-700" : "text-red-700"}>
+                            {check.label}
+                          </span>
+                          {check.ok && check.accountCode && (
+                            <span className="text-gray-500 mr-1">({check.accountCode} - {check.accountName})</span>
+                          )}
+                          {!check.ok && check.message && (
+                            <p className="text-red-600 mt-0.5">{check.message}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {glBlocked && (
+                  <div className="mt-2 pt-2 border-t border-red-200">
+                    <Link href="/account-mappings" className="text-xs text-blue-600 underline flex items-center gap-1">
+                      <BookOpen className="h-3 w-3" />
+                      اذهب إلى شاشة إدارة الحسابات لربط الحسابات الناقصة
+                    </Link>
+                  </div>
+                )}
+              </div>
+
+              {/* Quantity & Cost Summary */}
               <div className="grid grid-cols-2 gap-2 bg-gray-50 rounded p-3">
                 <div>
                   <p className="text-xs text-gray-500">كمية معلقة</p>
@@ -423,14 +539,52 @@ export default function OversellResolutionPage() {
                   </div>
                 )}
                 <div className="col-span-2">
-                  <p className="text-xs text-gray-500">التكلفة المقدّرة</p>
-                  <p className="font-bold">{previewData.estimatedCost.toFixed(2)} ج.م.</p>
+                  <p className="text-xs text-gray-500">التكلفة الفعلية (من الأدوار)</p>
+                  <p className="font-bold text-base">{previewData.estimatedCost.toFixed(2)} ج.م.</p>
                 </div>
               </div>
 
+              {/* Journal entry preview */}
+              {previewData.estimatedCost > 0 && (
+                <div>
+                  <p className="font-medium mb-1 text-xs text-gray-600">القيد المحاسبي المتوقع عند التسوية:</p>
+                  <div className={`rounded border text-xs font-mono overflow-hidden ${glBlocked ? "opacity-50" : ""}`}>
+                    <div className="grid grid-cols-3 bg-gray-100 px-3 py-1 font-semibold text-gray-600">
+                      <span>الحساب</span>
+                      <span className="text-center">مدين</span>
+                      <span className="text-center">دائن</span>
+                    </div>
+                    <div className="grid grid-cols-3 px-3 py-1.5 border-t">
+                      <span className="text-gray-700">
+                        {glReadiness?.checks.find(c => c.key === "cogs_account")?.accountCode
+                          ? `${glReadiness.checks.find(c => c.key === "cogs_account")?.accountCode} - ${glReadiness.checks.find(c => c.key === "cogs_account")?.accountName}`
+                          : "تكلفة البضاعة المباعة (COGS)"}
+                      </span>
+                      <span className="text-center text-blue-700 font-bold">{previewData.estimatedCost.toFixed(2)}</span>
+                      <span className="text-center text-gray-400">—</span>
+                    </div>
+                    <div className="grid grid-cols-3 px-3 py-1.5 border-t">
+                      <span className="text-gray-700">
+                        {glReadiness?.checks.find(c => c.key === "inventory_account")?.accountCode
+                          ? `${glReadiness.checks.find(c => c.key === "inventory_account")?.accountCode} - ${glReadiness.checks.find(c => c.key === "inventory_account")?.accountName}`
+                          : "حساب المخزون (GL المخزن)"}
+                      </span>
+                      <span className="text-center text-gray-400">—</span>
+                      <span className="text-center text-red-700 font-bold">{previewData.estimatedCost.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  {glBlocked && (
+                    <p className="text-xs text-red-600 mt-1">
+                      القيد لن يُنشأ حتى يتم ربط الحسابات الناقصة
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Lot details */}
               {previewData.lots.length > 0 && (
                 <div>
-                  <p className="font-medium mb-2">الأدوار المقترحة:</p>
+                  <p className="font-medium mb-2">الأدوار المقترحة (FEFO):</p>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -461,8 +615,8 @@ export default function OversellResolutionPage() {
               )}
             </div>
           )}
-          <DialogFooter>
-            {previewData && (
+          <DialogFooter className="gap-2">
+            {previewData && !glBlocked && (
               <Button
                 onClick={() => {
                   if (previewId) resolveMutation.mutate([previewId]);
@@ -470,10 +624,18 @@ export default function OversellResolutionPage() {
                 }}
                 disabled={resolveMutation.isPending || !previewData.fullyResolvable}
               >
-                تسوية الآن
+                {resolveMutation.isPending ? "جاري التسوية..." : "تسوية الآن"}
               </Button>
             )}
-            <Button variant="outline" onClick={() => setPreviewData(null)}>إغلاق</Button>
+            {previewData && glBlocked && (
+              <Link href="/account-mappings">
+                <Button variant="default">
+                  <BookOpen className="h-4 w-4 ml-1" />
+                  إعداد الحسابات
+                </Button>
+              </Link>
+            )}
+            <Button variant="outline" onClick={() => { setPreviewData(null); setPreviewWarehouseId(null); }}>إغلاق</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -498,9 +660,25 @@ export default function OversellResolutionPage() {
               />
             </div>
             <Separator />
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 space-y-2">
+              <div className="flex items-center gap-2 font-medium">
+                <BookOpen className="h-3 w-3" />
+                متطلبات إدارة الحسابات
+              </div>
+              <p>قبل تفعيل هذه الخاصية، تأكد من ربط الحسابات التالية في شاشة إدارة الحسابات:</p>
+              <ul className="list-disc pr-4 space-y-1">
+                <li>نوع العملية: <strong>تسوية الصرف المؤجل التكلفة</strong></li>
+                <li>تكلفة البضاعة المباعة (COGS) — الجانب المدين</li>
+                <li>المخزون — يُحدد تلقائياً من حساب GL المخزن</li>
+              </ul>
+              <Link href="/account-mappings" className="text-blue-600 underline flex items-center gap-1 mt-1">
+                اذهب إلى إدارة الحسابات
+              </Link>
+            </div>
             <p className="text-xs text-gray-500">
               عند التفعيل: يُسمح بصرف الأصناف المحددة حتى لو كانت الكمية المتاحة أقل من المطلوب،
               ويُسجَّل الفرق كـ "طلب معلق" لحين وصول التوريد.
+              يتطلب تقديم سبب واضح وقت الإنهاء.
             </p>
           </div>
           <DialogFooter>

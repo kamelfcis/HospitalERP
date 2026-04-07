@@ -149,6 +149,17 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
       creditSide: true,
     },
   },
+  // ── تسوية الصرف المؤجل التكلفة ─────────────────────────────────────────────
+  // القيد: مدين تكلفة البضاعة المباعة (COGS) — دائن حساب GL المخزن (ديناميكي)
+  // يُنشأ هذا القيد وقت التسوية الفعلية للكميات المعلقة بعد وصول المخزون
+  oversell_resolution: {
+    cogs: {
+      required: true as const,
+      condition: "مدين: تكلفة البضاعة المباعة — الدائن يُحدد تلقائياً من حساب GL المخزن",
+      debitSide: true,
+      creditSide: false,
+    },
+  },
   // ── إغلاق وردية كاشير ──────────────────────────────────────────────────────
   // القيد: مدين حساب عهدة أمين الخزنة — دائن درج الكاشير (حساب GL الخاص بالمستخدم)
   // ملاحظة: حسابا العجز والفائض مُعيَّنان على مستوى المستخدم في إدارة المستخدمين
@@ -190,6 +201,7 @@ export const suggestedLineTypes: Record<string, string[]> = {
   supplier_payment:          ["ap_settlement"],
   cashier_shift_close:       ["treasury"],
   contract_settlement:       ["ar_insurance", "bank_settlement", "rejection_loss", "contract_discount_exp", "price_diff_expense", "rounding_adjustment"],
+  oversell_resolution:       ["cogs"],
 };
 
 // Derived sets reused across multiple components
@@ -245,6 +257,16 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
         label:       "دائن: يُحدد تلقائياً من حساب GL المخزن/الصيدلية",
         tooltip:     "حساب المخزون يُحدد تلقائياً من حساب GL المرتبط بالمخزن أو الصيدلية المستخدمة في الفاتورة. إذا لم يكن للمخزن حساب GL، يُستخدم الحساب الاحتياطي المحدد هنا.",
         hasFallback: true,
+      },
+    },
+  },
+  // ── تسوية الصرف المؤجل: الجانب الدائن (مخزون) يُحدد تلقائياً من GL المخزن ──
+  oversell_resolution: {
+    cogs: {
+      credit: {
+        label:       "دائن: يُحدد تلقائياً من حساب GL المخزن",
+        tooltip:     "عند التسوية، الجانب الدائن هو حساب GL المخزن الذي يُستقطع منه المخزون الفعلي. يُحدد تلقائياً من إعداد المخزن ولا يحتاج لضبط يدوي هنا — قم بتحديد الجانب المدين (COGS) فقط.",
+        hasFallback: false,
       },
     },
   },

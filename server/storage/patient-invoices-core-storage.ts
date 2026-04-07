@@ -246,7 +246,7 @@ const methods = {
     });
   },
 
-  async finalizePatientInvoice(this: DatabaseStorage, id: string, expectedVersion?: number): Promise<PatientInvoiceHeader> {
+  async finalizePatientInvoice(this: DatabaseStorage, id: string, expectedVersion?: number, oversellReason?: string): Promise<PatientInvoiceHeader> {
     const result = await db.transaction(async (tx) => {
       const lockResult = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${id} FOR UPDATE`);
       const locked = lockResult.rows?.[0] as Record<string, unknown>;
@@ -394,6 +394,10 @@ const methods = {
 
           // ── Create pending_stock_allocations for oversell lines ──────────
           if (oversellLines.length > 0) {
+            // Validate: oversellReason is mandatory when deferred lines are created
+            if (!oversellReason || oversellReason.trim() === "") {
+              throw new Error("سبب الصرف بدون رصيد (oversellReason) إجباري عند وجود بنود مؤجلة التكلفة");
+            }
             const userId = (locked.created_by as string) ?? null;
             for (const ol of oversellLines) {
               await tx.insert(pendingStockAllocations).values({
@@ -404,6 +408,7 @@ const methods = {
                 qtyMinorPending: String(ol.qtyMinorPending),
                 qtyMinorOriginal: String(ol.qtyMinorPending),
                 status: "pending",
+                reason: oversellReason.trim(),
                 qtyMinorAvailableAtFinalize: String(ol.qtyMinorAvailableAtFinalize),
                 createdBy: userId,
               }).onConflictDoUpdate({

@@ -56,6 +56,8 @@ export const oversellResolutionBatches = pgTable("oversell_resolution_batches", 
   notes:       text("notes"),
   // Movement header created in stock_movement_headers to record the actual lot deductions
   stockMovementHeaderId: varchar("stock_movement_header_id"),
+  journalEntryId: varchar("journal_entry_id"),
+  journalStatus: varchar("journal_status", { length: 30 }).default("none"),
   createdAt:   timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   warehouseIdx: index("idx_orb_warehouse").on(t.warehouseId),

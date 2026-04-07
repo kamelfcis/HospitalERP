@@ -389,7 +389,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
   app.post("/api/patient-invoices/:id/finalize", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_FINALIZE), async (req, res) => {
     try {
-      const { expectedVersion } = req.body || {};
+      const { expectedVersion, oversellReason } = req.body || {};
       const invoiceId = req.params.id as string;
 
       const existing = await storage.getPatientInvoice(invoiceId);
@@ -416,7 +416,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
       const result = await storage.finalizePatientInvoice(
         invoiceId,
-        expectedVersion != null ? Number(expectedVersion) : undefined
+        expectedVersion != null ? Number(expectedVersion) : undefined,
+        oversellReason ? String(oversellReason).trim() : undefined
       );
 
       storage.createAuditLog({

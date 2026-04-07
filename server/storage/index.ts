@@ -431,7 +431,7 @@ export interface IStorage {
   getPatientInvoice(id: string): Promise<PatientInvoiceWithDetails | undefined>;
   createPatientInvoice(header: Record<string, unknown>, lines: Record<string, unknown>[], payments: Record<string, unknown>[]): Promise<PatientInvoiceHeader>;
   updatePatientInvoice(id: string, header: Record<string, unknown>, lines: Record<string, unknown>[], payments: Record<string, unknown>[], expectedVersion?: number): Promise<PatientInvoiceHeader>;
-  finalizePatientInvoice(id: string, expectedVersion?: number): Promise<PatientInvoiceHeader>;
+  finalizePatientInvoice(id: string, expectedVersion?: number, oversellReason?: string): Promise<PatientInvoiceHeader>;
   buildPatientInvoiceGLLines(header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string }[];
   deletePatientInvoice(id: string, reason?: string): Promise<boolean>;
   distributePatientInvoice(sourceId: string, patients: { name: string; phone?: string }[]): Promise<PatientInvoiceHeader[]>;

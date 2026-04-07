@@ -16,7 +16,7 @@ import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { db } from "../db";
 import { pendingStockAllocations, oversellResolutionBatches, oversellCostResolutions } from "@shared/schema";
-import { resolveOversellBatch } from "../lib/oversell-resolution-engine";
+import { resolveOversellBatch, checkOversellGlReadiness } from "../lib/oversell-resolution-engine";
 import { clearOversellFlagCache } from "../lib/oversell-guard";
 
 export function registerOversellRoutes(app: Express) {
@@ -41,6 +41,21 @@ export function registerOversellRoutes(app: Express) {
         activeCount:   parseInt(String(row.active_count ?? 0)),
         totalQtyMinorPending: parseFloat(String(row.total_qty_minor_pending ?? 0)),
       });
+    } catch (err: unknown) {
+      res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── GET /api/oversell/gl-readiness ────────────────────────────────────────
+  // Returns readiness for GL journal generation: COGS account mapped? Warehouse GL set?
+  app.get("/api/oversell/gl-readiness", requireAuth, checkPermission(PERMISSIONS.OVERSELL_VIEW), async (req, res) => {
+    try {
+      const warehouseId = req.query.warehouseId as string | undefined;
+      if (!warehouseId) {
+        return res.status(400).json({ message: "warehouseId مطلوب" });
+      }
+      const readiness = await checkOversellGlReadiness(warehouseId);
+      res.json(readiness);
     } catch (err: unknown) {
       res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
     }

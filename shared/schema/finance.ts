@@ -283,6 +283,7 @@ export const transactionTypeLabels: Record<string, string> = {
   supplier_payment:          "سداد موردين",
   cashier_shift_close:       "إغلاق وردية كاشير",
   contract_settlement:       "تسوية مطالبات تأمين",
+  oversell_resolution:       "تسوية الصرف المؤجل التكلفة",
 };
 
 export const mappingLineTypeLabels: Record<string, string> = {
