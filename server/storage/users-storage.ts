@@ -265,7 +265,12 @@ const methods = {
     const deptRows = await db.select({ id: userDepartments.departmentId })
       .from(userDepartments)
       .where(eq(userDepartments.userId, userId));
-    const allowedDepartmentIds = deptRows.map(r => r.id);
+    let allowedDepartmentIds = deptRows.map(r => r.id);
+
+    // fallback: إذا لم يُعيَّن نطاق أقسام صريح (cashier scope) لكن للمستخدم قسم افتراضي → استخدمه
+    if (allowedDepartmentIds.length === 0 && user.departmentId) {
+      allowedDepartmentIds = [user.departmentId];
+    }
 
     const clinicRows = await db.select({ clinicId: userClinics.clinicId })
       .from(userClinics)
