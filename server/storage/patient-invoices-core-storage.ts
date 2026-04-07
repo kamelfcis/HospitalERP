@@ -337,7 +337,7 @@ const methods = {
             const alreadyClaimed = itemClaimedMap[line.itemId!] ?? 0;
             const netAvail = totalAvail - alreadyClaimed;
 
-            if (deferredEnabled && item.allow_oversell && netAvail < qtyMinor - 0.00005) {
+            if (deferredEnabled && item.allow_oversell === true && netAvail < qtyMinor - 0.00005) {
               // Oversell allowed: record as pending, skip from stock allocation
               const availableForThisLine = Math.max(0, netAvail);
               itemClaimedMap[line.itemId!] = alreadyClaimed + availableForThisLine;
@@ -421,7 +421,21 @@ const methods = {
                 },
               });
             }
-            console.log(`[OVERSELL] Invoice ${id}: ${oversellLines.length} line(s) deferred to pending_stock_allocations`);
+            console.log(JSON.stringify({
+              event:     "OVERSELL_DEFERRED",
+              timestamp: new Date().toISOString(),
+              source:    "patient_invoice_finalize",
+              invoiceId: id,
+              userId,
+              reason:    oversellReason,
+              lineCount: oversellLines.length,
+              lines: oversellLines.map(ol => ({
+                itemId:                   ol.itemId,
+                lineId:                   ol.lineId,
+                qtyMinorPending:          ol.qtyMinorPending,
+                qtyMinorAvailableAtFinalize: ol.qtyMinorAvailableAtFinalize,
+              })),
+            }));
           }
         }
       }

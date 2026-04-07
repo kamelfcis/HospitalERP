@@ -2,7 +2,7 @@ import {
   useState, useRef, useCallback, useEffect, useLayoutEffect,
 } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Search, PackageX, Package, AlertCircle, SlidersHorizontal } from "lucide-react";
+import { Loader2, Search, PackageX, Package, AlertCircle, SlidersHorizontal, Infinity } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { formatAvailability } from "@/lib/invoice-lines";
 import type {
@@ -476,6 +476,11 @@ export function ItemFastSearch({
                           {item.hasExpiry && (
                             <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 font-medium bg-amber-50 border border-amber-200 rounded px-1 py-0 leading-4">
                               <AlertCircle className="h-2.5 w-2.5" />صلاحية
+                            </span>
+                          )}
+                          {item.allowOversell === true && !hideStockWarning && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 font-medium bg-sky-50 border border-sky-200 rounded px-1 py-0 leading-4">
+                              <Infinity className="h-2.5 w-2.5" />صرف بدون رصيد
                             </span>
                           )}
                           {isPreloading && (
