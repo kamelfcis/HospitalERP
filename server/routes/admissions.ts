@@ -84,7 +84,7 @@ export function registerAdmissionsRoutes(app: Express) {
 
   // ==================== Admissions API ====================
 
-  app.get("/api/admissions", requireAuth, checkHospitalAccess, async (req, res) => {
+  app.get("/api/admissions", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_VIEW), async (req, res) => {
     try {
       const filters: Record<string, unknown> = {};
       if (req.query.status as string)   filters.status   = req.query.status as string;
@@ -111,7 +111,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admissions/:id", requireAuth, checkHospitalAccess, async (req, res) => {
+  app.get("/api/admissions/:id", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_VIEW), async (req, res) => {
     try {
       const a = await storage.getAdmission(req.params.id as string);
       if (!a) return res.status(404).json({ message: "الإقامة غير موجودة" });

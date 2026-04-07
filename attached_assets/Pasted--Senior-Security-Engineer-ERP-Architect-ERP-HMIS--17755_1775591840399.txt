@@ -1,0 +1,285 @@
+أنت الآن Senior Security Engineer + ERP Architect تعمل على نظام ERP/HMIS تم بالفعل إعادة هيكلة نظام الصلاحيات فيه (RBAC + Operational Scope) وتم تنفيذ hardening أولي.
+
+المطلوب الآن:
+👉 **إغلاق النظام بشكل نهائي Production-grade (Final Hardening + Consistency + Zero Gaps)**
+👉 بدون كسر أي سلوك قائم
+👉 مع الحفاظ على كل الـ operational scopes (خصوصًا العيادات)
+
+---
+
+# الحالة الحالية (مهمة جدًا)
+
+النظام الآن:
+
+* يستخدم Groups كمصدر وحيد للصلاحيات ✔️
+* لا يستخدم user-level overrides ✔️
+* يستخدم getUserOperationalScope كمصدر موحد للـ scope ✔️
+* clinic scope مطبق ✔️
+* تم حذف dead code بالكامل ✔️
+* تم إضافة indexing ✔️
+
+لكن مطلوب إغلاق أي ثغرات أو inconsistency متبقية.
+
+---
+
+# المرحلة 1 — Zero-Loophole Enforcement Audit
+
+راجع كل endpoints في النظام بدون استثناء:
+
+## المطلوب لكل endpoint:
+
+```ts
+requireAuth
+checkPermission
+scope enforcement
+```
+
+## تحقق من:
+
+* patients
+* clinics
+* appointments
+* queues
+* visits
+* admissions
+* cashier
+* inventory
+* accounting
+* reports
+
+## ممنوع تمامًا:
+
+* endpoint بدون scope filter
+* endpoint يعتمد على frontend filtering
+* endpoint يعرض بيانات خارج نطاق المستخدم
+
+---
+
+# المرحلة 2 — Clinic Scope Hard Guarantee (Critical)
+
+العيادات هي أخطر نقطة في النظام.
+
+## المطلوب:
+
+* كل endpoint له علاقة بالعيادات يجب أن يحتوي على:
+
+```ts
+WHERE clinic_id IN (allowedClinicIds)
+```
+
+## تحقق من:
+
+* appointment lists
+* doctor schedules
+* clinic queues
+* patient visits
+* أي شاشة مرتبطة بعيادة
+
+❗ أي endpoint بدون هذا الفلتر = ثغرة أمنية
+
+---
+
+# المرحلة 3 — Central Scope Contract (Strict)
+
+اجعل هذه هي البنية الموحدة للـ scope:
+
+```ts
+{
+  clinicIds: number[],
+  allClinics: boolean,
+  departmentIds: number[],
+  allDepartments: boolean,
+  warehouseIds: number[],
+  allWarehouses: boolean,
+  pharmacyId: number | null,
+  allCashierUnits: boolean
+}
+```
+
+## المطلوب:
+
+* كل modules تستخدم نفس الشكل
+* لا يوجد scope logic خارج getUserOperationalScope
+* لا يوجد تفسير مختلف للـ scope بين modules
+
+---
+
+# المرحلة 4 — Remove All Hidden Legacy Behavior
+
+تأكد من عدم وجود:
+
+* أي reference لـ user_permissions
+* أي fallback للـ legacy roles
+* أي alias قديم
+* أي comment مضلل
+* أي code path غير مستخدم
+
+نفّذ:
+👉 full grep + verification
+
+---
+
+# المرحلة 5 — Permission Resolution Integrity
+
+تأكد أن:
+
+```ts
+effectivePermissions = group.permissions ONLY
+```
+
+❌ ممنوع:
+
+* fallback غير واضح
+* merging مع user-level logic
+* implicit permissions
+
+---
+
+# المرحلة 6 — Effective Permissions Visibility (Final UX)
+
+تحسين الكارت الموجود حاليًا:
+
+## أضف:
+
+* group name
+* permission count
+* badge (system / custom)
+* icon واضح
+
+## الهدف:
+
+* user admin يفهم بسرعة صلاحيات المستخدم
+* debugging سهل
+
+---
+
+# المرحلة 7 — Critical Actions Protection
+
+حدد العمليات الحساسة:
+
+* close shift
+* finalize invoice
+* post journal
+* reverse entry
+* delete transaction
+
+## المطلوب:
+
+### Frontend:
+
+* 🔒 icon
+* double confirmation modal
+
+### Backend:
+
+* audit log إجباري
+
+---
+
+# المرحلة 8 — Indexing Verification (Performance)
+
+راجع الفهارس:
+
+## يجب وجود index على:
+
+* user_id في:
+
+  * user_clinics
+  * user_departments
+  * user_warehouses
+* group_id في group_permissions
+
+## تحقق:
+
+* لا يوجد table scan في scope queries
+* queries سريعة تحت load
+
+---
+
+# المرحلة 9 — Matrix Performance Hardening
+
+PermissionsMatrixTab يجب أن يكون:
+
+* memoized sections
+* stable collapse state
+* no full re-render
+* lazy rendering إن لزم
+
+---
+
+# المرحلة 10 — Regression Safety Suite
+
+اختبر السيناريوهات التالية:
+
+## سكرتير عيادة
+
+* يرى عيادته فقط ✔️
+* لا يرى غيرها ✔️
+
+## كاشير
+
+* يرى وحداته فقط ✔️
+* allCashierUnits يعمل ✔️
+
+## أدمن
+
+* full access ✔️
+
+## مستخدم بدون scope
+
+* لا يرى بيانات خارج نطاقه ✔️
+
+---
+
+# المرحلة 11 — Final Cleanup Sweep
+
+تأكد من عدم وجود:
+
+* dead components
+* unused hooks
+* orphan routes
+* stale imports
+* duplicate logic
+
+نفّذ cleanup كامل من الجذور.
+
+---
+
+# معايير القبول النهائية
+
+لا يعتبر العمل مكتملًا إلا إذا:
+
+* لا يوجد endpoint بدون scope enforcement
+* لا يوجد override فردي
+* clinic assignment يعمل 100%
+* scope موحد عبر النظام
+* لا يوجد dead code
+* لا يوجد legacy logic
+* الأداء جيد
+* naming واضح
+* النظام قابل للمراجعة بسهولة
+
+---
+
+# توجيه نهائي
+
+نفّذ كـ:
+
+* Security hardening
+* Consistency enforcement
+* Final architecture cleanup
+
+لا تترك:
+
+* أي loophole
+* أي inconsistency
+* أي behavior غير واضح
+
+ولا تكسر:
+
+* أي flow
+* أي scope
+* أي تخصيص عيادات
+
+واجعل النتيجة:
+👉 نظام صلاحيات محكم + واضح + آمن + قابل للتوسع

@@ -1,4 +1,14 @@
 import { useState, useCallback, useRef, useEffect, memo } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -102,6 +112,8 @@ const PAGE_SIZE = 50;
 
 export default function JournalEntries() {
   const { toast } = useToast();
+  const [confirmPost, setConfirmPost] = useState<string | null>(null);
+  const [confirmReverse, setConfirmReverse] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -470,11 +482,7 @@ export default function JournalEntries() {
                               variant="ghost"
                               size="icon"
                               className="h-6 w-6 text-emerald-600 hover:text-emerald-700"
-                              onClick={() => {
-                                if (confirm("هل تريد ترحيل هذا القيد؟ لن يمكن تعديله بعد الترحيل.")) {
-                                  postMutation.mutate(entry.id);
-                                }
-                              }}
+                              onClick={() => setConfirmPost(entry.id)}
                               disabled={postMutation.isPending}
                               data-testid={`button-post-entry-${entry.id}`}
                             >
@@ -487,11 +495,7 @@ export default function JournalEntries() {
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6 text-destructive hover:text-destructive/80"
-                            onClick={() => {
-                              if (confirm("هل تريد إلغاء هذا القيد؟ سيتم إنشاء قيد عكسي.")) {
-                                reverseMutation.mutate(entry.id);
-                              }
-                            }}
+                            onClick={() => setConfirmReverse(entry.id)}
                             disabled={reverseMutation.isPending}
                             data-testid={`button-reverse-entry-${entry.id}`}
                           >
@@ -582,6 +586,50 @@ export default function JournalEntries() {
           </Button>
         </div>
       </div>
+
+      {/* ── تأكيد ترحيل القيد ───────────────────────────────────────────── */}
+      <AlertDialog open={!!confirmPost} onOpenChange={open => !open && setConfirmPost(null)}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد ترحيل القيد</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيصبح القيد مُرحَّلاً ولن يمكن تعديله أو حذفه. هل تريد المتابعة؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row-reverse gap-2">
+            <AlertDialogCancel data-testid="button-cancel-post-confirm">إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 hover:bg-emerald-700"
+              data-testid="button-confirm-post"
+              onClick={() => { if (confirmPost) { postMutation.mutate(confirmPost); setConfirmPost(null); } }}
+            >
+              ترحيل
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── تأكيد عكس القيد ─────────────────────────────────────────────── */}
+      <AlertDialog open={!!confirmReverse} onOpenChange={open => !open && setConfirmReverse(null)}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">تأكيد عكس القيد</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيتم إنشاء قيد عكسي جديد لإلغاء أثر هذا القيد. هذه العملية لا يمكن التراجع عنها. هل تريد المتابعة؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row-reverse gap-2">
+            <AlertDialogCancel data-testid="button-cancel-reverse-confirm">إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              data-testid="button-confirm-reverse"
+              onClick={() => { if (confirmReverse) { reverseMutation.mutate(confirmReverse); setConfirmReverse(null); } }}
+            >
+              تأكيد العكس
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

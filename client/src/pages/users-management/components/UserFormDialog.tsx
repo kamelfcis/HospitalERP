@@ -277,15 +277,21 @@ export function UserFormDialog({
             </div>
 
             {selectedGroup ? (
-              <div className="flex items-center gap-2 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-sm">
-                <Info className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                <span className="text-muted-foreground">الصلاحيات النشطة:</span>
-                <span className="font-medium text-blue-700 dark:text-blue-300">{selectedGroup.permissionCount} صلاحية</span>
-                <span className="text-muted-foreground mx-1">·</span>
-                <span className="text-muted-foreground">{selectedGroup.memberCount} مستخدم</span>
-                {selectedGroup.isSystem && (
-                  <Badge variant="secondary" className="text-[9px] mr-auto">نظام</Badge>
-                )}
+              <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-sm space-y-1">
+                <div className="flex items-center gap-2">
+                  <Info className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                  <span className="font-semibold text-blue-800 dark:text-blue-200">{selectedGroup.name}</span>
+                  {selectedGroup.isSystem ? (
+                    <Badge variant="secondary" className="text-[9px] mr-auto">نظام</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[9px] mr-auto">مخصصة</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 pr-5 text-xs text-muted-foreground">
+                  <span><span className="font-medium text-blue-700 dark:text-blue-300">{selectedGroup.permissionCount}</span> صلاحية نشطة</span>
+                  <span>·</span>
+                  <span><span className="font-medium">{selectedGroup.memberCount}</span> مستخدم في المجموعة</span>
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm">
