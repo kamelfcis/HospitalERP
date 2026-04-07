@@ -16,7 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, X, BarChart3, ShieldCheck, ShieldOff, Clock, FileText, Search as SearchIcon } from "lucide-react";
+import { Loader2, X, BarChart3, ShieldCheck, ShieldOff, Clock, FileText, Search as SearchIcon, Lock } from "lucide-react";
 import { ItemFastSearch } from "@/components/ItemFastSearch/ItemFastSearch";
 import type { ItemSelectedPayload } from "@/components/ItemFastSearch/types";
 import type { ItemSearchResult } from "../hooks/useLineManagement";
@@ -34,6 +34,7 @@ import {
   itemHasMediumUnit,
   getUnitName,
 } from "../utils/units";
+import { getUnitOptions } from "@/lib/invoice-lines";
 import { ServiceLookup } from "@/components/lookups";
 
 // ── نوع البند — مخطط الألوان والتسميات ────────────────────────────────────────
@@ -544,27 +545,48 @@ export function UnifiedLinesTab({
                   </td>
 
                   {/* الوحدة — للأصناف فقط */}
-                  <td className="text-center">
+                  <td className={`text-center ${
+                    !isService && line.unitLevel === "medium"
+                      ? "bg-orange-100 dark:bg-orange-900/30"
+                      : !isService && line.unitLevel === "minor"
+                      ? "bg-rose-100 dark:bg-rose-900/30"
+                      : ""
+                  }`}>
                     {!isService && line.itemId && line.item ? (
                       isDraft ? (
                         <select
                           value={line.unitLevel}
                           onChange={(e) => handleUnitLevelChange(line.tempId, e.target.value as "major" | "medium" | "minor")}
-                          className="h-7 text-xs text-center bg-transparent border rounded px-1 w-full"
+                          className={`peachtree-select w-full font-bold ${
+                            line.unitLevel === "medium"
+                              ? "border-orange-500 text-orange-800 dark:text-orange-200 bg-orange-50 dark:bg-orange-900/40"
+                              : line.unitLevel === "minor"
+                              ? "border-rose-500 text-rose-800 dark:text-rose-200 bg-rose-50 dark:bg-rose-900/40"
+                              : ""
+                          }`}
                           data-testid={`select-unit-unified-${i}`}
                         >
-                          {itemHasMajorUnit(line.item) && (
-                            <option value="major">{line.item?.majorUnitName || "كبرى"}</option>
-                          )}
-                          {itemHasMediumUnit(line.item) && (
-                            <option value="medium">{line.item?.mediumUnitName || "متوسطة"}</option>
-                          )}
-                          {(line.item?.minorUnitName || (!itemHasMajorUnit(line.item) && !itemHasMediumUnit(line.item))) && (
-                            <option value="minor">{line.item?.minorUnitName || "وحدة"}</option>
-                          )}
+                          {getUnitOptions(line.item).map((opt) => (
+                            <option
+                              key={opt.value}
+                              value={opt.value}
+                              disabled={!opt.priceable}
+                              title={!opt.priceable ? "معامل التحويل غير معرّف لهذه الوحدة — يجب إعداد الصنف أولاً" : undefined}
+                            >
+                              {opt.priceable ? opt.label : `${opt.label} (غير معرّف)`}
+                            </option>
+                          ))}
                         </select>
                       ) : (
-                        <span className="text-xs">{getUnitName(line.item, line.unitLevel)}</span>
+                        <span className={`font-bold ${
+                          line.unitLevel === "medium"
+                            ? "text-orange-700 dark:text-orange-300"
+                            : line.unitLevel === "minor"
+                            ? "text-rose-700 dark:text-rose-300"
+                            : "text-foreground font-normal"
+                        }`} data-testid={`text-unit-unified-${i}`}>
+                          {getUnitName(line.item, line.unitLevel)}
+                        </span>
                       )
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
@@ -619,20 +641,16 @@ export function UnifiedLinesTab({
                     )}
                   </td>
 
-                  {/* سعر الوحدة */}
+                  {/* سعر الوحدة — مغلق، يتحدد تلقائياً من الصنف أو القسم */}
                   <td className="text-center">
-                    {isDraft ? (
-                      <Input
-                        type="number"
-                        value={line.unitPrice}
-                        min={0}
-                        onChange={(e) => updateLine(line.tempId, "unitPrice", parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-center"
-                        data-testid={`input-price-unified-${i}`}
-                      />
-                    ) : (
-                      <span className="text-xs">{formatNumber(line.unitPrice)}</span>
-                    )}
+                    <span
+                      className="flex items-center justify-center gap-0.5 peachtree-amount"
+                      title="سعر النظام — يتحدد تلقائياً بناءً على الصنف أو القسم"
+                      data-testid={`text-unit-price-unified-${i}`}
+                    >
+                      {isDraft && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
+                      {formatNumber(line.unitPrice)}
+                    </span>
                   </td>
 
                   {/* خصم % */}
