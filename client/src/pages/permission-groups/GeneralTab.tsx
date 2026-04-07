@@ -19,34 +19,75 @@ import type { GroupDetail } from "./types";
 
 // قائمة الشاشات المتاحة كشاشة افتتاحية
 const ROUTE_OPTIONS = [
-  { label: "لوحة التحكم",              value: "/" },
-  { label: "فواتير البيع",             value: "/sales-invoices" },
-  { label: "شاشة تحصيل الكاشير",      value: "/cashier-collection" },
-  { label: "تقرير تسليم الدرج",        value: "/cashier-handover" },
-  { label: "فاتورة مريض",             value: "/patient-invoices" },
-  { label: "حجز العيادات",            value: "/clinic-booking" },
-  { label: "لوحة الأسرّة",            value: "/bed-board" },
-  { label: "أوامر الطبيب",            value: "/doctor-orders" },
-  { label: "تحويل مخزني",             value: "/store-transfers" },
-  { label: "إعداد إذن تحويل",         value: "/transfer-preparation" },
-  { label: "استلام من مورد",          value: "/supplier-receiving" },
-  { label: "فواتير الشراء",           value: "/purchase-invoices" },
-  { label: "الأصناف",                 value: "/items" },
-  { label: "تحصيل الآجل",            value: "/customer-payments" },
-  { label: "سداد الموردين",           value: "/supplier-payments" },
-  { label: "تحصيل التوصيل",          value: "/delivery-payments" },
-  { label: "جرد الأصناف",            value: "/stock-count" },
-  { label: "كشكول النواقص",          value: "/shortage-notebook" },
-  { label: "القيود اليومية",          value: "/journal-entries" },
-  { label: "دليل الحسابات",           value: "/chart-of-accounts" },
-  { label: "ميزان المراجعة",          value: "/reports/trial-balance" },
-  { label: "خدمات المعمل",            value: "/dept-services/LAB" },
-  { label: "خدمات الأشعة",           value: "/dept-services/RAD" },
-  { label: "مردودات المبيعات",        value: "/sales-returns" },
-  { label: "حالات دخول المستشفى",    value: "/patients" },
-  { label: "استعلام المرضى",         value: "/patient-inquiry" },
-  { label: "تسوية مستحقات الأطباء",   value: "/doctor-settlements" },
-  { label: "إعدادات النظام",          value: "/system-settings" },
+  // ── عام ─────────────────────────────────────────────────────────────────
+  { label: "لوحة التحكم",                 value: "/" },
+  { label: "المهام",                      value: "/tasks" },
+
+  // ── الكاشير والمبيعات ───────────────────────────────────────────────────
+  { label: "شاشة تحصيل الكاشير",         value: "/cashier-collection" },
+  { label: "تقرير تسليم الدرج",           value: "/cashier-handover" },
+  { label: "فواتير البيع",                value: "/sales-invoices" },
+  { label: "مردودات المبيعات",            value: "/sales-returns" },
+  { label: "تحصيل الآجل",               value: "/customer-payments" },
+  { label: "تحصيل التوصيل",             value: "/delivery-payments" },
+
+  // ── المرضى والمستشفى ────────────────────────────────────────────────────
+  { label: "حالات دخول المستشفى",        value: "/patients" },
+  { label: "فاتورة مريض",               value: "/patient-invoices" },
+  { label: "لوحة الأسرّة",              value: "/bed-board" },
+  { label: "إدارة الغرف",               value: "/room-management" },
+  { label: "استعلام المرضى",            value: "/patient-inquiry" },
+  { label: "تسوية مستحقات الأطباء",      value: "/doctor-settlements" },
+
+  // ── العيادات والأطباء ───────────────────────────────────────────────────
+  { label: "حجز العيادات",              value: "/clinic-booking" },
+  { label: "أوامر الطبيب",              value: "/doctor-orders" },
+  { label: "خدمات المعمل",              value: "/dept-services/LAB" },
+  { label: "خدمات الأشعة",             value: "/dept-services/RAD" },
+  { label: "الأطباء",                   value: "/doctors" },
+
+  // ── المشتريات والمخزن ───────────────────────────────────────────────────
+  { label: "استلام من مورد",            value: "/supplier-receiving" },
+  { label: "فواتير الشراء",             value: "/purchase-invoices" },
+  { label: "مردودات الشراء",            value: "/purchase-returns" },
+  { label: "سداد الموردين",             value: "/supplier-payments" },
+  { label: "الموردون",                  value: "/suppliers" },
+  { label: "الأصناف",                   value: "/items" },
+  { label: "تحويل مخزني",              value: "/store-transfers" },
+  { label: "إعداد إذن تحويل",           value: "/transfer-preparation" },
+  { label: "جرد الأصناف",              value: "/stock-count" },
+  { label: "مخزون أول المدة",           value: "/opening-stock" },
+  { label: "كشكول النواقص",            value: "/shortage-notebook" },
+  { label: "حل الصرف بدون رصيد",        value: "/oversell-resolution" },
+
+  // ── الخدمات والعقود ─────────────────────────────────────────────────────
+  { label: "تسعير الخدمات",             value: "/services-pricing" },
+  { label: "العقود والتأمين",            value: "/contracts" },
+  { label: "مطالبات التأمين",           value: "/contract-claims" },
+  { label: "تحليلات العقود",            value: "/contracts-analytics" },
+  { label: "الموافقات",                 value: "/approvals" },
+
+  // ── المحاسبة والتقارير ──────────────────────────────────────────────────
+  { label: "القيود اليومية",            value: "/journal-entries" },
+  { label: "دليل الحسابات",             value: "/chart-of-accounts" },
+  { label: "مراكز التكلفة",             value: "/cost-centers" },
+  { label: "الفترات المالية",           value: "/fiscal-periods" },
+  { label: "ميزان المراجعة",            value: "/reports/trial-balance" },
+  { label: "قائمة الدخل",              value: "/reports/income-statement" },
+  { label: "الميزانية العمومية",         value: "/reports/balance-sheet" },
+  { label: "تقارير مراكز التكلفة",      value: "/reports/cost-centers" },
+  { label: "كشف الحساب",               value: "/reports/account-ledger" },
+  { label: "تقرير حركة الأصناف",        value: "/reports/item-movement" },
+  { label: "تقرير رصيد المستودع",       value: "/reports/warehouse-balance" },
+
+  // ── إعدادات وإدارة النظام ───────────────────────────────────────────────
+  { label: "إدارة المستخدمين",          value: "/users" },
+  { label: "مجموعات الصلاحيات",         value: "/permission-groups" },
+  { label: "المستودعات",                value: "/warehouses" },
+  { label: "الأقسام",                   value: "/departments" },
+  { label: "ربط الحسابات",              value: "/account-mappings" },
+  { label: "سجل المراجعة",              value: "/audit-log" },
+  { label: "إعدادات النظام",            value: "/system-settings" },
 ];
 
 interface Props {
