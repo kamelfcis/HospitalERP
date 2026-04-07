@@ -6,6 +6,7 @@ import {
   formatAvailability, getUnitOptions,
   computeUnitPriceFromBase, computeLineTotal,
 } from "@/lib/invoice-lines";
+import { getInvoiceRowClass, isOversellRow } from "@/lib/invoice-row-classes";
 import type { SalesLineLocal } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,14 +213,18 @@ const InvoiceLineRow = memo(function InvoiceLineRow({
   ln, i, isDraft, fefoLoading, isLotContinuation, hasMultiPrice, needsExpiry,
   pendingQtyRef, onUpdateLine, onRemoveLine, onQtyConfirm, onOpenStats, barcodeInputRef,
 }: InvoiceLineRowProps) {
-  const isOversellNoStock =
-    ln.lineType !== "service" &&
-    ln.lineType !== "consumable" &&
-    ln.item?.allowOversell === true &&
-    parseFloat(ln.availableQtyMinor || "0") <= 0;
+  const rowClass = getInvoiceRowClass({
+    needsExpiry,
+    isLotContinuation,
+    isOversellNoStock: isOversellRow(
+      ln.lineType || "item",
+      ln.item?.allowOversell,
+      ln.availableQtyMinor,
+    ),
+  });
   return (
     <tr
-      className={`peachtree-grid-row ${needsExpiry ? "bg-yellow-50 dark:bg-yellow-900/20" : ""} ${isLotContinuation ? "border-r-2 border-r-indigo-300 dark:border-r-indigo-600" : ""} ${isOversellNoStock ? "bg-orange-50 dark:bg-orange-950/20 border-r-2 border-r-orange-400" : ""}`}
+      className={`peachtree-grid-row ${rowClass}`}
       data-testid={`row-line-${i}`}
     >
       {/* # */}
