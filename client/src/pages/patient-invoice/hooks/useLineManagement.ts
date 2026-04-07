@@ -374,7 +374,7 @@ export function useLineManagement({
           if (!addingItemRef.current.has(asyncToken)) return;
 
           if (!preview.fulfilled) {
-            if (item.allowOversell && oversellEnabled) {
+            if (item.allowOversell === true && oversellEnabled === true) {
               toast({
                 title: "صرف بدون رصيد",
                 description: `${item.nameAr || item.itemCode} — سيتم إضافة البند بدون دفعة (تكلفة مؤجلة)`,
@@ -581,7 +581,7 @@ export function useLineManagement({
       const preview = await res.json();
 
       if (!preview.fulfilled) {
-        if (line.item?.allowOversell && oversellEnabled) {
+        if (line.item?.allowOversell === true && oversellEnabled === true) {
           updateLine(tempId, "quantity", qtyEntered);
           toast({
             title: "صرف بدون رصيد",
