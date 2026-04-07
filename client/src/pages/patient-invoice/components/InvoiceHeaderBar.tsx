@@ -7,8 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   Save, CheckCircle, Plus, Loader2, CreditCard,
-  Search, XCircle, CheckCircle2, ChevronDown, ChevronUp, BookmarkPlus,
+  Search, XCircle, CheckCircle2, ChevronDown, ChevronUp, BookmarkPlus, Cloud, CloudOff,
 } from "lucide-react";
+import type { AutoSaveStatus } from "../hooks/useAutoSave";
 import { patientInvoiceStatusLabels } from "@shared/schema";
 import type { Department, Admission } from "@shared/schema";
 import type { LineLocal } from "../types";
@@ -78,6 +79,7 @@ interface InvoiceHeaderBarProps {
   saveMutation: { mutate: () => void; isPending: boolean };
   finalizeMutation: { mutate: () => void; isPending: boolean };
 
+  autoSaveStatus: AutoSaveStatus;
   getStatusBadgeClass: (status: string) => string;
 }
 
@@ -98,6 +100,7 @@ export function InvoiceHeaderBar({
   notes, setNotes,
   lines,
   resetForm, saveMutation, finalizeMutation,
+  autoSaveStatus,
   getStatusBadgeClass,
 }: InvoiceHeaderBarProps) {
   const { toast } = useToast();
@@ -336,6 +339,24 @@ export function InvoiceHeaderBar({
           )}
 
           <div className="flex-1" />
+
+          {/* مؤشر الحفظ التلقائي */}
+          {isDraft && autoSaveStatus === "saving" && (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0" data-testid="autosave-saving">
+              <Loader2 className="h-3 w-3 animate-spin" /> جاري الحفظ...
+            </span>
+          )}
+          {isDraft && autoSaveStatus === "saved" && (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 shrink-0" data-testid="autosave-saved">
+              <Cloud className="h-3 w-3" /> تم الحفظ
+            </span>
+          )}
+          {isDraft && autoSaveStatus === "error" && (
+            <span className="flex items-center gap-1 text-[10px] text-destructive shrink-0" data-testid="autosave-error">
+              <CloudOff className="h-3 w-3" /> خطأ في الحفظ
+            </span>
+          )}
+
           {actionButtons}
         </div>
 

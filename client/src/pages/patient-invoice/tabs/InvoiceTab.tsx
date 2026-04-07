@@ -118,6 +118,7 @@ interface InvoiceTabProps {
   resetForm: () => void;
   saveMutation: { mutate: () => void; isPending: boolean };
   finalizeMutation: { mutate: () => void; isPending: boolean };
+  autoSaveStatus: import("../hooks/useAutoSave").AutoSaveStatus;
   dtTransfers: DoctorTransfer[];
   dtAlreadyTransferred: number;
   dtRemaining: number;
@@ -166,7 +167,7 @@ export function InvoiceTab({
   handleQtyConfirm, handleUnitLevelChange, openStatsPopup,
   payments, addPayment, updatePayment, removePayment,
   totals,
-  resetForm, saveMutation, finalizeMutation,
+  resetForm, saveMutation, finalizeMutation, autoSaveStatus,
   dtTransfers, dtAlreadyTransferred, dtRemaining,
   dtOpen, setDtOpen, dtAmount, setDtAmount,
   dtDoctorName, setDtDoctorName, dtNotes, setDtNotes, openDtConfirm,
@@ -219,6 +220,7 @@ export function InvoiceTab({
         resetForm={resetForm}
         saveMutation={saveMutation}
         finalizeMutation={finalizeMutation}
+        autoSaveStatus={autoSaveStatus}
         getStatusBadgeClass={getStatusBadgeClass}
       />
 

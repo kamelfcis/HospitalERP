@@ -30,6 +30,7 @@ import { useInvoiceValidation }  from "./hooks/useInvoiceValidation";
 import { useSearchState }        from "./hooks/useSearchState";
 import { useDoctorTransfer }     from "./hooks/useDoctorTransfer";
 import { useStatsDialog }        from "./hooks/useStatsDialog";
+import { useAutoSave }           from "./hooks/useAutoSave";
 import type { ContractResolved } from "@/components/shared/ContractSelectCombobox";
 
 interface MemberResolved {
@@ -128,6 +129,36 @@ export default function PatientInvoice() {
       remaining:            +remaining.toFixed(2),
     };
   }, [lm.lines, payments.payments, form.headerDiscountAmount, form.headerDiscountPercent]);
+
+  // ── Auto-save ────────────────────────────────────────────────────────────────
+  const { autoSaveStatus, resetAutoSave } = useAutoSave({
+    formStatus:       form.status,
+    invoiceId:        form.invoiceId,
+    invoiceNumber:    form.invoiceNumber,
+    invoiceDate:      form.invoiceDate,
+    patientName:      form.patientName,
+    patientPhone:     form.patientPhone,
+    patientId:        form.patientId,
+    patientType:      form.patientType,
+    departmentId:     form.departmentId,
+    warehouseId:      form.warehouseId,
+    doctorName:       form.doctorName,
+    contractName:     form.contractName,
+    contractId:       form.contractId,
+    companyId:        form.companyId,
+    contractMemberId: form.contractMemberId,
+    notes:            form.notes,
+    admissionId:      form.admissionId,
+    totals,
+    lines:            lm.lines,
+    payments:         payments.payments,
+    onIdAssigned:     (id) => form.setInvoiceId(id),
+  });
+
+  // إعادة ضبط حالة الحفظ عند التبديل لفاتورة جديدة (invoiceId → null)
+  useEffect(() => {
+    if (!form.invoiceId) resetAutoSave();
+  }, [form.invoiceId, resetAutoSave]);
 
   // ── Hooks ────────────────────────────────────────────────────────────────────
   const dt       = useDoctorTransfer({ invoiceId: form.invoiceId, invoiceStatus: form.status, netAmount: totals.netAmount });
@@ -456,6 +487,7 @@ export default function PatientInvoice() {
             resetForm={resetAll}
             saveMutation={saveMutation}
             finalizeMutation={finalizeMutation}
+            autoSaveStatus={autoSaveStatus}
             dtTransfers={dt.dtTransfers}
             dtAlreadyTransferred={dt.dtAlreadyTransferred}
             dtRemaining={dt.dtRemaining}
