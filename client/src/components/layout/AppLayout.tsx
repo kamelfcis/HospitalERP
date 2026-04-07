@@ -320,7 +320,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
         <div className="flex flex-col flex-1 min-w-0">
           <AppHeader />
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-auto" dir="rtl">
             {children}
           </main>
         </div>

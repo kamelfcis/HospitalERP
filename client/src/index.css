@@ -372,6 +372,7 @@
     border: 2px solid hsl(215 40% 35%);
     background: white;
     font-size: 13px;
+    direction: rtl;
   }
 
   .peachtree-grid-header {
@@ -526,6 +527,8 @@
     border: 1px solid hsl(210 10% 75%);
     border-bottom: 2px solid hsl(210 10% 65%);
     padding: 6px 10px;
+    direction: rtl;
+    text-align: right;
   }
 
   .peachtree-totals {
