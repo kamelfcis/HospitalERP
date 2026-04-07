@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button }   from "@/components/ui/button";
 import { Input }    from "@/components/ui/input";
 import { Label }    from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, X }  from "lucide-react";
+import { Loader2, X, ChevronDown, ChevronUp, Info }  from "lucide-react";
 import { ROLE_LABELS } from "@shared/permissions";
 import { ScopeSelector } from "./ScopeSelector";
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
@@ -35,6 +36,11 @@ export function UserFormDialog({
   isPending, onFormChange, onSave, onOpenChange,
 }: UserFormDialogProps) {
   const showScope = !!formData.cashierGlAccountId;
+  const [showAdvancedVariance, setShowAdvancedVariance] = useState(
+    !!(formData.cashierVarianceShortAccountId || formData.cashierVarianceOverAccountId)
+  );
+  const hasNoVarianceAccount = !formData.cashierVarianceAccountId &&
+    !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -210,68 +216,36 @@ export function UserFormDialog({
 
           {formData.cashierGlAccountId && (
             <div className="space-y-3 border rounded-lg p-3 bg-muted/30">
-              <p className="text-xs font-semibold text-muted-foreground">حسابات فروق الجرد النقدي</p>
-
-              <div className="space-y-1">
-                <Label>
-                  حساب العجز النقدي
-                  <span className="text-muted-foreground text-xs mr-1">(اختياري — يُستخدم عند العجز)</span>
-                </Label>
-                <div className="flex items-center gap-1">
-                  <div className="flex-1">
-                    <AccountSearchSelect
-                      accounts={varianceAccounts}
-                      value={formData.cashierVarianceShortAccountId || ""}
-                      onChange={v => onFormChange({ cashierVarianceShortAccountId: v })}
-                      placeholder="ابحث عن حساب العجز..."
-                      data-testid="select-user-variance-short-account"
-                    />
-                  </div>
-                  {formData.cashierVarianceShortAccountId && (
-                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
-                      onClick={() => onFormChange({ cashierVarianceShortAccountId: "" })}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground">حساب فروق الجرد النقدي</p>
               </div>
 
-              <div className="space-y-1">
-                <Label>
-                  حساب الفائض النقدي
-                  <span className="text-muted-foreground text-xs mr-1">(اختياري — يُستخدم عند الفائض)</span>
-                </Label>
-                <div className="flex items-center gap-1">
-                  <div className="flex-1">
-                    <AccountSearchSelect
-                      accounts={varianceAccounts}
-                      value={formData.cashierVarianceOverAccountId || ""}
-                      onChange={v => onFormChange({ cashierVarianceOverAccountId: v })}
-                      placeholder="ابحث عن حساب الفائض..."
-                      data-testid="select-user-variance-over-account"
-                    />
-                  </div>
-                  {formData.cashierVarianceOverAccountId && (
-                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
-                      onClick={() => onFormChange({ cashierVarianceOverAccountId: "" })}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
+              {/* إشعار توضيحي */}
+              <div className="flex gap-2 rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40 p-2 text-xs text-blue-700 dark:text-blue-300">
+                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                  <strong>حساب واحد يكفي:</strong> العجز يُسجَّل مديناً، والفائض يُسجَّل دائناً في نفس الحساب.
+                  لتفصيل العجز عن الفائض في حسابين منفصلين، فعّل "إعدادات متقدمة" أدناه.
+                </span>
               </div>
 
+              {/* الحقل الرئيسي — حساب الفروق الموحد */}
               <div className="space-y-1">
                 <Label>
-                  حساب الفروق الموحد
-                  <span className="text-muted-foreground text-xs mr-1">(احتياطي — يُستخدم إن لم يُحدَّد العجز أو الفائض)</span>
+                  حساب فروق الجرد
+                  {!showAdvancedVariance && (
+                    <span className="text-muted-foreground text-xs mr-1">
+                      — العجز مدين | الفائض دائن
+                    </span>
+                  )}
                 </Label>
-                <div className={`flex items-center gap-1 ${!formData.cashierVarianceAccountId && !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId ? "ring-1 ring-destructive rounded-md" : ""}`}>
+                <div className={`flex items-center gap-1 ${hasNoVarianceAccount ? "ring-1 ring-destructive rounded-md" : ""}`}>
                   <div className="flex-1">
                     <AccountSearchSelect
                       accounts={varianceAccounts}
                       value={formData.cashierVarianceAccountId || ""}
                       onChange={v => onFormChange({ cashierVarianceAccountId: v })}
-                      placeholder="ابحث عن حساب الفروق الاحتياطي..."
+                      placeholder="ابحث عن حساب فروق الجرد..."
                       data-testid="select-user-variance-account"
                     />
                   </div>
@@ -282,14 +256,79 @@ export function UserFormDialog({
                     </Button>
                   )}
                 </div>
-                {!formData.cashierVarianceAccountId && !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId ? (
+                {hasNoVarianceAccount && (
                   <p className="text-xs text-destructive font-medium">
-                    يجب تحديد حساب فروق واحداً على الأقل — بدونه لن يتمكن الكاشير من إغلاق وردية بها فرق نقدي
+                    يجب تحديد حساب فروق — بدونه لن يتمكن الكاشير من إغلاق وردية بها فرق نقدي
                   </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    إن حُدِّد العجز والفائض بشكل منفصل، يُعطى لهما الأولوية على هذا الحساب
-                  </p>
+                )}
+              </div>
+
+              {/* إعدادات متقدمة — حسابات عجز/فائض منفصلة */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedVariance(v => !v)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="toggle-advanced-variance"
+                >
+                  {showAdvancedVariance ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  إعدادات متقدمة — حسابات مفصّلة للعجز والفائض
+                </button>
+
+                {showAdvancedVariance && (
+                  <div className="mt-2 space-y-3 border-r-2 border-muted pr-3">
+                    <p className="text-xs text-muted-foreground">
+                      اختياري — إن حُدِّدا، يأخذان الأولوية على الحساب الموحد أعلاه
+                    </p>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        حساب العجز
+                        <span className="text-muted-foreground mr-1">(مدين عند عجز الكاشير)</span>
+                      </Label>
+                      <div className="flex items-center gap-1">
+                        <div className="flex-1">
+                          <AccountSearchSelect
+                            accounts={varianceAccounts}
+                            value={formData.cashierVarianceShortAccountId || ""}
+                            onChange={v => onFormChange({ cashierVarianceShortAccountId: v })}
+                            placeholder="ابحث عن حساب العجز..."
+                            data-testid="select-user-variance-short-account"
+                          />
+                        </div>
+                        {formData.cashierVarianceShortAccountId && (
+                          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
+                            onClick={() => onFormChange({ cashierVarianceShortAccountId: "" })}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        حساب الفائض
+                        <span className="text-muted-foreground mr-1">(دائن عند فائض الكاشير)</span>
+                      </Label>
+                      <div className="flex items-center gap-1">
+                        <div className="flex-1">
+                          <AccountSearchSelect
+                            accounts={varianceAccounts}
+                            value={formData.cashierVarianceOverAccountId || ""}
+                            onChange={v => onFormChange({ cashierVarianceOverAccountId: v })}
+                            placeholder="ابحث عن حساب الفائض..."
+                            data-testid="select-user-variance-over-account"
+                          />
+                        </div>
+                        {formData.cashierVarianceOverAccountId && (
+                          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
+                            onClick={() => onFormChange({ cashierVarianceOverAccountId: "" })}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
