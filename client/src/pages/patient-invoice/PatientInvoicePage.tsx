@@ -257,7 +257,7 @@ export default function PatientInvoice() {
     admIsCreateOpen, setAdmIsCreateOpen,
     admSearchQuery, setAdmSearchQuery,
     admStatusFilter, setAdmStatusFilter,
-    admDeptFilter, setAdmDeptFilter,
+    admDeptFilter, setAdmDeptFilter, admDeptLocked,
     admDateFrom, setAdmDateFrom,
     admDateTo, setAdmDateTo,
     admPatientSearch, setAdmPatientSearch,
@@ -273,7 +273,7 @@ export default function PatientInvoice() {
     admInvoicesByDepartment, admFilteredPrintInvoices, admTotalAllInvoices,
     admStatusLabels, admGetStatusBadgeClass,
     admHandleCloseCreate, admHandleSelectPatient,
-  } = useAdmissions(mainTab);
+  } = useAdmissions(mainTab, user?.departmentId ?? null);
 
   const { admCreateMutation, admDischargeMutation, admConsolidateMutation } = useAdmissionsMutations({
     onCreateSuccess: admHandleCloseCreate,
@@ -569,6 +569,7 @@ export default function PatientInvoice() {
             setAdmStatusFilter={setAdmStatusFilter}
             admDeptFilter={admDeptFilter}
             setAdmDeptFilter={setAdmDeptFilter}
+            admDeptLocked={admDeptLocked}
             admDateFrom={admDateFrom}
             setAdmDateFrom={setAdmDateFrom}
             admDateTo={admDateTo}

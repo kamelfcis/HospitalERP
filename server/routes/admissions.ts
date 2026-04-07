@@ -96,6 +96,13 @@ export function registerAdmissionsRoutes(app: Express) {
         filters.page     = parseInt(String(req.query.page))     || 1;
         filters.pageSize = parseInt(String(req.query.pageSize || "50")) || 50;
       }
+
+      // ── فرض عزل القسم: إذا كان للمستخدم قسم محدد يُقيَّد به ──────────────
+      const sessionUser = await storage.getUser(req.session.userId!);
+      if (sessionUser?.departmentId) {
+        filters.deptId = sessionUser.departmentId;
+      }
+
       const result = await storage.getAdmissions(filters);
       res.json(result);
     } catch (error: unknown) {

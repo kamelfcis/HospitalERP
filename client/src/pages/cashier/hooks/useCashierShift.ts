@@ -8,10 +8,11 @@
 //  4. حساب: النقدية المتوقعة + الفرق
 //  5. resolveUnitName — ترجمة ID إلى اسم الوحدة
 // ============================================================
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { printShiftHandover, type ReceiptSettings } from "@/utils/receipt-printer";
 import type {
   UnitType, CashierShift, ShiftTotals, UserGlAccount, ShiftCloseValidation,
@@ -19,11 +20,24 @@ import type {
 
 export function useCashierShift() {
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // ── State اختيار الوحدة ──────────────────────────────────
   const [selectedUnitType, setSelectedUnitType] = useState<UnitType | null>(null);
   const [selectedUnitId,   setSelectedUnitId]   = useState<string>("");
   const [unitConfirmed,    setUnitConfirmed]     = useState(false);
+
+  // ── تعيين الوحدة تلقائياً من بيانات المستخدم ─────────────
+  useEffect(() => {
+    if (selectedUnitId) return;
+    if (user?.pharmacyId) {
+      setSelectedUnitType("pharmacy");
+      setSelectedUnitId(user.pharmacyId);
+    } else if (user?.departmentId) {
+      setSelectedUnitType("department");
+      setSelectedUnitId(user.departmentId);
+    }
+  }, [user?.pharmacyId, user?.departmentId]);
 
   // ── State فتح الوردية ────────────────────────────────────
   const [openingCash,    setOpeningCash]    = useState("0");

@@ -24,6 +24,7 @@ interface AdmissionListProps {
   onStatusChange: (v: string) => void;
   deptFilter: string;
   onDeptChange: (v: string) => void;
+  deptLocked?: boolean;
   departments: Department[] | undefined;
   dateFrom: string;
   onDateFromChange: (v: string) => void;
@@ -36,7 +37,7 @@ function AdmissionList({
   rows, loading,
   searchQuery, onSearchChange,
   statusFilter, onStatusChange,
-  deptFilter, onDeptChange, departments,
+  deptFilter, onDeptChange, deptLocked, departments,
   dateFrom, onDateFromChange,
   dateTo, onDateToChange,
   onSelect,
@@ -103,7 +104,7 @@ function AdmissionList({
         </div>
 
         {/* فلتر القسم */}
-        <Select value={deptFilter} onValueChange={onDeptChange}>
+        <Select value={deptFilter} onValueChange={onDeptChange} disabled={deptLocked}>
           <SelectTrigger className="w-[130px] h-7 text-xs" data-testid="select-adm-dept-filter">
             <SelectValue placeholder="القسم" />
           </SelectTrigger>

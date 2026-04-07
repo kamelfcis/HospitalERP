@@ -60,6 +60,7 @@ interface AdmissionsTabProps {
   setAdmStatusFilter: (v: string) => void;
   admDeptFilter:     string;
   setAdmDeptFilter:  (v: string) => void;
+  admDeptLocked?:    boolean;
   admDateFrom:       string;
   setAdmDateFrom:    (v: string) => void;
   admDateTo:         string;
@@ -102,7 +103,7 @@ export function AdmissionsTab({
   admPage, setAdmPage, admTotal = 0, admTotalPages = 1,
   admSearchQuery, setAdmSearchQuery,
   admStatusFilter, setAdmStatusFilter,
-  admDeptFilter, setAdmDeptFilter,
+  admDeptFilter, setAdmDeptFilter, admDeptLocked,
   admDateFrom, setAdmDateFrom,
   admDateTo, setAdmDateTo,
   admGetStatusBadgeClass, admStatusLabels,
@@ -165,6 +166,7 @@ export function AdmissionsTab({
               onStatusChange={setAdmStatusFilter}
               deptFilter={admDeptFilter}
               onDeptChange={setAdmDeptFilter}
+              deptLocked={admDeptLocked}
               departments={departments}
               dateFrom={admDateFrom}
               onDateFromChange={setAdmDateFrom}

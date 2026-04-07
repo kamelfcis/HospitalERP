@@ -8,12 +8,18 @@ const todayStr = () => new Date().toISOString().split("T")[0];
 
 const ADM_PAGE_SIZE = 50;
 
-export function useAdmissions(mainTab: string) {
+export function useAdmissions(mainTab: string, userDeptId?: string | null) {
   const [admSelectedAdmission, setAdmSelectedAdmission] = useState<AdmissionWithLatestInvoice | null>(null);
   const [admIsCreateOpen, setAdmIsCreateOpen] = useState(false);
   const [admSearchQuery, setAdmSearchQuery] = useState("");
   const [admStatusFilter, setAdmStatusFilter] = useState("all");
-  const [admDeptFilter, setAdmDeptFilter] = useState("all");
+  const [admDeptFilter, setAdmDeptFilter] = useState(userDeptId ?? "all");
+  const admDeptLocked = !!userDeptId;
+
+  // مزامنة فلتر القسم عند تحميل بيانات المستخدم (auth قد يكون async)
+  useEffect(() => {
+    if (userDeptId) setAdmDeptFilter(userDeptId);
+  }, [userDeptId]);
   const [admDateFrom, setAdmDateFrom] = useState(todayStr());
   const [admDateTo, setAdmDateTo] = useState(todayStr());
   const [admPage, setAdmPage] = useState(1);
@@ -196,7 +202,7 @@ export function useAdmissions(mainTab: string) {
     admIsCreateOpen, setAdmIsCreateOpen,
     admSearchQuery, setAdmSearchQuery,
     admStatusFilter, setAdmStatusFilter,
-    admDeptFilter, setAdmDeptFilter,
+    admDeptFilter, setAdmDeptFilter, admDeptLocked,
     admDateFrom, setAdmDateFrom,
     admDateTo, setAdmDateTo,
     admPage, setAdmPage,
