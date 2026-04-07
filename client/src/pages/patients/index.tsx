@@ -159,7 +159,7 @@ export default function Patients() {
             <div>
               <h1 className="text-sm font-bold text-foreground flex items-center gap-1">
                 <Users className="h-4 w-4" />
-                سجل المرضى
+                حالات دخول المستشفى
               </h1>
               <p className="text-xs text-muted-foreground">
                 إدارة بيانات المرضى ({totalCount} مريض)

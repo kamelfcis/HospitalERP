@@ -112,7 +112,7 @@ const mainNavItems: NavItem[] = [
   { title: "الخدمات والأسعار",        href: "/services-pricing",      icon: Stethoscope,       permission: "services.view",          hospitalOnly: true },
   { title: "المخازن",                href: "/warehouses",            icon: Warehouse,          permission: "warehouses.view" },
   { title: "الأقسام",               href: "/departments",           icon: Building2,          permission: "departments.view" },
-  { title: "سجل المرضى",            href: "/patients",              icon: Users,              permission: "patients.view",          hospitalOnly: true },
+  { title: "حالات دخول المستشفى",   href: "/patients",              icon: Users,              permission: "patients.view",          hospitalOnly: true },
   { title: "استعلام المرضى",         href: "/patient-inquiry",       icon: ScanSearch,         permission: "patients.view",          hospitalOnly: true },
   { title: "مراجعة المرضى المكررين", href: "/duplicate-patients",    icon: GitMerge,           permission: "patients.merge",         hospitalOnly: true },
   { title: "سجل الأطباء",           href: "/doctors",               icon: Stethoscope,        permission: "doctors.view",           hospitalOnly: true },

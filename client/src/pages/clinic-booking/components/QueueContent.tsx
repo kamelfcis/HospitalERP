@@ -32,7 +32,7 @@ export function QueueContent({
           data-testid="input-date-picker"
         />
         <span className="text-xs text-muted-foreground">
-          لإضافة حجز جديد انتقل إلى <strong>سجل المرضى</strong>
+          لإضافة حجز جديد انتقل إلى <strong>حالات دخول المستشفى</strong>
         </span>
       </div>
 

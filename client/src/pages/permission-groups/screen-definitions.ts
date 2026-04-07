@@ -241,7 +241,7 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
       },
       {
         id:          "patients",
-        label:       "سجل المرضى",
+        label:       "حالات دخول المستشفى",
         menuPermKey: "patients.view",
         actions: [
           { type: "create", permKey: "patients.create" },

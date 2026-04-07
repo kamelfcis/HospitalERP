@@ -372,7 +372,7 @@ export default function PatientInvoice() {
           </TabsTrigger>
           <TabsTrigger value="registry" data-testid="tab-registry">
             <Search className="h-4 w-4 ml-1" />
-            سجل المرضى
+            حالات دخول المستشفى
           </TabsTrigger>
           <TabsTrigger value="admission" data-testid="tab-admission">
             <BedDouble className="h-4 w-4 ml-1" />
