@@ -381,15 +381,15 @@ export default function ItemsList() {
           <span className="text-xs text-muted-foreground">
             عرض {((page - 1) * limit) + 1} إلى {Math.min(page * limit, data.total)} من {data.total} صنف
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-row-reverse items-center gap-2">
             <Button variant="outline" size="sm" className="h-6 px-2" disabled={page <= 1} onClick={() => setPage(p => p - 1)} data-testid="button-prev-page">
-              <ChevronRight className="h-3 w-3" />
               السابق
+              <ChevronRight className="h-3 w-3" />
             </Button>
             <span className="text-xs font-medium px-2">صفحة {page} من {totalPages}</span>
             <Button variant="outline" size="sm" className="h-6 px-2" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} data-testid="button-next-page">
-              التالي
               <ChevronLeft className="h-3 w-3" />
+              التالي
             </Button>
           </div>
         </div>

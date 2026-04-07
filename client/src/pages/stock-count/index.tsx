@@ -281,16 +281,16 @@ export default function StockCountPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page === 1}
-          >السابق</Button>
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+          >التالي</Button>
           <span className="text-sm">{page} / {totalPages}</span>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-          >التالي</Button>
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+          >السابق</Button>
         </div>
       )}
 

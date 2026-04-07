@@ -229,9 +229,9 @@ export default function ContractReport() {
       {/* ── التنقل بين الصفحات ──────────────────────────────────────────── */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 print:hidden">
-          <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>السابق</Button>
-          <span className="text-sm">{page} / {totalPages}</span>
           <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>التالي</Button>
+          <span className="text-sm">{page} / {totalPages}</span>
+          <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>السابق</Button>
         </div>
       )}
     </div>

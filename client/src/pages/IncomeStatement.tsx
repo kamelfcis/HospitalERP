@@ -93,7 +93,7 @@ export default function IncomeStatement() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         <div className="peachtree-toolbar p-2">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 w-full">
             <div>
               <p className="text-xs text-muted-foreground">إجمالي الإيرادات</p>
               <p className="text-sm font-bold font-mono peachtree-amount peachtree-amount-credit">
@@ -104,7 +104,7 @@ export default function IncomeStatement() {
           </div>
         </div>
         <div className="peachtree-toolbar p-2">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 w-full">
             <div>
               <p className="text-xs text-muted-foreground">إجمالي المصروفات</p>
               <p className="text-sm font-bold font-mono peachtree-amount peachtree-amount-debit">

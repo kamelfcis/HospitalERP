@@ -147,12 +147,6 @@ export function HistoryTab() {
       {/* Pagination */}
       {(data?.total ?? 0) > 50 && (
         <div className="flex justify-center gap-2">
-          <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>
-            السابق
-          </Button>
-          <span className="text-sm text-muted-foreground py-1 px-2">
-            صفحة {page} من {Math.ceil((data?.total ?? 0) / 50)}
-          </span>
           <Button
             size="sm"
             variant="outline"
@@ -160,6 +154,12 @@ export function HistoryTab() {
             onClick={() => setPage(p => p + 1)}
           >
             التالي
+          </Button>
+          <span className="text-sm text-muted-foreground py-1 px-2">
+            صفحة {page} من {Math.ceil((data?.total ?? 0) / 50)}
+          </span>
+          <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>
+            السابق
           </Button>
         </div>
       )}

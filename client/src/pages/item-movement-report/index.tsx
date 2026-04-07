@@ -833,7 +833,7 @@ export default function ItemMovementReport() {
                   </div>
                   {/* Pagination controls */}
                   {totalPages > 1 && (
-                    <div className="flex items-center justify-between pt-1 border-t border-border/40">
+                    <div className="flex flex-row-reverse items-center justify-between pt-1 border-t border-border/40">
                       <span className="text-xs text-muted-foreground">
                         صفحة {page} من {totalPages} — إجمالي {totalRows} حركة
                       </span>
@@ -842,24 +842,24 @@ export default function ItemMovementReport() {
                           variant="outline"
                           size="sm"
                           className="h-7 px-2"
-                          onClick={() => setPage(p => Math.max(1, p - 1))}
-                          disabled={page <= 1 || isFetching}
-                          data-testid="button-prev-page"
+                          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                          disabled={page >= totalPages || isFetching}
+                          data-testid="button-next-page"
                         >
-                          <ChevronRight className="h-3.5 w-3.5" />
-                          <span className="text-xs mr-1">السابق</span>
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                          <span className="text-xs">التالي</span>
                         </Button>
                         <span className="text-xs px-2 font-mono">{page}/{totalPages}</span>
                         <Button
                           variant="outline"
                           size="sm"
                           className="h-7 px-2"
-                          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                          disabled={page >= totalPages || isFetching}
-                          data-testid="button-next-page"
+                          onClick={() => setPage(p => Math.max(1, p - 1))}
+                          disabled={page <= 1 || isFetching}
+                          data-testid="button-prev-page"
                         >
-                          <span className="text-xs ml-1">التالي</span>
-                          <ChevronLeft className="h-3.5 w-3.5" />
+                          <span className="text-xs">السابق</span>
+                          <ChevronRight className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>

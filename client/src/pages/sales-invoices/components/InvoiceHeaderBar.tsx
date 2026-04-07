@@ -279,7 +279,7 @@ export function InvoiceHeaderBar({
 
       {/* ── قسم التعاقد (للمسودات فقط) ──────────────────────────────────── */}
       {isDraft && customerType === "contract" && (
-        <div className="peachtree-toolbar space-y-1.5 text-[12px]" dir="rtl">
+        <div className="peachtree-toolbar peachtree-toolbar-stack space-y-1.5 text-[12px]" dir="rtl">
 
           {/* ── الصف الأول: المريض ─────────────────────────────────────── */}
           <div className="flex items-center gap-2 flex-wrap">

@@ -200,7 +200,7 @@ export default function Patients() {
         {activeTab === "list" && <div className="flex-1 flex flex-col min-h-0 mt-1 space-y-2">
 
           <div className="peachtree-toolbar rounded flex flex-row-reverse items-center gap-3 flex-wrap">
-            <div className="flex flex-row-reverse items-center gap-1">
+            <div className="flex items-center gap-1">
               <input
                 type="text"
                 placeholder="بحث بالاسم أو التليفون أو الطبيب..."
@@ -212,7 +212,7 @@ export default function Patients() {
               <Search className="h-3 w-3 text-muted-foreground" />
             </div>
 
-            <div className="flex flex-row-reverse items-center gap-1">
+            <div className="flex items-center gap-1">
               <input
                 type="date" value={dateFrom}
                 onChange={e => setDateFrom(e.target.value)}
@@ -222,7 +222,7 @@ export default function Patients() {
               <Label className="text-xs text-muted-foreground whitespace-nowrap">من:</Label>
             </div>
 
-            <div className="flex flex-row-reverse items-center gap-1">
+            <div className="flex items-center gap-1">
               <input
                 type="date" value={dateTo}
                 onChange={e => setDateTo(e.target.value)}
@@ -233,7 +233,7 @@ export default function Patients() {
             </div>
 
             {isFullAccess ? (
-              <div className="flex flex-row-reverse items-center gap-1">
+              <div className="flex items-center gap-1">
                 <Select value={deptId || "all"} onValueChange={v => setDeptId(v === "all" ? "" : v)}>
                   <SelectTrigger className="h-7 text-xs w-36" data-testid="select-dept-filter">
                     <SelectValue placeholder="كل الأقسام" />
@@ -313,7 +313,7 @@ export default function Patients() {
                   onClick={() => setPage(p => p + 1)}
                   data-testid="button-patients-next-page"
                 >
-                  <ChevronRight className="h-3 w-3" />
+                  <ChevronLeft className="h-3 w-3" />
                 </Button>
                 <span className="text-xs px-2">صفحة {page} من {totalPages}</span>
                 <Button
@@ -322,7 +322,7 @@ export default function Patients() {
                   onClick={() => setPage(p => p - 1)}
                   data-testid="button-patients-prev-page"
                 >
-                  <ChevronLeft className="h-3 w-3" />
+                  <ChevronRight className="h-3 w-3" />
                 </Button>
               </div>
             </div>

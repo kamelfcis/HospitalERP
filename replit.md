@@ -12,6 +12,14 @@ The system is a full-stack web application. The frontend is built with React 18 
 ### UI/UX Decisions
 The user interface features a professional design, a collapsible sidebar, A4 print styles for reports, and visual auto-save indicators.
 
+**RTL Architecture (system-wide)**:
+- `.peachtree-toolbar` CSS class automatically enforces `flex-direction: row-reverse; direction: rtl` across all 78+ toolbar divs with zero per-page changes
+- `.peachtree-toolbar-stack` exception for vertical toolbars (e.g. InvoiceHeaderBar, ReceivingRegistry)
+- `.rtl-row` utility class for inner flex containers that need RTL flow
+- `.rtl-pagination` utility class for pagination bars with count text + nav buttons
+- Canonical filter group pattern: `<input/><label/>` in plain LTR flex (input LEFT, label RIGHT for Arabic reading)
+- Canonical pagination pattern: `[NEXT btn (ChevronLeft)][page text][PREV btn (ChevronRight)]` — 17+ pagination pages standardized
+
 ### Technical Implementations
 The system uses a RESTful JSON API. Database interactions are managed by Drizzle ORM, with Zod and `drizzle-zod` for validation. Concurrency and idempotency are handled using `FOR UPDATE` row locks and optimistic concurrency. Financial accuracy is maintained through server-side recomputation with `HALF_UP` rounding. Critical system settings are cached for performance. Centralized error handling provides Arabic messages and specific HTTP status codes. Inventory management includes expired batch blocking and FEFO. An audit trail tracks critical operations, and automated backup/restore functionality is supported. OPD billing implements IFRS revenue deferral. A centralized lookup architecture ensures consistent data fetching. Performance optimizations include `React.memo` for table rows and vendor chunking. Efficient data entry is achieved through mandatory grid navigation and a scanner pattern. The system also includes a feature for dispensing items with insufficient stock in patient invoices, with a resolution engine for managing oversold items.
 

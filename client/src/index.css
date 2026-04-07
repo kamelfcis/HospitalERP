@@ -529,7 +529,66 @@
     padding: 6px 10px;
     direction: rtl;
     text-align: right;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    flex-wrap: wrap;
   }
+
+  /* Use on peachtree-toolbar that stacks children vertically (not a row toolbar) */
+  .peachtree-toolbar-stack {
+    flex-direction: column !important;
+    align-items: flex-end !important;
+  }
+
+  /* Utility: RTL flex row — use on any flex container that must flow right-to-left */
+  /* Apply as className="flex rtl-row items-center gap-..." on inner containers */
+  .rtl-row {
+    flex-direction: row-reverse;
+  }
+
+  /* Utility: RTL pagination bar */
+  /* Wrap [count text] + [prev/next buttons] in this class for correct RTL layout */
+  /* Result: count text on RIGHT, nav buttons on LEFT */
+  .rtl-pagination {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: space-between;
+    direction: rtl;
+  }
+
+  /*
+   * ═══════════════════════════════════════════════════════════════════
+   * RTL CANONICAL PATTERNS — فروع التصميم العربي (Arabic RTL Patterns)
+   * ═══════════════════════════════════════════════════════════════════
+   *
+   * 1. TOOLBAR (شريط الأدوات):
+   *    Use class="peachtree-toolbar flex items-center justify-between gap-2"
+   *    CSS handles flex-direction:row-reverse automatically.
+   *    HTML order: [Title/Info div FIRST] ... [Buttons div LAST]
+   *    Result: Title → RIGHT side, Buttons → LEFT side ✓
+   *
+   * 2. FILTER GROUPS (مجموعات الفلترة — داخل toolbar):
+   *    Use class="flex items-center gap-1" with HTML order: [Input FIRST][Label LAST]
+   *    Result in plain LTR flex: Input LEFT, Label RIGHT → Arabic reads "Label ← Input" ✓
+   *    e.g. <input type="date"/><label>من:</label>
+   *
+   * 3. PAGINATION (ترقيم الصفحات):
+   *    HTML order: [NEXT btn][page text][PREV btn] with class="flex items-center gap-2"
+   *    Icons: NEXT=ChevronLeft (←), PREV=ChevronRight (→)
+   *    Result: NEXT on LEFT (← pointing), PREV on RIGHT (→ pointing) ✓
+   *    For paginator with count: use class="rtl-pagination" wrapping count + nav-div
+   *
+   * 4. ICON + TEXT (أيقونة + نص داخل أزرار):
+   *    HTML order: [Text FIRST][Icon LAST] so Icon appears on LEFT of text in RTL ✓
+   *    e.g. <Button><span>إضافة</span><Plus/></Button>
+   *
+   * 5. TITLE div (عنوان الشريط):
+   *    HTML order: [Icon FIRST][Title text LAST] — Icon RIGHT, Title LEFT in LTR inner flex
+   *    OR: apply class="flex items-center gap-2" with [h1 text, muted subtitle] only (no icon)
+   * ═══════════════════════════════════════════════════════════════════
+   */
 
   .peachtree-totals {
     background: linear-gradient(180deg, hsl(45 60% 95%) 0%, hsl(45 50% 88%) 100%);

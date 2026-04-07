@@ -538,18 +538,18 @@ export default function WarehouseBalanceReport() {
 
       {/* ── Pagination ──────────────────────────────────────────────────────── */}
       {applied && total > PAGE_SIZE && (
-        <div className="flex-shrink-0 p-2 border-t flex items-center justify-between text-sm">
+        <div className="flex-shrink-0 p-2 border-t flex flex-row-reverse items-center justify-between text-sm">
           <span className="text-muted-foreground">
             صفحة {page} من {totalPages} — {total.toLocaleString("ar-EG")} صنف
           </span>
           <div className="flex items-center gap-1">
             <Button size="sm" variant="outline" className="h-7 px-2"
-              disabled={page <= 1} onClick={() => setPage(p => p - 1)} data-testid="button-prev-page">
-              <ChevronRight className="h-3 w-3" />
-            </Button>
-            <Button size="sm" variant="outline" className="h-7 px-2"
               disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} data-testid="button-next-page">
               <ChevronLeft className="h-3 w-3" />
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 px-2"
+              disabled={page <= 1} onClick={() => setPage(p => p - 1)} data-testid="button-prev-page">
+              <ChevronRight className="h-3 w-3" />
             </Button>
           </div>
         </div>

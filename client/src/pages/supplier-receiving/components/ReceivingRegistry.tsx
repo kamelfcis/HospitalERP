@@ -87,7 +87,7 @@ export function ReceivingRegistry({
   return (
     <div className="space-y-2" dir="rtl">
       {/* ── فلاتر ── */}
-      <div className="peachtree-toolbar space-y-2">
+      <div className="peachtree-toolbar peachtree-toolbar-stack space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           {/* بحث نصي */}
           <div className="relative flex-1 min-w-[200px] max-w-[360px]">
@@ -263,12 +263,12 @@ export function ReceivingRegistry({
             {/* ── Pagination ── */}
             {totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 py-2 text-[11px]">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} data-testid="button-prev-page">
-                  <ChevronRight className="h-3 w-3" />
-                </Button>
-                <span className="text-muted-foreground">صفحة {page} من {totalPages}</span>
                 <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} data-testid="button-next-page">
                   <ChevronLeft className="h-3 w-3" />
+                </Button>
+                <span className="text-muted-foreground">صفحة {page} من {totalPages}</span>
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} data-testid="button-prev-page">
+                  <ChevronRight className="h-3 w-3" />
                 </Button>
               </div>
             )}
