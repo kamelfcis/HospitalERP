@@ -243,7 +243,7 @@ export function registerAccountSetupRoutes(app: Express) {
   });
 
   // Cost Centers Import
-  app.post("/api/cost-centers/import", upload.single("file"), async (req, res) => {
+  app.post("/api/cost-centers/import", requireAuth, checkPermission(PERMISSIONS.COST_CENTERS_CREATE), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "لم يتم تحميل ملف" });

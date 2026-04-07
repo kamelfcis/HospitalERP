@@ -5,7 +5,8 @@
  */
 
 import type { Express, Request, Response } from "express";
-import { requireAuth }           from "./_shared";
+import { requireAuth, checkPermission } from "./_shared";
+import { PERMISSIONS }          from "@shared/permissions";
 import { storage }               from "../storage";
 import { assertUserWarehouseAllowed } from "../lib/warehouse-guard";
 import { parseIsFreeItemParam } from "../lib/purchase-lot-kind";
@@ -119,7 +120,7 @@ export function registerPurchaseReturnRoutes(app: Express) {
   });
 
   // ── POST /api/purchase-returns ────────────────────────────────────────────
-  app.post("/api/purchase-returns", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/purchase-returns", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_CREATE), async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
       const body = req.body;

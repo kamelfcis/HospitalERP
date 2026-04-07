@@ -72,8 +72,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  // TODO: أضف checkPermission(PERMISSIONS.SETTINGS_PHARMACIES_MANAGE) بعد إنشاء الـ permission المناسب
-  app.post("/api/pharmacies", requireAuth, async (req, res) => {
+  app.post("/api/pharmacies", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try { res.json(await storage.createPharmacy(req.body)); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
@@ -256,7 +255,7 @@ export function registerCashierRoutes(app: Express) {
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/cashier/shift/:shiftId/close", requireAuth, async (req, res) => {
+  app.post("/api/cashier/shift/:shiftId/close", requireAuth, checkPermission(PERMISSIONS.CASHIER_OPEN_SHIFT), async (req, res) => {
     const shiftId = req.params.shiftId as string;
     const userId  = (req.session as { userId?: string }).userId!;
     try {
