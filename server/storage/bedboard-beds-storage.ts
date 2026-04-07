@@ -14,6 +14,7 @@
 import { db } from "../db";
 import { getSetting } from "../settings-cache";
 import { eq, and, sql, asc, ilike } from "drizzle-orm";
+import { buildStayLineSQL } from "../lib/stay-engine";
 import {
   admissions,
   patientInvoiceHeaders,
@@ -232,19 +233,14 @@ const methods = {
         const admittedAt = new Date();
         const dateStr = admittedAt.toISOString().split("T")[0];
         const sourceId = `${invoice.id}:${seg.id}:${dateStr}`;
-        await tx.execute(sql`
-          INSERT INTO patient_invoice_lines
-            (header_id, line_type, service_id, description,
-             quantity, unit_price, discount_percent, discount_amount,
-             total_price, unit_level, sort_order, source_type, source_id)
-          VALUES
-            (${invoice.id}, 'service', ${effectiveServiceId}, ${serviceNameAr + " – يوم 1"},
-             '1', ${ratePerDay}, '0', '0',
-             ${ratePerDay}, 'minor', 0, 'STAY_ENGINE', ${sourceId})
-          ON CONFLICT (source_type, source_id)
-            WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL
-          DO NOTHING
-        `);
+        await tx.execute(buildStayLineSQL({
+          invoiceId:   invoice.id,
+          serviceId:   effectiveServiceId,
+          description: `${serviceNameAr} – يوم 1`,
+          ratePerDay,
+          sourceId,
+          sortOrder:   0,
+        }));
 
         const allLines1 = await tx.select().from(patientInvoiceLines)
           .where(and(eq(patientInvoiceLines.headerId, invoice.id as string), eq(patientInvoiceLines.isVoid, false)));
@@ -389,22 +385,14 @@ const methods = {
         const existingCount = parseInt((lineCountRes.rows[0] as Record<string, unknown>)?.cnt as string | undefined ?? "0");
         const lineDesc = `${serviceNameAr} — إقامة إضافية (تحويل)`;
 
-        await tx.execute(sql`
-          INSERT INTO patient_invoice_lines
-            (header_id, line_type, service_id, description,
-             quantity, unit_price, discount_percent, discount_amount,
-             total_price, unit_level, sort_order, source_type, source_id)
-          VALUES
-            (${invoiceId}, 'service', ${effectiveServiceId}, ${lineDesc},
-             '1', ${ratePerDay}, '0', '0',
-             ${ratePerDay}, 'minor', ${existingCount + 10},
-             'STAY_ENGINE', ${sourceId})
-          ON CONFLICT (source_type, source_id)
-            WHERE is_void = false
-              AND source_type IS NOT NULL
-              AND source_id IS NOT NULL
-          DO NOTHING
-        `);
+        await tx.execute(buildStayLineSQL({
+          invoiceId:   invoiceId!,
+          serviceId:   effectiveServiceId,
+          description: lineDesc,
+          ratePerDay,
+          sourceId,
+          sortOrder:   existingCount + 10,
+        }));
 
         const allLines = await tx.select().from(patientInvoiceLines)
           .where(and(
