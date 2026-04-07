@@ -30,9 +30,11 @@ export default function Patients() {
   const canEdit        = hasPermission("patients.edit");
   const canViewInvoice = hasPermission("patient_invoices.view");
 
+  const today = new Date().toISOString().split("T")[0];
+
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom,    setDateFrom]    = useState("");
-  const [dateTo,      setDateTo]      = useState("");
+  const [dateFrom,    setDateFrom]    = useState(today);
+  const [dateTo,      setDateTo]      = useState(today);
   const [page,        setPage]        = useState(1);
   const PAGE_SIZE = 50;
   const [deptId,      setDeptId]      = useState("");
@@ -85,7 +87,9 @@ export default function Patients() {
   const totalCount = statsResult?.total      ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  const hasFilter = isFullAccess ? !!(dateFrom || dateTo || deptId) : !!(dateFrom || dateTo);
+  const hasFilter = isFullAccess
+    ? (dateFrom !== today || dateTo !== today || !!deptId)
+    : (dateFrom !== today || dateTo !== today);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/patients/${id}`),
@@ -138,7 +142,7 @@ export default function Patients() {
     setPrefilledPatient(null);
   }
   function handleClearFilters() {
-    setDateFrom(""); setDateTo("");
+    setDateFrom(today); setDateTo(today);
     if (isFullAccess) setDeptId("");
     setPage(1);
   }
