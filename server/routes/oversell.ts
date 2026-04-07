@@ -16,7 +16,7 @@ import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { db } from "../db";
 import { pendingStockAllocations, oversellResolutionBatches, oversellCostResolutions } from "@shared/schema";
-import { resolveOversellBatch, checkOversellGlReadiness } from "../lib/oversell-resolution-engine";
+import { resolveOversellBatch, checkOversellGlReadiness, voidOversellResolutionBatch } from "../lib/oversell-resolution-engine";
 import { clearOversellFlagCache } from "../lib/oversell-guard";
 
 export function registerOversellRoutes(app: Express) {
@@ -250,6 +250,124 @@ export function registerOversellRoutes(app: Express) {
         LIMIT ${limit}
       `);
       res.json(rows.rows);
+    } catch (err: unknown) {
+      res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── POST /api/oversell/cancel-allocation/:id ──────────────────────────────
+  // Cancel a pending (unresolved) allocation.
+  // Resets the PIL stock_issue_status back to 'normal' and cost_status to NULL.
+  // Use for: invoice return before resolution, data correction.
+  app.post("/api/oversell/cancel-allocation/:id", requireAuth, checkPermission(PERMISSIONS.OVERSELL_APPROVE), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body as { reason?: string };
+      const userId = (req.session as any).userId as string;
+
+      await db.transaction(async (tx) => {
+        // Lock the allocation
+        const allocRes = await tx.execute(
+          sql`SELECT * FROM pending_stock_allocations WHERE id = ${id} FOR UPDATE`
+        );
+        const alloc = allocRes.rows?.[0] as Record<string, unknown> | undefined;
+        if (!alloc) throw new Error("السجل غير موجود");
+        if (alloc.status === "fully_resolved") {
+          throw new Error("لا يمكن إلغاء بند مسوّى بالكامل — استخدم إلغاء الدفعة");
+        }
+        if (alloc.status === "cancelled") {
+          throw new Error("تم إلغاء هذا البند مسبقاً");
+        }
+
+        // Mark allocation as cancelled
+        await tx.execute(
+          sql`UPDATE pending_stock_allocations
+              SET status = 'cancelled',
+                  resolved_by = ${userId},
+                  resolved_at = NOW(),
+                  updated_at  = NOW()
+              WHERE id = ${id}`
+        );
+
+        // Reset PIL to normal state
+        await tx.execute(
+          sql`UPDATE patient_invoice_lines
+              SET stock_issue_status = 'normal',
+                  cost_status        = NULL,
+                  oversell_reason    = COALESCE(oversell_reason, '') || ${reason ? ` [ملغي: ${reason}]` : ' [ملغي]'}
+              WHERE id = ${alloc.invoice_line_id}`
+        );
+      });
+
+      res.json({ success: true, id, status: "cancelled" });
+    } catch (err: unknown) {
+      res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── POST /api/oversell/void-batch/:id ─────────────────────────────────────
+  // Void a fully resolved batch: reverses stock + GL journal, resets PSA to pending.
+  // Use for: returns after resolution, accounting correction.
+  app.post("/api/oversell/void-batch/:id", requireAuth, checkPermission(PERMISSIONS.OVERSELL_APPROVE), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = (req.session as any).userId as string;
+
+      const result = await db.transaction(async (tx) => {
+        return voidOversellResolutionBatch(id, userId, tx as any);
+      });
+
+      res.json({ success: true, batchId: id, ...result });
+    } catch (err: unknown) {
+      res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── GET /api/oversell/integrity ────────────────────────────────────────────
+  // Returns integrity report: orphan allocations, mismatched statuses, etc.
+  app.get("/api/oversell/integrity", requireAuth, checkPermission(PERMISSIONS.OVERSELL_APPROVE), async (req, res) => {
+    try {
+      // Orphan PSAs: allocation exists but invoice is cancelled
+      const orphansRes = await db.execute(sql`
+        SELECT psa.id, psa.invoice_id, psa.status, pih.status AS invoice_status
+        FROM pending_stock_allocations psa
+        JOIN patient_invoice_headers pih ON pih.id = psa.invoice_id
+        WHERE psa.status IN ('pending', 'partially_resolved')
+          AND pih.status = 'cancelled'
+      `);
+      const orphans = orphansRes.rows;
+
+      // Mismatch: PIL says cost_resolved but PSA still pending
+      const mismatchRes = await db.execute(sql`
+        SELECT psa.id AS psa_id, psa.status AS psa_status,
+               pil.id AS pil_id, pil.stock_issue_status, pil.cost_status
+        FROM pending_stock_allocations psa
+        JOIN patient_invoice_lines pil ON pil.id = psa.invoice_line_id
+        WHERE (
+          (psa.status IN ('pending','partially_resolved') AND pil.stock_issue_status = 'cost_resolved')
+          OR
+          (psa.status = 'fully_resolved' AND pil.stock_issue_status = 'pending_cost')
+        )
+        LIMIT 50
+      `);
+      const mismatches = mismatchRes.rows;
+
+      // Resolution batches with posted journal but missing journal_entry in journal_entries
+      const orphanJournalsRes = await db.execute(sql`
+        SELECT orb.id AS batch_id, orb.journal_entry_id, orb.journal_status
+        FROM oversell_resolution_batches orb
+        LEFT JOIN journal_entries je ON je.id = orb.journal_entry_id
+        WHERE orb.journal_status = 'posted'
+          AND je.id IS NULL
+      `);
+      const orphanJournals = orphanJournalsRes.rows;
+
+      res.json({
+        orphanAllocations: orphans,
+        statusMismatches: mismatches,
+        orphanJournalLinks: orphanJournals,
+        clean: orphans.length === 0 && mismatches.length === 0 && orphanJournals.length === 0,
+      });
     } catch (err: unknown) {
       res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
     }

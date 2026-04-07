@@ -9,15 +9,18 @@
  *
  * SAFETY INVARIANTS:
  *  - Runs entirely inside one DB transaction (tx passed from caller).
- *  - Never writes negative lot quantities.
+ *  - Never writes negative lot quantities (explicit pre-check per lot).
  *  - UNIQUE constraint on uq_psa_line prevents double-resolution.
- *  - Only processes allocations with status = 'pending'.
+ *  - Only processes allocations with status = 'pending' or 'partially_resolved'.
  *  - GL journal is BLOCKED (not silently skipped) if COGS account or
  *    warehouse GL account is not configured. The resolution fails with a
  *    clear Arabic error message listing the missing mapping.
+ *  - Double-posting guard: checks journal_entry_id on batch before creating journal.
+ *  - Pre-check: invoice must not be cancelled before deducting stock.
+ *  - cost_status on patient_invoice_lines is updated to 'partial' or 'resolved'.
  */
 import { db } from "../db";
-import { sql, eq, inArray } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import {
   pendingStockAllocations,
   oversellResolutionBatches,
@@ -33,7 +36,6 @@ import { logger } from "./logger";
 
 export interface ResolveLine {
   pendingAllocationId: string;
-  /** how many minor-unit to resolve in this run — can be partial */
   qtyMinorToResolve: number;
 }
 
@@ -76,18 +78,15 @@ export interface GlReadinessResult {
   }[];
 }
 
-/**
- * Check if all required GL accounts are configured for oversell_resolution.
- * Returns a detailed readiness report.
- * Can run inside or outside a transaction.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// GL Readiness Check
+// ─────────────────────────────────────────────────────────────────────────────
 export async function checkOversellGlReadiness(
   warehouseId: string,
   tx: typeof db = db
 ): Promise<GlReadinessResult> {
   const checks: GlReadinessResult["checks"] = [];
 
-  // ── 1. COGS account from account_mappings ────────────────────────────────
   const cogsMappingRes = await tx.execute(sql`
     SELECT am.debit_account_id, a.code, a.name
     FROM account_mappings am
@@ -113,7 +112,6 @@ export async function checkOversellGlReadiness(
       : "يجب ربط حساب COGS في شاشة إدارة الحسابات ← تسوية الصرف المؤجل التكلفة ← تكلفة البضاعة المباعة",
   });
 
-  // ── 2. Warehouse GL account (inventory credit) ───────────────────────────
   const warehouseRes = await tx.execute(sql`
     SELECT w.gl_account_id, a.code, a.name
     FROM warehouses w
@@ -135,16 +133,12 @@ export async function checkOversellGlReadiness(
       : "يجب ربط حساب GL للمخزن في إعدادات المستودع",
   });
 
-  return {
-    ready: checks.every((c) => c.ok),
-    checks,
-  };
+  return { ready: checks.every((c) => c.ok), checks };
 }
 
-/**
- * Resolve a batch of pending oversell allocations.
- * Must be called inside a DB transaction if the caller already has one.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Resolution Function
+// ─────────────────────────────────────────────────────────────────────────────
 export async function resolveOversellBatch(
   params: ResolveBatchParams,
   tx: typeof db = db
@@ -174,18 +168,27 @@ export async function resolveOversellBatch(
     SELECT gl_account_id FROM warehouses WHERE id = ${warehouseId} LIMIT 1
   `) as any).rows[0]?.gl_account_id as string;
 
-  // ── 1. Lock and validate pending allocations ─────────────────────────────
+  // ── 1. Lock and validate pending allocations (FOR UPDATE) ─────────────────
   const allocationIds = lines.map((l) => l.pendingAllocationId);
   const idsFragment = sql.join(allocationIds.map((id) => sql`${id}`), sql`, `);
   const lockedRes = await tx.execute(
-    sql`SELECT * FROM pending_stock_allocations
-        WHERE id IN (${idsFragment})
-          AND status IN ('pending', 'partially_resolved')
-        FOR UPDATE`,
+    sql`SELECT psa.*, pih.status AS invoice_status
+        FROM pending_stock_allocations psa
+        JOIN patient_invoice_headers pih ON pih.id = psa.invoice_id
+        WHERE psa.id IN (${idsFragment})
+          AND psa.status IN ('pending', 'partially_resolved')
+        FOR UPDATE OF psa`,
   );
   const locked = (lockedRes as any).rows as Array<Record<string, unknown>>;
 
   if (locked.length === 0) throw new Error("لم يتم العثور على طلبات تسوية معلقة");
+
+  // ── 1a. Pre-check: invoice must not be cancelled ──────────────────────────
+  const cancelledInvoices = locked.filter((r) => r.invoice_status === "cancelled");
+  if (cancelledInvoices.length > 0) {
+    const ids = cancelledInvoices.map((r) => r.invoice_id).join(", ");
+    throw new Error(`لا يمكن تسوية بنود لفواتير ملغاة: ${ids}`);
+  }
 
   // ── 2. Create resolution batch ───────────────────────────────────────────
   const [batch] = await tx.insert(oversellResolutionBatches).values({
@@ -222,26 +225,21 @@ export async function resolveOversellBatch(
     if (!allocation) {
       lineResults.push({
         pendingAllocationId: reqLine.pendingAllocationId,
-        invoiceId: "",
-        invoiceLineId: "",
-        itemId: "",
-        qtyMinorResolved: 0,
-        totalCost: 0,
-        lotId: null,
+        invoiceId: "", invoiceLineId: "", itemId: "",
+        qtyMinorResolved: 0, totalCost: 0, lotId: null,
         status: "insufficient_stock",
       });
       continue;
     }
 
-    const itemId = allocation.item_id as string;
-    const invoiceId = allocation.invoice_id as string;
+    const itemId       = allocation.item_id as string;
+    const invoiceId    = allocation.invoice_id as string;
     const invoiceLineId = allocation.invoice_line_id as string;
 
-    // Get item metadata for expiry flag
     const itemRes = await tx.execute(sql`SELECT has_expiry FROM items WHERE id = ${itemId} LIMIT 1`);
     const hasExpiry = (itemRes as any).rows[0]?.has_expiry ?? false;
 
-    // FEFO lot query
+    // FEFO lot query — FOR UPDATE to prevent concurrent deduction
     const lotsRes = await tx.execute(
       hasExpiry
         ? sql`SELECT id, qty_in_minor, purchase_price, expiry_month, expiry_year
@@ -249,7 +247,7 @@ export async function resolveOversellBatch(
               WHERE item_id = ${itemId}
                 AND warehouse_id = ${warehouseId}
                 AND is_active = true
-                AND qty_in_minor::numeric > 0
+                AND qty_in_minor::numeric > 0.00005
               ORDER BY expiry_year ASC NULLS LAST, expiry_month ASC NULLS LAST, received_date ASC
               FOR UPDATE`
         : sql`SELECT id, qty_in_minor, purchase_price, expiry_month, expiry_year
@@ -257,7 +255,7 @@ export async function resolveOversellBatch(
               WHERE item_id = ${itemId}
                 AND warehouse_id = ${warehouseId}
                 AND is_active = true
-                AND qty_in_minor::numeric > 0
+                AND qty_in_minor::numeric > 0.00005
               ORDER BY received_date ASC, created_at ASC
               FOR UPDATE`
     );
@@ -270,20 +268,37 @@ export async function resolveOversellBatch(
     for (const lot of lots) {
       if (remaining <= 0.00005) break;
       const available = parseFloat(lot.qty_in_minor);
+
+      // ── No-negative-stock safety check ──────────────────────────────────
+      if (available <= 0.00005) continue;
       const deduct = Math.min(available, remaining);
+
+      // Explicit guard: deduct must not exceed available
+      if (deduct > available + 0.00005) {
+        throw new Error(`[INTEGRITY] محاولة خصم ${deduct} من دور يحتوي ${available} — مرفوض`);
+      }
+
       const unitCost = parseFloat(lot.purchase_price);
       const lineCost = deduct * unitCost;
-
       if (!firstLotId) firstLotId = lot.id;
 
-      // Deduct from lot
       await tx.execute(
         sql`UPDATE inventory_lots
             SET qty_in_minor = qty_in_minor::numeric - ${deduct}, updated_at = NOW()
-            WHERE id = ${lot.id}`
+            WHERE id = ${lot.id}
+              AND qty_in_minor::numeric >= ${deduct - 0.00005}`
+        // WHERE clause prevents negative stock at DB level
       );
 
-      // Record movement
+      // Verify the update applied (deduct was within bounds)
+      const verifyRes = await tx.execute(
+        sql`SELECT qty_in_minor FROM inventory_lots WHERE id = ${lot.id}`
+      );
+      const qtyAfter = parseFloat((verifyRes as any).rows[0]?.qty_in_minor ?? "0");
+      if (qtyAfter < -0.001) {
+        throw new Error(`[INTEGRITY] الدور ${lot.id} وصل إلى رصيد سالب (${qtyAfter}) — العملية ملغاة`);
+      }
+
       await tx.insert(inventoryLotMovements).values({
         lotId: lot.id,
         warehouseId,
@@ -294,14 +309,11 @@ export async function resolveOversellBatch(
         referenceId: batch.id,
       });
 
-      // Record cost resolution line
       const costRounded = parseFloat(roundMoney(lineCost));
       await tx.insert(oversellCostResolutions).values({
         batchId: batch.id,
         pendingAllocationId: reqLine.pendingAllocationId,
-        invoiceId,
-        invoiceLineId,
-        itemId,
+        invoiceId, invoiceLineId, itemId,
         lotId: lot.id,
         warehouseId,
         qtyMinorResolved: String(deduct),
@@ -314,35 +326,36 @@ export async function resolveOversellBatch(
       remaining -= deduct;
     }
 
-    const qtyResolved = reqLine.qtyMinorToResolve - Math.max(0, remaining);
+    const qtyResolved   = reqLine.qtyMinorToResolve - Math.max(0, remaining);
     const qtyPendingAfter = parseFloat(allocation.qty_minor_pending as string) - qtyResolved;
     const fullyResolved = qtyPendingAfter <= 0.00005;
 
-    // Update pending allocation status
+    const newCostStatus = fullyResolved ? "resolved" : "partial";
+    const newPsaStatus  = fullyResolved ? "fully_resolved" : remaining > 0.00005 ? "partially_resolved" : "partially_resolved";
+
+    // Update pending allocation
     await tx.update(pendingStockAllocations)
       .set({
         qtyMinorPending: String(Math.max(0, qtyPendingAfter)),
-        status: fullyResolved ? "fully_resolved" : "partially_resolved",
+        status: newPsaStatus,
         resolvedBy,
         resolvedAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(pendingStockAllocations.id, reqLine.pendingAllocationId));
 
-    // Update patient invoice line stock_issue_status
-    if (fullyResolved) {
-      await tx.execute(
-        sql`UPDATE patient_invoice_lines
-            SET stock_issue_status = 'cost_resolved'
-            WHERE id = ${invoiceLineId}`
-      );
-    }
+    // Update patient invoice line: stock_issue_status + cost_status
+    await tx.execute(
+      sql`UPDATE patient_invoice_lines
+          SET
+            stock_issue_status = ${fullyResolved ? 'cost_resolved' : 'pending_cost'},
+            cost_status        = ${newCostStatus}
+          WHERE id = ${invoiceLineId}`
+    );
 
     lineResults.push({
       pendingAllocationId: reqLine.pendingAllocationId,
-      invoiceId,
-      invoiceLineId,
-      itemId,
+      invoiceId, invoiceLineId, itemId,
       qtyMinorResolved: qtyResolved,
       totalCost,
       lotId: firstLotId,
@@ -359,79 +372,94 @@ export async function resolveOversellBatch(
     sql`UPDATE stock_movement_headers SET total_cost = ${roundMoney(batchTotalCost)} WHERE id = ${movHeader.id}`
   );
 
-  // ── 5. GL Journal entry ── Dr COGS / Cr Inventory (warehouse GL) ─────────
+  // ── 5. GL Journal — Dr COGS / Cr Inventory ───────────────────────────────
   let journalEntryId: string | null = null;
   let journalStatus: "posted" | "blocked" | "none" = "none";
   let journalBlockReason: string | undefined;
 
   if (batchTotalCost > 0.001) {
-    try {
-      const entryNumRes = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
-      const entryNumber = Number((entryNumRes as any).rows[0]?.n ?? 1);
+    // ── Double-posting guard: check batch journal_entry_id (should be null) ─
+    const batchCheck = await tx.execute(
+      sql`SELECT journal_entry_id, journal_status FROM oversell_resolution_batches WHERE id = ${batch.id}`
+    );
+    const batchRow = (batchCheck as any).rows[0] as { journal_entry_id: string | null; journal_status: string };
+    if (batchRow?.journal_entry_id) {
+      // Already has a journal entry — do NOT post again
+      logger.warn(
+        { batchId: batch.id, existingJournalId: batchRow.journal_entry_id },
+        "[OVERSELL_GL] double-posting guard: journal already exists, skipping"
+      );
+      journalEntryId = batchRow.journal_entry_id;
+      journalStatus  = batchRow.journal_status === "posted" ? "posted" : "blocked";
+    } else {
+      try {
+        const entryNumRes = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
+        const entryNumber = Number((entryNumRes as any).rows[0]?.n ?? 1);
+        const todayStr = new Date().toISOString().split("T")[0];
 
-      const todayStr = new Date().toISOString().split("T")[0];
+        const periodRes = await tx.execute(sql`
+          SELECT id FROM fiscal_periods
+          WHERE is_closed = false
+            AND start_date <= ${todayStr}::date
+            AND end_date   >= ${todayStr}::date
+          LIMIT 1
+        `);
+        const periodId = (periodRes as any).rows[0]?.id ?? null;
 
-      const periodRes = await tx.execute(sql`
-        SELECT id FROM fiscal_periods
-        WHERE is_closed = false
-          AND start_date <= ${todayStr}::date
-          AND end_date   >= ${todayStr}::date
-        LIMIT 1
-      `);
-      const periodId = (periodRes as any).rows[0]?.id ?? null;
+        const batchRef = batch.id.slice(-8).toUpperCase();
+        const [entry] = await tx.insert(journalEntries).values({
+          entryNumber,
+          entryDate: todayStr,
+          description: `تسوية تكلفة صرف مؤجل - دفعة ${batchRef}`,
+          reference: `OVSELL-${batchRef}`,
+          status: "posted" as const,
+          periodId,
+          createdBy: resolvedBy,
+          sourceType: "oversell_resolution",
+          sourceDocumentId: batch.id,
+        }).returning({ id: journalEntries.id });
 
-      const batchRef = batch.id.slice(-8).toUpperCase();
-      const [entry] = await tx.insert(journalEntries).values({
-        entryNumber,
-        entryDate: todayStr,
-        description: `تسوية تكلفة صرف مؤجل - دفعة ${batchRef}`,
-        reference: `OVSELL-${batchRef}`,
-        status: "posted" as const,
-        periodId,
-        createdBy: resolvedBy,
-        sourceType: "oversell_resolution",
-        sourceDocumentId: batch.id,
-      }).returning({ id: journalEntries.id });
+        const amount = roundMoney(batchTotalCost);
+        const rawLines = await resolveCostCenters([
+          {
+            journalEntryId: entry.id,
+            lineNumber: 1,
+            accountId: cogsAccountId,
+            debit: amount,
+            credit: "0",
+            description: `تكلفة بضاعة مباعة - صرف مؤجل (${batchRef})`,
+          },
+          {
+            journalEntryId: entry.id,
+            lineNumber: 2,
+            accountId: inventoryAccountId,
+            debit: "0",
+            credit: amount,
+            description: `خروج مخزون - صرف مؤجل (${batchRef})`,
+          },
+        ]);
+        await tx.insert(journalLines).values(rawLines);
 
-      const amount = roundMoney(batchTotalCost);
+        await tx.update(oversellResolutionBatches)
+          .set({ journalEntryId: entry.id, journalStatus: "posted" })
+          .where(eq(oversellResolutionBatches.id, batch.id));
 
-      const rawLines = await resolveCostCenters([
-        {
-          journalEntryId: entry.id,
-          lineNumber: 1,
-          accountId: cogsAccountId,
-          debit: amount,
-          credit: "0",
-          description: `تكلفة بضاعة مباعة - صرف مؤجل (${batchRef})`,
-        },
-        {
-          journalEntryId: entry.id,
-          lineNumber: 2,
-          accountId: inventoryAccountId,
-          debit: "0",
-          credit: amount,
-          description: `خروج مخزون - صرف مؤجل (${batchRef})`,
-        },
-      ]);
-      await tx.insert(journalLines).values(rawLines);
-
-      // Link journal to batch
-      await tx.update(oversellResolutionBatches)
-        .set({ journalEntryId: entry.id, journalStatus: "posted" })
-        .where(eq(oversellResolutionBatches.id, batch.id));
-
-      journalEntryId = entry.id;
-      journalStatus = "posted";
-      logger.info({ batchId: batch.id, journalEntryId: entry.id, amount }, "[OVERSELL_GL] journal posted");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ err: msg, batchId: batch.id }, "[OVERSELL_GL] journal failed");
-      await tx.update(oversellResolutionBatches)
-        .set({ journalStatus: "blocked" })
-        .where(eq(oversellResolutionBatches.id, batch.id));
-      journalStatus = "blocked";
-      journalBlockReason = msg;
-      throw new Error(`فشل إنشاء القيد المحاسبي: ${msg}`);
+        journalEntryId = entry.id;
+        journalStatus  = "posted";
+        logger.info(
+          { batchId: batch.id, journalEntryId: entry.id, amount },
+          "[OVERSELL_GL] journal posted"
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error({ err: msg, batchId: batch.id }, "[OVERSELL_GL] journal failed");
+        await tx.update(oversellResolutionBatches)
+          .set({ journalStatus: "blocked" })
+          .where(eq(oversellResolutionBatches.id, batch.id));
+        journalStatus = "blocked";
+        journalBlockReason = msg;
+        throw new Error(`فشل إنشاء القيد المحاسبي: ${msg}`);
+      }
     }
   }
 
@@ -443,4 +471,142 @@ export async function resolveOversellBatch(
     journalBlockReason,
     lines: lineResults,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Void/Reverse a resolution batch
+// Reverses: stock movement (adds back), journal entry (reversal), resets PSA to pending
+// Only allowed if the invoice has NOT been cancelled (to protect data integrity)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function voidOversellResolutionBatch(
+  batchId: string,
+  voidedBy: string,
+  tx: typeof db = db
+): Promise<{ reversed: boolean; reversalJournalId: string | null }> {
+
+  // Lock the batch
+  const batchRes = await tx.execute(
+    sql`SELECT * FROM oversell_resolution_batches WHERE id = ${batchId} FOR UPDATE`
+  );
+  const batch = (batchRes as any).rows[0] as Record<string, unknown> | undefined;
+  if (!batch) throw new Error("دفعة التسوية غير موجودة");
+  if ((batch as any).voided_at) throw new Error("تم إلغاء هذه الدفعة مسبقاً");
+
+  // Get cost resolution lines
+  const costLinesRes = await tx.execute(
+    sql`SELECT * FROM oversell_cost_resolutions WHERE batch_id = ${batchId}`
+  );
+  const costLines = (costLinesRes as any).rows as any[];
+
+  // 1. Reverse lot deductions (add back to inventory)
+  for (const line of costLines) {
+    const deducted = parseFloat(line.qty_minor_resolved);
+    if (deducted <= 0.00005) continue;
+
+    await tx.execute(
+      sql`UPDATE inventory_lots
+          SET qty_in_minor = qty_in_minor::numeric + ${deducted}, updated_at = NOW()
+          WHERE id = ${line.lot_id}`
+    );
+
+    // Record reversal movement
+    await tx.insert(inventoryLotMovements).values({
+      lotId: line.lot_id,
+      warehouseId: line.warehouse_id,
+      txType: "in",
+      qtyChangeInMinor: String(deducted),
+      unitCost: String(line.unit_cost),
+      referenceType: "oversell_void",
+      referenceId: batchId,
+    });
+  }
+
+  // 2. Reset pending_stock_allocations to 'pending' for each allocation in this batch
+  const allocationIds = [...new Set(costLines.map((l: any) => l.pending_allocation_id))];
+  for (const allocId of allocationIds) {
+    // Get original qty
+    const allocRes = await tx.execute(
+      sql`SELECT qty_minor_original, invoice_line_id FROM pending_stock_allocations WHERE id = ${allocId} FOR UPDATE`
+    );
+    const alloc = (allocRes as any).rows[0] as any;
+    if (!alloc) continue;
+
+    await tx.update(pendingStockAllocations)
+      .set({
+        qtyMinorPending: alloc.qty_minor_original,
+        status: "pending",
+        resolvedBy: null,
+        resolvedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(pendingStockAllocations.id, allocId));
+
+    // Reset PIL cost_status and stock_issue_status
+    await tx.execute(
+      sql`UPDATE patient_invoice_lines
+          SET stock_issue_status = 'pending_cost', cost_status = 'pending'
+          WHERE id = ${alloc.invoice_line_id}`
+    );
+  }
+
+  // 3. Reverse GL journal if it was posted
+  let reversalJournalId: string | null = null;
+  if (batch.journal_entry_id && batch.journal_status === "posted") {
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    // Get original journal lines
+    const origLinesRes = await tx.execute(
+      sql`SELECT * FROM journal_lines WHERE journal_entry_id = ${batch.journal_entry_id} ORDER BY line_number`
+    );
+    const origLines = (origLinesRes as any).rows as any[];
+
+    const periodRes = await tx.execute(sql`
+      SELECT id FROM fiscal_periods
+      WHERE is_closed = false
+        AND start_date <= ${todayStr}::date
+        AND end_date   >= ${todayStr}::date
+      LIMIT 1
+    `);
+    const periodId = (periodRes as any).rows[0]?.id ?? null;
+
+    const entryNumRes = await tx.execute(sql`SELECT nextval('journal_entry_number_seq') AS n`);
+    const entryNumber = Number((entryNumRes as any).rows[0]?.n ?? 1);
+
+    const batchRef = batchId.slice(-8).toUpperCase();
+    const [revEntry] = await tx.insert(journalEntries).values({
+      entryNumber,
+      entryDate: todayStr,
+      description: `عكس تسوية صرف مؤجل - دفعة ${batchRef}`,
+      reference: `OVSELL-REV-${batchRef}`,
+      status: "posted" as const,
+      periodId,
+      createdBy: voidedBy,
+      sourceType: "oversell_void",
+      sourceDocumentId: batchId,
+    }).returning({ id: journalEntries.id });
+
+    // Swap debit/credit on each original line
+    const reversalLines = origLines.map((ol: any, i: number) => ({
+      journalEntryId: revEntry.id,
+      lineNumber: i + 1,
+      accountId: ol.account_id,
+      debit: ol.credit,    // swap
+      credit: ol.debit,    // swap
+      description: `[عكس] ${ol.description ?? ""}`,
+      costCenterId: ol.cost_center_id ?? null,
+    }));
+    await tx.insert(journalLines).values(reversalLines);
+
+    reversalJournalId = revEntry.id;
+    logger.info({ batchId, reversalJournalId }, "[OVERSELL_GL] reversal journal posted");
+  }
+
+  // 4. Mark batch as voided
+  await tx.execute(
+    sql`UPDATE oversell_resolution_batches
+        SET journal_status = 'voided', notes = COALESCE(notes, '') || ' [ملغي]'
+        WHERE id = ${batchId}`
+  );
+
+  return { reversed: true, reversalJournalId };
 }

@@ -361,11 +361,12 @@ const methods = {
                 });
               }
 
-              // Mark line as pending_cost
+              // Mark line as pending_cost + cost_status = 'pending'
               await tx.execute(
                 sql`UPDATE patient_invoice_lines
                     SET stock_issue_status = 'pending_cost',
-                        oversell_reason = ${(line as any).oversellReason ?? null}
+                        cost_status        = 'pending',
+                        oversell_reason    = ${(line as any).oversellReason ?? null}
                     WHERE id = ${line.id}`
               );
             } else {

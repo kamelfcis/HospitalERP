@@ -149,6 +149,20 @@ const methods = {
   },
 
   async closeFiscalPeriod(this: DatabaseStorage, id: string, userId?: string | null): Promise<FiscalPeriod | undefined> {
+    // ── Period-close protection: block if pending oversell allocations exist ──
+    const pendingRes = await db.execute(sql`
+      SELECT COUNT(*) AS cnt
+      FROM pending_stock_allocations
+      WHERE status IN ('pending', 'partially_resolved')
+    `);
+    const pendingCount = parseInt(String((pendingRes.rows[0] as any)?.cnt ?? 0));
+    if (pendingCount > 0) {
+      throw new Error(
+        `لا يمكن إغلاق الفترة المالية: يوجد ${pendingCount} بند(اً) من الصرف بدون رصيد لم يُسوَّ بعد. ` +
+        `يُرجى تسوية جميع البنود المعلقة قبل إغلاق الفترة (شاشة: تسوية الصرف بدون رصيد).`
+      );
+    }
+
     const [updated] = await db.update(fiscalPeriods)
       .set({ isClosed: true, closedAt: new Date(), closedBy: userId || null })
       .where(eq(fiscalPeriods.id, id))

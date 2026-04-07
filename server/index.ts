@@ -384,6 +384,42 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] patient GL check skipped");
   }
 
+  // ── 5b-4b. Oversell (Deferred Cost) integrity check ─────────────────────
+  // Non-blocking: logs warnings for orphan allocations and status mismatches.
+  try {
+    const { rows: oversellRows } = await pool.query<{
+      pending_count: string; orphan_count: string;
+    }>(`
+      SELECT
+        COUNT(*) FILTER (WHERE psa.status IN ('pending','partially_resolved')) AS pending_count,
+        COUNT(*) FILTER (
+          WHERE psa.status IN ('pending','partially_resolved')
+            AND pih.status = 'cancelled'
+        ) AS orphan_count
+      FROM pending_stock_allocations psa
+      JOIN patient_invoice_headers pih ON pih.id = psa.invoice_id
+    `);
+    const pendingCount = parseInt(oversellRows[0]?.pending_count || "0");
+    const orphanCount  = parseInt(oversellRows[0]?.orphan_count || "0");
+
+    if (orphanCount > 0) {
+      logger.warn(
+        { orphanCount },
+        `[OVERSELL_INTEGRITY] ${orphanCount} orphan allocation(s) linked to cancelled invoices — run /api/oversell/integrity for details`
+      );
+    }
+    if (pendingCount > 0) {
+      logger.info(
+        { pendingCount },
+        `[OVERSELL_INTEGRITY] ${pendingCount} active pending allocation(s) — resolve via /oversell-resolution`
+      );
+    } else {
+      logger.info("[OVERSELL_INTEGRITY] no active pending allocations — clean");
+    }
+  } catch (err: unknown) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] oversell integrity check skipped");
+  }
+
   // ── 5b-5. Stay Engine visibility check ───────────────────────────────────
   // Non-blocking startup snapshot: active segments + last accrual timestamp.
   // If last accrual is stale (>2h) while segments are active, the engine is

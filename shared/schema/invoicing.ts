@@ -412,6 +412,9 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   stockIssueStatus: varchar("stock_issue_status", { length: 30 }).default("normal").notNull(),
   // normal | pending_cost | cost_resolved | skipped_no_stock
   oversellReason: text("oversell_reason"),
+  // حالة تكلفة التسوية المؤجلة — pending: مؤجلة | partial: جزئية | resolved: مسواة
+  // NULL = بند عادي (غير مرتبط بصرف مؤجل)
+  costStatus: varchar("cost_status", { length: 20 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx:         index("idx_pat_line_header").on(table.headerId),
