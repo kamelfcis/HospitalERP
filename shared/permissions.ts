@@ -82,6 +82,8 @@ export const PERMISSIONS = {
   DEPARTMENTS_VIEW: "departments.view",
   DEPARTMENTS_MANAGE: "departments.manage",
 
+  PHARMACIES_MANAGE: "pharmacies.manage",
+
   PATIENTS_VIEW: "patients.view",
   PATIENTS_CREATE: "patients.create",
   PATIENTS_EDIT: "patients.edit",
@@ -211,6 +213,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.SERVICES_VIEW,
     PERMISSIONS.WAREHOUSES_VIEW,
     PERMISSIONS.DEPARTMENTS_VIEW,
+    PERMISSIONS.PHARMACIES_MANAGE,
     PERMISSIONS.PATIENTS_VIEW,
     PERMISSIONS.DOCTORS_VIEW,
     PERMISSIONS.ADMISSIONS_VIEW,
@@ -593,6 +596,12 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
     permissions: [
       { key: PERMISSIONS.DEPARTMENTS_VIEW, label: "عرض" },
       { key: PERMISSIONS.DEPARTMENTS_MANAGE, label: "إدارة" },
+    ],
+  },
+  {
+    label: "الصيدليات",
+    permissions: [
+      { key: PERMISSIONS.PHARMACIES_MANAGE, label: "إدارة" },
     ],
   },
   {

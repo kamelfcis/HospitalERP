@@ -72,7 +72,7 @@ export function registerCashierRoutes(app: Express) {
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
-  app.post("/api/pharmacies", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
+  app.post("/api/pharmacies", requireAuth, checkPermission(PERMISSIONS.PHARMACIES_MANAGE), async (req, res) => {
     try { res.json(await storage.createPharmacy(req.body)); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
@@ -273,6 +273,22 @@ export function registerCashierRoutes(app: Express) {
 
       // ── القاعدة 5: التحقق من الملكية — bypass مشرف يُسجَّل ──────────
       await assertShiftOwnership(shiftId, userId, fullName, isAdminOrSupervisor);
+
+      // ── فحص النطاق (Scope Check) ─────────────────────────────────────
+      //    مكمّل لـ assertShiftOwnership:
+      //    - الأدمن/المالك: isFullAccess = true → يمر دائماً
+      //    - المستخدم العادي (مالك الوردية): يتحقق أن صيدلية الوردية ضمن نطاقه
+      //      (defense-in-depth في حالة تغيّر النطاق بعد فتح الوردية)
+      if (!isAdminOrSupervisor) {
+        const shiftRecord = await storage.getShiftById(shiftId);
+        if (shiftRecord?.pharmacyId) {
+          const scope = await storage.getUserOperationalScope(userId);
+          if (!scope.isFullAccess && !scope.allowedPharmacyIds.includes(shiftRecord.pharmacyId)) {
+            logger.warn({ shiftId, userId, pharmacyId: shiftRecord.pharmacyId }, "[SHIFT_CLOSE] scope violation blocked");
+            return res.status(403).json({ message: "الوردية خارج نطاق الصيدلية المسموح بها لك" });
+          }
+        }
+      }
 
       // ── التحقق المسبق الإلزامي (BLOCKING) ───────────────────────────
       //    يتحقق من: فترة مالية مفتوحة، حساب العهدة (12127)،
