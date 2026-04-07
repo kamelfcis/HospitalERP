@@ -25,7 +25,7 @@ export interface PatientOption {
 interface Props {
   value?:        string;
   selectedName?: string;
-  onChange:      (id: string, name: string) => void;
+  onChange:      (id: string, name: string, patientCode?: string | null) => void;
   onClear?:      () => void;
   disabled?:     boolean;
   placeholder?:  string;
@@ -58,7 +58,7 @@ export function PatientSearchCombobox({
 
     // مريض مسجّل — استخدم id مباشرةً
     if (!patient.isWalkIn) {
-      onChange(patient.id, patient.fullName);
+      onChange(patient.id, patient.fullName, patient.patientCode ?? null);
       return;
     }
 
@@ -70,10 +70,10 @@ export function PatientSearchCombobox({
         phone:    patient.phone || null,
       });
       const created = await res.json();
-      onChange(created.id, created.fullName);
+      onChange(created.id, created.fullName, created.patientCode ?? null);
     } catch {
       // في حالة الخطأ، مرّر الاسم بدون id
-      onChange("", patient.fullName);
+      onChange("", patient.fullName, null);
     } finally {
       setResolving(false);
     }

@@ -7,6 +7,7 @@ export interface InvoiceFormState {
   patientName: string;
   patientPhone: string;
   patientId: string;
+  patientCode: string;
   departmentId: string;
   doctorName: string;
   patientType: "cash" | "contract";
@@ -31,6 +32,7 @@ export interface InvoiceFormSetters {
   setPatientName: (v: string) => void;
   setPatientPhone: (v: string) => void;
   setPatientId: (v: string) => void;
+  setPatientCode: (v: string) => void;
   setDepartmentId: (v: string) => void;
   setDoctorName: (v: string) => void;
   setPatientType: (v: "cash" | "contract") => void;
@@ -61,6 +63,7 @@ export function useInvoiceForm(
   const [patientName, setPatientName]     = useState("");
   const [patientPhone, setPatientPhone]   = useState("");
   const [patientId, setPatientId]         = useState("");
+  const [patientCode, setPatientCode]     = useState("");
   const [departmentId, setDepartmentId]   = useState("");
   const [doctorName, setDoctorName]       = useState("");
   const [patientType, setPatientType]     = useState<"cash" | "contract">("cash");
@@ -83,6 +86,7 @@ export function useInvoiceForm(
     setPatientName("");
     setPatientPhone("");
     setPatientId("");
+    setPatientCode("");
     setDepartmentId(defaults?.departmentId ?? userDefaults?.departmentId ?? "");
     setWarehouseId(defaults?.warehouseId ?? userDefaults?.warehouseId ?? "");
     setDoctorName("");
@@ -106,6 +110,7 @@ export function useInvoiceForm(
     patientName, setPatientName,
     patientPhone, setPatientPhone,
     patientId, setPatientId,
+    patientCode, setPatientCode,
     departmentId, setDepartmentId,
     doctorName, setDoctorName,
     patientType, setPatientType,

@@ -15,6 +15,7 @@ import {
   services,
   departments,
   items,
+  patients,
   patientInvoiceHeaders,
   patientInvoiceLines,
   patientInvoicePayments,
@@ -89,9 +90,11 @@ const methods = {
     const [headerRow] = await db.select({
       header: patientInvoiceHeaders,
       department: departments,
+      patientCode: patients.patientCode,
     })
       .from(patientInvoiceHeaders)
       .leftJoin(departments, eq(patientInvoiceHeaders.departmentId, departments.id))
+      .leftJoin(patients, eq(patientInvoiceHeaders.patientId, patients.id))
       .where(eq(patientInvoiceHeaders.id, id));
 
     if (!headerRow) return undefined;
@@ -132,6 +135,7 @@ const methods = {
 
     return {
       ...headerRow.header,
+      patientCode: headerRow.patientCode || null,
       department: headerRow.department || undefined,
       lines: lines.map(l => ({ ...l.line, service: l.service || undefined, item: l.item || undefined })),
       payments,

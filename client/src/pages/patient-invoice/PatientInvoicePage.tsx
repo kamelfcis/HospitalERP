@@ -162,15 +162,17 @@ export default function PatientInvoice() {
   });
 
   // ── Patient search callbacks (for PatientSearchCombobox) ─────────────────────
-  const onPatientChange = useCallback((id: string, name: string) => {
+  const onPatientChange = useCallback((id: string, name: string, patientCode?: string | null) => {
     form.setPatientId(id);
     form.setPatientName(name);
-  }, [form.setPatientId, form.setPatientName]);
+    form.setPatientCode(patientCode || "");
+  }, [form.setPatientId, form.setPatientName, form.setPatientCode]);
 
   const onPatientClear = useCallback(() => {
     form.setPatientId("");
     form.setPatientName("");
-  }, [form.setPatientId, form.setPatientName]);
+    form.setPatientCode("");
+  }, [form.setPatientId, form.setPatientName, form.setPatientCode]);
 
   // ── Contract callbacks ───────────────────────────────────────────────────────
   const onContractChange = useCallback((resolved: ContractResolved) => {
@@ -283,6 +285,7 @@ export default function PatientInvoice() {
       form.setPatientName(data.patientName);
       form.setPatientPhone(data.patientPhone || "");
       form.setPatientId(data.patientId || "");
+      form.setPatientCode(data.patientCode || "");
       form.setDepartmentId(data.departmentId || "");
       form.setWarehouseId(data.warehouseId || "");
       form.setDoctorName(data.doctorName || "");
@@ -399,6 +402,7 @@ export default function PatientInvoice() {
             isDraft={form.isDraft}
             patientId={form.patientId}
             patientName={form.patientName}
+            patientCode={form.patientCode}
             patientPhone={form.patientPhone}
             setPatientPhone={form.setPatientPhone}
             onPatientChange={onPatientChange}

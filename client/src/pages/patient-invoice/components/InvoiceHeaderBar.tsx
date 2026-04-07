@@ -39,9 +39,10 @@ interface InvoiceHeaderBarProps {
 
   patientId: string;
   patientName: string;
+  patientCode: string;
   patientPhone: string;
   setPatientPhone: (v: string) => void;
-  onPatientChange: (id: string, name: string) => void;
+  onPatientChange: (id: string, name: string, patientCode?: string | null) => void;
   onPatientClear: () => void;
 
   doctorName: string;
@@ -84,7 +85,7 @@ export function InvoiceHeaderBar({
   invoiceId, invoiceNumber, setInvoiceNumber,
   invoiceDate, setInvoiceDate,
   status, isDraft,
-  patientId, patientName, patientPhone, setPatientPhone,
+  patientId, patientName, patientCode, patientPhone, setPatientPhone,
   onPatientChange, onPatientClear,
   doctorName, setDoctorName,
   departmentId, setDepartmentId, departments,
@@ -314,6 +315,11 @@ export function InvoiceHeaderBar({
               {patientName}
             </span>
           )}
+          {patientCode && (
+            <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded shrink-0" data-testid="summary-patient-code">
+              {patientCode}
+            </span>
+          )}
 
           {dept && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">{dept.nameAr}</Badge>
@@ -379,6 +385,11 @@ export function InvoiceHeaderBar({
               <div className="flex items-center gap-0.5 shrink-0">
                 <span className="text-[10px] text-muted-foreground">مريض</span>
                 <PatientSearchCombobox value={patientId} selectedName={patientName} onChange={onPatientChange} onClear={onPatientClear} disabled={!isDraft} data-testid="patient-search" />
+                {patientCode && (
+                  <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded" data-testid="field-patient-code">
+                    {patientCode}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-0.5 shrink-0">
                 <span className="text-[10px] text-muted-foreground">هاتف</span>
