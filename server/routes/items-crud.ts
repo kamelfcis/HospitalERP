@@ -567,10 +567,16 @@ export function registerItemsCrudRoutes(app: Express, storage: any) {
         "majorToMinor", "majorToMedium", "mediumToMinor",
         "majorUnitName", "mediumUnitName", "minorUnitName",
       ] as const;
+      // "" و null كلاهما "فارغ" — لا نعتبرهما تغييراً على الوحدات
+      const normalizeUnitVal = (v: unknown): string | null => {
+        if (v == null) return null;
+        const s = String(v).trim();
+        return s === "" ? null : s;
+      };
       const conversionChanged = conversionFields.some((f) => {
         if (!(f in parsed)) return false;
-        const requested = parsed[f] != null ? String(parsed[f]).trim() : null;
-        const current   = currentItem[f]   != null ? String(currentItem[f]).trim()   : null;
+        const requested = normalizeUnitVal(parsed[f]);
+        const current   = normalizeUnitVal(currentItem[f]);
         return requested !== current;
       });
 
