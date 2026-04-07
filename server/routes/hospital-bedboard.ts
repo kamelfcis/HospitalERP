@@ -27,7 +27,8 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { bedBoardClients, broadcastBedBoardUpdate, requireAuth, checkHospitalAccess } from "./_shared";
+import { bedBoardClients, broadcastBedBoardUpdate, requireAuth, checkHospitalAccess, checkPermission } from "./_shared";
+import { PERMISSIONS } from "@shared/permissions";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
 
 export function registerBedBoardRoutes(app: Express) {
@@ -68,7 +69,7 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
-  app.post("/api/beds/:id/admit", requireAuth, checkHospitalAccess, async (req, res) => {
+  app.post("/api/beds/:id/admit", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
     try {
       const { patientName, patientPhone, patientId, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
