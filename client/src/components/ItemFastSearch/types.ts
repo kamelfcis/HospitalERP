@@ -12,6 +12,7 @@ export interface FastSearchItem {
   majorToMinor: string | null;
   mediumToMinor: string | null;
   hasExpiry: boolean;
+  allowOversell?: boolean | null;
   availableQtyMinor: string;
 }
 

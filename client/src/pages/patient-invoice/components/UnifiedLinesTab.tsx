@@ -164,6 +164,7 @@ export function UnifiedLinesTab({
       nameAr: item.nameAr,
       itemCode: item.itemCode,
       hasExpiry: item.hasExpiry,
+      allowOversell: item.allowOversell ?? null,
       salePriceCurrent: item.salePriceCurrent,
       purchasePriceLast: undefined,
       businessClassification: undefined,
