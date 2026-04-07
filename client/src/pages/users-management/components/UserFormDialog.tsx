@@ -4,10 +4,12 @@ import { Input }    from "@/components/ui/input";
 import { Label }    from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2 }  from "lucide-react";
+import { Loader2, X }  from "lucide-react";
 import { ROLE_LABELS } from "@shared/permissions";
 import { ScopeSelector } from "./ScopeSelector";
+import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import type { UserData, UserFormData } from "../types";
+import type { Account } from "@shared/schema";
 
 const ROLES = Object.entries(ROLE_LABELS);
 
@@ -20,7 +22,7 @@ interface UserFormDialogProps {
   clinics:           { id: string; nameAr: string }[];
   warehouses:        { id: string; nameAr: string }[];
   cashierAccounts:   { glAccountId: string; code: string; name: string; hasPassword: boolean }[];
-  varianceAccounts:  { id: string; code: string; name: string }[];
+  varianceAccounts:  Account[];
   isPending:         boolean;
   onFormChange:      (patch: Partial<UserFormData>) => void;
   onSave:            () => void;
@@ -215,22 +217,23 @@ export function UserFormDialog({
                   حساب العجز النقدي
                   <span className="text-muted-foreground text-xs mr-1">(اختياري — يُستخدم عند العجز)</span>
                 </Label>
-                <Select
-                  value={formData.cashierVarianceShortAccountId || "none"}
-                  onValueChange={v => onFormChange({ cashierVarianceShortAccountId: v === "none" ? "" : v })}
-                >
-                  <SelectTrigger data-testid="select-user-variance-short-account">
-                    <SelectValue placeholder="اختر حساب العجز..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">بدون</SelectItem>
-                    {varianceAccounts.map(a => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} - {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-1">
+                  <div className="flex-1">
+                    <AccountSearchSelect
+                      accounts={varianceAccounts}
+                      value={formData.cashierVarianceShortAccountId || ""}
+                      onChange={v => onFormChange({ cashierVarianceShortAccountId: v })}
+                      placeholder="ابحث عن حساب العجز..."
+                      data-testid="select-user-variance-short-account"
+                    />
+                  </div>
+                  {formData.cashierVarianceShortAccountId && (
+                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
+                      onClick={() => onFormChange({ cashierVarianceShortAccountId: "" })}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -238,22 +241,23 @@ export function UserFormDialog({
                   حساب الفائض النقدي
                   <span className="text-muted-foreground text-xs mr-1">(اختياري — يُستخدم عند الفائض)</span>
                 </Label>
-                <Select
-                  value={formData.cashierVarianceOverAccountId || "none"}
-                  onValueChange={v => onFormChange({ cashierVarianceOverAccountId: v === "none" ? "" : v })}
-                >
-                  <SelectTrigger data-testid="select-user-variance-over-account">
-                    <SelectValue placeholder="اختر حساب الفائض..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">بدون</SelectItem>
-                    {varianceAccounts.map(a => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} - {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-1">
+                  <div className="flex-1">
+                    <AccountSearchSelect
+                      accounts={varianceAccounts}
+                      value={formData.cashierVarianceOverAccountId || ""}
+                      onChange={v => onFormChange({ cashierVarianceOverAccountId: v })}
+                      placeholder="ابحث عن حساب الفائض..."
+                      data-testid="select-user-variance-over-account"
+                    />
+                  </div>
+                  {formData.cashierVarianceOverAccountId && (
+                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
+                      onClick={() => onFormChange({ cashierVarianceOverAccountId: "" })}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -261,25 +265,23 @@ export function UserFormDialog({
                   حساب الفروق الموحد
                   <span className="text-muted-foreground text-xs mr-1">(احتياطي — يُستخدم إن لم يُحدَّد العجز أو الفائض)</span>
                 </Label>
-                <Select
-                  value={formData.cashierVarianceAccountId || "none"}
-                  onValueChange={v => onFormChange({ cashierVarianceAccountId: v === "none" ? "" : v })}
-                >
-                  <SelectTrigger
-                    data-testid="select-user-variance-account"
-                    className={!formData.cashierVarianceAccountId && !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId ? "border-destructive" : ""}
-                  >
-                    <SelectValue placeholder="اختر حساب الفروق الاحتياطي..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">بدون</SelectItem>
-                    {varianceAccounts.map(a => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} - {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className={`flex items-center gap-1 ${!formData.cashierVarianceAccountId && !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId ? "ring-1 ring-destructive rounded-md" : ""}`}>
+                  <div className="flex-1">
+                    <AccountSearchSelect
+                      accounts={varianceAccounts}
+                      value={formData.cashierVarianceAccountId || ""}
+                      onChange={v => onFormChange({ cashierVarianceAccountId: v })}
+                      placeholder="ابحث عن حساب الفروق الاحتياطي..."
+                      data-testid="select-user-variance-account"
+                    />
+                  </div>
+                  {formData.cashierVarianceAccountId && (
+                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0"
+                      onClick={() => onFormChange({ cashierVarianceAccountId: "" })}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
                 {!formData.cashierVarianceAccountId && !formData.cashierVarianceShortAccountId && !formData.cashierVarianceOverAccountId ? (
                   <p className="text-xs text-destructive font-medium">
                     يجب تحديد حساب فروق واحداً على الأقل — بدونه لن يتمكن الكاشير من إغلاق وردية بها فرق نقدي

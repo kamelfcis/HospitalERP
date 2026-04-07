@@ -12,6 +12,7 @@ import { UserCard } from "./components/UserCard";
 import { UserFormDialog } from "./components/UserFormDialog";
 import { AccountScopeDialog } from "./components/AccountScopeDialog";
 import type { UserData, UserFormData } from "./types";
+import type { Account } from "@shared/schema";
 
 const EMPTY_FORM: UserFormData = {
   username: "", password: "", fullName: "",
@@ -45,10 +46,12 @@ export default function UsersManagement() {
   const { data: pharmacies = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/pharmacies"] });
   const { data: warehouses = [] }       = useQuery<{ id: string; nameAr: string }[]>({ queryKey: ["/api/warehouses"] });
   const { data: cashierAccounts = [] }  = useQuery<{ glAccountId: string; code: string; name: string; hasPassword: boolean }[]>({ queryKey: ["/api/drawer-passwords"] });
-  const { data: allAccounts = [] }      = useQuery<{ id: string; code: string; name: string }[]>({ queryKey: ["/api/accounts"] });
+  const { data: allAccounts = [] }      = useQuery<Account[]>({ queryKey: ["/api/accounts"] });
   const { items: clinicItems }          = useClinicsLookup();
 
-  const varianceAccounts = allAccounts.filter(a => a.code?.startsWith("5292") && a.code.length > 4);
+  // حسابات طرفية نشطة — بدون فلتر كود ثابت لتوافق أي دليل حسابات
+  const parentAccountIds = new Set(allAccounts.map(a => a.parentId).filter(Boolean));
+  const varianceAccounts = allAccounts.filter(a => a.isActive && !parentAccountIds.has(a.id));
 
   const createMutation = useMutation({
     mutationFn: async (data: Partial<UserData>) => (await apiRequest("POST", "/api/users", data)).json(),
