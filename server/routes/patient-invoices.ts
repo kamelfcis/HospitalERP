@@ -35,6 +35,18 @@ import {
   fireApprovalRequestsForInvoice,
 } from "../lib/patient-invoice-helpers";
 
+async function assertNotFinalClosed(invoiceId: string): Promise<void> {
+  const row = await db.execute(sql`
+    SELECT is_final_closed FROM patient_invoice_headers WHERE id = ${invoiceId}
+  `);
+  const inv = row.rows?.[0] as Record<string, unknown> | undefined;
+  if (inv?.is_final_closed) {
+    const err = new Error("لا يمكن تعديل فاتورة تم إغلاقها نهائيًا");
+    (err as any).statusCode = 409;
+    throw err;
+  }
+}
+
 export function registerPatientInvoicesRoutes(app: Express) {
   // ============= Patient Invoices =============
 
@@ -168,6 +180,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
   app.put("/api/patient-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_EDIT), async (req, res) => {
     try {
+      await assertNotFinalClosed(req.params.id as string);
+
       const { header, lines, payments, expectedVersion } = req.body;
 
       const headerParsed = insertPatientInvoiceHeaderSchema.partial().parse(header);
@@ -227,6 +241,9 @@ export function registerPatientInvoicesRoutes(app: Express) {
       if (error instanceof ScopeViolationError) {
         return res.status(error.statusCode).json({ message: error.message });
       }
+      if ((error as any).statusCode === 409) {
+        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
+      }
       if (error instanceof z.ZodError || (error instanceof Error && error.name === "ZodError")) {
         return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
@@ -252,13 +269,16 @@ export function registerPatientInvoicesRoutes(app: Express) {
         }
 
         const invRes = await db.execute(sql`
-          SELECT id, status, total_amount, discount_amount, header_discount_percent, header_discount_amount, version
+          SELECT id, status, total_amount, discount_amount, header_discount_percent, header_discount_amount, version, is_final_closed
           FROM patient_invoice_headers
           WHERE id = ${invoiceId}
           FOR UPDATE
         `);
         const inv = invRes.rows[0] as Record<string, unknown>;
         if (!inv) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+        if (inv.is_final_closed) {
+          return res.status(409).json({ message: "لا يمكن تعديل فاتورة تم إغلاقها نهائيًا" });
+        }
         if (inv.status !== "draft") {
           return res.status(409).json({ message: "لا يمكن تعديل فاتورة نهائية" });
         }
@@ -573,6 +593,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
   app.post("/api/patient-invoices/:id/distribute", requireAuth, checkPermission(PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
     try {
+      await assertNotFinalClosed(req.params.id as string);
       const { patients } = req.body;
       if (!Array.isArray(patients) || patients.length < 2) {
         return res.status(400).json({ message: "يجب تحديد مريضين على الأقل" });
@@ -590,6 +611,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
       });
       res.json({ invoices: result });
     } catch (error: unknown) {
+      if ((error as any).statusCode === 409) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
       if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("نهائية") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("غير موجودة") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("لا تحتوي")) {
         return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
       }
@@ -629,10 +651,12 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
   app.delete("/api/patient-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_EDIT), async (req, res) => {
     try {
+      await assertNotFinalClosed(req.params.id as string);
       const reason = req.body?.reason as string | undefined;
       await storage.deletePatientInvoice(req.params.id as string, reason);
       res.json({ success: true });
     } catch (error: unknown) {
+      if ((error as any).statusCode === 409) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
       if (_em?.includes("نهائية")) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
       res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
