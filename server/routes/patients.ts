@@ -739,6 +739,9 @@ export function registerPatientsRoutes(app: Express) {
           h.contract_name,
           h.created_at,
           h.department_id,
+          h.is_final_closed,
+          h.final_closed_at,
+          h.final_closed_by,
           COALESCE(d.name_ar, '—') AS department_name
         FROM patient_invoice_headers h
         LEFT JOIN departments d ON d.id = h.department_id
@@ -755,6 +758,7 @@ export function registerPatientsRoutes(app: Express) {
         header_discount_amount: string; net_amount: string; paid_amount: string;
         doctor_name: string | null; contract_name: string | null;
         created_at: string; department_id: string | null; department_name: string;
+        is_final_closed: boolean | null; final_closed_at: string | null; final_closed_by: string | null;
       }>;
 
       if (headers.length === 0) {
@@ -921,6 +925,9 @@ export function registerPatientsRoutes(app: Express) {
         admissionId: h.admission_id,
         visitGroupId: h.visit_group_id,
         isConsolidated: h.is_consolidated,
+        isFinalClosed: h.is_final_closed ?? false,
+        finalClosedAt: h.final_closed_at ?? null,
+        finalClosedBy: h.final_closed_by ?? null,
         doctorName: h.doctor_name,
         contractName: h.contract_name,
         totalAmount: round2(n(h.total_amount)),
@@ -1052,6 +1059,101 @@ export function registerPatientsRoutes(app: Express) {
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ message: _em });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  سجل الزيارات / الاستقبال (Patient Visits / Reception Log)
+  //  نقطة الدخول الرسمية لكل مريض — داخلي أو خارجي
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // POST /api/patient-visits — تسجيل زيارة جديدة من الاستقبال
+  app.post("/api/patient-visits", requireAuth, checkPermission(PERMISSIONS.PATIENTS_CREATE), async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId as string | undefined;
+      const { patientId, visitType, requestedService, departmentId, notes } = req.body;
+      if (!patientId?.trim()) return res.status(400).json({ message: "يجب تحديد المريض" });
+      if (!["inpatient","outpatient"].includes(visitType)) return res.status(400).json({ message: "نوع الزيارة غير صحيح" });
+
+      const cntRes = await db.execute(sql`SELECT COUNT(*) AS cnt FROM patient_visits`);
+      const seq = parseInt((cntRes.rows[0] as Record<string,unknown>)?.cnt as string ?? "0") + 1;
+      const visitNumber = `VIS-${String(seq).padStart(6,"0")}`;
+
+      const row = await db.execute(sql`
+        INSERT INTO patient_visits (id, visit_number, patient_id, visit_type, requested_service, department_id, status, notes, created_by, created_at, updated_at)
+        VALUES (gen_random_uuid(), ${visitNumber}, ${patientId}, ${visitType}, ${requestedService || null}, ${departmentId || null}, 'open', ${notes || null}, ${userId || null}, NOW(), NOW())
+        RETURNING *
+      `);
+      return res.status(201).json(row.rows[0]);
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // GET /api/patient-visits — قائمة الزيارات (مع فلاتر)
+  app.get("/api/patient-visits", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
+    try {
+      const { date, visitType, status, deptId, search } = req.query as Record<string,string>;
+      const today = date || new Date().toISOString().split("T")[0];
+
+      const rows = await db.execute(sql`
+        SELECT
+          pv.*,
+          p.full_name   AS patient_name,
+          p.patient_code,
+          p.phone       AS patient_phone,
+          d.name_ar     AS department_name
+        FROM patient_visits pv
+        JOIN patients p ON p.id = pv.patient_id
+        LEFT JOIN departments d ON d.id = pv.department_id
+        WHERE DATE(pv.created_at) = ${today}::date
+          ${visitType ? sql`AND pv.visit_type = ${visitType}` : sql``}
+          ${status ? sql`AND pv.status = ${status}` : sql``}
+          ${deptId ? sql`AND pv.department_id = ${deptId}` : sql``}
+          ${search ? sql`AND (p.full_name ILIKE ${'%' + search + '%'} OR p.phone ILIKE ${'%' + search + '%'} OR p.patient_code ILIKE ${'%' + search + '%'})` : sql``}
+        ORDER BY pv.created_at DESC
+        LIMIT 200
+      `);
+      return res.json(rows.rows);
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // GET /api/patients/:id/visits — زيارات مريض محدد
+  app.get("/api/patients/:id/visits", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const rows = await db.execute(sql`
+        SELECT pv.*, d.name_ar AS department_name
+        FROM patient_visits pv
+        LEFT JOIN departments d ON d.id = pv.department_id
+        WHERE pv.patient_id = ${id}
+        ORDER BY pv.created_at DESC
+        LIMIT 100
+      `);
+      return res.json(rows.rows);
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // PATCH /api/patient-visits/:id/status — تحديث حالة الزيارة
+  app.patch("/api/patient-visits/:id/status", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
+    try {
+      const { status } = req.body;
+      if (!["open","in_progress","completed","cancelled"].includes(status)) {
+        return res.status(400).json({ message: "حالة غير صحيحة" });
+      }
+      const row = await db.execute(sql`
+        UPDATE patient_visits SET status = ${status}, updated_at = NOW()
+        WHERE id = ${req.params.id}
+        RETURNING *
+      `);
+      if (!row.rows.length) return res.status(404).json({ message: "الزيارة غير موجودة" });
+      return res.json(row.rows[0]);
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
     }
   });
 

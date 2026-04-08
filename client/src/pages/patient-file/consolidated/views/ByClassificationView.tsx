@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Tag } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { fmtMoney, LINE_TYPE_LABELS } from "../../shared/formatters";
 import type { ClassificationGroup } from "../../shared/types";
 
@@ -34,7 +35,12 @@ const ClassRow = memo(function ClassRow({ cls, showPaid }: { cls: Classification
       <td className="p-3 text-center font-mono text-sm font-semibold">{fmtMoney(cls.netAmount)}</td>
       {showPaid && (
         <>
-          <td className="p-3 text-center font-mono text-sm text-green-600">{fmtMoney(cls.paidAmount)}</td>
+          <td className="p-3 text-center font-mono text-sm text-green-600">
+            <div className="flex items-center justify-center gap-1">
+              {fmtMoney(cls.paidAmount)}
+              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-300 px-1 py-0" title="القيمة تقريبية مبنية على توزيع نسبي للمدفوعات">تقريبي</Badge>
+            </div>
+          </td>
           <td className={`p-3 text-center font-mono text-sm font-semibold ${hasBalance ? "text-red-600" : "text-green-600"}`}>
             {fmtMoney(cls.remaining)}
           </td>

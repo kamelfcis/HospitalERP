@@ -15,12 +15,23 @@ const STATUS_BADGE: Record<string, string> = {
   cancelled: "bg-red-50   text-red-700   border-red-200",
 };
 
+const VISIT_TYPE_BADGE: Record<string, { label: string; className: string }> = {
+  inpatient:  { label: "داخلي",  className: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  outpatient: { label: "خارجي",  className: "bg-teal-50   text-teal-700   border-teal-200" },
+};
+
+function getVisitTypeBadge(inv: AggregatedInvoice) {
+  if (inv.admissionId) return VISIT_TYPE_BADGE.inpatient;
+  return VISIT_TYPE_BADGE.outpatient;
+}
+
 const InvoiceRow = memo(function InvoiceRow({ inv }: { inv: AggregatedInvoice }) {
   const hasBalance = inv.remaining > 0.01;
+  const vtBadge = getVisitTypeBadge(inv);
   return (
     <tr className="border-b last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-invoice-${inv.id}`}>
       <td className="p-3">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <a
             href={`/patient-invoices/${inv.id}`}
             className="font-mono text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
@@ -29,6 +40,7 @@ const InvoiceRow = memo(function InvoiceRow({ inv }: { inv: AggregatedInvoice })
             {inv.invoiceNumber}
             <ExternalLink className="h-3 w-3 opacity-50" />
           </a>
+          <Badge variant="outline" className={`text-xs ${vtBadge.className}`} data-testid={`badge-visit-type-${inv.id}`}>{vtBadge.label}</Badge>
           {inv.isConsolidated && (
             <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">مجمّعة</Badge>
           )}

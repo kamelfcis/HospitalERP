@@ -354,6 +354,10 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   claimStatus: text("claim_status"),
   // snapshot دائم يُحفظ عند الاعتماد — يظل مرجعاً حتى لو تغيّر master data
   finalizedSnapshotJson: text("finalized_snapshot_json"),
+  // ── الإغلاق النهائي للفاتورة المجمعة (audit trail كامل) ─────────────────────
+  isFinalClosed:    boolean("is_final_closed").notNull().default(false),
+  finalClosedAt:    timestamp("final_closed_at"),
+  finalClosedBy:    varchar("final_closed_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -371,6 +375,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   // ── Visit Group indexes — الاستعلام الأساسي: (visitGroupId, isConsolidated) ──
   visitGroupIdx:         index("idx_pat_inv_visit_group").on(table.visitGroupId),
   visitGroupStatusIdx:   index("idx_pat_inv_visit_group_consolidated").on(table.visitGroupId, table.isConsolidated),
+  visitGroupPatientIdx:  index("idx_pat_inv_visit_group_patient").on(table.visitGroupId, table.patientId),
 }));
 
 export const patientInvoiceLines = pgTable("patient_invoice_lines", {

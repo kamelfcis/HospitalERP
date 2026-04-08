@@ -1,68 +1,58 @@
 # Hospital General Ledger System
 
 ## Overview
-This project is an Arabic RTL web application designed for hospital general ledger (GL) accounting, specifically for the Middle East healthcare sector. It provides comprehensive financial management, including accounts, cost centers, and journal entries, and generates IFRS-compliant financial reports in EGP. The system also integrates inventory and sales processing, patient and service invoicing, multi-pharmacy operations, and advanced security and reporting features. The project aims to become the leading accounting software solution for healthcare providers in the region.
+This project is an Arabic RTL web application for hospital general ledger (GL) accounting, targeting the Middle East healthcare sector. It offers comprehensive financial management, including accounts, cost centers, and journal entries, and generates IFRS-compliant financial reports in EGP. Key capabilities extend to inventory and sales processing, patient and service invoicing, multi-pharmacy operations, and advanced security and reporting. The long-term vision is to establish this system as the leading accounting software solution for healthcare providers in the region.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
-The system is a full-stack web application. The frontend is built with React 18 (TypeScript, Wouter, TanStack React Query, shadcn/ui, Tailwind CSS), and the backend uses Node.js Express 5 (TypeScript, Drizzle ORM). PostgreSQL serves as the primary database. Full Arabic RTL localization is supported throughout the application.
+The system is a full-stack web application. The frontend uses React 18 (TypeScript, Wouter, TanStack React Query, shadcn/ui, Tailwind CSS), and the backend is built with Node.js Express 5 (TypeScript, Drizzle ORM). PostgreSQL is the primary database. Full Arabic RTL localization is integrated system-wide.
 
 ### UI/UX Decisions
-The user interface features a professional design, a collapsible sidebar, A4 print styles for reports, and visual auto-save indicators.
-
-**RTL Architecture (system-wide)**:
-- `.peachtree-toolbar` CSS class automatically enforces `flex-direction: row-reverse; direction: rtl` across all 78+ toolbar divs with zero per-page changes
-- `.peachtree-toolbar-stack` exception for vertical toolbars (e.g. InvoiceHeaderBar, ReceivingRegistry)
-- `.rtl-row` utility class for inner flex containers that need RTL flow
-- `.rtl-pagination` utility class for pagination bars with count text + nav buttons
-- Canonical filter group pattern: `<input/><label/>` in plain LTR flex (input LEFT, label RIGHT for Arabic reading)
-- Canonical pagination pattern: `[NEXT btn (ChevronLeft)][page text][PREV btn (ChevronRight)]` — 17+ pagination pages standardized
+The user interface features a professional design, a collapsible sidebar, A4 print styles for reports, and visual auto-save indicators. RTL architecture is implemented comprehensively with specific CSS utilities for toolbars, rows, and pagination, ensuring proper Arabic reading flow.
 
 ### Technical Implementations
-The system uses a RESTful JSON API. Database interactions are managed by Drizzle ORM, with Zod and `drizzle-zod` for validation. Concurrency and idempotency are handled using `FOR UPDATE` row locks and optimistic concurrency. Financial accuracy is maintained through server-side recomputation with `HALF_UP` rounding. Critical system settings are cached for performance. Centralized error handling provides Arabic messages and specific HTTP status codes. Inventory management includes expired batch blocking and FEFO. An audit trail tracks critical operations, and automated backup/restore functionality is supported. OPD billing implements IFRS revenue deferral. A centralized lookup architecture ensures consistent data fetching. Performance optimizations include `React.memo` for table rows and vendor chunking. Efficient data entry is achieved through mandatory grid navigation and a scanner pattern. The system also includes a feature for dispensing items with insufficient stock in patient invoices, with a resolution engine for managing oversold items.
+The system utilizes a RESTful JSON API. Database interactions are managed via Drizzle ORM, with Zod and `drizzle-zod` for validation. Concurrency and idempotency are handled using `FOR UPDATE` row locks and optimistic concurrency. Financial accuracy relies on server-side recomputation with `HALF_UP` rounding. Critical system settings are cached, and centralized error handling provides Arabic messages. Inventory management includes expired batch blocking and FEFO. An audit trail tracks critical operations. Key features include OPD billing with IFRS revenue deferral, a centralized lookup architecture, `React.memo` for performance, and efficient data entry via grid navigation and a scanner pattern. A deferred cost issue mechanism manages dispensing with insufficient stock, featuring a resolution engine. Department/Warehouse scope is enforced at multiple layers for patient invoices.
 
 ### Feature Specifications
-- **Financial Management**: Chart of Accounts, Cost Centers, Journal Entries, Fiscal Period controls, IFRS-compliant financial reports, and automatic journal entry generation.
+- **Financial Management**: Chart of Accounts, Cost Centers, Journal Entries, Fiscal Period controls, IFRS-compliant financial reports, and automated journal entry generation.
 - **Inventory & Sales**: Supplier receiving, sales invoicing (barcode, FEFO), sales returns, patient invoicing, patient admissions, and master data management.
-- **Services & Price Lists**: CRUD operations for department-scoped services and price lists with inline editing and bulk adjustments. Price lists support an `is_default` flag (DB UNIQUE constraint per type) with amber star badge in the UI. Service types include NURSING. Price resolution order: contract's `base_price_list_id` → default price list → service base price. Audit fields `price_source` and `price_list_id_used` on `patient_invoice_lines`.
-- **Service + Consumables Tree View in Invoices**: Sales invoice line items display services with their consumable sub-rows in a grouped tree view.
-- **Item Card Consumables Panel**: Service-category items in the item card have a dedicated panel for managing default consumables.
-- **Multi-Pharmacy Support**: Provides isolation for invoicing and cashier operations across multiple pharmacies.
-- **Cashier & Security**: Real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC), Dynamic Account Resolution, and a complete cashier shift lifecycle.
-- **Outpatient Clinic Module**: Features clinic booking, doctor consultations, orders, integration with sales/service orders, doctor-specific pricing, clinic-scoped drug favorites, structured consultation fields (SOAP), doctor templates, and patient history optimization.
-- **Department Services Orders**: A unified module for ordering medical services (lab, radiology) with single and batch entry, integrated with doctor orders.
-- **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine (patient accommodation billing), Bed Board with real-time updates, and a Surgery Types System.
-- **Opening Stock**: Draft-to-posted document flow with per-line lot entry, Excel import/export, and GL journal generation upon posting.
-- **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation and lot adjustments.
-- **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions with individual user overrides.
-- **Contracts Module**: Master data for insurance/contract companies, contracts, and member cards, including a 5-pass rule evaluator for contract coverage, claims GL accounting, and an approval workflow. Contracts support `base_price_list_id` linkage (selectable in the contract form) for contract-specific pricing. The contracts table displays the linked price list name.
-- **Account Mappings Module**: Dedicated UI for bulk updates of all automatic journal transaction types.
-- **Items Excel Import/Export**: Bulk management of items via xlsx with upsert functionality and barcode handling.
+- **Services & Price Lists**: CRUD for department-scoped services and price lists with inline editing and bulk adjustments. Supports default price lists and a specific price resolution order.
+- **Multi-Pharmacy Support**: Provides operational isolation for invoicing and cashier operations across pharmacies.
+- **Cashier & Security**: Real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC), and a complete cashier shift lifecycle.
+- **Outpatient Clinic Module**: Features clinic booking, doctor consultations, orders, integration with sales/service orders, doctor-specific pricing, and structured consultation fields.
+- **Department Services Orders**: A unified module for ordering medical services (lab, radiology).
+- **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine (patient accommodation), Bed Board, and Surgery Types System.
+- **Opening Stock**: Draft-to-posted document flow with lot entry, Excel import/export, and GL journal generation.
+- **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation.
+- **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions.
+- **Contracts Module**: Master data for insurance/contract companies, contracts, and member cards, including a 5-pass rule evaluator for coverage and an approval workflow.
+- **Account Mappings Module**: UI for bulk updates of automatic journal transaction types.
 - **Customer Credit Payments Module**: Manages customer credit and integrates with cashier handover summaries.
-- **Supplier Payments Module**: Manages supplier payments with dedicated database schemas, backend storage for balances, payment processing routes, and GL journal integration.
-- **Sales Return Accounting**: Two-stage journal entry system for sales returns, integrating with inventory movements and cashier refunds.
-- **Purchase Returns Module**: Full module for returning purchased items to suppliers, including invoice-linked returns, atomic lot decrement, and GL journal reversal.
-- **Delivery Payment Collection**: Full module for collecting delivery invoices, featuring atomic receipt creation with GL journal, shift totals integration, and cashier handover report columns.
-- **Thermal Receipt Printing**: Full 80mm thermal receipt system for the cashier module, with auto-printing, customizable settings, and a reprint function.
-- **Shortage Notebook**: Procurement decision dashboard for pharmacy managers, logging shortage events and providing aggregated statistics.
-- **Pharmacy Mode**: A toggle that restricts access to hospital-specific modules for non-owner users.
-- **Item Movement Report**: Detailed per-item inventory movement report with search, filters, unit-level toggle, signed quantities, running balance, and Excel export/print functionality.
-- **Unit Conversion Overhaul**: Centralized unit conversion logic with `QTY_MINOR_TOLERANCE=0.0005`, supporting various unit configurations and server-side re-verification.
-- **Financial Integrity Hardening**: Includes measures for GL safety, inventory integrity, and accounting for returns, with a `returns_mode` system setting to define sales return accounting behavior.
-- **Pharmacy Sales VAT Module**: Per-item VAT configuration, a pure VAT engine, service layer, per-line tax snapshot on sales invoice lines, header-level tax totals, GL journal `vat_output` line injection with proportional revenue split, and returns reversal via `Dr vat_output`.
-- **Internal Task Management System**: Allows staff to create tasks assigned to users, with priorities, due dates, status lifecycle, timeline comments, and real-time notifications.
-- **Cost Center Auto-Assignment**: Automatically assigns cost centers to journal lines based on account defaults, with a UI for updating account defaults and a backfill endpoint for existing journal lines.
-- **Edit Posted Receiving**: Allows editing quantity/items on a posted (but not costed) supplier receiving, with backend logic for reversals and re-application of inventory.
-- **Patient Master Linkage (Upgrade)**: Unifies patient identity across all modules by adding `patient_id` to `sales_invoice_headers` and enforcing `PATIENT_REQUIRED` for non-cash invoices. Includes backend auto-resolution and a backfill endpoint.
-- **Patient Audit Trail**: Tracks who linked a patient and when for internal audit and tamper detection.
-- **Patient Financial Summary API**: Provides aggregated financial data for patients including total amounts, outstanding balances, invoice counts, and a breakdown by invoice type.
-- **Business Classification for Patient Invoice Lines**: Introduces a separate `business_classification` field for items, services, and patient invoice lines, decoupled from other categorizations, with a central resolver for auto-derivation.
-- **Visit Group Multi-Department Billing (visit_group_id)**: Lightweight grouping layer linking multiple department invoices for the same patient in a single OPD visit. `visit_group_id` is a nullable UUID on `patient_invoice_headers` (no FK yet). Each department creates its own scoped invoice; the UUID groups them. Consolidation via `POST /api/visit-groups/:id/consolidate` (uses same engine as admission consolidation). UI: optional field in dept-services with auto-generate button. Backward compatible — null means independent/old invoice. Indexes: `idx_pat_inv_visit_group` + `idx_pat_inv_visit_group_consolidated`.
-- **Traceability Hardening (source_type/source_id)**: All lines created by dept-services now carry `source_type='dept_service_invoice'` and `source_id=invoiceId`. Consolidation preserves source_type/source_id when copying lines (STAY_ENGINE lines preserved as-is; old null-source lines backfilled with invoice reference at consolidation time). Core: `_consolidateInvoicesCore` shared helper; admission and visit_group wrappers are thin.
-- **Patient File Workspace (ملف المريض المتكامل)**: Full patient master workspace with 6 tabbed sections — Overview (patient data + financial summary cards), History (existing timeline/medical history), Original Invoices (all department invoices with links), Consolidated Invoice (4 view modes: by visit / by department / by classification / detailed line-by-line), Payments (all payment records with treasury/method), Statement (full financial statement with visit/dept breakdown). Flexible multi-level print system (by visit, by dept, by classification, detailed). Backend: 3 new batch-query endpoints (`/api/patients/:id/invoices-aggregated`, `/api/patients/:id/invoice-lines` with pagination, `/api/patients/:id/payments-list`). Frontend architecture: 20 files split into hooks/, tabs/, consolidated/views/, consolidated/print/ — no monolith, full memoization, server-side aggregation, zero N+1.
-- **Deferred Cost Issue (الصرف بدون رصيد) — V1+V2+Hardened**: Full production-grade feature for dispensing items with insufficient stock in patient invoices. Feature flag `enable_deferred_cost_issue` + per-item `allow_oversell` toggle. Schema: `pending_stock_allocations`, `oversell_resolution_batches` (with `journal_entry_id`/`journal_status`), `oversell_cost_resolutions`, `cost_status` on `patient_invoice_lines` (pending/partial/resolved). `oversellReason` mandatory at finalize. Resolution engine: GL pre-check blocks if COGS/inventory GL missing; double-posting guard checks journal_entry_id before creating; no-negative-stock check with DB-level WHERE guard; cancelled-invoice pre-check. `cost_status` updated to 'partial'/'resolved' per line. Reverse logic: `POST /api/oversell/cancel-allocation/:id` (before resolution) + `POST /api/oversell/void-batch/:id` (after — reverses stock movements + GL journal). Period close protection: `closeFiscalPeriod()` blocks if pending PSAs exist. Integrity system: `GET /api/oversell/integrity` checks orphans/mismatches/orphan-journals; startup logs orphan count. Resolution screen: 3-tab layout (pending/history/integrity), cost_status badges, cancel/void buttons with confirmation dialogs, integrity report tab.
+- **Supplier Payments Module**: Manages supplier payments with dedicated schemas and GL integration.
+- **Sales Return Accounting**: Two-stage journal entry system for sales returns, integrated with inventory and cashier refunds.
+- **Purchase Returns Module**: For returning purchased items to suppliers, including invoice-linked returns and GL journal reversal.
+- **Delivery Payment Collection**: Module for collecting delivery invoices, featuring atomic receipt creation and shift totals integration.
+- **Thermal Receipt Printing**: 80mm thermal receipt system for the cashier module with auto-printing and customization.
+- **Shortage Notebook**: Procurement dashboard for pharmacy managers, logging and aggregating shortage events.
+- **Pharmacy Mode**: Restricts access to hospital-specific modules for non-owner users.
+- **Item Movement Report**: Detailed per-item inventory movement report with search, filters, and Excel export.
+- **Unit Conversion Overhaul**: Centralized unit conversion logic with server-side re-verification.
+- **Financial Integrity Hardening**: Measures for GL safety, inventory integrity, and accounting for returns.
+- **Pharmacy Sales VAT Module**: Per-item VAT configuration, a pure VAT engine, and GL journal integration for VAT output.
+- **Internal Task Management System**: Allows staff to create tasks with priorities, due dates, and real-time notifications.
+- **Cost Center Auto-Assignment**: Automatically assigns cost centers to journal lines based on account defaults, with a UI for updates.
+- **Edit Posted Receiving**: Allows editing quantity/items on posted supplier receiving documents with backend reversal logic.
+- **Patient Master Linkage (Upgrade)**: Unifies patient identity across modules by linking `patient_id` to `sales_invoice_headers`.
+- **Patient Audit Trail**: Tracks patient linkage for audit purposes.
+- **Patient Financial Summary API**: Provides aggregated financial data for patients.
+- **Business Classification for Patient Invoice Lines**: Introduces a separate `business_classification` field for items, services, and invoice lines.
+- **Visit Group Multi-Department Billing**: Lightweight grouping layer for multiple department invoices for the same patient in an OPD visit.
+- **Traceability Hardening**: All lines from department services carry `source_type`/`source_id` for improved traceability.
+- **Patient File Workspace**: A comprehensive patient master workspace with 6 tabbed sections for overview, history, invoices, payments, and financial statements.
+- **Reception Module**: Dedicated screen for logging patient visits, including search, new patient creation, visit type selection, and a list of today's visits.
+- **Final Close for Patient Invoices**: Functionality to formally close patient invoices with specific rules and audit trails.
 
 ## External Dependencies
 
@@ -77,5 +67,4 @@ The system uses a RESTful JSON API. Database interactions are managed by Drizzle
 - `zod`
 - `xlsx`
 - `shadcn/ui`
-- **Department/Warehouse Scope Enforcement (Patient Invoices)**: 4-layer enforcement — `allowedDepartmentIds` exposed from auth/me, UI dropdowns scoped to user's allowed departments/warehouses, `/api/services` enforces dept scope server-side, CREATE+UPDATE+FINALIZE routes block out-of-scope dept/warehouse/service. Central helper: `server/lib/scope-guard.ts`. Admin/owner bypass preserved. `assertServiceDeptMatch` validates service belongs to invoice department (null dept = cross-dept service, allowed everywhere).
 - `connect-pg-simple`

@@ -167,6 +167,7 @@ const methods = {
         paymentType: (params.paymentType === "contract" ? "contract" : "CASH") as "contract" | "CASH",
         insuranceCompany: params.insuranceCompany || null,
         surgeryTypeId: params.surgeryTypeId || null,
+        departmentId: params.departmentId || null,
       } as unknown as InsertAdmission).returning();
 
       let warehouseId: string | null = null;

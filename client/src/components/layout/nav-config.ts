@@ -99,6 +99,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "المستشفى والمرضى",
     icon: Heart,
     items: [
+      { title: "الاستقبال",               href: "/reception",           icon: ClipboardList, permission: "patients.view",          hospitalOnly: true },
       { title: "فاتورة مريض",             href: "/patient-invoices",    icon: UserRound,     permission: "patient_invoices.view",  hospitalOnly: true },
       { title: "نماذج الفواتير",          href: "/invoice-templates",   icon: FileText,      permission: "patient_invoices.view",  hospitalOnly: true },
       { title: "حالات دخول المستشفى",    href: "/patients",             icon: Users,         permission: "patients.view",          hospitalOnly: true },

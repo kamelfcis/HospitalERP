@@ -71,6 +71,7 @@ const ShortageNotebook = lazy(() => import("@/pages/shortage-notebook/index"));
 const OversellResolution = lazy(() => import("@/pages/oversell-resolution/index"));
 const UnitIntegrityPage = lazy(() => import("@/pages/unit-integrity/index"));
 const SuppliersPage = lazy(() => import("@/pages/suppliers/index"));
+const ReceptionPage = lazy(() => import("@/pages/reception/ReceptionPage"));
 const SupplierPaymentsPage  = lazy(() => import("@/pages/supplier-payments/index"));
 const CustomerPaymentsPage  = lazy(() => import("@/pages/customer-payments/index"));
 const DeliveryPaymentsPage  = lazy(() => import("@/pages/delivery-payments/index"));
@@ -192,6 +193,7 @@ function Router() {
           <Route path="/patients">{() => <G p="patients.view"><Patients /></G>}</Route>
           <Route path="/patients/:id/file">{() => <G p="patients.view"><PatientFilePage /></G>}</Route>
           <Route path="/patient-inquiry">{() => <G p="patients.view"><PatientInquiry /></G>}</Route>
+          <Route path="/reception">{() => <G p="patients.view"><ReceptionPage /></G>}</Route>
           <Route path="/duplicate-patients">{() => <G p="patients.merge"><DuplicatePatients /></G>}</Route>
           <Route path="/doctors">{() => <G p="doctors.view"><Doctors /></G>}</Route>
           <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><ErrorBoundary fallbackLabel="خطأ في صفحة فاتورة المريض"><PatientInvoice /></ErrorBoundary></G>}</Route>
@@ -261,6 +263,7 @@ const ROUTE_REQUIRED_PERMISSION: Record<string, string | null> = {
   "/dept-services/RAD":      "dept_services.create",
   "/sales-returns":          "sales.view",
   "/patient-inquiry":        "patients.view",
+  "/reception":              "patients.view",
   "/doctor-settlements":     "doctor_settlements.create",
   "/system-settings":        null,
   // ── إضافات (شاشات افتتاحية مدعومة) ────────────────────────────────────

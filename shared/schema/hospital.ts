@@ -223,6 +223,8 @@ export const admissions = pgTable("admissions", {
   paymentType:    varchar("payment_type", { length: 20 }).default("CASH"),
   insuranceCompany: text("insurance_company"),
   surgeryTypeId:  varchar("surgery_type_id").references(() => surgeryTypes.id),
+  // ── القسم الداخلي المسؤول عن الإقامة (مصدر الفلترة الرسمي) ───────────────
+  departmentId:   varchar("department_id").references(() => departments.id),
   // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
   companyId:        varchar("company_id").references(() => companies.id),
   contractId:       varchar("contract_id"),
@@ -235,9 +237,34 @@ export const admissions = pgTable("admissions", {
   patientIdIdx:      index("idx_adm_patient_id").on(table.patientId),
   statusIdx:         index("idx_adm_status").on(table.status),
   dateIdx:           index("idx_adm_date").on(table.admissionDate),
+  deptIdx:           index("idx_adm_dept").on(table.departmentId),
+  deptStatusIdx:     index("idx_adm_dept_status").on(table.departmentId, table.status),
   companyIdx:        index("idx_adm_company").on(table.companyId),
   contractIdx:       index("idx_adm_contract").on(table.contractId),
   contractMemberIdx: index("idx_adm_contract_member").on(table.contractMemberId),
+}));
+
+// ─── سجل الزيارات / الاستقبال (Reception Visit Log) ──────────────────────
+// نقطة الدخول الرسمية لكل مريض — داخلي أو خارجي
+export const patientVisits = pgTable("patient_visits", {
+  id:               varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  visitNumber:      varchar("visit_number", { length: 30 }).notNull().unique(),
+  patientId:        varchar("patient_id").notNull().references(() => patients.id),
+  visitType:        varchar("visit_type", { length: 20 }).notNull().default("outpatient"),
+  requestedService: varchar("requested_service", { length: 100 }),
+  departmentId:     varchar("department_id").references(() => departments.id),
+  admissionId:      varchar("admission_id"),
+  status:           varchar("status", { length: 20 }).notNull().default("open"),
+  notes:            text("notes"),
+  createdBy:        varchar("created_by").references(() => users.id),
+  createdAt:        timestamp("created_at").notNull().defaultNow(),
+  updatedAt:        timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  patientIdx:   index("idx_pv_patient").on(table.patientId),
+  visitTypeIdx: index("idx_pv_type").on(table.visitType),
+  statusIdx:    index("idx_pv_status").on(table.status),
+  deptIdx:      index("idx_pv_dept").on(table.departmentId),
+  dateIdx:      index("idx_pv_date").on(table.createdAt),
 }));
 
 // ─── محرك الإقامة ─────────────────────────────────────────────────────────
@@ -384,6 +411,7 @@ export const insertCashierRefundReceiptSchema = createInsertSchema(cashierRefund
 export const insertCashierAuditLogSchema = createInsertSchema(cashierAuditLog).omit({ id: true, performedAt: true });
 export const insertSurgeryTypeSchema = createInsertSchema(surgeryTypes).omit({ id: true, createdAt: true });
 export const insertAdmissionSchema = createInsertSchema(admissions).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPatientVisitSchema = createInsertSchema(patientVisits).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertDrawerPasswordSchema = createInsertSchema(drawerPasswords).omit({ id: true, updatedAt: true });
 export const insertTreasurySchema = createInsertSchema(treasuries).omit({ id: true, createdAt: true });
 export const insertUserTreasurySchema = createInsertSchema(userTreasuries).omit({ id: true, createdAt: true });
@@ -427,6 +455,9 @@ export type SurgeryCategoryPrice = typeof surgeryCategoryPrices.$inferSelect;
 
 export type InsertAdmission = z.infer<typeof insertAdmissionSchema>;
 export type Admission = typeof admissions.$inferSelect;
+
+export type InsertPatientVisit = z.infer<typeof insertPatientVisitSchema>;
+export type PatientVisit = typeof patientVisits.$inferSelect;
 
 export type StaySegment = typeof staySegments.$inferSelect;
 export type Floor = typeof floors.$inferSelect;

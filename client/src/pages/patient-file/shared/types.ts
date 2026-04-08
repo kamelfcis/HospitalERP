@@ -54,6 +54,9 @@ export interface AggregatedInvoice {
   admissionId: string | null;
   visitGroupId: string | null;
   isConsolidated: boolean;
+  isFinalClosed: boolean;
+  finalClosedAt: string | null;
+  finalClosedBy: string | null;
   doctorName: string | null;
   contractName: string | null;
   totalAmount: number;

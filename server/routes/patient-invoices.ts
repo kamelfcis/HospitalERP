@@ -510,6 +510,67 @@ export function registerPatientInvoicesRoutes(app: Express) {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  الإغلاق النهائي للفاتورة المجمعة — Final Close
+  //  القواعد: outstanding=0، ليست ملغاة، لا فواتير draft في نفس الإقامة
+  // ══════════════════════════════════════════════════════════════════════════
+  app.post("/api/patient-invoices/:id/final-close", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_FINALIZE), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = (req.session as any)?.userId as string | undefined;
+
+      const invRes = await db.execute(sql`
+        SELECT id, status, is_consolidated, admission_id, net_amount, paid_amount, is_final_closed
+        FROM patient_invoice_headers WHERE id = ${id}
+      `);
+      const inv = invRes.rows[0] as Record<string,unknown> | undefined;
+      if (!inv) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (inv.is_final_closed) return res.status(409).json({ message: "الفاتورة مغلقة نهائياً بالفعل" });
+      if (inv.status === "cancelled") return res.status(409).json({ message: "لا يمكن إغلاق فاتورة ملغاة" });
+      if (inv.status !== "finalized") return res.status(409).json({ message: "يجب اعتماد الفاتورة أولاً قبل الإغلاق النهائي" });
+
+      const outstanding = parseFloat(String(inv.net_amount || 0)) - parseFloat(String(inv.paid_amount || 0));
+      if (outstanding > 0.01) {
+        return res.status(409).json({ message: `لا يمكن الإغلاق النهائي — يوجد رصيد متبقي: ${outstanding.toFixed(2)}` });
+      }
+
+      if (inv.admission_id) {
+        const draftRes = await db.execute(sql`
+          SELECT COUNT(*)::int AS cnt
+          FROM patient_invoice_headers
+          WHERE admission_id = ${inv.admission_id as string}
+            AND id != ${id}
+            AND status = 'draft'
+            AND is_consolidated = false
+        `);
+        const draftCount = parseInt(String((draftRes.rows[0] as Record<string,unknown>)?.cnt ?? "0"));
+        if (draftCount > 0) {
+          return res.status(409).json({ message: `يوجد ${draftCount} فاتورة/فواتير في حالة مسودة مرتبطة بهذه الإقامة — يرجى إنهاؤها أولاً` });
+        }
+      }
+
+      await db.execute(sql`
+        UPDATE patient_invoice_headers
+        SET is_final_closed = true, final_closed_at = NOW(), final_closed_by = ${userId || null}, updated_at = NOW()
+        WHERE id = ${id}
+      `);
+
+      Promise.resolve().then(() => {
+        auditLog({
+          tableName: "patient_invoice_headers",
+          recordId: id,
+          action: "final_close",
+          userId,
+          newValues: { isFinalClosed: true, closedAt: new Date().toISOString() },
+        }).catch(() => {});
+      });
+
+      return res.json({ success: true, message: "تم الإغلاق النهائي للفاتورة بنجاح" });
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   app.post("/api/patient-invoices/:id/distribute", requireAuth, checkPermission(PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
     try {
       const { patients } = req.body;
